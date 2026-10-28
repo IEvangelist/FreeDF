@@ -73,8 +73,8 @@ public sealed class PdfDocument
 
     PdfDocument(PdfFile f) { File = f; }
 
-    public static PdfDocument Open(string path) => new PdfDocument(PdfFile.Open(path)).Init();
-    public static PdfDocument Load(byte[] data) => new PdfDocument(PdfFile.Load(data)).Init();
+    public static PdfDocument Open(string path, string password = "") => new PdfDocument(PdfFile.Open(path, password)).Init();
+    public static PdfDocument Load(byte[] data, string password = "") => new PdfDocument(PdfFile.Load(data, password)).Init();
 
     PdfDocument Init()
     {

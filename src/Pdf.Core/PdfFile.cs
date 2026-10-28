@@ -18,17 +18,25 @@ public sealed class PdfFile
 
     PdfFile(byte[] data) { Data = data; }
 
-    public static PdfFile Open(string path) => Load(File.ReadAllBytes(path));
+    PdfDecryptor? _dec;
+    string _password = "";
+    int _encObj = -1;
+    public bool IsEncrypted => _dec is not null;
+    public PdfDecryptor? Decryptor => _dec;
 
-    public static PdfFile Load(byte[] data)
+    public static PdfFile Open(string path, string password = "") => Load(File.ReadAllBytes(path), password);
+
+    public static PdfFile Load(byte[] data, string password = "")
     {
-        var f = new PdfFile(data);
+        var f = new PdfFile(data) { _password = password };
         f.ParseHeader();
         try
         {
             f.ReadXrefChain();
+            f.SetupEncryption(password);
             if (f.Trailer.Get("Root") is null || f.Resolve(f.Trailer.Get("Root")) is not PdfDictionary) throw new PdfParseException("bad root");
         }
+        catch (PdfPasswordException) { throw; }
         catch (Exception e) when (e is PdfParseException or IndexOutOfRangeException or ArgumentException or FormatException or InvalidCastException or KeyNotFoundException)
         {
             f.Repair();
@@ -63,8 +71,24 @@ public sealed class PdfFile
         PdfObject result;
         try { result = e.Compressed ? LoadCompressed((int)e.OffsetOrStream, e.GenOrIndex, num) : LoadAt(e.OffsetOrStream, num); }
         catch (PdfParseException) when (!Repaired) { Repair(); return GetObject(num); }
+        if (_dec is not null && !e.Compressed && num != _encObj) result = _dec.Decrypt(result, num, e.GenOrIndex);
         _cache[num] = result;
         return result;
+    }
+
+    void SetupEncryption(string password)
+    {
+        _dec = null; _encObj = -1;
+        var raw = Trailer.Get("Encrypt");
+        if (raw is null) return;
+        if (raw is PdfRef r) _encObj = r.Number;
+        var enc = Resolve(raw) as PdfDictionary ?? throw new PdfParseException("bad /Encrypt");
+        var id = Resolve(Trailer.Get("ID")) is PdfArray { Items.Count: > 0 } ia && Resolve(ia.Items[0]) is PdfString s ? s.Bytes : [];
+        _dec = PdfDecryptor.Create(enc, id, Resolve, password);
+        // Drop anything parsed before the key was known (strings/streams were still ciphertext).
+        var keep = _encObj >= 0 && _cache.TryGetValue(_encObj, out var e) ? e : null;
+        _cache.Clear(); _objStmCache.Clear();
+        if (keep is not null) _cache[_encObj] = keep;
     }
 
     PdfObject LoadAt(long offset, int expectNum)
@@ -259,14 +283,23 @@ public sealed class PdfFile
         foreach (var td in trailers) foreach (var kv in td.Entries) merged.Entries[kv.Key] = kv.Value;
 
         // Object streams and xref streams: index compressed objects and pick up trailer keys.
+        // XRef streams first (they are never encrypted) so /Encrypt is known before object streams are read.
+        foreach (var num in Xref.Keys.ToList())
+        {
+            PdfObject o;
+            try { o = LoadAt(Xref[num].OffsetOrStream, num); } catch (PdfParseException) { continue; }
+            if (o is PdfStream { } xs && xs.Dict.Get("Type").AsName() == "XRef") foreach (var kv in xs.Dict.Entries) merged.Entries.TryAdd(kv.Key, kv.Value);
+        }
+        Trailer = merged;
+        SetupEncryption(_password);
         foreach (var num in Xref.Keys.ToList())
         {
             PdfObject o;
             try { o = LoadAt(Xref[num].OffsetOrStream, num); } catch (PdfParseException) { continue; }
             if (o is not PdfStream st) continue;
+            if (_dec is not null && num != _encObj) st = (PdfStream)_dec.Decrypt(st, num, Xref[num].GenOrIndex);
             var type = st.Dict.Get("Type").AsName();
-            if (type == "XRef") foreach (var kv in st.Dict.Entries) merged.Entries.TryAdd(kv.Key, kv.Value);
-            else if (type == "ObjStm")
+            if (type == "ObjStm")
             {
                 try
                 {
