@@ -1,15 +1,43 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Pdf.Content;
 
 namespace Pdf.Render;
 
-/// <summary>Managed anti-aliased software rasterizer implementing <see cref="IRenderBackend"/>. Surface is opaque RGB, white background.</summary>
+/// <summary>
+/// Managed anti-aliased software rasterizer implementing <see cref="IRenderBackend"/>. Surface is opaque RGB, white background.
+/// Scan conversion is row-at-a-time (4 sub-scanlines, exact horizontal coverage) with struct edges and no per-fill allocations.
+/// </summary>
 public sealed class SoftwareRasterizer : IRenderBackend
 {
     const int SubY = 4;
+    const float Weight = 1f / SubY;
+
+    struct Edge { public double Y0, Y1, X0, Slope; public int Dir; }
+
+    /// <summary>Clip region: a bounding box plus optional coverage (null = fully covered). Immutable; crops share the coverage array.</summary>
+    sealed class ClipMask
+    {
+        public int X0, Y0, X1, Y1;
+        public float[]? Cov; public int Stride, CovX0, CovY0;
+        public bool Empty => X1 <= X0 || Y1 <= Y0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float At(int x, int y) => Cov is null ? 1f : Cov[(y - CovY0) * Stride + (x - CovX0)];
+    }
+
     readonly int _w, _h;
     readonly float[] _px; // RGB, 3 floats per pixel
-    float[]? _clip;       // null = unclipped
-    readonly Stack<float[]?> _stack = new();
+    ClipMask _clip;
+    readonly Stack<ClipMask> _stack = new();
+
+    Edge[] _edges = new Edge[512]; int _en;
+    double _minX, _minY, _maxX, _maxY; bool _bad;
+    int[] _active = new int[64]; int _an;
+    double[] _xs = new double[64]; int[] _xd = new int[64];
+    readonly float[] _cov;
+    int _next, _y, _by1, _bx0, _bx1, _tmin, _tmax; bool _eo;
+
+    static readonly Comparison<Edge> ByY0 = static (a, b) => a.Y0.CompareTo(b.Y0);
 
     public int Width => _w;
     public int Height => _h;
@@ -19,47 +47,257 @@ public sealed class SoftwareRasterizer : IRenderBackend
         _w = width; _h = height;
         _px = new float[width * height * 3];
         Array.Fill(_px, 1f);
+        _cov = new float[width + 2];
+        _clip = new ClipMask { X0 = 0, Y0 = 0, X1 = width, Y1 = height };
     }
 
     public byte[] ToRgba()
     {
         var o = new byte[_w * _h * 4];
-        for (var i = 0; i < _w * _h; i++)
+        var px = _px;
+        var n = _w * _h;
+        for (var i = 0; i < n; i++)
         {
-            o[i * 4] = (byte)Math.Clamp((int)Math.Round(_px[i * 3] * 255), 0, 255);
-            o[i * 4 + 1] = (byte)Math.Clamp((int)Math.Round(_px[i * 3 + 1] * 255), 0, 255);
-            o[i * 4 + 2] = (byte)Math.Clamp((int)Math.Round(_px[i * 3 + 2] * 255), 0, 255);
+            o[i * 4] = ToByte(px[i * 3]);
+            o[i * 4 + 1] = ToByte(px[i * 3 + 1]);
+            o[i * 4 + 2] = ToByte(px[i * 3 + 2]);
             o[i * 4 + 3] = 255;
         }
         return o;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    static byte ToByte(float v) { var i = (int)(v * 255f + 0.5f); return (byte)(i < 0 ? 0 : i > 255 ? 255 : i); }
+
     public void Save() => _stack.Push(_clip);
     public void Restore() { if (_stack.Count > 0) _clip = _stack.Pop(); }
 
+    // ---------------------------------------------------------------- edge building
+
+    void BeginEdges() { _en = 0; _minX = _minY = double.MaxValue; _maxX = _maxY = double.MinValue; _bad = false; }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    void Line(double x0, double y0, double x1, double y1)
+    {
+        if (double.IsNaN(x0 + y0 + x1 + y1) || double.IsInfinity(x0 + y0 + x1 + y1)) { _bad = true; return; }
+        if (x0 < _minX) _minX = x0; if (x0 > _maxX) _maxX = x0; if (y0 < _minY) _minY = y0; if (y0 > _maxY) _maxY = y0;
+        if (x1 < _minX) _minX = x1; if (x1 > _maxX) _maxX = x1; if (y1 < _minY) _minY = y1; if (y1 > _maxY) _maxY = y1;
+        if (y0 == y1) return;
+        if (_en == _edges.Length) Array.Resize(ref _edges, _en * 2);
+        ref var e = ref _edges[_en++];
+        if (y0 < y1) { e.Y0 = y0; e.Y1 = y1; e.X0 = x0; e.Slope = (x1 - x0) / (y1 - y0); e.Dir = 1; }
+        else { e.Y0 = y1; e.Y1 = y0; e.X0 = x1; e.Slope = (x0 - x1) / (y0 - y1); e.Dir = -1; }
+    }
+
+    void AddPath(PathData path, in Matrix m, double tol)
+    {
+        var ops = CollectionsMarshal.AsSpan(path.Ops);
+        var pts = CollectionsMarshal.AsSpan(path.Pts);
+        var pi = 0;
+        double sx = 0, sy = 0, cx = 0, cy = 0; var open = false;
+        foreach (var op in ops)
+        {
+            switch (op)
+            {
+                case PathOp.Move:
+                    if (open && (cx != sx || cy != sy)) Line(cx, cy, sx, sy);
+                    sx = cx = m.A * pts[pi] + m.C * pts[pi + 1] + m.E; sy = cy = m.B * pts[pi] + m.D * pts[pi + 1] + m.F; pi += 2; open = true; break;
+                case PathOp.Line:
+                    {
+                        var x = m.A * pts[pi] + m.C * pts[pi + 1] + m.E; var y = m.B * pts[pi] + m.D * pts[pi + 1] + m.F; pi += 2;
+                        Line(cx, cy, x, y); cx = x; cy = y; break;
+                    }
+                case PathOp.Curve:
+                    {
+                        double x1 = m.A * pts[pi] + m.C * pts[pi + 1] + m.E, y1 = m.B * pts[pi] + m.D * pts[pi + 1] + m.F;
+                        double x2 = m.A * pts[pi + 2] + m.C * pts[pi + 3] + m.E, y2 = m.B * pts[pi + 2] + m.D * pts[pi + 3] + m.F;
+                        double x3 = m.A * pts[pi + 4] + m.C * pts[pi + 5] + m.E, y3 = m.B * pts[pi + 4] + m.D * pts[pi + 5] + m.F;
+                        pi += 6;
+                        var dd = Math.Abs(cx - 2 * x1 + x2) + Math.Abs(cy - 2 * y1 + y2) + Math.Abs(x1 - 2 * x2 + x3) + Math.Abs(y1 - 2 * y2 + y3);
+                        var n = Math.Clamp((int)Math.Ceiling(Math.Sqrt(dd / tol) * 0.75), 2, 100);
+                        // Cubic in power basis, evaluated with Horner's rule.
+                        double ax = -cx + 3 * x1 - 3 * x2 + x3, bx = 3 * cx - 6 * x1 + 3 * x2, ccx = -3 * cx + 3 * x1;
+                        double ay = -cy + 3 * y1 - 3 * y2 + y3, by = 3 * cy - 6 * y1 + 3 * y2, ccy = -3 * cy + 3 * y1;
+                        double px = cx, py = cy;
+                        for (var i = 1; i <= n; i++)
+                        {
+                            var t = (double)i / n;
+                            double qx = i == n ? x3 : ((ax * t + bx) * t + ccx) * t + cx;
+                            double qy = i == n ? y3 : ((ay * t + by) * t + ccy) * t + cy;
+                            Line(px, py, qx, qy); px = qx; py = qy;
+                        }
+                        cx = x3; cy = y3; break;
+                    }
+                case PathOp.Close:
+                    if (open) { Line(cx, cy, sx, sy); cx = sx; cy = sy; }
+                    break;
+            }
+        }
+        if (open && (cx != sx || cy != sy)) Line(cx, cy, sx, sy);
+    }
+
+    void AddPoly(List<(double X, double Y)> p, in Matrix m)
+    {
+        if (p.Count < 2) return;
+        var span = CollectionsMarshal.AsSpan(p);
+        var (fx, fy) = m.Apply(span[0].X, span[0].Y);
+        double px = fx, py = fy;
+        for (var i = 1; i < span.Length; i++)
+        {
+            var qx = m.A * span[i].X + m.C * span[i].Y + m.E; var qy = m.B * span[i].X + m.D * span[i].Y + m.F;
+            Line(px, py, qx, qy); px = qx; py = qy;
+        }
+        Line(px, py, fx, fy);
+    }
+
+    // ---------------------------------------------------------------- scan conversion
+
+    bool BeginScan(bool evenOdd, out int bx0, out int by0, out int bx1, out int by1)
+    {
+        bx0 = by0 = bx1 = by1 = 0;
+        if (_bad || _en == 0 || _minX > _maxX) return false;
+        bx0 = Math.Max(_clip.X0, (int)Math.Floor(Math.Max(_minX, -1)));
+        bx1 = Math.Min(_clip.X1, (int)Math.Ceiling(Math.Min(_maxX, _w + 1)) + 1);
+        by0 = Math.Max(_clip.Y0, (int)Math.Floor(Math.Max(_minY, -1)));
+        by1 = Math.Min(_clip.Y1, (int)Math.Ceiling(Math.Min(_maxY, _h + 1)) + 1);
+        if (bx0 >= bx1 || by0 >= by1) return false;
+        _edges.AsSpan(0, _en).Sort(ByY0);
+        _next = 0; _an = 0; _eo = evenOdd; _y = by0; _by1 = by1; _bx0 = bx0; _bx1 = bx1;
+        _tmin = int.MaxValue; _tmax = -1;
+        return true;
+    }
+
+    bool NextRow(out int y, out int xa, out int xb)
+    {
+        if (_tmax >= _tmin) Array.Clear(_cov, _tmin, _tmax - _tmin + 1);
+        _tmin = int.MaxValue; _tmax = -1;
+        y = xa = xb = 0;
+        while (_y < _by1)
+        {
+            var cy = _y;
+            if (_an == 0)
+            {
+                if (_next >= _en) return false;
+                var ny = (int)Math.Floor(_edges[_next].Y0);
+                if (ny > cy) { _y = ny; continue; }
+            }
+            _y++;
+            for (var s = 0; s < SubY; s++)
+            {
+                var sy = cy + (s + 0.5) / SubY;
+                while (_next < _en && _edges[_next].Y0 <= sy)
+                {
+                    if (_an == _active.Length) Array.Resize(ref _active, _an * 2);
+                    _active[_an++] = _next++;
+                }
+                if (_an > _xs.Length) { Array.Resize(ref _xs, _an * 2); Array.Resize(ref _xd, _an * 2); }
+                int keep = 0, cnt = 0;
+                for (var i = 0; i < _an; i++)
+                {
+                    var idx = _active[i];
+                    ref var e = ref _edges[idx];
+                    if (e.Y1 <= sy) continue;
+                    _active[keep++] = idx;
+                    var x = e.X0 + (sy - e.Y0) * e.Slope;
+                    var j = cnt++;
+                    while (j > 0 && _xs[j - 1] > x) { _xs[j] = _xs[j - 1]; _xd[j] = _xd[j - 1]; j--; }
+                    _xs[j] = x; _xd[j] = e.Dir;
+                }
+                _an = keep;
+                var wind = 0;
+                for (var k = 0; k + 1 < cnt; k++)
+                {
+                    wind += _xd[k];
+                    if (_eo ? (k & 1) != 0 : wind == 0) continue;
+                    AddSpan(_xs[k], _xs[k + 1]);
+                }
+            }
+            if (_tmax >= _tmin) { y = cy; xa = _tmin; xb = _tmax + 1; return true; }
+        }
+        return false;
+    }
+
+    void AddSpan(double xa, double xb)
+    {
+        if (xb <= _bx0 || xa >= _bx1) return;
+        if (xa < _bx0) xa = _bx0;
+        if (xb > _bx1) xb = _bx1;
+        if (xb <= xa) return;
+        var ia = (int)xa; var ib = (int)xb;
+        var cov = _cov;
+        var last = ib < _bx1 ? ib : _bx1 - 1;
+        if (ia < _tmin) _tmin = ia;
+        if (last > _tmax) _tmax = last;
+        if (ia == ib) { cov[ia] += (float)(xb - xa) * Weight; return; }
+        cov[ia] += (float)(ia + 1 - xa) * Weight;
+        for (var i = ia + 1; i < ib; i++) cov[i] += Weight;
+        if (ib < _bx1) cov[ib] += (float)(xb - ib) * Weight;
+    }
+
+    // ---------------------------------------------------------------- clipping
+
     public void Clip(PathData path, Matrix ctm, bool evenOdd)
     {
-        var polys = ToPolys(path.Transform(ctm), true);
-        var cov = Rasterize(polys, evenOdd, out var bx0, out var by0, out var bx1, out var by1);
-        var nc = new float[_w * _h];
-        if (cov != null)
-            for (var y = by0; y < by1; y++)
-                for (var x = bx0; x < bx1; x++)
-                {
-                    var c = cov[(y - by0) * (bx1 - bx0) + (x - bx0)];
-                    nc[y * _w + x] = _clip == null ? c : c * _clip[y * _w + x];
-                }
-        _clip = nc;
+        if (_clip.Empty) return;
+        if (TryRectClip(path, ctm)) return;
+        BeginEdges(); AddPath(path, ctm, 0.1);
+        if (!BeginScan(evenOdd, out var bx0, out var by0, out var bx1, out var by1)) { _clip = new ClipMask(); return; }
+        var bw = bx1 - bx0;
+        var mask = new float[bw * (by1 - by0)];
+        var old = _clip;
+        var lo = int.MaxValue; var hi = int.MinValue;
+        while (NextRow(out var y, out var xa, out var xb))
+        {
+            var row = y - by0;
+            for (var x = xa; x < xb; x++)
+            {
+                var c = _cov[x]; if (c > 1f) c = 1f;
+                if (old.Cov is not null) c *= old.At(x, y);
+                mask[row * bw + (x - bx0)] = c;
+            }
+            if (row < lo) lo = row; if (row > hi) hi = row;
+        }
+        _clip = new ClipMask { X0 = bx0, Y0 = by0, X1 = bx1, Y1 = by1, Cov = mask, Stride = bw, CovX0 = bx0, CovY0 = by0 };
     }
+
+    /// <summary>Axis-aligned, pixel-aligned rectangles (the overwhelmingly common clip) just crop the clip box.</summary>
+    bool TryRectClip(PathData path, in Matrix m)
+    {
+        var ops = path.Ops;
+        if (ops.Count is not (4 or 5) || ops[0] != PathOp.Move || ops[1] != PathOp.Line || ops[2] != PathOp.Line || ops[3] != PathOp.Line) return false;
+        if (ops.Count == 5 && ops[4] != PathOp.Close) return false;
+        var p = path.Pts;
+        double[] xs = new double[4], ys = new double[4];
+        for (var i = 0; i < 4; i++) { var (x, y) = m.Apply(p[i * 2], p[i * 2 + 1]); xs[i] = x; ys[i] = y; }
+        const double eps = 1e-3;
+        bool a = Math.Abs(xs[0] - xs[1]) < eps && Math.Abs(ys[1] - ys[2]) < eps && Math.Abs(xs[2] - xs[3]) < eps && Math.Abs(ys[3] - ys[0]) < eps;
+        bool b = Math.Abs(ys[0] - ys[1]) < eps && Math.Abs(xs[1] - xs[2]) < eps && Math.Abs(ys[2] - ys[3]) < eps && Math.Abs(xs[3] - xs[0]) < eps;
+        if (!a && !b) return false;
+        double minX = xs.Min(), maxX = xs.Max(), minY = ys.Min(), maxY = ys.Max();
+        static bool Whole(double v) => Math.Abs(v - Math.Round(v)) < eps;
+        if (!Whole(minX) || !Whole(maxX) || !Whole(minY) || !Whole(maxY)) return false;
+        var o = _clip;
+        _clip = new ClipMask
+        {
+            X0 = Math.Max(o.X0, (int)Math.Round(minX)), X1 = Math.Min(o.X1, (int)Math.Round(maxX)),
+            Y0 = Math.Max(o.Y0, (int)Math.Round(minY)), Y1 = Math.Min(o.Y1, (int)Math.Round(maxY)),
+            Cov = o.Cov, Stride = o.Stride, CovX0 = o.CovX0, CovY0 = o.CovY0,
+        };
+        return true;
+    }
+
+    // ---------------------------------------------------------------- painting
 
     public void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode)
     {
-        var polys = ToPolys(path.Transform(ctm), true);
-        Paint(polys, evenOdd, color, alpha, blendMode);
+        if (_clip.Empty) return;
+        BeginEdges(); AddPath(path, ctm, 0.1);
+        PaintScan(evenOdd, color, alpha, blendMode);
     }
 
     public void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode)
     {
+        if (_clip.Empty) return;
         var scale = Math.Sqrt(Math.Abs(ctm.Det));
         var width = style.Width;
         if (width * scale < 1) width = scale > 0 ? 1 / scale : 1; // hairline: at least one device pixel
@@ -67,25 +305,30 @@ public sealed class SoftwareRasterizer : IRenderBackend
         var polys = new List<List<(double X, double Y)>>();
         foreach (var (pts, closed) in subs)
         {
-            foreach (var (dp, dclosed) in ApplyDash(pts, closed, style))
-                Stroker.Build(dp, dclosed, width, style.Cap, style.Join, style.MiterLimit, polys);
+            if (style.Dash.Length == 0) Stroker.Build(pts, closed, width, style.Cap, style.Join, style.MiterLimit, polys);
+            else foreach (var (dp, dclosed) in ApplyDash(pts, closed, style))
+                    Stroker.Build(dp, dclosed, width, style.Cap, style.Join, style.MiterLimit, polys);
         }
-        var dev = polys.Select(p => p.Select(q => ctm.Apply(q.X, q.Y)).ToList()).ToList();
-        Paint(dev, false, color, alpha, blendMode);
+        BeginEdges();
+        foreach (var p in polys) AddPoly(p, ctm);
+        PaintScan(false, color, alpha, blendMode);
     }
 
     static IEnumerable<(List<(double X, double Y)>, bool)> ApplyDash(List<(double X, double Y)> pts, bool closed, StrokeStyle s)
     {
-        if (s.Dash.Length == 0 || s.Dash.Sum() <= 0 || s.Dash.Any(d => d < 0)) { yield return (pts, closed); yield break; }
+        var dash = s.Dash;
+        double sum = 0; var anyNeg = false; var allZero = true;
+        foreach (var d in dash) { sum += d; if (d < 0) anyNeg = true; if (d > 0) allZero = false; }
+        if (sum <= 0 || anyNeg) { yield return (pts, closed); yield break; }
         var src = new List<(double X, double Y)>(pts);
         if (closed) src.Add(pts[0]);
         var idx = 0; var on = true;
-        var phase = s.DashPhase % (s.Dash.Sum() * (s.Dash.Length % 2 == 1 ? 2 : 1));
-        if (phase < 0) phase += s.Dash.Sum() * 2;
-        var rem = s.Dash[0];
+        var phase = s.DashPhase % (sum * (dash.Length % 2 == 1 ? 2 : 1));
+        if (phase < 0) phase += sum * 2;
+        var rem = dash[0];
         while (phase > 0)
         {
-            if (phase >= rem) { phase -= rem; idx = (idx + 1) % s.Dash.Length; rem = s.Dash[idx]; on = !on; }
+            if (phase >= rem) { phase -= rem; idx = (idx + 1) % dash.Length; rem = dash[idx]; on = !on; }
             else { rem -= phase; phase = 0; }
         }
         var cur = new List<(double X, double Y)>();
@@ -102,8 +345,8 @@ public sealed class SoftwareRasterizer : IRenderBackend
                 var t = pos / len; var p = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
                 if (on) { cur.Add(p); yield return (cur, false); cur = []; }
                 else cur = [p];
-                on = !on; idx = (idx + 1) % s.Dash.Length; rem = s.Dash[idx];
-                if (rem <= 0 && s.Dash.All(d => d <= 0)) yield break;
+                on = !on; idx = (idx + 1) % dash.Length; rem = dash[idx];
+                if (rem <= 0 && allZero) yield break;
             }
             rem -= len - pos;
             if (on) cur.Add((x1, y1));
@@ -111,51 +354,65 @@ public sealed class SoftwareRasterizer : IRenderBackend
         if (on && cur.Count > 1) yield return (cur, false);
     }
 
-    static List<List<(double X, double Y)>> ToPolys(PathData p, bool _)
-        => p.Flatten(0.1).Select(s => s.Points).Where(l => l.Count > 1).ToList();
-
-    void Paint(List<List<(double X, double Y)>> polys, bool evenOdd, RgbColor c, double alpha, string blend)
+    void PaintScan(bool evenOdd, RgbColor c, double alpha, string blendMode)
     {
-        var cov = Rasterize(polys, evenOdd, out var bx0, out var by0, out var bx1, out var by1);
-        if (cov == null) return;
-        var bw = bx1 - bx0;
-        for (var y = by0; y < by1; y++)
-            for (var x = bx0; x < bx1; x++)
-            {
-                var a = cov[(y - by0) * bw + (x - bx0)];
-                if (a <= 0) continue;
-                if (_clip != null) a *= _clip[y * _w + x];
-                if (a <= 0) continue;
-                Blend(y * _w + x, (float)c.R, (float)c.G, (float)c.B, a * (float)alpha, blend);
-            }
-    }
-
-    void Blend(int i, float r, float g, float b, float a, string mode)
-    {
-        var o = i * 3;
-        if (mode is not ("Normal" or "Compatible"))
+        if (!BeginScan(evenOdd, out _, out _, out _, out _)) return;
+        float r = (float)c.R, g = (float)c.G, b = (float)c.B, al = (float)alpha;
+        var mode = ParseBlend(blendMode);
+        var clip = _clip;
+        var px = _px;
+        while (NextRow(out var y, out var xa, out var xb))
         {
-            r = B(mode, _px[o], r); g = B(mode, _px[o + 1], g); b = B(mode, _px[o + 2], b);
+            var rowBase = y * _w;
+            for (var x = xa; x < xb; x++)
+            {
+                var a = _cov[x];
+                if (a <= 0f) continue;
+                if (a > 1f) a = 1f;
+                if (clip.Cov is not null) a *= clip.At(x, y);
+                a *= al;
+                if (a <= 0f) continue;
+                BlendPixel(px, (rowBase + x) * 3, r, g, b, a, mode);
+            }
         }
-        _px[o] += (r - _px[o]) * a;
-        _px[o + 1] += (g - _px[o + 1]) * a;
-        _px[o + 2] += (b - _px[o + 2]) * a;
     }
 
-    static float B(string mode, float cb, float cs) => mode switch
+    enum Blend : byte { Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion }
+
+    static Blend ParseBlend(string m) => m switch
     {
-        "Multiply" => cb * cs,
-        "Screen" => cb + cs - cb * cs,
-        "Overlay" => HardLight(cs, cb),
-        "Darken" => Math.Min(cb, cs),
-        "Lighten" => Math.Max(cb, cs),
-        "ColorDodge" => cb == 0 ? 0 : cs >= 1 ? 1 : Math.Min(1, cb / (1 - cs)),
-        "ColorBurn" => cb >= 1 ? 1 : cs <= 0 ? 0 : 1 - Math.Min(1, (1 - cb) / cs),
-        "HardLight" => HardLight(cb, cs),
-        "SoftLight" => cs <= 0.5f ? cb - (1 - 2 * cs) * cb * (1 - cb)
+        "Multiply" => Blend.Multiply, "Screen" => Blend.Screen, "Overlay" => Blend.Overlay, "Darken" => Blend.Darken, "Lighten" => Blend.Lighten,
+        "ColorDodge" => Blend.ColorDodge, "ColorBurn" => Blend.ColorBurn, "HardLight" => Blend.HardLight, "SoftLight" => Blend.SoftLight,
+        "Difference" => Blend.Difference, "Exclusion" => Blend.Exclusion, _ => Blend.Normal,
+    };
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    static void BlendPixel(float[] px, int o, float r, float g, float b, float a, Blend mode)
+    {
+        if (mode != Blend.Normal)
+        {
+            r = B(mode, px[o], r); g = B(mode, px[o + 1], g); b = B(mode, px[o + 2], b);
+        }
+        if (a >= 0.9999f) { px[o] = r; px[o + 1] = g; px[o + 2] = b; return; }
+        px[o] += (r - px[o]) * a;
+        px[o + 1] += (g - px[o + 1]) * a;
+        px[o + 2] += (b - px[o + 2]) * a;
+    }
+
+    static float B(Blend mode, float cb, float cs) => mode switch
+    {
+        Blend.Multiply => cb * cs,
+        Blend.Screen => cb + cs - cb * cs,
+        Blend.Overlay => HardLight(cs, cb),
+        Blend.Darken => Math.Min(cb, cs),
+        Blend.Lighten => Math.Max(cb, cs),
+        Blend.ColorDodge => cb == 0 ? 0 : cs >= 1 ? 1 : Math.Min(1, cb / (1 - cs)),
+        Blend.ColorBurn => cb >= 1 ? 1 : cs <= 0 ? 0 : 1 - Math.Min(1, (1 - cb) / cs),
+        Blend.HardLight => HardLight(cb, cs),
+        Blend.SoftLight => cs <= 0.5f ? cb - (1 - 2 * cs) * cb * (1 - cb)
             : cb + (2 * cs - 1) * ((cb <= 0.25f ? ((16 * cb - 12) * cb + 4) * cb : MathF.Sqrt(cb)) - cb),
-        "Difference" => Math.Abs(cb - cs),
-        "Exclusion" => cb + cs - 2 * cb * cs,
+        Blend.Difference => Math.Abs(cb - cs),
+        Blend.Exclusion => cb + cs - 2 * cb * cs,
         _ => cs,
     };
 
@@ -163,116 +420,79 @@ public sealed class SoftwareRasterizer : IRenderBackend
 
     public void DrawImage(ImageData img, Matrix ctm, double alpha, RgbColor maskColor, string blendMode)
     {
+        if (_clip.Empty) return;
         // Image space (u,v in px, v down) -> unit square (x = u/w, y = 1 - v/h) -> device.
-        var m = new Matrix(1.0 / img.Width, 0, 0, -1.0 / img.Height, 0, 1).Then(ctm);
-        var inv = m.Invert();
-        var corners = new[] { ctm.Apply(0, 0), ctm.Apply(1, 0), ctm.Apply(0, 1), ctm.Apply(1, 1) };
-        var x0 = Math.Max(0, (int)Math.Floor(corners.Min(c => c.X))); var x1 = Math.Min(_w, (int)Math.Ceiling(corners.Max(c => c.X)));
-        var y0 = Math.Max(0, (int)Math.Floor(corners.Min(c => c.Y))); var y1 = Math.Min(_h, (int)Math.Ceiling(corners.Max(c => c.Y)));
-        // Scale factor for box-filtering when downsampling.
+        var inv = new Matrix(1.0 / img.Width, 0, 0, -1.0 / img.Height, 0, 1).Then(ctm).Invert();
+        var (c0x, c0y) = ctm.Apply(0, 0); var (c1x, c1y) = ctm.Apply(1, 0); var (c2x, c2y) = ctm.Apply(0, 1); var (c3x, c3y) = ctm.Apply(1, 1);
+        var x0 = Math.Max(_clip.X0, (int)Math.Floor(Math.Min(Math.Min(c0x, c1x), Math.Min(c2x, c3x))));
+        var x1 = Math.Min(_clip.X1, (int)Math.Ceiling(Math.Max(Math.Max(c0x, c1x), Math.Max(c2x, c3x))));
+        var y0 = Math.Max(_clip.Y0, (int)Math.Floor(Math.Min(Math.Min(c0y, c1y), Math.Min(c2y, c3y))));
+        var y1 = Math.Min(_clip.Y1, (int)Math.Ceiling(Math.Max(Math.Max(c0y, c1y), Math.Max(c2y, c3y))));
+        if (x0 >= x1 || y0 >= y1) return;
+        // Box-filter when downsampling.
         var sx = Math.Sqrt(inv.A * inv.A + inv.B * inv.B); var sy = Math.Sqrt(inv.C * inv.C + inv.D * inv.D);
         var rx = Math.Clamp((int)Math.Round(sx), 1, 8); var ry = Math.Clamp((int)Math.Round(sy), 1, 8);
-        for (var y = y0; y < y1; y++)
-            for (var x = x0; x < x1; x++)
+        var ns = rx * ry;
+        var ou = new double[ns]; var ov = new double[ns];
+        for (var j = 0; j < ry; j++)
+            for (var i = 0; i < rx; i++)
             {
-                double ar = 0, ag = 0, ab = 0, aa = 0; var n = 0;
-                for (var j = 0; j < ry; j++)
-                    for (var i = 0; i < rx; i++)
-                    {
-                        var (u, v) = inv.Apply(x + (i + 0.5) / rx, y + (j + 0.5) / ry);
-                        var iu = (int)Math.Floor(u); var iv = (int)Math.Floor(v);
-                        n++;
-                        if (iu < 0 || iv < 0 || iu >= img.Width || iv >= img.Height) continue;
-                        var o = (iv * img.Width + iu) * 4;
-                        var pa = img.Rgba[o + 3] / 255.0;
-                        if (img.IsMask) { ar += maskColor.R * pa; ag += maskColor.G * pa; ab += maskColor.B * pa; }
-                        else { ar += img.Rgba[o] / 255.0 * pa; ag += img.Rgba[o + 1] / 255.0 * pa; ab += img.Rgba[o + 2] / 255.0 * pa; }
-                        aa += pa;
-                    }
-                if (aa <= 0) continue;
-                var cov = (float)(aa / n);
-                if (_clip != null) cov *= _clip[y * _w + x];
-                if (cov <= 0) continue;
-                Blend(y * _w + x, (float)(ar / aa), (float)(ag / aa), (float)(ab / aa), cov * (float)alpha, blendMode);
+                double dx = (i + 0.5) / rx, dy = (j + 0.5) / ry;
+                ou[j * rx + i] = inv.A * dx + inv.C * dy; ov[j * rx + i] = inv.B * dx + inv.D * dy;
             }
+        var mode = ParseBlend(blendMode);
+        float mr = (float)maskColor.R, mg = (float)maskColor.G, mb = (float)maskColor.B, al = (float)alpha;
+        var src = img.Rgba; int iw = img.Width, ih = img.Height; var isMask = img.IsMask;
+        var clip = _clip; var px = _px; var wpx = _w;
+        var invNs = 1f / ns;
+
+        void Row(int y)
+        {
+            var u = inv.A * x0 + inv.C * y + inv.E; var v = inv.B * x0 + inv.D * y + inv.F;
+            for (var x = x0; x < x1; x++, u += inv.A, v += inv.B)
+            {
+                long sr = 0, sg = 0, sb = 0, sa = 0;
+                for (var k = 0; k < ns; k++)
+                {
+                    var uu = u + ou[k]; var vv = v + ov[k];
+                    if (uu < 0 || vv < 0) continue;
+                    int iu = (int)uu, iv = (int)vv;
+                    if (iu >= iw || iv >= ih) continue;
+                    var o = (iv * iw + iu) * 4;
+                    int pa = src[o + 3];
+                    if (pa == 0) continue;
+                    if (pa == 255) { sr += src[o]; sg += src[o + 1]; sb += src[o + 2]; }
+                    else { sr += src[o] * pa / 255; sg += src[o + 1] * pa / 255; sb += src[o + 2] * pa / 255; }
+                    sa += pa;
+                }
+                if (sa == 0) continue;
+                var cov = sa * (1f / 255f) * invNs;
+                if (clip.Cov is not null) cov *= clip.At(x, y);
+                cov *= al;
+                if (cov <= 0f) continue;
+                float r, g, b;
+                if (isMask) { r = mr; g = mg; b = mb; }
+                else { var k = 255f / sa; r = sr * k * (1f / 255f); g = sg * k * (1f / 255f); b = sb * k * (1f / 255f); }
+                BlendPixel(px, (y * wpx + x) * 3, r, g, b, cov, mode);
+            }
+        }
+        if ((long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
+        else for (var y = y0; y < y1; y++) Row(y);
     }
 
     public void PaintShader(Func<double, double, RgbColor?> shader, double alpha, string blendMode)
     {
-        for (var y = 0; y < _h; y++)
-            for (var x = 0; x < _w; x++)
+        var clip = _clip;
+        if (clip.Empty) return;
+        var mode = ParseBlend(blendMode); var al = (float)alpha;
+        for (var y = clip.Y0; y < clip.Y1; y++)
+            for (var x = clip.X0; x < clip.X1; x++)
             {
-                var cl = _clip == null ? 1f : _clip[y * _w + x];
+                var cl = clip.At(x, y);
                 if (cl <= 0) continue;
                 var c = shader(x + 0.5, y + 0.5);
                 if (c is null) continue;
-                Blend(y * _w + x, (float)c.Value.R, (float)c.Value.G, (float)c.Value.B, cl * (float)alpha, blendMode);
+                BlendPixel(_px, (y * _w + x) * 3, (float)c.Value.R, (float)c.Value.G, (float)c.Value.B, cl * al, mode);
             }
-    }
-
-    /// <summary>Scanline coverage with SubY sub-scanlines and exact horizontal span coverage.</summary>
-    float[]? Rasterize(List<List<(double X, double Y)>> polys, bool evenOdd, out int bx0, out int by0, out int bx1, out int by1)
-    {
-        bx0 = by0 = bx1 = by1 = 0;
-        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
-        foreach (var p in polys)
-            foreach (var (x, y) in p)
-            {
-                if (double.IsNaN(x) || double.IsNaN(y)) return null;
-                minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
-            }
-        if (minX > maxX) return null;
-        bx0 = Math.Max(0, (int)Math.Floor(minX)); bx1 = Math.Min(_w, (int)Math.Ceiling(maxX) + 1);
-        by0 = Math.Max(0, (int)Math.Floor(minY)); by1 = Math.Min(_h, (int)Math.Ceiling(maxY) + 1);
-        if (bx0 >= bx1 || by0 >= by1) return null;
-        var bw = bx1 - bx0;
-        var cov = new float[bw * (by1 - by0)];
-        var edges = new List<(double X0, double Y0, double X1, double Y1, int Dir)>();
-        foreach (var p in polys)
-            for (var i = 0; i < p.Count; i++)
-            {
-                var a = p[i]; var b = p[(i + 1) % p.Count];
-                if (a.Y == b.Y) continue;
-                edges.Add(a.Y < b.Y ? (a.X, a.Y, b.X, b.Y, 1) : (b.X, b.Y, a.X, a.Y, -1));
-            }
-        if (edges.Count == 0) return null;
-        edges.Sort((l, r) => l.Y0.CompareTo(r.Y0));
-        var active = new List<(double X0, double Y0, double X1, double Y1, int Dir)>();
-        var next = 0;
-        var xs = new List<(double X, int Dir)>();
-        var weight = 1f / SubY;
-        for (var y = by0; y < by1; y++)
-            for (var s = 0; s < SubY; s++)
-            {
-                var sy = y + (s + 0.5) / SubY;
-                while (next < edges.Count && edges[next].Y0 <= sy) active.Add(edges[next++]);
-                active.RemoveAll(e => e.Y1 <= sy);
-                if (active.Count == 0) continue;
-                xs.Clear();
-                foreach (var e in active) xs.Add((e.X0 + (e.X1 - e.X0) * (sy - e.Y0) / (e.Y1 - e.Y0), e.Dir));
-                xs.Sort((l, r) => l.X.CompareTo(r.X));
-                var wind = 0;
-                for (var k = 0; k + 1 < xs.Count; k++)
-                {
-                    wind += xs[k].Dir;
-                    var inside = evenOdd ? (k % 2 == 0) : wind != 0;
-                    if (!inside) continue;
-                    AddSpan(cov, bw, (y - by0), xs[k].X - bx0, xs[k + 1].X - bx0, weight);
-                }
-            }
-        return cov;
-    }
-
-    static void AddSpan(float[] cov, int bw, int row, double xa, double xb, float weight)
-    {
-        if (xb <= 0 || xa >= bw) return;
-        xa = Math.Max(0, xa); xb = Math.Min(bw, xb);
-        if (xb <= xa) return;
-        var ia = (int)xa; var ib = (int)xb;
-        var o = row * bw;
-        if (ia == ib) { cov[o + ia] += (float)(xb - xa) * weight; return; }
-        cov[o + ia] += (float)(ia + 1 - xa) * weight;
-        for (var i = ia + 1; i < ib; i++) cov[o + i] += weight;
-        if (ib < bw) cov[o + ib] += (float)(xb - ib) * weight;
     }
 }
