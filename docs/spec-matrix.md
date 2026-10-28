@@ -40,7 +40,9 @@ Full spec parity is the goal; this table is the honest current state.
 | Feature | Status |
 |---|---|
 | Page delete/reorder/rotate, merge/split by page import, Info edit, full save (`PdfEditor`, `PdfWriter`; unreachable objects dropped, encryption removed) | **Done** |
-| Incremental save, content editing, form filling, redaction, signing, object/xref streams on save, encrypted save | **Todo** |
+| Overlay content editing (text, shapes, images; move/resize/restyle; web UI) | Done |
+| Editing existing page text/objects in place | **Todo** |
+| Incremental save, form filling, redaction, signing, object/xref streams on save, encrypted save | **Todo** |
 
 ## Render comparison
 

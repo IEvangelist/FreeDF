@@ -25,9 +25,31 @@
   .thumb .acts { position:absolute; top:10px; right:10px; display:none; gap:4px; }
   .thumb:hover .acts { display:flex; }
   .acts button { padding:2px 7px; font-size:13px; }
-  #view { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:24px; background:radial-gradient(circle at 30% 20%, #221c38, var(--bg)); }
-  #view img { max-width:100%; max-height:100%; box-shadow:0 10px 40px #0009; background:#fff; }
-  #empty { color:var(--mut); text-align:center; }
+  #view { flex:1; overflow:auto; display:flex; padding:24px; background:radial-gradient(circle at 30% 20%, #221c38, var(--bg)); }
+  #page { position:relative; margin:auto; flex:none; box-shadow:0 10px 40px #0009; background:#fff; }
+  #page img { display:block; width:100%; height:100%; user-select:none; -webkit-user-drag:none; }
+  #layer { position:absolute; left:0; top:0; transform-origin:0 0; }
+  #layer.draw { cursor:crosshair; }
+  .it { position:absolute; cursor:move; outline:1px dashed transparent; }
+  .it:hover { outline-color:#7c5cff99; }
+  .it.on { outline:1.5px solid var(--accent); }
+  .it.txt { white-space:pre; line-height:1.2; padding:0; color:#000; }
+  .it.txt[contenteditable] { cursor:text; outline:1.5px solid var(--accent2); }
+  .it img { width:100%; height:100%; display:block; pointer-events:none; }
+  .hd { position:absolute; width:10px; height:10px; background:#fff; border:2px solid var(--accent); border-radius:2px; z-index:5; }
+  svg.lines { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
+  svg.lines line { pointer-events:stroke; cursor:move; }
+  #empty { color:var(--mut); text-align:center; margin:auto; }
+  #center { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #tools { display:flex; gap:6px; align-items:center; padding:8px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
+  #tools button.on { background:var(--accent); border-color:var(--accent); }
+  #props { width:250px; overflow-y:auto; padding:14px; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; gap:10px; }
+  #props h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); margin:0; }
+  #props label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--mut); }
+  #props .row { display:flex; gap:8px; } #props .row > * { flex:1; min-width:0; }
+  #props input, #props select, #props textarea { background:#14111f; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit; width:100%; }
+  #props input[type=color] { padding:1px; height:30px; }
+  #props .hint { font-size:12px; color:var(--mut); }
   #drop { outline:3px dashed var(--accent); outline-offset:-12px; }
   footer { padding:6px 16px; color:var(--mut); font-size:12px; background:var(--panel); border-top:1px solid var(--line); }
   .sp { width:1px; height:22px; background:var(--line); margin:0 4px; }
@@ -42,22 +64,40 @@
   <span class="sp"></span>
   <button id="rl" title="Rotate left">⟲</button>
   <button id="rr" title="Rotate right">⟳</button>
-  <button id="del" title="Delete page">Delete</button>
+  <button id="del" title="Delete page">Delete page</button>
   <button id="title">Set title</button>
   <button id="dl" class="primary">Download</button>
 </header>
 <main>
   <div id="thumbs"></div>
-  <div id="view"><div id="empty">Open a PDF, or drop one here.</div></div>
+  <div id="center">
+    <div id="tools">
+      <button data-tool="select" class="on" title="Select and move (V)">Select</button>
+      <button data-tool="text" title="Add text (T)">Text</button>
+      <button data-tool="rect" title="Rectangle (R)">Rectangle</button>
+      <button data-tool="ellipse" title="Ellipse (E)">Ellipse</button>
+      <button data-tool="line" title="Line (L)">Line</button>
+      <label class="btn">Image<input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
+      <span class="sp"></span>
+      <button id="zo" title="Zoom out">−</button><span id="zv">100%</span><button id="zi" title="Zoom in">+</button>
+      <button id="prev" title="Show the real rendered output">Preview</button>
+    </div>
+    <div id="view"><div id="empty">Open a PDF, or drop one here.</div></div>
+  </div>
+  <aside id="props"></aside>
 </main>
-<footer id="status">Drag thumbnails to reorder. Rendered by the managed C# renderer.</footer>
+<footer id="status">Pick a tool and drag on the page. Double-click text to edit. Ctrl+Z undoes.</footer>
 <script>
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
+let items = [], cur = null, tool = 'select', zoom = 1, preview = false, undo = [], saveT = 0, editing = false;
 const $ = id => document.getElementById(id);
 const post = (u, body) => fetch(u, { method: 'POST', body }).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); });
 const status = t => $('status').textContent = t;
+const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace' };
+let S = 1, geom = null;
 
 async function refresh() {
+  await flush();
   state = await (await fetch('/api/state')).json();
   $('name').textContent = state.pageCount ? `${state.fileName} - ${state.pageCount} page(s)` : 'No document';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
@@ -72,7 +112,7 @@ async function refresh() {
       if (a === 'l') act(() => post(`/api/rotate/${i}/270`));
       else if (a === 'r') act(() => post(`/api/rotate/${i}/90`));
       else if (a === 'x') { sel = i; act(() => post(`/api/delete/${i}`)); }
-      else { sel = i; select(); }
+      else { flush().then(() => { sel = i; select(); }); }
     };
     d.ondragstart = () => dragFrom = i;
     d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
@@ -80,14 +120,226 @@ async function refresh() {
     d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); if (dragFrom >= 0 && dragFrom !== i) { sel = i; act(() => post(`/api/move/${dragFrom}/${i}`)); } dragFrom = -1; };
     t.appendChild(d);
   });
-  select();
+  await select();
 }
-function select() {
+
+async function select() {
   document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
   const v = $('view');
-  if (!state.pageCount) { v.innerHTML = '<div id="empty">Open a PDF, or drop one here.</div>'; return; }
-  v.innerHTML = `<img src="/api/page/${sel}.png?dpi=110&v=${state.version}">`;
+  if (!state.pageCount) { v.innerHTML = '<div id="empty">Open a PDF, or drop one here.</div>'; items = []; props(); return; }
+  items = await (await fetch(`/api/page/${sel}/items`)).json();
+  cur = null; undo = [];
+  build();
 }
+
+// Page geometry: the layer lives in unrotated MediaBox space (points, y down); the CSS transform matches the page /Rotate.
+function build() {
+  const p = state.pages[sel], v = $('view'), r = p.rotation;
+  const swap = r === 90 || r === 270;
+  const w0 = swap ? p.height : p.width, h0 = swap ? p.width : p.height;
+  const fit = Math.min((v.clientWidth - 48) / w0, (v.clientHeight - 48) / h0);
+  S = Math.max(fit, 0.2) * zoom;
+  const dw = w0 * S, dh = h0 * S, Lw = p.width * S, Lh = p.height * S;
+  geom = { r, dw, dh, Lw, Lh };
+  const dpi = Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))));
+  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" src="/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
+  const tf = { 0: '', 90: `translate(${dw}px,0) rotate(90deg)`, 180: `translate(${dw}px,${dh}px) rotate(180deg)`, 270: `translate(0,${dh}px) rotate(270deg)` }[r] ?? '';
+  const layer = $('layer'); layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
+  layer.onpointerdown = layerDown;
+  $('zv').textContent = Math.round(zoom * 100) + '%';
+  paint(); props();
+}
+
+// Client pixel position -> layer pixel position (inverse of the rotation transform).
+function toLayer(cx, cy) {
+  const b = $('page').getBoundingClientRect(), x = cx - b.left, y = cy - b.top, { r, dw, dh } = geom;
+  return r === 0 ? [x, y] : r === 90 ? [y, dw - x] : r === 180 ? [dw - x, dh - y] : [dh - y, x];
+}
+
+function paint() {
+  const layer = $('layer'); if (!layer) return;
+  layer.innerHTML = '';
+  const lines = items.filter(i => i.type === 'line');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'lines'); svg.setAttribute('width', geom.Lw); svg.setAttribute('height', geom.Lh);
+  for (const it of lines) {
+    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1', it.x * S); l.setAttribute('y1', it.y * S); l.setAttribute('x2', it.x2 * S); l.setAttribute('y2', it.y2 * S);
+    l.setAttribute('stroke', it.stroke || '#000'); l.setAttribute('stroke-width', Math.max(it.strokeWidth * S, 1)); l.setAttribute('opacity', it.opacity);
+    l.onpointerdown = e => startMove(e, it);
+    svg.appendChild(l);
+  }
+  layer.appendChild(svg);
+  for (const it of items) {
+    if (it.type === 'line') { if (it === cur) lineHandles(layer, it); continue; }
+    const e = document.createElement('div');
+    e.className = 'it' + (it === cur ? ' on' : '') + (it.type === 'text' ? ' txt' : '');
+    e.style.left = it.x * S + 'px'; e.style.top = it.y * S + 'px'; e.style.opacity = it.opacity;
+    if (it.type === 'text') {
+      e.textContent = it.text; e.style.fontSize = it.size * S + 'px'; e.style.color = it.color || '#000';
+      e.style.fontFamily = FAM[it.font] ?? FAM.Helvetica; e.style.fontWeight = it.bold ? 700 : 400; e.style.fontStyle = it.italic ? 'italic' : 'normal';
+    } else {
+      e.style.width = it.w * S + 'px'; e.style.height = it.h * S + 'px';
+      if (it.type === 'image') e.innerHTML = `<img src="/api/asset/${it.asset}">`;
+      else {
+        e.style.background = it.fill || 'transparent';
+        e.style.border = it.stroke && it.strokeWidth > 0 ? `${it.strokeWidth * S}px solid ${it.stroke}` : 'none';
+        e.style.boxSizing = 'border-box'; if (it.type === 'ellipse') e.style.borderRadius = '50%';
+      }
+    }
+    e.onpointerdown = ev => { if (tool === 'select' && !e.isContentEditable) startMove(ev, it); };
+    if (it.type === 'text') e.ondblclick = () => editText(e, it);
+    if (it === cur && !editing) boxHandles(e, it);
+    layer.appendChild(e);
+  }
+}
+
+function handle(parent, cls, x, y, cursor, down) {
+  const h = document.createElement('div'); h.className = 'hd';
+  h.style.left = `calc(${x} - 5px)`; h.style.top = `calc(${y} - 5px)`; h.style.cursor = cursor;
+  h.onpointerdown = down; parent.appendChild(h);
+}
+function boxHandles(e, it) {
+  for (const [k, x, y, c] of [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']])
+    handle(e, k, x, y, c, ev => startResize(ev, it, k, e));
+}
+function lineHandles(layer, it) {
+  for (const [a, b] of [['x', 'y'], ['x2', 'y2']]) {
+    const d = document.createElement('div'); d.className = 'hd'; d.style.left = it[a] * S - 5 + 'px'; d.style.top = it[b] * S - 5 + 'px'; d.style.cursor = 'crosshair';
+    d.onpointerdown = ev => drag(ev, () => { }, p => { it[a] = p[0] / S; it[b] = p[1] / S; paint(); });
+    layer.appendChild(d);
+  }
+}
+
+function drag(ev, onStart, onMove, onEnd) {
+  ev.preventDefault(); ev.stopPropagation();
+  const start = toLayer(ev.clientX, ev.clientY); pushUndo(); onStart(start);
+  const mv = e => onMove(toLayer(e.clientX, e.clientY), start);
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); onEnd?.(); queueSave(); props(); };
+  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+}
+
+function startMove(ev, it) {
+  cur = it; let o;
+  drag(ev, () => { o = { ...it }; paint(); props(); },
+    (p, s) => {
+      const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+      it.x = o.x + dx; it.y = o.y + dy;
+      if (it.type === 'line') { it.x2 = o.x2 + dx; it.y2 = o.y2 + dy; }
+      paint();
+    });
+}
+
+function startResize(ev, it, k, el) {
+  let o, w0, h0;
+  drag(ev, () => { o = { ...it }; w0 = el.offsetWidth / S; h0 = el.offsetHeight / S; },
+    (p, s) => {
+      let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+      if (it.type === 'text') { it.size = Math.max(4, Math.round(o.size * (h0 + (k[0] === 'n' ? -dy : dy)) / h0 * 10) / 10); paint(); return; }
+      if (it.type === 'image') dy = (k === 'se' || k === 'nw' ? dx : -dx) * o.h / o.w;
+      if (k.includes('w')) { it.x = o.x + dx; it.w = o.w - dx; } else it.w = o.w + dx;
+      if (k.includes('n')) { it.y = o.y + dy; it.h = o.h - dy; } else it.h = o.h + dy;
+      if (it.w < 4) { it.w = 4; it.x = k.includes('w') ? o.x + o.w - 4 : it.x; }
+      if (it.h < 4) { it.h = 4; it.y = k.includes('n') ? o.y + o.h - 4 : it.y; }
+      paint();
+    });
+}
+
+function layerDown(ev) {
+  if (tool === 'select') { cur = null; paint(); props(); return; }
+  const kind = tool;
+  const base = { id: crypto.randomUUID(), type: kind, x: 0, y: 0, w: 0, h: 0, text: '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000',
+    fill: '', stroke: '#000000', strokeWidth: 1, opacity: 1, asset: null, x2: 0, y2: 0 };
+  let it;
+  if (kind === 'text') {
+    const p = toLayer(ev.clientX, ev.clientY); ev.preventDefault();
+    pushUndo(); it = { ...base, x: p[0] / S, y: p[1] / S, text: 'Text' }; items.push(it); cur = it; setTool('select'); paint(); props();
+    editText([...document.querySelectorAll('.it')].pop(), it); return;
+  }
+  if (kind === 'rect' || kind === 'ellipse') { base.fill = '#7c5cff'; base.stroke = '#000000'; base.strokeWidth = 0; }
+  drag(ev, s => { it = { ...base, x: s[0] / S, y: s[1] / S, x2: s[0] / S, y2: s[1] / S }; items.push(it); cur = it; },
+    (p, s) => {
+      if (kind === 'line') { it.x2 = p[0] / S; it.y2 = p[1] / S; }
+      else { it.x = Math.min(s[0], p[0]) / S; it.y = Math.min(s[1], p[1]) / S; it.w = Math.abs(p[0] - s[0]) / S; it.h = Math.abs(p[1] - s[1]) / S; }
+      paint();
+    },
+    () => {
+      const tiny = kind === 'line' ? Math.hypot(it.x2 - it.x, it.y2 - it.y) < 3 : it.w < 3 && it.h < 3;
+      if (tiny) { if (kind === 'line') { it.x2 = it.x + 100; } else { it.w = 120; it.h = kind === 'ellipse' ? 120 : 70; } }
+      setTool('select'); paint();
+    });
+}
+
+function editText(el, it) {
+  if (!el) return;
+  editing = true; el.contentEditable = 'plaintext-only'; el.focus();
+  getSelection().selectAllChildren(el);
+  el.onpointerdown = e => e.stopPropagation();
+  el.onkeydown = e => { if (e.key === 'Escape') el.blur(); };
+  let pushed = false;
+  el.oninput = () => { if (!pushed) { pushUndo(); pushed = true; } it.text = el.innerText.replace(/\n$/, ''); queueSave(); };
+  el.onblur = () => {
+    editing = false; el.contentEditable = 'false';
+    it.text = el.innerText.replace(/\n$/, ''); queueSave();
+    if (!it.text) items = items.filter(x => x !== it), cur = null;
+    paint(); props();
+  };
+}
+
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  $('layer')?.classList.toggle('draw', t !== 'select');
+}
+
+function pushUndo() { undo.push(JSON.stringify(items)); if (undo.length > 100) undo.shift(); }
+function doUndo() { if (!undo.length) return; items = JSON.parse(undo.pop()); cur = null; paint(); props(); queueSave(); }
+
+function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
+async function flush() {
+  if (!saveT || !state.pageCount) return;
+  clearTimeout(saveT); saveT = 0;
+  const i = sel;
+  await fetch(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(items.map(({ ...x }) => x)) });
+  const th = document.querySelectorAll('.thumb img')[i];
+  if (th) th.src = `/api/page/${i}.png?dpi=40&t=${Date.now()}`;
+}
+
+function props() {
+  const p = $('props');
+  if (!cur) { p.innerHTML = '<h2>Properties</h2><div class="hint">Select an object to edit its text, size, position and colours, or choose a tool and drag on the page to add one.</div>'; return; }
+  const it = cur, n = (k, label, step = 1) => `<label>${label}<input type="number" step="${step}" data-k="${k}" value="${+(+it[k]).toFixed(2)}"></label>`;
+  const colour = (k, label, none) => `<label>${label}<div class="row"><input type="color" data-k="${k}" value="${it[k] || '#000000'}">${none ? `<button data-none="${k}">None</button>` : ''}</div></label>`;
+  let h = `<h2>${it.type}</h2>`;
+  if (it.type === 'text') h += `<label>Text<textarea rows="3" data-k="text">${it.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</textarea></label>
+    <div class="row"><label>Font<select data-k="font">${['Helvetica', 'Times', 'Courier'].map(f => `<option ${f === it.font ? 'selected' : ''}>${f}</option>`).join('')}</select></label>${n('size', 'Size (pt)', 0.5)}</div>
+    <div class="row"><label><span>Bold</span><input type="checkbox" data-k="bold" ${it.bold ? 'checked' : ''}></label><label><span>Italic</span><input type="checkbox" data-k="italic" ${it.italic ? 'checked' : ''}></label></div>${colour('color', 'Colour')}`;
+  if (it.type === 'rect' || it.type === 'ellipse') h += colour('fill', 'Fill', true) + colour('stroke', 'Stroke', true) + n('strokeWidth', 'Stroke width', 0.5);
+  if (it.type === 'line') h += colour('stroke', 'Colour') + n('strokeWidth', 'Width', 0.5);
+  if (it.type !== 'line') h += `<div class="row">${n('x', 'X')}${n('y', 'Y')}</div>` + (it.type !== 'text' ? `<div class="row">${n('w', 'Width')}${n('h', 'Height')}</div>` : '');
+  else h += `<div class="row">${n('x', 'X1')}${n('y', 'Y1')}</div><div class="row">${n('x2', 'X2')}${n('y2', 'Y2')}</div>`;
+  h += `<label>Opacity<input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"></label>
+    <div class="row"><button data-act="dup">Duplicate</button><button data-act="front">To front</button></div><button data-act="del">Delete object</button>`;
+  p.innerHTML = h;
+  p.querySelectorAll('[data-k]').forEach(el => {
+    el.onfocus = () => pushUndo();
+    el.oninput = () => {
+      const k = el.dataset.k;
+      it[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' || el.type === 'range' ? +el.value : el.value;
+      if (k === 'fill' || k === 'stroke') { if (k === 'fill' && !it.stroke) it.stroke = '#000000'; }
+      paint(); queueSave();
+    };
+  });
+  p.querySelectorAll('[data-none]').forEach(b => b.onclick = () => { pushUndo(); it[b.dataset.none] = ''; paint(); queueSave(); props(); });
+  p.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+    pushUndo();
+    if (b.dataset.act === 'del') { items = items.filter(x => x !== it); cur = null; }
+    if (b.dataset.act === 'dup') { cur = { ...it, id: crypto.randomUUID(), x: it.x + 12, y: it.y + 12, x2: it.x2 + 12, y2: it.y2 + 12 }; items.push(cur); }
+    if (b.dataset.act === 'front') { items = items.filter(x => x !== it); items.push(it); }
+    paint(); props(); queueSave();
+  });
+}
+
 async function act(fn) { try { await fn(); await refresh(); } catch (e) { status(e.message); } }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 
@@ -95,16 +347,40 @@ $('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.t
 $('merge').onchange = e => e.target.files[0] && act(() => upload('/api/import', e.target.files[0]));
 $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/270`));
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
-$('del').onclick = () => state.pageCount && act(() => post(`/api/delete/${sel}`));
+$('del').onclick = () => state.pageCount && confirm('Delete this page?') && act(() => post(`/api/delete/${sel}`));
 $('title').onclick = () => { const t = prompt('Document title'); if (t) act(() => post('/api/title?t=' + encodeURIComponent(t))); };
-$('dl').onclick = () => state.pageCount && (location.href = '/api/download');
+$('dl').onclick = async () => { if (state.pageCount) { await flush(); location.href = '/api/download'; } };
+document.querySelectorAll('#tools [data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+$('zi').onclick = () => { zoom = Math.min(4, zoom * 1.25); state.pageCount && build(); };
+$('zo').onclick = () => { zoom = Math.max(0.25, zoom / 1.25); state.pageCount && build(); };
+$('prev').onclick = async () => { await flush(); preview = !preview; $('prev').classList.toggle('on', preview); state.version++; build(); };
+$('img').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f || !state.pageCount) return;
+  const fd = new FormData(); fd.append('f', f);
+  const r = await fetch('/api/asset', { method: 'POST', body: fd });
+  if (!r.ok) { status('Unsupported image (PNG or baseline/progressive JPEG only).'); return; }
+  const a = await r.json(), pg = state.pages[sel], w = Math.min(240, pg.width / 2);
+  pushUndo();
+  cur = { id: crypto.randomUUID(), type: 'image', x: 40, y: 40, w, h: w * a.h / a.w, text: '', font: 'Helvetica', size: 12, bold: false, italic: false, color: '#000000', fill: '', stroke: '', strokeWidth: 0, opacity: 1, asset: a.id, x2: 0, y2: 0 };
+  items.push(cur); paint(); props(); queueSave();
+};
+addEventListener('resize', () => state.pageCount && build());
 addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); document.body.id = 'drop'; } });
 addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''; });
 addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); document.body.id = ''; act(() => upload(state.pageCount ? '/api/import' : '/api/open', e.dataTransfer.files[0])); } });
 addEventListener('keydown', e => {
-  if (e.key === 'ArrowDown' && sel < state.pageCount - 1) { sel++; select(); }
-  if (e.key === 'ArrowUp' && sel > 0) { sel--; select(); }
-  if (e.key === 'Delete' && state.pageCount) $('del').click();
+  if (editing || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); doUndo(); return; }
+  if (cur) {
+    const d = e.shiftKey ? 10 : 1, mv = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
+    if (mv) { e.preventDefault(); pushUndo(); cur.x += mv[0]; cur.y += mv[1]; if (cur.type === 'line') { cur.x2 += mv[0]; cur.y2 += mv[1]; } paint(); props(); queueSave(); return; }
+    if (e.key === 'Delete' || e.key === 'Backspace') { pushUndo(); items = items.filter(x => x !== cur); cur = null; paint(); props(); queueSave(); return; }
+    if (e.key === 'Escape') { cur = null; paint(); props(); return; }
+  }
+  const tk = { v: 'select', t: 'text', r: 'rect', e: 'ellipse', l: 'line' }[e.key];
+  if (tk && !e.ctrlKey) { setTool(tk); return; }
+  if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
+  if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
 refresh();
 </script>

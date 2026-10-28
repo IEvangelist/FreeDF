@@ -15,43 +15,95 @@ app.UseStaticFiles();
 var gate = new object();
 var editor = PdfEditor.Create();
 var version = 0;
-PdfDocument? snapshot = null; byte[]? snapshotBytes = null;
+PdfDocument? snapshot = null, baseSnapshot = null; byte[]? snapshotBytes = null;
 string fileName = "document.pdf";
+var items = new Dictionary<int, List<Item>>();
+var assets = new Dictionary<string, Asset>();
+var overlayBuilder = new OverlayBuilder(editor, assets);
+var jsonOpts = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
 
-if (initial is not null) { editor = PdfEditor.Open(File.ReadAllBytes(initial)); fileName = Path.GetFileName(initial); }
+void Reset(PdfEditor e)
+{
+    editor = e; items.Clear(); overlayBuilder = new OverlayBuilder(editor, assets); Changed();
+}
+if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); }
 
-// Callers hold the lock. The snapshot is the saved-and-reloaded document used for rendering and download.
+// Callers hold the lock. Snap includes the editable overlays; BaseSnap is the page without them (what the editing canvas draws under the HTML objects).
 PdfDocument Snap()
 {
-    if (snapshot is null) { snapshotBytes = editor.Save(); snapshot = PdfDocument.Load(snapshotBytes); }
+    if (snapshot is null)
+    {
+        var probe = baseSnapshot ?? BaseSnap();
+        for (var i = 0; i < editor.PageCount; i++)
+        {
+            var id = editor.PageId(i);
+            if (items.TryGetValue(id, out var list) && list.Count > 0)
+            {
+                var (content, res) = overlayBuilder.Build(list, probe.Pages[i].MediaBox);
+                editor.SetOverlay(i, content, res);
+            }
+            else editor.SetOverlay(i, []);
+        }
+        snapshotBytes = editor.Save(); snapshot = PdfDocument.Load(snapshotBytes);
+    }
     return snapshot;
 }
-void Changed() { version++; snapshot = null; snapshotBytes = null; }
+PdfDocument BaseSnap() => baseSnapshot ??= PdfDocument.Load(editor.Save(false));
+void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; }
 
 app.MapGet("/api/state", () =>
 {
     lock (gate)
     {
-        var doc = editor.PageCount == 0 ? null : Snap();
-        var pages = doc?.Pages.Select((p, i) => new { index = i, rotation = p.Rotate, width = p.MediaBox.Width, height = p.MediaBox.Height }) ?? [];
+        var doc = editor.PageCount == 0 ? null : BaseSnap();
+        var pages = doc?.Pages.Select((p, i) => new { index = i, id = editor.PageId(i), rotation = p.Rotate, x0 = p.MediaBox.Left, top = p.MediaBox.Top, width = p.MediaBox.Width, height = p.MediaBox.Height }) ?? [];
         return Results.Json(new { version, fileName, pageCount = editor.PageCount, pages });
     }
 });
 
-app.MapGet("/api/page/{i:int}.png", (int i, int? dpi, int? v) =>
+app.MapGet("/api/page/{i:int}.png", (int i, int? dpi, int? v, bool? bare) =>
 {
     lock (gate)
     {
         if (editor.PageCount == 0 || i < 0 || i >= editor.PageCount) return Results.NotFound();
-        var page = Snap().Pages[i];
+        var page = (bare == true ? BaseSnap() : Snap()).Pages[i];
         return Results.File(PdfRenderer.RenderPage(page, Math.Clamp(dpi ?? 48, 16, 300)).ToPng(), "image/png");
     }
+});
+
+app.MapGet("/api/page/{i:int}/items", (int i) =>
+{
+    lock (gate) return Results.Json(items.TryGetValue(editor.PageId(i), out var l) ? l : [], jsonOpts);
+});
+
+app.MapPut("/api/page/{i:int}/items", async (int i, HttpRequest r) =>
+{
+    var list = await System.Text.Json.JsonSerializer.DeserializeAsync<List<Item>>(r.Body, jsonOpts) ?? [];
+    lock (gate) { items[editor.PageId(i)] = list; Changed(); }
+    return Results.Ok();
+});
+
+app.MapPost("/api/asset", async (HttpRequest r) =>
+{
+    var (_, bytes) = await ReadUpload(r);
+    var mime = bytes.Length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 ? "image/jpeg" : "image/png";
+    var id = Guid.NewGuid().ToString("N");
+    int w, h;
+    if (mime == "image/jpeg") { if (Pdf.Content.JpegDecoder.Decode(bytes, out w, out h, out _) is null) return Results.BadRequest(); }
+    else { try { (w, h, _) = PngWriter.Decode(bytes); } catch (Exception) { return Results.BadRequest(); } }
+    lock (gate) assets[id] = new Asset(bytes, mime);
+    return Results.Json(new { id, w, h });
+});
+
+app.MapGet("/api/asset/{id}", (string id) =>
+{
+    lock (gate) return assets.TryGetValue(id, out var a) ? Results.File(a.Data, a.Mime) : Results.NotFound();
 });
 
 app.MapPost("/api/open", async (HttpRequest r) =>
 {
     var (name, bytes) = await ReadUpload(r);
-    lock (gate) { editor = PdfEditor.Open(bytes); fileName = name; Changed(); }
+    lock (gate) { Reset(PdfEditor.Open(bytes)); fileName = name; }
     return Results.Ok();
 });
 

@@ -175,7 +175,57 @@ public sealed class PdfEditor
         return e;
     }
 
-    public byte[] Save()
+    /// <summary>Stable object number of the page at <paramref name="index"/> (survives reordering).</summary>
+    public int PageId(int index) { Check(index); return _pages[index]; }
+
+    /// <summary>Adds an object (e.g. a font dictionary or image XObject) and returns a reference to it.</summary>
+    public PdfRef AddObject(PdfObject o) { var n = _next++; _objs[n] = o; return new PdfRef(n, 0); }
+
+    public sealed record Overlay(byte[] Content, IReadOnlyDictionary<string, IReadOnlyDictionary<string, PdfObject>> Resources);
+
+    readonly Dictionary<int, Overlay> _overlays = [];
+
+    /// <summary>
+    /// Sets the overlay content drawn on top of a page. Overlays are kept separate from the page until <see cref="Save"/>, so they stay editable.
+    /// Resources are grouped by category ("Font", "XObject", "ExtGState"); names must not collide with the page's own.
+    /// </summary>
+    public void SetOverlay(int index, byte[] content, IReadOnlyDictionary<string, IReadOnlyDictionary<string, PdfObject>>? resources = null)
+    {
+        Check(index);
+        if (content.Length == 0) _overlays.Remove(_pages[index]);
+        else _overlays[_pages[index]] = new Overlay(content, resources ?? new Dictionary<string, IReadOnlyDictionary<string, PdfObject>>());
+    }
+
+    PdfObject? Res(PdfObject? o) => o is PdfRef r && _objs.TryGetValue(r.Number, out var v) ? v : o;
+
+    PdfDictionary ApplyOverlay(PdfDictionary page, Overlay ov, Dictionary<int, PdfObject> objs, ref int next)
+    {
+        var n0 = next;
+        PdfRef Add(PdfObject o) { var n = n0++; objs[n] = o; return new PdfRef(n, 0); }
+        PdfStream Stream(byte[] b) => new(new PdfDictionary(new Dictionary<string, PdfObject> { ["Length"] = new PdfInteger(b.Length) }), b);
+
+        var parts = new List<PdfObject> { Add(Stream("q\n"u8.ToArray())) };
+        switch (Res(page.Get("Contents")))
+        {
+            case PdfArray a: parts.AddRange(a.Items); break;
+            case PdfStream: parts.Add(page.Get("Contents")!); break;
+        }
+        parts.Add(Add(Stream("\nQ\nq\n"u8.ToArray())));
+        parts.Add(Add(Stream(ov.Content)));
+        parts.Add(Add(Stream("\nQ\n"u8.ToArray())));
+
+        var res = Res(page.Get("Resources")) is PdfDictionary rd ? new Dictionary<string, PdfObject>(rd.Entries) : [];
+        foreach (var (cat, items) in ov.Resources)
+        {
+            var merged = res.TryGetValue(cat, out var c) && Res(c) is PdfDictionary cd ? new Dictionary<string, PdfObject>(cd.Entries) : [];
+            foreach (var (k, v) in items) merged[k] = v;
+            res[cat] = new PdfDictionary(merged);
+        }
+        next = n0;
+        return new PdfDictionary(new Dictionary<string, PdfObject>(page.Entries) { ["Contents"] = new PdfArray(parts), ["Resources"] = new PdfDictionary(res) });
+    }
+
+    public byte[] Save(bool applyOverlays = true)
     {
         var kids = new PdfArray(_pages.Select(n => (PdfObject)new PdfRef(n, 0)).ToList());
         var objs = new Dictionary<int, PdfObject>(_objs)
@@ -185,6 +235,10 @@ public sealed class PdfEditor
                 ["Type"] = new PdfName("Pages"), ["Kids"] = kids, ["Count"] = new PdfInteger(_pages.Count),
             }),
         };
+        var next = _next;
+        if (applyOverlays)
+            foreach (var n in _pages)
+                if (_overlays.TryGetValue(n, out var ov)) objs[n] = ApplyOverlay((PdfDictionary)objs[n], ov, objs, ref next);
         return PdfWriter.Write(objs, _catalog, _info == 0 ? null : _info, _version, _deleted);
     }
 }

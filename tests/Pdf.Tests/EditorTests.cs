@@ -73,4 +73,19 @@ public class EditorTests
         Assert.Equal("Caf\u00E9", d.Info("Title"));
         Assert.Equal((255, 0, 0), (Render(d, 0)[(150 * 200 + 50) * 4], Render(d, 0)[(150 * 200 + 50) * 4 + 1], Render(d, 0)[(150 * 200 + 50) * 4 + 2]));
     }
+
+    [Fact]
+    public void Overlay_draws_on_top_and_base_save_excludes_it()
+    {
+        var e = PdfEditor.Open(Cff());
+        var box = Reload(e.Save(false)).Pages[0].MediaBox;
+        var rect = System.Text.Encoding.ASCII.GetBytes($"1 0 0 rg {box.Left} {box.Bottom} 20 20 re f");
+        e.SetOverlay(0, rect);
+        var with = Render(Reload(e.Save()), 0);
+        var without = Render(Reload(e.Save(false)), 0);
+        var h = (int)box.Height; var w = (int)box.Width;
+        var px = ((h - 5) * w + 5) * 4;
+        Assert.Equal((255, 0, 0), (with[px], with[px + 1], with[px + 2]));
+        Assert.NotEqual((255, 0, 0), (without[px], without[px + 1], without[px + 2]));
+    }
 }
