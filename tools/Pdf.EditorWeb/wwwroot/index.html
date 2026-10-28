@@ -9,7 +9,7 @@
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.4 "Segoe UI", system-ui, sans-serif; background:var(--bg); color:var(--fg); height:100vh; display:flex; flex-direction:column; }
   header { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
-  header h1 { font-size:20px; font-weight:700; margin:0 12px 0 0; color:var(--fg); }
+  header h1 { font-size:24px; font-weight:800; letter-spacing:-.01em; margin:0 12px 0 0; color:var(--fg); }
   #name { color:var(--mut); margin-right:auto; }
   button, label.btn { background:#2a2440; color:var(--fg); border:1px solid var(--line); padding:6px 12px; border-radius:8px; cursor:pointer; font:inherit; }
   button:hover, label.btn:hover { border-color:var(--accent); }
@@ -31,6 +31,8 @@
   #layer { position:absolute; left:0; top:0; transform-origin:0 0; }
   #layer.draw { cursor:crosshair; }
   .it { position:absolute; cursor:move; outline:1px dashed transparent; }
+  .span { position:absolute; cursor:text; outline:1px dashed transparent; border-radius:2px; }
+  .span:hover { outline-color:var(--accent); background:#7c5cff1f; }
   .it:hover { outline-color:#7c5cff99; }
   .it.on { outline:1.5px solid var(--accent); }
   .it.txt { white-space:pre; line-height:1.2; padding:0; color:#000; }
@@ -94,7 +96,18 @@ const $ = id => document.getElementById(id);
 const post = (u, body) => fetch(u, { method: 'POST', body }).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); });
 const status = t => $('status').textContent = t;
 const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace' };
-let S = 1, geom = null;
+let S = 1, geom = null, spans = [], origKey = '';
+const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
+const fontFamily = n => /courier|mono/i.test(n) ? 'Courier' : /times|serif|georgia|garamond|minion/i.test(n) && !/sans/i.test(n) ? 'Times' : 'Helvetica';
+
+// Turns an existing page text run into an editable text item; the original operator is removed on the server.
+function convertSpan(s) {
+  pushUndo();
+  const it = { id: crypto.randomUUID(), type: 'text', x: s.x, y: s.y - 0.95 * s.size, w: 0, h: 0, text: s.text, font: fontFamily(s.font),
+    size: s.size, bold: /bold|black|heavy/i.test(s.font), italic: /italic|oblique/i.test(s.font), color: s.color, fill: '', stroke: '', strokeWidth: 0,
+    opacity: 1, asset: '', x2: 0, y2: 0, orig: s.index };
+  items.push(it); cur = it; paint(); props(); queueSave();
+}
 
 async function refresh() {
   await flush();
@@ -128,6 +141,8 @@ async function select() {
   const v = $('view');
   if (!state.pageCount) { v.innerHTML = '<div id="empty">Open a PDF, or drop one here.</div>'; items = []; props(); return; }
   items = await (await fetch(`/api/page/${sel}/items`)).json();
+  spans = await (await fetch(`/api/page/${sel}/text`)).json();
+  origKey = okey();
   cur = null; undo = [];
   build();
 }
@@ -170,6 +185,17 @@ function paint() {
     svg.appendChild(l);
   }
   layer.appendChild(svg);
+  if (tool === 'select') {
+    const used = new Set(items.filter(i => i.orig != null).map(i => i.orig));
+    for (const s of spans) {
+      if (used.has(s.index)) continue;
+      const b = document.createElement('div'); b.className = 'span'; b.title = 'Click to edit this text';
+      b.style.left = s.x * S + 'px'; b.style.top = (s.y - 0.9 * s.size) * S + 'px';
+      b.style.width = Math.max(s.width, 2) * S + 'px'; b.style.height = 1.15 * s.size * S + 'px';
+      b.onpointerdown = ev => { ev.stopPropagation(); convertSpan(s); };
+      layer.appendChild(b);
+    }
+  }
   for (const it of items) {
     if (it.type === 'line') { if (it === cur) lineHandles(layer, it); continue; }
     const e = document.createElement('div');
@@ -301,6 +327,7 @@ async function flush() {
   clearTimeout(saveT); saveT = 0;
   const i = sel;
   await fetch(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(items.map(({ ...x }) => x)) });
+  if (okey() !== origKey) { origKey = okey(); const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now()); }
   const th = document.querySelectorAll('.thumb img')[i];
   if (th) th.src = `/api/page/${i}.png?dpi=40&t=${Date.now()}`;
 }
@@ -334,7 +361,7 @@ function props() {
   p.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
     pushUndo();
     if (b.dataset.act === 'del') { items = items.filter(x => x !== it); cur = null; }
-    if (b.dataset.act === 'dup') { cur = { ...it, id: crypto.randomUUID(), x: it.x + 12, y: it.y + 12, x2: it.x2 + 12, y2: it.y2 + 12 }; items.push(cur); }
+    if (b.dataset.act === 'dup') { cur = { ...it, id: crypto.randomUUID(), orig: null, x: it.x + 12, y: it.y + 12, x2: it.x2 + 12, y2: it.y2 + 12 }; items.push(cur); }
     if (b.dataset.act === 'front') { items = items.filter(x => x !== it); items.push(it); }
     paint(); props(); queueSave();
   });

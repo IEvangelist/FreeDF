@@ -208,7 +208,7 @@ public sealed class PdfEditor
         switch (Res(page.Get("Contents")))
         {
             case PdfArray a: parts.AddRange(a.Items); break;
-            case PdfStream: parts.Add(page.Get("Contents")!); break;
+            case PdfStream: case PdfRef: parts.Add(page.Get("Contents")!); break;
         }
         parts.Add(Add(Stream("\nQ\nq\n"u8.ToArray())));
         parts.Add(Add(Stream(ov.Content)));
@@ -225,7 +225,16 @@ public sealed class PdfEditor
         return new PdfDictionary(new Dictionary<string, PdfObject>(page.Entries) { ["Contents"] = new PdfArray(parts), ["Resources"] = new PdfDictionary(res) });
     }
 
-    public byte[] Save(bool applyOverlays = true)
+    readonly Dictionary<int, byte[]> _contentOverrides = [];
+
+    /// <summary>Replaces the page's content stream(s) at save time with <paramref name="content"/>; null clears the override.</summary>
+    public void SetContentOverride(int index, byte[]? content)
+    {
+        Check(index);
+        if (content is null) _contentOverrides.Remove(_pages[index]); else _contentOverrides[_pages[index]] = content;
+    }
+
+    public byte[] Save(bool applyOverlays = true, bool applyContentEdits = true)
     {
         var kids = new PdfArray(_pages.Select(n => (PdfObject)new PdfRef(n, 0)).ToList());
         var objs = new Dictionary<int, PdfObject>(_objs)
@@ -236,6 +245,14 @@ public sealed class PdfEditor
             }),
         };
         var next = _next;
+        if (applyContentEdits)
+            foreach (var n in _pages)
+                if (_contentOverrides.TryGetValue(n, out var bytes))
+                {
+                    var sn = next++;
+                    objs[sn] = new PdfStream(new PdfDictionary(new Dictionary<string, PdfObject> { ["Length"] = new PdfInteger(bytes.Length) }), bytes);
+                    objs[n] = new PdfDictionary(new Dictionary<string, PdfObject>(((PdfDictionary)objs[n]).Entries) { ["Contents"] = new PdfRef(sn, 0) });
+                }
         if (applyOverlays)
             foreach (var n in _pages)
                 if (_overlays.TryGetValue(n, out var ov)) objs[n] = ApplyOverlay((PdfDictionary)objs[n], ov, objs, ref next);

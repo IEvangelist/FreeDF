@@ -10,7 +10,7 @@ using Pdf.Render;
 public sealed record Item(
     string Id, string Type, double X, double Y, double W, double H,
     string? Text, string? Font, double Size, bool Bold, bool Italic, string? Color,
-    string? Fill, string? Stroke, double StrokeWidth, double Opacity, string? Asset, double X2, double Y2);
+    string? Fill, string? Stroke, double StrokeWidth, double Opacity, string? Asset, double X2, double Y2, int? Orig = null);
 
 public sealed record Asset(byte[] Data, string Mime);
 

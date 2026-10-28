@@ -29,6 +29,16 @@ public static class PdfRenderer
         return m;
     }
 
+    /// <summary>Text-showing operators of the page's own content (not forms), positioned in CropBox space: points, origin top-left, y down, unrotated.</summary>
+    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page)
+    {
+        var box = page.CropBox;
+        using var raster = new SoftwareRasterizer(1, 1);
+        var interp = new ContentInterpreter(page.Document.File, raster) { TextSpans = [] };
+        interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
+        return interp.TextSpans;
+    }
+
     public static RenderedPage RenderPage(PdfPage page, double dpi = 96, IRenderBackendFactory? factory = null)
     {
         var scale = dpi / 72.0 * page.UserUnit;

@@ -1,3 +1,4 @@
+using Pdf.Content;
 using Pdf.Document;
 using Pdf.Render;
 
@@ -22,41 +23,84 @@ var assets = new Dictionary<string, Asset>();
 var overlayBuilder = new OverlayBuilder(editor, assets);
 var jsonOpts = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
 
+PdfDocument? pristine = null; bool prepared = false;
+var texts = new Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans)>();
+
 void Reset(PdfEditor e)
 {
-    editor = e; items.Clear(); overlayBuilder = new OverlayBuilder(editor, assets); Changed();
+    editor = e; items.Clear(); texts.Clear(); overlayBuilder = new OverlayBuilder(editor, assets); Changed();
 }
 if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); }
 
-// Callers hold the lock. Snap includes the editable overlays; BaseSnap is the page without them (what the editing canvas draws under the HTML objects).
+// Callers hold the lock. Pristine is the document with no overlays and no text edits; text spans are extracted from it so operator indices stay stable.
+PdfDocument Pristine() => pristine ??= PdfDocument.Load(editor.Save(false, false));
+
+(byte[] Content, List<ContentInterpreter.TextSpan> Spans) PageText(int i)
+{
+    var id = editor.PageId(i);
+    if (!texts.TryGetValue(id, out var t))
+    {
+        var page = Pristine().Pages[i];
+        texts[id] = t = (page.GetContents(), PdfRenderer.ExtractText(page));
+    }
+    return t;
+}
+
+// Pushes the current items to the editor: overlays for new objects, content rewrites to remove text that was converted into editable objects.
+void Prepare()
+{
+    if (prepared) return;
+    for (var i = 0; i < editor.PageCount; i++)
+    {
+        items.TryGetValue(editor.PageId(i), out var list);
+        var origs = list?.Where(x => x.Orig is not null).Select(x => x.Orig!.Value).ToHashSet() ?? [];
+        if (origs.Count > 0)
+        {
+            var (content, spans) = PageText(i);
+            var removals = spans.Where(s => origs.Contains(s.Index)).ToDictionary(s => s.Index, s => s.Advance);
+            editor.SetContentOverride(i, ContentRewriter.RemoveText(content, removals));
+        }
+        else editor.SetContentOverride(i, null);
+        if (list is { Count: > 0 })
+        {
+            var (content, res) = overlayBuilder.Build(list, Pristine().Pages[i].CropBox);
+            editor.SetOverlay(i, content, res);
+        }
+        else editor.SetOverlay(i, []);
+    }
+    prepared = true;
+}
+
+// Snap includes the editable overlays; BaseSnap is the page without them (what the editing canvas draws under the HTML objects).
 PdfDocument Snap()
 {
-    if (snapshot is null)
-    {
-        var probe = baseSnapshot ?? BaseSnap();
-        for (var i = 0; i < editor.PageCount; i++)
-        {
-            var id = editor.PageId(i);
-            if (items.TryGetValue(id, out var list) && list.Count > 0)
-            {
-                var (content, res) = overlayBuilder.Build(list, probe.Pages[i].MediaBox);
-                editor.SetOverlay(i, content, res);
-            }
-            else editor.SetOverlay(i, []);
-        }
-        snapshotBytes = editor.Save(); snapshot = PdfDocument.Load(snapshotBytes);
-    }
+    if (snapshot is null) { Prepare(); snapshotBytes = editor.Save(); snapshot = PdfDocument.Load(snapshotBytes); }
     return snapshot;
 }
-PdfDocument BaseSnap() => baseSnapshot ??= PdfDocument.Load(editor.Save(false));
-void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; }
+PdfDocument BaseSnap() { Prepare(); return baseSnapshot ??= PdfDocument.Load(editor.Save(false)); }
+void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; prepared = false; }
+
+app.MapGet("/api/page/{i:int}/text", (int i) =>
+{
+    lock (gate)
+    {
+        var spans = PageText(i).Spans
+            .Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
+            .Select(s => new
+            {
+                index = s.Index, text = s.Text, x = s.X, y = s.Y, width = s.Width, size = s.Size, font = s.FontName,
+                color = $"#{(int)Math.Round(s.Color.R * 255):x2}{(int)Math.Round(s.Color.G * 255):x2}{(int)Math.Round(s.Color.B * 255):x2}",
+            });
+        return Results.Json(spans, jsonOpts);
+    }
+});
 
 app.MapGet("/api/state", () =>
 {
     lock (gate)
     {
         var doc = editor.PageCount == 0 ? null : BaseSnap();
-        var pages = doc?.Pages.Select((p, i) => new { index = i, id = editor.PageId(i), rotation = p.Rotate, x0 = p.MediaBox.Left, top = p.MediaBox.Top, width = p.MediaBox.Width, height = p.MediaBox.Height }) ?? [];
+        var pages = doc?.Pages.Select((p, i) => new { index = i, id = editor.PageId(i), rotation = p.Rotate, x0 = p.CropBox.Left, top = p.CropBox.Top, width = p.CropBox.Width, height = p.CropBox.Height }) ?? [];
         return Results.Json(new { version, fileName, pageCount = editor.PageCount, pages });
     }
 });

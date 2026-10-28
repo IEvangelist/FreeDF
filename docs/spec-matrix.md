@@ -41,7 +41,8 @@ Full spec parity is the goal; this table is the honest current state.
 |---|---|
 | Page delete/reorder/rotate, merge/split by page import, Info edit, full save (`PdfEditor`, `PdfWriter`; unreachable objects dropped, encryption removed) | **Done** |
 | Overlay content editing (text, shapes, images; move/resize/restyle; web UI) | Done |
-| Editing existing page text/objects in place | **Todo** |
+| Editing existing page text in place (convert run to editable object, original operator removed, advance preserved; font becomes a standard font; page-level text only, not inside form XObjects) | Done |
+| Moving/resizing existing images and vector objects | **Todo** |
 | Incremental save, form filling, redaction, signing, object/xref streams on save, encrypted save | **Todo** |
 
 ## Render comparison

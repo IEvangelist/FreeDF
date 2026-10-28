@@ -1,0 +1,68 @@
+using System.Globalization;
+using System.Text;
+using Pdf.Core;
+
+namespace Pdf.Document;
+
+/// <summary>Token-level edits of a page content stream that leave every other byte untouched.</summary>
+public static class ContentRewriter
+{
+    static string F(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Removes the text drawn by the given text-showing operators (counted in order over Tj, TJ, ' and ", 0-based).
+    /// Each is replaced by an equivalent advance so following text and text state are unchanged.
+    /// <paramref name="removals"/> maps operator index to the horizontal advance in thousandths of text space (TJ number).
+    /// </summary>
+    public static byte[] RemoveText(byte[] content, IReadOnlyDictionary<int, double> removals)
+    {
+        if (removals.Count == 0) return content;
+        var lx = new PdfLexer(content);
+        var ops = new List<PdfObject>();
+        var output = new MemoryStream(content.Length);
+        var copied = 0; var stmtStart = 0; var index = 0;
+        PdfObject? o;
+        while ((o = lx.ReadObject(false)) is not null)
+        {
+            if (o is not PdfKeyword k) { ops.Add(o); continue; }
+            if (k.Value == "BI") { SkipInlineImage(lx); ops.Clear(); stmtStart = lx.Pos; continue; }
+            if (k.Value is "Tj" or "TJ" or "'" or "\"")
+            {
+                if (removals.TryGetValue(index, out var adj))
+                {
+                    var sb = new StringBuilder("\n");
+                    if (k.Value == "\"") sb.Append($"{F(ops.ElementAtOrDefault(0).AsNumber() ?? 0)} Tw {F(ops.ElementAtOrDefault(1).AsNumber() ?? 0)} Tc ");
+                    if (k.Value is "'" or "\"") sb.Append("T* ");
+                    sb.Append($"[{F(adj)}] TJ\n");
+                    // Keep leading whitespace/comments before the operands; replace from the first operand.
+                    var from = FirstOperandStart(content, stmtStart);
+                    output.Write(content, copied, from - copied);
+                    output.Write(Encoding.ASCII.GetBytes(sb.ToString()));
+                    copied = lx.Pos;
+                }
+                index++;
+            }
+            ops.Clear(); stmtStart = lx.Pos;
+        }
+        output.Write(content, copied, content.Length - copied);
+        return output.ToArray();
+    }
+
+    static int FirstOperandStart(byte[] d, int p)
+    {
+        while (p < d.Length && PdfLexer.IsWhite(d[p])) p++;
+        return p;
+    }
+
+    static void SkipInlineImage(PdfLexer lx)
+    {
+        PdfObject? o;
+        while ((o = lx.ReadObject(false)) is not null && !(o is PdfKeyword { Value: "ID" })) { }
+        var d = lx.Data;
+        var p = lx.Pos;
+        if (p < d.Length && PdfLexer.IsWhite(d[p])) p++;
+        for (; p + 1 < d.Length; p++)
+            if (d[p] == 'E' && d[p + 1] == 'I' && p > 0 && PdfLexer.IsWhite(d[p - 1]) && (p + 2 >= d.Length || PdfLexer.IsWhite(d[p + 2]))) { lx.Pos = p + 2; return; }
+        lx.Pos = d.Length;
+    }
+}

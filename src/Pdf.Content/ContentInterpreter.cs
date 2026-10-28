@@ -61,15 +61,20 @@ public sealed class ContentInterpreter
         var ops = new List<PdfObject>();
         var stackDepth = _stack.Count;
         PdfObject? o;
-        while ((o = lx.ReadObject(false)) is not null)
+        _runDepth++;
+        try
         {
-            if (o is not PdfKeyword k) { ops.Add(o); if (ops.Count > 512) ops.RemoveAt(0); continue; }
-            if (k.Value == "BI") { InlineImage(lx, res); ops.Clear(); continue; }
-            try { Exec(k.Value, ops, res); }
-            catch (Exception e) when (e is InvalidCastException or ArgumentOutOfRangeException or IndexOutOfRangeException or NotSupportedException or KeyNotFoundException or InvalidOperationException)
-            { Warn($"operator {k.Value}: {e.GetType().Name}"); }
-            ops.Clear();
+            while ((o = lx.ReadObject(false)) is not null)
+            {
+                if (o is not PdfKeyword k) { ops.Add(o); if (ops.Count > 512) ops.RemoveAt(0); continue; }
+                if (k.Value == "BI") { InlineImage(lx, res); ops.Clear(); continue; }
+                try { Exec(k.Value, ops, res); }
+                catch (Exception e) when (e is InvalidCastException or ArgumentOutOfRangeException or IndexOutOfRangeException or NotSupportedException or KeyNotFoundException or InvalidOperationException)
+                { Warn($"operator {k.Value}: {e.GetType().Name}"); }
+                ops.Clear();
+            }
         }
+        finally { _runDepth--; }
         while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
     }
 
@@ -127,24 +132,7 @@ public sealed class ContentInterpreter
             case "TD": _gs.Leading = -N(a, 1); _tlm = Matrix.Translate(N(a, 0), N(a, 1)).Then(_tlm); _tm = _tlm; break;
             case "Tm": _tm = _tlm = new Matrix(N(a, 0), N(a, 1), N(a, 2), N(a, 3), N(a, 4), N(a, 5)); break;
             case "T*": NextLine(); break;
-            case "Tj": if (a.Count > 0 && a[0] is PdfString s0) ShowText(s0.Bytes, res); break;
-            case "'": NextLine(); if (a.Count > 0 && a[0] is PdfString s1) ShowText(s1.Bytes, res); break;
-            case "\"":
-                _gs.WordSpace = N(a, 0); _gs.CharSpace = N(a, 1); NextLine();
-                if (a.Count > 2 && a[2] is PdfString s2) ShowText(s2.Bytes, res);
-                break;
-            case "TJ":
-                if (a.Count > 0 && a[0] is PdfArray arr)
-                    foreach (var item in arr.Items)
-                    {
-                        if (item is PdfString ts) ShowText(ts.Bytes, res);
-                        else if (item.AsNumber() is { } adj)
-                        {
-                            var d = -adj / 1000 * _gs.FontSize;
-                            _tm = (_gs.Font?.Vertical == true ? Matrix.Translate(0, d) : Matrix.Translate(d * _gs.HScale, 0)).Then(_tm);
-                        }
-                    }
-                break;
+            case "Tj": case "'": case "\"": case "TJ": ShowOp(op, a, res); break;
 
             case "CS": _gs.StrokeCs = PdfColorSpace.Parse(_f, a[0], res); _gs.StrokeColor = _gs.StrokeCs.InitialColor; _gs.StrokePattern = null; break;
             case "cs": _gs.FillCs = PdfColorSpace.Parse(_f, a[0], res); _gs.FillColor = _gs.FillCs.InitialColor; _gs.FillPattern = null; break;
@@ -373,6 +361,60 @@ public sealed class ContentInterpreter
         _gs = savedGs; _path = savedPath;
         _stack.Clear(); foreach (var s in savedStack.Reverse()) _stack.Push(s);
         _be.Restore();
+    }
+
+    /// <summary>A text-showing operator (Tj, TJ, ' or ") in the page's own content stream, with its device-space geometry.</summary>
+    public sealed record TextSpan(int Index, string Op, string Text, double X, double Y, double Width, double Size, double Angle,
+        string FontName, RgbColor Color, double Advance, bool Vertical);
+
+    /// <summary>When set, text operators in the page content (not in forms) are recorded here.</summary>
+    public List<TextSpan>? TextSpans { get; set; }
+    int _runDepth, _spanIndex;
+
+    (double X, double Y) TextOrigin() =>
+        new Matrix(_gs.FontSize * _gs.HScale, 0, 0, _gs.FontSize, 0, _gs.Rise).Then(_tm).Then(_gs.Ctm).Apply(0, 0);
+
+    void ShowOp(string op, List<PdfObject> a, PdfDictionary res)
+    {
+        if (op == "'") NextLine();
+        else if (op == "\"") { _gs.WordSpace = N(a, 0); _gs.CharSpace = N(a, 1); NextLine(); }
+
+        var idx = _runDepth == 1 ? _spanIndex++ : -1;
+        var collect = idx >= 0 && TextSpans is not null && _hiddenDepth == 0 && _gs.Font is not null;
+        var tmBefore = _tm; var start = collect ? TextOrigin() : default;
+        var sb = collect ? new System.Text.StringBuilder() : null;
+        var font = _gs.Font;
+
+        void Show(byte[] bytes)
+        {
+            ShowText(bytes, res);
+            if (sb is not null && font is not null) foreach (var r in font.Decode(bytes)) sb.Append(font.ToUnicode(r.Code));
+        }
+
+        if (op == "TJ")
+        {
+            if (a.Count > 0 && a[0] is PdfArray arr)
+                foreach (var item in arr.Items)
+                {
+                    if (item is PdfString ts) Show(ts.Bytes);
+                    else if (item.AsNumber() is { } adj)
+                    {
+                        var d = -adj / 1000 * _gs.FontSize;
+                        _tm = (_gs.Font?.Vertical == true ? Matrix.Translate(0, d) : Matrix.Translate(d * _gs.HScale, 0)).Then(_tm);
+                        if (sb is not null && adj <= -200) sb.Append(' ');
+                    }
+                }
+        }
+        else if (a.Count > (op == "\"" ? 2 : 0) && a[op == "\"" ? 2 : 0] is PdfString s) Show(s.Bytes);
+
+        if (!collect || font is null) return;
+        var end = TextOrigin();
+        var trm = new Matrix(_gs.FontSize * _gs.HScale, 0, 0, _gs.FontSize, 0, _gs.Rise).Then(tmBefore).Then(_gs.Ctm);
+        var local = tmBefore.Invert().Apply(_tm.E, _tm.F).Item1;
+        var scale = _gs.FontSize * _gs.HScale;
+        TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
+            Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
+            font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical));
     }
 
     void ShowText(byte[] s, PdfDictionary res)

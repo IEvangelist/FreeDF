@@ -75,6 +75,34 @@ public class EditorTests
     }
 
     [Fact]
+    public void Extract_text_and_remove_operator_keeps_following_text_in_place()
+    {
+        const string content = "BT /F1 20 Tf 10 100 Td (Hello) Tj 0 -30 Td [(Wor) -100 (ld)] TJ ( Again) Tj ET 1 0 0 rg 0 0 5 5 re f";
+        var bytes = TestPdf.Build(content, "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
+        var page = PdfDocument.Load(bytes).Pages[0];
+        var spans = PdfRenderer.ExtractText(page);
+        Assert.Equal(["Hello", "World", " Again"], spans.Select(s => s.Text));
+        Assert.Equal(10, spans[0].X, 3);
+        Assert.Equal(200 - 100, spans[0].Y, 3);
+        Assert.Equal(20, spans[0].Size, 3);
+
+        var edited = ContentRewriter.RemoveText(page.GetContents(), new Dictionary<int, double> { [1] = spans[1].Advance });
+        var text = System.Text.Encoding.Latin1.GetString(edited);
+        Assert.DoesNotContain("Wor", text);
+        Assert.Contains("(Hello) Tj", text);
+        Assert.Contains("1 0 0 rg", text);
+
+        var e = PdfEditor.Open(bytes);
+        e.SetContentOverride(0, edited);
+        var after = PdfRenderer.ExtractText(PdfDocument.Load(e.Save()).Pages[0]);
+        Assert.Equal(3, after.Count);
+        Assert.Equal("Hello", after[0].Text);
+        Assert.True(string.IsNullOrWhiteSpace(after[1].Text));
+        Assert.Equal(" Again", after[2].Text);
+        Assert.Equal(spans[2].X, after[2].X, 2);
+    }
+
+    [Fact]
     public void Overlay_draws_on_top_and_base_save_excludes_it()
     {
         var e = PdfEditor.Open(Cff());
