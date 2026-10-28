@@ -27,6 +27,25 @@ public class RenderBench
         foreach (var p in doc.Pages) PdfRenderer.RenderPage(p, 96);
     }
 
+    sealed class NullBackend : IRenderBackend
+    {
+        public void Save() { }
+        public void Restore() { }
+        public void Clip(PathData path, Matrix ctm, bool evenOdd) { }
+        public void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode) { }
+        public void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode) { }
+        public void DrawImage(ImageData image, Matrix ctm, double alpha, RgbColor maskColor, string blendMode) { }
+        public void PaintShader(Func<double, double, RgbColor?> deviceToColor, double alpha, string blendMode) { }
+    }
+
+    // Interpreter-only cost (no rasterization).
+    [Benchmark]
+    public void TextInterpretOnly()
+    {
+        var doc = PdfDocument.Load(_text);
+        foreach (var p in doc.Pages) new ContentInterpreter(doc.File, new NullBackend()).Render(p, Matrix.Identity);
+    }
+
     [Benchmark] public void Text() => RenderAll(_text);
     [Benchmark] public void Vector() => RenderAll(_vector);
     [Benchmark] public void Image() => RenderAll(_image);

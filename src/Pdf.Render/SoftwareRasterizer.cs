@@ -8,7 +8,7 @@ namespace Pdf.Render;
 /// Managed anti-aliased software rasterizer implementing <see cref="IRenderBackend"/>. Surface is opaque RGB, white background.
 /// Scan conversion is row-at-a-time (4 sub-scanlines, exact horizontal coverage) with struct edges and no per-fill allocations.
 /// </summary>
-public sealed class SoftwareRasterizer : IRenderBackend
+public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 {
     const int SubY = 4;
     const float Weight = 1f / SubY;
@@ -26,7 +26,7 @@ public sealed class SoftwareRasterizer : IRenderBackend
     }
 
     readonly int _w, _h;
-    readonly float[] _px; // RGB, 3 floats per pixel
+    float[] _px; // RGB, 3 floats per pixel
     ClipMask _clip;
     readonly Stack<ClipMask> _stack = new();
 
@@ -45,24 +45,42 @@ public sealed class SoftwareRasterizer : IRenderBackend
     public SoftwareRasterizer(int width, int height)
     {
         _w = width; _h = height;
-        _px = new float[width * height * 3];
-        Array.Fill(_px, 1f);
+        _px = System.Buffers.ArrayPool<float>.Shared.Rent(width * height * 3);
+        _px.AsSpan(0, width * height * 3).Fill(1f);
         _cov = new float[width + 2];
         _clip = new ClipMask { X0 = 0, Y0 = 0, X1 = width, Y1 = height };
     }
 
+    /// <summary>Returns the pixel buffer to the pool; the rasterizer must not be used afterwards.</summary>
+    public void Dispose()
+    {
+        var p = _px; _px = [];
+        if (p.Length > 0) System.Buffers.ArrayPool<float>.Shared.Return(p);
+    }
+
     public byte[] ToRgba()
     {
-        var o = new byte[_w * _h * 4];
+        var o = GC.AllocateUninitializedArray<byte>(_w * _h * 4);
         var px = _px;
-        var n = _w * _h;
-        for (var i = 0; i < n; i++)
+        var w = _w;
+        void Rows(int y0, int y1)
         {
-            o[i * 4] = ToByte(px[i * 3]);
-            o[i * 4 + 1] = ToByte(px[i * 3 + 1]);
-            o[i * 4 + 2] = ToByte(px[i * 3 + 2]);
-            o[i * 4 + 3] = 255;
+            for (var y = y0; y < y1; y++)
+            {
+                var s = px.AsSpan(y * w * 3, w * 3);
+                var d = o.AsSpan(y * w * 4, w * 4);
+                for (int i = 0, j = 0, k = 0; i < w; i++, j += 3, k += 4)
+                {
+                    d[k] = ToByte(s[j]); d[k + 1] = ToByte(s[j + 1]); d[k + 2] = ToByte(s[j + 2]); d[k + 3] = 255;
+                }
+            }
         }
+        if ((long)_w * _h > 100_000)
+        {
+            const int Band = 32;
+            Parallel.For(0, (_h + Band - 1) / Band, b => Rows(b * Band, Math.Min(_h, b * Band + Band)));
+        }
+        else Rows(0, _h);
         return o;
     }
 
