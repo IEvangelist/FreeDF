@@ -4,91 +4,75 @@
 <meta charset="utf-8">
 <title>C# PDF Editor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  :root { --bg:#14111f; --panel:#1e1a2e; --line:#352f4d; --fg:#ece9f7; --mut:#9a94b8; --accent:#7c5cff; --accent2:#e91e8c; --danger:#ff5d73; }
-  * { box-sizing: border-box; }
-  body { margin:0; font:14px/1.4 "Segoe UI", system-ui, sans-serif; background:var(--bg); color:var(--fg); height:100vh; display:flex; flex-direction:column; }
-  header { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
-  header h1 { font-size:24px; font-weight:800; letter-spacing:-.01em; margin:0 12px 0 0; color:var(--fg); }
-  #name { color:var(--mut); margin-right:auto; }
-  button, label.btn { background:#2a2440; color:var(--fg); border:1px solid var(--line); padding:6px 12px; border-radius:8px; cursor:pointer; font:inherit; }
-  button:hover, label.btn:hover { border-color:var(--accent); }
-  button.primary { background:linear-gradient(90deg,var(--accent),var(--accent2)); border:0; font-weight:600; }
-  button:disabled { opacity:.4; cursor:default; }
-  main { flex:1; display:flex; min-height:0; }
-  #thumbs { width:220px; overflow-y:auto; padding:12px; background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; gap:12px; }
-  .thumb { position:relative; border:2px solid transparent; border-radius:8px; padding:6px; background:#251f3a; cursor:grab; }
-  .thumb.sel { border-color:var(--accent); }
-  .thumb.over { border-color:var(--accent2); }
-  .thumb img { width:100%; display:block; background:#fff; border-radius:3px; pointer-events:none; }
-  .thumb .num { text-align:center; color:var(--mut); font-size:12px; margin-top:4px; }
-  .thumb .acts { position:absolute; top:10px; right:10px; display:none; gap:4px; }
-  .thumb:hover .acts { display:flex; }
-  .acts button { padding:2px 7px; font-size:13px; }
-  #view { flex:1; overflow:auto; display:flex; padding:24px; background:radial-gradient(circle at 30% 20%, #221c38, var(--bg)); }
-  #page { position:relative; margin:auto; flex:none; box-shadow:0 10px 40px #0009; background:#fff; }
-  #page img { display:block; width:100%; height:100%; user-select:none; -webkit-user-drag:none; }
-  #layer { position:absolute; left:0; top:0; transform-origin:0 0; }
-  #layer.draw { cursor:crosshair; }
-  .it { position:absolute; cursor:move; outline:1px dashed transparent; }
-  .span { position:absolute; cursor:text; outline:1px dashed transparent; border-radius:2px; }
-  .span:hover { outline-color:var(--accent); background:#7c5cff1f; }
-  .it:hover { outline-color:#7c5cff99; }
-  .it.on { outline:1.5px solid var(--accent); }
-  .it.txt { white-space:pre; line-height:1.2; padding:0; color:#000; }
-  .it.txt[contenteditable] { cursor:text; outline:1.5px solid var(--accent2); }
-  .it img { width:100%; height:100%; display:block; pointer-events:none; }
-  .hd { position:absolute; width:10px; height:10px; background:#fff; border:2px solid var(--accent); border-radius:2px; z-index:5; }
-  svg.lines { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
-  svg.lines line { pointer-events:stroke; cursor:move; }
-  #empty { color:var(--mut); text-align:center; margin:auto; }
-  #center { flex:1; display:flex; flex-direction:column; min-width:0; }
-  #tools { display:flex; gap:6px; align-items:center; padding:8px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
-  #tools button.on { background:var(--accent); border-color:var(--accent); }
-  #props { width:250px; overflow-y:auto; padding:14px; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; gap:10px; }
-  #props h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); margin:0; }
-  #props label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--mut); }
-  #props .row { display:flex; gap:8px; } #props .row > * { flex:1; min-width:0; }
-  #props input, #props select, #props textarea { background:#14111f; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit; width:100%; }
-  #props input[type=color] { padding:1px; height:30px; }
-  #props .hint { font-size:12px; color:var(--mut); }
-  #drop { outline:3px dashed var(--accent); outline-offset:-12px; }
-  footer { padding:6px 16px; color:var(--mut); font-size:12px; background:var(--panel); border-top:1px solid var(--line); }
-  .sp { width:1px; height:22px; background:var(--line); margin:0 4px; }
-</style>
+<link rel="stylesheet" href="/editor.css">
 </head>
 <body>
+<svg class="sprite" aria-hidden="true"><defs>
+  <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></symbol>
+  <symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></symbol>
+  <symbol id="i-ellipse" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></symbol>
+  <symbol id="i-line" viewBox="0 0 24 24"><path d="M5 19L19 5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20 16l-4.5-4.5L7 20"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 4v6a4 4 0 004 4h4a4 4 0 014 4v2M18 4v6M6 20v-2M16 8l2-2 2 2"/></symbol>
+  <symbol id="i-rotl" viewBox="0 0 24 24"><path d="M4 12a8 8 0 108-8H8M8 1l-4 3 4 3"/></symbol>
+  <symbol id="i-rotr" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-8-8h4M16 1l4 3-4 3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-zoomin" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-zoomout" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-bold" viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 010 7H7zM7 12h7a3.5 3.5 0 010 7H7z"/></symbol>
+  <symbol id="i-italic" viewBox="0 0 24 24"><path d="M10 5h8M6 19h8M14 5l-4 14"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></symbol>
+  <symbol id="i-front" viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="2"/><path d="M10 21h9a2 2 0 002-2v-9"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5"/></symbol>
+</defs></svg>
 <header>
-  <h1>C# PDF Editor</h1>
-  <span id="name">No document</span>
-  <label class="btn">Open<input id="open" type="file" accept="application/pdf" hidden></label>
-  <label class="btn">Merge…<input id="merge" type="file" accept="application/pdf" hidden></label>
+  <div class="brand"><span class="logo">C#</span><strong>PDF Editor</strong></div>
+  <div class="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="pages"></span></div>
+  <div class="group">
+    <label class="btn" title="Open a PDF"><svg class="i"><use href="#i-open"/></svg>Open<input id="open" type="file" accept="application/pdf" hidden></label>
+    <label class="btn" title="Append pages from another PDF"><svg class="i"><use href="#i-merge"/></svg>Merge<input id="merge" type="file" accept="application/pdf" hidden></label>
+  </div>
   <span class="sp"></span>
-  <button id="rl" title="Rotate left">⟲</button>
-  <button id="rr" title="Rotate right">⟳</button>
-  <button id="del" title="Delete page">Delete page</button>
-  <button id="title">Set title</button>
-  <button id="dl" class="primary">Download</button>
+  <div class="group">
+    <button id="rl" class="icon" title="Rotate page left"><svg class="i"><use href="#i-rotl"/></svg></button>
+    <button id="rr" class="icon" title="Rotate page right"><svg class="i"><use href="#i-rotr"/></svg></button>
+    <button id="del" class="icon" title="Delete page"><svg class="i"><use href="#i-trash"/></svg></button>
+    <button id="title" class="icon" title="Set document title"><svg class="i"><use href="#i-tag"/></svg></button>
+  </div>
+  <span class="sp"></span>
+  <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg>Download</button>
 </header>
 <main>
   <div id="thumbs"></div>
   <div id="center">
     <div id="tools">
-      <button data-tool="select" class="on" title="Select and move (V)">Select</button>
-      <button data-tool="text" title="Add text (T)">Text</button>
-      <button data-tool="rect" title="Rectangle (R)">Rectangle</button>
-      <button data-tool="ellipse" title="Ellipse (E)">Ellipse</button>
-      <button data-tool="line" title="Line (L)">Line</button>
-      <label class="btn">Image<input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
+      <div class="seg" role="toolbar" aria-label="Tools">
+        <button data-tool="select" class="on icon" title="Select and move (V)"><svg class="i"><use href="#i-select"/></svg></button>
+        <button data-tool="text" class="icon" title="Add text (T)"><svg class="i"><use href="#i-text"/></svg></button>
+        <button data-tool="rect" class="icon" title="Rectangle (R)"><svg class="i"><use href="#i-rect"/></svg></button>
+        <button data-tool="ellipse" class="icon" title="Ellipse (E)"><svg class="i"><use href="#i-ellipse"/></svg></button>
+        <button data-tool="line" class="icon" title="Line (L)"><svg class="i"><use href="#i-line"/></svg></button>
+        <label class="btn icon" title="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
+      </div>
+      <span class="grow"></span>
+      <button id="prev" title="Show the real rendered output"><svg class="i"><use href="#i-eye"/></svg>Preview</button>
       <span class="sp"></span>
-      <button id="zo" title="Zoom out">−</button><span id="zv">100%</span><button id="zi" title="Zoom in">+</button>
-      <button id="prev" title="Show the real rendered output">Preview</button>
+      <div class="group">
+        <button id="zo" class="icon" title="Zoom out"><svg class="i"><use href="#i-zoomout"/></svg></button><span id="zv">100%</span><button id="zi" class="icon" title="Zoom in"><svg class="i"><use href="#i-zoomin"/></svg></button>
+      </div>
     </div>
-    <div id="view"><div id="empty">Open a PDF, or drop one here.</div></div>
+    <div id="view"><div id="empty"><svg class="i"><use href="#i-file"/></svg><strong>No document open</strong><span>Open a PDF or drop one here.</span></div></div>
   </div>
   <aside id="props"></aside>
 </main>
-<footer id="status">Pick a tool and drag on the page. Double-click text to edit. Ctrl+Z undoes.</footer>
+<footer><span id="status">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span></footer>
 <script>
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, preview = false, undo = [], saveT = 0, editing = false;
@@ -98,6 +82,7 @@ const status = t => $('status').textContent = t;
 const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace' };
 let S = 1, geom = null, spans = [], origKey = '', fields = [];
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
 const fontFamily = n => /courier|mono/i.test(n) ? 'Courier' : /times|serif|georgia|garamond|minion/i.test(n) && !/sans/i.test(n) ? 'Times' : 'Helvetica';
 
@@ -113,16 +98,17 @@ function convertSpan(s) {
 async function refresh() {
   await flush();
   state = await (await fetch('/api/state')).json();
-  $('name').textContent = state.pageCount ? `${state.fileName} - ${state.pageCount} page(s)` : 'No document';
+  $('name').textContent = state.pageCount ? state.fileName : 'No document';
+  $('pages').textContent = state.pageCount ? `${state.pageCount} page${state.pageCount === 1 ? '' : 's'}` : '';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
   const t = $('thumbs'); t.innerHTML = '';
   state.pages.forEach((p, i) => {
     const d = document.createElement('div');
     d.className = 'thumb' + (i === sel ? ' sel' : ''); d.draggable = true;
-    d.innerHTML = `<img src="/api/page/${i}.png?dpi=40&v=${state.version}"><div class="num">${i + 1}</div>
-      <div class="acts"><button data-a="l">⟲</button><button data-a="r">⟳</button><button data-a="x">✕</button></div>`;
+    d.innerHTML = `<div class="paper"><img src="/api/page/${i}.png?dpi=40&v=${state.version}"></div><span class="num">${i + 1}</span>
+      <div class="acts"><button class="mini" data-a="l" title="Rotate left">${ic('rotl')}</button><button class="mini" data-a="r" title="Rotate right">${ic('rotr')}</button><button class="mini danger" data-a="x" title="Delete page">${ic('trash')}</button></div>`;
     d.onclick = e => {
-      const a = e.target.dataset?.a;
+      const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'l') act(() => post(`/api/rotate/${i}/270`));
       else if (a === 'r') act(() => post(`/api/rotate/${i}/90`));
       else if (a === 'x') { sel = i; act(() => post(`/api/delete/${i}`)); }
@@ -140,7 +126,7 @@ async function refresh() {
 async function select() {
   document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
   const v = $('view');
-  if (!state.pageCount) { v.innerHTML = '<div id="empty">Open a PDF, or drop one here.</div>'; items = []; props(); return; }
+  if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; props(); return; }
   items = await (await fetch(`/api/page/${sel}/items`)).json();
   spans = await (await fetch(`/api/page/${sel}/text`)).json();
   fields = await (await fetch('/api/fields')).json();
@@ -337,37 +323,40 @@ async function flush() {
 function props() {
   const p = $('props');
   if (!cur) {
-    p.innerHTML = '<h2>Properties</h2><div class="hint">Select an object to edit its text, size, position and colours, or choose a tool and drag on the page to add one.</div>'
-      + (fields.length ? '<h2>Form fields</h2>' + fields.map((f, i) => f.type === 'Btn'
+    p.innerHTML = `<section><h2>Properties</h2><p class="hint">Select an object to edit it, click existing text to make it editable, or pick a tool and drag on the page.</p></section>`
+      + (fields.length ? `<section><h2>Form fields</h2>${fields.map((f, i) => f.type === 'Btn'
         ? `<label class="chk"><span>${esc(f.name)}</span><input type="checkbox" data-f="${i}" ${f.value && f.value !== 'Off' ? 'checked' : ''}></label>`
-        : `<label>${esc(f.name)}<input type="text" data-f="${i}" value="${esc(f.value)}"></label>`).join('') : '');
+        : `<label class="fld"><span>${esc(f.name)}</span><input type="text" data-f="${i}" value="${esc(f.value)}"></label>`).join('')}</section>` : '');
     p.querySelectorAll('[data-f]').forEach(el => el.onchange = async () => {
       const f = fields[+el.dataset.f], v = el.type === 'checkbox' ? (el.checked ? 'Yes' : 'Off') : el.value;
       await fetch(`/api/field?n=${encodeURIComponent(f.name)}&v=${encodeURIComponent(v)}`, { method: 'POST' });
       f.value = v; status(`Set ${f.name}`);
       const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now());
       document.querySelectorAll('.thumb img').forEach((im, k) => im.src = `/api/page/${k}.png?dpi=40&t=${Date.now()}`);
+    });
     return;
   }
-  const it = cur, n = (k, label, step = 1) => `<label>${label}<input type="number" step="${step}" data-k="${k}" value="${+(+it[k]).toFixed(2)}"></label>`;
-  const colour = (k, label, none) => `<label>${label}<div class="row"><input type="color" data-k="${k}" value="${it[k] || '#000000'}">${none ? `<button data-none="${k}">None</button>` : ''}</div></label>`;
-  let h = `<h2>${it.type}</h2>`;
-  if (it.type === 'text') h += `<label>Text<textarea rows="3" data-k="text">${it.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</textarea></label>
-    <div class="row"><label>Font<select data-k="font">${['Helvetica', 'Times', 'Courier'].map(f => `<option ${f === it.font ? 'selected' : ''}>${f}</option>`).join('')}</select></label>${n('size', 'Size (pt)', 0.5)}</div>
-    <div class="row"><label><span>Bold</span><input type="checkbox" data-k="bold" ${it.bold ? 'checked' : ''}></label><label><span>Italic</span><input type="checkbox" data-k="italic" ${it.italic ? 'checked' : ''}></label></div>${colour('color', 'Colour')}`;
-  if (it.type === 'rect' || it.type === 'ellipse') h += colour('fill', 'Fill', true) + colour('stroke', 'Stroke', true) + n('strokeWidth', 'Stroke width', 0.5);
-  if (it.type === 'line') h += colour('stroke', 'Colour') + n('strokeWidth', 'Width', 0.5);
-  if (it.type !== 'line') h += `<div class="row">${n('x', 'X')}${n('y', 'Y')}</div>` + (it.type !== 'text' ? `<div class="row">${n('w', 'Width')}${n('h', 'Height')}</div>` : '');
-  else h += `<div class="row">${n('x', 'X1')}${n('y', 'Y1')}</div><div class="row">${n('x2', 'X2')}${n('y2', 'Y2')}</div>`;
-  h += `<label>Opacity<input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"></label>
-    <div class="row"><button data-act="dup">Duplicate</button><button data-act="front">To front</button></div><button data-act="del">Delete object</button>`;
+  const it = cur, n = (k, label, step = 1) => `<label class="fld"><span>${label}</span><input type="number" step="${step}" data-k="${k}" value="${+(+it[k]).toFixed(2)}"></label>`;
+  const colour = (k, label, none) => `<label class="fld"><span>${label}</span><div class="swatch"><input type="color" data-k="${k}" value="${it[k] || '#000000'}"><code>${(it[k] || 'none').toUpperCase()}</code>${none ? `<button class="ghost" data-none="${k}" title="No ${label.toLowerCase()}">${ic('x')}</button>` : ''}</div></label>`;
+  const names = { text: 'Text', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', image: 'Image' };
+  let h = `<section class="head"><span class="chip">${ic(it.type === 'rect' ? 'square' : it.type)}</span><h2>${names[it.type] ?? it.type}${it.orig != null ? ' <em>from page</em>' : ''}</h2></section>`;
+  if (it.type === 'text') h += `<section><h3>Content</h3><textarea rows="3" data-k="text">${it.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</textarea></section>
+    <section><h3>Typography</h3><div class="row"><label class="fld"><span>Font</span><select data-k="font">${['Helvetica', 'Times', 'Courier'].map(f => `<option ${f === it.font ? 'selected' : ''}>${f}</option>`).join('')}</select></label>${n('size', 'Size', 0.5)}</div>
+    <div class="row"><label class="tgl" title="Bold"><input type="checkbox" data-k="bold" ${it.bold ? 'checked' : ''}>${ic('bold')}</label><label class="tgl" title="Italic"><input type="checkbox" data-k="italic" ${it.italic ? 'checked' : ''}>${ic('italic')}</label><span class="grow"></span></div>${colour('color', 'Colour')}</section>`;
+  if (it.type === 'rect' || it.type === 'ellipse') h += `<section><h3>Appearance</h3>${colour('fill', 'Fill', true)}${colour('stroke', 'Stroke', true)}${n('strokeWidth', 'Stroke width', 0.5)}</section>`;
+  if (it.type === 'line') h += `<section><h3>Appearance</h3>${colour('stroke', 'Colour')}${n('strokeWidth', 'Width', 0.5)}</section>`;
+  h += '<section><h3>Position</h3>' + (it.type !== 'line' ? `<div class="row">${n('x', 'X')}${n('y', 'Y')}</div>` + (it.type !== 'text' ? `<div class="row">${n('w', 'Width')}${n('h', 'Height')}</div>` : '')
+    : `<div class="row">${n('x', 'X1')}${n('y', 'Y1')}</div><div class="row">${n('x2', 'X2')}${n('y2', 'Y2')}</div>`) + '</section>';
+  h += `<section><h3>Opacity</h3><div class="range"><input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"><output>${Math.round(it.opacity * 100)}%</output></div></section>
+    <section class="acts2"><button data-act="dup" title="Duplicate">${ic('copy')}Duplicate</button><button data-act="front" title="Bring to front">${ic('front')}To front</button><button class="danger" data-act="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;
   p.innerHTML = h;
   p.querySelectorAll('[data-k]').forEach(el => {
     el.onfocus = () => pushUndo();
     el.oninput = () => {
       const k = el.dataset.k;
       it[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' || el.type === 'range' ? +el.value : el.value;
-      if (k === 'fill' || k === 'stroke') { if (k === 'fill' && !it.stroke) it.stroke = '#000000'; }
+      if (k === 'fill' || k === 'stroke') { if (k === 'fill' && !it.stroke) it.stroke = '#000000'; const c = el.parentElement.querySelector('code'); if (c) c.textContent = el.value.toUpperCase(); }
+      if (k === 'opacity') el.nextElementSibling.textContent = Math.round(it.opacity * 100) + '%';
       paint(); queueSave();
     };
   });
