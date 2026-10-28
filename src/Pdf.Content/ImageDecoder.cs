@@ -24,6 +24,13 @@ public static class ImageDecoder
             data = jpg; w = jw; h = jh; bpc = 8;
             if (R(d.Get("ColorSpace")) is null || cs.Components != jn) cs = jn switch { 1 => PdfColorSpace.Gray, 4 => PdfColorSpace.Cmyk, _ => PdfColorSpace.Rgb };
         }
+        else if (codec is "CCITTFaxDecode" or "CCF")
+        {
+            int Pi(string k, int def) => (int)(R(parms?.Get(k)).AsNumber() ?? def);
+            bool Pb(string k) => R(parms?.Get(k)) is PdfBoolean { Value: true };
+            data = CcittDecoder.Decode(data, Pi("K", 0), Pi("Columns", 1728), Pi("Rows", 0), Pb("BlackIs1"), Pb("EncodedByteAlign"), h);
+            bpc = 1;
+        }
         else if (codec is not null)
         {
             warning = $"image codec {codec} not supported";
