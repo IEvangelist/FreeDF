@@ -53,7 +53,9 @@ public sealed class PdfFont
     public bool Vertical { get; }
     public PdfStream? FontFile { get; }
     TrueTypeFont? _tt;
-    public bool HasOutlines => _tt?.HasGlyf == true;
+    CffFont? _cff;
+    Dictionary<int, int>? _cffUni;
+    public bool HasOutlines => _tt?.HasGlyf == true || _cff is not null;
     readonly PdfFile _f;
     readonly string?[] _names = new string?[256];
     readonly double[] _widths = new double[256];
@@ -112,8 +114,13 @@ public sealed class PdfFont
                 if (tt.HasGlyf) _tt = tt;
             }
             catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
+            if (_tt is null)
+            {
+                try { _cff = new CffFont(f.DecodeStream(FontFile)); }
+                catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException or KeyNotFoundException) { }
+            }
         }
-        if (_tt is null && !IsType3)
+        if (_tt is null && _cff is null && !IsType3)
         {
             var n = BaseFont.ToLowerInvariant();
             var bold = n.Contains("bold") || n.Contains("black") || (flags & (1 << 18)) != 0;
@@ -246,12 +253,40 @@ public sealed class PdfFont
 
     double FallbackWidth(int c)
     {
+        if (_cff is not null) { var cg = CffGlyphId(c); return cg > 0 ? _cff.Advance(cg) : _missingWidth; }
         if (_tt is null) return _missingWidth > 0 ? _missingWidth : 500;
         var g = GlyphIdFor(c);
         return g > 0 ? _tt.Advance(g) : _missingWidth;
     }
 
     public bool IsSpace(GlyphRun r) => r.ByteLength == 1 && r.Code == 32;
+
+    int CffGlyphId(int code)
+    {
+        var cff = _cff!;
+        if (IsType0)
+        {
+            if (_cidToGid is not null) return code * 2 + 1 < _cidToGid.Length ? _cidToGid[code * 2] << 8 | _cidToGid[code * 2 + 1] : 0;
+            return cff.GlyphByCid(code);
+        }
+        var name = code is >= 0 and < 256 ? _names[code] : null;
+        if (name is not null)
+        {
+            var g = cff.GlyphByName(name);
+            if (g > 0) return g;
+            if (NameToUnicode(name) is { Length: > 0 } u)
+            {
+                if (_cffUni is null)
+                {
+                    _cffUni = [];
+                    for (var i = cff.GlyphCount - 1; i > 0; i--)
+                        if (NameToUnicode(cff.GlyphName(i)) is { Length: > 0 } gu) _cffUni[char.ConvertToUtf32(gu, 0)] = i;
+                }
+                if (_cffUni.TryGetValue(char.ConvertToUtf32(u, 0), out var ug)) return ug;
+            }
+        }
+        return cff.GlyphByCode(code);
+    }
 
     int GlyphIdFor(int code)
     {
@@ -287,7 +322,12 @@ public sealed class PdfFont
     {
         if (_glyphCache.TryGetValue(code, out var p)) return p;
         p = null;
-        if (_tt is not null)
+        if (_cff is not null)
+        {
+            var cg = CffGlyphId(code);
+            if (cg > 0 || IsType0) p = _cff.GetOutline(cg);
+        }
+        else if (_tt is not null)
         {
             var gid = GlyphIdFor(code);
             if (gid > 0 || FontFile is not null && IsType0) p = _tt.GetOutline(gid);
