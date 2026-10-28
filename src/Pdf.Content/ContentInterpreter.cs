@@ -562,6 +562,18 @@ public sealed class ContentInterpreter
                 return cs.ToRgb(comps);
             }, _gs.FillAlpha, _gs.BlendMode);
         }
+        else if (type is >= 4 and <= 7 && shObj is PdfStream ms)
+        {
+            var nComps = fns is null ? cs.Components : 1;
+            var dec = Arr("Decode");
+            int Int(string k, int def) => (int)(R(d.Get(k)).AsNumber() ?? def);
+            var mesh = MeshShading.Decode(type, _f.DecodeStream(ms), dec, Int("BitsPerCoordinate", 8), Int("BitsPerComponent", 8),
+                type == 5 ? 0 : Int("BitsPerFlag", 8), nComps, Int("VerticesPerRow", 0), m);
+            var shader = MeshShading.ToShader(mesh, comps => fns is null
+                ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps)
+                : EvalT(comps[0]));
+            _be.PaintShader(shader, _gs.FillAlpha, _gs.BlendMode);
+        }
         else Warn($"shading type {type} not rendered");
     }
 

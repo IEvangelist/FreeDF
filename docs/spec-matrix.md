@@ -27,7 +27,7 @@ Full spec parity is the goal; this table is the honest current state.
 | 8.4 | Graphics state, paths, clipping | Done | AA scanline raster, non-zero/even-odd |
 | 8.4.3 | Stroking: width, caps, joins, miter, dash | Done | |
 | 8.6 | Device, Cal*, Lab, Indexed, Separation, DeviceN | Partial | Cal*/ICC treated as device spaces, no ICC transform; CMYK is an approximation |
-| 8.7 | Tiling and shading patterns | Partial | Shading 1-3 done; mesh types 4-7 **Todo** |
+| 8.7 | Tiling and shading patterns | Partial | Shading 1-3 done; mesh types 4-7 **Done** (Gouraud triangles; patches tessellated 8x8; types 4/6 tested, 5/7 untested; no per-pixel function eval, colour interpolated then mapped) |
 | 8.9-8.10 | Images, inline images, XObject forms | Partial | See filters above; stencil + colour-key + SMask alpha |
 | 9 | Fonts: TrueType, Type0/CID, Type3, ToUnicode | Partial | Embedded CFF (Type1C, CIDFontType0C, OpenType-CFF) outlines via `CffFont` (Type 2 charstrings, subrs, flex, FDSelect; seac and arithmetic ops not supported). Legacy Type 1 (FontFile, PFA/PFB) **Todo**; no predefined CJK CMaps; SIDs 229-378 of the CFF standard strings are placeholders |
 | 11 | Transparency: alpha, blend modes | Partial | Alpha + separable blend modes + ExtGState soft masks (Luminosity and Alpha, BC backdrop) **Done**; isolated/knockout groups, non-separable blend modes, soft-mask /TR transfer function **Todo**; a clip applied while a mask is active is lost when the mask is cleared before `Q` |

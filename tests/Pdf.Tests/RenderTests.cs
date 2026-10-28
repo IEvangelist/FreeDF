@@ -93,6 +93,33 @@ public class RenderTests
     }
 
     [Fact]
+    public void MeshShadingType4_Triangle()
+    {
+        var data = "\0\0\0\xFF\0\0" + "\0\xFF\0\0\xFF\0" + "\0\0\xFF\0\0\xFF";
+        var obj = $"5 0 obj\n<< /ShadingType 4 /ColorSpace /DeviceRGB /BitsPerCoordinate 8 /BitsPerComponent 8 /BitsPerFlag 8 /Decode [0 200 0 200 0 1 0 1 0 1] /Length {data.Length} >>\nstream\n{data}\nendstream\nendobj\n";
+        var p = PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/M sh", "/Shading << /M 5 0 R >>", obj, brokenXref: true)).Pages[0], 72);
+        Assert.True(Px(p, 10, 190).R > 200);
+        Assert.True(Px(p, 150, 190).G > 150);
+        Assert.Equal((255, 255, 255), Px(p, 150, 50));
+    }
+
+    [Fact]
+    public void MeshShadingType6_CoonsPatch()
+    {
+        var sb = new System.Text.StringBuilder("\0");
+        (int, int)[] order = [(0, 0), (0, 1), (0, 2), (0, 3), (1, 3), (2, 3), (3, 3), (3, 2), (3, 1), (3, 0), (2, 0), (1, 0)];
+        foreach (var (i, j) in order) { sb.Append((char)(j * 85)); sb.Append((char)(i * 85)); }
+        sb.Append("\xFF\0\0" + "\0\xFF\0" + "\0\0\xFF" + "\xFF\xFF\0"); // c00 red, c03 green, c33 blue, c30 yellow
+        var data = sb.ToString();
+        var obj = $"5 0 obj\n<< /ShadingType 6 /ColorSpace /DeviceRGB /BitsPerCoordinate 8 /BitsPerComponent 8 /BitsPerFlag 8 /Decode [0 200 0 200 0 1 0 1 0 1] /Length {data.Length} >>\nstream\n{data}\nendstream\nendobj\n";
+        var p = PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/M sh", "/Shading << /M 5 0 R >>", obj, brokenXref: true)).Pages[0], 72);
+        var red = Px(p, 4, 195); var green = Px(p, 195, 195); var mid = Px(p, 100, 100);
+        Assert.True(red.R > 200 && red.G < 80);
+        Assert.True(green.G > 200 && green.R < 80);
+        Assert.NotEqual((255, 255, 255), mid);
+    }
+
+    [Fact]
     public void ProducesDecodablePng()
     {
         var p = Render("1 0 0 rg 0 0 200 200 re f");
