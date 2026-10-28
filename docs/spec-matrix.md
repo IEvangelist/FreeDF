@@ -16,7 +16,7 @@ Full spec parity is the goal; this table is the honest current state.
 | 7.7 | Document structure: page tree, inheritance | Done | |
 | 7.8-7.9 | Content streams, resources, functions (types 0,2,3,4) | Done | |
 | 7.10-7.11 | File specs, embedded files, data structures | Todo | |
-| 12 | Annotations, forms, outlines, actions | Partial | Read-only: outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, embedded files (`DocumentFeatures`). Not yet: annotation appearance rendering, form editing, other action types |
+| 12 | Annotations, forms, outlines, actions | Partial | Outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, embedded files. Annotation normal-appearance (/AP /N, /AS) rendered per 12.5.5 (no generated appearances for annotations lacking /AP). Form filling for text/button fields (`PdfEditor.SetFieldValue`, generated single-line Helvetica appearance). Not yet: choice/multiline/comb fields, other action types |
 | 14 | Metadata, tagged PDF, logical structure | Partial | Info, XMP packet, tagged flag, language. Structure tree walking not yet |
 | 14.8/PDF/A,UA | Validation | Todo | |
 
@@ -43,7 +43,8 @@ Full spec parity is the goal; this table is the honest current state.
 | Overlay content editing (text, shapes, images; move/resize/restyle; web UI) | Done |
 | Editing existing page text in place (convert run to editable object, original operator removed, advance preserved; font becomes a standard font; page-level text only, not inside form XObjects) | Done |
 | Moving/resizing existing images and vector objects | **Todo** |
-| Incremental save, form filling, redaction, signing, object/xref streams on save, encrypted save | **Todo** |
+| Form filling (text and checkbox/radio fields, with editor UI) | Done |
+| Incremental save, redaction, signing, object/xref streams on save, encrypted save | **Todo** |
 
 ## Render comparison
 

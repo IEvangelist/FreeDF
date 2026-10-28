@@ -172,6 +172,18 @@ app.MapPost("/api/rotate/{i:int}/{delta:int}", (int i, int delta) =>
 });
 app.MapPost("/api/title", (HttpRequest r, string t) => { lock (gate) { editor.SetInfo("Title", t); Changed(); } return Results.Ok(); });
 
+app.MapGet("/api/fields", () =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount == 0) return Results.Json(Array.Empty<object>(), jsonOpts);
+        return Results.Json(Pristine().GetFormFields()
+            .Where(f => f.FieldType is "Tx" or "Btn" or "Ch")
+            .Select(f => new { name = f.FullName, type = f.FieldType, value = f.Value ?? "" }), jsonOpts);
+    }
+});
+app.MapPost("/api/field", (string n, string v) => { lock (gate) { var ok = editor.SetFieldValue(n, v); if (ok) Changed(); return ok ? Results.Ok() : Results.NotFound(); } });
+
 app.MapGet("/api/download", () =>
 {
     lock (gate)

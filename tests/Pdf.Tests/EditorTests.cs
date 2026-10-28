@@ -75,6 +75,31 @@ public class EditorTests
     }
 
     [Fact]
+    public void Filled_field_appearance_is_rendered()
+    {
+        var doc = Features();
+        var pageIdx = Enumerable.Range(0, doc.Pages.Count).First(i => doc.Pages[i].GetAnnotations().Any(a => a.Subtype == "Widget"));
+        var e = PdfEditor.Open(doc);
+        var before = PdfRenderer.RenderPage(Reload(e.Save()).Pages[pageIdx], 72).Rgba;
+        e.SetFieldValue("firstName", "Grace Hopper");
+        var after = PdfRenderer.RenderPage(Reload(e.Save()).Pages[pageIdx], 72).Rgba;
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void Set_field_value_roundtrips_and_generates_appearance()
+    {
+        var e = PdfEditor.Open(Features());
+        Assert.True(e.SetFieldValue("firstName", "Grace (Hopper)"));
+        Assert.True(e.SetFieldValue("agree", "Yes"));
+        Assert.False(e.SetFieldValue("nope", "x"));
+        var f = Reload(e.Save());
+        var fields = f.GetFormFields();
+        Assert.Contains(fields, x => x.FullName == "firstName" && x.Value == "Grace (Hopper)");
+        Assert.Contains(fields, x => x.FullName == "agree" && x.Value == "Yes");
+    }
+
+    [Fact]
     public void Extract_text_and_remove_operator_keeps_following_text_in_place()
     {
         const string content = "BT /F1 20 Tf 10 100 Td (Hello) Tj 0 -30 Td [(Wor) -100 (ld)] TJ ( Again) Tj ET 1 0 0 rg 0 0 5 5 re f";

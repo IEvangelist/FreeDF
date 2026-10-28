@@ -44,11 +44,43 @@ public sealed class ContentInterpreter
         _f = f; _be = backend; _fallback = fallback ?? new SystemFontFallback();
     }
 
+    public bool DrawAnnotations { get; set; } = true;
+
     public void Render(PdfPage page, Matrix baseMatrix)
     {
         SetBase(baseMatrix);
         _gs = new GState { Ctm = baseMatrix };
         Run(page.GetContents(), page.Resources);
+        if (DrawAnnotations) RenderAnnotations(page, baseMatrix);
+    }
+
+    // ISO 32000-2 12.5.5: map the transformed appearance BBox onto the annotation Rect.
+    void RenderAnnotations(PdfPage page, Matrix baseMatrix)
+    {
+        if (R(page.Dict.Get("Annots")) is not PdfArray annots) return;
+        foreach (var ao in annots.Items)
+        {
+            if (R(ao) is not PdfDictionary a) continue;
+            var flags = (int)(R(a.Get("F")).AsNumber() ?? 0);
+            if ((flags & (2 | 32)) != 0 || R(a.Get("Subtype")).AsName() == "Popup") continue;
+            if (R(a.Get("Rect")) is not PdfArray ra || ra.Count < 4) continue;
+            var ap = R(a.Get("AP")) as PdfDictionary;
+            var n = R(ap?.Get("N"));
+            if (n is PdfDictionary states) n = R(R(a.Get("AS")).AsName() is { } s ? states.Get(s) : null);
+            if (n is not PdfStream xs) continue;
+            var r = ra.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
+            double rx0 = Math.Min(r[0], r[2]), ry0 = Math.Min(r[1], r[3]), rw = Math.Abs(r[2] - r[0]), rh = Math.Abs(r[3] - r[1]);
+            var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, rw, rh];
+            var fm = R(xs.Dict.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : new Matrix(1, 0, 0, 1, 0, 0);
+            var pts = new[] { fm.Apply(bb[0], bb[1]), fm.Apply(bb[2], bb[1]), fm.Apply(bb[0], bb[3]), fm.Apply(bb[2], bb[3]) };
+            double x0 = pts.Min(p => p.X), x1 = pts.Max(p => p.X), y0 = pts.Min(p => p.Y), y1 = pts.Max(p => p.Y);
+            if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
+            double sx = rw / (x1 - x0), sy = rh / (y1 - y0);
+            var amap = new Matrix(sx, 0, 0, sy, rx0 - x0 * sx, ry0 - y0 * sy);
+            _gs = new GState { Ctm = amap.Then(baseMatrix) };
+            _path = new PathData();
+            DoForm(xs, page.Resources);
+        }
     }
 
     void Warn(string s) { if (!Warnings.Contains(s)) Warnings.Add(s); }

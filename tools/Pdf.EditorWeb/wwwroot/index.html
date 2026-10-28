@@ -96,7 +96,8 @@ const $ = id => document.getElementById(id);
 const post = (u, body) => fetch(u, { method: 'POST', body }).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); });
 const status = t => $('status').textContent = t;
 const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace' };
-let S = 1, geom = null, spans = [], origKey = '';
+let S = 1, geom = null, spans = [], origKey = '', fields = [];
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
 const fontFamily = n => /courier|mono/i.test(n) ? 'Courier' : /times|serif|georgia|garamond|minion/i.test(n) && !/sans/i.test(n) ? 'Times' : 'Helvetica';
 
@@ -142,6 +143,7 @@ async function select() {
   if (!state.pageCount) { v.innerHTML = '<div id="empty">Open a PDF, or drop one here.</div>'; items = []; props(); return; }
   items = await (await fetch(`/api/page/${sel}/items`)).json();
   spans = await (await fetch(`/api/page/${sel}/text`)).json();
+  fields = await (await fetch('/api/fields')).json();
   origKey = okey();
   cur = null; undo = [];
   build();
@@ -334,7 +336,19 @@ async function flush() {
 
 function props() {
   const p = $('props');
-  if (!cur) { p.innerHTML = '<h2>Properties</h2><div class="hint">Select an object to edit its text, size, position and colours, or choose a tool and drag on the page to add one.</div>'; return; }
+  if (!cur) {
+    p.innerHTML = '<h2>Properties</h2><div class="hint">Select an object to edit its text, size, position and colours, or choose a tool and drag on the page to add one.</div>'
+      + (fields.length ? '<h2>Form fields</h2>' + fields.map((f, i) => f.type === 'Btn'
+        ? `<label class="chk"><span>${esc(f.name)}</span><input type="checkbox" data-f="${i}" ${f.value && f.value !== 'Off' ? 'checked' : ''}></label>`
+        : `<label>${esc(f.name)}<input type="text" data-f="${i}" value="${esc(f.value)}"></label>`).join('') : '');
+    p.querySelectorAll('[data-f]').forEach(el => el.onchange = async () => {
+      const f = fields[+el.dataset.f], v = el.type === 'checkbox' ? (el.checked ? 'Yes' : 'Off') : el.value;
+      await fetch(`/api/field?n=${encodeURIComponent(f.name)}&v=${encodeURIComponent(v)}`, { method: 'POST' });
+      f.value = v; status(`Set ${f.name}`);
+      const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now());
+      document.querySelectorAll('.thumb img').forEach((im, k) => im.src = `/api/page/${k}.png?dpi=40&t=${Date.now()}`);
+    return;
+  }
   const it = cur, n = (k, label, step = 1) => `<label>${label}<input type="number" step="${step}" data-k="${k}" value="${+(+it[k]).toFixed(2)}"></label>`;
   const colour = (k, label, none) => `<label>${label}<div class="row"><input type="color" data-k="${k}" value="${it[k] || '#000000'}">${none ? `<button data-none="${k}">None</button>` : ''}</div></label>`;
   let h = `<h2>${it.type}</h2>`;

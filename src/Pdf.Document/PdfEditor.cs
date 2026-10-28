@@ -225,6 +225,80 @@ public sealed class PdfEditor
         return new PdfDictionary(new Dictionary<string, PdfObject>(page.Entries) { ["Contents"] = new PdfArray(parts), ["Resources"] = new PdfDictionary(res) });
     }
 
+    /// <summary>
+    /// Sets an AcroForm field value by fully qualified name. Text/choice fields get /V as a text string plus a generated
+    /// single-line appearance; buttons get /V and /AS (checked state name or Off). NeedAppearances is set so viewers refresh.
+    /// Returns false if no such field exists.
+    /// </summary>
+    public bool SetFieldValue(string name, string value)
+    {
+        if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || Res(form.Get("Fields")) is not PdfArray fields) return false;
+        var done = false;
+        void Walk(PdfObject? o, string prefix, string? ft, int depth)
+        {
+            if (depth > 32 || o is not PdfRef r || !_objs.TryGetValue(r.Number, out var po) || po is not PdfDictionary d) return;
+            var partial = Res(d.Get("T")) is PdfString t ? t.Text : null;
+            var full = partial is null ? prefix : prefix.Length == 0 ? partial : prefix + "." + partial;
+            ft = (Res(d.Get("FT")) as PdfName)?.Value ?? ft;
+            var kids = Res(d.Get("Kids")) as PdfArray;
+            var hasFieldKids = kids is not null && kids.Items.Any(k => Res(k) is PdfDictionary kd && kd.Get("T") is not null);
+            if (hasFieldKids) { foreach (var k in kids!.Items) Walk(k, full, ft, depth + 1); return; }
+            if (full != name) return;
+            done = true;
+            var e = new Dictionary<string, PdfObject>(d.Entries);
+            if (ft == "Btn")
+            {
+                var on = value is not ("" or "Off");
+                e["V"] = new PdfName(on ? value : "Off");
+                _objs[r.Number] = new PdfDictionary(e);
+                foreach (var w in kids is null ? [r] : kids.Items)
+                    if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd)
+                    {
+                        var states = Res(wd.Get("AP")) is PdfDictionary ap && Res(ap.Get("N")) is PdfDictionary n ? n.Entries.Keys : (IEnumerable<string>)[];
+                        var we = new Dictionary<string, PdfObject>(wd.Entries) { ["AS"] = new PdfName(on && states.Contains(value) ? value : "Off") };
+                        _objs[wr.Number] = new PdfDictionary(we);
+                    }
+                return;
+            }
+            e["V"] = new PdfString(EncodeText(value));
+            _objs[r.Number] = new PdfDictionary(e);
+            if (ft == "Tx")
+                foreach (var w in kids is null ? [r] : kids.Items)
+                    if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd && Res(wd.Get("Rect")) is PdfArray ra && ra.Count >= 4)
+                    {
+                        double N(int i) => Res(ra[i]).AsNumber() ?? 0;
+                        double width = Math.Abs(N(2) - N(0)), height = Math.Abs(N(3) - N(1));
+                        var size = Math.Clamp(height - 4, 6, 12);
+                        var shown = new string(value.Where(ch => ch is >= ' ' and <= '~').ToArray()).Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
+                        var body = System.Text.Encoding.ASCII.GetBytes($"/Tx BMC q BT /Helv {size:0.##} Tf 0 g 2 {(height - size) / 2 + size * 0.22:0.##} Td ({shown}) Tj ET Q EMC");
+                        var font = AddObject(new PdfDictionary(new Dictionary<string, PdfObject>
+                        { ["Type"] = new PdfName("Font"), ["Subtype"] = new PdfName("Type1"), ["BaseFont"] = new PdfName("Helvetica"), ["Encoding"] = new PdfName("WinAnsiEncoding") }));
+                        var xo = AddObject(new PdfStream(new PdfDictionary(new Dictionary<string, PdfObject>
+                        {
+                            ["Type"] = new PdfName("XObject"), ["Subtype"] = new PdfName("Form"),
+                            ["BBox"] = new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfReal(width), new PdfReal(height)]),
+                            ["Resources"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["Font"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["Helv"] = font }) }),
+                            ["Length"] = new PdfInteger(body.Length),
+                        }), body));
+                        var we = new Dictionary<string, PdfObject>(wd.Entries)
+                        { ["AP"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["N"] = xo }) };
+                        _objs[wr.Number] = new PdfDictionary(we);
+                    }
+        }
+        foreach (var f in fields.Items) Walk(f, "", null, 0);
+        if (done)
+        {
+            var af = ((PdfDictionary)_objs[_catalog]).Get("AcroForm");
+            var fe = new Dictionary<string, PdfObject>(form.Entries) { ["NeedAppearances"] = new PdfBoolean(true) };
+            if (af is PdfRef ar) _objs[ar.Number] = new PdfDictionary(fe);
+            else _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(((PdfDictionary)_objs[_catalog]).Entries) { ["AcroForm"] = new PdfDictionary(fe) });
+        }
+        return done;
+    }
+
+    static byte[] EncodeText(string s) =>
+        s.All(c => c < 0x80) ? System.Text.Encoding.ASCII.GetBytes(s) : [0xFE, 0xFF, .. System.Text.Encoding.BigEndianUnicode.GetBytes(s)];
+
     readonly Dictionary<int, byte[]> _contentOverrides = [];
 
     /// <summary>Replaces the page's content stream(s) at save time with <paramref name="content"/>; null clears the override.</summary>
