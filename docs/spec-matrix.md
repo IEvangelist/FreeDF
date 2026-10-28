@@ -11,8 +11,8 @@ Full spec parity is the goal; this table is the honest current state.
 | 7.5 | File structure, xref tables/streams, hybrid, `Prev` chain, object streams | Done | |
 | 7.5.6 | Recovery of damaged files | Done | GregsEx (PCRE2, byte mode) scans for `n g obj`; test `RepairsBrokenXref` |
 | 7.4 | Filters: Flate, LZW, ASCIIHex, ASCII85, RunLength, predictors | Done | |
-| 7.4 | DCT (baseline), CCITT, JBIG2, JPX | Partial | DCT baseline only (no progressive); CCITT/JBIG2/JPX **Todo** |
-| 7.6 | Encryption (Standard RC4/AES, public-key) | **Todo** | Encrypted files cannot be read yet |
+| 7.4 | DCT (baseline), CCITT, JBIG2, JPX | Partial | DCT baseline/extended/progressive **Done** (Huffman; arithmetic and lossless unsupported; nearest-neighbour chroma upsampling); CCITT G3 1D/2D + G4 **Done**; JBIG2/JPX **Todo** |
+| 7.6 | Encryption (Standard RC4/AES, public-key) | Partial | Standard handler R2-R6 (RC4 40/128, AESV2, AESV3) **Done**, read-only; public-key handlers and encrypted save **Todo** |
 | 7.7 | Document structure: page tree, inheritance | Done | |
 | 7.8-7.9 | Content streams, resources, functions (types 0,2,3,4) | Done | |
 | 7.10-7.11 | File specs, embedded files, data structures | Todo | |
