@@ -36,6 +36,7 @@ public class RenderBench
         public void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode) { }
         public void DrawImage(ImageData image, Matrix ctm, double alpha, RgbColor maskColor, string blendMode) { }
         public void PaintShader(Func<double, double, RgbColor?> deviceToColor, double alpha, string blendMode) { }
+        public void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop) { }
     }
 
     // Interpreter-only cost (no rasterization).

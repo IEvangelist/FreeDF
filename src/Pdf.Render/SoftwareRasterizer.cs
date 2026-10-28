@@ -28,7 +28,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     readonly int _w, _h;
     float[] _px; // RGB, 3 floats per pixel
     ClipMask _clip;
-    readonly Stack<ClipMask> _stack = new();
+    readonly Stack<(ClipMask, ClipMask?)> _stack = new();
 
     Edge[] _edges = new Edge[512]; int _en;
     double _minX, _minY, _maxX, _maxY; bool _bad;
@@ -87,8 +87,52 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static byte ToByte(float v) { var i = (int)(v * 255f + 0.5f); return (byte)(i < 0 ? 0 : i > 255 ? 255 : i); }
 
-    public void Save() => _stack.Push(_clip);
-    public void Restore() { if (_stack.Count > 0) _clip = _stack.Pop(); }
+    public void Save() => _stack.Push((_clip, _preMask));
+    public void Restore() { if (_stack.Count > 0) (_clip, _preMask) = _stack.Pop(); }
+
+    ClipMask? _preMask; // clip in force before the current soft mask was applied
+
+    void FillBackground(RgbColor c) 
+    {
+        var s = _px.AsSpan(0, _w * _h * 3);
+        for (var i = 0; i < s.Length; i += 3) { s[i] = (float)c.R; s[i + 1] = (float)c.G; s[i + 2] = (float)c.B; }
+    }
+
+    float[] Luminosity()
+    {
+        var m = new float[_w * _h];
+        var p = _px;
+        for (var i = 0; i < m.Length; i++) m[i] = 0.3f * p[i * 3] + 0.59f * p[i * 3 + 1] + 0.11f * p[i * 3 + 2];
+        return m;
+    }
+
+    public void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop)
+    {
+        if (draw is null) { if (_preMask is not null) { _clip = _preMask; _preMask = null; } return; }
+        float[] m;
+        if (luminosity)
+        {
+            using var off = new SoftwareRasterizer(_w, _h);
+            off.FillBackground(backdrop); draw(off); m = off.Luminosity();
+        }
+        else
+        {
+            // Alpha = 1 - (white-backed render - black-backed render).
+            using var ob = new SoftwareRasterizer(_w, _h); ob.FillBackground(new RgbColor(0, 0, 0)); draw(ob);
+            using var ow = new SoftwareRasterizer(_w, _h); ow.FillBackground(new RgbColor(1, 1, 1)); draw(ow);
+            var lb = ob.Luminosity(); m = ow.Luminosity();
+            for (var i = 0; i < m.Length; i++) m[i] = Math.Clamp(1f - (m[i] - lb[i]), 0f, 1f);
+        }
+        var b = _preMask ?? _clip;
+        if (b.Empty) return;
+        int bw = b.X1 - b.X0, bh = b.Y1 - b.Y0;
+        var cov = new float[bw * bh];
+        for (var y = 0; y < bh; y++)
+            for (var x = 0; x < bw; x++)
+                cov[y * bw + x] = b.At(b.X0 + x, b.Y0 + y) * m[(b.Y0 + y) * _w + b.X0 + x];
+        _preMask = b;
+        _clip = new ClipMask { X0 = b.X0, Y0 = b.Y0, X1 = b.X1, Y1 = b.Y1, Cov = cov, Stride = bw, CovX0 = b.X0, CovY0 = b.Y0 };
+    }
 
     // ---------------------------------------------------------------- edge building
 

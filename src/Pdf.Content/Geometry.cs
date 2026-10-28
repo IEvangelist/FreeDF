@@ -126,4 +126,6 @@ public interface IRenderBackend
     void DrawImage(ImageData image, Matrix ctm, double alpha, RgbColor maskColor, string blendMode);
     /// <summary>Fills the current clip with a per-pixel shader (device -> color) used for shadings.</summary>
     void PaintShader(Func<double, double, RgbColor?> deviceToColor, double alpha, string blendMode);
+    /// <summary>Sets (or with null clears) a soft mask. <paramref name="draw"/> renders the mask group onto an offscreen backend of the same size.</summary>
+    void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop);
 }

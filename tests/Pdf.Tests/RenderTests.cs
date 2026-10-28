@@ -76,6 +76,24 @@ public class RenderTests
     }
 
     [Fact]
+    public void SoftMask_Luminosity_And_Alpha()
+    {
+        const string form = "1 g 0 0 100 200 re f";
+        var obj = $"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 200 200] /Length {form.Length} >>\nstream\n{form}\nendstream\nendobj\n";
+        var lum = "/ExtGState << /G1 << /SMask << /Type /Mask /S /Luminosity /G 5 0 R >> >> /G0 << /SMask /None >> >>";
+        var bytes = TestPdf.Build("q /G1 gs 1 0 0 rg 0 0 200 200 re f Q 0 0 1 rg 190 190 10 10 re f", lum, obj, brokenXref: true);
+        var p = PdfRenderer.RenderPage(PdfDocument.Load(bytes).Pages[0], 72);
+        Assert.Equal((255, 0, 0), Px(p, 50, 100));
+        Assert.Equal((255, 255, 255), Px(p, 150, 100));
+        Assert.Equal((0, 0, 255), Px(p, 195, 5)); // mask is gone after Q
+
+        var alpha = lum.Replace("Luminosity", "Alpha");
+        var p2 = PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/G1 gs 1 0 0 rg 0 0 200 200 re f", alpha, obj, brokenXref: true)).Pages[0], 72);
+        Assert.Equal((255, 0, 0), Px(p2, 50, 100));
+        Assert.Equal((255, 255, 255), Px(p2, 150, 100));
+    }
+
+    [Fact]
     public void RotatesPage()
     {
         var bytes = TestPdf.Build("1 0 0 rg 0 0 100 100 re f", mediaBox: "[0 0 200 100]");

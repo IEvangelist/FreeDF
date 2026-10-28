@@ -24,7 +24,7 @@ sealed class GState
 public sealed class ContentInterpreter
 {
     readonly PdfFile _f;
-    readonly IRenderBackend _be;
+    IRenderBackend _be;
     readonly IFontFallback _fallback;
     readonly Dictionary<PdfDictionary, PdfFont> _fonts = new(ReferenceEqualityComparer.Instance);
     readonly Stack<GState> _stack = new();
@@ -88,7 +88,7 @@ public sealed class ContentInterpreter
             case "M": _gs.MiterLimit = N(a, 0); break;
             case "d": if (a.Count >= 2 && a[0] is PdfArray da) { _gs.Dash = da.Items.Select(x => x.AsNumber() ?? 0).ToArray(); _gs.DashPhase = N(a, 1); } break;
             case "ri": case "i": break;
-            case "gs": if (a.Count > 0 && a[0] is PdfName gn && R(res.Get("ExtGState")) is PdfDictionary egd && R(egd.Get(gn.Value)) is PdfDictionary g) ApplyExtGState(g); break;
+            case "gs": if (a.Count > 0 && a[0] is PdfName gn && R(res.Get("ExtGState")) is PdfDictionary egd && R(egd.Get(gn.Value)) is PdfDictionary g) ApplyExtGState(g, res); break;
 
             case "m": _path.MoveTo(N(a, 0), N(a, 1)); break;
             case "l": _path.LineTo(N(a, 0), N(a, 1)); break;
@@ -211,7 +211,7 @@ public sealed class ContentInterpreter
 
     void NextLine() { _tlm = Matrix.Translate(0, -_gs.Leading).Then(_tlm); _tm = _tlm; }
 
-    void ApplyExtGState(PdfDictionary g)
+    void ApplyExtGState(PdfDictionary g, PdfDictionary res)
     {
         foreach (var (k, v0) in g.Entries)
         {
@@ -227,9 +227,36 @@ public sealed class ContentInterpreter
                 case "ca": _gs.FillAlpha = Math.Clamp(v.AsNumber() ?? 1, 0, 1); break;
                 case "BM": _gs.BlendMode = (v is PdfArray ba && ba.Count > 0 ? R(ba[0]).AsName() : v.AsName()) ?? "Normal"; if (_gs.BlendMode == "Compatible") _gs.BlendMode = "Normal"; break;
                 case "Font": if (v is PdfArray { Count: 2 } fa && R(fa[0]) is PdfDictionary fd) { _gs.Font = GetFont(fd); _gs.FontSize = R(fa[1]).AsNumber() ?? 0; } break;
-                case "SMask": if (v is PdfDictionary) Warn("soft masks (SMask) not rendered"); break;
+                case "SMask": ApplySoftMask(v, res); break;
             }
         }
+    }
+
+    void ApplySoftMask(PdfObject? v, PdfDictionary res)
+    {
+        if (v is not PdfDictionary sm) { _be.SetSoftMask(null, false, default); return; }
+        if (R(sm.Get("G")) is not PdfStream g) return;
+        var lum = R(sm.Get("S")).AsName() == "Luminosity";
+        var bc = RgbColor.Black;
+        if (lum && R(sm.Get("BC")) is PdfArray ba)
+        {
+            var c = ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
+            bc = c.Length switch
+            {
+                1 => new RgbColor(c[0], c[0], c[0]),
+                3 => new RgbColor(c[0], c[1], c[2]),
+                4 => new RgbColor((1 - c[0]) * (1 - c[3]), (1 - c[1]) * (1 - c[3]), (1 - c[2]) * (1 - c[3])),
+                _ => bc
+            };
+        }
+        var ctm = _gs.Ctm;
+        _be.SetSoftMask(off =>
+        {
+            var sb = _be; var saved = _gs;
+            _be = off; _gs = new GState { Ctm = ctm };
+            try { DoForm(g, res); }
+            finally { _be = sb; _gs = saved; }
+        }, lum, bc);
     }
 
     PdfFont? LoadFont(PdfDictionary res, string name) => R(res.Get("Font")) is PdfDictionary fd && R(fd.Get(name)) is PdfDictionary d ? GetFont(d) : null;
