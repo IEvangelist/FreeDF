@@ -21,6 +21,8 @@ public sealed class PdfPage
 
     PdfObject? Attr(string key) => Document.File.Resolve(Dict.Get(key) ?? _inherited.GetValueOrDefault(key));
 
+    internal IReadOnlyDictionary<string, PdfObject> Inherited => _inherited;
+
     PdfRect Rect(string key)
     {
         if (Attr(key) is PdfArray a && a.Count >= 4)

@@ -39,7 +39,8 @@ Full spec parity is the goal; this table is the honest current state.
 
 | Feature | Status |
 |---|---|
-| Mutable object model, full/incremental save, merge/split, forms, redaction, signing | **Todo** |
+| Page delete/reorder/rotate, merge/split by page import, Info edit, full save (`PdfEditor`, `PdfWriter`; unreachable objects dropped, encryption removed) | **Done** |
+| Incremental save, content editing, form filling, redaction, signing, object/xref streams on save, encrypted save | **Todo** |
 
 ## Render comparison
 
