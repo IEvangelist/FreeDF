@@ -66,6 +66,33 @@ public class RenderTests
     }
 
     [Fact]
+    public void ShadingHonoursRectClip()
+    {
+        var res = "/Shading << /S1 << /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 200 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> >> >>";
+        var p = Render("q\nn 0 100 200 100 re W* n\n/S1 sh\nQ", res);
+        Assert.NotEqual((255, 255, 255), Px(p, 100, 50));
+        Assert.Equal((255, 255, 255), Px(p, 100, 150));
+    }
+
+    [Fact]
+    public void ShowcaseGradientIsClippedToHeader()
+    {
+        var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "showcase.pdf")));
+        var p = PdfRenderer.RenderPage(doc.Pages[0], 72);
+        Assert.Equal((255, 255, 255), Px(p, 20, 400));
+    }
+
+    [Fact]
+    public void RotatedPageKeepsClip()
+    {
+        var ed = PdfEditor.Open(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "showcase.pdf")));
+        ed.SetRotation(0, 90);
+        var p = PdfRenderer.RenderPage(PdfDocument.Load(ed.Save()).Pages[0], 72);
+        Assert.Equal((p.Width, p.Height), (792, 612));
+        Assert.Equal((255, 255, 255), Px(p, 400, 300));
+    }
+
+    [Fact]
     public void ProducesDecodablePng()
     {
         var p = Render("1 0 0 rg 0 0 200 200 re f");

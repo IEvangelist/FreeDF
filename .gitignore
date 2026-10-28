@@ -5,3 +5,4 @@ obj/
 .vs/
 BenchmarkDotNet.Artifacts/
 demo-out/
+demo-out*/
