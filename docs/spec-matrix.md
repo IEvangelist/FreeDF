@@ -16,8 +16,8 @@ Full spec parity is the goal; this table is the honest current state.
 | 7.7 | Document structure: page tree, inheritance | Done | |
 | 7.8-7.9 | Content streams, resources, functions (types 0,2,3,4) | Done | |
 | 7.10-7.11 | File specs, embedded files, data structures | Todo | |
-| 12 | Annotations, forms, outlines, actions | Todo | |
-| 14 | Metadata, tagged PDF, logical structure | Todo | `Info` string only |
+| 12 | Annotations, forms, outlines, actions | Partial | Read-only: outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, embedded files (`DocumentFeatures`). Not yet: annotation appearance rendering, form editing, other action types |
+| 14 | Metadata, tagged PDF, logical structure | Partial | Info, XMP packet, tagged flag, language. Structure tree walking not yet |
 | 14.8/PDF/A,UA | Validation | Todo | |
 
 ## Renderer (`Pdf.Content`, `Pdf.Render`)
