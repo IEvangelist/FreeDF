@@ -350,6 +350,8 @@ public class EditorTests
         var kee = DocumentRenderer.ExtractText(PdfDocument.Load(bytes).Pages[0]).First(s => s.Text == "KEEPME");
         var gw = kee.Width / 6;
         Redactor.Apply(e, 0, [new Redactor.BoxRect(0, 25, 200, 50), new Redactor.BoxRect(kee.X - 1, kee.Y - kee.Size, gw * 3 + 1, kee.Size * 1.3)]);
+        Assert.False(e.CanSaveIncremental);
+        Assert.Throws<InvalidOperationException>(() => e.SaveIncremental());
         var saved = e.Save();
         var raw = System.Text.Encoding.Latin1.GetString(saved);
         Assert.DoesNotContain("SECRETFORM", raw);

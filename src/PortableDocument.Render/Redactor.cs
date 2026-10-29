@@ -45,6 +45,7 @@ public static class Redactor
         var back = map.ToDictionary(kv => kv.Value, kv => kv.Key);
         var page = doc.Pages[pageIndex];
         var plan = Build(page, rects, editorMode: true);
+        editor.RequireFullRewrite();
 
         var formNames = new Dictionary<int, Dictionary<string, PdfObject>>();
         foreach (var im in plan.Images)

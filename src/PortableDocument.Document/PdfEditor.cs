@@ -509,9 +509,13 @@ public sealed partial class PdfEditor
     }
 
     PdfFile? _src;
+    bool _requiresFullRewrite;
 
     /// <summary>True when the editor was opened from an intact, unencrypted file, so <see cref="SaveIncremental"/> can append an update.</summary>
-    public bool CanSaveIncremental => _src is { IsEncrypted: false, Repaired: false };
+    public bool CanSaveIncremental => !_requiresFullRewrite && _src is { IsEncrypted: false, Repaired: false };
+
+    /// <summary>Disables incremental saving when an edit must not retain the original file bytes.</summary>
+    public void RequireFullRewrite() => _requiresFullRewrite = true;
 
     Dictionary<int, PdfObject> BuildObjects(bool applyOverlays, bool applyContentEdits, out int next)
     {
@@ -573,7 +577,7 @@ public sealed partial class PdfEditor
     /// <summary>Appends changed and new objects to the original bytes (7.5.6), leaving the original content intact.</summary>
     public byte[] SaveIncremental(bool applyOverlays = true, bool applyContentEdits = true)
     {
-        if (!CanSaveIncremental) throw new InvalidOperationException("Incremental save needs an intact, unencrypted source file.");
+        if (!CanSaveIncremental) throw new InvalidOperationException("Incremental save is unavailable for this document state.");
         var objs = BuildObjects(applyOverlays, applyContentEdits, out var next);
         return AppendUpdate(objs, next);
     }
