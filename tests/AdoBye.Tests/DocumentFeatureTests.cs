@@ -44,11 +44,25 @@ public class DocumentFeatureTests
     [Fact]
     public void Xmp_and_attachments()
     {
-        var d = Load();
+        var path = Path.Combine(AppContext.BaseDirectory, "fixtures", "features", "features.pdf");
+        var source = File.ReadAllBytes(path);
+        var d = PdfDocument.Load(source);
         Assert.Contains("xmpmeta", d.GetXmpMetadata());
         var e = Assert.Single(d.GetEmbeddedFiles());
         Assert.Equal("hello.txt", e.Name);
         Assert.Equal("hello attachment", System.Text.Encoding.ASCII.GetString(e.Data));
+
+        var fullSave = PdfDocument.Load(PdfEditor.Open(d).Save());
+        var fullSaveAttachment = Assert.Single(fullSave.GetEmbeddedFiles());
+        Assert.Equal(e.Name, fullSaveAttachment.Name);
+        Assert.Equal(e.Data, fullSaveAttachment.Data);
+
+        var incrementalEditor = PdfEditor.Open(PdfDocument.Load(source));
+        incrementalEditor.SetInfo("Title", "Attachment preservation");
+        var incrementalSave = PdfDocument.Load(incrementalEditor.SaveIncremental());
+        var incrementalAttachment = Assert.Single(incrementalSave.GetEmbeddedFiles());
+        Assert.Equal(e.Name, incrementalAttachment.Name);
+        Assert.Equal(e.Data, incrementalAttachment.Data);
     }
 
     static byte[] FileSpecificationPdf()
