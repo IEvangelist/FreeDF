@@ -952,7 +952,32 @@ public sealed class ContentInterpreter
         var cs = PdfColorSpace.Parse(_f, d.Get("ColorSpace"), res);
         PdfFunction[]? fns = null;
         var fo = R(d.Get("Function"));
-        if (fo is PdfArray fa) fns = fa.Items.Select(x => PdfFunction.Parse(_f, x)).Where(x => x is not null).Select(x => x!).ToArray();
+        if (type is >= 4 and <= 7 && fo is not null)
+        {
+            var functions = fo is PdfArray array ? array.Items.ToArray() : [fo];
+            if (fo is PdfArray && functions.Length != cs.Components)
+            {
+                Warn("mesh shading Function array must contain one function per colour component");
+                return;
+            }
+            fns = new PdfFunction[functions.Length];
+            for (var i = 0; i < functions.Length; i++)
+            {
+                var fn = PdfFunction.Parse(_f, functions[i]);
+                if (fn is null)
+                {
+                    Warn($"mesh shading Function {i}: unsupported or invalid function");
+                    return;
+                }
+                if (fn.Domain.Length != 2 || fn.Outputs != (fo is PdfArray ? 1 : cs.Components))
+                {
+                    Warn($"mesh shading Function {i}: expected one input and {(fo is PdfArray ? 1 : cs.Components)} output component(s)");
+                    return;
+                }
+                fns[i] = fn;
+            }
+        }
+        else if (fo is PdfArray fa) fns = fa.Items.Select(x => PdfFunction.Parse(_f, x)).Where(x => x is not null).Select(x => x!).ToArray();
         else if (fo is not null && PdfFunction.Parse(_f, fo) is { } one) fns = [one];
 
         RgbColor EvalT(double t)

@@ -176,7 +176,8 @@ static class MeshShading
         b[0] = s * s * s; b[1] = 3 * t * s * s; b[2] = 3 * t * t * s; b[3] = t * t * t;
     }
 
-    /// <summary>Rasterizes the mesh into a device-space colour buffer; <paramref name="toRgb"/> maps interpolated components to RGB.</summary>
+    /// <summary>Rasterizes the mesh into a device-space colour buffer; <paramref name="toRgb"/> evaluates any shading function
+    /// and converts to RGB after interpolating the inputs at each pixel (ISO 32000-2, 8.7.4.5).</summary>
     public static Func<double, double, RgbColor?> ToShader(Mesh mesh, Func<double[], RgbColor> toRgb)
     {
         if (mesh.Triangles.Count == 0) return static (_, _) => null;
