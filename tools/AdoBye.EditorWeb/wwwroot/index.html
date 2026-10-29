@@ -221,7 +221,7 @@ function paint() {
     for (const o of objs) {
       if (o.edit?.delete) continue;
       const [x0, y0, x1, y1] = oBox(o);
-      const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}`;
+      const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}${o.inForm ? ' inside its graphic group' : ''}`;
       e.style.left = x0 * S + 'px'; e.style.top = y0 * S + 'px'; e.style.width = Math.max(x1 - x0, 1) * S + 'px'; e.style.height = Math.max(y1 - y0, 1) * S + 'px';
       e.onpointerdown = ev => { if (tool === 'select') startObjMove(ev, o); };
       if (o === curObj) for (const [k, x, y, c] of [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']])
@@ -483,7 +483,8 @@ function objProps() {
   const o = curObj, p = $('props'), b = oBox(o), kinds = { path: 'Shape', image: 'Image', form: 'Graphic group' };
   const num = (k, label, v) => `<label class="fld"><span>${label}</span><input type="number" step="1" data-o="${k}"   value="${+v.toFixed(2)}"${locked ? ' disabled title="Locked"' : ''}></label>`;
   const colour = (k, label, v) => `<label class="fld"><span>${label}</span><div class="swatch"><input type="color" data-oc="${k}" value="${o.edit?.[k] || v}"><code>${(o.edit?.[k] || v).toUpperCase()}</code></div></label>`;
-  p.innerHTML = `<section class="head"><span class="chip">${ic(o.kind === 'image' ? 'image' : o.kind === 'form' ? 'file' : 'square')}</span><h2>${kinds[o.kind] ?? o.kind} <em>from page</em></h2></section>
+  p.innerHTML = `<section class="head"><span class="chip">${ic(o.kind === 'image' ? 'image' : o.kind === 'form' ? 'file' : 'square')}</span><h2>${kinds[o.kind] ?? o.kind} <em>${o.inForm ? 'inside form' : 'from page'}</em></h2></section>
+    ${o.formContentsShared ? '<section><p class="hint">This form is shared or invoked more than once, so individual painted objects are not editable here; transform the group instead.</p></section>' : ''}
     <section><h3>Position</h3><div class="row">${num('x', 'X', b[0])}${num('y', 'Y', b[1])}</div><div class="row">${num('w', 'Width', b[2] - b[0])}${num('h', 'Height', b[3] - b[1])}</div></section>
     ${o.kind === 'path' && (o.hasFill || o.hasStroke) ? `<section><h3>Appearance</h3>${o.hasFill ? colour('fill', 'Fill', o.fill) : ''}${o.hasStroke ? colour('stroke', 'Stroke', o.stroke) : ''}</section>` : ''}
     <section class="acts2"><button data-oact="reset" title="Restore the original">${ic('rotl')}Reset</button><button class="danger" data-oact="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;

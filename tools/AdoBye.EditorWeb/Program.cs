@@ -3,6 +3,7 @@ using PortableDocument.Content;
 using PortableDocument.Core;
 using PortableDocument.Document;
 using PortableDocument.Render;
+using AdoBye.EditorWeb;
 
 // Usage: AdoBye.EditorWeb [input.pdf] [--port 5080]
 var port = args.SkipWhile(a => a != "--port").Skip(1).FirstOrDefault() ?? "5080";
@@ -22,6 +23,8 @@ PdfDocument? snapshot = null, baseSnapshot = null; byte[]? snapshotBytes = null;
 string fileName = "document.pdf";
 var items = new Dictionary<int, List<Item>>();
 var assets = new Dictionary<string, Asset>();
+var formObjEdits = new Dictionary<(int Form, int Start, int End), ObjEdit>();
+HashSet<int>? sharedFormReferences = null;
 var catalog = FontCatalog.Scan();
 var overlayBuilder = new OverlayBuilder(editor, assets, catalog);
 var jsonOpts = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
@@ -34,7 +37,7 @@ string? savePath = null; int savedVersion = 0;
 void MarkSaved() => savedVersion = version;
 void Reset(PdfEditor e)
 {
-    editor = e; items.Clear(); texts.Clear(); objEdits.Clear(); overlayBuilder = new OverlayBuilder(editor, assets, catalog); Changed(); savePath = null; MarkSaved();
+    editor = e; items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); overlayBuilder = new OverlayBuilder(editor, assets, catalog); Changed(); savePath = null; MarkSaved();
 }
 if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); savePath = Path.GetFullPath(initial); MarkSaved(); }
 
@@ -74,14 +77,49 @@ IEnumerable<ContentInterpreter.TextSpan> EditableSpans(List<ContentInterpreter.T
     return t;
 }
 
+HashSet<FormObjectRange> AmbiguousFormObjects(int i) =>
+    FormObjectEditPolicy.FindAmbiguous(PageText(i).Objects, SharedFormReferences());
+
+HashSet<int> SharedFormReferences() => sharedFormReferences ??= FormObjectEditPolicy.FindSharedForms(Pristine());
+
 static double[]? Rgb(string? hex) => hex is { Length: 7 } && hex[0] == '#'
     ? [Convert.ToInt32(hex[1..3], 16) / 255.0, Convert.ToInt32(hex[3..5], 16) / 255.0, Convert.ToInt32(hex[5..7], 16) / 255.0] : null;
+
+static double[]? ObjectMatrix(ContentInterpreter.PageObject o, ObjEdit e)
+{
+    if (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0) return null;
+    var c = o.Ctm;
+    var m = c.Then(new Matrix(e.Sx, 0, 0, e.Sy, e.Tx, e.Ty)).Then(c.Invert());
+    return [m.A, m.B, m.C, m.D, m.E, m.F];
+}
 
 // Pushes the current items to the editor: overlays for new objects, content rewrites to remove text that was converted into editable objects.
 void Prepare()
 {
     if (prepared) return;
     editor.ClearStreamOverrides(); editor.ClearPageXObjects();
+    var formStreamContents = new Dictionary<int, byte[]>();
+    if (formObjEdits.Count > 0)
+    {
+        var doc = Pristine();
+        var pageObjects = Enumerable.Range(0, editor.PageCount).SelectMany(i => PageText(i).Objects).ToList();
+        foreach (var group in formObjEdits.GroupBy(kv => kv.Key.Form))
+        {
+            var pair = pristineBack.FirstOrDefault(kv => kv.Value == group.Key);
+            if (pair.Key == 0 || doc.File.GetObject(pair.Key) is not PdfStream stream)
+                throw new InvalidOperationException("The edited Form XObject is no longer available.");
+            var edits = group.Select(kv =>
+            {
+                var obj = pageObjects.SingleOrDefault(o => o.Form == pair.Key && o.Start == kv.Key.Start && o.End == kv.Key.End)
+                    ?? throw new InvalidOperationException("The edited Form XObject object is no longer available.");
+                var e = kv.Value;
+                return new ContentRewriter.ObjectEdit(obj.Start, obj.End, e.Delete, ObjectMatrix(obj, e), Rgb(e.Fill), Rgb(e.Stroke));
+            });
+            var content = ContentRewriter.EditObjects(doc.File.DecodeStream(stream), edits);
+            formStreamContents[group.Key] = content;
+            editor.SetStreamOverride(group.Key, content);
+        }
+    }
     for (var i = 0; i < editor.PageCount; i++)
     {
         items.TryGetValue(editor.PageId(i), out var allItems);
@@ -96,21 +134,17 @@ void Prepare()
                 content = ContentRewriter.EditObjects(content, oe.Select(kv =>
                 {
                     var o = objects[kv.Key]; var e = kv.Value;
-                    double[]? m = null;
-                    if (e.Sx != 1 || e.Sy != 1 || e.Tx != 0 || e.Ty != 0)
-                    {
-                        var c = o.Ctm; var mm = c.Then(new Matrix(e.Sx, 0, 0, e.Sy, e.Tx, e.Ty)).Then(c.Invert());
-                        m = [mm.A, mm.B, mm.C, mm.D, mm.E, mm.F];
-                    }
-                    return new ContentRewriter.ObjectEdit(o.Start, o.End, e.Delete, m, Rgb(e.Fill), Rgb(e.Stroke));
+                    return new ContentRewriter.ObjectEdit(o.Start, o.End, e.Delete, ObjectMatrix(o, e), Rgb(e.Fill), Rgb(e.Stroke));
                 }));
             var removals = spans.Where(s => s.Form == 0 && origs.Contains(s.Index)).ToDictionary(s => s.Index, s => s.Advance);
             editor.SetContentOverride(i, ContentRewriter.RemoveText(content, removals));
             foreach (var g in EditableSpans(spans).Where(s => s.Form != 0 && origs.Contains(SpanKey(s))).GroupBy(s => s.Form))
             {
                 if (Pristine().File.GetObject(g.Key) is not PdfStream fs || !pristineBack.TryGetValue(g.Key, out var formNum)) continue;
-                var fcontent = Pristine().File.DecodeStream(fs);
-                editor.SetStreamOverride(formNum, ContentRewriter.RemoveText(fcontent, g.ToDictionary(s => s.Index, s => s.Advance)));
+                var fcontent = formStreamContents.TryGetValue(formNum, out var edited) ? edited : Pristine().File.DecodeStream(fs);
+                fcontent = ContentRewriter.RemoveText(fcontent, g.ToDictionary(s => s.Index, s => s.Advance));
+                formStreamContents[formNum] = fcontent;
+                editor.SetStreamOverride(formNum, fcontent);
             }
         }
         else editor.SetContentOverride(i, null);
@@ -144,7 +178,7 @@ PdfDocument Snap()
     return snapshot;
 }
 PdfDocument BaseSnap() { Prepare(); return baseSnapshot ??= PdfDocument.Load(editor.Save(false)); }
-void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); prepared = false; }
+void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); sharedFormReferences = null; prepared = false; }
 
 app.MapGet("/api/page/{i:int}/text", (int i) =>
 {
@@ -167,12 +201,22 @@ app.MapGet("/api/page/{i:int}/objects", (int i) =>
     {
         var id = editor.PageId(i);
         objEdits.TryGetValue(id, out var oe);
-        var list = PageText(i).Objects.Where(o => o.Form == 0).Select(o => new
+        var ambiguous = AmbiguousFormObjects(i);
+        var pageObjects = PageText(i).Objects;
+        var list = pageObjects.Where(o => FormObjectEditPolicy.IsEditable(o, ambiguous) && (o.Form == 0 || pristineBack.ContainsKey(o.Form))).Select(o =>
         {
-            index = o.Index, kind = o.Kind, x0 = o.X0, y0 = o.Y0, x1 = o.X1, y1 = o.Y1,
-            hasFill = o.HasFill, hasStroke = o.HasStroke, lineWidth = o.LineWidth,
-            fill = o.HasFill ? Hex(o.Fill) : null, stroke = o.HasStroke ? Hex(o.Stroke) : null,
-            edit = oe is not null && oe.TryGetValue(o.Index, out var e) ? e : null,
+            ObjEdit? edit = null;
+            if (o.Form == 0) oe?.TryGetValue(o.Index, out edit);
+            else if (pristineBack.TryGetValue(o.Form, out var formNum)) formObjEdits.TryGetValue((formNum, o.Start, o.End), out edit);
+            var formContentsShared = o.Kind == "form" &&
+                (SharedFormReferences().Contains(o.Ref) || ambiguous.Any(range => range.Form == o.Ref));
+            return new
+            {
+                index = o.Index, kind = o.Kind, inForm = o.Form != 0, x0 = o.X0, y0 = o.Y0, x1 = o.X1, y1 = o.Y1,
+                hasFill = o.HasFill, hasStroke = o.HasStroke, lineWidth = o.LineWidth,
+                fill = o.HasFill ? Hex(o.Fill) : null, stroke = o.HasStroke ? Hex(o.Stroke) : null,
+                formContentsShared, edit,
+            };
         });
         return Results.Json(list, jsonOpts);
     }
@@ -184,9 +228,21 @@ app.MapPut("/api/page/{i:int}/objects/{n:int}", async (int i, int n, HttpRequest
     lock (gate)
     {
         var id = editor.PageId(i);
-        if (n < 0 || n >= PageText(i).Objects.Count || PageText(i).Objects[n].Form != 0) return Results.NotFound();
-        if (!objEdits.TryGetValue(id, out var d)) objEdits[id] = d = [];
-        if (e is null || (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null)) d.Remove(n); else d[n] = e;
+        var objects = PageText(i).Objects;
+        if (n < 0 || n >= objects.Count) return Results.NotFound();
+        var o = objects[n];
+        if (o.Form != 0)
+        {
+            if (!FormObjectEditPolicy.IsEditable(o, AmbiguousFormObjects(i)) || !pristineBack.TryGetValue(o.Form, out var formNum)) return Results.NotFound();
+            var key = (formNum, o.Start, o.End);
+            if (e is null || (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null)) formObjEdits.Remove(key);
+            else formObjEdits[key] = e;
+        }
+        else
+        {
+            if (!objEdits.TryGetValue(id, out var d)) objEdits[id] = d = [];
+            if (e is null || (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null)) d.Remove(n); else d[n] = e;
+        }
         Changed();
         return Results.Ok();
     }
