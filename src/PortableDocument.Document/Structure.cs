@@ -101,6 +101,7 @@ public sealed class StructureTree
     readonly Dictionary<PdfDictionary, StructElement> _byDict = new(ReferenceEqualityComparer.Instance);
     readonly Dictionary<PdfDictionary, int> _pageIndex = new(ReferenceEqualityComparer.Instance);
     Dictionary<(int Page, int Mcid), StructMarkedContent>? _mcidMap;
+    readonly Dictionary<PdfStream, Dictionary<int, StructMarkedContent>> _streamMcidMap = new(ReferenceEqualityComparer.Instance);
     int _nodes;
 
     public PdfDictionary Root { get; }
@@ -181,19 +182,21 @@ public sealed class StructureTree
         StructNode? node = null;
         switch (o)
         {
-            case PdfInteger or PdfReal when parent is not null:
-                node = new StructMarkedContent { Mcid = (int)(o.AsNumber() ?? 0), PageIndex = inheritedPage };
+            case PdfInteger { Value: >= 0 and <= int.MaxValue } id when parent is not null:
+                node = new StructMarkedContent { Mcid = (int)id.Value, PageIndex = inheritedPage };
                 break;
             case PdfDictionary d:
                 var type = F.Resolve(d.Get("Type")).AsName();
                 if (type == "MCR")
                 {
-                    if (parent is null) return;
+                    if (parent is null || NonNegativeInteger(d.Get("MCID")) is not { } mcid) return;
+                    var stream = F.Resolve(d.Get("Stm")) as PdfStream;
+                    if (d.Get("Stm") is not null && stream is null) return;
                     node = new StructMarkedContent
                     {
-                        Mcid = (int)(F.Resolve(d.Get("MCID")).AsNumber() ?? 0),
+                        Mcid = mcid,
                         PageIndex = PageOf(d.Get("Pg")) ?? inheritedPage,
-                        Stream = F.Resolve(d.Get("Stm")) as PdfStream,
+                        Stream = stream,
                     };
                 }
                 else if (type == "OBJR")
@@ -254,42 +257,63 @@ public sealed class StructureTree
     /// <summary>The marked-content reference for (page, MCID) found by walking the tree (not the ParentTree).</summary>
     public StructMarkedContent? FindMarkedContent(int pageIndex, int mcid)
     {
+        BuildMcidMaps();
+        return _mcidMap!.GetValueOrDefault((pageIndex, mcid));
+    }
+
+    /// <summary>The marked-content reference for an MCID in a particular form stream, independent of its page placements.</summary>
+    public StructMarkedContent? FindMarkedContent(PdfStream stream, int mcid)
+    {
+        BuildMcidMaps();
+        return _streamMcidMap.TryGetValue(stream, out var map) ? map.GetValueOrDefault(mcid) : null;
+    }
+
+    void BuildMcidMaps()
+    {
         if (_mcidMap is null)
         {
             var m = new Dictionary<(int, int), StructMarkedContent>();
             foreach (var e in Elements())
                 foreach (var mc in e.MarkedContent)
-                    if (mc.PageIndex is { } p && mc.Stream is null) m.TryAdd((p, mc.Mcid), mc);
+                    if (mc.Stream is { } stream)
+                    {
+                        if (!_streamMcidMap.TryGetValue(stream, out var map)) _streamMcidMap[stream] = map = [];
+                        map.TryAdd(mc.Mcid, mc);
+                    }
+                    else if (mc.PageIndex is { } p) m.TryAdd((p, mc.Mcid), mc);
             _mcidMap = m;
         }
-        return _mcidMap.GetValueOrDefault((pageIndex, mcid));
     }
 
     /// <summary>Looks an integer key up in the ParentTree number tree.</summary>
     public PdfObject? ParentTreeLookup(int key)
     {
-        var node = F.Resolve(Root.Get("ParentTree")) as PdfDictionary;
-        for (var depth = 0; node is not null && depth < 32; depth++)
+        if (key < 0 || F.Resolve(Root.Get("ParentTree")) is not PdfDictionary root) return null;
+        var pending = new Stack<(PdfDictionary Node, int Depth)>();
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        pending.Push((root, 0));
+        var visited = 0;
+        while (pending.TryPop(out var entry) && visited++ < MaxNodes)
         {
+            var (node, depth) = entry;
+            if (depth >= 32 || !seen.Add(node)) continue;
             if (F.Resolve(node.Get("Nums")) is PdfArray nums)
             {
                 for (var i = 0; i + 1 < nums.Count; i += 2)
-                    if (F.Resolve(nums[i]).AsNumber() is { } n && (int)n == key) return F.Resolve(nums[i + 1]);
-                return null;
+                    if (NonNegativeInteger(nums[i]) == key) return F.Resolve(nums[i + 1]);
+                continue;
             }
-            if (F.Resolve(node.Get("Kids")) is not PdfArray kids) return null;
-            PdfDictionary? next = null;
-            foreach (var kid in kids.Items)
+            if (F.Resolve(node.Get("Kids")) is not PdfArray kids) continue;
+            for (var i = kids.Count - 1; i >= 0; i--)
             {
-                if (F.Resolve(kid) is not PdfDictionary kd) continue;
+                if (F.Resolve(kids[i]) is not PdfDictionary kd) continue;
                 if (F.Resolve(kd.Get("Limits")) is PdfArray { Count: >= 2 } lim
                     && F.Resolve(lim[0]).AsNumber() is { } lo && F.Resolve(lim[1]).AsNumber() is { } hi)
                 {
                     if (key < lo || key > hi) continue;
                 }
-                next = kd; break;
+                if (pending.Count < MaxNodes) pending.Push((kd, depth + 1));
             }
-            node = next;
         }
         return null;
     }
@@ -298,8 +322,19 @@ public sealed class StructureTree
     public StructElement? ElementFromParentTree(int pageIndex, int mcid)
     {
         if (pageIndex < 0 || pageIndex >= _doc.Pages.Count || mcid < 0) return null;
-        if (F.Resolve(_doc.Pages[pageIndex].Dict.Get("StructParents")).AsNumber() is not { } key) return null;
-        if (ParentTreeLookup((int)key) is PdfArray a && mcid < a.Count && F.Resolve(a[mcid]) is PdfDictionary d) return ElementFor(d);
+        return ElementFromParentTree(_doc.Pages[pageIndex].Dict, mcid);
+    }
+
+    /// <summary>The owning element via a form stream's /StructParents key and its stream-local MCID.</summary>
+    public StructElement? ElementFromParentTree(PdfStream stream, int mcid) => ElementFromParentTree(stream.Dict, mcid);
+
+    StructElement? ElementFromParentTree(PdfDictionary owner, int mcid)
+    {
+        if (mcid < 0 || NonNegativeInteger(owner.Get("StructParents")) is not { } key) return null;
+        if (ParentTreeLookup(key) is PdfArray a && mcid < a.Count && F.Resolve(a[mcid]) is PdfDictionary d) return ElementFor(d);
         return null;
     }
+
+    int? NonNegativeInteger(PdfObject? value) =>
+        F.Resolve(value) is PdfInteger { Value: >= 0 and <= int.MaxValue } n ? (int)n.Value : null;
 }
