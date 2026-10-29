@@ -181,12 +181,25 @@ public class DocumentFeatureTests
         var xfa = Assert.IsType<PdfArray>(doc.GetXfaData());
         Assert.Equal("template", Assert.IsType<PdfString>(xfa[0]).Text);
         Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(doc.File.Resolve(xfa[1])).RawData));
+        var xfaPackets = doc.GetXfaPackets();
+        Assert.Equal(2, xfaPackets.Count);
+        Assert.Equal("template", xfaPackets[0].Name);
+        Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(doc.File.DecodeStream(xfaPackets[0].Stream)));
+        Assert.Equal("datasets", xfaPackets[1].Name);
+
+        var singleStreamPdf = System.Text.Encoding.ASCII.GetString(ActiveContentPdf())
+            .Replace("/XFA [(template) 8 0 R (datasets) 9 0 R]", "/XFA 8 0 R", StringComparison.Ordinal);
+        var singleDoc = PdfDocument.Load(System.Text.Encoding.ASCII.GetBytes(singleStreamPdf));
+        var singlePacket = Assert.Single(singleDoc.GetXfaPackets());
+        Assert.Null(singlePacket.Name);
+        Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(singleDoc.File.DecodeStream(singlePacket.Stream)));
 
         var richMedia = Assert.Single(doc.Pages[0].GetAnnotations(), annotation => annotation.Subtype == "RichMedia");
         Assert.NotNull(richMedia.Dict.Get("RichMediaContent"));
         var roundTrip = PdfDocument.Load(PdfEditor.Open(doc).Save());
         Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
             roundTrip.File.Resolve(Assert.IsType<PdfArray>(roundTrip.GetXfaData())[1])).RawData));
+        Assert.Equal(new[] { "template", "datasets" }, roundTrip.GetXfaPackets().Select(packet => packet.Name));
         Assert.Contains(roundTrip.GetActions(), action => action.JavaScript is PdfString { Text: "open-action-code" });
         Assert.NotNull(Assert.Single(roundTrip.Pages[0].GetAnnotations(), annotation => annotation.Subtype == "RichMedia").Dict.Get("RichMediaContent"));
     }

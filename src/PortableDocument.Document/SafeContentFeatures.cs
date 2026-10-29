@@ -24,6 +24,8 @@ public sealed record PdfAction(
     int? AnnotationIndex = null,
     string? FieldName = null);
 
+public sealed record PdfXfaPacket(string? Name, PdfStream Stream);
+
 public static class SafeContentFeatures
 {
     const int MaxDepth = 64;
@@ -97,6 +99,21 @@ public static class SafeContentFeatures
         return f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary form
             ? f.Resolve(form.Get("XFA"))
             : null;
+    }
+
+    /// <summary>Returns XFA packet names and streams without interpreting or executing packet contents.</summary>
+    public static IReadOnlyList<PdfXfaPacket> GetXfaPackets(this PdfDocument doc)
+    {
+        var f = doc.File;
+        var xfa = doc.GetXfaData();
+        if (f.Resolve(xfa) is PdfStream stream) return [new PdfXfaPacket(null, stream)];
+        if (f.Resolve(xfa) is not PdfArray packets) return [];
+
+        var result = new List<PdfXfaPacket>();
+        for (var i = 0; i + 1 < packets.Count; i += 2)
+            if (f.Resolve(packets[i]) is PdfString name && f.Resolve(packets[i + 1]) is PdfStream packet)
+                result.Add(new PdfXfaPacket(name.Text, packet));
+        return result;
     }
 
     static void CollectFieldActions(
