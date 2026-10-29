@@ -39,7 +39,7 @@ foreach (var file in files)
     File.WriteAllBytes(Path.Combine(outDir, name + ".ours.png"), ours.ToPng());
     if (browser is null) { results.Add(new { file = name, warnings = ours.Warnings }); continue; }
 
-    var page = await browser.NewPageAsync(new() { ViewportSize = new() { Width = 1400, Height = 1800 } });
+    var page = await browser.NewPageAsync(new() { ViewportSize = new() { Width = Math.Max(1400, ours.Width * 2 + 80), Height = Math.Max(1800, ours.Height * 2 + 80) } });
     await page.GotoAsync(new Uri(Path.GetFullPath(file)).AbsoluteUri + "#toolbar=0&navpanes=0&scrollbar=0&zoom=" + (int)(dpi / 96 * 100 * 2));
     await page.WaitForTimeoutAsync(2500);
     var shot = await page.ScreenshotAsync();
@@ -77,6 +77,17 @@ static class ImageDiff
                 minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
             }
         if (maxX < 0) return null;
+        // multi-page documents: stop at the first row that is entirely viewer background (the gap before page 2)
+        for (var y = minY + 1; y <= maxY; y++)
+        {
+            var gap = true;
+            for (var x = minX; x <= maxX && gap; x++)
+            {
+                var o = (y * w + x) * 4;
+                if (Math.Abs(px[o] - bgR) + Math.Abs(px[o + 1] - bgG) + Math.Abs(px[o + 2] - bgB) >= 24) gap = false;
+            }
+            if (gap) { maxY = y - 1; break; }
+        }
         minX += 1; minY += 1; maxX -= 1; maxY -= 1;
         var cw = maxX - minX + 1; var ch = maxY - minY + 1;
         if (cw < 8 || ch < 8) return null;

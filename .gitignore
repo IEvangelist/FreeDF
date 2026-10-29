@@ -6,3 +6,6 @@ obj/
 BenchmarkDotNet.Artifacts/
 demo-out/
 demo-out*/
+samples/_gen/out/
+samples/_gen/cmp/
+samples/_gen/__pycache__/
