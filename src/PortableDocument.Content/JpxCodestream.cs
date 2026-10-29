@@ -89,6 +89,8 @@ internal sealed class JpxQuant
     public int[] Exp = [], Mant = [];
 }
 
+internal readonly record struct JpxPoc(int ResStart, int CompStart, int LayerEnd, int ResEnd, int CompEnd, int Prog);
+
 /// <summary>JPEG 2000 codestream decoder (T.800 Annex A-G, I): tier-2 packets, tier-1 blocks, dequantisation, inverse DWT and MCT.</summary>
 internal sealed class JpxCodestream
 {
@@ -105,6 +107,8 @@ internal sealed class JpxCodestream
         public int Prog = -1, Layers, Mct;
         public bool Sop, Eph;
         public JpxCodParams? Cod;
+        public bool HasPoc;
+        public readonly List<JpxPoc> Pocs = [];
         public readonly Dictionary<int, JpxCodParams> Coc = [];
         public JpxQuant? Qcd;
         public readonly Dictionary<int, JpxQuant> Qcc = [];
@@ -115,6 +119,7 @@ internal sealed class JpxCodestream
     int _prog, _layers, _mct;
     bool _sop, _eph;
     JpxCodParams? _cod;
+    readonly List<JpxPoc> _pocs = [];
     readonly Dictionary<int, JpxCodParams> _coc = [];
     JpxQuant? _qcd;
     readonly Dictionary<int, JpxQuant> _qcc = [];
@@ -170,6 +175,7 @@ internal sealed class JpxCodestream
         p += 2;
         var tiles = new Dictionary<int, TileState>();
         var sizSeen = false;
+        var mainPocSeen = false;
         while (p + 4 <= end)
         {
             var m = U16(p);
@@ -185,6 +191,13 @@ internal sealed class JpxCodestream
                 case 0xFF5C: _qcd = ParseQuant(body, len - 2); break;
                 case 0xFF5D: ParseQcc(body, len - 2, _qcc); break;
                 case 0xFF5E: ParseRgn(body, _roi); break;
+                case 0xFF5F:
+                    if (!sizSeen) throw new InvalidDataException("JPX: malformed POC marker (before SIZ)");
+                    if (mainPocSeen) throw new InvalidDataException("JPX: malformed POC marker (multiple markers in main header)");
+                    if (len < 2 || p + 2L + len > end) throw new InvalidDataException("JPX: malformed POC marker (truncated segment)");
+                    ParsePoc(body, len - 2, _pocs);
+                    mainPocSeen = true;
+                    break;
                 case 0xFF60: Warning = "JPX: packed packet headers (PPM) are not supported"; return false;
             }
             p += 2 + len;
@@ -209,6 +222,7 @@ internal sealed class JpxCodestream
             if (psot == 0 && tpEnd - 2 >= p && U16(tpEnd - 2) == 0xFFD9) tpEnd -= 2;
             if (isot >= _ntx * _nty) { p = tpEnd; continue; }
             if (!tiles.TryGetValue(isot, out var ts)) tiles[isot] = ts = new TileState();
+            var tilePartPocSeen = false;
             while (p + 2 <= tpEnd)
             {
                 var m = U16(p);
@@ -224,6 +238,14 @@ internal sealed class JpxCodestream
                     case 0xFF5C: ts.Qcd = ParseQuant(body, len - 2); break;
                     case 0xFF5D: ParseQcc(body, len - 2, ts.Qcc); break;
                     case 0xFF5E: ParseRgn(body, ts.Roi); break;
+                    case 0xFF5F:
+                        if (tilePartPocSeen) throw new InvalidDataException("JPX: malformed POC marker (multiple markers in tile-part header)");
+                        if (len < 2 || p + 2L + len > tpEnd) throw new InvalidDataException("JPX: malformed POC marker (truncated segment)");
+                        if (!ts.HasPoc && _d[sot + 10] != 0) throw new InvalidDataException("JPX: malformed POC marker (tile POC is not in the first tile-part)");
+                        ParsePoc(body, len - 2, ts.Pocs);
+                        ts.HasPoc = true;
+                        tilePartPocSeen = true;
+                        break;
                     case 0xFF61: Warning = "JPX: packed packet headers (PPT) are not supported"; return false;
                 }
                 p += 2 + len;
@@ -234,11 +256,42 @@ internal sealed class JpxCodestream
         return Finish(tiles);
     }
 
+    void ParsePoc(int p, int len, List<JpxPoc> into)
+    {
+        var componentBytes = Csiz < 257 ? 1 : 2;
+        var entrySize = 5 + 2 * componentBytes;
+        if (len <= 0 || len % entrySize != 0 || p < 0 || p > _d.Length - len)
+            throw new InvalidDataException("JPX: malformed POC marker (invalid segment length)");
+
+        var end = p + len;
+        while (p < end)
+        {
+            var resStart = _d[p++];
+            var compStart = componentBytes == 1 ? _d[p++] : U16(p);
+            if (componentBytes == 2) p += 2;
+            var layerEnd = U16(p); p += 2;
+            var resEnd = _d[p++];
+            var compEnd = componentBytes == 1 ? _d[p++] : U16(p);
+            if (componentBytes == 2) p += 2;
+            if (componentBytes == 1 && compEnd == 0) compEnd = 256;
+            var prog = _d[p++];
+
+            if (layerEnd == 0 || resStart >= resEnd || compStart >= compEnd || prog > 4)
+                throw new InvalidDataException("JPX: malformed POC marker (invalid progression range or order)");
+            into.Add(new JpxPoc(resStart, compStart, layerEnd, resEnd, compEnd, prog));
+        }
+    }
+
     bool Finish(Dictionary<int, TileState> tiles)
     {
         foreach (var (idx, ts) in tiles)
         {
             try { DecodeTile(idx, ts); }
+            catch (InvalidDataException e) when (e.Message.StartsWith("JPX: malformed POC", StringComparison.Ordinal))
+            {
+                Warning = e.Message;
+                return false;
+            }
             catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidDataException or NotSupportedException)
             {
                 Warning ??= $"JPX: tile {idx} decode error ({e.Message})";
@@ -361,7 +414,10 @@ internal sealed class JpxCodestream
             comps[c] = tc;
         }
 
-        var order = BuildOrder(comps, prog, layers, maxR, tx0, ty0);
+        var pocs = ts.HasPoc ? ts.Pocs : _pocs;
+        var order = pocs.Count > 0
+            ? BuildOrder(comps, prog, layers, maxR, tx0, ty0, pocs)
+            : BuildOrder(comps, prog, layers, maxR, tx0, ty0);
         var data = ts.Data.GetBuffer();
         var end = (int)ts.Data.Length;
         var pos = 0;
@@ -527,6 +583,76 @@ internal sealed class JpxCodestream
                 }
             tc.Res[r] = res;
         }
+    }
+
+    List<PacketRef> BuildOrder(TComp[] comps, int prog, int layers, int maxR, int tx0, int ty0, IReadOnlyList<JpxPoc> pocs)
+    {
+        var list = new List<PacketRef>();
+        var emitted = new HashSet<(int L, int C, int R, int P)>();
+
+        foreach (var poc in pocs)
+        {
+            if (poc.LayerEnd > layers || poc.ResStart >= maxR || poc.ResEnd > maxR ||
+                poc.CompStart >= Csiz || poc.CompEnd > Csiz)
+                throw new InvalidDataException("JPX: malformed POC marker (range exceeds coding parameters)");
+
+            void Add(int l, int c, int r, int p, long x = 0, long y = 0)
+            {
+                if (emitted.Add((l, c, r, p))) list.Add(new PacketRef(l, c, r, p, x, y));
+            }
+
+            if (poc.Prog is 0 or 1)
+            {
+                if (poc.Prog == 0)
+                    for (var l = 0; l < poc.LayerEnd; l++)
+                        for (var r = poc.ResStart; r < poc.ResEnd; r++)
+                            for (var c = poc.CompStart; c < poc.CompEnd; c++)
+                                if (r < comps[c].Res.Length)
+                                    for (var p = 0; p < comps[c].Res[r].Prec.Length; p++) Add(l, c, r, p);
+                if (poc.Prog == 1)
+                    for (var r = poc.ResStart; r < poc.ResEnd; r++)
+                        for (var l = 0; l < poc.LayerEnd; l++)
+                            for (var c = poc.CompStart; c < poc.CompEnd; c++)
+                                if (r < comps[c].Res.Length)
+                                    for (var p = 0; p < comps[c].Res[r].Prec.Length; p++) Add(l, c, r, p);
+                continue;
+            }
+
+            var bases = new List<PacketRef>();
+            for (var c = poc.CompStart; c < poc.CompEnd; c++)
+            {
+                var nl = comps[c].Cod.NL;
+                for (var r = poc.ResStart; r < poc.ResEnd && r <= nl; r++)
+                {
+                    var res = comps[c].Res[r];
+                    for (var py = 0; py < res.Nph; py++)
+                        for (var px = 0; px < res.Npw; px++)
+                        {
+                            var gx = (long)(((res.X0 >> res.PPx) + px) << res.PPx) << (nl - r);
+                            var gy = (long)(((res.Y0 >> res.PPy) + py) << res.PPy) << (nl - r);
+                            gx = Math.Max(tx0, gx * Xr[c]); gy = Math.Max(ty0, gy * Yr[c]);
+                            bases.Add(new PacketRef(0, c, r, py * res.Npw + px, gx, gy));
+                        }
+                }
+            }
+            Comparison<PacketRef> cmp = poc.Prog switch
+            {
+                2 => (a, b) => a.R != b.R ? a.R.CompareTo(b.R) : a.Y != b.Y ? a.Y.CompareTo(b.Y) : a.X != b.X ? a.X.CompareTo(b.X) : a.C != b.C ? a.C.CompareTo(b.C) : a.P.CompareTo(b.P),
+                3 => (a, b) => a.Y != b.Y ? a.Y.CompareTo(b.Y) : a.X != b.X ? a.X.CompareTo(b.X) : a.C != b.C ? a.C.CompareTo(b.C) : a.R != b.R ? a.R.CompareTo(b.R) : a.P.CompareTo(b.P),
+                _ => (a, b) => a.C != b.C ? a.C.CompareTo(b.C) : a.Y != b.Y ? a.Y.CompareTo(b.Y) : a.X != b.X ? a.X.CompareTo(b.X) : a.R != b.R ? a.R.CompareTo(b.R) : a.P.CompareTo(b.P),
+            };
+            bases.Sort(cmp);
+            foreach (var b in bases)
+                for (var l = 0; l < poc.LayerEnd; l++) Add(l, b.C, b.R, b.P, b.X, b.Y);
+        }
+
+        long expected = 0;
+        foreach (var comp in comps)
+            foreach (var res in comp.Res)
+                expected += (long)layers * res.Prec.Length;
+        if (list.Count != expected)
+            throw new InvalidDataException("JPX: malformed POC marker (progression ranges do not cover every packet)");
+        return list;
     }
 
     List<PacketRef> BuildOrder(TComp[] comps, int prog, int layers, int maxR, int tx0, int ty0)

@@ -10,7 +10,15 @@ public class JpxTests
     static string Dir => Path.Combine(AppContext.BaseDirectory, "fixtures", "jpx");
 
     public static IEnumerable<object[]> Fixtures() =>
-        Directory.GetFiles(Dir, "*.pdf").Select(p => new object[] { Path.GetFileNameWithoutExtension(p) }).OrderBy(a => (string)a[0]);
+        Directory.GetFiles(Dir, "*.pdf")
+            .Where(p => !Path.GetFileName(p).StartsWith("poc-malformed-", StringComparison.Ordinal))
+            .Select(p => new object[] { Path.GetFileNameWithoutExtension(p) })
+            .OrderBy(a => (string)a[0]);
+
+    public static IEnumerable<object[]> MalformedPocFixtures() =>
+        Directory.GetFiles(Dir, "poc-malformed-*.pdf")
+            .Select(p => new object[] { Path.GetFileNameWithoutExtension(p) })
+            .OrderBy(a => (string)a[0]);
 
     [Theory]
     [MemberData(nameof(Fixtures))]
@@ -42,5 +50,20 @@ public class JpxTests
                 if (diff > max) max = diff;
             }
         Assert.True(bad == 0, $"{name}: {bad} samples differ by more than {tol} (max diff {max})");
+    }
+
+    [Theory]
+    [MemberData(nameof(MalformedPocFixtures))]
+    public void ReportsMalformedProgressionOrderChanges(string name)
+    {
+        var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(Dir, name + ".pdf")));
+        var f = doc.File;
+        var xo = (PdfDictionary)f.Resolve(doc.Pages[0].Resources.Get("XObject"))!;
+        var img = (PdfStream)f.Resolve(xo.Get("Im0"))!;
+        var data = ImageDecoder.Decode(f, img, doc.Pages[0].Resources, out _, out var warn);
+
+        Assert.Null(data);
+        Assert.NotNull(warn);
+        Assert.True(warn!.Contains("POC", StringComparison.OrdinalIgnoreCase));
     }
 }
