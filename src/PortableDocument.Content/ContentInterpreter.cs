@@ -49,6 +49,7 @@ public sealed class ContentInterpreter
     public List<string> Warnings { get; } = [];
     public PdfDictionary? OptionalContentConfiguration { get; set; }
     public PdfDictionary? DefaultOptionalContentConfiguration { get; set; }
+    public OptionalContentState? OptionalContentState { get; set; }
     public OptionalContentEvent OptionalContentDisplayEvent { get; set; } = OptionalContentEvent.View;
     public double OptionalContentZoom { get; set; } = 1;
 
@@ -61,6 +62,12 @@ public sealed class ContentInterpreter
 
     public void Render(PdfPage page, Matrix baseMatrix)
     {
+        if (OptionalContentState is { } state)
+        {
+            if (!ReferenceEquals(state.File, _f))
+                throw new ArgumentException("Optional-content state belongs to another document.");
+            foreach (var warning in state.Warnings) Warn(warning);
+        }
         SetBase(baseMatrix);
         _gs = new GState { Ctm = baseMatrix };
         // A knockout page group makes top-level objects knock each other out; isolation is moot over opaque paper.
@@ -512,67 +519,11 @@ public sealed class ContentInterpreter
         return valid && result;
     }
 
-    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg)
-    {
-        if (cfg is null) return false;
-        var baseState = R(cfg.Get("BaseState")).AsName();
-        bool off;
-        if (baseState == "Unchanged" && !ReferenceEquals(cfg, DefaultOptionalContentConfiguration)
-            && DefaultOptionalContentConfiguration is { } defaultConfiguration)
-            off = OcgOff(ocg, defaultConfiguration);
-        else
-        {
-            var baseOff = baseState == "OFF";
-            bool Contains(string key) => R(cfg.Get(key)) is PdfArray arr && arr.Items.Any(x => ReferenceEquals(R(x), ocg));
-            off = Contains("OFF") || !Contains("ON") && baseOff;
-        }
-
-        return ApplyUsageApplications(ocg, cfg, off);
-    }
-
-    bool ApplyUsageApplications(PdfDictionary ocg, PdfDictionary cfg, bool off)
-    {
-        if (R(cfg.Get("AS")) is not PdfArray applications) return off;
-        var eventName = OptionalContentDisplayEvent.ToString();
-        var zoomOutOfRange = false;
-        foreach (var application in applications.Items)
-        {
-            if (R(application) is not PdfDictionary app
-                || R(app.Get("Event")).AsName() != eventName
-                || R(app.Get("Category")) is not PdfArray categories)
-                continue;
-            if (R(app.Get("OCGs")) is PdfArray groups
-                && !groups.Items.Any(value => ReferenceEquals(R(value), ocg)))
-                continue;
-            if (R(app.Get("OCGs")) is PdfDictionary group && !ReferenceEquals(group, ocg))
-                continue;
-            if (R(ocg.Get("Usage")) is not PdfDictionary usage) continue;
-            foreach (var categoryValue in categories.Items)
-            {
-                var category = R(categoryValue).AsName();
-                if (category == eventName && R(usage.Get(category)) is PdfDictionary eventUsage)
-                {
-                    off = R(eventUsage.Get(eventName + "State")).AsName() switch
-                    {
-                        "ON" => false,
-                        "OFF" => true,
-                        _ => off,
-                    };
-                }
-                else if (category == "Zoom" && OptionalContentDisplayEvent == OptionalContentEvent.View
-                    && R(usage.Get("Zoom")) is PdfDictionary zoom)
-                {
-                    var min = R(zoom.Get("min")).AsNumber();
-                    var max = R(zoom.Get("max")).AsNumber();
-                    if (min is { } minZoom && OptionalContentZoom < minZoom
-                        || max is { } maxZoom && OptionalContentZoom > maxZoom)
-                        zoomOutOfRange = true;
-                }
-            }
-        }
-        if (zoomOutOfRange) off = true;
-        return off;
-    }
+    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg) =>
+        OptionalContentState is { } state
+            ? !state.IsVisibleCore(ocg, OptionalContentDisplayEvent, OptionalContentZoom)
+            : global::PortableDocument.Content.OptionalContentState.IsOff(
+                _f, ocg, cfg, DefaultOptionalContentConfiguration, OptionalContentDisplayEvent, OptionalContentZoom);
 
     void NextLine() { _tlm = Matrix.Translate(0, -_gs.Leading).Then(_tlm); _tm = _tlm; }
 
