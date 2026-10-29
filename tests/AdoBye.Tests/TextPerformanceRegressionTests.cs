@@ -127,6 +127,25 @@ public class TextPerformanceRegressionTests
             }
     }
 
+    [Fact]
+    public void Text_only_paths_preserve_text_transforms_color_and_state_restoration()
+    {
+        var paths = "0 0 m 10 10 l 10 15 15 20 20 20 c 25 25 30 30 v 35 35 40 40 y h 0 0 50 50 re ";
+        var content = "q 2 0 0 3 10 20 cm 0.2 0.3 0.4 rg ";
+        foreach (var paint in new[] { "S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "W n", "W* n", "n" })
+            content += paths + paint + " ";
+        content += "BT /F1 12 Tf 1 0 0 1 4 5 Tm (AB) Tj ET Q BT /F1 12 Tf 7 11 Td (CD) Tj ET";
+        var page = PdfDocument.Load(TestPdf.Build(content,
+            "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>")).Pages[0];
+        var full = PdfRenderer.Analyze(page).Spans;
+        var textOnly = PdfRenderer.ExtractText(page);
+        Assert.Equal("ABCD", string.Concat(textOnly.Select(s => s.Text)));
+        Assert.Equal(full.Select(s => s with { Font = null, Pieces = null }),
+            textOnly.Select(s => s with { Font = null, Pieces = null }));
+        Assert.Equal((18d, 165d), (textOnly[0].X, textOnly[0].Y));
+        Assert.Equal((7d, 189d), (textOnly[1].X, textOnly[1].Y));
+    }
+
     static byte[] FontWithCmaps(params (ushort Platform, ushort Encoding, byte A, byte B)[] maps)
     {
         var data = new byte[32 + maps.Length * (8 + 262)];

@@ -321,6 +321,10 @@ public sealed class ContentInterpreter
 
     void Exec(string op, List<PdfObject> a, PdfDictionary res)
     {
+        if (!DrawGraphics && Objects is null && op is
+            "m" or "l" or "c" or "v" or "y" or "h" or "re" or
+            "S" or "s" or "f" or "F" or "f*" or "B" or "B*" or "b" or "b*" or "n" or "W" or "W*")
+            return;
         switch (op)
         {
             case "q": _stack.Push(_gs); _gs = _gs.Clone(); _be.Save(); break;

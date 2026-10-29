@@ -70,7 +70,7 @@ The vector workload then exposed numeric token parsing: in a separate 500-docume
 
 After that change, a matched 500-document trace put numeric parsing at 7.33% exclusive sampled CPU; the fractional `TakeWhile`/char-array/enumerator chain disappeared from the top allocation types. Sampled strings fell to about 0.27 GB. Remaining application hotspots include stream inflation, numeric token objects, path construction, and graphics-state cloning. Further work should target those with new profiles and correctness tests rather than weakening the corpus or dropping required text metadata.
 
-## Measured results: 2026-10-29
+## Full-corpus measured baseline: 2026-10-29 (90a225b)
 
 These are machine-specific measurements, not general guarantees. Environment: Windows 11 25H2 build 26200.9711; Intel Core i9-10900 at 2.80 GHz (10 physical / 20 logical cores); .NET SDK 10.0.403; .NET 10.0.14 x64 RyuJIT x86-64-v3; concurrent workstation GC; TieredPGO enabled. Both engines ran in the same BenchmarkDotNet executable with stock .NET GC. No Satori GC or NativeAOT substitution was used.
 
@@ -112,3 +112,26 @@ The final byte-span lexer pass alone reduced vector fresh-open extraction from 9
 BenchmarkDotNet warned about short iterations for already-open typography/pattern/image cases despite batching, and multimodal already-open distributions. Fresh-open and open-only measurements met the 100 ms minimum-iteration recommendation. Treat the already-open measurements as noisier diagnostics, not a basis for narrow ranking claims. Setup/lifetime/cache differences make subtraction or comparisons between benchmark classes invalid.
 
 Validation: Release benchmark build succeeded; all 311 existing and added tests passed. Added regression tests cover numeric token tolerance/overflow, cmap priority/duplicate/fallback behavior and zero repeated-lookup allocations, repeatable glyph geometry/bytes/advances, and text-only versus full-analysis parity on font, feature, and graphics fixtures.
+
+### Targeted path-only follow-up
+
+A later, narrowly scoped pass skips path construction/painting/clipping operators only when graphics drawing is disabled and no graphics-object collection is requested. It still parses the operands and retains text-relevant graphics state, CTM changes, colors, forms, and `q`/`Q` restoration. Full analysis and rendering are unchanged. A new parity test covers every path/paint/clip opcode followed by transformed text and restored text state.
+
+The [targeted CSV](results/2026-10-29-text-path.csv) contains all 12 new measurements. These supersede the corresponding six extraction comparisons above; the full-corpus table remains a labeled baseline, not a claim that unmeasured cases were rerun. Environment and timing settings are unchanged. Exact timing arguments:
+
+```powershell
+dotnet run -c Release --no-build --project bench\AdoBye.Bench -- --filter "*Text*vector.pdf*" "*Text*06-patterns*" "*Text*text.pdf*" --join --warmupCount 6 --iterationCount 15 --iterationTime 1000 --launchCount 1
+```
+
+Times are microseconds per document; allocations below retain BenchmarkDotNet's reported MB precision (1 MB = 1,048,576 bytes). Ratios are quotients of reported means.
+
+| Operation | Document | AdoBye mean (us) | PdfPig mean (us) | AdoBye MB | PdfPig MB | Mean ratio |
+|---|---|---:|---:|---:|---:|---:|
+| Open + extract | 06-patterns-shadings.pdf | 851.9 | 2,631.4 | 1.90 | 3.48 | 3.09x |
+| Open + extract | text.pdf | 4,404.1 | 11,876.1 | 6.22 | 13.62 | 2.70x |
+| Open + extract | vector.pdf | 5,700.9 | 7,637.3 | 5.72 | 5.54 | 1.34x |
+| Already open, first extract | 06-patterns-shadings.pdf | 2,214.1 | 4,745.1 | 1.85 | 3.38 | 2.14x |
+| Already open, first extract | text.pdf | 4,420.0 | 12,036.0 | 6.18 | 13.55 | 2.72x |
+| Already open, first extract | vector.pdf | 7,636.4 | 7,796.7 | 5.69 | 5.48 | 1.02x |
+
+Vector fresh-open extraction improves by about 11% and already-open vector extraction by about 18% against the preceding matched baseline, with lower managed allocations. It **still misses both 2x and 3x**. Text fresh-open means are close to the preceding run within its error range; already-open patterns vary substantially and now measure 2.14x, not the baseline's 3.02x. The already-open AdoBye pattern case still has a minimum-iteration-time warning. No across-the-board speedup is claimed. All six preflight documents still pass, and the full suite now passes 312 tests.
