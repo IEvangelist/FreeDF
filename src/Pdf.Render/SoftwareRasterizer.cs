@@ -49,8 +49,13 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     public int Width => _w;
     public int Height => _h;
 
+    public const int MaxDimension = 1 << 16;
+    public const long MaxPixels = 100_000_000;
+
     public SoftwareRasterizer(int width, int height)
     {
+        if (width < 1 || height < 1 || width > MaxDimension || height > MaxDimension || (long)width * height > MaxPixels)
+            throw new Pdf.Core.PdfParseException($"Invalid raster size {width}x{height}");
         _w = width; _h = height; _lw = width; _lh = height;
         _px = System.Buffers.ArrayPool<float>.Shared.Rent(width * height * 3);
         _px.AsSpan(0, width * height * 3).Fill(1f);
@@ -316,6 +321,18 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     // ---------------------------------------------------------------- clipping
 
     public void Clip(PathData path, Matrix ctm, bool evenOdd)
+    {
+        if (_preMask is null) { ClipCore(path, ctm, evenOdd); return; }
+        // A soft mask is folded into the clip; keep the mask-free clip in step so it survives clearing the mask.
+        var masked = _clip;
+        _clip = _preMask;
+        ClipCore(path, ctm, evenOdd);
+        _preMask = _clip;
+        _clip = masked;
+        ClipCore(path, ctm, evenOdd);
+    }
+
+    void ClipCore(PathData path, Matrix ctm, bool evenOdd)
     {
         if (_clip.Empty) return;
         if (TryRectClip(path, ctm)) return;

@@ -75,23 +75,100 @@ public abstract class PdfColorSpace
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => profile.ToSrgb(c);
     }
 
+    /// <summary>CIE XYZ (relative to a given white point) to sRGB: Bradford adaptation to D65, linear sRGB matrix, sRGB transfer curve.</summary>
+    sealed class XyzToSrgb
+    {
+        readonly double[] _m = new double[9];
+
+        public XyzToSrgb(double xw, double yw, double zw)
+        {
+            double[] br = [0.8951, 0.2664, -0.1614, -0.7502, 1.7135, 0.0367, 0.0389, -0.0685, 1.0296];
+            double[] brInv = Inv(br);
+            double[] d65 = [0.95047, 1, 1.08883];
+            var src = Mul(br, [xw, yw, zw]); var dst = Mul(br, d65);
+            double[] scale = [dst[0] / src[0], dst[1] / src[1], dst[2] / src[2]];
+            double[] sc = new double[9];
+            for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) sc[i * 3 + j] = brInv[i * 3 + j] * scale[j];
+            var adapt = Mul3(sc, br);
+            double[] srgb = [3.2404542, -1.5371385, -0.4985314, -0.9692660, 1.8760108, 0.0415560, 0.0556434, -0.2040259, 1.0572252];
+            Array.Copy(Mul3(srgb, adapt), _m, 9);
+        }
+
+        static double[] Mul(double[] m, double[] v) => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
+        static double[] Mul3(double[] a, double[] b)
+        {
+            var r = new double[9];
+            for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) for (var k = 0; k < 3; k++) r[i * 3 + j] += a[i * 3 + k] * b[k * 3 + j];
+            return r;
+        }
+        static double[] Inv(double[] m)
+        {
+            var det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+            return [(m[4] * m[8] - m[5] * m[7]) / det, (m[2] * m[7] - m[1] * m[8]) / det, (m[1] * m[5] - m[2] * m[4]) / det,
+                    (m[5] * m[6] - m[3] * m[8]) / det, (m[0] * m[8] - m[2] * m[6]) / det, (m[2] * m[3] - m[0] * m[5]) / det,
+                    (m[3] * m[7] - m[4] * m[6]) / det, (m[1] * m[6] - m[0] * m[7]) / det, (m[0] * m[4] - m[1] * m[3]) / det];
+        }
+
+        static double Enc(double v) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.Pow(v, 1 / 2.4) - 0.055;
+
+        public RgbColor Convert(double x, double y, double z) => new(
+            C(Enc(_m[0] * x + _m[1] * y + _m[2] * z)), C(Enc(_m[3] * x + _m[4] * y + _m[5] * z)), C(Enc(_m[6] * x + _m[7] * y + _m[8] * z)));
+    }
+
+    static double[] Nums(PdfFile f, PdfObject? o, int n, double[] def)
+    {
+        if (f.Resolve(o) is not PdfArray a || a.Count < n) return def;
+        var r = new double[n];
+        for (var i = 0; i < n; i++) r[i] = f.Resolve(a[i]).AsNumber() ?? def[i];
+        return r;
+    }
+
+    sealed class CalGray(double[] white, double gamma) : PdfColorSpace
+    {
+        readonly XyzToSrgb _x = new(white[0], white[1], white[2]);
+        public override int Components => 1;
+        public override RgbColor ToRgb(ReadOnlySpan<double> c)
+        {
+            var y = Math.Pow(C(c[0]), gamma);
+            return _x.Convert(white[0] * y, white[1] * y, white[2] * y);
+        }
+    }
+
+    sealed class CalRgb(double[] white, double[] gamma, double[] matrix) : PdfColorSpace
+    {
+        readonly XyzToSrgb _x = new(white[0], white[1], white[2]);
+        public override int Components => 3;
+        public override RgbColor ToRgb(ReadOnlySpan<double> c)
+        {
+            double a = Math.Pow(C(c[0]), gamma[0]), b = Math.Pow(C(c[1]), gamma[1]), cc = Math.Pow(C(c[2]), gamma[2]);
+            return _x.Convert(matrix[0] * a + matrix[3] * b + matrix[6] * cc, matrix[1] * a + matrix[4] * b + matrix[7] * cc, matrix[2] * a + matrix[5] * b + matrix[8] * cc);
+        }
+    }
+
+    static PdfColorSpace BuildCal(PdfFile f, PdfObject? dictObj, bool rgb)
+    {
+        if (f.Resolve(dictObj) is not PdfDictionary d) return rgb ? Rgb : Gray;
+        var white = Nums(f, d.Get("WhitePoint"), 3, [0.9505, 1, 1.089]);
+        if (white[1] <= 0 || white[0] <= 0 || white[2] <= 0) return rgb ? Rgb : Gray;
+        if (!rgb) return new CalGray(white, f.Resolve(d.Get("Gamma")).AsNumber() ?? 1);
+        return new CalRgb(white, Nums(f, d.Get("Gamma"), 3, [1, 1, 1]), Nums(f, d.Get("Matrix"), 9, [1, 0, 0, 0, 1, 0, 0, 0, 1]));
+    }
+
     sealed class Lab : PdfColorSpace
     {
         public double[] White = [0.9505, 1, 1.089], Range = [-100, 100, -100, 100];
+        XyzToSrgb? _x;
         public override int Components => 3;
         public override double[] DefaultDecode(int bpc) => [0, 100, Range[0], Range[1], Range[2], Range[3]];
 
         public override RgbColor ToRgb(ReadOnlySpan<double> c)
         {
-            var m = (c[0] + 16) / 116; var l = m + c[1] / 500; var n = m - c[2] / 200;
+            _x ??= new XyzToSrgb(White[0], White[1], White[2]);
+            var ls = Math.Clamp(c[0], 0, 100);
+            static double Cl(double v, double a, double b) => Math.Clamp(v, Math.Min(a, b), Math.Max(a, b));
+            var m = (ls + 16) / 116; var l = m + Cl(c[1], Range[0], Range[1]) / 500; var n = m - Cl(c[2], Range[2], Range[3]) / 200;
             static double G(double x) => x >= 6.0 / 29 ? x * x * x : 108.0 / 841 * (x - 4.0 / 29);
-            double X = White[0] * G(l), Y = White[1] * G(m), Z = White[2] * G(n);
-            // D50 -> sRGB via Bradford-adapted matrix.
-            var r = 3.1339 * X - 1.6169 * Y - 0.4906 * Z;
-            var g = -0.9785 * X + 1.9160 * Y + 0.0333 * Z;
-            var b = 0.0720 * X - 0.2290 * Y + 1.4057 * Z;
-            static double Gm(double v) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.Pow(v, 1 / 2.4) - 0.055;
-            return new(C(Gm(r)), C(Gm(g)), C(Gm(b)));
+            return _x.Convert(White[0] * G(l), White[1] * G(m), White[2] * G(n));
         }
     }
 
@@ -157,8 +234,10 @@ public abstract class PdfColorSpace
         var kind = f.Resolve(a[0]).AsName();
         switch (kind)
         {
-            case "DeviceGray" or "G" or "CalGray": return Gray;
-            case "DeviceRGB" or "RGB" or "CalRGB": return Rgb;
+            case "DeviceGray" or "G": return Gray;
+            case "CalGray": return BuildCal(f, a.Count > 1 ? a[1] : null, false);
+            case "DeviceRGB" or "RGB": return Rgb;
+            case "CalRGB": return BuildCal(f, a.Count > 1 ? a[1] : null, true);
             case "DeviceCMYK" or "CMYK": return Cmyk;
             case "Lab":
                 {
