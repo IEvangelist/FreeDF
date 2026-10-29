@@ -74,8 +74,7 @@ static class MeshShading
             while (!br.Eof(vertBits * vertsPerRow))
             {
                 var row = new Vertex[vertsPerRow];
-                for (var i = 0; i < vertsPerRow; i++) row[i] = Vtx();
-                br.Align(); // spec aligns per vertex only for 4; rows are packed, alignment at the end is harmless
+                for (var i = 0; i < vertsPerRow; i++) { row[i] = Vtx(); br.Align(); } // each vertex is padded to a byte boundary
                 rows.Add(row);
             }
             for (var r = 0; r + 1 < rows.Count; r++)
@@ -128,7 +127,11 @@ static class MeshShading
                 for (var i = skipCols; i < 4; i++) cc[i] = Col();
                 br.Align();
                 p = pp; c = cc; have = true;
-                Tessellate(mesh, p, c, 8);
+                // Subdivide in proportion to the patch's device size so large patches stay smooth.
+                double mnx = double.MaxValue, mxx = double.MinValue, mny = double.MaxValue, mxy = double.MinValue;
+                foreach (var q in p) { mnx = Math.Min(mnx, q.X); mxx = Math.Max(mxx, q.X); mny = Math.Min(mny, q.Y); mxy = Math.Max(mxy, q.Y); }
+                var span = Math.Max(mxx - mnx, mxy - mny);
+                Tessellate(mesh, p, c, double.IsFinite(span) ? Math.Clamp((int)Math.Ceiling(span / 8), 8, 40) : 8);
             }
         }
         return mesh;

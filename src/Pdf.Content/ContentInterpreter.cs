@@ -17,6 +17,7 @@ sealed class GState
     public double CharSpace, WordSpace, HScale = 1, Leading, Rise;
     public PdfFont? Font; public double FontSize;
     public int RenderMode;
+    public bool SoftMaskActive;
 
     public GState Clone() => (GState)MemberwiseClone();
 }
@@ -445,7 +446,7 @@ public sealed class ContentInterpreter
                 case "D": if (v is PdfArray { Count: 2 } d && R(d[0]) is PdfArray da) { _gs.Dash = da.Items.Select(x => R(x).AsNumber() ?? 0).ToArray(); _gs.DashPhase = R(d[1]).AsNumber() ?? 0; } break;
                 case "CA": _gs.StrokeAlpha = Math.Clamp(v.AsNumber() ?? 1, 0, 1); break;
                 case "ca": _gs.FillAlpha = Math.Clamp(v.AsNumber() ?? 1, 0, 1); break;
-                case "BM": _gs.BlendMode = (v is PdfArray ba && ba.Count > 0 ? R(ba[0]).AsName() : v.AsName()) ?? "Normal"; if (_gs.BlendMode == "Compatible") _gs.BlendMode = "Normal"; break;
+                case "BM": _gs.BlendMode = FirstKnownBlend(v) ?? "Normal"; break;
                 case "Font": if (v is PdfArray { Count: 2 } fa && R(fa[0]) is PdfDictionary fd) { _gs.Font = GetFont(fd); _gs.FontSize = R(fa[1]).AsNumber() ?? 0; } break;
                 case "SMask": ApplySoftMask(v, res); break;
             }
@@ -454,18 +455,32 @@ public sealed class ContentInterpreter
 
     void ApplySoftMask(PdfObject? v, PdfDictionary res)
     {
-        if (v is not PdfDictionary sm) { _be.SetSoftMask(null, false, default); return; }
+        if (v is not PdfDictionary sm) { _be.SetSoftMask(null, false, default); _gs.SoftMaskActive = false; return; }
         if (R(sm.Get("G")) is not PdfStream g) return;
         var lum = R(sm.Get("S")).AsName() == "Luminosity";
         var bc = RgbColor.Black;
         if (lum && R(sm.Get("BC")) is PdfArray ba)
         {
             var c = ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
-            bc = c.Length switch
+            var gcs = R(R(g.Dict.Get("Group")) is PdfDictionary gd ? gd.Get("CS") : null) is { } cso ? PdfColorSpace.Parse(_f, cso, res) : null;
+            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c);
+            else bc = c.Length switch
+    static readonly HashSet<string> KnownBlends = ["Normal", "Compatible", "Multiply", "Screen", "Overlay", "Darken", "Lighten", "ColorDodge", "ColorBurn", "HardLight", "SoftLight", "Difference", "Exclusion", "Hue", "Saturation", "Color", "Luminosity"];
+
+    // /BM may be an array: the first name the consumer recognises wins (11.6.3).
+    string? FirstKnownBlend(PdfObject v)
+    {
+        var names = new List<string?>();
+        if (v is PdfArray a) { for (var i = 0; i < a.Count; i++) names.Add(R(a[i]).AsName()); } else names.Add(v.AsName());
+        foreach (var n in names)
+            if (n is not null && KnownBlends.Contains(n)) return n == "Compatible" ? "Normal" : n;
+        return null;
+    }
+
             {
                 1 => new RgbColor(c[0], c[0], c[0]),
                 3 => new RgbColor(c[0], c[1], c[2]),
-                4 => new RgbColor((1 - c[0]) * (1 - c[3]), (1 - c[1]) * (1 - c[3]), (1 - c[2]) * (1 - c[3])),
+                4 => PdfColorSpace.Cmyk.ToRgb(c),
                 _ => bc
             };
         }
@@ -476,10 +491,14 @@ public sealed class ContentInterpreter
             _be = off; _gs = new GState { Ctm = ctm };
             try { DoForm(g, res); }
             finally { _be = sb; _gs = saved; }
-        }, lum, bc);
+        }, lum, bc, transfer);
     }
 
+        Func<double, double>? transfer = null;
+        if (R(sm.Get("TR")) is { } tro && tro is not PdfName && PdfFunction.Parse(_f, tro) is { } trf)
+            transfer = x => { var o = trf.Evaluate([x]); return o.Length > 0 ? o[0] : x; };
     PdfFont? LoadFont(PdfDictionary res, string name) => R(res.Get("Font")) is PdfDictionary fd && R(fd.Get(name)) is PdfDictionary d ? GetFont(d) : null;
+        _gs.SoftMaskActive = true;
 
     PdfFont GetFont(PdfDictionary d)
     {
@@ -779,7 +798,21 @@ public sealed class ContentInterpreter
             var ramp = new RgbColor[257];
             for (var i = 0; i <= 256; i++) ramp[i] = EvalT(dom[0] + (dom[1] - dom[0]) * i / 256.0);
             RgbColor At(double s) => ramp[(int)Math.Round(Math.Clamp(s, 0, 1) * 256)];
+        var grouped = false;
+        if (R(xs.Dict.Get("Group")) is PdfDictionary grp && R(grp.Get("S")).AsName() == "Transparency")
+        {
+            var isolated = R(grp.Get("I")) is PdfBoolean { Value: true };
+            var knockout = R(grp.Get("K")) is PdfBoolean { Value: true };
+            var alpha = _gs.FillAlpha; var bm = _gs.BlendMode;
+            if (knockout || alpha < 1 || bm != "Normal" || _gs.SoftMaskActive || (isolated && TransparencyScan.UsesBlendMode(_f, res)))
+            {
+                _be.BeginGroup(isolated, knockout, alpha, bm);
+                _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
+                grouped = true;
+            }
+        }
             if (type == 2 && c.Length >= 4)
+        if (grouped) _be.EndGroup();
             {
                 double x0 = c[0], y0 = c[1], dx = c[2] - c[0], dy = c[3] - c[1];
                 var den = dx * dx + dy * dy;

@@ -52,6 +52,29 @@ public abstract class PdfColorSpace
         }
     }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfStream, PdfColorSpace> IccCache = new();
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IccProfile?> ProfilesByHash = new();
+
+    static PdfColorSpace Device(int n) => n switch { 1 => Gray, 4 => Cmyk, _ => Rgb };
+
+    /// <summary>Builds an ICCBased space; falls back to the device space of the same component count when the profile is unusable.</summary>
+    static PdfColorSpace BuildIcc(PdfFile f, PdfStream s, int n)
+    {
+        var dev = Device(n);
+        byte[] data;
+        try { data = f.DecodeStream(s); } catch (Exception) { return dev; }
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data));
+        var prof = ProfilesByHash.GetOrAdd(key, _ => IccProfile.TryParse(data));
+        if (prof is null || prof.Components != n) return dev;
+        return prof.IsSrgb ? Rgb : new IccBased(prof);
+    }
+
+    sealed class IccBased(IccProfile profile) : PdfColorSpace
+    {
+        public override int Components => profile.Components;
+        public override RgbColor ToRgb(ReadOnlySpan<double> c) => profile.ToSrgb(c);
+    }
+
     sealed class Lab : PdfColorSpace
     {
         public double[] White = [0.9505, 1, 1.089], Range = [-100, 100, -100, 100];
@@ -152,8 +175,7 @@ public abstract class PdfColorSpace
                     if (a.Count > 1 && f.Resolve(a[1]) is PdfStream s)
                     {
                         var n2 = (int)(f.Resolve(s.Dict.Get("N")).AsNumber() ?? 3);
-                        // ICC profile transforms are not applied; the component count selects the matching device space.
-                        return n2 switch { 1 => Gray, 4 => Cmyk, _ => Rgb };
+                        return IccCache.GetValue(s, _ => BuildIcc(f, s, n2));
                     }
                     return Rgb;
                 }

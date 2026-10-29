@@ -126,6 +126,11 @@ public interface IRenderBackend
     void DrawImage(ImageData image, Matrix ctm, double alpha, RgbColor maskColor, string blendMode);
     /// <summary>Fills the current clip with a per-pixel shader (device -> color) used for shadings.</summary>
     void PaintShader(Func<double, double, RgbColor?> deviceToColor, double alpha, string blendMode);
-    /// <summary>Sets (or with null clears) a soft mask. <paramref name="draw"/> renders the mask group onto an offscreen backend of the same size.</summary>
+    /// <summary>Sets (or with null clears) a soft mask. <paramref name="draw"/> renders the mask group onto an offscreen backend of the same size. <paramref name="transfer"/> is the /TR function.</summary>
     void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop);
+    /// <summary>As above with the soft mask's /TR transfer function (applied to the mask value); backends that ignore it keep the plain mask.</summary>
+    void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop, Func<double, double>? transfer) => SetSoftMask(draw, luminosity, backdrop);
+    /// <summary>Starts a transparency group (11.4): content is composited into a separate layer and merged on <see cref="EndGroup"/> with the given alpha and blend mode.</summary>
+    void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode) { }
+    void EndGroup() { }
 }

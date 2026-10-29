@@ -27,6 +27,13 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     readonly int _w, _h;
     float[] _px; // RGB, 3 floats per pixel
+    // Current layer: the page (opaque, origin 0,0) or a transparency-group buffer covering device rect [_ox,_ox+_lw) x [_oy,_oy+_lh).
+    int _ox, _oy, _lw, _lh;
+    float[]? _a;   // per-pixel alpha (null = opaque page)
+    float[]? _ag;  // group-only alpha, for non-isolated groups
+    float[]? _ip, _ia; // initial backdrop colour/alpha (non-isolated groups)
+    bool _ko;      // knockout group
+    readonly Stack<Group> _groups = new();
     ClipMask _clip;
     readonly Stack<(ClipMask, ClipMask?)> _stack = new();
 
@@ -44,7 +51,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     public SoftwareRasterizer(int width, int height)
     {
-        _w = width; _h = height;
+        _w = width; _h = height; _lw = width; _lh = height;
         _px = System.Buffers.ArrayPool<float>.Shared.Rent(width * height * 3);
         _px.AsSpan(0, width * height * 3).Fill(1f);
         _cov = new float[width + 2];
@@ -106,7 +113,9 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         return m;
     }
 
-    public void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop)
+    public void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop) => SetSoftMask(draw, luminosity, backdrop, null);
+
+    public void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop, Func<double, double>? transfer)
     {
         if (draw is null) { if (_preMask is not null) { _clip = _preMask; _preMask = null; } return; }
         float[] m;
@@ -122,6 +131,14 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             using var ow = new SoftwareRasterizer(_w, _h); ow.FillBackground(new RgbColor(1, 1, 1)); draw(ow);
             var lb = ob.Luminosity(); m = ow.Luminosity();
             for (var i = 0; i < m.Length; i++) m[i] = Math.Clamp(1f - (m[i] - lb[i]), 0f, 1f);
+        }
+        if (transfer is not null)
+        {
+            // /TR is applied to the mask value (over the whole surface, so the area outside the group maps through it too).
+            const int N = 1024;
+            var lut = new float[N + 1];
+            for (var i = 0; i <= N; i++) lut[i] = (float)Math.Clamp(transfer((double)i / N), 0, 1);
+            for (var i = 0; i < m.Length; i++) { var p = Math.Clamp(m[i], 0f, 1f) * N; var k = Math.Min((int)p, N - 1); m[i] = lut[k] + (lut[k + 1] - lut[k]) * (p - k); }
         }
         var b = _preMask ?? _clip;
         if (b.Empty) return;
@@ -425,40 +442,127 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         var px = _px;
         while (NextRow(out var y, out var xa, out var xb))
         {
-            var rowBase = y * _w;
+            var rowBase = (y - _oy) * _lw - _ox;
             for (var x = xa; x < xb; x++)
             {
                 var a = _cov[x];
                 if (a <= 0f) continue;
                 if (a > 1f) a = 1f;
                 if (clip.Cov is not null) a *= clip.At(x, y);
-                a *= al;
-                if (a <= 0f) continue;
-                BlendPixel(px, (rowBase + x) * 3, r, g, b, a, mode);
+                if (a * al <= 0f) continue;
+                Put(rowBase + x, r, g, b, a, al, mode);
             }
         }
     }
 
-    enum Blend : byte { Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion }
+    enum Blend : byte { Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion, Hue, Saturation, Color, Luminosity }
 
     static Blend ParseBlend(string m) => m switch
     {
         "Multiply" => Blend.Multiply, "Screen" => Blend.Screen, "Overlay" => Blend.Overlay, "Darken" => Blend.Darken, "Lighten" => Blend.Lighten,
         "ColorDodge" => Blend.ColorDodge, "ColorBurn" => Blend.ColorBurn, "HardLight" => Blend.HardLight, "SoftLight" => Blend.SoftLight,
-        "Difference" => Blend.Difference, "Exclusion" => Blend.Exclusion, _ => Blend.Normal,
+        "Difference" => Blend.Difference, "Exclusion" => Blend.Exclusion,
+        "Hue" => Blend.Hue, "Saturation" => Blend.Saturation, "Color" => Blend.Color, "Luminosity" => Blend.Luminosity, _ => Blend.Normal,
     };
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void BlendPixel(float[] px, int o, float r, float g, float b, float a, Blend mode)
+    static void BlendRgb(Blend mode, float br, float bg, float bb, float sr, float sg, float sb, out float r, out float g, out float b)
     {
-        if (mode != Blend.Normal)
+        if (mode < Blend.Hue) { r = B(mode, br, sr); g = B(mode, bg, sg); b = B(mode, bb, sb); return; }
+        Span<float> c = stackalloc float[3];
+        switch (mode)
         {
-            r = B(mode, px[o], r); g = B(mode, px[o + 1], g); b = B(mode, px[o + 2], b);
+            case Blend.Hue: c[0] = sr; c[1] = sg; c[2] = sb; SetSat(c, Sat(br, bg, bb)); SetLum(c, Lum(br, bg, bb)); break;
+            case Blend.Saturation: c[0] = br; c[1] = bg; c[2] = bb; SetSat(c, Sat(sr, sg, sb)); SetLum(c, Lum(br, bg, bb)); break;
+            case Blend.Color: c[0] = sr; c[1] = sg; c[2] = sb; SetLum(c, Lum(br, bg, bb)); break;
+            default: c[0] = br; c[1] = bg; c[2] = bb; SetLum(c, Lum(sr, sg, sb)); break;
         }
+        r = c[0]; g = c[1]; b = c[2];
+    }
+
+    static float Lum(float r, float g, float b) => 0.3f * r + 0.59f * g + 0.11f * b;
+    static float Sat(float r, float g, float b) => Math.Max(r, Math.Max(g, b)) - Math.Min(r, Math.Min(g, b));
+
+    static void SetLum(Span<float> c, float l)
+    {
+        var d = l - Lum(c[0], c[1], c[2]);
+        c[0] += d; c[1] += d; c[2] += d;
+        var lum = Lum(c[0], c[1], c[2]);
+        var n = Math.Min(c[0], Math.Min(c[1], c[2])); var x = Math.Max(c[0], Math.Max(c[1], c[2]));
+        if (n < 0f) for (var i = 0; i < 3; i++) c[i] = lum + (c[i] - lum) * lum / (lum - n);
+        if (x > 1f) for (var i = 0; i < 3; i++) c[i] = lum + (c[i] - lum) * (1 - lum) / (x - lum);
+    }
+
+    static void SetSat(Span<float> c, float s)
+    {
+        int imax = 0, imin = 0;
+        for (var i = 1; i < 3; i++) { if (c[i] > c[imax]) imax = i; if (c[i] < c[imin]) imin = i; }
+        if (imax == imin) { c[0] = c[1] = c[2] = 0; return; }
+        var imid = 3 - imax - imin;
+        var mx = c[imax]; var mn = c[imin];
+        c[imid] = (c[imid] - mn) * s / (mx - mn);
+        c[imax] = s; c[imin] = 0;
+    }
+
+    /// <summary>Composites one source sample (shape × opacity) onto the current layer, honouring blend mode, group alpha and knockout.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    void Put(int o, float r, float g, float b, float shape, float q, Blend mode)
+    {
+        var a = _a;
+        if (a is null) { BlendOpaque(_px, o * 3, r, g, b, shape * q, mode); return; }
+        PutLayer(o, r, g, b, shape, q, mode);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    static void BlendOpaque(float[] px, int o, float r, float g, float b, float a, Blend mode)
+    {
+        if (mode != Blend.Normal) BlendRgb(mode, px[o], px[o + 1], px[o + 2], r, g, b, out r, out g, out b);
         if (a >= 0.9999f) { px[o] = r; px[o + 1] = g; px[o + 2] = b; return; }
         px[o] += (r - px[o]) * a;
         px[o + 1] += (g - px[o + 1]) * a;
         px[o + 2] += (b - px[o + 2]) * a;
+    }
+
+    /// <summary>ISO 32000-2 11.3.6 compositing of source (cs, as) over backdrop (cb, ab).</summary>
+    static void Comp(float cbr, float cbg, float cbb, float ab, float r, float g, float b, float s, Blend mode,
+        out float orr, out float og, out float ob, out float oa)
+    {
+        if (mode != Blend.Normal && ab > 0f)
+        {
+            BlendRgb(mode, cbr, cbg, cbb, r, g, b, out var br, out var bg, out var bb);
+            r += ab * (br - r); g += ab * (bg - g); b += ab * (bb - b);
+        }
+        oa = ab + s - ab * s;
+        if (oa <= 0f) { orr = og = ob = 0; return; }
+        var k = s / oa;
+        orr = cbr + (r - cbr) * k; og = cbg + (g - cbg) * k; ob = cbb + (b - cbb) * k;
+    }
+
+    void PutLayer(int o, float r, float g, float b, float shape, float q, Blend mode)
+    {
+        var px = _px; var a = _a!; var o3 = o * 3;
+        if (!_ko)
+        {
+            var s = shape * q;
+            if (s <= 0f) return;
+            Comp(px[o3], px[o3 + 1], px[o3 + 2], a[o], r, g, b, s, mode, out px[o3], out px[o3 + 1], out px[o3 + 2], out a[o]);
+            if (_ag is { } ga) ga[o] += s - ga[o] * s;
+            return;
+        }
+        if (shape <= 0f) return;
+        float ir = 0, ig = 0, ib = 0, ia = 0;
+        if (_ip is { } ip) { ir = ip[o3]; ig = ip[o3 + 1]; ib = ip[o3 + 2]; ia = _ia![o]; }
+        Comp(ir, ig, ib, ia, r, g, b, q, mode, out var nr, out var ng, out var nb, out var na);
+        var pa = a[o];
+        var ra = pa + (na - pa) * shape;
+        if (ra > 0f)
+        {
+            var inv = 1f / ra;
+            px[o3] = (px[o3] * pa + (nr * na - px[o3] * pa) * shape) * inv;
+            px[o3 + 1] = (px[o3 + 1] * pa + (ng * na - px[o3 + 1] * pa) * shape) * inv;
+            px[o3 + 2] = (px[o3 + 2] * pa + (nb * na - px[o3 + 2] * pa) * shape) * inv;
+        }
+        a[o] = ra;
+        if (_ag is { } gk) gk[o] += (q - gk[o]) * shape;
     }
 
     static float B(Blend mode, float cb, float cs) => mode switch
@@ -530,12 +634,11 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 if (sa == 0) continue;
                 var cov = sa * (1f / 255f) * invNs;
                 if (clip.Cov is not null) cov *= clip.At(x, y);
-                cov *= al;
-                if (cov <= 0f) continue;
+                if (cov * al <= 0f) continue;
                 float r, g, b;
                 if (isMask) { r = mr; g = mg; b = mb; }
                 else { var k = 255f / sa; r = sr * k * (1f / 255f); g = sg * k * (1f / 255f); b = sb * k * (1f / 255f); }
-                BlendPixel(px, (y * wpx + x) * 3, r, g, b, cov, mode);
+                Put((y - _oy) * _lw + (x - _ox), r, g, b, cov, al, mode);
             }
         }
         if ((long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
@@ -554,7 +657,94 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 if (cl <= 0) continue;
                 var c = shader(x + 0.5, y + 0.5);
                 if (c is null) continue;
-                BlendPixel(_px, (y * _w + x) * 3, (float)c.Value.R, (float)c.Value.G, (float)c.Value.B, cl * al, mode);
+                Put((y - _oy) * _lw + (x - _ox), (float)c.Value.R, (float)c.Value.G, (float)c.Value.B, cl, al, mode);
             }
+    }
+
+    // ---------------------------------------------------------------- transparency groups (ISO 32000-2 11.4)
+
+    sealed class Group
+    {
+        public float[] Px = [], PPx = []; public float[]? A, Ag, Ip, Ia, PA, PAg, PIp, PIa;
+        public int Ox, Oy, Lw, Lh, POx, POy, PLw, PLh;
+        public bool Ko, PKo, Isolated, Pooled;
+        public ClipMask Outer = null!; public ClipMask? OuterPre;
+        public float Alpha; public Blend Mode;
+    }
+
+    static float[] Rent(int n, bool clear)
+    {
+        var a = System.Buffers.ArrayPool<float>.Shared.Rent(Math.Max(n, 1));
+        if (clear) a.AsSpan(0, n).Clear();
+        return a;
+    }
+
+    static void Return(float[]? a) { if (a is not null && a.Length > 0) System.Buffers.ArrayPool<float>.Shared.Return(a); }
+
+    public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode)
+    {
+        var c = _clip;
+        var g = new Group
+        {
+            PPx = _px, PA = _a, PAg = _ag, PIp = _ip, PIa = _ia, POx = _ox, POy = _oy, PLw = _lw, PLh = _lh, PKo = _ko,
+            Ko = knockout, Isolated = isolated, Outer = c, OuterPre = _preMask, Alpha = (float)alpha, Mode = ParseBlend(blendMode),
+        };
+        _groups.Push(g);
+        _preMask = null;
+        if (c.Empty)
+        {
+            _clip = new ClipMask(); // stays empty; nothing is painted into the layer
+            g.Px = _px; g.A = _a; g.Ag = _ag; g.Ip = _ip; g.Ia = _ia; g.Ox = _ox; g.Oy = _oy; g.Lw = _lw; g.Lh = _lh; g.Pooled = false;
+            return;
+        }
+        int w = c.X1 - c.X0, h = c.Y1 - c.Y0, n = w * h;
+        g.Ox = c.X0; g.Oy = c.Y0; g.Lw = w; g.Lh = h; g.Pooled = true;
+        g.Px = Rent(n * 3, isolated); g.A = Rent(n, isolated);
+        if (!isolated)
+        {
+            g.Ag = Rent(n, true); g.Ip = Rent(n * 3, false); g.Ia = Rent(n, false);
+            for (var y = 0; y < h; y++)
+            {
+                var pi = (c.Y0 + y - g.POy) * g.PLw + (c.X0 - g.POx);
+                var li = y * w;
+                Array.Copy(g.PPx, pi * 3, g.Px, li * 3, w * 3);
+                if (g.PA is null) Array.Fill(g.A, 1f, li, w); else Array.Copy(g.PA, pi, g.A, li, w);
+            }
+            Array.Copy(g.Px, g.Ip, n * 3); Array.Copy(g.A, g.Ia, n);
+        }
+        _px = g.Px; _a = g.A; _ag = g.Ag; _ip = g.Ip; _ia = g.Ia; _ox = g.Ox; _oy = g.Oy; _lw = w; _lh = h; _ko = knockout;
+        _clip = new ClipMask { X0 = c.X0, Y0 = c.Y0, X1 = c.X1, Y1 = c.Y1 };
+    }
+
+    public void EndGroup()
+    {
+        if (_groups.Count == 0) return;
+        var g = _groups.Pop();
+        _px = g.PPx; _a = g.PA; _ag = g.PAg; _ip = g.PIp; _ia = g.PIa; _ox = g.POx; _oy = g.POy; _lw = g.PLw; _lh = g.PLh; _ko = g.PKo;
+        _clip = g.Outer; _preMask = g.OuterPre;
+        if (!g.Pooled) return;
+        var c = g.Outer;
+        void Row(int y)
+        {
+            for (var x = c.X0; x < c.X1; x++)
+            {
+                var cov = c.At(x, y);
+                if (cov <= 0f) continue;
+                var li = (y - g.Oy) * g.Lw + (x - g.Ox); var l3 = li * 3;
+                var ag = g.Isolated ? g.A![li] : g.Ag![li];
+                if (ag <= 0f) continue;
+                float r = g.Px[l3], gg = g.Px[l3 + 1], b = g.Px[l3 + 2];
+                if (!g.Isolated)
+                {
+                    // Remove the backdrop contribution (11.4.8): C = Cn + (Cn - C0) * (a0 / ag - a0).
+                    var a0 = g.Ia![li]; var k = a0 / ag - a0;
+                    r += (r - g.Ip![l3]) * k; gg += (gg - g.Ip[l3 + 1]) * k; b += (b - g.Ip[l3 + 2]) * k;
+                    r = Math.Clamp(r, 0f, 1f); gg = Math.Clamp(gg, 0f, 1f); b = Math.Clamp(b, 0f, 1f);
+                }
+                Put((y - _oy) * _lw + (x - _ox), r, gg, b, cov, ag * g.Alpha, g.Mode);
+            }
+        }
+        for (var y = c.Y0; y < c.Y1; y++) Row(y);
+        Return(g.Px); Return(g.A); Return(g.Ag); Return(g.Ip); Return(g.Ia);
     }
 }
