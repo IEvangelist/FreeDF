@@ -71,6 +71,7 @@ public enum PdfAssociatedFileScope
     AcroForm,
     FormField,
     StructureElement,
+    XObject,
 }
 
 public sealed record PdfAssociatedFile(
@@ -79,7 +80,10 @@ public sealed record PdfAssociatedFile(
     int? PageIndex = null,
     int? AnnotationIndex = null,
     string? FieldName = null,
-    string? StructureRole = null);
+    string? StructureRole = null)
+{
+    public string? ResourceName { get; init; }
+}
 
 public sealed record PdfRichMediaAsset(
     int PageIndex,
@@ -368,6 +372,10 @@ public static class DocumentFeatures
         {
             var page = doc.Pages[pageIndex];
             AddAssociatedFiles(f, page.Dict.Get("AF"), PdfAssociatedFileScope.Page, pageIndex, null, list);
+            var seenXObjects = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            var visitedXObjects = 0;
+            CollectXObjectAssociatedFiles(f, page.Resources.Get("XObject"), pageIndex, "", 0,
+                seenXObjects, ref visitedXObjects, list);
             if (f.Resolve(page.Dict.Get("Annots")) is not PdfArray annotations) continue;
             for (var annotationIndex = 0; annotationIndex < annotations.Count; annotationIndex++)
                 if (f.Resolve(annotations[annotationIndex]) is PdfDictionary annotation)
@@ -510,6 +518,49 @@ public static class DocumentFeatures
             foreach (var kid in kids.Items)
                 if (f.Resolve(kid) is PdfDictionary child)
                     CollectRichMediaAssets(f, child, pageIndex, annotationIndex, depth + 1, seen, assets);
+    }
+
+    static void CollectXObjectAssociatedFiles(
+        PdfFile f,
+        PdfObject? xObjectResources,
+        int pageIndex,
+        string prefix,
+        int depth,
+        HashSet<PdfDictionary> seen,
+        ref int visited,
+        List<PdfAssociatedFile> acc)
+    {
+        if (depth > MaxDepth || f.Resolve(xObjectResources) is not PdfDictionary xObjects) return;
+        foreach (var (name, value) in xObjects.Entries)
+        {
+            if (++visited > 10_000) return;
+            var resolved = f.Resolve(value);
+            var dictionary = resolved switch
+            {
+                PdfStream stream => stream.Dict,
+                PdfDictionary direct => direct,
+                _ => null,
+            };
+            if (dictionary is null || !seen.Add(dictionary)) continue;
+            var resourceName = prefix.Length == 0 ? name : prefix + "/" + name;
+            if (f.Resolve(dictionary.Get("AF")) is PdfArray files)
+                foreach (var file in files.Items)
+                    if (f.Resolve(file) is PdfDictionary spec)
+                        acc.Add(new PdfAssociatedFile(
+                            PdfAssociatedFileScope.XObject,
+                            ReadFileSpecification(f, spec, FileName(f, spec) ?? ""),
+                            pageIndex)
+                        {
+                            ResourceName = resourceName,
+                        });
+            if (resolved is PdfStream form
+                && f.Resolve(form.Dict.Get("Subtype")).AsName() == "Form")
+            {
+                var resources = f.Resolve(form.Dict.Get("Resources")) as PdfDictionary;
+                CollectXObjectAssociatedFiles(f, resources?.Get("XObject"), pageIndex, resourceName, depth + 1,
+                    seen, ref visited, acc);
+            }
+        }
     }
 
     static void CollectStructureAssociatedFiles(
