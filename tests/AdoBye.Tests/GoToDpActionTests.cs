@@ -56,6 +56,21 @@ public class GoToDpActionTests
         Assert.IsType<PdfRef>(details.Dictionary.Get("Dp"));
     }
 
+    [Fact]
+    public void Indirect_dpart_dictionary_is_exposed_when_optional_type_is_absent()
+    {
+        var doc = LoadAction("/S /GoToDp /Dp 5 0 R",
+            "5 0 obj\n<< /Start 6 0 R /End 7 0 R /Vendor (opaque) >>\nendobj\n");
+        var details = ReadDetails(doc);
+        var dPart = Assert.IsType<PdfDictionary>(details.DPart);
+
+        Assert.Null(dPart.Get("Type"));
+        Assert.IsType<PdfRef>(dPart.Get("Start"));
+        Assert.IsType<PdfRef>(dPart.Get("End"));
+        Assert.Equal("opaque", Assert.IsType<PdfString>(dPart.Get("Vendor")).Text);
+        Assert.IsType<PdfRef>(details.Dictionary.Get("Dp"));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("/Dp null")]

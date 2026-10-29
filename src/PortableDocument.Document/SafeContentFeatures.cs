@@ -399,7 +399,7 @@ public static class SafeContentFeatures
         var dPart = action.Get("Dp") is PdfRef reference
             ? f.Resolve(reference) as PdfDictionary
             : null;
-        if (f.Resolve(dPart?.Get("Type")).AsName() != "DPart")
+        if (dPart?.Get("Type") is { } type && f.Resolve(type).AsName() != "DPart")
             dPart = null;
         return new PdfGoToDpAction(dPart, action);
     }
