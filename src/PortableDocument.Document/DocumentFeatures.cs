@@ -34,7 +34,10 @@ public sealed record PdfFileSpecification(
     PdfDictionary? CollectionItem,
     IReadOnlyList<PdfRelatedFile> RelatedFiles);
 
-public sealed record PdfRelatedFile(string Platform, string? FileName, PdfDictionary Dictionary);
+public sealed record PdfRelatedFile(string Platform, string? FileName, PdfDictionary Dictionary)
+{
+    public IReadOnlyList<PdfRelatedFile> RelatedFiles { get; init; } = [];
+}
 
 public sealed record PdfDocumentCollection(
     string? View,
@@ -420,18 +423,32 @@ public static class DocumentFeatures
             embedded,
             spec,
             f.Resolve(spec.Get("CI")) as PdfDictionary,
-            ReadRelatedFiles(f, spec.Get("RF")));
+            ReadRelatedFiles(f, spec.Get("RF"), new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance) { spec }, 0));
     }
 
-    static IReadOnlyList<PdfRelatedFile> ReadRelatedFiles(PdfFile f, PdfObject? value)
+    static IReadOnlyList<PdfRelatedFile> ReadRelatedFiles(
+        PdfFile f,
+        PdfObject? value,
+        HashSet<PdfDictionary> path,
+        int depth)
     {
-        if (f.Resolve(value) is not PdfDictionary related) return [];
+        if (depth >= MaxDepth || f.Resolve(value) is not PdfDictionary related) return [];
         var files = new List<PdfRelatedFile>();
         foreach (var (platform, relatedFiles) in related.Entries)
             if (f.Resolve(relatedFiles) is PdfArray array)
                 foreach (var file in array.Items)
                     if (f.Resolve(file) is PdfDictionary spec)
-                        files.Add(new PdfRelatedFile(platform, FileName(f, spec) ?? "", spec));
+                    {
+                        var isNew = path.Add(spec);
+                        var nested = isNew
+                            ? ReadRelatedFiles(f, spec.Get("RF"), path, depth + 1)
+                            : [];
+                        if (isNew) path.Remove(spec);
+                        files.Add(new PdfRelatedFile(platform, FileName(f, spec) ?? "", spec)
+                        {
+                            RelatedFiles = nested,
+                        });
+                    }
         return files;
     }
 

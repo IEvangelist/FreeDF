@@ -88,6 +88,9 @@ public class DocumentFeatureTests
         Assert.Equal("F", related.Platform);
         Assert.Equal("source.dat", related.FileName);
         Assert.NotNull(related.Dictionary.Get("RF"));
+        var nestedRelated = Assert.Single(related.RelatedFiles);
+        Assert.Equal("unicode.txt", nestedRelated.FileName);
+        Assert.Empty(nestedRelated.RelatedFiles);
         Assert.Equal("A report", doc.File.Resolve(spec.CollectionItem?.Get("Title")) is PdfString title ? title.Text : null);
 
         var embedded = spec.EmbeddedFiles["UF"];
