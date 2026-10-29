@@ -24,9 +24,22 @@ public sealed record PdfAction(
     int? AnnotationIndex = null,
     string? FieldName = null)
 {
+    public PdfGoToAction? GoToDetails { get; init; }
     public PdfRemoteGoToAction? RemoteGoToDetails { get; init; }
     public PdfUriAction? UriDetails { get; init; }
 }
+
+/// <summary>
+/// Inert /GoTo metadata (ISO 32000-2:2020, 12.6.4.2, Table 202). Only references
+/// within the current PDF are dereferenced; no navigation or named destination lookup occurs.
+/// Missing or wrong-type entries are null and remain available in Dictionary.
+/// Array contents are retained without conformance validation or resolving their elements.
+/// </summary>
+/// <param name="Destination">The required /D name, byte string, or explicit destination array (12.3.2). Local explicit destinations use page references.</param>
+/// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
+public sealed record PdfGoToAction(
+    PdfObject? Destination,
+    PdfDictionary Dictionary);
 
 /// <summary>
 /// Inert /URI metadata (ISO 32000-2:2020, 12.6.4.8, Table 210). Only references
@@ -67,7 +80,7 @@ public static class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection, with inert typed metadata for remote go-to and URI actions.
+    /// Returns action dictionaries for inspection, with inert typed metadata for local go-to, remote go-to and URI actions.
     /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
@@ -241,12 +254,21 @@ public static class SafeContentFeatures
             annotationIndex,
             fieldName)
         {
+            GoToDetails = type == "GoTo" ? ReadGoToAction(f, action) : null,
             RemoteGoToDetails = type == "GoToR" ? ReadRemoteGoToAction(f, action) : null,
             UriDetails = type == "URI" ? ReadUriAction(f, action) : null,
         });
         if (action.Get("Next") is { } next)
             AddActionChain(f, next, scope, $"{trigger}/Next", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
         ancestors.Remove(action);
+    }
+
+    static PdfGoToAction ReadGoToAction(PdfFile f, PdfDictionary action)
+    {
+        var destination = f.Resolve(action.Get("D"));
+        return new PdfGoToAction(
+            destination is PdfName or PdfString or PdfArray ? destination : null,
+            action);
     }
 
     static PdfRemoteGoToAction ReadRemoteGoToAction(PdfFile f, PdfDictionary action)
