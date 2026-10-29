@@ -10,7 +10,8 @@ using Pdf.Render;
 public sealed record Item(
     string Id, string Type, double X, double Y, double W, double H,
     string? Text, string? Font, double Size, bool Bold, bool Italic, string? Color,
-    string? Fill, string? Stroke, double StrokeWidth, double Opacity, string? Asset, double X2, double Y2, int? Orig = null);
+    string? Fill, string? Stroke, double StrokeWidth, double Opacity, string? Asset, double X2, double Y2, int? Orig = null,
+    string? Align = null, bool Underline = false, bool Strike = false, double Spacing = 0, double LineHeight = 0);
 
 public sealed record Asset(byte[] Data, string Mime);
 
@@ -132,6 +133,21 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
             face = FontCatalog.Standard.Contains(it.Font ?? "Helvetica") ? null : catalog.Resolve(it.Font, it.Bold, it.Italic);
             return face is not null && emb.TryGetValue(face.Path, out var e) ? e : null;
         }
+        double Measure(Item it, Embedded? ef, string line, double size)
+        {
+            var font = ef?.Font;
+            if (font is null)
+            {
+                // Arial, Times New Roman and Courier New are metric-compatible with the standard Helvetica, Times and Courier.
+                var proxy = (it.Font ?? "Helvetica") switch { "Times" => "Times New Roman", "Courier" => "Courier New", _ => "Arial" };
+                var f = catalog.Resolve(proxy, it.Bold, it.Italic);
+                if (f is not null) font = catalog.Load(f).Item2;
+            }
+            if (font is null) return line.Length * size * 0.5;
+            double w = 0;
+            foreach (var rn in line.EnumerateRunes()) w += font.Advance(font.LookupAny(rn.Value));
+            return w / 1000.0 * size;
+        }
         foreach (var it in items.Where(i => i.Type == "text"))
         {
             if (FontCatalog.Standard.Contains(it.Font ?? "Helvetica") || catalog.Resolve(it.Font, it.Bold, it.Italic) is not { } face) continue;
@@ -160,33 +176,47 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                     var (r, g2, b) = Rgb(it.Color);
                     var size = it.Size > 0 ? it.Size : 12;
                     var lines = (it.Text ?? "").Replace("\r", "").Split('\n');
-                    if (Face(it, out var face) is { } ef)
+                    var lead = size * (it.LineHeight > 0 ? it.LineHeight : 1.2); var tc = it.Spacing;
+                    var ef = Face(it, out var face);
+                    var widths = lines.Select(l => Measure(it, ef, l, size) + tc * l.EnumerateRunes().Count()).ToArray();
+                    var boxW = it.W > 0 ? it.W : widths.Max();
+                    double Left(int li) => it.Align switch { "center" => (boxW - widths[li]) / 2, "right" => boxW - widths[li], _ => 0 };
+                    var rule = new StringBuilder();
+                    string fkey = "";
+                    var synthBold = ef is not null && it.Bold && !face!.Bold; var skew = ef is not null && it.Italic && !face!.Italic ? 0.2 : 0;
+                    if (ef is null)
                     {
-                        var synthBold = it.Bold && !face!.Bold; var skew = it.Italic && !face!.Italic ? 0.2 : 0;
-                        sb.Append($"{N(r)} {N(g2)} {N(b)} rg\n");
-                        if (synthBold) sb.Append($"{N(r)} {N(g2)} {N(b)} RG\n{N(size * 0.03)} w\n2 Tr\n");
-                        sb.Append($"BT\n/{ef.Key} {N(size)} Tf\n");
-                        for (var li = 0; li < lines.Length; li++)
+                        var bf = BaseFont(it.Font, it.Bold, it.Italic);
+                        fkey = "EdF" + bf.Replace("-", "");
+                        if (!_fonts.TryGetValue(fkey, out var f))
+                        {
+                            var fd = new Dictionary<string, PdfObject> { ["Type"] = new PdfName("Font"), ["Subtype"] = new PdfName("Type1"), ["BaseFont"] = new PdfName(bf) };
+                            if (bf is not ("Symbol" or "ZapfDingbats")) fd["Encoding"] = new PdfName("WinAnsiEncoding");
+                            _fonts[fkey] = f = editor.AddObject(new PdfDictionary(fd));
+                        }
+                        fonts[fkey] = f;
+                    }
+                    else fkey = ef.Key;
+                    sb.Append($"{N(r)} {N(g2)} {N(b)} rg\n");
+                    if (synthBold) sb.Append($"{N(r)} {N(g2)} {N(b)} RG\n{N(size * 0.03)} w\n2 Tr\n");
+                    sb.Append($"BT\n/{fkey} {N(size)} Tf\n{N(tc)} Tc\n");
+                    for (var li = 0; li < lines.Length; li++)
+                    {
+                        var x = Px(it.X) + Left(li); var y = Py(it.Y) - size * 0.95 - li * lead;
+                        string shown;
+                        if (ef is not null)
                         {
                             var hex = new StringBuilder("<");
                             foreach (var rn in lines[li].EnumerateRunes()) hex.Append(ef.Font.LookupAny(rn.Value).ToString("X4"));
-                            sb.Append($"1 0 {N(skew)} 1 {N(Px(it.X))} {N(Py(it.Y) - size * 0.95 - li * size * 1.2)} Tm\n{hex}> Tj\n");
+                            shown = hex + ">";
                         }
-                        sb.Append("ET\n");
-                        break;
+                        else shown = Escape(lines[li]);
+                        sb.Append($"1 0 {N(skew)} 1 {N(x)} {N(y)} Tm\n{shown} Tj\n");
+                        if (it.Underline) rule.Append($"{N(x)} {N(y - size * 0.14)} {N(widths[li])} {N(Math.Max(size * 0.06, 0.5))} re\n");
+                        if (it.Strike) rule.Append($"{N(x)} {N(y + size * 0.3)} {N(widths[li])} {N(Math.Max(size * 0.06, 0.5))} re\n");
                     }
-                    var bf = BaseFont(it.Font, it.Bold, it.Italic);
-                    var fkey = "EdF" + bf.Replace("-", "");
-                    if (!_fonts.TryGetValue(fkey, out var f))
-                    {
-                        var fd = new Dictionary<string, PdfObject> { ["Type"] = new PdfName("Font"), ["Subtype"] = new PdfName("Type1"), ["BaseFont"] = new PdfName(bf) };
-                        if (bf is not ("Symbol" or "ZapfDingbats")) fd["Encoding"] = new PdfName("WinAnsiEncoding");
-                        _fonts[fkey] = f = editor.AddObject(new PdfDictionary(fd));
-                    }
-                    fonts[fkey] = f;
-                    sb.Append($"{N(r)} {N(g2)} {N(b)} rg\nBT\n/{fkey} {N(size)} Tf\n{N(size * 1.2)} TL\n{N(Px(it.X))} {N(Py(it.Y) - size * 0.95)} Td\n");
-                    foreach (var line in lines) sb.Append($"{Escape(line)} '\n");
                     sb.Append("ET\n");
+                    if (rule.Length > 0) sb.Append("0 Tr\n").Append(rule).Append("f\n");
                     break;
                 }
                 case "rect":
