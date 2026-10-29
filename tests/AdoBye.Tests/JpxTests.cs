@@ -159,6 +159,18 @@ public class JpxTests
     }
 
     [Fact]
+    public void MultiRangeSpatialPocFixtureContainsBothProgressionChanges()
+    {
+        var data = Codestream("poc-spatial-multirange");
+        var markerPos = FindMarker(data, 0xFF5F);
+
+        Assert.Equal(16, ReadU16(data, markerPos + 2));
+        Assert.Equal(
+            new byte[] { 0, 0, 0, 1, 4, 3, 3, 0, 0, 0, 3, 4, 3, 4 },
+            data.AsSpan(markerPos + 4, 14).ToArray());
+    }
+
+    [Fact]
     public void RejectsPpmMarkerInTilePartHeader()
     {
         var data = Codestream("ppt-lossless");

@@ -292,6 +292,149 @@ def add_poc(data, layers, resolutions, components, end_components=None, malforme
     return bytes(data[:sot] + new_sot + tile_header + sod + packet_data + data[tile_end:])
 
 
+def add_multi_range_spatial_poc(data, width, height):
+    """Adds PCRL then CPRL progression ranges to an LRCP stream."""
+    data = bytearray(data)
+    if data[:2] != b"\xff\x4f":
+        raise ValueError("POC fixture must be a raw JPEG 2000 codestream")
+
+    p = 2
+    poc_at = None
+    cod_pos = None
+    while p + 4 <= len(data):
+        marker, next_pos = _marker(data, p)
+        if marker == 0xFF90:
+            break
+        if marker == 0xFF52:
+            poc_at = next_pos
+            cod_pos = p
+        p = next_pos
+    if poc_at is None or cod_pos is None or p + 12 > len(data):
+        raise ValueError("codestream has no COD or SOT marker")
+
+    poc_data = bytes((0, 0, 0, 1, 4, 3, 3, 0, 0, 0, 3, 4, 3, 4))
+    poc = b"\xff\x5f" + (len(poc_data) + 2).to_bytes(2, "big") + poc_data
+    data[poc_at:poc_at] = poc
+    sot = p + len(poc)
+
+    psot = int.from_bytes(data[sot + 6:sot + 10], "big")
+    if psot == 0:
+        raise ValueError("POC fixture requires a finite tile-part length")
+    tile_end = sot + psot
+    q = sot + 12
+    header_parts = []
+    packet_lengths = []
+    replaced_plt = False
+    while data[q:q + 2] != b"\xff\x93":
+        marker = data[q:q + 2]
+        length = int.from_bytes(data[q + 2:q + 4], "big")
+        segment_end = q + 2 + length
+        segment = bytes(data[q:segment_end])
+        if marker == b"\xff\x58":
+            if replaced_plt:
+                raise ValueError("fixture requires a single PLT marker")
+            replaced_plt = True
+            encoded = data[q + 5:segment_end]
+            value = 0
+            for byte in encoded:
+                value = (value << 7) | (byte & 0x7f)
+                if byte & 0x80 == 0:
+                    packet_lengths.append(value)
+                    value = 0
+            if value:
+                raise ValueError("incomplete PLT packet length")
+            header_parts.append(None)
+        else:
+            header_parts.append(segment)
+        q = segment_end
+    if not replaced_plt:
+        raise ValueError("POC fixture requires PLT packet lengths")
+
+    packet_start = q + 2
+    payload = bytes(data[packet_start:tile_end])
+    if sum(packet_lengths) != len(payload):
+        raise ValueError("PLT lengths do not match tile packet data")
+
+    cod_body = cod_pos + 4
+    resolutions = data[cod_body + 5] + 1
+    if not data[cod_body] & 1:
+        raise ValueError("spatial POC fixture requires explicit precinct sizes")
+    precincts = data[cod_body + 10:cod_body + 10 + resolutions]
+    if len(precincts) != resolutions:
+        raise ValueError("truncated COD precinct sizes")
+    precinct_exponents = [(value >> 4, value & 0x0f) for value in precincts]
+    levels = resolutions - 1
+    components = 3
+    precinct_counts = []
+    source_index = {}
+    packet_index = 0
+    for layer in range(3):
+        for resolution in range(resolutions):
+            scale = 1 << (levels - resolution)
+            ppx, ppy = precinct_exponents[resolution]
+            precinct_width, precinct_height = 1 << ppx, 1 << ppy
+            res_width = (width + scale - 1) // scale
+            res_height = (height + scale - 1) // scale
+            npw = (res_width + precinct_width - 1) // precinct_width
+            nph = (res_height + precinct_height - 1) // precinct_height
+            count = npw * nph
+            if layer == 0:
+                precinct_counts.append(count)
+            for component in range(components):
+                for precinct in range(count):
+                    source_index[layer, resolution, component, precinct] = packet_index
+                    packet_index += 1
+    if packet_index != len(packet_lengths):
+        raise ValueError(f"expected {packet_index} packets from precinct geometry, found {len(packet_lengths)}")
+
+    positions = []
+    for component in range(components):
+        for resolution, count in enumerate(precinct_counts):
+            scale = 1 << (levels - resolution)
+            ppx, ppy = precinct_exponents[resolution]
+            precinct_width, precinct_height = 1 << ppx, 1 << ppy
+            npw = (width + scale * precinct_width - 1) // (scale * precinct_width)
+            for precinct in range(count):
+                px, py = precinct % npw, precinct // npw
+                positions.append((
+                    component, resolution, precinct,
+                    px * precinct_width * scale, py * precinct_height * scale,
+                ))
+
+    schedule = [
+        source_index[0, resolution, component, precinct]
+        for component, resolution, precinct, _, _ in sorted(
+            positions, key=lambda packet: (packet[4], packet[3], packet[0], packet[1], packet[2]))
+    ]
+    for component, resolution, precinct, _, _ in sorted(
+            positions, key=lambda packet: (packet[0], packet[4], packet[3], packet[1], packet[2])):
+        for layer in (1, 2):
+            schedule.append(source_index[layer, resolution, component, precinct])
+
+    if len(schedule) != len(packet_lengths) or len(set(schedule)) != len(packet_lengths):
+        raise ValueError("POC ranges must cover every packet exactly once")
+
+    def encode_length(value):
+        groups = [value & 0x7f]
+        value >>= 7
+        while value:
+            groups.append((value & 0x7f) | 0x80)
+            value >>= 7
+        return bytes(reversed(groups))
+
+    plt_data = b"\x00" + b"".join(encode_length(packet_lengths[index]) for index in schedule)
+    plt = b"\xff\x58" + (len(plt_data) + 2).to_bytes(2, "big") + plt_data
+    packet_offsets = [0]
+    for length in packet_lengths:
+        packet_offsets.append(packet_offsets[-1] + length)
+    packet_data = b"".join(payload[packet_offsets[index]:packet_offsets[index + 1]] for index in schedule)
+    tile_header = b"".join(plt if segment is None else segment for segment in header_parts)
+    old_header_size = q - (sot + 12)
+    new_sot = bytearray(data[sot:sot + 12])
+    new_sot[6:10] = (psot + len(tile_header) - old_header_size).to_bytes(4, "big")
+    return bytes(data[:sot] + new_sot + tile_header + b"\xff\x93" + packet_data + data[tile_end:])
+
+
 def emit(name, im, tol=0, extra=None, expected_mode=None, packed=None, **kw):
     buf = io.BytesIO()
     if packed is not None:
@@ -346,6 +489,31 @@ def emit_poc(name, im, tile_poc=False):
                  {"ColorSpace": Name.DeviceRGB})
 
 
+def emit_multi_range_spatial_poc(name, im):
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG2000", no_jp2=True, progression="LRCP", num_resolutions=4,
+            quality_mode="rates", quality_layers=[100, 25, 1], irreversible=True,
+            precinct_size=(32, 32), plt=True)
+    original = buf.getvalue()
+    data = add_multi_range_spatial_poc(original, im.width, im.height)
+
+    plain = Image.open(io.BytesIO(original))
+    plain.load()
+    plain_arr = np.asarray(plain)
+    ref = Image.open(io.BytesIO(data))
+    ref.load()
+    arr = np.asarray(ref)
+    if arr.ndim != 3 or arr.shape[2] != 3:
+        raise ValueError(f"expected OpenJPEG to decode RGB POC fixture, found {arr.shape}")
+    if not np.array_equal(arr, plain_arr):
+        raise ValueError("OpenJPEG decoded different samples after applying the multi-range spatial POC schedule")
+    h, w, _ = arr.shape
+    make_pdf(os.path.join(OUT, name + ".pdf"), w, h, data, {"ColorSpace": Name.DeviceRGB})
+    open(os.path.join(OUT, name + ".bin"), "wb").write(np.ascontiguousarray(arr).tobytes())
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"RGB {w} {h} 2")
+    print("wrote", name, "RGB", w, h, len(data), "bytes")
+
+
 def main():
     rgb = picture(96, 72)
     gray = rgb.convert("L")
@@ -387,6 +555,7 @@ def main():
     emit("gray16-lossless", Image.fromarray(g16, "I;16"))
     emit_poc("poc-rlcp", rgb)
     emit_poc("poc-tile-rlcp", rgb, tile_poc=True)
+    emit_multi_range_spatial_poc("poc-spatial-multirange", rgb)
 
     packed = Image.fromarray((np.arange(64, dtype=np.uint8).reshape((8, 8)) + 64), "L")
     emit("ppm-lossless", packed, packed="PPM", num_resolutions=1, irreversible=False)
