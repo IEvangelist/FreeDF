@@ -132,5 +132,12 @@ public interface IRenderBackend
     void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop, Func<double, double>? transfer) => SetSoftMask(draw, luminosity, backdrop);
     /// <summary>Starts a transparency group (11.4): content is composited into a separate layer and merged on <see cref="EndGroup"/> with the given alpha and blend mode.</summary>
     void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode) { }
+    /// <summary>Starts a group in the specified blending colour space; null inherits the current group's space.</summary>
+    void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode, PdfColorSpace? colorSpace)
+    {
+        if (colorSpace is not null && colorSpace != PdfColorSpace.Rgb)
+            throw new NotSupportedException("The render backend does not support this transparency group colour space.");
+        BeginGroup(isolated, knockout, alpha, blendMode);
+    }
     void EndGroup() { }
 }

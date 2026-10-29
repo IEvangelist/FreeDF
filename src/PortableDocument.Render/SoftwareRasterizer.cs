@@ -5,7 +5,7 @@ using PortableDocument.Content;
 namespace PortableDocument.Render;
 
 /// <summary>
-/// Managed anti-aliased software rasterizer implementing <see cref="IRenderBackend"/>. Surface is opaque RGB, white background.
+/// Managed anti-aliased software rasterizer implementing <see cref="IRenderBackend"/>. Output is opaque RGB over white; groups may blend in RGB or gray.
 /// Scan conversion is row-at-a-time (4 sub-scanlines, exact horizontal coverage) with struct edges and no per-fill allocations.
 /// </summary>
 public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
@@ -33,6 +33,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     float[]? _ag;  // group-only alpha, for non-isolated groups
     float[]? _ip, _ia; // initial backdrop colour/alpha (non-isolated groups)
     bool _ko;      // knockout group
+    bool _gray;    // current blending space (gray is stored as three equal components)
     readonly Stack<Group> _groups = new();
     ClipMask _clip;
     readonly Stack<(ClipMask, ClipMask?)> _stack = new();
@@ -524,6 +525,8 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     void Put(int o, float r, float g, float b, float shape, float q, Blend mode)
     {
+        // Classic device conversion (10.4.2.2), before compositing rather than after flattening.
+        if (_gray) r = g = b = Lum(r, g, b);
         var a = _a;
         if (a is null) { BlendOpaque(_px, o * 3, r, g, b, shape * q, mode); return; }
         PutLayer(o, r, g, b, shape, q, mode);
@@ -684,7 +687,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     {
         public float[] Px = [], PPx = []; public float[]? A, Ag, Ip, Ia, PA, PAg, PIp, PIa;
         public int Ox, Oy, Lw, Lh, POx, POy, PLw, PLh;
-        public bool Ko, PKo, Isolated, Pooled;
+        public bool Ko, PKo, PGray, Isolated, Pooled;
         public ClipMask Outer = null!; public ClipMask? OuterPre;
         public float Alpha; public Blend Mode;
     }
@@ -698,13 +701,21 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     static void Return(float[]? a) { if (a is not null && a.Length > 0) System.Buffers.ArrayPool<float>.Shared.Return(a); }
 
-    public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode)
+    public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode) =>
+        BeginGroup(isolated, knockout, alpha, blendMode, null);
+
+    public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode, PdfColorSpace? colorSpace)
     {
+        if (colorSpace is not null && colorSpace != PdfColorSpace.Gray && colorSpace != PdfColorSpace.Rgb)
+            throw new NotSupportedException("Only DeviceGray and DeviceRGB transparency group blending are implemented.");
+        var gray = colorSpace is null ? _gray : colorSpace == PdfColorSpace.Gray;
+        if (!isolated && gray != _gray)
+            throw new NotSupportedException("Non-isolated transparency groups must inherit the backdrop's colour space.");
         var c = _clip;
         var g = new Group
         {
             PPx = _px, PA = _a, PAg = _ag, PIp = _ip, PIa = _ia, POx = _ox, POy = _oy, PLw = _lw, PLh = _lh, PKo = _ko,
-            Ko = knockout, Isolated = isolated, Outer = c, OuterPre = _preMask, Alpha = (float)alpha, Mode = ParseBlend(blendMode),
+            Ko = knockout, PGray = _gray, Isolated = isolated, Outer = c, OuterPre = _preMask, Alpha = (float)alpha, Mode = ParseBlend(blendMode),
         };
         _groups.Push(g);
         _preMask = null;
@@ -729,7 +740,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             }
             Array.Copy(g.Px, g.Ip, n * 3); Array.Copy(g.A, g.Ia, n);
         }
-        _px = g.Px; _a = g.A; _ag = g.Ag; _ip = g.Ip; _ia = g.Ia; _ox = g.Ox; _oy = g.Oy; _lw = w; _lh = h; _ko = knockout;
+        _px = g.Px; _a = g.A; _ag = g.Ag; _ip = g.Ip; _ia = g.Ia; _ox = g.Ox; _oy = g.Oy; _lw = w; _lh = h; _ko = knockout; _gray = gray;
         _clip = new ClipMask { X0 = c.X0, Y0 = c.Y0, X1 = c.X1, Y1 = c.Y1 };
     }
 
@@ -737,7 +748,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     {
         if (_groups.Count == 0) return;
         var g = _groups.Pop();
-        _px = g.PPx; _a = g.PA; _ag = g.PAg; _ip = g.PIp; _ia = g.PIa; _ox = g.POx; _oy = g.POy; _lw = g.PLw; _lh = g.PLh; _ko = g.PKo;
+        _px = g.PPx; _a = g.PA; _ag = g.PAg; _ip = g.PIp; _ia = g.PIa; _ox = g.POx; _oy = g.POy; _lw = g.PLw; _lh = g.PLh; _ko = g.PKo; _gray = g.PGray;
         _clip = g.Outer; _preMask = g.OuterPre;
         if (!g.Pooled) return;
         var c = g.Outer;

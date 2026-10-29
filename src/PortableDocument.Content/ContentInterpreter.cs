@@ -61,7 +61,10 @@ public sealed class ContentInterpreter
 
     public bool DrawAnnotations { get; set; } = true;
 
-    public void Render(PdfPage page, Matrix baseMatrix)
+    public void Render(PdfPage page, Matrix baseMatrix) => Render(page, baseMatrix, asPageElement: false);
+
+    /// <summary>Renders a page. When placed as an element of another page, /I controls isolation and a non-isolated page inherits its backdrop's colour space (11.4.7, 11.6.6).</summary>
+    public void Render(PdfPage page, Matrix baseMatrix, bool asPageElement)
     {
         if (OptionalContentState is { } state)
         {
@@ -71,12 +74,75 @@ public sealed class ContentInterpreter
         }
         SetBase(baseMatrix);
         _gs = new GState { Ctm = baseMatrix };
-        // A knockout page group makes top-level objects knock each other out; isolation is moot over opaque paper.
-        var pageKo = R(R(page.Dict.Get("Group")) is PdfDictionary pg && R(pg.Get("S")).AsName() == "Transparency" ? pg.Get("K") : null) is PdfBoolean { Value: true };
-        if (pageKo) _be.BeginGroup(false, true, 1, "Normal");
-        Run(page.GetContents(), page.Resources);
-        if (pageKo) _be.EndGroup();
-        if (DrawAnnotations) RenderAnnotations(page, baseMatrix);
+        var group = R(page.Dict.Get("Group")) is PdfDictionary pg && R(pg.Get("S")).AsName() == "Transparency" ? pg : null;
+        // Output pages are always isolated, including pages without /Group (11.4.7).
+        var isolated = !asPageElement || R(group?.Get("I")) is PdfBoolean { Value: true };
+        var knockout = R(group?.Get("K")) is PdfBoolean { Value: true };
+        var colorSpace = DrawGraphics && isolated ? PageGroupColorSpace(group?.Get("CS"), page.Resources) : null;
+        _be.Save();
+        try
+        {
+            if (asPageElement)
+            {
+                var box = page.CropBox;
+                var clip = new PathData(); clip.Rect(box.Left, box.Bottom, box.Width, box.Height);
+                _be.Clip(clip, baseMatrix, false);
+            }
+            if (DrawGraphics) _be.BeginGroup(isolated, knockout, 1, "Normal", colorSpace);
+            try
+            {
+                var stackDepth = _stack.Count;
+                _be.Save();
+                try { Run(page.GetContents(), page.Resources); }
+                finally
+                {
+                    while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
+                    _be.Restore();
+                }
+                if (DrawAnnotations) RenderAnnotations(page, baseMatrix);
+            }
+            finally { if (DrawGraphics) _be.EndGroup(); }
+        }
+        finally { _be.Restore(); }
+    }
+
+    PdfColorSpace? PageGroupColorSpace(PdfObject? obj, PdfDictionary resources, int depth = 0, bool useDefaults = true)
+    {
+        obj = R(obj);
+        if (obj is null or PdfNull) return null;
+        if (depth > 8) throw new PdfParseException("Cyclic page transparency group colour space.");
+        var spaces = R(resources.Get("ColorSpace")) as PdfDictionary;
+        if (obj is PdfName name)
+        {
+            var device = name.Value switch
+            {
+                "DeviceGray" => PdfColorSpace.Gray,
+                "DeviceRGB" => PdfColorSpace.Rgb,
+                "DeviceCMYK" => PdfColorSpace.Cmyk,
+                _ => null,
+            };
+            if (device is not null)
+            {
+                var key = name.Value switch { "DeviceGray" => "DefaultGray", "DeviceRGB" => "DefaultRGB", _ => "DefaultCMYK" };
+                if (useDefaults && R(spaces?.Get(key)) is { } replacement and not PdfNull)
+                {
+                    var mapped = PageGroupColorSpace(replacement, resources, depth + 1, useDefaults: false);
+                    if (mapped is null || mapped.Components != device.Components)
+                        throw new PdfParseException($"Page transparency group /{key} has an invalid component count.");
+                    return mapped;
+                }
+                if (device != PdfColorSpace.Cmyk) return device;
+            }
+            else if (spaces?.Get(name.Value) is { } named)
+            {
+                var resolved = PageGroupColorSpace(named, resources, depth + 1, useDefaults);
+                return resolved ?? throw new PdfParseException($"Invalid page transparency group colour space /{name.Value}.");
+            }
+        }
+        // The general colour parser deliberately falls back for unsupported spaces/profiles.
+        // A blending space needs an inverse transform, so that fallback is not valid here.
+        var kind = obj is PdfArray { Count: > 0 } a ? R(a[0]).AsName() : obj.AsName();
+        throw new NotSupportedException($"Page transparency group colour space /{kind ?? "invalid"} is not supported; only DeviceGray and DeviceRGB blending are implemented.");
     }
 
     // ISO 32000-2 12.5.5: map the transformed appearance BBox onto the annotation Rect.
