@@ -112,6 +112,10 @@ public sealed class PdfFont
     public string BaseFont { get; } = "";
     public bool IsType0 { get; }
     public bool IsType3 { get; }
+    /// <summary>
+    /// The encoding CMap selects vertical writing. W2/DW2 place the selected CID outlines;
+    /// OpenType GSUB vert/vrt2 substitution is not performed (vertical CMap CID mappings are honored).
+    /// </summary>
     public bool Vertical { get; }
     public PdfStream? FontFile { get; }
     TrueTypeFont? _tt;
@@ -130,6 +134,8 @@ public sealed class PdfFont
     double _missingWidth;
     readonly Dictionary<int, double> _cidWidths = [];
     double _dw = 1000;
+    readonly Dictionary<int, (double Advance, double X, double Y)> _cidVerticalMetrics = [];
+    double _defaultVerticalY = 880, _defaultVerticalAdvance = -1000;
     byte[]? _cidToGid;
     bool _symbolic;
     bool _fallbackUsed;
@@ -165,12 +171,19 @@ public sealed class PdfFont
                 try { _cmap = CMap.Parse(f.DecodeStream(ecs), parent); }
                 catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
             }
+            Vertical = (encObj is PdfStream es ? f.Resolve(es.Dict.Get("WMode")).AsNumber() : null) is { } mode
+                ? mode == 1 : _cmap?.WMode == 1;
             if (_cmap is { IsIdentity: true }) _cmap = null;
-            Vertical = _cmap?.WMode == 1 || encName is not null && encName.EndsWith("-V");
             if (f.Resolve(fontDict.Get("CIDSystemInfo")) is PdfDictionary csi && f.Resolve(csi.Get("Ordering")) is PdfString os) _ordering = Encoding.Latin1.GetString(os.Bytes);
             if (_ordering is "" or "Identity" && encName is not null) _ordering = OrderingFromCMap(encName);
             _dw = f.Resolve(fontDict.Get("DW")).AsNumber() ?? 1000;
             ParseW(f.Resolve(fontDict.Get("W")) as PdfArray);
+            if (f.Resolve(fontDict.Get("DW2")) is PdfArray dw2 && dw2.Count == 2)
+            {
+                _defaultVerticalY = f.Resolve(dw2[0]).AsNumber() ?? 880;
+                _defaultVerticalAdvance = f.Resolve(dw2[1]).AsNumber() ?? -1000;
+            }
+            ParseW2(f.Resolve(fontDict.Get("W2")) as PdfArray);
             var c2g = f.Resolve(fontDict.Get("CIDToGIDMap"));
             if (c2g is PdfStream cs) _cidToGid = f.DecodeStream(cs);
         }
@@ -251,6 +264,41 @@ public sealed class PdfFont
             else break;
         }
     }
+
+    void ParseW2(PdfArray? w)
+    {
+        if (w is null) return;
+        (double, double, double) Metrics(PdfArray a, int i) =>
+            (_f.Resolve(a[i]).AsNumber() ?? 0, _f.Resolve(a[i + 1]).AsNumber() ?? 0, _f.Resolve(a[i + 2]).AsNumber() ?? 0);
+        for (var i = 0; i < w.Count;)
+        {
+            var first = _f.Resolve(w[i]).AsNumber(); if (first is null) break;
+            if (i + 1 < w.Count && _f.Resolve(w[i + 1]) is PdfArray arr)
+            {
+                for (var k = 0; k + 2 < arr.Count; k += 3)
+                    _cidVerticalMetrics[(int)first.Value + k / 3] = Metrics(arr, k);
+                i += 2;
+            }
+            else if (i + 4 < w.Count)
+            {
+                var last = (int)(_f.Resolve(w[i + 1]).AsNumber() ?? first.Value);
+                var metrics = Metrics(w, i + 2);
+                for (var c = (int)first.Value; c <= last && c - (int)first.Value < 70000; c++)
+                    _cidVerticalMetrics[c] = metrics;
+                i += 5;
+            }
+            else break;
+        }
+    }
+
+    /// <summary>
+    /// Vertical displacement w1y and origin vector v in em units (9.7.4.3).
+    /// This places the selected CID's outline; it does not perform OpenType vertical glyph substitution.
+    /// </summary>
+    internal (double Advance, double X, double Y) VerticalMetrics(GlyphRun run) =>
+        _cidVerticalMetrics.TryGetValue(run.Code, out var m)
+            ? (m.Advance / 1000, m.X / 1000, m.Y / 1000)
+            : (_defaultVerticalAdvance / 1000, run.Width / 2, _defaultVerticalY / 1000);
 
     void BuildSimpleEncoding(PdfDictionary dict, PdfDictionary fontDict)
     {

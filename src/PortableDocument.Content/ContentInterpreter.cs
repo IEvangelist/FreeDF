@@ -760,11 +760,12 @@ public sealed class ContentInterpreter
     }
 
     /// <summary>A text-showing operator (Tj, TJ, ' or ") in the page's own content stream, with its device-space geometry.</summary>
+    /// <remarks>Advance is a TJ adjustment along the font's writing axis. Pieces contain glyph boxes for both writing modes.</remarks>
     public sealed record TextSpan(int Index, string Op, string Text, double X, double Y, double Width, double Size, double Angle,
         string FontName, RgbColor Color, double Advance, bool Vertical, int Mcid = -1,
         int Form = 0, int FontRef = 0, PdfFont? Font = null, IReadOnlyList<TextPiece>? Pieces = null);
 
-    /// <summary>One shown glyph: its raw string bytes, device-space box and horizontal advance as a TJ number (negative moves forward).</summary>
+    /// <summary>One shown glyph: its raw string bytes, device-space box and writing-axis advance as a TJ number.</summary>
     public sealed record TextGlyph(byte[] Bytes, double X0, double Y0, double X1, double Y1, double Adv);
 
     /// <summary>Either a TJ adjustment number or a run of glyphs from one string operand.</summary>
@@ -824,12 +825,13 @@ public sealed class ContentInterpreter
         if (!collect || font is null) return;
         var end = TextOrigin();
         var trm = new Matrix(_gs.FontSize * _gs.HScale, 0, 0, _gs.FontSize, 0, _gs.Rise).Then(tmBefore).Then(_gs.Ctm);
-        var local = tmBefore.Invert().Apply(_tm.E, _tm.F).Item1;
-        var scale = _gs.FontSize * _gs.HScale;
+        var displacement = tmBefore.Invert().Apply(_tm.E, _tm.F);
+        var local = font.Vertical ? displacement.Y : displacement.X;
+        var scale = _gs.FontSize * (font.Vertical ? 1 : _gs.HScale);
         TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
             Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
-            _curForm, _gs.FontRef, font, font.Vertical ? null : pieces));
+            _curForm, _gs.FontRef, font, pieces));
     }
 
     void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null, System.Text.StringBuilder? text = null)
@@ -842,11 +844,17 @@ public sealed class ContentInterpreter
         {
             text?.Append(font.ToUnicode(run));
             var fs = _gs.FontSize;
-            var trm = new Matrix(fs * _gs.HScale, 0, 0, fs, 0, _gs.Rise).Then(_tm).Then(_gs.Ctm);
+            var vertical = font.Vertical ? font.VerticalMetrics(run) : default;
+            // v points from the horizontal origin to the vertical origin; outlines use the former.
+            var origin = font.Vertical ? Matrix.Translate(-vertical.X, -vertical.Y) : Matrix.Identity;
+            var glyphToUser = origin.Then(new Matrix(fs * _gs.HScale, 0, 0, fs, 0, _gs.Rise)).Then(_tm);
+            var trm = glyphToUser.Then(_gs.Ctm);
+            var advance = (font.Vertical ? vertical.Advance : run.Width) * fs
+                + _gs.CharSpace + (font.IsSpace(run) ? _gs.WordSpace : 0);
             if (rec is not null && fs != 0)
             {
                 var (bx0, by0, bx1, by1) = Bounds(trm, [(0, -0.25), (run.Width, -0.25), (0, 0.95), (run.Width, 0.95)], 0);
-                var adv = -(run.Width * fs + _gs.CharSpace + (font.IsSpace(run) ? _gs.WordSpace : 0)) * 1000 / fs;
+                var adv = -advance * 1000 / fs;
                 rec.Add(new TextGlyph(s[off..Math.Min(s.Length, off + run.ByteLength)], bx0, by0, bx1, by1, adv));
             }
             off += run.ByteLength;
@@ -861,16 +869,13 @@ public sealed class ContentInterpreter
                     if (mode is 1 or 2 or 5 or 6)
                     {
                         // Stroke width is in user space, so stroke with the text-space transform folded into the path.
-                        var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(new Matrix(fs * _gs.HScale, 0, 0, fs, 0, _gs.Rise).Then(_tm)));
+                        var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(glyphToUser));
                         _be.Stroke(up, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
                     }
                     if (mode >= 4) { _textClip ??= new PathData(); _textClip.Append(outline.Transform(m)); }
                 }
             }
-            double tx;
-            if (font.Vertical) { var ty = -run.Width * 0 - 1.0 * fs + _gs.CharSpace + (font.IsSpace(run) ? _gs.WordSpace : 0); _tm = Matrix.Translate(0, ty).Then(_tm); continue; }
-            tx = (run.Width * fs + _gs.CharSpace + (font.IsSpace(run) ? _gs.WordSpace : 0)) * _gs.HScale;
-            _tm = Matrix.Translate(tx, 0).Then(_tm);
+            _tm = (font.Vertical ? Matrix.Translate(0, advance) : Matrix.Translate(advance * _gs.HScale, 0)).Then(_tm);
         }
     }
 
