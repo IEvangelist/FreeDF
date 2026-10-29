@@ -49,6 +49,7 @@ public class EmbeddedGoToActionTests
         Assert.Equal(0L, Assert.IsType<PdfInteger>(destination[0]).Value);
         Assert.Equal("Fit", Assert.IsType<PdfName>(destination[1]).Value);
         Assert.Null(details.Target);
+        Assert.Null(details.TargetPath);
         Assert.Null(details.NewWindow);
     }
 
@@ -77,7 +78,7 @@ public class EmbeddedGoToActionTests
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public void Local_indirect_values_are_resolved_without_reading_embedded_content_or_nested_targets(bool indirect, bool newWindow)
+    public void Local_indirect_values_are_resolved_without_reading_embedded_content_or_changing_raw_targets(bool indirect, bool newWindow)
     {
         const string file = "<< /Type /Filespec /F (unopened.pdf) /EF << /F 8 0 R >> >>";
         const string target = "<< /R /P /T 5 0 R >>";
@@ -138,6 +139,7 @@ public class EmbeddedGoToActionTests
         Assert.Null(details.FileSpecification);
         Assert.Null(details.Destination);
         Assert.Null(details.Target);
+        Assert.Null(details.TargetPath);
         Assert.Null(details.NewWindow);
         Assert.Equal("opaque", Assert.IsType<PdfString>(details.Dictionary.Get("Vendor")).Text);
         Assert.IsType<PdfArray>(details.Dictionary.Get("SD"));
@@ -148,7 +150,7 @@ public class EmbeddedGoToActionTests
     [InlineData("[3 0 R /Fit]", "<< /R /Unknown /N 42 /P -1 /A false /T 4 0 R >>")]
     [InlineData("[-1 /Unknown]", "<< /R /C /P (page-destination) /A (annotation-name) >>")]
     [InlineData("[0 /Fit]", "<< /R /C /P 0 /A 1 /T << /R /P >> >>")]
-    public void Target_path_and_destination_contents_are_retained_without_traversal_or_normalisation(string destination, string target)
+    public void Raw_target_path_and_destination_contents_are_retained_without_normalisation(string destination, string target)
     {
         var details = ReadDetails(LoadAction($"/S /GoToE /D {destination} /T {target}"));
 
@@ -212,6 +214,7 @@ public class EmbeddedGoToActionTests
         var invalid = Assert.IsType<PdfEmbeddedGoToAction>(actions[0].EmbeddedGoToDetails);
         Assert.Null(invalid.Destination);
         Assert.Null(invalid.Target);
+        Assert.Null(invalid.TargetPath);
         Assert.IsType<PdfInteger>(invalid.Dictionary.Get("D"));
         Assert.Equal("OpenAction/Next[0]", actions[1].Trigger);
         Assert.Equal("Chapter", Assert.IsType<PdfString>(Assert.IsType<PdfEmbeddedGoToAction>(actions[1].EmbeddedGoToDetails).Destination).Text);
