@@ -8,14 +8,72 @@ public interface IFontFallback
     TrueTypeFont? Find(string baseFont, bool bold, bool italic, bool fixedPitch, bool serif);
 }
 
+/// <summary>Optional capability of an <see cref="IFontFallback"/>: a Unicode-cmap font covering an Adobe CJK ordering (Japan1, GB1, CNS1, Korea1).</summary>
+public interface ICjkFontFallback
+{
+    TrueTypeFont? FindCjk(string ordering, bool serif);
+}
+
 /// <summary>Resolves non-embedded fonts from the host's installed fonts (Windows, macOS, Linux directories).</summary>
-public sealed class SystemFontFallback : IFontFallback
+public sealed class SystemFontFallback : IFontFallback, ICjkFontFallback
 {
     static readonly string[] Dirs =
     [
         Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "/usr/share/fonts", "/usr/local/share/fonts", "/Library/Fonts", "/System/Library/Fonts"
     ];
     readonly Dictionary<string, TrueTypeFont?> _cache = [];
+
+    static readonly Dictionary<string, string[]> CjkSans = new()
+    {
+        ["Japan1"] = ["msgothic.ttc", "YuGothR.ttc", "meiryo.ttc", "NotoSansCJK-Regular.ttc", "NotoSansCJKjp-Regular.otf", "HiraginoSans-W3.ttc", "ipag.ttf", "TakaoPGothic.ttf"],
+        ["GB1"] = ["simhei.ttf", "msyh.ttc", "NotoSansSC-VF.ttf", "NotoSansCJK-Regular.ttc", "PingFang.ttc", "wqy-zenhei.ttc", "DroidSansFallbackFull.ttf"],
+        ["CNS1"] = ["msjh.ttc", "mingliub.ttc", "kaiu.ttf", "NotoSansCJK-Regular.ttc", "PingFang.ttc", "wqy-zenhei.ttc"],
+        ["Korea1"] = ["malgun.ttf", "gulim.ttc", "batang.ttc", "NotoSansCJK-Regular.ttc", "AppleSDGothicNeo.ttc", "NanumGothic.ttf"],
+    };
+    static readonly Dictionary<string, string[]> CjkSerif = new()
+    {
+        ["Japan1"] = ["msmincho.ttc", "YuMincho.ttc", "NotoSerifCJK-Regular.ttc", "HiraMinProN-W3.ttc"],
+        ["GB1"] = ["simsun.ttc", "NotoSerifSC-VF.ttf", "NotoSerifCJK-Regular.ttc", "STSong.ttf"],
+        ["CNS1"] = ["mingliub.ttc", "NotoSerifCJK-Regular.ttc"],
+        ["Korea1"] = ["batang.ttc", "NotoSerifCJK-Regular.ttc"],
+    };
+
+    public TrueTypeFont? FindCjk(string ordering, bool serif)
+    {
+        var key = "cjk:" + ordering + (serif ? "s" : "");
+        lock (_cache)
+        {
+            if (_cache.TryGetValue(key, out var cached)) return cached;
+            TrueTypeFont? font = null;
+            var lists = serif ? new[] { CjkSerif, CjkSans } : [CjkSans];
+            foreach (var list in lists)
+            {
+                if (!list.TryGetValue(ordering, out var cands)) continue;
+                font = Load(cands, ordering == "Korea1" ? 0xAC00 : 0x4E00);
+                if (font is not null) break;
+            }
+            return _cache[key] = font;
+        }
+    }
+
+    static TrueTypeFont? Load(string[] candidates, int probe)
+    {
+        foreach (var c in candidates)
+            foreach (var d in Dirs)
+            {
+                if (!Directory.Exists(d)) continue;
+                string? p;
+                try { p = Directory.EnumerateFiles(d, c, SearchOption.AllDirectories).FirstOrDefault(); } catch (UnauthorizedAccessException) { continue; }
+                if (p is null) continue;
+                try
+                {
+                    var tt = new TrueTypeFont(File.ReadAllBytes(p));
+                    if (tt.HasGlyf && tt.LookupAny(probe) != 0) return tt;
+                }
+                catch (Exception e) when (e is IOException or IndexOutOfRangeException or ArgumentException) { }
+            }
+        return null;
+    }
 
     public TrueTypeFont? Find(string baseFont, bool bold, bool italic, bool fixedPitch, bool serif)
     {
@@ -42,7 +100,7 @@ public sealed class SystemFontFallback : IFontFallback
     }
 }
 
-public readonly record struct GlyphRun(int Code, int ByteLength, double Width);
+public readonly record struct GlyphRun(int Code, int ByteLength, double Width, int Raw = -1);
 
 public sealed class PdfFont
 {
@@ -54,8 +112,13 @@ public sealed class PdfFont
     public PdfStream? FontFile { get; }
     TrueTypeFont? _tt;
     CffFont? _cff;
+    Type1Font? _t1;
     Dictionary<int, int>? _cffUni;
-    public bool HasOutlines => _tt?.HasGlyf == true || _cff is not null;
+    Dictionary<int, string>? _t1Uni;
+    CMap? _cmap;
+    string _ordering = "";
+    Dictionary<int, int>? _cidToUni;
+    public bool HasOutlines => _tt?.HasGlyf == true || _cff is not null || _t1 is not null;
     readonly PdfFile _f;
     readonly string?[] _names = new string?[256];
     readonly double[] _widths = new double[256];
@@ -86,7 +149,22 @@ public sealed class PdfFont
         {
             var desc = (f.Resolve(dict.Get("DescendantFonts")) as PdfArray)?.Items.FirstOrDefault();
             fontDict = f.Resolve(desc) as PdfDictionary ?? new PdfDictionary();
-            Vertical = f.Resolve(dict.Get("Encoding")).AsName() is { } en && en.EndsWith("-V");
+            var encObj = f.Resolve(dict.Get("Encoding"));
+            var encName = encObj.AsName();
+            if (encName is not null) _cmap = CMap.Predefined(encName);
+            else if (encObj is PdfStream ecs)
+            {
+                CMap? parent = null;
+                var use = f.Resolve(ecs.Dict.Get("UseCMap"));
+                if (use.AsName() is { } un) parent = CMap.Predefined(un);
+                else if (use is PdfStream us) parent = CMap.Parse(f.DecodeStream(us));
+                try { _cmap = CMap.Parse(f.DecodeStream(ecs), parent); }
+                catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
+            }
+            if (_cmap is { IsIdentity: true }) _cmap = null;
+            Vertical = _cmap?.WMode == 1 || encName is not null && encName.EndsWith("-V");
+            if (f.Resolve(fontDict.Get("CIDSystemInfo")) is PdfDictionary csi && f.Resolve(csi.Get("Ordering")) is PdfString os) _ordering = Encoding.Latin1.GetString(os.Bytes);
+            if (_ordering is "" or "Identity" && encName is not null) _ordering = OrderingFromCMap(encName);
             _dw = f.Resolve(fontDict.Get("DW")).AsNumber() ?? 1000;
             ParseW(f.Resolve(fontDict.Get("W")) as PdfArray);
             var c2g = f.Resolve(fontDict.Get("CIDToGIDMap"));
@@ -108,26 +186,40 @@ public sealed class PdfFont
 
         if (FontFile is not null)
         {
-            try
+            var ffData = f.DecodeStream(FontFile);
+            if (Type1Font.Looks(ffData))
             {
-                var tt = new TrueTypeFont(f.DecodeStream(FontFile));
-                if (tt.HasGlyf) _tt = tt;
+                try { _t1 = new Type1Font(ffData); }
+                catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException or KeyNotFoundException) { }
             }
-            catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
-            if (_tt is null)
+            else
             {
-                try { _cff = new CffFont(f.DecodeStream(FontFile)); }
+                try
+                {
+                    var tt = new TrueTypeFont(ffData);
+                    if (tt.HasGlyf) _tt = tt;
+                }
+                catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
+            }
+            if (_tt is null && _t1 is null)
+            {
+                try { _cff = new CffFont(ffData); }
                 catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException or KeyNotFoundException) { }
             }
         }
-        if (_tt is null && _cff is null && !IsType3)
+        if (_tt is null && _cff is null && _t1 is null && !IsType3)
         {
             var n = BaseFont.ToLowerInvariant();
             var bold = n.Contains("bold") || n.Contains("black") || (flags & (1 << 18)) != 0;
             var italic = n.Contains("italic") || n.Contains("oblique") || (flags & 64) != 0;
             var mono = n.Contains("courier") || n.Contains("mono") || (flags & 1) != 0;
             var serif = n.Contains("times") || n.Contains("serif") && !n.Contains("sans") || n.Contains("georgia") || n.Contains("garamond") || n.Contains("palatino") || n.Contains("roman") || (flags & 2) != 0 && !n.Contains("sans");
-            _tt = fallback.Find(BaseFont, bold, italic, mono, serif);
+            if (IsType0 && _ordering is "Japan1" or "GB1" or "CNS1" or "Korea1" && fallback is ICjkFontFallback cjk)
+            {
+                _tt = cjk.FindCjk(_ordering, serif && !n.Contains("gothic") && !n.Contains("hei"));
+                if (_tt is not null) _cidToUni = CidToUnicode(_ordering);
+            }
+            _tt ??= fallback.Find(BaseFont, bold, italic, mono, serif);
             _fallbackUsed = true;
         }
 
@@ -166,7 +258,7 @@ public sealed class PdfFont
             baseEnc = _f.Resolve(ed.Get("BaseEncoding")).AsName();
             diffs = _f.Resolve(ed.Get("Differences")) as PdfArray;
         }
-        baseEnc ??= _symbolic && FontFile is not null ? null : "StandardEncoding";
+        baseEnc ??= (_symbolic || _t1 is not null) && FontFile is not null ? null : "StandardEncoding";
         var cp = baseEnc switch { "WinAnsiEncoding" => 1252, "MacRomanEncoding" => 10000, "StandardEncoding" => 1252, _ => 0 };
         if (cp != 0)
         {
@@ -226,15 +318,107 @@ public sealed class PdfFont
     static int Be(byte[] b) { var v = 0; foreach (var x in b) v = v << 8 | x; return v; }
     static int FirstCp(byte[] b) { if (b.Length < 2) return b.Length == 1 ? b[0] : 0; var s = Encoding.BigEndianUnicode.GetString(b); return char.ConvertToUtf32(s, 0); }
 
-    public string ToUnicode(int code)
+    public string ToUnicode(int code) => ToUnicode(new GlyphRun(code, IsType0 ? 2 : 1, 0));
+
+    /// <summary>Unicode text for a decoded run: ToUnicode CMap first, then the Unicode CMap/CID ordering tables for CJK, then glyph names.</summary>
+    public string ToUnicode(GlyphRun r)
     {
-        if (_toUnicode is not null && _toUnicode.TryGetValue(code, out var cp)) return char.ConvertFromUtf32(cp);
-        if (!IsType0 && code < 256 && _names[code] is { } n && NameToUnicode(n) is { } u) return u;
-        return code is >= 32 and < 127 && !IsType0 ? ((char)code).ToString() : "";
+        var code = r.Code;
+        var raw = r.Raw >= 0 ? r.Raw : code;
+        if (_toUnicode is not null && _toUnicode.TryGetValue(raw, out var cp)) return char.ConvertFromUtf32(cp);
+        if (IsType0)
+        {
+            if (_cmap is { Name: var cn } && cn.StartsWith("Uni", StringComparison.Ordinal))
+            {
+                if (r.ByteLength == 2 && raw is < 0xD800 or > 0xDFFF) return raw >= 0x20 ? ((char)raw).ToString() : "";
+                if (r.ByteLength == 4) { int hi = raw >> 16, lo = raw & 0xFFFF; if (hi is >= 0xD800 and < 0xDC00 && lo is >= 0xDC00 and < 0xE000) return char.ConvertFromUtf32(0x10000 + (hi - 0xD800 << 10) + (lo - 0xDC00)); }
+            }
+            if (_ordering is "Japan1" or "GB1" or "CNS1" or "Korea1" && CidToUnicode(_ordering).TryGetValue(code, out var u0)) return char.ConvertFromUtf32(u0);
+            return "";
+        }
+        if (code < 256 && (_names[code] ?? _t1?.EncodingName(code)) is { } n && NameToUnicode(n) is { } u) return u;
+        return code is >= 32 and < 127 ? ((char)code).ToString() : "";
+    }
+
+    static string OrderingFromCMap(string n) =>
+        n.StartsWith("Uni", StringComparison.Ordinal) ? n[3..].StartsWith("JIS") ? "Japan1" : n[3..].StartsWith("GB") ? "GB1" : n[3..].StartsWith("CNS") ? "CNS1" : n[3..].StartsWith("KS") ? "Korea1" : "" :
+        n.Contains("RKSJ") || n is "H" or "V" or "EUC-H" or "EUC-V" ? "Japan1" :
+        n.StartsWith("GB") ? "GB1" :
+        n.StartsWith("B5") || n.Contains("B5-") || n.StartsWith("CNS") ? "CNS1" :
+        n.StartsWith("KSC") ? "Korea1" : "";
+
+    static readonly Dictionary<string, Dictionary<int, int>> CidUniCache = [];
+
+    /// <summary>CID to Unicode for an Adobe CJK ordering, inverted from the Uni*-UTF16-H CMap (lowest code point wins).</summary>
+    static Dictionary<int, int> CidToUnicode(string ordering)
+    {
+        lock (CidUniCache)
+        {
+            if (CidUniCache.TryGetValue(ordering, out var d)) return d;
+            d = [];
+            var name = ordering switch { "Japan1" => "UniJIS-UTF16-H", "GB1" => "UniGB-UTF16-H", "CNS1" => "UniCNS-UTF16-H", "Korea1" => "UniKS-UTF16-H", _ => "" };
+            if (name.Length > 0 && CMap.Predefined(name) is { } m)
+                foreach (var (code, len, cid) in m.Entries())
+                {
+                    int cp;
+                    if (len == 2) cp = (int)code;
+                    else if (len == 4 && code >> 16 is >= 0xD800 and < 0xDC00) cp = 0x10000 + (((int)(code >> 16) - 0xD800) << 10) + ((int)(code & 0xFFFF) - 0xDC00);
+                    else continue;
+                    if (cid > 0 && (!d.TryGetValue(cid, out var old) || cp < old)) d[cid] = cp;
+                }
+            // Half-width/proportional Latin CIDs are absent from the Unicode CMaps; recover them from the legacy 1-byte ASCII ranges.
+            foreach (var sec in ordering switch { "Japan1" => new[] { "UniJIS-UCS2-HW-H", "90ms-RKSJ-H" }, "GB1" => ["GBK-EUC-H"], "CNS1" => ["ETen-B5-H"], "Korea1" => ["KSCms-UHC-H"], _ => [] })
+                if (CMap.Predefined(sec) is { } sm)
+                    foreach (var (code, len, cid) in sm.Entries())
+                        if (cid > 0 && ((len == 1 && code is >= 0x20 and < 0x7F) || (len == 2 && code is >= 0x20 and < 0x7F && sec.StartsWith("UniJIS")))) d.TryAdd(cid, (int)code);
+            return CidUniCache[ordering] = d;
+        }
+    }
+
+    Dictionary<int, int>? _reverse;
+
+    /// <summary>
+    /// Encodes a code point with this font's own embedded program, used when editing existing text. Fails unless the font is embedded
+    /// and already contains a glyph for the character (subset fonts only keep the glyphs the original text used).
+    /// </summary>
+    public bool TryEncode(int codepoint, out byte[] bytes, out double width)
+    {
+        bytes = []; width = 0;
+        if (FontFile is null || IsType3 || Vertical) return false;
+        if (_reverse is null)
+        {
+            _reverse = [];
+            var codes = IsType0 ? (_toUnicode?.Keys.ToList() ?? []) : Enumerable.Range(0, 256).ToList();
+            foreach (var c in codes)
+            {
+                var u = ToUnicode(c);
+                if (u.Length == 0) continue;
+                var cp = char.ConvertToUtf32(u, 0);
+                if (_reverse.ContainsKey(cp)) continue;
+                var g = GetGlyph(c);
+                if (g is null || g.IsEmpty && !char.IsWhiteSpace(u, 0)) continue;
+                _reverse[cp] = c;
+            }
+        }
+        if (!_reverse.TryGetValue(codepoint, out var code)) return false;
+        bytes = IsType0 ? [(byte)(code >> 8), (byte)code] : [(byte)code];
+        width = Decode(bytes).First().Width;
+        return true;
     }
 
     public IEnumerable<GlyphRun> Decode(byte[] s)
     {
+        if (IsType0 && _cmap is not null)
+        {
+            for (var i = 0; i < s.Length;)
+            {
+                var len = _cmap.ReadCode(s, i, out var code);
+                i += len;
+                var cid = _cmap.ToCid(code, len);
+                yield return new GlyphRun(cid, len, _cidWidths.GetValueOrDefault(cid, _dw) / 1000.0, code);
+            }
+            yield break;
+        }
         if (IsType0)
         {
             for (var i = 0; i + 1 < s.Length; i += 2)
@@ -254,12 +438,34 @@ public sealed class PdfFont
     double FallbackWidth(int c)
     {
         if (_cff is not null) { var cg = CffGlyphId(c); return cg > 0 ? _cff.Advance(cg) : _missingWidth; }
+        if (_t1 is not null) { var tn = T1Name(c); return tn is not null ? _t1.Advance(tn) : _missingWidth; }
         if (_tt is null) return _missingWidth > 0 ? _missingWidth : 500;
         var g = GlyphIdFor(c);
         return g > 0 ? _tt.Advance(g) : _missingWidth;
     }
 
-    public bool IsSpace(GlyphRun r) => r.ByteLength == 1 && r.Code == 32;
+    public bool IsSpace(GlyphRun r) => r.ByteLength == 1 && (r.Raw >= 0 ? r.Raw : r.Code) == 32;
+
+    string? T1Name(int code)
+    {
+        var t1 = _t1!;
+        var name = code is >= 0 and < 256 ? _names[code] : null;
+        if (name is not null)
+        {
+            if (t1.HasGlyph(name)) return name;
+            if (NameToUnicode(name) is { Length: > 0 } u)
+            {
+                if (_t1Uni is null)
+                {
+                    _t1Uni = [];
+                    foreach (var gn in t1.GlyphNames)
+                        if (NameToUnicode(gn) is { Length: > 0 } gu) _t1Uni.TryAdd(char.ConvertToUtf32(gu, 0), gn);
+                }
+                if (_t1Uni.TryGetValue(char.ConvertToUtf32(u, 0), out var ug)) return ug;
+            }
+        }
+        return t1.EncodingName(code) is { } bn && t1.HasGlyph(bn) ? bn : null;
+    }
 
     int CffGlyphId(int code)
     {
@@ -293,7 +499,7 @@ public sealed class PdfFont
         if (_tt is null) return 0;
         if (IsType0)
         {
-            if (FontFile is null) return _tt.LookupAny(code);
+            if (FontFile is null) return _tt.LookupAny(_cidToUni is not null ? _cidToUni.GetValueOrDefault(code) : code);
             if (_cidToGid is not null) return code * 2 + 1 < _cidToGid.Length ? _cidToGid[code * 2] << 8 | _cidToGid[code * 2 + 1] : 0;
             return code;
         }
@@ -326,6 +532,10 @@ public sealed class PdfFont
         {
             var cg = CffGlyphId(code);
             if (cg > 0 || IsType0) p = _cff.GetOutline(cg);
+        }
+        else if (_t1 is not null)
+        {
+            if (T1Name(code) is { } tn) p = _t1.GetOutline(tn);
         }
         else if (_tt is not null)
         {
@@ -363,6 +573,7 @@ public sealed class PdfFont
     {
         if (n.Length == 1) return n;
         if (Aglite.TryGetValue(n, out var s)) return s;
+        if (GlyphList.Lookup(n) is var gl and >= 0) return char.ConvertFromUtf32(gl);
         if (n.StartsWith("uni") && n.Length >= 7 && int.TryParse(n.AsSpan(3, 4), System.Globalization.NumberStyles.HexNumber, null, out var u)) return ((char)u).ToString();
         if (n.StartsWith('u') && n.Length is >= 5 and <= 7 && int.TryParse(n.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out var u2) && u2 <= 0x10FFFF) return char.ConvertFromUtf32(u2);
         var dot = n.IndexOf('.');

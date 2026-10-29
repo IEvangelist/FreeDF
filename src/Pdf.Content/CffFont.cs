@@ -212,7 +212,12 @@ public sealed class CffFont
 
     void ReadEncoding(int off)
     {
-        if (off <= 1) return; // Standard/Expert encodings are resolved by glyph name instead.
+        if (off == 0)
+        {
+            for (var c = 0; c < 256; c++) _encoding[c] = StdGlyph(c);
+            return;
+        }
+        if (off == 1) return; // Expert encoding is resolved by glyph name instead.
         var p = off;
         var fmt = _d[p++] & 0x7F;
         if (fmt == 0)
@@ -237,7 +242,7 @@ public sealed class CffFont
     {
         if (gid < 0 || gid >= _charset.Length || IsCid) return "";
         var sid = _charset[gid];
-        if (sid < StdStrings.Length) return StdStrings[sid];
+        if (sid < CffStandardStrings.Strings.Length) return CffStandardStrings.Strings[sid];
         var i = sid - 391;
         return i < _strings.Length ? _strings[i]! : "";
     }
@@ -278,15 +283,18 @@ public sealed class CffFont
         return p.Ops.Count == 0 ? null : p;
     }
 
+    int StdGlyph(int code) => code is >= 0 and < 256 ? GlyphByName(CffStandardStrings.StandardEncoding[code]) : 0;
+
     Private PrivateFor(int gid) => _fdSelect is not null && _fdSelect[gid] < _privates.Length ? _privates[_fdSelect[gid]] : _privates[0];
 
     /// <summary>Executes a charstring. Returns the advance width in 1/1000 em; fills <paramref name="path"/> when non-null.</summary>
-    double Run(int gid, PathData? path)
+    double Run(int gid, PathData? path, double ox = 0, double oy = 0, int seacDepth = 0)
     {
         var pr = PrivateFor(gid);
         var st = new double[96];
         var sp = 0;
-        double x = 0, y = 0;
+        double x = ox, y = oy;
+        var trans = new double[32];
         var nStems = 0;
         double width = pr.DefaultWidth;
         var haveWidth = false;
@@ -400,7 +408,20 @@ public sealed class CffFont
                         break;
                     }
                     case 11: return;
-                    case 14: Width(sp is 1 or 5); done = true; break;
+                    case 14:
+                        Width(sp is 1 or 5);
+                        if (sp >= 4 && seacDepth == 0 && !IsCid)
+                        {
+                            // Deprecated seac form: adx ady bchar achar compose two StandardEncoding glyphs.
+                            double adx = st[sp - 4], ady = st[sp - 3];
+                            int bchar = (int)st[sp - 2], achar = (int)st[sp - 1];
+                            if (open) path?.Close();
+                            open = false;
+                            var bg = StdGlyph(bchar); var ag = StdGlyph(achar);
+                            if (bg > 0) Run(bg, path, ox, oy, 1);
+                            if (ag > 0) Run(ag, path, ox + adx, oy + ady, 1);
+                        }
+                        done = true; break;
                     case 12:
                     {
                         int b2 = _d[p++];
@@ -418,6 +439,45 @@ public sealed class CffFont
                                     else Curve(st[6], st[7], st[8], st[9], -dx, st[10]);
                                 }
                                 sp = 0; break;
+                            case 3: if (sp >= 2) { st[sp - 2] = st[sp - 2] != 0 && st[sp - 1] != 0 ? 1 : 0; sp--; } break;
+                            case 4: if (sp >= 2) { st[sp - 2] = st[sp - 2] != 0 || st[sp - 1] != 0 ? 1 : 0; sp--; } break;
+                            case 5: if (sp >= 1) st[sp - 1] = st[sp - 1] == 0 ? 1 : 0; break;
+                            case 9: if (sp >= 1) st[sp - 1] = Math.Abs(st[sp - 1]); break;
+                            case 10: if (sp >= 2) { st[sp - 2] += st[sp - 1]; sp--; } break;
+                            case 11: if (sp >= 2) { st[sp - 2] -= st[sp - 1]; sp--; } break;
+                            case 12: if (sp >= 2) { st[sp - 2] = st[sp - 1] == 0 ? 0 : st[sp - 2] / st[sp - 1]; sp--; } break;
+                            case 14: if (sp >= 1) st[sp - 1] = -st[sp - 1]; break;
+                            case 15: if (sp >= 2) { st[sp - 2] = st[sp - 2] == st[sp - 1] ? 1 : 0; sp--; } break;
+                            case 18: if (sp >= 1) sp--; break;
+                            case 20: if (sp >= 2) { var ti = (int)st[sp - 1]; if ((uint)ti < (uint)trans.Length) trans[ti] = st[sp - 2]; sp -= 2; } break;
+                            case 21: if (sp >= 1) { var ti = (int)st[sp - 1]; st[sp - 1] = (uint)ti < (uint)trans.Length ? trans[ti] : 0; } break;
+                            case 22: if (sp >= 4) { st[sp - 4] = st[sp - 2] <= st[sp - 1] ? st[sp - 4] : st[sp - 3]; sp -= 3; } break;
+                            case 23: if (sp < st.Length) st[sp++] = 0.5; break;
+                            case 24: if (sp >= 2) { st[sp - 2] *= st[sp - 1]; sp--; } break;
+                            case 26: if (sp >= 1) st[sp - 1] = Math.Sqrt(Math.Max(0, st[sp - 1])); break;
+                            case 27: if (sp >= 1 && sp < st.Length) { st[sp] = st[sp - 1]; sp++; } break;
+                            case 28: if (sp >= 2) (st[sp - 1], st[sp - 2]) = (st[sp - 2], st[sp - 1]); break;
+                            case 29:
+                                if (sp >= 1)
+                                {
+                                    var ix = (int)st[sp - 1]; if (ix < 0) ix = 0;
+                                    if (sp - 2 - ix >= 0) st[sp - 1] = st[sp - 2 - ix];
+                                }
+                                break;
+                            case 30:
+                                if (sp >= 2)
+                                {
+                                    int j = (int)st[sp - 1], n = (int)st[sp - 2];
+                                    sp -= 2;
+                                    if (n > 0 && n <= sp)
+                                    {
+                                        var seg = st.AsSpan(sp - n, n);
+                                        j = (j % n + n) % n;
+                                        var tmp = seg.ToArray();
+                                        for (var q = 0; q < n; q++) seg[(q + j) % n] = tmp[q];
+                                    }
+                                }
+                                break;
                             default: sp = 0; break;
                         }
                         break;
@@ -431,27 +491,5 @@ public sealed class CffFont
         catch (IndexOutOfRangeException) { }
         if (open) path?.Close();
         return width * scale;
-    }
-
-    // SIDs 0-228 are exact per the CFF spec; 229-378 (small caps, old-style figures, etc.) are rarely referenced and left as placeholders.
-    static readonly string[] StdStrings = BuildStd();
-
-    static string[] BuildStd()
-    {
-        const string head =
-            ".notdef space exclam quotedbl numbersign dollar percent ampersand quoteright parenleft parenright asterisk plus comma hyphen period slash " +
-            "zero one two three four five six seven eight nine colon semicolon less equal greater question at " +
-            "A B C D E F G H I J K L M N O P Q R S T U V W X Y Z bracketleft backslash bracketright asciicircum underscore quoteleft " +
-            "a b c d e f g h i j k l m n o p q r s t u v w x y z braceleft bar braceright asciitilde " +
-            "exclamdown cent sterling fraction yen florin section currency quotesingle quotedblleft guillemotleft guilsinglleft guilsinglright fi fl endash dagger daggerdbl periodcentered paragraph bullet quotesinglbase quotedblbase quotedblright guillemotright ellipsis perthousand questiondown " +
-            "grave acute circumflex tilde macron breve dotaccent dieresis ring cedilla hungarumlaut ogonek caron emdash " +
-            "AE ordfeminine Lslash Oslash OE ordmasculine ae dotlessi lslash oslash oe germandbls " +
-            "onesuperior logicalnot mu trademark Eth onehalf plusminus Thorn onequarter divide brokenbar degree thorn threequarters twosuperior registered minus eth multiply threesuperior copyright " +
-            "Aacute Acircumflex Adieresis Agrave Aring Atilde Ccedilla Eacute Ecircumflex Edieresis Egrave Iacute Icircumflex Idieresis Igrave Ntilde Oacute Ocircumflex Odieresis Ograve Otilde Scaron Uacute Ucircumflex Udieresis Ugrave Yacute Ydieresis Zcaron " +
-            "aacute acircumflex adieresis agrave aring atilde ccedilla eacute ecircumflex edieresis egrave iacute icircumflex idieresis igrave ntilde oacute ocircumflex odieresis ograve otilde scaron uacute ucircumflex udieresis ugrave yacute ydieresis zcaron";
-        var list = head.Split(' ').ToList();
-        while (list.Count < 379) list.Add("sid" + list.Count);
-        list.AddRange(["001.000", "001.001", "001.002", "001.003", "Black", "Bold", "Book", "Light", "Medium", "Regular", "Roman", "Semibold"]);
-        return list.ToArray();
     }
 }

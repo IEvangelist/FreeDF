@@ -15,7 +15,7 @@ sealed class GState
     public double FillAlpha = 1, StrokeAlpha = 1;
     public string BlendMode = "Normal";
     public double CharSpace, WordSpace, HScale = 1, Leading, Rise;
-    public PdfFont? Font; public double FontSize;
+    public PdfFont? Font; public double FontSize; public int FontRef;
     public int RenderMode;
     public bool SoftMaskActive;
 
@@ -36,6 +36,7 @@ public sealed class ContentInterpreter
     Matrix _tm = Matrix.Identity, _tlm = Matrix.Identity;
     PathData? _textClip;
     readonly List<string> _hiddenStack = [];
+    readonly List<int> _mcidStack = [];
     int _hiddenDepth;
     int _type3Depth;
     public List<string> Warnings { get; } = [];
@@ -51,7 +52,11 @@ public sealed class ContentInterpreter
     {
         SetBase(baseMatrix);
         _gs = new GState { Ctm = baseMatrix };
+        // A knockout page group makes top-level objects knock each other out; isolation is moot over opaque paper.
+        var pageKo = R(R(page.Dict.Get("Group")) is PdfDictionary pg && R(pg.Get("S")).AsName() == "Transparency" ? pg.Get("K") : null) is PdfBoolean { Value: true };
+        if (pageKo) _be.BeginGroup(false, true, 1, "Normal");
         Run(page.GetContents(), page.Resources);
+        if (pageKo) _be.EndGroup();
         if (DrawAnnotations) RenderAnnotations(page, baseMatrix);
     }
 
@@ -230,7 +235,7 @@ public sealed class ContentInterpreter
         var stackDepth = _stack.Count;
         PdfObject? o;
         _runDepth++;
-        var collect = _runDepth == 1 && Objects is not null;
+        var collect = _runDepth == _collectDepth && Objects is not null;
         int stmtStart = 0, pathStart = -1;
         try
         {
@@ -254,9 +259,9 @@ public sealed class ContentInterpreter
         while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
     }
 
-    /// <summary>A painted graphics object (path, image or form XObject) of the page's own content, located by byte range.</summary>
+    /// <summary>A painted graphics object (path, image or form XObject) located by byte range in its owning stream: the page content (<paramref name="Form"/> 0) or a form XObject (its object number).</summary>
     public sealed record PageObject(int Index, string Kind, int Start, int End, Matrix Ctm, double X0, double Y0, double X1, double Y1,
-        bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth);
+        bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth, int Form = 0, PdfStream? Stream = null, int Ref = 0);
 
     /// <summary>When set, painted objects in the page content (not in forms) are recorded here.</summary>
     public List<PageObject>? Objects { get; set; }
@@ -272,8 +277,8 @@ public sealed class ContentInterpreter
         return (x0 - pad, y0 - pad, x1 + pad, y1 + pad);
     }
 
-    void AddObject(string kind, int start, int end, Matrix ctm, (double X0, double Y0, double X1, double Y1) b, bool fill = false, bool stroke = false)
-        => Objects!.Add(new PageObject(Objects.Count, kind, start, end, ctm, b.X0, b.Y0, b.X1, b.Y1, fill, stroke, fill ? Color(false) : default, stroke ? Color(true) : default, _gs.LineWidth));
+    void AddObject(string kind, int start, int end, Matrix ctm, (double X0, double Y0, double X1, double Y1) b, bool fill = false, bool stroke = false, PdfStream? stream = null, int xref = 0)
+        => Objects!.Add(new PageObject(Objects.Count, kind, start, end, ctm, b.X0, b.Y0, b.X1, b.Y1, fill, stroke, fill ? Color(false) : default, stroke ? Color(true) : default, _gs.LineWidth, _curForm, stream, xref));
 
     void Observe(string op, List<PdfObject> a, PdfDictionary res, byte[] content, int stmtStart, int end, ref int pathStart)
     {
@@ -299,12 +304,13 @@ public sealed class ContentInterpreter
                     && !(R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc)))
                 {
                     var sub = R(xs.Dict.Get("Subtype")).AsName();
-                    if (sub == "Image") AddObject("image", SkipWhite(content, stmtStart), end, _gs.Ctm, UnitSquare(_gs.Ctm));
+                    var xnum = xd.Get(xn.Value) is PdfRef xr ? xr.Number : 0;
+                    if (sub == "Image") AddObject("image", SkipWhite(content, stmtStart), end, _gs.Ctm, UnitSquare(_gs.Ctm), stream: xs, xref: xnum);
                     else if (sub == "Form")
                     {
                         var fm = R(xs.Dict.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
                         var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, 1, 1];
-                        AddObject("form", SkipWhite(content, stmtStart), end, _gs.Ctm, Bounds(fm.Then(_gs.Ctm), [(bb[0], bb[1]), (bb[2], bb[1]), (bb[0], bb[3]), (bb[2], bb[3])], 0));
+                        AddObject("form", SkipWhite(content, stmtStart), end, _gs.Ctm, Bounds(fm.Then(_gs.Ctm), [(bb[0], bb[1]), (bb[2], bb[1]), (bb[0], bb[3]), (bb[2], bb[3])], 0), xref: xnum);
                     }
                 }
                 break;
@@ -359,7 +365,11 @@ public sealed class ContentInterpreter
             case "Tr": _gs.RenderMode = (int)N(a, 0); break;
             case "Ts": _gs.Rise = N(a, 0); break;
             case "Tf":
-                if (a.Count >= 2 && a[0] is PdfName fn) { _gs.Font = LoadFont(res, fn.Value); _gs.FontSize = N(a, 1); }
+                if (a.Count >= 2 && a[0] is PdfName fn)
+                {
+                    _gs.Font = LoadFont(res, fn.Value); _gs.FontSize = N(a, 1);
+                    _gs.FontRef = R(res.Get("Font")) is PdfDictionary fdr && fdr.Get(fn.Value) is PdfRef frr ? frr.Number : 0;
+                }
                 break;
             case "Td": _tlm = Matrix.Translate(N(a, 0), N(a, 1)).Then(_tlm); _tm = _tlm; break;
             case "TD": _gs.Leading = -N(a, 1); _tlm = Matrix.Translate(N(a, 0), N(a, 1)).Then(_tlm); _tm = _tlm; break;
@@ -379,12 +389,15 @@ public sealed class ContentInterpreter
             case "k": _gs.FillCs = PdfColorSpace.Cmyk; _gs.FillColor = [N(a, 0), N(a, 1), N(a, 2), N(a, 3)]; _gs.FillPattern = null; break;
 
             case "sh": if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName sn && R(res.Get("Shading")) is PdfDictionary shd) Shade(R(shd.Get(sn.Value)), res, null); break;
-            case "Do": if (a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd) DoXObject(R(xd.Get(xn.Value)), res); break;
+            case "Do": if (a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd) DoXObject(R(xd.Get(xn.Value)), res, xd.Get(xn.Value) is PdfRef xrf ? xrf.Number : 0); break;
 
-            case "BMC": _hiddenStack.Add(""); break;
+            case "BMC": _hiddenStack.Add(""); _mcidStack.Add(-1); break;
             case "BDC":
                 {
                     var hidden = false;
+                    var mcid = -1;
+                    if (a.Count >= 2 && (a[1] is PdfName mpn && R(res.Get("Properties")) is PdfDictionary mpd ? R(mpd.Get(mpn.Value)) : a[1]) is PdfDictionary mdict && R(mdict.Get("MCID")).AsNumber() is { } mv) mcid = (int)mv;
+                    _mcidStack.Add(mcid);
                     if (a.Count >= 2 && a[0].AsName() == "OC")
                     {
                         PdfObject? prop = a[1] is PdfName pn && R(res.Get("Properties")) is PdfDictionary pd ? R(pd.Get(pn.Value)) : a[1];
@@ -395,6 +408,7 @@ public sealed class ContentInterpreter
                     break;
                 }
             case "EMC":
+                if (_mcidStack.Count > 0) _mcidStack.RemoveAt(_mcidStack.Count - 1);
                 if (_hiddenStack.Count > 0) { if (_hiddenStack[^1] == "H") _hiddenDepth--; _hiddenStack.RemoveAt(_hiddenStack.Count - 1); }
                 break;
             case "d0": case "d1": case "MP": case "DP": case "BX": case "EX": break;
@@ -453,18 +467,6 @@ public sealed class ContentInterpreter
         }
     }
 
-    void ApplySoftMask(PdfObject? v, PdfDictionary res)
-    {
-        if (v is not PdfDictionary sm) { _be.SetSoftMask(null, false, default); _gs.SoftMaskActive = false; return; }
-        if (R(sm.Get("G")) is not PdfStream g) return;
-        var lum = R(sm.Get("S")).AsName() == "Luminosity";
-        var bc = RgbColor.Black;
-        if (lum && R(sm.Get("BC")) is PdfArray ba)
-        {
-            var c = ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
-            var gcs = R(R(g.Dict.Get("Group")) is PdfDictionary gd ? gd.Get("CS") : null) is { } cso ? PdfColorSpace.Parse(_f, cso, res) : null;
-            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c);
-            else bc = c.Length switch
     static readonly HashSet<string> KnownBlends = ["Normal", "Compatible", "Multiply", "Screen", "Overlay", "Darken", "Lighten", "ColorDodge", "ColorBurn", "HardLight", "SoftLight", "Difference", "Exclusion", "Hue", "Saturation", "Color", "Luminosity"];
 
     // /BM may be an array: the first name the consumer recognises wins (11.6.3).
@@ -477,6 +479,18 @@ public sealed class ContentInterpreter
         return null;
     }
 
+    void ApplySoftMask(PdfObject? v, PdfDictionary res)
+    {
+        if (v is not PdfDictionary sm) { _be.SetSoftMask(null, false, default); _gs.SoftMaskActive = false; return; }
+        if (R(sm.Get("G")) is not PdfStream g) return;
+        var lum = R(sm.Get("S")).AsName() == "Luminosity";
+        var bc = RgbColor.Black;
+        if (lum && R(sm.Get("BC")) is PdfArray ba)
+        {
+            var c = ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
+            var gcs = R(R(g.Dict.Get("Group")) is PdfDictionary gd ? gd.Get("CS") : null) is { } cso ? PdfColorSpace.Parse(_f, cso, res) : null;
+            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c);
+            else bc = c.Length switch
             {
                 1 => new RgbColor(c[0], c[0], c[0]),
                 3 => new RgbColor(c[0], c[1], c[2]),
@@ -484,7 +498,11 @@ public sealed class ContentInterpreter
                 _ => bc
             };
         }
+        Func<double, double>? transfer = null;
+        if (R(sm.Get("TR")) is { } tro && tro is not PdfName && PdfFunction.Parse(_f, tro) is { } trf)
+            transfer = x => { var o = trf.Evaluate([x]); return o.Length > 0 ? o[0] : x; };
         var ctm = _gs.Ctm;
+        _gs.SoftMaskActive = true;
         _be.SetSoftMask(off =>
         {
             var sb = _be; var saved = _gs;
@@ -494,11 +512,7 @@ public sealed class ContentInterpreter
         }, lum, bc, transfer);
     }
 
-        Func<double, double>? transfer = null;
-        if (R(sm.Get("TR")) is { } tro && tro is not PdfName && PdfFunction.Parse(_f, tro) is { } trf)
-            transfer = x => { var o = trf.Evaluate([x]); return o.Length > 0 ? o[0] : x; };
     PdfFont? LoadFont(PdfDictionary res, string name) => R(res.Get("Font")) is PdfDictionary fd && R(fd.Get(name)) is PdfDictionary d ? GetFont(d) : null;
-        _gs.SoftMaskActive = true;
 
     PdfFont GetFont(PdfDictionary d)
     {
@@ -616,11 +630,24 @@ public sealed class ContentInterpreter
 
     /// <summary>A text-showing operator (Tj, TJ, ' or ") in the page's own content stream, with its device-space geometry.</summary>
     public sealed record TextSpan(int Index, string Op, string Text, double X, double Y, double Width, double Size, double Angle,
-        string FontName, RgbColor Color, double Advance, bool Vertical);
+        string FontName, RgbColor Color, double Advance, bool Vertical, int Mcid = -1,
+        int Form = 0, int FontRef = 0, PdfFont? Font = null, IReadOnlyList<TextPiece>? Pieces = null);
 
-    /// <summary>When set, text operators in the page content (not in forms) are recorded here.</summary>
+    /// <summary>One shown glyph: its raw string bytes, device-space box and horizontal advance as a TJ number (negative moves forward).</summary>
+    public sealed record TextGlyph(byte[] Bytes, double X0, double Y0, double X1, double Y1, double Adv);
+
+    /// <summary>Either a TJ adjustment number or a run of glyphs from one string operand.</summary>
+    public sealed record TextPiece(double? Adj, IReadOnlyList<TextGlyph>? Glyphs);
+
+    /// <summary>When set, text operators in the page content and in form XObjects reached by indirect reference are recorded here; <see cref="TextSpan.Form"/> is 0 for the page.</summary>
     public List<TextSpan>? TextSpans { get; set; }
-    int _runDepth, _spanIndex;
+    int _runDepth, _spanIndex, _collectDepth = 1, _curForm;
+
+    int CurrentMcid()
+    {
+        for (var i = _mcidStack.Count - 1; i >= 0; i--) if (_mcidStack[i] >= 0) return _mcidStack[i];
+        return -1;
+    }
 
     (double X, double Y) TextOrigin() =>
         new Matrix(_gs.FontSize * _gs.HScale, 0, 0, _gs.FontSize, 0, _gs.Rise).Then(_tm).Then(_gs.Ctm).Apply(0, 0);
@@ -630,16 +657,19 @@ public sealed class ContentInterpreter
         if (op == "'") NextLine();
         else if (op == "\"") { _gs.WordSpace = N(a, 0); _gs.CharSpace = N(a, 1); NextLine(); }
 
-        var idx = _runDepth == 1 ? _spanIndex++ : -1;
+        var idx = _runDepth == _collectDepth ? _spanIndex++ : -1;
         var collect = idx >= 0 && TextSpans is not null && _hiddenDepth == 0 && _gs.Font is not null;
         var tmBefore = _tm; var start = collect ? TextOrigin() : default;
         var sb = collect ? new System.Text.StringBuilder() : null;
+        var pieces = collect ? new List<TextPiece>() : null;
         var font = _gs.Font;
 
         void Show(byte[] bytes)
         {
-            ShowText(bytes, res);
-            if (sb is not null && font is not null) foreach (var r in font.Decode(bytes)) sb.Append(font.ToUnicode(r.Code));
+            List<TextGlyph>? rec = pieces is null ? null : [];
+            ShowText(bytes, res, rec);
+            if (rec is not null) pieces!.Add(new TextPiece(null, rec));
+            if (sb is not null && font is not null) foreach (var r in font.Decode(bytes)) sb.Append(font.ToUnicode(r));
         }
 
         if (op == "TJ")
@@ -653,6 +683,7 @@ public sealed class ContentInterpreter
                         var d = -adj / 1000 * _gs.FontSize;
                         _tm = (_gs.Font?.Vertical == true ? Matrix.Translate(0, d) : Matrix.Translate(d * _gs.HScale, 0)).Then(_tm);
                         if (sb is not null && adj <= -200) sb.Append(' ');
+                        pieces?.Add(new TextPiece(adj, null));
                     }
                 }
         }
@@ -665,18 +696,27 @@ public sealed class ContentInterpreter
         var scale = _gs.FontSize * _gs.HScale;
         TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
             Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
-            font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical));
+            font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
+            _curForm, _gs.FontRef, font, font.Vertical ? null : pieces));
     }
 
-    void ShowText(byte[] s, PdfDictionary res)
+    void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null)
     {
         var font = _gs.Font;
         if (font is null || _hiddenDepth > 0 && false) return;
         var hidden = _hiddenDepth > 0;
+        var off = 0;
         foreach (var run in font.Decode(s))
         {
             var fs = _gs.FontSize;
             var trm = new Matrix(fs * _gs.HScale, 0, 0, fs, 0, _gs.Rise).Then(_tm).Then(_gs.Ctm);
+            if (rec is not null && fs != 0)
+            {
+                var (bx0, by0, bx1, by1) = Bounds(trm, [(0, -0.25), (run.Width, -0.25), (0, 0.95), (run.Width, 0.95)], 0);
+                var adv = -(run.Width * fs + _gs.CharSpace + (font.IsSpace(run) ? _gs.WordSpace : 0)) * 1000 / fs;
+                rec.Add(new TextGlyph(s[off..Math.Min(s.Length, off + run.ByteLength)], bx0, by0, bx1, by1, adv));
+            }
+            off += run.ByteLength;
             if (!hidden)
             {
                 if (font.IsType3) DrawType3(font, run.Code, trm);
@@ -733,19 +773,23 @@ public sealed class ContentInterpreter
         _gs = saved; _path = savedPath; _tm = savedTm; _tlm = savedTlm;
     }
 
-    void DoXObject(PdfObject? obj, PdfDictionary res)
+    void DoXObject(PdfObject? obj, PdfDictionary res, int objNum = 0)
     {
         if (obj is not PdfStream xs || _hiddenDepth > 0) return;
         if (R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc)) return;
         var sub = R(xs.Dict.Get("Subtype")).AsName();
         if (sub == "Image") DrawImage(xs, res);
-        else if (sub == "Form") DoForm(xs, res);
+        else if (sub == "Form") DoForm(xs, res, objNum);
     }
 
-    void DoForm(PdfStream xs, PdfDictionary parentRes)
+    void DoForm(PdfStream xs, PdfDictionary parentRes, int objNum = 0)
     {
         if (!_activeForms.Add(xs.Dict)) return;
         var saved = _gs; var savedPath = _path; var savedTm = _tm; var savedTlm = _tlm;
+        var sCollect = _collectDepth; var sForm = _curForm; var sIdx = _spanIndex;
+        // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
+        if (_runDepth == _collectDepth && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
+        else if (_runDepth == _collectDepth) _collectDepth = -1;
         _be.Save();
         _stack.Push(_gs);
         _gs = _gs.Clone();
@@ -758,7 +802,22 @@ public sealed class ContentInterpreter
         }
         _path = new PathData();
         var res = R(xs.Dict.Get("Resources")) as PdfDictionary ?? parentRes;
+        var grouped = false;
+        if (R(xs.Dict.Get("Group")) is PdfDictionary grp && R(grp.Get("S")).AsName() == "Transparency")
+        {
+            var isolated = R(grp.Get("I")) is PdfBoolean { Value: true };
+            var knockout = R(grp.Get("K")) is PdfBoolean { Value: true };
+            var alpha = _gs.FillAlpha; var bm = _gs.BlendMode;
+            if (knockout || alpha < 1 || bm != "Normal" || _gs.SoftMaskActive || (isolated && TransparencyScan.UsesBlendMode(_f, res)))
+            {
+                _be.BeginGroup(isolated, knockout, alpha, bm);
+                _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
+                grouped = true;
+            }
+        }
         Run(_f.DecodeStream(xs), res);
+        if (grouped) _be.EndGroup();
+        _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx;
         _gs = _stack.Pop();
         _be.Restore();
         _gs = saved; _path = savedPath; _tm = savedTm; _tlm = savedTlm;
@@ -798,21 +857,7 @@ public sealed class ContentInterpreter
             var ramp = new RgbColor[257];
             for (var i = 0; i <= 256; i++) ramp[i] = EvalT(dom[0] + (dom[1] - dom[0]) * i / 256.0);
             RgbColor At(double s) => ramp[(int)Math.Round(Math.Clamp(s, 0, 1) * 256)];
-        var grouped = false;
-        if (R(xs.Dict.Get("Group")) is PdfDictionary grp && R(grp.Get("S")).AsName() == "Transparency")
-        {
-            var isolated = R(grp.Get("I")) is PdfBoolean { Value: true };
-            var knockout = R(grp.Get("K")) is PdfBoolean { Value: true };
-            var alpha = _gs.FillAlpha; var bm = _gs.BlendMode;
-            if (knockout || alpha < 1 || bm != "Normal" || _gs.SoftMaskActive || (isolated && TransparencyScan.UsesBlendMode(_f, res)))
-            {
-                _be.BeginGroup(isolated, knockout, alpha, bm);
-                _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
-                grouped = true;
-            }
-        }
             if (type == 2 && c.Length >= 4)
-        if (grouped) _be.EndGroup();
             {
                 double x0 = c[0], y0 = c[1], dx = c[2] - c[0], dy = c[3] - c[1];
                 var den = dx * dx + dy * dy;
