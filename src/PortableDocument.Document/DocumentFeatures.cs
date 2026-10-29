@@ -148,6 +148,28 @@ public sealed record PdfRichMediaPresentation(
     bool? Toolbar,
     bool PassContextClick,
     PdfDictionary? Window,
+    PdfDictionary Dictionary)
+{
+    public PdfRichMediaWindow? WindowDetails { get; init; }
+}
+
+public sealed record PdfRichMediaWindow(
+    PdfRichMediaDimension Width,
+    PdfRichMediaDimension Height,
+    PdfRichMediaPosition? Position,
+    PdfDictionary Dictionary);
+
+public sealed record PdfRichMediaDimension(
+    double Default,
+    double Max,
+    double Min,
+    PdfDictionary? Dictionary);
+
+public sealed record PdfRichMediaPosition(
+    string HorizontalAlignment,
+    string VerticalAlignment,
+    double HorizontalOffset,
+    double VerticalOffset,
     PdfDictionary Dictionary);
 
 public sealed record Pdf3DAnnotation(
@@ -731,14 +753,56 @@ public static class DocumentFeatures
     {
         if (presentation is null) return null;
         var style = f.Resolve(presentation.Get("Style")).AsName();
+        var window = f.Resolve(presentation.Get("Window")) as PdfDictionary;
         return new PdfRichMediaPresentation(
             style is "Embedded" or "Windowed" ? style : "Embedded",
             f.Resolve(presentation.Get("Transparent")) is PdfBoolean transparent && transparent.Value,
             f.Resolve(presentation.Get("NavigationPane")) is PdfBoolean navigationPane && navigationPane.Value,
             f.Resolve(presentation.Get("Toolbar")) is PdfBoolean toolbar ? toolbar.Value : null,
             f.Resolve(presentation.Get("PassContextClick")) is PdfBoolean passContextClick && passContextClick.Value,
-            f.Resolve(presentation.Get("Window")) as PdfDictionary,
-            presentation);
+            window,
+            presentation)
+        {
+            WindowDetails = ReadRichMediaWindow(f, window),
+        };
+    }
+
+    static PdfRichMediaWindow? ReadRichMediaWindow(PdfFile f, PdfDictionary? window)
+    {
+        if (window is null) return null;
+        var position = f.Resolve(window.Get("Position")) as PdfDictionary;
+        return new PdfRichMediaWindow(
+            ReadRichMediaDimension(f, window.Get("Width"), 288, 576, 72),
+            ReadRichMediaDimension(f, window.Get("Height"), 216, 432, 72),
+            position is null ? null : ReadRichMediaPosition(f, position),
+            window);
+    }
+
+    static PdfRichMediaPosition ReadRichMediaPosition(PdfFile f, PdfDictionary position)
+    {
+        var horizontal = f.Resolve(position.Get("HAlign")).AsName();
+        var vertical = f.Resolve(position.Get("VAlign")).AsName();
+        return new PdfRichMediaPosition(
+            horizontal is "Near" or "Center" or "Far" ? horizontal : "Far",
+            vertical is "Near" or "Center" or "Far" ? vertical : "Near",
+            f.Resolve(position.Get("HOffset")).AsNumber() ?? 18,
+            f.Resolve(position.Get("VOffset")).AsNumber() ?? 18,
+            position);
+    }
+
+    static PdfRichMediaDimension ReadRichMediaDimension(
+        PdfFile f,
+        PdfObject? value,
+        double defaultValue,
+        double max,
+        double min)
+    {
+        var dictionary = f.Resolve(value) as PdfDictionary;
+        return new PdfRichMediaDimension(
+            f.Resolve(dictionary?.Get("Default")).AsNumber() ?? defaultValue,
+            f.Resolve(dictionary?.Get("Max")).AsNumber() ?? max,
+            f.Resolve(dictionary?.Get("Min")).AsNumber() ?? min,
+            dictionary);
     }
 
     /// <summary>Returns 3D annotation references as inert PDF objects; model data is never decoded or activated.</summary>

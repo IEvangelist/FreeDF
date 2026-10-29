@@ -238,7 +238,7 @@ public class DocumentFeatureTests
             "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
             "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [4 0 R] >>\nendobj\n" +
-            "4 0 obj\n<< /Type /Annot /Subtype /RichMedia /Rect [0 0 50 50] /RichMediaSettings << /Activation << /Animation << >> /Presentation << >> >> /Deactivation << >> >> >>\nendobj\n" +
+            "4 0 obj\n<< /Type /Annot /Subtype /RichMedia /Rect [0 0 50 50] /RichMediaSettings << /Activation << /Animation << >> /Presentation << /Window << /Position << >> >> >> >> /Deactivation << >> >> >>\nendobj\n" +
             "trailer\n<< /Root 1 0 R /Size 5 >>\n%%EOF\n";
         return System.Text.Encoding.ASCII.GetBytes(pdf);
     }
@@ -309,6 +309,17 @@ public class DocumentFeatureTests
         Assert.False(activation.Presentation?.Toolbar);
         Assert.True(activation.Presentation?.PassContextClick);
         Assert.Same(doc.File.GetObject(31), activation.Presentation?.Window);
+        var richMediaWindow = Assert.IsType<PdfRichMediaWindow>(activation.Presentation?.WindowDetails);
+        Assert.Equal(320, richMediaWindow.Width.Default);
+        Assert.Equal(600, richMediaWindow.Width.Max);
+        Assert.Equal(100, richMediaWindow.Width.Min);
+        Assert.Equal(240, richMediaWindow.Height.Default);
+        Assert.Equal(500, richMediaWindow.Height.Max);
+        Assert.Equal(80, richMediaWindow.Height.Min);
+        Assert.Equal("Center", richMediaWindow.Position?.HorizontalAlignment);
+        Assert.Equal("Far", richMediaWindow.Position?.VerticalAlignment);
+        Assert.Equal(12, richMediaWindow.Position?.HorizontalOffset);
+        Assert.Equal(20, richMediaWindow.Position?.VerticalOffset);
         Assert.Equal("PC", richMediaSettings.DeactivationDetails?.Condition);
         Assert.Same(richMediaSettings.Activation, activation.Dictionary);
         var threeD = Assert.Single(doc.Get3DAnnotations());
@@ -367,5 +378,16 @@ public class DocumentFeatureTests
         Assert.Null(settings.ActivationDetails?.Presentation?.Toolbar);
         Assert.False(settings.ActivationDetails?.Presentation?.PassContextClick);
         Assert.Equal("XD", settings.DeactivationDetails?.Condition);
+        var defaultWindow = Assert.IsType<PdfRichMediaWindow>(settings.ActivationDetails?.Presentation?.WindowDetails);
+        Assert.Equal(288, defaultWindow.Width.Default);
+        Assert.Equal(576, defaultWindow.Width.Max);
+        Assert.Equal(72, defaultWindow.Width.Min);
+        Assert.Equal(216, defaultWindow.Height.Default);
+        Assert.Equal(432, defaultWindow.Height.Max);
+        Assert.Equal(72, defaultWindow.Height.Min);
+        Assert.Equal("Far", defaultWindow.Position?.HorizontalAlignment);
+        Assert.Equal("Near", defaultWindow.Position?.VerticalAlignment);
+        Assert.Equal(18, defaultWindow.Position?.HorizontalOffset);
+        Assert.Equal(18, defaultWindow.Position?.VerticalOffset);
     }
 }
