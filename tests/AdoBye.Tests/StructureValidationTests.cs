@@ -1,6 +1,7 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Text;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 namespace AdoBye.Tests;
 
@@ -80,7 +81,7 @@ public class StructureTests
     public void StructureOrderedTextDiffersFromContentOrder()
     {
         var doc = PdfDocument.Load(Tagged());
-        var content = string.Concat(PdfRenderer.ExtractText(doc.Pages[0]).Select(s => s.Text + "|"));
+        var content = string.Concat(DocumentRenderer.ExtractText(doc.Pages[0]).Select(s => s.Text + "|"));
         Assert.StartsWith("Second para", content);
         Assert.Equal("Title\nSecond para", StructuredTextExtractor.Extract(doc));
     }
@@ -89,7 +90,7 @@ public class StructureTests
     public void SpansCarryMcid()
     {
         var doc = PdfDocument.Load(Tagged());
-        var spans = PdfRenderer.ExtractText(doc.Pages[0]);
+        var spans = DocumentRenderer.ExtractText(doc.Pages[0]);
         Assert.Equal([1, 0], spans.Select(s => s.Mcid));
     }
 
@@ -305,7 +306,7 @@ public class ValidationTests
         foreach (var f in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "fixtures"), "*.pdf", SearchOption.AllDirectories))
         {
             PdfDocument doc;
-            try { doc = PdfDocument.Open(f); } catch (AdoBye.Core.PdfParseException) { continue; }
+            try { doc = PdfDocument.Open(f); } catch (global::PortableDocument.Core.PdfParseException) { continue; }
             foreach (var p in Enum.GetValues<PdfValidationProfile>()) Assert.NotNull(PdfValidator.Validate(doc, p));
         }
     }

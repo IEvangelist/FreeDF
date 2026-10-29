@@ -1,6 +1,7 @@
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 // Usage:
 //   AdoBye.Samples validate <samples-dir> [--out dir]   open + render every page of every sample, fail on exceptions or renderer warnings
@@ -36,7 +37,7 @@ foreach (var file in Directory.EnumerateFiles(args[1], "*.pdf").OrderBy(f => f))
         var warnings = new List<string>();
         for (var p = 0; p < doc.Pages.Count; p++)
         {
-            var r = PdfRenderer.RenderPage(doc.Pages[p], 96);
+            var r = DocumentRenderer.RenderPage(doc.Pages[p], 96);
             warnings.AddRange(r.Warnings.Select(w => $"p{p + 1}: {w}"));
             if (outDir != null) File.WriteAllBytes(Path.Combine(outDir, $"{name}.p{p + 1}.png"), r.ToPng());
         }

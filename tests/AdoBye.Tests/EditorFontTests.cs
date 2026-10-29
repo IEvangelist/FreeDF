@@ -1,7 +1,8 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Text;
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -26,7 +27,7 @@ public class EditorFontTests
         return (e.Save(), e);
     }
 
-    static string Extract(byte[] pdf) => string.Concat(PdfRenderer.ExtractText(PdfDocument.Load(pdf).Pages[0]).Select(s => s.Text));
+    static string Extract(byte[] pdf) => string.Concat(DocumentRenderer.ExtractText(PdfDocument.Load(pdf).Pages[0]).Select(s => s.Text));
 
     static PdfObject? Dig(PdfDocument d, PdfObject? o) => o is PdfRef r ? d.File.GetObject(r.Number) : o;
 
@@ -68,7 +69,7 @@ public class EditorFontTests
     public void Cff_subset_renders_the_same_glyphs_as_the_full_font()
     {
         var (pdf, _) = Overlay("", Text("Rendering OK", "Source Code Pro"));
-        var rgba = PdfRenderer.RenderPage(PdfDocument.Load(pdf).Pages[0], 72).Rgba;
+        var rgba = DocumentRenderer.RenderPage(PdfDocument.Load(pdf).Pages[0], 72).Rgba;
         var dark = 0;
         for (var i = 0; i < rgba.Length; i += 4) if (rgba[i] < 100) dark++;
         Assert.True(dark > 150, $"expected visible glyph ink, got {dark} dark pixels");
@@ -112,7 +113,7 @@ public class EditorFontTests
     public void Original_embedded_font_is_reused_when_style_is_unchanged()
     {
         var src = PdfDocument.Open(Path.Combine(AppContext.BaseDirectory, "fixtures", "fonts", "cff.pdf"));
-        var spans = PdfRenderer.ExtractText(src.Pages[0]);
+        var spans = DocumentRenderer.ExtractText(src.Pages[0]);
         var s = spans.First(x => x.Font is not null && x.FontRef != 0 && x.Text.Any(char.IsLetter));
         var e = PdfEditor.Open(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "fonts", "cff.pdf")));
         var origRef = new PdfRef(s.FontRef, 0);
@@ -136,7 +137,7 @@ public class EditorFontTests
         var gid = font.LookupAny('A');
         var sub = FontSubsetter.Subset(data, new HashSet<int> { gid });
         Assert.True(sub.Length < data.Length / 10, $"subset {sub.Length} vs {data.Length}");
-        var small = new AdoBye.Content.TrueTypeFont(sub);
+        var small = new global::PortableDocument.Content.TrueTypeFont(sub);
         Assert.Equal(font.Advance(gid), small.Advance(gid), 3);
     }
 
@@ -144,15 +145,15 @@ public class EditorFontTests
     public void Cff_subsetter_keeps_requested_glyphs_and_blanks_the_rest()
     {
         var data = File.ReadAllBytes(Path.Combine(FontDir, "SourceCodePro-Regular.otf"));
-        var tt = new AdoBye.Content.TrueTypeFont(data);
+        var tt = new global::PortableDocument.Content.TrueTypeFont(data);
         var gids = new HashSet<int> { tt.LookupAny('A'), tt.LookupAny('b') };
         var cffBytes = data.AsSpan(FontSubsetter.TableOffset(data, "CFF "), FontSubsetter.TableLength(data, "CFF ")).ToArray();
         var sub = CffSubsetter.Subset(cffBytes, gids);
         Assert.NotNull(sub);
         Assert.True(sub!.Length < cffBytes.Length * 0.7, $"subset {sub.Length} vs full {cffBytes.Length}");
-        var full = new AdoBye.Content.CffFont(cffBytes);
-        var small = new AdoBye.Content.CffFont(sub);
-        static string Sig(AdoBye.Content.PathData? p) => p is null ? "" : string.Join(",", p.Ops) + "|" + string.Join(",", p.Pts.Select(v => v.ToString("0.###")));
+        var full = new global::PortableDocument.Content.CffFont(cffBytes);
+        var small = new global::PortableDocument.Content.CffFont(sub);
+        static string Sig(global::PortableDocument.Content.PathData? p) => p is null ? "" : string.Join(",", p.Ops) + "|" + string.Join(",", p.Pts.Select(v => v.ToString("0.###")));
         foreach (var g in gids) { Assert.NotEqual("", Sig(full.GetOutline(g))); Assert.Equal(Sig(full.GetOutline(g)), Sig(small.GetOutline(g))); }
     }
 }

@@ -24,7 +24,7 @@ Candidates are `bench\fixtures\text.pdf`, `vector.pdf`, `image.pdf`, and `sample
 
 Before any comparison, preflight opens every candidate with both engines twice. It requires equal page counts, stable text across independent opens, and equal per-page decoded text after removing whitespace. Only whitespace is normalized to account for text-layout differences; text is not reordered, case-folded, or replaced. Mismatches and exceptions fail preflight visibly: no candidate is silently skipped to improve results. `PASS` lines include byte length, SHA-256, page count, and normalized character count so a run's exact corpus can be checked. Blank/image-only pages are valid equal inputs but should not be interpreted as text-heavy workloads.
 
-Both extraction paths return materialized arrays of per-page strings in content order: AdoBye concatenates `PdfRenderer.ExtractText` spans and PdfPig concatenates `Page.Letters` values. Preflight normalization is not timed.
+Both extraction paths return materialized arrays of per-page strings in content order: AdoBye concatenates `PortableDocument.Render.PortableDocument.ExtractText` spans and PdfPig concatenates `Page.Letters` values. Preflight normalization is not timed.
 
 ## Measurement boundaries
 
@@ -71,6 +71,8 @@ The vector workload then exposed numeric token parsing: in a separate 500-docume
 After that change, a matched 500-document trace put numeric parsing at 7.33% exclusive sampled CPU; the fractional `TakeWhile`/char-array/enumerator chain disappeared from the top allocation types. Sampled strings fell to about 0.27 GB. Remaining application hotspots include stream inflation, numeric token objects, path construction, and graphics-state cloning. Further work should target those with new profiles and correctness tests rather than weakening the corpus or dropping required text metadata.
 
 ## Full-corpus measured baseline: 2026-10-29 (90a225b)
+
+The libraries and static entry class were subsequently renamed to `PortableDocument.*` / `PortableDocument.Render.PortableDocument`. Current benchmark method labels use `PortableDocument`; historical reports and the measured tables below deliberately retain `AdoBye`. Reproduction commands still use the unchanged benchmark tool project. The rename was validated with the full suite, corpus preflight, and native smoke consumer; it is not a new performance measurement.
 
 These are machine-specific measurements, not general guarantees. Environment: Windows 11 25H2 build 26200.9711; Intel Core i9-10900 at 2.80 GHz (10 physical / 20 logical cores); .NET SDK 10.0.403; .NET 10.0.14 x64 RyuJIT x86-64-v3; concurrent workstation GC; TieredPGO enabled. Both engines ran in the same BenchmarkDotNet executable with stock .NET GC. No Satori GC or NativeAOT substitution was used.
 

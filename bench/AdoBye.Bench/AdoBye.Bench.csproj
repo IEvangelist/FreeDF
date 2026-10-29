@@ -13,8 +13,8 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
-    <ProjectReference Include="..\..\src\AdoBye.Render\AdoBye.Render.csproj" />
-    <ProjectReference Include="..\..\src\AdoBye.Document\AdoBye.Document.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.Document\PortableDocument.Document.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,7 +3,7 @@
 Status: **Done** = implemented and covered by tests, **Partial** = implemented with known gaps, **Todo** = not implemented.
 Full spec parity is the goal; this table is the honest current state.
 
-## Parser (`AdoBye.Core`, `AdoBye.Document`)
+## Parser (`PortableDocument.Core`, `PortableDocument.Document`)
 
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Full spec parity is the goal; this table is the honest current state.
 | Robustness | Fuzz/truncation tests | Done | Deterministic mutation of all fixtures (400-seed run green): only PdfException (or NotSupported for unsupported filters), timeouts enforced. Caps added: lexer nesting 200, inflate 1 GiB, raster 100M px, JBIG2/CCITT budgets |
 | Perf | Hot paths | Partial | Rasterizer/JPEG already tuned earlier; added static system-font cache. text.pdf 96dpi render 107→98 ms, vector.pdf 246→243 ms; load scales linearly (1000 pages ≈12 ms) |
 
-## Renderer (`AdoBye.Content`, `AdoBye.Render`)
+## Renderer (`PortableDocument.Content`, `PortableDocument.Render`)
 
 | Clause | Feature | Status | Notes |
 |---|---|---|---|

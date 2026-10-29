@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AdoBye.Render\AdoBye.Render.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
   </ItemGroup>
 
   <ItemGroup>

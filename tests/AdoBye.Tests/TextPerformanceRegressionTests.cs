@@ -1,8 +1,9 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Buffers.Binary;
-using AdoBye.Content;
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Content;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 namespace AdoBye.Tests;
 
@@ -78,8 +79,8 @@ public class TextPerformanceRegressionTests
     {
         var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "fonts", file));
         var page = PdfDocument.Load(bytes).Pages[0];
-        var first = PdfRenderer.ExtractText(page);
-        var second = PdfRenderer.ExtractText(page);
+        var first = DocumentRenderer.ExtractText(page);
+        var second = DocumentRenderer.ExtractText(page);
         Assert.Equal(expected, string.Concat(first.Select(s => s.Text)));
         Assert.Equal(first.Select(s => (s.Text, s.X, s.Y, s.Width, s.Advance)),
             second.Select(s => (s.Text, s.X, s.Y, s.Width, s.Advance)));
@@ -108,8 +109,8 @@ public class TextPerformanceRegressionTests
         foreach (var file in files)
             foreach (var page in PdfDocument.Open(file).Pages)
             {
-                var full = PdfRenderer.Analyze(page).Spans;
-                var textOnly = PdfRenderer.ExtractText(page);
+                var full = DocumentRenderer.Analyze(page).Spans;
+                var textOnly = DocumentRenderer.ExtractText(page);
                 Assert.Equal(full.Count, textOnly.Count);
                 for (var i = 0; i < full.Count; i++)
                 {
@@ -137,8 +138,8 @@ public class TextPerformanceRegressionTests
         content += "BT /F1 12 Tf 1 0 0 1 4 5 Tm (AB) Tj ET Q BT /F1 12 Tf 7 11 Td (CD) Tj ET";
         var page = PdfDocument.Load(TestPdf.Build(content,
             "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>")).Pages[0];
-        var full = PdfRenderer.Analyze(page).Spans;
-        var textOnly = PdfRenderer.ExtractText(page);
+        var full = DocumentRenderer.Analyze(page).Spans;
+        var textOnly = DocumentRenderer.ExtractText(page);
         Assert.Equal("ABCD", string.Concat(textOnly.Select(s => s.Text)));
         Assert.Equal(full.Select(s => s with { Font = null, Pieces = null }),
             textOnly.Select(s => s with { Font = null, Pieces = null }));

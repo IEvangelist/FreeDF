@@ -1,6 +1,7 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using Microsoft.Playwright;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 // Usage: AdoBye.RenderCompare <pdf|dir>... [--out dir] [--dpi 96] [--page-tolerance 0.02] [--channel msedge|chrome] [--no-browser]
 // Renders each PDF with our renderer and with the browser's built-in PDF viewer (PDFium on Chrome/Edge),
@@ -35,7 +36,7 @@ foreach (var file in files)
 {
     var name = Path.GetFileNameWithoutExtension(file);
     var doc = PdfDocument.Open(file);
-    var ours = PdfRenderer.RenderPage(doc.Pages[0], dpi);
+    var ours = DocumentRenderer.RenderPage(doc.Pages[0], dpi);
     File.WriteAllBytes(Path.Combine(outDir, name + ".ours.png"), ours.ToPng());
     if (browser is null) { results.Add(new { file = name, warnings = ours.Warnings }); continue; }
 

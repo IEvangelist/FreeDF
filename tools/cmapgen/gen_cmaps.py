@@ -1,4 +1,4 @@
-"""Generates src/AdoBye.Content/Resources/predefined-cmaps.bin from Adobe's cmap-resources (BSD-3-Clause).
+"""Generates src/PortableDocument.Content/Resources/predefined-cmaps.bin from Adobe's cmap-resources (BSD-3-Clause).
 
 Usage:  git clone --depth 1 https://github.com/adobe-type-tools/cmap-resources.git tools/cmapgen/src/cmap-resources
         python tools/cmapgen/gen_cmaps.py
@@ -13,7 +13,7 @@ import os, re, struct, sys, zlib
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, 'src', 'cmap-resources')
-OUT = os.path.join(ROOT, '..', '..', 'src', 'AdoBye.Content', 'Resources', 'predefined-cmaps.bin')
+OUT = os.path.join(ROOT, '..', '..', 'src', 'PortableDocument.Content', 'Resources', 'predefined-cmaps.bin')
 
 NAMES = ('GB-EUC-H GB-EUC-V GBpc-EUC-H GBpc-EUC-V GBK-EUC-H GBK-EUC-V GBKp-EUC-H GBKp-EUC-V GBK2K-H GBK2K-V '
          'UniGB-UCS2-H UniGB-UCS2-V UniGB-UTF16-H UniGB-UTF16-V B5pc-H B5pc-V HKscs-B5-H HKscs-B5-V ETen-B5-H ETen-B5-V '

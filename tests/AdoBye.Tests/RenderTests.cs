@@ -1,5 +1,6 @@
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -13,7 +14,7 @@ public class RenderTests
     }
 
     static RenderedPage Render(string content, string res = "", double dpi = 72, bool broken = false)
-        => PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build(content, res, brokenXref: broken)).Pages[0], dpi);
+        => DocumentRenderer.RenderPage(PdfDocument.Load(TestPdf.Build(content, res, brokenXref: broken)).Pages[0], dpi);
 
     [Fact]
     public void ParsesPageTree()
@@ -78,7 +79,7 @@ public class RenderTests
     public void ShowcaseGradientIsClippedToHeader()
     {
         var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "showcase.pdf")));
-        var p = PdfRenderer.RenderPage(doc.Pages[0], 72);
+        var p = DocumentRenderer.RenderPage(doc.Pages[0], 72);
         Assert.Equal((255, 255, 255), Px(p, 20, 400));
     }
 
@@ -87,7 +88,7 @@ public class RenderTests
     {
         var ed = PdfEditor.Open(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "showcase.pdf")));
         ed.SetRotation(0, 90);
-        var p = PdfRenderer.RenderPage(PdfDocument.Load(ed.Save()).Pages[0], 72);
+        var p = DocumentRenderer.RenderPage(PdfDocument.Load(ed.Save()).Pages[0], 72);
         Assert.Equal((p.Width, p.Height), (792, 612));
         Assert.Equal((255, 255, 255), Px(p, 400, 300));
     }
@@ -97,7 +98,7 @@ public class RenderTests
     {
         var data = "\0\0\0\xFF\0\0" + "\0\xFF\0\0\xFF\0" + "\0\0\xFF\0\0\xFF";
         var obj = $"5 0 obj\n<< /ShadingType 4 /ColorSpace /DeviceRGB /BitsPerCoordinate 8 /BitsPerComponent 8 /BitsPerFlag 8 /Decode [0 200 0 200 0 1 0 1 0 1] /Length {data.Length} >>\nstream\n{data}\nendstream\nendobj\n";
-        var p = PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/M sh", "/Shading << /M 5 0 R >>", obj, brokenXref: true)).Pages[0], 72);
+        var p = DocumentRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/M sh", "/Shading << /M 5 0 R >>", obj, brokenXref: true)).Pages[0], 72);
         Assert.True(Px(p, 10, 190).R > 200);
         Assert.True(Px(p, 150, 190).G > 150);
         Assert.Equal((255, 255, 255), Px(p, 150, 50));
@@ -112,7 +113,7 @@ public class RenderTests
         sb.Append("\xFF\0\0" + "\0\xFF\0" + "\0\0\xFF" + "\xFF\xFF\0"); // c00 red, c03 green, c33 blue, c30 yellow
         var data = sb.ToString();
         var obj = $"5 0 obj\n<< /ShadingType 6 /ColorSpace /DeviceRGB /BitsPerCoordinate 8 /BitsPerComponent 8 /BitsPerFlag 8 /Decode [0 200 0 200 0 1 0 1 0 1] /Length {data.Length} >>\nstream\n{data}\nendstream\nendobj\n";
-        var p = PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/M sh", "/Shading << /M 5 0 R >>", obj, brokenXref: true)).Pages[0], 72);
+        var p = DocumentRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/M sh", "/Shading << /M 5 0 R >>", obj, brokenXref: true)).Pages[0], 72);
         var red = Px(p, 4, 195); var green = Px(p, 195, 195); var mid = Px(p, 100, 100);
         Assert.True(red.R > 200 && red.G < 80);
         Assert.True(green.G > 200 && green.R < 80);
@@ -136,13 +137,13 @@ public class RenderTests
         var obj = $"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 200 200] /Length {form.Length} >>\nstream\n{form}\nendstream\nendobj\n";
         var lum = "/ExtGState << /G1 << /SMask << /Type /Mask /S /Luminosity /G 5 0 R >> >> /G0 << /SMask /None >> >>";
         var bytes = TestPdf.Build("q /G1 gs 1 0 0 rg 0 0 200 200 re f Q 0 0 1 rg 190 190 10 10 re f", lum, obj, brokenXref: true);
-        var p = PdfRenderer.RenderPage(PdfDocument.Load(bytes).Pages[0], 72);
+        var p = DocumentRenderer.RenderPage(PdfDocument.Load(bytes).Pages[0], 72);
         Assert.Equal((255, 0, 0), Px(p, 50, 100));
         Assert.Equal((255, 255, 255), Px(p, 150, 100));
         Assert.Equal((0, 0, 255), Px(p, 195, 5)); // mask is gone after Q
 
         var alpha = lum.Replace("Luminosity", "Alpha");
-        var p2 = PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/G1 gs 1 0 0 rg 0 0 200 200 re f", alpha, obj, brokenXref: true)).Pages[0], 72);
+        var p2 = DocumentRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("/G1 gs 1 0 0 rg 0 0 200 200 re f", alpha, obj, brokenXref: true)).Pages[0], 72);
         Assert.Equal((255, 0, 0), Px(p2, 50, 100));
         Assert.Equal((255, 255, 255), Px(p2, 150, 100));
     }
@@ -153,7 +154,7 @@ public class RenderTests
         var bytes = TestPdf.Build("1 0 0 rg 0 0 100 100 re f", mediaBox: "[0 0 200 100]");
         var s = System.Text.Encoding.Latin1.GetString(bytes).Replace("/Type /Page /Parent", "/Type /Page /Rotate 90 /Parent");
         var page = PdfDocument.Load(System.Text.Encoding.Latin1.GetBytes(s)).Pages[0];
-        var p = PdfRenderer.RenderPage(page, 72);
+        var p = DocumentRenderer.RenderPage(page, 72);
         Assert.Equal((100, 200), (p.Width, p.Height));
     }
 }

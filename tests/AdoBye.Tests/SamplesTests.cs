@@ -1,5 +1,6 @@
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -38,7 +39,7 @@ public class SamplesTests
         var password = Passwords.FirstOrDefault(kv => file.StartsWith(kv.Key, StringComparison.Ordinal)).Value ?? "";
         var doc = PdfDocument.Open(path, password);
         Assert.True(doc.Pages.Count >= 1);
-        var r = PdfRenderer.RenderPage(doc.Pages[0], 48);
+        var r = DocumentRenderer.RenderPage(doc.Pages[0], 48);
         Assert.True(r.Width > 0 && r.Height > 0);
         Assert.Empty(r.Warnings);
     }

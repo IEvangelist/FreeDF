@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\PortableDocument.Document\PortableDocument.Document.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\predefined-cmaps.bin" LogicalName="PortableDocument.Content.Resources.predefined-cmaps.bin" />
+    <EmbeddedResource Include="Resources\glyphlist.txt" LogicalName="PortableDocument.Content.Resources.glyphlist.txt" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+</Project>

@@ -1,7 +1,8 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Text;
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 namespace AdoBye.Tests;
 
@@ -96,8 +97,8 @@ public class FuzzTests
         for (var i = 0; i < n; i++)
         {
             var page = doc.Pages[i];
-            RenderStep(() => PdfRenderer.RenderPage(page, 24));
-            RenderStep(() => PdfRenderer.Analyze(page));
+            RenderStep(() => DocumentRenderer.RenderPage(page, 24));
+            RenderStep(() => DocumentRenderer.Analyze(page));
             RenderStep(() => page.GetAnnotations());
         }
         RenderStep(() => doc.GetOutlines());

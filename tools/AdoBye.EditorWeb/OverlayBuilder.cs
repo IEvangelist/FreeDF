@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
-using AdoBye.Content;
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Content;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 /// <summary>An editable page object. Coordinates are points in the unrotated MediaBox with the origin at the top-left (y down).</summary>
 public sealed record Item(

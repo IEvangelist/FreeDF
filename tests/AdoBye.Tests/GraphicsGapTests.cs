@@ -1,5 +1,6 @@
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -12,7 +13,7 @@ public class GraphicsGapTests
     {
         var bytes = TestPdf.Build(content, res, objs, brokenXref: true);
         if (patch is not null) bytes = System.Text.Encoding.Latin1.GetBytes(patch(System.Text.Encoding.Latin1.GetString(bytes)));
-        return PdfRenderer.RenderPage(PdfDocument.Load(bytes).Pages[0], 72);
+        return DocumentRenderer.RenderPage(PdfDocument.Load(bytes).Pages[0], 72);
     }
 
     static void Near((int R, int G, int B) a, (int, int, int) e, int tol = 4)

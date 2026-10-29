@@ -1,8 +1,9 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Buffers.Binary;
 using System.Text;
-using AdoBye.Content;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Content;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -134,7 +135,7 @@ public class IccTests
         var data = Encoding.Latin1.GetString(icc);
         var obj = $"5 0 obj\n<< /N {n} /Length {data.Length} >>\nstream\n{data}\nendstream\nendobj\n";
         var pdf = TestPdf.Build(content, "/ColorSpace << /CS0 [/ICCBased 5 0 R] >>", obj, brokenXref: true);
-        return PdfRenderer.RenderPage(PdfDocument.Load(pdf).Pages[0], 72);
+        return DocumentRenderer.RenderPage(PdfDocument.Load(pdf).Pages[0], 72);
     }
 
     static (int R, int G, int B) Px(RenderedPage p, int x, int y) { var o = (y * p.Width + x) * 4; return (p.Rgba[o], p.Rgba[o + 1], p.Rgba[o + 2]); }

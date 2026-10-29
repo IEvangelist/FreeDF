@@ -2,7 +2,7 @@
 
 Writes tests/fixtures/jpegx/name.pdf (one /Im0 DCTDecode image), name.bin (8-bit reference pixels) and name.meta
 ("MODE width height tolerance"). The arithmetic encoder is a Python port of the QM-coder procedures of ITU-T T.81 Annex D/F/G
-(the probability table is read from src/AdoBye.Content/JpegArith.cs). Arithmetic references come from Pillow (libjpeg-turbo)
+(the probability table is read from src/PortableDocument.Content/JpegArith.cs). Arithmetic references come from Pillow (libjpeg-turbo)
 when it can decode the file, and from a numpy float IDCT otherwise; lossless references are the source samples.
 """
 import io
@@ -20,7 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "tests", "fixtures", "jpegx")
 os.makedirs(OUT, exist_ok=True)
 
-_raw = re.search(r"QmRaw = \[(.*?)\];", open(os.path.join(ROOT, "src", "AdoBye.Content", "JpegArith.cs")).read(), re.S).group(1)
+_raw = re.search(r"QmRaw = \[(.*?)\];", open(os.path.join(ROOT, "src", "PortableDocument.Content", "JpegArith.cs")).read(), re.S).group(1)
 _v = [int(x, 0) for x in _raw.replace("\n", " ").split(",")]
 QM = [(_v[i] << 16) | (_v[i + 2] << 8) | (_v[i + 3] << 7) | _v[i + 1] for i in range(0, len(_v), 4)]
 

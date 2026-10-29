@@ -5,13 +5,13 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AdoBye.Core", "src\AdoBye.Core\AdoBye.Core.csproj", "{AB26431D-28BF-4B9A-843C-6E7D99BF5CD6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PortableDocument.Core", "src\PortableDocument.Core\PortableDocument.Core.csproj", "{AB26431D-28BF-4B9A-843C-6E7D99BF5CD6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AdoBye.Document", "src\AdoBye.Document\AdoBye.Document.csproj", "{ABECCC34-89D1-4CF2-A93B-8D42941827E8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PortableDocument.Document", "src\PortableDocument.Document\PortableDocument.Document.csproj", "{ABECCC34-89D1-4CF2-A93B-8D42941827E8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AdoBye.Content", "src\AdoBye.Content\AdoBye.Content.csproj", "{C010140A-4F09-4464-8D84-A9514411A1C6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PortableDocument.Content", "src\PortableDocument.Content\PortableDocument.Content.csproj", "{C010140A-4F09-4464-8D84-A9514411A1C6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AdoBye.Render", "src\AdoBye.Render\AdoBye.Render.csproj", "{39968C93-B004-47CB-B2A4-F02910762166}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PortableDocument.Render", "src\PortableDocument.Render\PortableDocument.Render.csproj", "{39968C93-B004-47CB-B2A4-F02910762166}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject

@@ -1,6 +1,6 @@
-using AdoBye.Content;
-using AdoBye.Core;
-using AdoBye.Document;
+using PortableDocument.Content;
+using PortableDocument.Core;
+using PortableDocument.Document;
 using Xunit;
 
 namespace AdoBye.Tests;

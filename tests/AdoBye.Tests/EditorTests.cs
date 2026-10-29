@@ -1,6 +1,7 @@
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -12,7 +13,7 @@ public class EditorTests
     static PdfDocument Cff() => PdfDocument.Open(Fx("fonts", "cff.pdf"));
     static PdfDocument Reload(byte[] b) => PdfDocument.Load(b);
 
-    static byte[] Render(PdfDocument d, int i) => PdfRenderer.RenderPage(d.Pages[i], 72).Rgba;
+    static byte[] Render(PdfDocument d, int i) => DocumentRenderer.RenderPage(d.Pages[i], 72).Rgba;
 
     [Fact]
     public void Roundtrip_preserves_structure_and_rendering()
@@ -81,9 +82,9 @@ public class EditorTests
         var doc = Features();
         var pageIdx = Enumerable.Range(0, doc.Pages.Count).First(i => doc.Pages[i].GetAnnotations().Any(a => a.Subtype == "Widget"));
         var e = PdfEditor.Open(doc);
-        var before = PdfRenderer.RenderPage(Reload(e.Save()).Pages[pageIdx], 72).Rgba;
+        var before = DocumentRenderer.RenderPage(Reload(e.Save()).Pages[pageIdx], 72).Rgba;
         e.SetFieldValue("firstName", "Grace Hopper");
-        var after = PdfRenderer.RenderPage(Reload(e.Save()).Pages[pageIdx], 72).Rgba;
+        var after = DocumentRenderer.RenderPage(Reload(e.Save()).Pages[pageIdx], 72).Rgba;
         Assert.NotEqual(before, after);
     }
 
@@ -195,24 +196,24 @@ public class EditorTests
         const string content = "q 2 0 0 2 10 10 cm 1 0 0 rg 0 0 20 10 re f Q 0 0 1 rg 100 100 30 30 re f BT /F1 12 Tf 5 5 Td (Hi) Tj ET";
         var bytes = TestPdf.Build(content, "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
         var page = PdfDocument.Load(bytes).Pages[0];
-        var (spans, objs) = PdfRenderer.Analyze(page);
+        var (spans, objs) = DocumentRenderer.Analyze(page);
         Assert.Equal(2, objs.Count);
         Assert.Equal((10, 50), (objs[0].X0, objs[0].X1));
         Assert.Equal((170, 190), (objs[0].Y0, objs[0].Y1));
 
         // Move +30 right and scale x by 2 about the origin (x' = 2x + 5); box space is y-down but the matrix is applied through the object's CTM.
-        var c = objs[0].Ctm; var m = c.Then(new AdoBye.Content.Matrix(2, 0, 0, 1, 5, 0)).Then(c.Invert());
+        var c = objs[0].Ctm; var m = c.Then(new global::PortableDocument.Content.Matrix(2, 0, 0, 1, 5, 0)).Then(c.Invert());
         var edited = ContentRewriter.EditObjects(page.GetContents(), [
             new ContentRewriter.ObjectEdit(objs[0].Start, objs[0].End, false, [m.A, m.B, m.C, m.D, m.E, m.F], [0, 1, 0], null),
             new ContentRewriter.ObjectEdit(objs[1].Start, objs[1].End, true, null, null, null)]);
         var e = PdfEditor.Open(bytes);
         e.SetContentOverride(0, edited);
-        var (spans2, objs2) = PdfRenderer.Analyze(PdfDocument.Load(e.Save()).Pages[0]);
+        var (spans2, objs2) = DocumentRenderer.Analyze(PdfDocument.Load(e.Save()).Pages[0]);
         Assert.Single(objs2);
         Assert.Equal(25, objs2[0].X0, 3);
         Assert.Equal(105, objs2[0].X1, 3);
         Assert.Equal(170, objs2[0].Y0, 3);
-        Assert.Equal(new AdoBye.Content.RgbColor(0, 1, 0), objs2[0].Fill);
+        Assert.Equal(new global::PortableDocument.Content.RgbColor(0, 1, 0), objs2[0].Fill);
         Assert.Equal(spans.Select(s => s.Text), spans2.Select(s => s.Text));
     }
 
@@ -229,11 +230,11 @@ public class EditorTests
 
         var e = PdfEditor.Open(bytes);
         e.SetContentOverride(0, red);
-        var (spans, objs) = PdfRenderer.Analyze(PdfDocument.Load(e.Save()).Pages[0]);
+        var (spans, objs) = DocumentRenderer.Analyze(PdfDocument.Load(e.Save()).Pages[0]);
         Assert.Equal(["Keep"], spans.Select(s => s.Text.Trim()).Where(t => t.Length > 0).ToArray());
-        Assert.Contains(objs, o => o.Fill == new AdoBye.Content.RgbColor(0, 0, 1));
-        Assert.DoesNotContain(objs, o => o.Fill == new AdoBye.Content.RgbColor(1, 0, 0));
-        Assert.Contains(objs, o => o.Fill == new AdoBye.Content.RgbColor(0, 0, 0) && o.Y0 >= 69 && o.Y1 <= 121);
+        Assert.Contains(objs, o => o.Fill == new global::PortableDocument.Content.RgbColor(0, 0, 1));
+        Assert.DoesNotContain(objs, o => o.Fill == new global::PortableDocument.Content.RgbColor(1, 0, 0));
+        Assert.Contains(objs, o => o.Fill == new global::PortableDocument.Content.RgbColor(0, 0, 0) && o.Y0 >= 69 && o.Y1 <= 121);
     }
 
     [Fact]
@@ -253,7 +254,7 @@ public class EditorTests
     {
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "fixtures", "showcase.pdf");
         var page = PdfDocument.Load(File.ReadAllBytes(path)).Pages[0];
-        var (spans, _) = PdfRenderer.Analyze(page);
+        var (spans, _) = DocumentRenderer.Analyze(page);
         var cap = spans.First(s => s.Text.StartsWith("Vector"));
         var outp = Redactor.Redact(page, [new Redactor.BoxRect(140, 700, 340, 30)]);
         var text = System.Text.Encoding.Latin1.GetString(outp);
@@ -280,7 +281,7 @@ public class EditorTests
         const string content = "BT /F1 20 Tf 10 100 Td (Hello) Tj 0 -30 Td [(Wor) -100 (ld)] TJ ( Again) Tj ET 1 0 0 rg 0 0 5 5 re f";
         var bytes = TestPdf.Build(content, "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
         var page = PdfDocument.Load(bytes).Pages[0];
-        var spans = PdfRenderer.ExtractText(page);
+        var spans = DocumentRenderer.ExtractText(page);
         Assert.Equal(["Hello", "World", " Again"], spans.Select(s => s.Text));
         Assert.Equal(10, spans[0].X, 3);
         Assert.Equal(200 - 100, spans[0].Y, 3);
@@ -294,7 +295,7 @@ public class EditorTests
 
         var e = PdfEditor.Open(bytes);
         e.SetContentOverride(0, edited);
-        var after = PdfRenderer.ExtractText(PdfDocument.Load(e.Save()).Pages[0]);
+        var after = DocumentRenderer.ExtractText(PdfDocument.Load(e.Save()).Pages[0]);
         Assert.Equal(3, after.Count);
         Assert.Equal("Hello", after[0].Text);
         Assert.True(string.IsNullOrWhiteSpace(after[1].Text));
@@ -320,7 +321,7 @@ public class EditorTests
     {
         var bytes = FormTextPdf();
         var page = PdfDocument.Load(bytes).Pages[0];
-        var spans = PdfRenderer.ExtractText(page);
+        var spans = DocumentRenderer.ExtractText(page);
         var f = Assert.Single(spans, s => s.Form != 0);
         Assert.Equal("SECRETFORM", f.Text);
         Assert.Contains(spans, s => s.Form == 0 && s.Text == "KEEPME");
@@ -328,13 +329,13 @@ public class EditorTests
         var map = new Dictionary<int, int>();
         var e = PdfEditor.Open(bytes);
         var doc = PdfDocument.Load(e.Save(false, false, new PdfWriteOptions { ObjectMapOut = map }));
-        var (spans2, _) = PdfRenderer.Analyze(doc.Pages[0]);
+        var (spans2, _) = DocumentRenderer.Analyze(doc.Pages[0]);
         var fs = spans2.Single(s => s.Form != 0);
         var data = doc.File.DecodeStream((PdfStream)doc.File.GetObject(fs.Form)!);
         var back = map.ToDictionary(kv => kv.Value, kv => kv.Key);
         var e2 = e;
         e2.SetStreamOverride(back[fs.Form], ContentRewriter.RemoveText(data, new Dictionary<int, double> { [fs.Index] = fs.Advance }));
-        var after = PdfRenderer.ExtractText(PdfDocument.Load(e2.Save()).Pages[0]);
+        var after = DocumentRenderer.ExtractText(PdfDocument.Load(e2.Save()).Pages[0]);
         Assert.DoesNotContain(after, s => s.Text.Contains("SECRETFORM"));
         Assert.Contains(after, s => s.Text == "KEEPME");
     }
@@ -346,7 +347,7 @@ public class EditorTests
         var e = PdfEditor.Open(bytes);
         e.SetInfo("Title", "SECRETTITLE");
         // Covers the form text (page y 100..150 -> box y 50..100) and the annotation, plus the first three glyphs of KEEPME.
-        var kee = PdfRenderer.ExtractText(PdfDocument.Load(bytes).Pages[0]).First(s => s.Text == "KEEPME");
+        var kee = DocumentRenderer.ExtractText(PdfDocument.Load(bytes).Pages[0]).First(s => s.Text == "KEEPME");
         var gw = kee.Width / 6;
         Redactor.Apply(e, 0, [new Redactor.BoxRect(0, 25, 200, 50), new Redactor.BoxRect(kee.X - 1, kee.Y - kee.Size, gw * 3 + 1, kee.Size * 1.3)]);
         var saved = e.Save();
@@ -355,7 +356,7 @@ public class EditorTests
         Assert.DoesNotContain("SECRETNOTE", raw);
         Assert.DoesNotContain("SECRETTITLE", raw);
         var page = PdfDocument.Load(saved).Pages[0];
-        var text = string.Concat(PdfRenderer.ExtractText(page).Select(s => s.Text));
+        var text = string.Concat(DocumentRenderer.ExtractText(page).Select(s => s.Text));
         Assert.DoesNotContain("KEE", text);
         Assert.Contains("ME", text);
     }
@@ -369,7 +370,7 @@ public class EditorTests
         var e = PdfEditor.Open(bytes);
         Redactor.Apply(e, 0, [new Redactor.BoxRect(0, 50, 50, 50)]);
         var d = PdfDocument.Load(e.Save());
-        var rgba = PdfRenderer.RenderPage(d.Pages[0], 72).Rgba;
+        var rgba = DocumentRenderer.RenderPage(d.Pages[0], 72).Rgba;
         int W = 200;
         int Px(int x, int y) => rgba[(y * W + x) * 4];
         Assert.True(Px(25, 75) < 40, "covered half is black");

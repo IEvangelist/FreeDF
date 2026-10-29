@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
-using AdoBye.Content;
+using PortableDocument.Content;
 
 /// <summary>One installed font face: TrueType (glyf) or CFF-flavoured OpenType, from a single-font file or a .ttc/.otc collection member (<paramref name="Face"/> ≥ 0).</summary>
 public sealed record FontFace(string Family, bool Bold, bool Italic, string Path, string PostScript, int Face = -1)

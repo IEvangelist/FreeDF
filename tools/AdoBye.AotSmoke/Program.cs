@@ -1,7 +1,8 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 if (RuntimeFeature.IsDynamicCodeSupported)
     throw new InvalidOperationException("Run the published NativeAOT executable, not the managed build.");
@@ -43,7 +44,7 @@ static void Smoke(byte[] bytes)
     var document = PdfDocument.Load(bytes);
     Check(document.Pages.Count == 1, "page count");
     Check(Text(document) == "AB\u3042", "embedded CJK text and predefined CMap resources");
-    var rendered = PdfRenderer.RenderPage(document.Pages[0], 72);
+    var rendered = DocumentRenderer.RenderPage(document.Pages[0], 72);
     Check(rendered.Width > 0 && rendered.Height > 0, "raster dimensions");
     Check(rendered.Rgba.Length == rendered.Width * rendered.Height * 4, "raster length");
     Check(Enumerable.Range(0, rendered.Rgba.Length / 4).Any(i => rendered.Rgba[i * 4] < 128), "visible glyph pixels");
@@ -55,7 +56,7 @@ static void Smoke(byte[] bytes)
     var reloaded = PdfDocument.Load(saved);
     Check(reloaded.Info("Title") == "NativeAOT smoke", "edited metadata");
     Check(Text(reloaded) == "AB\u3042", "saved text");
-    Check(PdfRenderer.RenderPage(reloaded.Pages[0], 72).Rgba.AsSpan().SequenceEqual(rendered.Rgba), "saved rendering");
+    Check(DocumentRenderer.RenderPage(reloaded.Pages[0], 72).Rgba.AsSpan().SequenceEqual(rendered.Rgba), "saved rendering");
 
     // Exercise xref repair and the native byte-pattern dependency as well as ordinary parsing.
     var damaged = (byte[])saved.Clone();
@@ -68,7 +69,7 @@ static void Smoke(byte[] bytes)
 }
 
 static string Text(PdfDocument document) =>
-    string.Concat(PdfRenderer.ExtractText(document.Pages[0]).Select(span => span.Text));
+    string.Concat(DocumentRenderer.ExtractText(document.Pages[0]).Select(span => span.Text));
 
 static void Check(bool success, string operation)
 {

@@ -1,7 +1,8 @@
-using AdoBye.Content;
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Content;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 // Usage: AdoBye.EditorWeb [input.pdf] [--port 5080]
 var port = args.SkipWhile(a => a != "--port").Skip(1).FirstOrDefault() ?? "5080";
@@ -67,7 +68,7 @@ IEnumerable<ContentInterpreter.TextSpan> EditableSpans(List<ContentInterpreter.T
     if (!texts.TryGetValue(id, out var t))
     {
         var page = Pristine().Pages[i];
-        var (spans, objects) = PdfRenderer.Analyze(page);
+        var (spans, objects) = DocumentRenderer.Analyze(page);
         texts[id] = t = (page.GetContents(), spans, objects);
     }
     return t;
@@ -207,7 +208,7 @@ app.MapGet("/api/page/{i:int}.png", (int i, int? dpi, int? v, bool? bare) =>
     {
         if (editor.PageCount == 0 || i < 0 || i >= editor.PageCount) return Results.NotFound();
         var page = (bare == true ? BaseSnap() : Snap()).Pages[i];
-        return Results.File(PdfRenderer.RenderPage(page, Math.Clamp(dpi ?? 48, 16, 300)).ToPng(), "image/png");
+        return Results.File(DocumentRenderer.RenderPage(page, Math.Clamp(dpi ?? 48, 16, 300)).ToPng(), "image/png");
     }
 });
 
@@ -231,7 +232,7 @@ app.MapPost("/api/asset", async (HttpRequest r) =>
     var mime = bytes.Length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 ? "image/jpeg" : "image/png";
     var id = Guid.NewGuid().ToString("N");
     int w, h;
-    if (mime == "image/jpeg") { if (AdoBye.Content.JpegDecoder.Decode(bytes, out w, out h, out _) is null) return Results.BadRequest(); }
+    if (mime == "image/jpeg") { if (global::PortableDocument.Content.JpegDecoder.Decode(bytes, out w, out h, out _) is null) return Results.BadRequest(); }
     else { try { (w, h, _) = PngWriter.Decode(bytes); } catch (Exception) { return Results.BadRequest(); } }
     lock (gate) assets[id] = new Asset(bytes, mime);
     return Results.Json(new { id, w, h });
@@ -302,7 +303,7 @@ app.MapGet("/api/find", (string q, bool? cs) =>
         {
             var doc = Snap(); findCache = [];
             for (var i = 0; i < editor.PageCount; i++)
-                foreach (var s in PdfRenderer.ExtractText(doc.Pages[i])) if (!s.Vertical && !string.IsNullOrEmpty(s.Text)) findCache.Add((i, s));
+                foreach (var s in DocumentRenderer.ExtractText(doc.Pages[i])) if (!s.Vertical && !string.IsNullOrEmpty(s.Text)) findCache.Add((i, s));
             findVersion = version;
         }
         var cmp = cs == true ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -406,7 +407,7 @@ app.MapGet("/api/export/png", (int page, int? dpi) =>
     lock (gate)
     {
         if (page < 0 || page >= editor.PageCount) return Results.NotFound();
-        return Results.File(PdfRenderer.RenderPage(Snap().Pages[page], Math.Clamp(dpi ?? 150, 16, 600)).ToPng(), "image/png", $"{Path.GetFileNameWithoutExtension(fileName)}-{page + 1}.png");
+        return Results.File(DocumentRenderer.RenderPage(Snap().Pages[page], Math.Clamp(dpi ?? 150, 16, 600)).ToPng(), "image/png", $"{Path.GetFileNameWithoutExtension(fileName)}-{page + 1}.png");
     }
 });
 app.MapGet("/api/export/zip", (int? dpi) =>
@@ -419,7 +420,7 @@ app.MapGet("/api/export/zip", (int? dpi) =>
             for (var i = 0; i < editor.PageCount; i++)
             {
                 using var s = z.CreateEntry($"page-{i + 1:000}.png", System.IO.Compression.CompressionLevel.NoCompression).Open();
-                s.Write(PdfRenderer.RenderPage(doc.Pages[i], Math.Clamp(dpi ?? 150, 16, 600)).ToPng());
+                s.Write(DocumentRenderer.RenderPage(doc.Pages[i], Math.Clamp(dpi ?? 150, 16, 600)).ToPng());
             }
         return Results.File(ms.ToArray(), "application/zip", $"{Path.GetFileNameWithoutExtension(fileName)}-pages.zip");
     }
@@ -434,7 +435,7 @@ app.MapGet("/api/export/text", () =>
         {
             if (i > 0) sb.Append('\f');
             double lastY = double.NaN, lastEnd = 0;
-            foreach (var s in PdfRenderer.ExtractText(doc.Pages[i]).OrderBy(s => Math.Round(s.Y / 3)).ThenBy(s => s.X))
+            foreach (var s in DocumentRenderer.ExtractText(doc.Pages[i]).OrderBy(s => Math.Round(s.Y / 3)).ThenBy(s => s.X))
             {
                 if (!double.IsNaN(lastY) && Math.Abs(s.Y - lastY) > 3) { sb.AppendLine(); lastEnd = 0; }
                 else if (!double.IsNaN(lastY) && s.X - lastEnd > s.Size * 0.15) sb.Append(' ');

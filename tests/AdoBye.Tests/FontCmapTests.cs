@@ -1,6 +1,7 @@
-using AdoBye.Content;
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Content;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -8,9 +9,9 @@ namespace AdoBye.Tests;
 public class FontCmapTests
 {
     static string Fx(params string[] p) => Path.Combine([AppContext.BaseDirectory, "fixtures", "fonts", .. p]);
-    static RenderedPage Render(string name) => PdfRenderer.RenderPage(PdfDocument.Open(Fx(name)).Pages[0], 72);
+    static RenderedPage Render(string name) => DocumentRenderer.RenderPage(PdfDocument.Open(Fx(name)).Pages[0], 72);
     static bool Dark(RenderedPage p, int x, int yPdf) => p.Rgba[((p.Height - 1 - yPdf) * p.Width + x) * 4] < 64;
-    static string Text(string name) => string.Concat(PdfRenderer.ExtractText(PdfDocument.Open(Fx(name)).Pages[0]).Select(s => s.Text));
+    static string Text(string name) => string.Concat(DocumentRenderer.ExtractText(PdfDocument.Open(Fx(name)).Pages[0]).Select(s => s.Text));
 
     // Glyph origins are 10 + 70*i pt, baseline y=50, font size 100 (1 unit = 0.1 pt).
     [Theory]

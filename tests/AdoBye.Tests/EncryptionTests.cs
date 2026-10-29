@@ -1,6 +1,7 @@
-using AdoBye.Core;
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Core;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -21,7 +22,7 @@ public class EncryptionTests
         var doc = PdfDocument.Open(Path.Combine(Dir, file));
         Assert.True(doc.File.IsEncrypted);
         Assert.Equal("Secret Title", doc.Info("Title"));
-        var p = PdfRenderer.RenderPage(doc.Pages[0], 72);
+        var p = DocumentRenderer.RenderPage(doc.Pages[0], 72);
         Assert.Equal((255, 0, 0), (p.Rgba[(150 * 200 + 50) * 4], p.Rgba[(150 * 200 + 50) * 4 + 1], p.Rgba[(150 * 200 + 50) * 4 + 2]));
     }
 

@@ -10,11 +10,11 @@
     <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AdoBye.Render\AdoBye.Render.csproj" />
-    <TrimmerRootAssembly Include="AdoBye.Core" />
-    <TrimmerRootAssembly Include="AdoBye.Document" />
-    <TrimmerRootAssembly Include="AdoBye.Content" />
-    <TrimmerRootAssembly Include="AdoBye.Render" />
+    <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <TrimmerRootAssembly Include="PortableDocument.Core" />
+    <TrimmerRootAssembly Include="PortableDocument.Document" />
+    <TrimmerRootAssembly Include="PortableDocument.Content" />
+    <TrimmerRootAssembly Include="PortableDocument.Render" />
     <None Include="..\..\tests\fixtures\fonts\cjk-rksj.pdf" Link="fixtures\cjk-rksj.pdf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

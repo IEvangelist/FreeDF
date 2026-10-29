@@ -1,8 +1,9 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
-using AdoBye.Content;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Content;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 if (args is ["--profile-text", var file, var count])
 {
@@ -42,7 +43,7 @@ public class RenderBench
     static void RenderAll(byte[] pdf)
     {
         var doc = PdfDocument.Load(pdf);
-        foreach (var p in doc.Pages) PdfRenderer.RenderPage(p, 96);
+        foreach (var p in doc.Pages) DocumentRenderer.RenderPage(p, 96);
     }
 
     sealed class NullBackend : IRenderBackend

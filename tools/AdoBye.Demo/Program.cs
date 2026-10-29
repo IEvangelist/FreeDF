@@ -1,5 +1,6 @@
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Document;
+using PortableDocument.Render;
 
 // Usage: AdoBye.Demo <outDir> <input.pdf>...
 // Merges the inputs, moves the last page to the front, rotates the second page, saves, reloads and renders every page to PNG.
@@ -23,7 +24,7 @@ Console.WriteLine($"saved {saved} ({bytes.Length} bytes, {ed.PageCount} pages)")
 var doc = PdfDocument.Load(bytes);
 for (var i = 0; i < doc.Pages.Count; i++)
 {
-    var p = PdfRenderer.RenderPage(doc.Pages[i], 72);
+    var p = DocumentRenderer.RenderPage(doc.Pages[i], 72);
     var png = Path.Combine(outDir, $"page{i + 1}.png");
     File.WriteAllBytes(png, p.ToPng());
     Console.WriteLine($"rendered {png} ({p.Width}x{p.Height})");

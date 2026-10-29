@@ -1,6 +1,7 @@
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Text;
-using AdoBye.Document;
-using AdoBye.Render;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -14,7 +15,7 @@ public class TransparencyTests
     }
 
     static RenderedPage Render(string content, string res, string objs = "", string box = "[0 0 200 200]")
-        => PdfRenderer.RenderPage(PdfDocument.Load(TestPdf.Build(content, res, objs, box, brokenXref: true)).Pages[0], 72);
+        => DocumentRenderer.RenderPage(PdfDocument.Load(TestPdf.Build(content, res, objs, box, brokenXref: true)).Pages[0], 72);
 
     static string Stream(int n, string dict, string data)
         => $"{n} 0 obj\n<< {dict} /Length {data.Length} >>\nstream\n{data}\nendstream\nendobj\n";

@@ -1,5 +1,6 @@
-using AdoBye.Document;
-using AdoBye.Render;
+using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Document;
+using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -12,7 +13,7 @@ public class CffTests
     public void Embedded_cff_glyphs_render_for_bare_and_opentype_wrappers()
     {
         var doc = PdfDocument.Open(Path.Combine(AppContext.BaseDirectory, "fixtures", "fonts", "cff.pdf"));
-        var p = PdfRenderer.RenderPage(doc.Pages[0], 72);
+        var p = DocumentRenderer.RenderPage(doc.Pages[0], 72);
         // Font size 50: A is a 30x35 square at x 10..40, B a blob at x 45..75; baselines y=20 and y=120 (PDF), flipped to device.
         foreach (var baseline in new[] { 20, 120 })
         {

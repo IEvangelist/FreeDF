@@ -2,7 +2,7 @@
 
 Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to the paywall.
 
-- `src/` core, document, content and render libraries (`AdoBye.*`)
+- `src/` core, document, content and render libraries (`PortableDocument.*`)
 - `tools/AdoBye.EditorWeb` browser editor: `dotnet run -c Release --project tools/AdoBye.EditorWeb -- file.pdf`
 - `samples/` 26 example PDFs, see `samples/README.md`
 - `docs/spec-matrix.md` spec coverage and known gaps
@@ -10,3 +10,18 @@ Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to t
 Build and test: `dotnet build AdoBye.sln -c Release` then `dotnet test AdoBye.sln -c Release`.
 
 NativeAOT: production libraries enable compatibility analysis; see `tools/AdoBye.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.
+
+## Library API
+
+The library projects, assemblies, and namespaces are `PortableDocument.Core`, `PortableDocument.Document`, `PortableDocument.Content`, and `PortableDocument.Render`. The existing static entry class is now `PortableDocument.Render.PortableDocument`, replacing `PdfRenderer` without changing its methods or behavior:
+
+```csharp
+using PortableDocument.Document;
+using Pdf = PortableDocument.Render.PortableDocument;
+
+var document = PdfDocument.Load(bytes);
+var spans = Pdf.ExtractText(document.Pages[0]);
+var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
+```
+
+Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. Product/tool names and `AdoBye.sln` remain unchanged while the product name is undecided. Historical benchmark reports retain their original identities and measurements.

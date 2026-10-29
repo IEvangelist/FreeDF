@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using AdoBye.Core;
-using AdoBye.Document;
+using PortableDocument.Core;
+using PortableDocument.Document;
 using Xunit;
 
 namespace AdoBye.Tests;
