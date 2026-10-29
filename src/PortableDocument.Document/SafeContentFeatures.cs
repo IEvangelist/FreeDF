@@ -25,7 +25,22 @@ public sealed record PdfAction(
     string? FieldName = null)
 {
     public PdfRemoteGoToAction? RemoteGoToDetails { get; init; }
+    public PdfUriAction? UriDetails { get; init; }
 }
+
+/// <summary>
+/// Inert /URI metadata (ISO 32000-2:2020, 12.6.4.8, Table 210). Only references
+/// within the current PDF are dereferenced; no URI is accessed or resolved against a base URI.
+/// Missing or wrong-type entries are null and remain available in Dictionary.
+/// String contents are retained without conformance validation.
+/// </summary>
+/// <param name="Uri">The required /URI ASCII string containing UTF-8 bytes, preserved without decoding, parsing, or navigating.</param>
+/// <param name="IsMap">The optional /IsMap flag. Null preserves absence or a wrong type; the PDF default is false.</param>
+/// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
+public sealed record PdfUriAction(
+    PdfString? Uri,
+    bool? IsMap,
+    PdfDictionary Dictionary);
 
 /// <summary>
 /// Inert /GoToR metadata (ISO 32000-2:2020, 12.6.4.3, Table 203). Only references
@@ -52,8 +67,8 @@ public static class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection, with inert typed metadata for remote go-to actions.
-    /// Payloads are never interpreted or executed, and external files and destinations are never accessed.
+    /// Returns action dictionaries for inspection, with inert typed metadata for remote go-to and URI actions.
+    /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
     {
@@ -227,6 +242,7 @@ public static class SafeContentFeatures
             fieldName)
         {
             RemoteGoToDetails = type == "GoToR" ? ReadRemoteGoToAction(f, action) : null,
+            UriDetails = type == "URI" ? ReadUriAction(f, action) : null,
         });
         if (action.Get("Next") is { } next)
             AddActionChain(f, next, scope, $"{trigger}/Next", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
@@ -244,6 +260,12 @@ public static class SafeContentFeatures
             f.Resolve(action.Get("NewWindow")) is PdfBoolean newWindow ? newWindow.Value : null,
             action);
     }
+
+    static PdfUriAction ReadUriAction(PdfFile f, PdfDictionary action) =>
+        new(
+            f.Resolve(action.Get("URI")) as PdfString,
+            f.Resolve(action.Get("IsMap")) is PdfBoolean isMap ? isMap.Value : null,
+            action);
 
     static string? StringValue(PdfFile f, PdfObject? value) =>
         f.Resolve(value) is PdfString text ? text.Text : null;
