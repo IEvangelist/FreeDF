@@ -8,3 +8,5 @@ Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to t
 - `docs/spec-matrix.md` spec coverage and known gaps
 
 Build and test: `dotnet build AdoBye.sln -c Release` then `dotnet test AdoBye.sln -c Release`.
+
+NativeAOT: production libraries enable compatibility analysis; see `tools/AdoBye.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.

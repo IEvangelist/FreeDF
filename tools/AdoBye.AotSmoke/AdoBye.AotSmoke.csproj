@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishAot>true</PublishAot>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ILLinkTreatWarningsAsErrors>true</ILLinkTreatWarningsAsErrors>
+    <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AdoBye.Render\AdoBye.Render.csproj" />
+    <TrimmerRootAssembly Include="AdoBye.Core" />
+    <TrimmerRootAssembly Include="AdoBye.Document" />
+    <TrimmerRootAssembly Include="AdoBye.Content" />
+    <TrimmerRootAssembly Include="AdoBye.Render" />
+    <None Include="..\..\tests\fixtures\fonts\cjk-rksj.pdf" Link="fixtures\cjk-rksj.pdf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
