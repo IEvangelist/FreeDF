@@ -3,15 +3,17 @@ using System.Runtime.CompilerServices;
 namespace Pdf.Content;
 
 /// <summary>
-/// Huffman JPEG decoder: baseline, extended sequential and progressive (SOF0/1/2). Arithmetic/lossless are unsupported.
+/// Huffman JPEG decoder: baseline, extended sequential and progressive (SOF0/1/2), plus arithmetic-coded DCT (SOF9/10, JpegArith.cs)
+/// and lossless Huffman (SOF3, JpegLossless.cs). Arithmetic lossless (SOF11), hierarchical and 12-bit DCT are unsupported.
 /// Uses a 64-bit bit buffer, 9-bit Huffman lookahead tables, libjpeg's integer "islow" IDCT and parallel reconstruction.
 /// </summary>
-public static class JpegDecoder
+public static partial class JpegDecoder
 {
     sealed class Comp
     {
-        public int Id, H, V, Tq, Td, Ta, Pred, BW, BH, RealBW, RealBH;
+        public int Id, H, V, Tq, Td, Ta, Pred, BW, BH, RealBW, RealBH, CW, CH;
         public short[] Coef = [];
+        public ushort[]? Raw;
     }
 
     sealed class Huff
@@ -40,6 +42,9 @@ public static class JpegDecoder
         int pos = 2, restart = 0, adobe = -1;
         int hmax = 1, vmax = 1;
         var progressive = false;
+        bool arith = false, lossless = false;
+        var prec = 8; var lpt = 0;
+        int[] dcL = new int[4], dcU = [1, 1, 1, 1], acK = [5, 5, 5, 5];
         var scans = 0;
         if (d.Length < 4 || d[0] != 0xFF || d[1] != 0xD8) return null;
         while (pos + 4 <= d.Length)
@@ -72,9 +77,12 @@ public static class JpegDecoder
                         if (tc == 0) hdc[th] = h; else hac[th] = h;
                     }
                     break;
-                case 0xC0 or 0xC1 or 0xC2:
-                    progressive = m == 0xC2;
-                    if (d[seg] != 8) return null;
+                case 0xC0 or 0xC1 or 0xC2 or 0xC3 or 0xC9 or 0xCA:
+                    progressive = m is 0xC2 or 0xCA;
+                    arith = m is 0xC9 or 0xCA;
+                    lossless = m == 0xC3;
+                    prec = d[seg];
+                    if (lossless ? prec is < 2 or > 16 : prec != 8) return null;
                     height = d[seg + 1] << 8 | d[seg + 2]; width = d[seg + 3] << 8 | d[seg + 4];
                     ncomp = d[seg + 5];
                     if (width <= 0 || height <= 0 || ncomp is < 1 or > 4) return null;
@@ -90,10 +98,22 @@ public static class JpegDecoder
                     {
                         c.BW = mx * c.H; c.BH = my * c.V;
                         c.RealBW = ((width * c.H + hmax - 1) / hmax + 7) / 8; c.RealBH = ((height * c.V + vmax - 1) / vmax + 7) / 8;
-                        c.Coef = new short[c.BW * c.BH * 64];
+                        if (lossless)
+                        {
+                            c.CW = (width * c.H + hmax - 1) / hmax; c.CH = (height * c.V + vmax - 1) / vmax;
+                            c.Raw = new ushort[c.CW * c.CH];
+                        }
+                        else c.Coef = new short[c.BW * c.BH * 64];
                     }
                     break;
-                case 0xC3 or 0xC5 or 0xC6 or 0xC7 or 0xC9 or 0xCA or 0xCB or 0xCD or 0xCE or 0xCF: return null;
+                case 0xC5 or 0xC6 or 0xC7 or 0xCB or 0xCD or 0xCE or 0xCF: return null;
+                case 0xCC:
+                    for (var q = seg; q + 1 < end; q += 2)
+                    {
+                        var tb = d[q] & 3; var cs = d[q + 1];
+                        if (d[q] >> 4 == 0) { dcL[tb] = cs & 15; dcU[tb] = cs >> 4; } else acK[tb] = cs;
+                    }
+                    break;
                 case 0xDD: restart = d[seg] << 8 | d[seg + 1]; break;
                 case 0xEE: if (len >= 14 && d[seg] == 'A' && d[seg + 1] == 'd') adobe = d[seg + 11]; break;
                 case 0xDA:
@@ -109,7 +129,20 @@ public static class JpegDecoder
                         }
                         var ss = d[seg + 1 + ns * 2]; var se = d[seg + 2 + ns * 2];
                         var ah = d[seg + 3 + ns * 2] >> 4; var al = d[seg + 3 + ns * 2] & 15;
+                        if (lossless)
+                        {
+                            var lbr = new BitReader(d, end);
+                            DecodeLosslessScan(lbr, sc, hdc, ss, al, prec, restart); lpt = al;
+                            pos = lbr.Pos; scans++;
+                            continue;
+                        }
                         if (!progressive) { ss = 0; se = 63; ah = al = 0; }
+                        if (arith)
+                        {
+                            DecodeArithScan(d, end, sc, progressive, ss, se, ah, al, restart, hmax, vmax, width, height, dcL, dcU, acK, out pos);
+                            scans++;
+                            continue;
+                        }
                         var br = new BitReader(d, end);
                         DecodeScan(br, sc, hdc, hac, progressive, ss, se, ah, al, restart, hmax, vmax, width, height);
                         pos = br.Pos; scans++;
@@ -119,6 +152,7 @@ public static class JpegDecoder
             pos = end;
         }
         if (scans == 0) return null;
+        if (lossless) return FinishLossless(comps, width, height, hmax, vmax, adobe, prec, lpt);
         var planes = new byte[comps.Length][];
         var quant = new int[comps.Length][];
         for (var i = 0; i < comps.Length; i++)
