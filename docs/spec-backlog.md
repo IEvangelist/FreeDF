@@ -17,6 +17,10 @@ The current matrix has **14 Partial rows and 1 Todo row**. Two additional rows m
 
 Local `/GoTo` action metadata (12.6.4.2, Table 202) is also exposed through `GoToDetails`, retaining `/D` names, byte strings, and explicit arrays without navigation, named-destination lookup, or resolving array elements. `tests/AdoBye.Tests/GoToActionTests.cs` covers direct/indirect entries, destination modes, malformed values, and cyclic `/Next` chains. This is inert inspection, not destination conformance validation or navigation.
 
+Typed `/Named` action metadata (12.6.4.11, Table 216) now retains `/N` names, including unrecognised names, and original dictionaries without execution or dispatch. `tests/AdoBye.Tests/NamedActionTests.cs` covers direct/indirect names, missing and malformed entries, unrelated subtypes, and cyclic `/Next` chains.
+
+JPX multi-range POC coverage now includes a reference fixture combining an initial PCRL layer with remaining CPRL layers across multiple precincts, pixel-identical to Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4). `JpxTests.MultiRangeSpatialPocFixtureContainsBothProgressionChanges` verifies both encoded ranges. Continue with other range/order combinations and POC-plus-packed-header fixtures rather than treating this case as exhaustive.
+
 ## Rendering and content
 
 | Clause | Remaining work | Evidence and completion checks |

@@ -25,6 +25,10 @@ See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
 The clause-12 action model also exposes inert typed local `/GoTo` metadata through `GoToDetails`: `/D` names, byte strings, and explicit arrays are retained without navigation, named-destination lookup, or array-element resolution. Missing and wrong-type destinations remain null in the typed view while the original dictionary is preserved; array contents are not conformance-validated.
 
+Typed `/Named` metadata exposes `/N` through `NamedDetails`, retaining standard and unrecognised names and the original action dictionary without dispatching actions. Missing or wrong-type names are null in the typed view.
+
+JPX POC coverage additionally includes a three-layer, multi-precinct fixture that changes from one PCRL layer to the remaining CPRL layers. Its decoded pixels match Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4) exactly, and tests verify both progression records. This closes one multi-range/spatial-order coverage case, not every POC combination; POC combined with packed headers still needs reference fixtures.
+
 ## Renderer (`PortableDocument.Content`, `PortableDocument.Render`)
 
 | Clause | Feature | Status | Notes |
