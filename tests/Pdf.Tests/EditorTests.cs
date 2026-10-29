@@ -147,6 +147,20 @@ public class EditorTests
     }
 
     [Fact]
+    public void Redact_survives_a_second_pass_through_the_editor()
+    {
+        var bytes = TestPdf.Build("BT /F1 12 Tf 10 100 Td (Secret) Tj ET", "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
+        var e = PdfEditor.Open(bytes);
+        e.SetContentOverride(0, null);
+        var page = PdfDocument.Load(e.Save(false)).Pages[0];
+        e.SetContentOverride(0, Redactor.Redact(page, [new Redactor.BoxRect(0, 70, 200, 50)]));
+        e.SetOverlay(0, []);
+        var text = System.Text.Encoding.Latin1.GetString(PdfDocument.Load(e.Save()).Pages[0].GetContents());
+        Assert.DoesNotContain("Secret", text);
+        Assert.Contains(" re\nf", text.Replace(" f\n", " re\nf"));
+    }
+
+    [Fact]
     public void Extract_text_and_remove_operator_keeps_following_text_in_place()
     {
         const string content = "BT /F1 20 Tf 10 100 Td (Hello) Tj 0 -30 Td [(Wor) -100 (ld)] TJ ( Again) Tj ET 1 0 0 rg 0 0 5 5 re f";

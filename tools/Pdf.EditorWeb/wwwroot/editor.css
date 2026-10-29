@@ -88,12 +88,25 @@ footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 .it.txt[contenteditable] { cursor: text; outline: 1.5px solid var(--accent-2); background: #4c8dff14; }
 .it img { width: 100%; height: 100%; display: block; pointer-events: none; }
 .obj { position: absolute; cursor: move; outline: 1px solid transparent; }
+.it.redact { background-image: repeating-linear-gradient(45deg, #0000 0 5px, #ff4d5e55 5px 7px) !important; outline: 1.5px dashed var(--danger); }
 .obj:hover { outline-color: #4c8dff80; }
 .obj.on { outline: 1.5px solid var(--accent); }
 .span { position: absolute; cursor: text; outline: 1px dashed transparent; border-radius: 2px; }
 .span:hover { outline-color: var(--accent); background: #4c8dff1f; }
 .hd { position: absolute; width: 9px; height: 9px; background: #fff; border: 1.5px solid var(--accent); border-radius: 50%; z-index: 5; box-shadow: 0 1px 3px #0006; }
 svg.lines { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.cm { position: fixed; z-index: 1000; min-width: 220px; padding: 5px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 12px 32px #000a, 0 2px 6px #0006; font-size: 12.5px; animation: cm-in .08s ease-out; }
+.cm.sub { position: absolute; display: none; min-width: 200px; }
+.cm-i.has-sub:hover > .cm.sub, .cm-i.has-sub:focus-within > .cm.sub { display: block; }
+.cm-i { position: relative; display: flex; align-items: center; gap: 24px; width: 100%; padding: 6px 10px; border: 0; border-radius: 6px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.cm-i > span { flex: 1; }
+.cm-i:hover:not(:disabled), .cm-i:focus-visible { background: var(--accent-bg); outline: none; }
+.cm-i:disabled { color: var(--mut); opacity: .5; cursor: default; }
+.cm-i.danger { color: #ff6b7a; }
+.cm-i kbd { margin-left: auto; font-size: 10.5px; }
+.cm-i > i { font-style: normal; color: var(--mut); }
+.cm-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+@keyframes cm-in { from { opacity: 0; transform: scale(.97); } }
 svg.lines line { pointer-events: stroke; cursor: move; }
 #drop { outline: 2px dashed var(--accent); outline-offset: -10px; }
 

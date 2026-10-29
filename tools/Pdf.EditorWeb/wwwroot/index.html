@@ -31,6 +31,7 @@
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></symbol>
   <symbol id="i-front" viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="2"/><path d="M10 21h9a2 2 0 002-2v-9"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5"/></symbol>
+  <symbol id="i-redact" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1" fill="currentColor"/><path d="M5 4h6M13 4h6M5 20h8"/></symbol>
   <symbol id="i-sidel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
   <symbol id="i-sider" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
 </defs></svg>
@@ -63,6 +64,7 @@
         <button data-tool="rect" class="icon" title="Rectangle (R)"><svg class="i"><use href="#i-rect"/></svg></button>
         <button data-tool="ellipse" class="icon" title="Ellipse (E)"><svg class="i"><use href="#i-ellipse"/></svg></button>
         <button data-tool="line" class="icon" title="Line (L)"><svg class="i"><use href="#i-line"/></svg></button>
+        <button data-tool="redact" class="icon" title="Redact: permanently removes content beneath (X)"><svg class="i"><use href="#i-redact"/></svg></button>
         <label class="btn icon" title="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
       </div>
       <span class="grow"></span>
@@ -167,17 +169,6 @@ function toLayer(cx, cy) {
 function paint() {
   const layer = $('layer'); if (!layer) return;
   layer.innerHTML = '';
-  const lines = items.filter(i => i.type === 'line');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'lines'); svg.setAttribute('width', geom.Lw); svg.setAttribute('height', geom.Lh);
-  for (const it of lines) {
-    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    l.setAttribute('x1', it.x * S); l.setAttribute('y1', it.y * S); l.setAttribute('x2', it.x2 * S); l.setAttribute('y2', it.y2 * S);
-    l.setAttribute('stroke', it.stroke || '#000'); l.setAttribute('stroke-width', Math.max(it.strokeWidth * S, 1)); l.setAttribute('opacity', it.opacity);
-    l.onpointerdown = e => startMove(e, it);
-    svg.appendChild(l);
-  }
-  layer.appendChild(svg);
   if (tool === 'select') {
     for (const o of objs) {
       if (o.edit?.delete) continue;
@@ -202,9 +193,20 @@ function paint() {
     }
   }
   for (const it of items) {
-    if (it.type === 'line') { if (it === cur) lineHandles(layer, it); continue; }
-    const e = document.createElement('div');
-    e.className = 'it' + (it === cur ? ' on' : '') + (it.type === 'text' ? ' txt' : '');
+    if (it.type === 'line') {
+      // One SVG per line so lines take part in z-order with the other items.
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'lines'); svg.setAttribute('width', geom.Lw); svg.setAttribute('height', geom.Lh);
+      const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      l.setAttribute('x1', it.x * S); l.setAttribute('y1', it.y * S); l.setAttribute('x2', it.x2 * S); l.setAttribute('y2', it.y2 * S);
+      l.setAttribute('stroke', it.stroke || '#000'); l.setAttribute('stroke-width', Math.max(it.strokeWidth * S, 1)); l.setAttribute('opacity', it.opacity);
+      l.onpointerdown = e => startMove(e, it); l._it = it;
+      svg.appendChild(l); layer.appendChild(svg);
+      if (it === cur) lineHandles(layer, it);
+      continue;
+    }
+    const e = document.createElement('div'); e._it = it;
+    e.className = 'it' + (it === cur ? ' on' : '') + (it.type === 'text' ? ' txt' : '') + (it.type === 'redact' ? ' redact' : '');
     e.style.left = it.x * S + 'px'; e.style.top = it.y * S + 'px'; e.style.opacity = it.opacity;
     if (it.type === 'text') {
       e.textContent = it.text; e.style.fontSize = it.size * S + 'px'; e.style.color = it.color || '#000';
@@ -306,6 +308,7 @@ function layerDown(ev) {
     editText([...document.querySelectorAll('.it')].pop(), it); return;
   }
   if (kind === 'rect' || kind === 'ellipse') { base.fill = '#7c5cff'; base.stroke = '#000000'; base.strokeWidth = 0; }
+  if (kind === 'redact') { base.fill = '#000000'; base.strokeWidth = 0; }
   drag(ev, s => { it = { ...base, x: s[0] / S, y: s[1] / S, x2: s[0] / S, y2: s[1] / S }; items.push(it); cur = it; },
     (p, s, e) => {
       if (kind === 'line') {
@@ -455,8 +458,9 @@ function props() {
   }
   const it = cur, n = (k, label, step = 1) => `<label class="fld"><span>${label}</span><input type="number" step="${step}" data-k="${k}" value="${+(+it[k]).toFixed(2)}"></label>`;
   const colour = (k, label, none) => `<label class="fld"><span>${label}</span><div class="swatch"><input type="color" data-k="${k}" value="${it[k] || '#000000'}"><code>${(it[k] || 'none').toUpperCase()}</code>${none ? `<button class="ghost" data-none="${k}" title="No ${label.toLowerCase()}">${ic('x')}</button>` : ''}</div></label>`;
-  const names = { text: 'Text', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', image: 'Image' };
+  const names = { text: 'Text', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', image: 'Image', redact: 'Redaction' };
   let h = `<section class="head"><span class="chip">${ic(it.type === 'rect' ? 'square' : it.type)}</span><h2>${names[it.type] ?? it.type}${it.orig != null ? ' <em>from page</em>' : ''}</h2></section>`;
+  if (it.type === 'redact') h += `<section><p class="hint">Text, shapes and images touching this box are permanently removed from the saved PDF, then the area is blacked out.</p></section>`;
   if (it.type === 'text') h += `<section><h3>Content</h3><textarea rows="3" data-k="text">${it.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</textarea></section>
     <section><h3>Typography</h3><div class="row"><label class="fld"><span>Font</span><select data-k="font">${['Helvetica', 'Times', 'Courier'].map(f => `<option ${f === it.font ? 'selected' : ''}>${f}</option>`).join('')}</select></label>${n('size', 'Size', 0.5)}</div>
     <div class="row"><label class="tgl" title="Bold"><input type="checkbox" data-k="bold" ${it.bold ? 'checked' : ''}>${ic('bold')}</label><label class="tgl" title="Italic"><input type="checkbox" data-k="italic" ${it.italic ? 'checked' : ''}>${ic('italic')}</label><span class="grow"></span></div>${colour('color', 'Colour')}</section>`;
@@ -464,7 +468,7 @@ function props() {
   if (it.type === 'line') h += `<section><h3>Appearance</h3>${colour('stroke', 'Colour')}${n('strokeWidth', 'Width', 0.5)}</section>`;
   h += '<section><h3>Position</h3>' + (it.type !== 'line' ? `<div class="row">${n('x', 'X')}${n('y', 'Y')}</div>` + (it.type !== 'text' ? `<div class="row">${n('w', 'Width')}${n('h', 'Height')}</div>` : '')
     : `<div class="row">${n('x', 'X1')}${n('y', 'Y1')}</div><div class="row">${n('x2', 'X2')}${n('y2', 'Y2')}</div>`) + '</section>';
-  h += `<section><h3>Opacity</h3><div class="range"><input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"><output>${Math.round(it.opacity * 100)}%</output></div></section>
+  h += `${it.type === 'redact' ? '' : `<section><h3>Opacity</h3><div class="range"><input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"><output>${Math.round(it.opacity * 100)}%</output></div></section>`}
     <section class="acts2"><button data-act="dup" title="Duplicate">${ic('copy')}Duplicate</button><button data-act="front" title="Bring to front">${ic('front')}To front</button><button class="danger" data-act="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;
   p.innerHTML = h;
   p.querySelectorAll('[data-k]').forEach(el => {
@@ -533,10 +537,147 @@ let lastW = innerWidth;
 addEventListener('resize', () => { if ((lastW >= 1000) !== (innerWidth >= 1000) || (lastW >= 760) !== (innerWidth >= 760)) { localStorage.removeItem('panel-l'); localStorage.removeItem('panel-r'); autoPanels(); } lastW = innerWidth; });
 autoPanels();
 
+// ---- Context menu ----
+let clip = null, cmPos = { x: 40, y: 40 };
+const bboxOf = it => {
+  if (it.type === 'line') return { x: Math.min(it.x, it.x2), y: Math.min(it.y, it.y2), w: Math.abs(it.x2 - it.x), h: Math.abs(it.y2 - it.y) };
+  if (it.type === 'text') { const el = [...$('layer').children].find(c => c._it === it); return { x: it.x, y: it.y, w: el ? el.offsetWidth / S : it.size * it.text.length * 0.5, h: el ? el.offsetHeight / S : it.size * 1.2 }; }
+  return { x: it.x, y: it.y, w: it.w, h: it.h };
+};
+const shift = (it, dx, dy) => { it.x += dx; it.y += dy; if (it.type === 'line') { it.x2 += dx; it.y2 += dy; } };
+function commit(fn) { pushUndo(); fn(); paint(); props(); queueSave(); }
+function arrange(it, mode) {
+  commit(() => {
+    const i = items.indexOf(it); if (i < 0) return;
+    items.splice(i, 1);
+    const j = mode === 'front' ? items.length : mode === 'back' ? 0 : mode === 'forward' ? Math.min(i + 1, items.length) : Math.max(i - 1, 0);
+    items.splice(j, 0, it);
+  });
+}
+function alignTo(it, mode) {
+  const b = bboxOf(it), W = geom.Lw / S, H = geom.Lh / S;
+  const dx = { left: -b.x, center: (W - b.w) / 2 - b.x, right: W - b.w - b.x }[mode] ?? 0;
+  const dy = { top: -b.y, middle: (H - b.h) / 2 - b.y, bottom: H - b.h - b.y }[mode] ?? 0;
+  commit(() => shift(it, dx, dy));
+}
+function paste(at) {
+  if (!clip) return;
+  commit(() => {
+    const c = { ...clip, id: crypto.randomUUID(), orig: null };
+    const b = bboxOf(c), dx = at ? at.x - b.x : 12, dy = at ? at.y - b.y : 12;
+    shift(c, dx, dy); items.push(c); cur = c; curObj = null; clip = { ...c };
+  });
+}
+const copyItem = it => { clip = JSON.parse(JSON.stringify(it)); };
+const mkItem = (type, x, y) => ({ id: crypto.randomUUID(), type, x, y, w: type === 'text' ? 0 : 120, h: type === 'text' ? 0 : 80, text: type === 'text' ? 'Text' : '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000', fill: type === 'rect' || type === 'ellipse' ? '#4c8dff' : '', stroke: '', strokeWidth: 0, opacity: 1, asset: '', x2: 0, y2: 0 });
+function redactItem(it) {
+  const b = bboxOf(it);
+  commit(() => { const r = mkItem('redact', b.x, b.y); r.w = b.w; r.h = b.h; r.fill = '#000000'; items.push(r); cur = r; });
+}
+const mod = navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+';
+
+function menuFor(ev) {
+  const t = ev.target, pt = { x: ev.offsetX, y: ev.offsetY };
+  const layer = $('layer'), r = layer.getBoundingClientRect();
+  const here = { x: (ev.clientX - r.left) / S, y: (ev.clientY - r.top) / S };
+  const el = t.closest?.('.it, line'), it = el?._it ?? null;
+  const objEl = t.closest?.('.obj');
+  if (it) {
+    cur = it; curObj = null; paint(); props();
+    const n = items.indexOf(it), last = n === items.length - 1, first = n === 0;
+    return [
+      it.type === 'text' && { label: 'Edit text', key: 'Dbl-click', run: () => { const e = [...layer.children].find(c => c._it === it); e && editText(e, it); } },
+      { label: 'Cut', key: mod + 'X', run: () => { copyItem(it); commit(() => { items = items.filter(x => x !== it); cur = null; }); } },
+      { label: 'Copy', key: mod + 'C', run: () => copyItem(it) },
+      { label: 'Paste', key: mod + 'V', disabled: !clip, run: () => paste(here) },
+      { label: 'Duplicate', key: mod + 'D', run: () => { copyItem(it); paste(null); } },
+      '-',
+      { label: 'Arrange', sub: [
+        { label: 'Bring to Front', key: mod + 'Shift+]', disabled: last, run: () => arrange(it, 'front') },
+        { label: 'Bring Forward', key: mod + ']', disabled: last, run: () => arrange(it, 'forward') },
+        { label: 'Send Backward', key: mod + '[', disabled: first, run: () => arrange(it, 'backward') },
+        { label: 'Send to Back', key: mod + 'Shift+[', disabled: first, run: () => arrange(it, 'back') }] },
+      { label: 'Align to page', sub: [
+        { label: 'Left', run: () => alignTo(it, 'left') }, { label: 'Center horizontally', run: () => alignTo(it, 'center') }, { label: 'Right', run: () => alignTo(it, 'right') }, '-',
+        { label: 'Top', run: () => alignTo(it, 'top') }, { label: 'Middle vertically', run: () => alignTo(it, 'middle') }, { label: 'Bottom', run: () => alignTo(it, 'bottom') }] },
+      it.type !== 'redact' && { label: 'Redact this area', run: () => redactItem(it) },
+      '-',
+      { label: 'Delete', key: 'Del', danger: true, run: () => commit(() => { items = items.filter(x => x !== it); cur = null; }) },
+    ];
+  }
+  if (objEl) {
+    const o = objs.find(o => !o.edit?.delete && (() => { const [x0, y0, x1, y1] = oBox(o); return here.x >= x0 && here.x <= x1 && here.y >= y0 && here.y <= y1; })());
+    if (o) {
+      selectObj(o);
+      return [
+        { label: 'Delete', key: 'Del', danger: true, run: () => deleteObj(o) },
+        o.edit && { label: 'Reset position and size', run: () => { pushUndo(); o.edit = null; paint(); props(); saveObj(o); } },
+      ];
+    }
+  }
+  const ts = t.closest?.('.span');
+  return [
+    { label: 'Paste here', key: mod + 'V', disabled: !clip, run: () => paste(here) },
+    { label: 'Add text here', run: () => commit(() => { cur = mkItem('text', here.x, here.y); items.push(cur); }) },
+    { label: 'Add rectangle here', run: () => commit(() => { cur = mkItem('rect', here.x, here.y); items.push(cur); }) },
+    { label: 'Add ellipse here', run: () => commit(() => { cur = mkItem('ellipse', here.x, here.y); items.push(cur); }) },
+    '-',
+    { label: 'Undo', key: mod + 'Z', disabled: !undo.length, run: doUndo },
+    { label: 'Deselect', key: 'Esc', disabled: !cur && !curObj, run: () => { cur = null; curObj = null; paint(); props(); } },
+  ];
+}
+
+function closeMenu() { document.querySelectorAll('.cm').forEach(m => m.remove()); }
+function buildMenu(entries, sub) {
+  const m = document.createElement('div'); m.className = 'cm' + (sub ? ' sub' : ''); m.setAttribute('role', 'menu');
+  for (const e of entries.filter(Boolean)) {
+    if (e === '-') { const s = document.createElement('div'); s.className = 'cm-sep'; m.appendChild(s); continue; }
+    const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'menuitem');
+    b.className = 'cm-i' + (e.danger ? ' danger' : '') + (e.sub ? ' has-sub' : ''); b.disabled = !!e.disabled;
+    b.innerHTML = `<span>${e.label}</span>${e.key ? `<kbd>${e.key}</kbd>` : ''}${e.sub ? '<i>›</i>' : ''}`;
+    if (e.sub) {
+      const s = buildMenu(e.sub, true); b.appendChild(s);
+      b.onpointerenter = () => { const r = b.getBoundingClientRect(); s.style.top = '-5px'; s.style.left = '100%'; if (r.right + 200 > innerWidth) { s.style.left = 'auto'; s.style.right = '100%'; } };
+    } else b.onclick = () => { closeMenu(); e.run(); };
+    m.appendChild(b);
+  }
+  return m;
+}
+document.addEventListener('contextmenu', ev => {
+  const inLayer = ev.target.closest?.('#layer');
+  closeMenu();
+  if (!inLayer || editing) return;
+  ev.preventDefault();
+  const entries = menuFor(ev); if (!entries) return;
+  const m = buildMenu(entries); document.body.appendChild(m);
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.max(4, Math.min(ev.clientX, innerWidth - w - 4)) + 'px';
+  m.style.top = Math.max(4, Math.min(ev.clientY, innerHeight - h - 4)) + 'px';
+  m.querySelector('.cm-i:not(:disabled)')?.focus();
+});
+addEventListener('pointerdown', e => { if (!e.target.closest?.('.cm')) closeMenu(); }, true);
+addEventListener('blur', closeMenu); addEventListener('resize', closeMenu);
+document.addEventListener('scroll', closeMenu, true);
+addEventListener('keydown', e => {
+  const m = document.querySelector('.cm'); if (!m) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeMenu(); return; }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const list = [...document.querySelectorAll('.cm:not(.sub) > .cm-i:not(:disabled)')], i = list.indexOf(document.activeElement);
+  list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus();
+}, true);
+
 addEventListener('keydown', e => {
   if (editing || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
-  if (e.key === '[') { $('tl').click(); return; }
-  if (e.key === ']') { $('tr').click(); return; }
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key;
+    if (cur && (k === ']' || k === '}' || k === '[' || k === '{')) { e.preventDefault(); arrange(cur, k === ']' ? 'forward' : k === '}' ? 'front' : k === '[' ? 'backward' : 'back'); return; }
+    if (cur && k.toLowerCase() === 'c') { e.preventDefault(); copyItem(cur); return; }
+    if (cur && k.toLowerCase() === 'x') { e.preventDefault(); copyItem(cur); const c = cur; commit(() => { items = items.filter(x => x !== c); cur = null; }); return; }
+    if (clip && k.toLowerCase() === 'v') { e.preventDefault(); paste(null); return; }
+  }
+  if (e.key === '[' && !e.ctrlKey) { $('tl').click(); return; }
+  if (e.key === ']' && !e.ctrlKey) { $('tr').click(); return; }
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); doUndo(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'd' && cur) {
     e.preventDefault(); pushUndo();
@@ -556,7 +697,7 @@ addEventListener('keydown', e => {
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteObj(curObj); return; }
     if (e.key === 'Escape') { curObj = null; paint(); props(); return; }
   }
-  const tk = { v: 'select', t: 'text', r: 'rect', e: 'ellipse', l: 'line' }[e.key];
+  const tk = { v: 'select', t: 'text', r: 'rect', e: 'ellipse', l: 'line', x: 'redact' }[e.key];
   if (tk && !e.ctrlKey) { setTool(tk); return; }
   if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });

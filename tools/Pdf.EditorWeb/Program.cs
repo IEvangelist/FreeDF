@@ -57,7 +57,9 @@ void Prepare()
     if (prepared) return;
     for (var i = 0; i < editor.PageCount; i++)
     {
-        items.TryGetValue(editor.PageId(i), out var list);
+        items.TryGetValue(editor.PageId(i), out var allItems);
+        var list = allItems?.Where(x => x.Type != "redact").ToList();
+        var redacts = allItems?.Where(x => x.Type == "redact").Select(x => new Redactor.BoxRect(x.X, x.Y, x.W, x.H)).ToList() ?? [];
         var origs = list?.Where(x => x.Orig is not null).Select(x => x.Orig!.Value).ToHashSet() ?? [];
         objEdits.TryGetValue(editor.PageId(i), out var oe);
         if (origs.Count > 0 || oe is { Count: > 0 })
@@ -79,6 +81,13 @@ void Prepare()
             editor.SetContentOverride(i, ContentRewriter.RemoveText(content, removals));
         }
         else editor.SetContentOverride(i, null);
+        if (redacts.Count > 0)
+        {
+            // Redact the page as edited so far; overlay items that touch a redaction are dropped too.
+            var edited = PdfDocument.Load(editor.Save(false)).Pages[i];
+            editor.SetContentOverride(i, Redactor.Redact(edited, redacts));
+            list = list?.Where(x => !redacts.Any(r => x.X < r.X + r.W && x.X + Math.Max(x.W, x.Type == "text" ? x.Size * Math.Max(x.Text.Length, 1) * 0.5 : 0) > r.X && x.Y < r.Y + r.H && x.Y + Math.Max(x.H, x.Type == "text" ? x.Size : 0) > r.Y)).ToList();
+        }
         if (list is { Count: > 0 })
         {
             var (content, res) = overlayBuilder.Build(list, Pristine().Pages[i].CropBox);
