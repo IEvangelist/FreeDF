@@ -9,6 +9,7 @@ public enum PdfActionScope
     Annotation,
     AcroForm,
     FormField,
+    Outline,
     NamedJavaScript,
 }
 
@@ -38,6 +39,8 @@ public static class SafeContentFeatures
         if (f.Resolve(f.Catalog.Get("OpenAction")) is PdfDictionary openAction)
             AddActionChain(f, openAction, PdfActionScope.Catalog, "OpenAction", null, null, null, null, 0, [], actions);
         AddActionDictionary(f, f.Catalog.Get("AA"), PdfActionScope.Catalog, "AA", null, null, null, null, actions);
+        if (f.Resolve(f.Catalog.Get("Outlines")) is PdfDictionary outlines)
+            CollectOutlineActions(f, outlines.Get("First"), 0, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance), actions);
 
         if (f.Resolve(f.Catalog.Get("Names")) is PdfDictionary names
             && f.Resolve(names.Get("JavaScript")) is PdfDictionary javaScriptTree)
@@ -67,6 +70,24 @@ public static class SafeContentFeatures
             }
         }
         return actions;
+    }
+
+    static void CollectOutlineActions(
+        PdfFile f,
+        PdfObject? first,
+        int depth,
+        HashSet<PdfDictionary> seen,
+        List<PdfAction> actions)
+    {
+        var current = f.Resolve(first) as PdfDictionary;
+        while (current is not null && depth <= MaxDepth && seen.Add(current))
+        {
+            var title = StringValue(f, current.Get("Title"));
+            AddActionChain(f, current.Get("A"), PdfActionScope.Outline, "A", title, null, null, null, 0, [], actions);
+            if (f.Resolve(current.Get("First")) is { } child)
+                CollectOutlineActions(f, child, depth + 1, seen, actions);
+            current = f.Resolve(current.Get("Next")) as PdfDictionary;
+        }
     }
 
     /// <summary>Returns the AcroForm /XFA value without interpreting or executing its contents.</summary>

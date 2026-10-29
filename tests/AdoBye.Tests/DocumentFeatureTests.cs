@@ -124,7 +124,7 @@ public class DocumentFeatureTests
     static byte[] ActiveContentPdf()
     {
         const string pdf = "%PDF-2.0\n" +
-            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R /Names << /JavaScript << /Names [(named) 5 0 R] >> >> /AA << /WC 18 0 R >> /AcroForm << /Fields [7 0 R] /XFA [(template) 8 0 R (datasets) 9 0 R] >> >>\nendobj\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R /Names << /JavaScript << /Names [(named) 5 0 R] >> >> /AA << /WC 18 0 R >> /Outlines 25 0 R /AcroForm << /Fields [7 0 R] /XFA [(template) 8 0 R (datasets) 9 0 R] >> >>\nendobj\n" +
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
             "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [6 0 R 19 0 R] /AA << /O 10 0 R >> >>\nendobj\n" +
             "4 0 obj\n<< /S /JavaScript /JS (open-action-code) /Next [12 0 R 13 0 R] >>\nendobj\n" +
@@ -145,7 +145,10 @@ public class DocumentFeatureTests
             "19 0 obj\n<< /Type /Annot /Subtype /RichMedia /Rect [20 20 100 100] /RichMediaContent << /Assets << /Names [(movie) 20 0 R] >> >> /RichMediaSettings << /Activation << /Condition /XA >> >> >>\nendobj\n" +
             "20 0 obj\n<< /Type /Filespec /F (movie.mp4) /EF << /F 21 0 R >> >>\nendobj\n" +
             "21 0 obj\n<< /Type /EmbeddedFile /Subtype /video#2Fmp4 /Length 4 >>\nstream\ndata\nendstream\nendobj\n" +
-            "trailer\n<< /Root 1 0 R /Size 22 >>\n%%EOF\n";
+            "25 0 obj\n<< /Type /Outlines /First 26 0 R >>\nendobj\n" +
+            "26 0 obj\n<< /Title (scripted outline) /A 27 0 R >>\nendobj\n" +
+            "27 0 obj\n<< /S /JavaScript /JS (outline-action-code) >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 28 >>\n%%EOF\n";
         return System.Text.Encoding.ASCII.GetBytes(pdf);
     }
 
@@ -155,7 +158,7 @@ public class DocumentFeatureTests
         var doc = PdfDocument.Load(ActiveContentPdf());
         var actions = doc.GetActions();
 
-        Assert.Equal(10, actions.Count);
+        Assert.Equal(11, actions.Count);
         Assert.Contains(actions, action => action.Scope == PdfActionScope.Catalog
             && action.Trigger == "OpenAction" && action.ActionType == "JavaScript"
             && action.JavaScript is PdfString { Text: "open-action-code" });
@@ -167,6 +170,8 @@ public class DocumentFeatureTests
             && action.FieldName == "form" && action.JavaScript is PdfString { Text: "field-action-code" });
         Assert.Contains(actions, action => action.Scope == PdfActionScope.Annotation
             && action.JavaScript is PdfString { Text: "annotation-action-code" });
+        Assert.Contains(actions, action => action.Scope == PdfActionScope.Outline
+            && action.Name == "scripted outline" && action.JavaScript is PdfString { Text: "outline-action-code" });
         Assert.Contains(actions, action => action.ActionType == "Launch"
             && action.Dictionary.Get("F") is PdfString { Text: "opaque-target" });
 
