@@ -42,9 +42,10 @@ public sealed class ContentInterpreter
     int _pendingClip; // 0 none, 1 nonzero, 2 even-odd
     Matrix _tm = Matrix.Identity, _tlm = Matrix.Identity;
     PathData? _textClip;
-    readonly List<string> _hiddenStack = [];
-    readonly List<int> _mcidStack = [];
+    List<string> _hiddenStack = [];
+    List<int> _mcidStack = [];
     int _hiddenDepth;
+    int _pageMcid = -1;
     int _type3Depth;
     public List<string> Warnings { get; } = [];
     public PdfDictionary? OptionalContentConfiguration { get; set; }
@@ -418,7 +419,12 @@ public sealed class ContentInterpreter
                 {
                     var hidden = false;
                     var mcid = -1;
-                    if (a.Count >= 2 && (a[1] is PdfName mpn && R(res.Get("Properties")) is PdfDictionary mpd ? R(mpd.Get(mpn.Value)) : a[1]) is PdfDictionary mdict && R(mdict.Get("MCID")).AsNumber() is { } mv) mcid = (int)mv;
+                    if (a.Count >= 2 && (a[1] is PdfName mpn && R(res.Get("Properties")) is PdfDictionary mpd ? R(mpd.Get(mpn.Value)) : a[1]) is PdfDictionary mdict
+                        && mdict.Get("MCID") is { } rawMcid)
+                    {
+                        if (R(rawMcid) is PdfInteger { Value: >= 0 and <= int.MaxValue } mv) mcid = (int)mv.Value;
+                        else Warn("invalid marked-content MCID");
+                    }
                     _mcidStack.Add(mcid);
                     if (a.Count >= 2 && a[0].AsName() == "OC")
                     {
@@ -430,7 +436,8 @@ public sealed class ContentInterpreter
                     break;
                 }
             case "EMC":
-                if (_mcidStack.Count > 0) _mcidStack.RemoveAt(_mcidStack.Count - 1);
+                if (_mcidStack.Count == 0) { Warn("unmatched EMC"); break; }
+                _mcidStack.RemoveAt(_mcidStack.Count - 1);
                 if (_hiddenStack.Count > 0) { if (_hiddenStack[^1] == "H") _hiddenDepth--; _hiddenStack.RemoveAt(_hiddenStack.Count - 1); }
                 break;
             case "d0": case "d1": case "MP": case "DP": case "BX": case "EX": break;
@@ -711,10 +718,15 @@ public sealed class ContentInterpreter
     }
 
     /// <summary>A text-showing operator (Tj, TJ, ' or ") in the page's own content stream, with its device-space geometry.</summary>
-    /// <remarks>Advance is a TJ adjustment along the font's writing axis. Pieces contain glyph boxes for both writing modes.</remarks>
+    /// <remarks>Advance is a TJ adjustment along the font's writing axis. Pieces contain glyph boxes for both writing modes.
+    /// Mcid is local to Form (0 for page content); enclosing form MCIDs are never inherited.</remarks>
     public sealed record TextSpan(int Index, string Op, string Text, double X, double Y, double Width, double Size, double Angle,
         string FontName, RgbColor Color, double Advance, bool Vertical, int Mcid = -1,
-        int Form = 0, int FontRef = 0, PdfFont? Font = null, IReadOnlyList<TextPiece>? Pieces = null);
+        int Form = 0, int FontRef = 0, PdfFont? Font = null, IReadOnlyList<TextPiece>? Pieces = null)
+    {
+        /// <summary>The page sequence surrounding an untagged form invocation; not an MCID in this span's form.</summary>
+        public int EnclosingPageMcid { get; init; } = -1;
+    }
 
     /// <summary>One shown glyph: its raw string bytes, device-space box and writing-axis advance as a TJ number.</summary>
     public sealed record TextGlyph(byte[] Bytes, double X0, double Y0, double X1, double Y1, double Adv);
@@ -782,7 +794,7 @@ public sealed class ContentInterpreter
         TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
             Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
-            _curForm, _gs.FontRef, font, pieces));
+            _curForm, _gs.FontRef, font, pieces) { EnclosingPageMcid = _pageMcid });
     }
 
     void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null, System.Text.StringBuilder? text = null)
@@ -876,41 +888,56 @@ public sealed class ContentInterpreter
         if (!_activeForms.Add(xs.Dict)) return;
         var saved = _gs; var savedPath = _path; var savedTm = _tm; var savedTlm = _tlm;
         var sCollect = _collectDepth; var sForm = _curForm; var sIdx = _spanIndex;
-        // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
-        if (_runDepth == _collectDepth && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
-        else if (_runDepth == _collectDepth) _collectDepth = -1;
-        _be.Save();
-        _stack.Push(_gs);
-        _gs = _gs.Clone();
-        if (R(xs.Dict.Get("Matrix")) is PdfArray ma && ma.Count == 6) _gs.Ctm = ToMatrix(ma).Then(_gs.Ctm);
-        if (R(xs.Dict.Get("BBox")) is PdfArray bb && bb.Count == 4)
-        {
-            var v = bb.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
-            var r = new PathData(); r.Rect(Math.Min(v[0], v[2]), Math.Min(v[1], v[3]), Math.Abs(v[2] - v[0]), Math.Abs(v[3] - v[1]));
-            _be.Clip(r, _gs.Ctm, false);
-        }
-        _path = new PathData();
-        var res = R(xs.Dict.Get("Resources")) as PdfDictionary ?? parentRes;
+        var savedHidden = _hiddenStack; var savedMcids = _mcidStack;
+        var savedHiddenDepth = _hiddenDepth; var savedPageMcid = _pageMcid;
+        var stackDepth = _stack.Count;
         var grouped = false;
-        if (R(xs.Dict.Get("Group")) is PdfDictionary grp && R(grp.Get("S")).AsName() == "Transparency")
+        // MCIDs belong to the stream declaring them, never to a descendant form.
+        // Preserve only the explicit page-owned Do association for legacy page extraction.
+        _pageMcid = _runDepth == 1 ? CurrentMcid() : CurrentMcid() >= 0 ? -1 : _pageMcid;
+        _hiddenStack = []; _mcidStack = [];
+        try
         {
-            var isolated = R(grp.Get("I")) is PdfBoolean { Value: true };
-            var knockout = R(grp.Get("K")) is PdfBoolean { Value: true };
-            var alpha = _gs.FillAlpha; var bm = _gs.BlendMode;
-            if (knockout || alpha < 1 || bm != "Normal" || _gs.SoftMaskActive || (isolated && TransparencyScan.UsesBlendMode(_f, res)))
+            // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
+            if (_runDepth == _collectDepth && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
+            else if (_runDepth == _collectDepth) _collectDepth = -1;
+            _be.Save();
+            _stack.Push(_gs);
+            _gs = _gs.Clone();
+            if (R(xs.Dict.Get("Matrix")) is PdfArray ma && ma.Count == 6) _gs.Ctm = ToMatrix(ma).Then(_gs.Ctm);
+            if (R(xs.Dict.Get("BBox")) is PdfArray bb && bb.Count == 4)
             {
-                _be.BeginGroup(isolated, knockout, alpha, bm);
-                _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
-                grouped = true;
+                var v = bb.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
+                var r = new PathData(); r.Rect(Math.Min(v[0], v[2]), Math.Min(v[1], v[3]), Math.Abs(v[2] - v[0]), Math.Abs(v[3] - v[1]));
+                _be.Clip(r, _gs.Ctm, false);
             }
+            _path = new PathData();
+            var res = R(xs.Dict.Get("Resources")) as PdfDictionary ?? parentRes;
+            if (R(xs.Dict.Get("Group")) is PdfDictionary grp && R(grp.Get("S")).AsName() == "Transparency")
+            {
+                var isolated = R(grp.Get("I")) is PdfBoolean { Value: true };
+                var knockout = R(grp.Get("K")) is PdfBoolean { Value: true };
+                var alpha = _gs.FillAlpha; var bm = _gs.BlendMode;
+                if (knockout || alpha < 1 || bm != "Normal" || _gs.SoftMaskActive || (isolated && TransparencyScan.UsesBlendMode(_f, res)))
+                {
+                    _be.BeginGroup(isolated, knockout, alpha, bm);
+                    _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
+                    grouped = true;
+                }
+            }
+            Run(_f.DecodeStream(xs), res);
         }
-        Run(_f.DecodeStream(xs), res);
-        if (grouped) _be.EndGroup();
-        _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx;
-        _gs = _stack.Pop();
-        _be.Restore();
-        _gs = saved; _path = savedPath; _tm = savedTm; _tlm = savedTlm;
-        _activeForms.Remove(xs.Dict);
+        finally
+        {
+            if (_mcidStack.Count > 0) Warn("unclosed marked content in form");
+            _hiddenStack = savedHidden; _mcidStack = savedMcids;
+            _hiddenDepth = savedHiddenDepth; _pageMcid = savedPageMcid;
+            _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx;
+            _activeForms.Remove(xs.Dict);
+            if (grouped) _be.EndGroup();
+            while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
+            _gs = saved; _path = savedPath; _tm = savedTm; _tlm = savedTlm;
+        }
     }
 
     // ---- Shadings ----

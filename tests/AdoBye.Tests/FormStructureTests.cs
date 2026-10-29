@@ -1,4 +1,5 @@
 using PortableDocument.Core;
+using PortableDocument.Content;
 using PortableDocument.Document;
 using PortableDocument.Render;
 using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
@@ -193,5 +194,127 @@ public class FormStructureTests
         Assert.True(doc.Structure!.Truncated);
         Assert.Equal(StructureTree.MaxDepth + 1, doc.Structure.Elements().Count());
         Assert.Equal("", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
+    public void UntaggedDescendantDoesNotInheritAncestorFormMcidOrAliasPage()
+    {
+        var doc = Load(
+            (4, ObjPdf.Stream($"/P <</MCID 0>> BDC {Text("Page")} /Outer Do EMC")),
+            (11, ObjPdf.Stream($"/Span <</MCID 0>> BDC {Text("Outer")} /Inner Do EMC",
+                $"{Form} /StructParents 1 /Resources << {Font} /XObject << /Inner 12 0 R >> >>")),
+            (12, ObjPdf.Stream(Text("Untagged"), $"{Form} /Resources << {Font} >>")));
+        var spans = DocumentRenderer.ExtractText(doc.Pages[0]);
+        Assert.All(spans.Where(s => s.Text == "Untagged"), s =>
+        {
+            Assert.Equal(12, s.Form);
+            Assert.Equal(-1, s.Mcid);
+            Assert.Equal(-1, s.EnclosingPageMcid);
+        });
+        var extractor = new StructuredTextExtractor(doc);
+        Assert.Equal("Page", extractor.GetMarkedContentText(0, 0));
+        Assert.Equal("Outer", extractor.GetMarkedContentText(0, Stream(doc, 11), 0));
+        Assert.Null(extractor.GetMarkedContentText(0, Stream(doc, 12), 0));
+        Assert.Equal("Outer\nPage", extractor.Extract());
+    }
+
+    [Theory]
+    [InlineData("EMC")]
+    [InlineData("/Span BMC")]
+    [InlineData("/Span <</MCID 0>> BDC")]
+    [InlineData("EMC /Span <</MCID 0>> BDC")]
+    public void MalformedFormMarkedContentCannotConsumeOrLeakIntoCallerAndSiblings(string malformed)
+    {
+        var doc = Load(
+            (4, ObjPdf.Stream($"/P <</MCID 0>> BDC {Text("Before")} /Figure Do {Text("After")} EMC /Outer Do {Text("Tail")}")),
+            (14, ObjPdf.Stream(malformed + " " + Text("Form"), $"{Form} /Resources << {Font} >>")));
+        var spans = DocumentRenderer.ExtractText(doc.Pages[0]);
+        Assert.Equal(0, Assert.Single(spans, s => s.Text == "Before").Mcid);
+        Assert.Equal(0, Assert.Single(spans, s => s.Text == "After").Mcid);
+        Assert.Equal(-1, Assert.Single(spans, s => s.Text == "Tail").Mcid);
+        Assert.All(spans.Where(s => s.Text == "Outer"), s => Assert.Equal(0, s.Mcid));
+        Assert.All(spans.Where(s => s.Text == "Inner"), s => Assert.Equal(0, s.Mcid));
+        Assert.Equal("Outer", new StructuredTextExtractor(doc).GetMarkedContentText(0, Stream(doc, 11), 0));
+    }
+
+    [Fact]
+    public void FormMcidWithoutStructParentsDoesNotAliasPageMcid()
+    {
+        var doc = Load(
+            (4, ObjPdf.Stream($"/P <</MCID 0>> BDC {Text("Page")} /Figure Do EMC")),
+            (10, "<< /S /Figure /Alt (Diagram) >>"),
+            (14, ObjPdf.Stream(Marked("Local form"), $"{Form} /Resources << {Font} >>")));
+        var extractor = new StructuredTextExtractor(doc);
+        Assert.Equal("Page", extractor.GetMarkedContentText(0, 0));
+        Assert.Equal("Local form", extractor.GetMarkedContentText(0, Stream(doc, 14), 0));
+        Assert.Equal("Page", extractor.Extract());
+    }
+
+    [Theory]
+    [InlineData("0.5")]
+    [InlineData("-1")]
+    [InlineData("2147483648")]
+    public void InvalidFormMcidIsNotCoercedToPageOrFormZero(string mcid)
+    {
+        var doc = Load((12, ObjPdf.Stream(
+            $"/Span <</MCID {mcid}>> BDC {Text("Invalid")} EMC",
+            $"{Form} /StructParents 2 /Resources << {Font} >>")));
+        Assert.All(DocumentRenderer.ExtractText(doc.Pages[0]).Where(s => s.Text == "Invalid"), s => Assert.Equal(-1, s.Mcid));
+        Assert.Equal("Outer\nPage", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
+    public void UnclosedHiddenFormSequenceDoesNotHideCallerOrSibling()
+    {
+        var doc = Load(
+            (1, "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R /OCProperties << /D << /BaseState /OFF >> >> >>"),
+            (4, ObjPdf.Stream($"/Figure Do {Marked("Page")} /Outer Do")),
+            (14, ObjPdf.Stream("/OC << /Type /OCG /Name (Hidden) >> BDC " + Text("Hidden"), $"{Form} /Resources << {Font} >>")));
+        var spans = DocumentRenderer.ExtractText(doc.Pages[0]);
+        Assert.DoesNotContain(spans, s => s.Text == "Hidden");
+        Assert.Contains(spans, s => s.Text == "Page");
+        Assert.Contains(spans, s => s.Text == "Outer");
+        Assert.Contains(spans, s => s.Text == "Inner");
+        Assert.Equal("Inner\nOuter\nPage", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
+    public void DecodeFailureRestoresCallerStateAndAllowsSameFormToBeTriedAgain()
+    {
+        var doc = Load(
+            (4, ObjPdf.Stream($"/P <</MCID 0>> BDC /Figure Do {Text("After")} /Figure Do {Text("Again")} EMC {Text("Tail")} /Outer Do")),
+            (14, ObjPdf.Stream(Text("Recovered"), $"{Form} /Resources << {Font} >> /Filter /Unsupported")));
+        var spans = DocumentRenderer.ExtractText(doc.Pages[0]);
+        Assert.Equal(0, Assert.Single(spans, s => s.Text == "After").Mcid);
+        Assert.Equal(0, Assert.Single(spans, s => s.Text == "Again").Mcid);
+        Assert.Equal(-1, Assert.Single(spans, s => s.Text == "Tail").Mcid);
+        Assert.Contains(spans, s => s.Form == 11 && s.Text == "Outer");
+        Assert.Equal("AfterAgain", new StructuredTextExtractor(doc).GetMarkedContentText(0, 0));
+        using var raster = new SoftwareRasterizer(1, 1);
+        var interpreter = new global::PortableDocument.Content.ContentInterpreter(doc.File, raster)
+            { TextSpans = [], DrawGraphics = false, DrawAnnotations = false };
+        interpreter.Render(doc.Pages[0], Matrix.Identity);
+        Assert.Contains("operator Do: NotSupportedException", interpreter.Warnings);
+        Stream(doc, 14).Dict.Entries.Remove("Filter");
+        interpreter.Render(doc.Pages[0], Matrix.Identity);
+        Assert.Equal(2, interpreter.TextSpans.Count(s => s.Form == 14 && s.Text == "Recovered"));
+    }
+
+    [Theory]
+    [InlineData("EMC")]
+    [InlineData("/Span BMC")]
+    [InlineData("/Span <</MCID 99>> BDC")]
+    public void MalformedNestedFormDoesNotChangeParentFormSequence(string malformed)
+    {
+        var doc = Load(
+            (11, ObjPdf.Stream($"/Span <</MCID 0>> BDC {Text("Before")} /Inner Do {Text("After")} EMC {Text("Tail")}",
+                $"{Form} /StructParents 1 /Resources << {Font} /XObject << /Inner 12 0 R >> >>")),
+            (12, ObjPdf.Stream(malformed + " " + Text("Child"), $"{Form} /StructParents 2 /Resources << {Font} >>")));
+        var spans = DocumentRenderer.ExtractText(doc.Pages[0]);
+        Assert.All(spans.Where(s => s.Form == 11 && s.Text is "Before" or "After"), s => Assert.Equal(0, s.Mcid));
+        Assert.All(spans.Where(s => s.Form == 11 && s.Text == "Tail"), s => Assert.Equal(-1, s.Mcid));
+        Assert.Equal("BeforeAfter", new StructuredTextExtractor(doc).GetMarkedContentText(0, Stream(doc, 11), 0));
+        var warnings = DocumentRenderer.RenderPage(doc.Pages[0], 10).Warnings;
+        Assert.Contains(malformed == "EMC" ? "unmatched EMC" : "unclosed marked content in form", warnings);
     }
 }
