@@ -7,9 +7,9 @@ Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to t
 - `samples/` 26 example PDFs, see `samples/README.md`
 - `docs/spec-matrix.md` spec coverage and known gaps
 
-Build and test: `dotnet build AdoBye.slnx -c Release` then `dotnet test AdoBye.slnx -c Release`.
+Build and test: `dotnet build PortableDocument.slnx -c Release` then `dotnet test PortableDocument.slnx -c Release`.
 
-`AdoBye.slnx` is the canonical solution. Package versions are managed centrally in root `Directory.Packages.props`; project `PackageReference` entries omit versions. Change dependency versions there, while keeping tool-only dependencies referenced only by the relevant tools.
+`PortableDocument.slnx` is the canonical solution. Package versions are managed centrally in root `Directory.Packages.props`; project `PackageReference` entries omit versions. Change dependency versions there, while keeping tool-only dependencies referenced only by the relevant tools.
 
 NativeAOT: production libraries enable compatibility analysis; see `tools/AdoBye.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.
 
