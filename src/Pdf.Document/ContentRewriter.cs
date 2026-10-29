@@ -48,6 +48,35 @@ public static class ContentRewriter
         return output.ToArray();
     }
 
+    /// <summary>A replacement of one painted object's byte range: deleted, or wrapped in <c>q [colours] [cm] … Q</c>.</summary>
+    public sealed record ObjectEdit(int Start, int End, bool Delete, double[]? Matrix, double[]? Fill, double[]? Stroke);
+
+    /// <summary>Applies non-overlapping object edits. Offsets refer to <paramref name="content"/>.</summary>
+    public static byte[] EditObjects(byte[] content, IEnumerable<ObjectEdit> edits)
+    {
+        var output = new MemoryStream(content.Length + 64);
+        var copied = 0;
+        foreach (var e in edits.OrderBy(x => x.Start))
+        {
+            if (e.Start < copied || e.End > content.Length) continue;
+            output.Write(content, copied, e.Start - copied);
+            if (!e.Delete)
+            {
+                var sb = new StringBuilder("q ");
+                if (e.Matrix is { Length: 6 } m) sb.Append(string.Join(' ', m.Select(F))).Append(" cm ");
+                if (e.Fill is { Length: 3 } f) sb.Append($"{F(f[0])} {F(f[1])} {F(f[2])} rg ");
+                if (e.Stroke is { Length: 3 } s) sb.Append($"{F(s[0])} {F(s[1])} {F(s[2])} RG ");
+                output.Write(Encoding.ASCII.GetBytes(sb.ToString()));
+                output.Write(content, e.Start, e.End - e.Start);
+                output.Write(Encoding.ASCII.GetBytes(" Q"));
+            }
+            else output.Write("\n"u8);
+            copied = e.End;
+        }
+        output.Write(content, copied, content.Length - copied);
+        return output.ToArray();
+    }
+
     static int FirstOperandStart(byte[] d, int p)
     {
         while (p < d.Length && PdfLexer.IsWhite(d[p])) p++;

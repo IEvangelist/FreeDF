@@ -94,20 +94,85 @@ public sealed class ContentInterpreter
         var stackDepth = _stack.Count;
         PdfObject? o;
         _runDepth++;
+        var collect = _runDepth == 1 && Objects is not null;
+        int stmtStart = 0, pathStart = -1;
         try
         {
             while ((o = lx.ReadObject(false)) is not null)
             {
                 if (o is not PdfKeyword k) { ops.Add(o); if (ops.Count > 512) ops.RemoveAt(0); continue; }
-                if (k.Value == "BI") { InlineImage(lx, res); ops.Clear(); continue; }
+                if (k.Value == "BI")
+                {
+                    if (collect && _hiddenDepth == 0) { var s0 = SkipWhite(content, stmtStart); var c0 = _gs.Ctm; InlineImage(lx, res); AddObject("image", s0, lx.Pos, c0, UnitSquare(c0)); }
+                    else InlineImage(lx, res);
+                    ops.Clear(); stmtStart = lx.Pos; continue;
+                }
+                if (collect) Observe(k.Value, ops, res, content, stmtStart, lx.Pos, ref pathStart);
                 try { Exec(k.Value, ops, res); }
                 catch (Exception e) when (e is InvalidCastException or ArgumentOutOfRangeException or IndexOutOfRangeException or NotSupportedException or KeyNotFoundException or InvalidOperationException)
                 { Warn($"operator {k.Value}: {e.GetType().Name}"); }
-                ops.Clear();
+                ops.Clear(); stmtStart = lx.Pos;
             }
         }
         finally { _runDepth--; }
         while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
+    }
+
+    /// <summary>A painted graphics object (path, image or form XObject) of the page's own content, located by byte range.</summary>
+    public sealed record PageObject(int Index, string Kind, int Start, int End, Matrix Ctm, double X0, double Y0, double X1, double Y1,
+        bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth);
+
+    /// <summary>When set, painted objects in the page content (not in forms) are recorded here.</summary>
+    public List<PageObject>? Objects { get; set; }
+
+    static int SkipWhite(byte[] d, int p) { while (p < d.Length && PdfLexer.IsWhite(d[p])) p++; return p; }
+
+    static (double, double, double, double) UnitSquare(Matrix m) => Bounds(m, [(0, 0), (1, 0), (0, 1), (1, 1)], 0);
+
+    static (double, double, double, double) Bounds(Matrix m, IEnumerable<(double X, double Y)> pts, double pad)
+    {
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        foreach (var (px, py) in pts) { var (x, y) = m.Apply(px, py); x0 = Math.Min(x0, x); y0 = Math.Min(y0, y); x1 = Math.Max(x1, x); y1 = Math.Max(y1, y); }
+        return (x0 - pad, y0 - pad, x1 + pad, y1 + pad);
+    }
+
+    void AddObject(string kind, int start, int end, Matrix ctm, (double X0, double Y0, double X1, double Y1) b, bool fill = false, bool stroke = false)
+        => Objects!.Add(new PageObject(Objects.Count, kind, start, end, ctm, b.X0, b.Y0, b.X1, b.Y1, fill, stroke, fill ? Color(false) : default, stroke ? Color(true) : default, _gs.LineWidth));
+
+    void Observe(string op, List<PdfObject> a, PdfDictionary res, byte[] content, int stmtStart, int end, ref int pathStart)
+    {
+        switch (op)
+        {
+            case "m": case "l": case "c": case "v": case "y": case "h": case "re":
+                if (pathStart < 0) pathStart = SkipWhite(content, stmtStart);
+                break;
+            case "S": case "s": case "f": case "F": case "f*": case "B": case "B*": case "b": case "b*": case "n":
+                if (op != "n" && pathStart >= 0 && _pendingClip == 0 && _hiddenDepth == 0 && !_path.IsEmpty)
+                {
+                    var stroke = op is "S" or "s" or "B" or "B*" or "b" or "b*";
+                    var fill = op is not ("S" or "s");
+                    var pts = new List<(double, double)>();
+                    for (var i = 0; i + 1 < _path.Pts.Count; i += 2) pts.Add((_path.Pts[i], _path.Pts[i + 1]));
+                    var sc = Math.Sqrt(Math.Abs(_gs.Ctm.Det));
+                    AddObject("path", pathStart, end, _gs.Ctm, Bounds(_gs.Ctm, pts, stroke ? _gs.LineWidth * sc / 2 : 0), fill, stroke);
+                }
+                pathStart = -1;
+                break;
+            case "Do":
+                if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd && R(xd.Get(xn.Value)) is PdfStream xs
+                    && !(R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc)))
+                {
+                    var sub = R(xs.Dict.Get("Subtype")).AsName();
+                    if (sub == "Image") AddObject("image", SkipWhite(content, stmtStart), end, _gs.Ctm, UnitSquare(_gs.Ctm));
+                    else if (sub == "Form")
+                    {
+                        var fm = R(xs.Dict.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
+                        var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, 1, 1];
+                        AddObject("form", SkipWhite(content, stmtStart), end, _gs.Ctm, Bounds(fm.Then(_gs.Ctm), [(bb[0], bb[1]), (bb[2], bb[1]), (bb[0], bb[3]), (bb[2], bb[3])], 0));
+                    }
+                }
+                break;
+        }
     }
 
     static double N(List<PdfObject> a, int i) => i < a.Count ? a[i].AsNumber() ?? 0 : 0;

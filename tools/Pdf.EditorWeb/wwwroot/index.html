@@ -80,7 +80,7 @@ const $ = id => document.getElementById(id);
 const post = (u, body) => fetch(u, { method: 'POST', body }).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); });
 const status = t => $('status').textContent = t;
 const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace' };
-let S = 1, geom = null, spans = [], origKey = '', fields = [];
+let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
@@ -92,7 +92,7 @@ function convertSpan(s) {
   const it = { id: crypto.randomUUID(), type: 'text', x: s.x, y: s.y - 0.95 * s.size, w: 0, h: 0, text: s.text, font: fontFamily(s.font),
     size: s.size, bold: /bold|black|heavy/i.test(s.font), italic: /italic|oblique/i.test(s.font), color: s.color, fill: '', stroke: '', strokeWidth: 0,
     opacity: 1, asset: '', x2: 0, y2: 0, orig: s.index };
-  items.push(it); cur = it; paint(); props(); queueSave();
+  items.push(it); cur = it; curObj = null; paint(); props(); queueSave();
 }
 
 async function refresh() {
@@ -129,9 +129,10 @@ async function select() {
   if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; props(); return; }
   items = await (await fetch(`/api/page/${sel}/items`)).json();
   spans = await (await fetch(`/api/page/${sel}/text`)).json();
+  objs = await (await fetch(`/api/page/${sel}/objects`)).json();
   fields = await (await fetch('/api/fields')).json();
   origKey = okey();
-  cur = null; undo = [];
+  cur = null; curObj = null; undo = [];
   build();
 }
 
@@ -173,6 +174,18 @@ function paint() {
     svg.appendChild(l);
   }
   layer.appendChild(svg);
+  if (tool === 'select') {
+    for (const o of objs) {
+      if (o.edit?.delete) continue;
+      const [x0, y0, x1, y1] = oBox(o);
+      const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}`;
+      e.style.left = x0 * S + 'px'; e.style.top = y0 * S + 'px'; e.style.width = Math.max(x1 - x0, 1) * S + 'px'; e.style.height = Math.max(y1 - y0, 1) * S + 'px';
+      e.onpointerdown = ev => { if (tool === 'select') startObjMove(ev, o); };
+      if (o === curObj) for (const [k, x, y, c] of [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']])
+        handle(e, k, x, y, c, ev => startObjResize(ev, o, k));
+      layer.appendChild(e);
+    }
+  }
   if (tool === 'select') {
     const used = new Set(items.filter(i => i.orig != null).map(i => i.orig));
     for (const s of spans) {
@@ -234,7 +247,7 @@ function drag(ev, onStart, onMove, onEnd) {
 }
 
 function startMove(ev, it) {
-  cur = it; let o;
+  cur = it; curObj = null; let o;
   drag(ev, () => { o = { ...it }; paint(); props(); },
     (p, s) => {
       const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
@@ -260,7 +273,7 @@ function startResize(ev, it, k, el) {
 }
 
 function layerDown(ev) {
-  if (tool === 'select') { cur = null; paint(); props(); return; }
+  if (tool === 'select') { cur = null; curObj = null; paint(); props(); return; }
   const kind = tool;
   const base = { id: crypto.randomUUID(), type: kind, x: 0, y: 0, w: 0, h: 0, text: '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000',
     fill: '', stroke: '#000000', strokeWidth: 1, opacity: 1, asset: null, x2: 0, y2: 0 };
@@ -306,8 +319,82 @@ function setTool(t) {
   $('layer')?.classList.toggle('draw', t !== 'select');
 }
 
-function pushUndo() { undo.push(JSON.stringify(items)); if (undo.length > 100) undo.shift(); }
-function doUndo() { if (!undo.length) return; items = JSON.parse(undo.pop()); cur = null; paint(); props(); queueSave(); }
+function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null) })); if (undo.length > 100) undo.shift(); }
+async function doUndo() {
+  if (!undo.length) return;
+  const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null;
+  const changed = [];
+  objs.forEach((o, k) => { if (JSON.stringify(o.edit ?? null) !== JSON.stringify(s.ed[k])) { o.edit = s.ed[k]; changed.push(o); } });
+  paint(); props(); queueSave();
+  for (const o of changed) await saveObj(o);
+}
+
+const oBox = o => {
+  const e = o.edit; if (!e) return [o.x0, o.y0, o.x1, o.y1];
+  const xs = [e.sx * o.x0 + e.tx, e.sx * o.x1 + e.tx], ys = [e.sy * o.y0 + e.ty, e.sy * o.y1 + e.ty];
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+};
+// Records an edit as a scale/translate of the object's original bounds (x' = sx·x + tx), the form the server turns into a cm.
+function setEdit(o, [x0, y0, x1, y1]) {
+  const w0 = o.x1 - o.x0, h0 = o.y1 - o.y0;
+  const sx = w0 > 0.01 ? (x1 - x0) / w0 : 1, sy = h0 > 0.01 ? (y1 - y0) / h0 : 1;
+  o.edit = { ...(o.edit ?? {}), delete: false, sx, sy, tx: x0 - sx * o.x0, ty: y0 - sy * o.y0 };
+}
+async function saveObj(o) {
+  const e = o.edit; const empty = !e || (!e.delete && e.sx === 1 && e.sy === 1 && e.tx === 0 && e.ty === 0 && !e.fill && !e.stroke);
+  if (empty) o.edit = null;
+  await fetch(`/api/page/${sel}/objects/${o.index}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o.edit ?? null) });
+  const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now());
+  const th = document.querySelectorAll('.thumb img')[sel]; if (th) th.src = `/api/page/${sel}.png?dpi=40&t=${Date.now()}`;
+}
+function selectObj(o) { cur = null; curObj = o; paint(); props(); }
+
+function startObjMove(ev, o) {
+  let b0;
+  drag(ev, () => { selectObj(o); b0 = oBox(o); },
+    (p, s) => { const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S; setEdit(o, [b0[0] + dx, b0[1] + dy, b0[2] + dx, b0[3] + dy]); paint(); },
+    () => saveObj(o));
+}
+function startObjResize(ev, o, k) {
+  let b0;
+  drag(ev, () => { b0 = oBox(o); },
+    (p, s) => {
+      let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+      let [x0, y0, x1, y1] = b0;
+      if (o.kind === 'image') dy = (k === 'se' || k === 'nw' ? dx : -dx) * (y1 - y0) / (x1 - x0);
+      if (k.includes('w')) x0 += dx; else x1 += dx;
+      if (k.includes('n')) y0 += dy; else y1 += dy;
+      if (x1 - x0 < 2) { if (k.includes('w')) x0 = x1 - 2; else x1 = x0 + 2; }
+      if (y1 - y0 < 2) { if (k.includes('n')) y0 = y1 - 2; else y1 = y0 + 2; }
+      setEdit(o, [x0, y0, x1, y1]); paint();
+    },
+    () => saveObj(o));
+}
+function deleteObj(o) { pushUndo(); o.edit = { ...(o.edit ?? { sx: 1, sy: 1, tx: 0, ty: 0 }), delete: true }; curObj = null; paint(); props(); saveObj(o); }
+
+function objProps() {
+  const o = curObj, p = $('props'), b = oBox(o), kinds = { path: 'Shape', image: 'Image', form: 'Graphic group' };
+  const num = (k, label, v) => `<label class="fld"><span>${label}</span><input type="number" step="1" data-o="${k}" value="${+v.toFixed(2)}"></label>`;
+  const colour = (k, label, v) => `<label class="fld"><span>${label}</span><div class="swatch"><input type="color" data-oc="${k}" value="${o.edit?.[k] || v}"><code>${(o.edit?.[k] || v).toUpperCase()}</code></div></label>`;
+  p.innerHTML = `<section class="head"><span class="chip">${ic(o.kind === 'image' ? 'image' : o.kind === 'form' ? 'file' : 'square')}</span><h2>${kinds[o.kind] ?? o.kind} <em>from page</em></h2></section>
+    <section><h3>Position</h3><div class="row">${num('x', 'X', b[0])}${num('y', 'Y', b[1])}</div><div class="row">${num('w', 'Width', b[2] - b[0])}${num('h', 'Height', b[3] - b[1])}</div></section>
+    ${o.kind === 'path' && (o.hasFill || o.hasStroke) ? `<section><h3>Appearance</h3>${o.hasFill ? colour('fill', 'Fill', o.fill) : ''}${o.hasStroke ? colour('stroke', 'Stroke', o.stroke) : ''}</section>` : ''}
+    <section class="acts2"><button data-oact="reset" title="Restore the original">${ic('rotl')}Reset</button><button class="danger" data-oact="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;
+  p.querySelectorAll('[data-o]').forEach(el => {
+    el.onfocus = () => pushUndo();
+    el.onchange = () => {
+      const v = {}; p.querySelectorAll('[data-o]').forEach(i => v[i.dataset.o] = +i.value);
+      setEdit(o, [v.x, v.y, v.x + Math.max(v.w, 1), v.y + Math.max(v.h, 1)]); paint(); saveObj(o);
+    };
+  });
+  p.querySelectorAll('[data-oc]').forEach(el => {
+    el.onfocus = () => pushUndo();
+    el.oninput = () => { el.parentElement.querySelector('code').textContent = el.value.toUpperCase(); };
+    el.onchange = () => { o.edit = { ...(o.edit ?? { sx: 1, sy: 1, tx: 0, ty: 0, delete: false }), [el.dataset.oc]: el.value }; saveObj(o); };
+  });
+  p.querySelector('[data-oact=del]').onclick = () => deleteObj(o);
+  p.querySelector('[data-oact=reset]').onclick = () => { pushUndo(); o.edit = null; paint(); props(); saveObj(o); };
+}
 
 function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
 async function flush() {
@@ -322,6 +409,7 @@ async function flush() {
 
 function props() {
   const p = $('props');
+  if (!cur && curObj) return objProps();
   if (!cur) {
     p.innerHTML = `<section><h2>Properties</h2><p class="hint">Select an object to edit it, click existing text to make it editable, or pick a tool and drag on the page.</p></section>`
       + (fields.length ? `<section><h2>Form fields</h2>${fields.map((f, i) => f.type === 'Btn'
@@ -406,6 +494,12 @@ addEventListener('keydown', e => {
     if (mv) { e.preventDefault(); pushUndo(); cur.x += mv[0]; cur.y += mv[1]; if (cur.type === 'line') { cur.x2 += mv[0]; cur.y2 += mv[1]; } paint(); props(); queueSave(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { pushUndo(); items = items.filter(x => x !== cur); cur = null; paint(); props(); queueSave(); return; }
     if (e.key === 'Escape') { cur = null; paint(); props(); return; }
+  }
+  if (curObj) {
+    const d = e.shiftKey ? 10 : 1, mv = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
+    if (mv) { e.preventDefault(); pushUndo(); const b = oBox(curObj); setEdit(curObj, [b[0] + mv[0], b[1] + mv[1], b[2] + mv[0], b[3] + mv[1]]); paint(); props(); saveObj(curObj); return; }
+    if (e.key === 'Delete' || e.key === 'Backspace') { deleteObj(curObj); return; }
+    if (e.key === 'Escape') { curObj = null; paint(); props(); return; }
   }
   const tk = { v: 'select', t: 'text', r: 'rect', e: 'ellipse', l: 'line' }[e.key];
   if (tk && !e.ctrlKey) { setTool(tk); return; }

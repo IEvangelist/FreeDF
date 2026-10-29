@@ -100,6 +100,33 @@ public class EditorTests
     }
 
     [Fact]
+    public void Edit_objects_moves_resizes_recolours_and_deletes_painted_objects()
+    {
+        const string content = "q 2 0 0 2 10 10 cm 1 0 0 rg 0 0 20 10 re f Q 0 0 1 rg 100 100 30 30 re f BT /F1 12 Tf 5 5 Td (Hi) Tj ET";
+        var bytes = TestPdf.Build(content, "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
+        var page = PdfDocument.Load(bytes).Pages[0];
+        var (spans, objs) = PdfRenderer.Analyze(page);
+        Assert.Equal(2, objs.Count);
+        Assert.Equal((10, 50), (objs[0].X0, objs[0].X1));
+        Assert.Equal((170, 190), (objs[0].Y0, objs[0].Y1));
+
+        // Move +30 right and scale x by 2 about the origin (x' = 2x + 5); box space is y-down but the matrix is applied through the object's CTM.
+        var c = objs[0].Ctm; var m = c.Then(new Pdf.Content.Matrix(2, 0, 0, 1, 5, 0)).Then(c.Invert());
+        var edited = ContentRewriter.EditObjects(page.GetContents(), [
+            new ContentRewriter.ObjectEdit(objs[0].Start, objs[0].End, false, [m.A, m.B, m.C, m.D, m.E, m.F], [0, 1, 0], null),
+            new ContentRewriter.ObjectEdit(objs[1].Start, objs[1].End, true, null, null, null)]);
+        var e = PdfEditor.Open(bytes);
+        e.SetContentOverride(0, edited);
+        var (spans2, objs2) = PdfRenderer.Analyze(PdfDocument.Load(e.Save()).Pages[0]);
+        Assert.Single(objs2);
+        Assert.Equal(25, objs2[0].X0, 3);
+        Assert.Equal(105, objs2[0].X1, 3);
+        Assert.Equal(170, objs2[0].Y0, 3);
+        Assert.Equal(new Pdf.Content.RgbColor(0, 1, 0), objs2[0].Fill);
+        Assert.Equal(spans.Select(s => s.Text), spans2.Select(s => s.Text));
+    }
+
+    [Fact]
     public void Extract_text_and_remove_operator_keeps_following_text_in_place()
     {
         const string content = "BT /F1 20 Tf 10 100 Td (Hello) Tj 0 -30 Td [(Wor) -100 (ld)] TJ ( Again) Tj ET 1 0 0 rg 0 0 5 5 re f";

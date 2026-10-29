@@ -24,27 +24,32 @@ var overlayBuilder = new OverlayBuilder(editor, assets);
 var jsonOpts = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
 
 PdfDocument? pristine = null; bool prepared = false;
-var texts = new Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans)>();
+var texts = new Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)>();
+var objEdits = new Dictionary<int, Dictionary<int, ObjEdit>>();
 
 void Reset(PdfEditor e)
 {
-    editor = e; items.Clear(); texts.Clear(); overlayBuilder = new OverlayBuilder(editor, assets); Changed();
+    editor = e; items.Clear(); texts.Clear(); objEdits.Clear(); overlayBuilder = new OverlayBuilder(editor, assets); Changed();
 }
 if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); }
 
 // Callers hold the lock. Pristine is the document with no overlays and no text edits; text spans are extracted from it so operator indices stay stable.
 PdfDocument Pristine() => pristine ??= PdfDocument.Load(editor.Save(false, false));
 
-(byte[] Content, List<ContentInterpreter.TextSpan> Spans) PageText(int i)
+(byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects) PageText(int i)
 {
     var id = editor.PageId(i);
     if (!texts.TryGetValue(id, out var t))
     {
         var page = Pristine().Pages[i];
-        texts[id] = t = (page.GetContents(), PdfRenderer.ExtractText(page));
+        var (spans, objects) = PdfRenderer.Analyze(page);
+        texts[id] = t = (page.GetContents(), spans, objects);
     }
     return t;
 }
+
+static double[]? Rgb(string? hex) => hex is { Length: 7 } && hex[0] == '#'
+    ? [Convert.ToInt32(hex[1..3], 16) / 255.0, Convert.ToInt32(hex[3..5], 16) / 255.0, Convert.ToInt32(hex[5..7], 16) / 255.0] : null;
 
 // Pushes the current items to the editor: overlays for new objects, content rewrites to remove text that was converted into editable objects.
 void Prepare()
@@ -54,9 +59,22 @@ void Prepare()
     {
         items.TryGetValue(editor.PageId(i), out var list);
         var origs = list?.Where(x => x.Orig is not null).Select(x => x.Orig!.Value).ToHashSet() ?? [];
-        if (origs.Count > 0)
+        objEdits.TryGetValue(editor.PageId(i), out var oe);
+        if (origs.Count > 0 || oe is { Count: > 0 })
         {
-            var (content, spans) = PageText(i);
+            var (content, spans, objects) = PageText(i);
+            if (oe is { Count: > 0 })
+                content = ContentRewriter.EditObjects(content, oe.Select(kv =>
+                {
+                    var o = objects[kv.Key]; var e = kv.Value;
+                    double[]? m = null;
+                    if (e.Sx != 1 || e.Sy != 1 || e.Tx != 0 || e.Ty != 0)
+                    {
+                        var c = o.Ctm; var mm = c.Then(new Matrix(e.Sx, 0, 0, e.Sy, e.Tx, e.Ty)).Then(c.Invert());
+                        m = [mm.A, mm.B, mm.C, mm.D, mm.E, mm.F];
+                    }
+                    return new ContentRewriter.ObjectEdit(o.Start, o.End, e.Delete, m, Rgb(e.Fill), Rgb(e.Stroke));
+                }));
             var removals = spans.Where(s => origs.Contains(s.Index)).ToDictionary(s => s.Index, s => s.Advance);
             editor.SetContentOverride(i, ContentRewriter.RemoveText(content, removals));
         }
@@ -92,6 +110,37 @@ app.MapGet("/api/page/{i:int}/text", (int i) =>
                 color = $"#{(int)Math.Round(s.Color.R * 255):x2}{(int)Math.Round(s.Color.G * 255):x2}{(int)Math.Round(s.Color.B * 255):x2}",
             });
         return Results.Json(spans, jsonOpts);
+    }
+});
+
+app.MapGet("/api/page/{i:int}/objects", (int i) =>
+{
+    lock (gate)
+    {
+        var id = editor.PageId(i);
+        objEdits.TryGetValue(id, out var oe);
+        var list = PageText(i).Objects.Select(o => new
+        {
+            index = o.Index, kind = o.Kind, x0 = o.X0, y0 = o.Y0, x1 = o.X1, y1 = o.Y1,
+            hasFill = o.HasFill, hasStroke = o.HasStroke, lineWidth = o.LineWidth,
+            fill = o.HasFill ? Hex(o.Fill) : null, stroke = o.HasStroke ? Hex(o.Stroke) : null,
+            edit = oe is not null && oe.TryGetValue(o.Index, out var e) ? e : null,
+        });
+        return Results.Json(list, jsonOpts);
+    }
+});
+
+app.MapPut("/api/page/{i:int}/objects/{n:int}", async (int i, int n, HttpRequest r) =>
+{
+    var e = await System.Text.Json.JsonSerializer.DeserializeAsync<ObjEdit>(r.Body, jsonOpts);
+    lock (gate)
+    {
+        var id = editor.PageId(i);
+        if (n < 0 || n >= PageText(i).Objects.Count) return Results.NotFound();
+        if (!objEdits.TryGetValue(id, out var d)) objEdits[id] = d = [];
+        if (e is null || (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null)) d.Remove(n); else d[n] = e;
+        Changed();
+        return Results.Ok();
     }
 });
 
@@ -197,6 +246,8 @@ app.MapGet("/api/download", () =>
 Console.WriteLine($"PDF editor running at http://localhost:{port}");
 app.Run();
 
+static string Hex(RgbColor c) => $"#{(int)Math.Round(c.R * 255):x2}{(int)Math.Round(c.G * 255):x2}{(int)Math.Round(c.B * 255):x2}";
+
 static async Task<(string, byte[])> ReadUpload(HttpRequest r)
 {
     var form = await r.ReadFormAsync();
@@ -205,3 +256,6 @@ static async Task<(string, byte[])> ReadUpload(HttpRequest r)
     await f.CopyToAsync(ms);
     return (f.FileName, ms.ToArray());
 }
+
+/// <summary>Edit of an existing page object: box-space scale/translate, colour overrides, or deletion.</summary>
+record ObjEdit(bool Delete = false, double Sx = 1, double Sy = 1, double Tx = 0, double Ty = 0, string? Fill = null, string? Stroke = null);

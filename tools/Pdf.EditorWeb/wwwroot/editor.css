@@ -77,6 +77,9 @@ main { display: grid; grid-template-columns: 208px minmax(0, 1fr) 280px; min-hei
 .it.txt { white-space: pre; line-height: 1.2; padding: 0; color: #000; }
 .it.txt[contenteditable] { cursor: text; outline: 1.5px solid var(--accent-2); background: #4c8dff14; }
 .it img { width: 100%; height: 100%; display: block; pointer-events: none; }
+.obj { position: absolute; cursor: move; outline: 1px solid transparent; }
+.obj:hover { outline-color: #4c8dff80; }
+.obj.on { outline: 1.5px solid var(--accent); }
 .span { position: absolute; cursor: text; outline: 1px dashed transparent; border-radius: 2px; }
 .span:hover { outline-color: var(--accent); background: #4c8dff1f; }
 .hd { position: absolute; width: 9px; height: 9px; background: #fff; border: 1.5px solid var(--accent); border-radius: 50%; z-index: 5; box-shadow: 0 1px 3px #0006; }
