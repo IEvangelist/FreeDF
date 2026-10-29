@@ -54,7 +54,7 @@ footer #keys { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { footer #keys, footer .sp { display: none; } .brand strong { display: none; } }
 @media (max-width: 900px) { header .lbl { display: none; } header .btn, header button.primary { padding: 0; width: var(--h); justify-content: center; } .doc #pages { display: none; } }
-@media (max-width: 720px) { .doc { display: none; } header .sp { flex: 1; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
+@media (max-width: 720px) { .doc { display: none; } header .sp { flex: 1; height: auto; background: none; margin: 0; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
 #thumbs { overflow-y: auto; padding: 12px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px; }
 .thumb { position: relative; padding: 6px; border-radius: var(--r-lg); border: 1px solid transparent; cursor: grab; transition: background .12s; }
 .thumb:hover { background: var(--raised); }
@@ -194,7 +194,7 @@ button:disabled { opacity: .4; cursor: default; }
 .dfoot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 16px; }
 .dfoot button { border: 1px solid var(--line-2); padding: 0 16px; }
 .dfoot button.primary { border-color: transparent; }
-@media (max-width: 760px) { #nav, #pt { display: none; } #findbar { left: 12px; right: 12px; } #fq { flex: 1; width: auto; } }
+@media (max-width: 760px) { #nav, #pt, #nav + .sp { display: none; } #findbar { left: 12px; right: 12px; } #fq { flex: 1; width: auto; } }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4150; background-clip: padding-box; border: 2px solid transparent; }
