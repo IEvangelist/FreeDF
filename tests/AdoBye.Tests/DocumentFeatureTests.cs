@@ -147,6 +147,54 @@ public class DocumentFeatureTests
         Assert.Equal("hello", System.Text.Encoding.ASCII.GetString(legacy.Data));
     }
 
+    static byte[] CollectionPdf()
+    {
+        const string pdf = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles 3 0 R >> /Collection << /View /T /Schema << /Score << /Subtype /N /N (Score) /O 0 >> /Title << /Subtype /S /N (Title) /O 1 >> /Hidden << /Subtype /S /N (Hidden) /O 2 /V false >> >> /Sort << /S [/Score /Title] /A [true false] >> >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n" +
+            "3 0 obj\n<< /Names [(a) 10 0 R (b) 11 0 R (c) 12 0 R (d) 13 0 R] >>\nendobj\n" +
+            "10 0 obj\n<< /Type /Filespec /F (a.pdf) /UF (a.pdf) /CI << /Score 2 /Title (Alpha) >> >>\nendobj\n" +
+            "11 0 obj\n<< /Type /Filespec /F (b.pdf) /UF (b.pdf) /CI << /Score 1 /Title (Beta) >> >>\nendobj\n" +
+            "12 0 obj\n<< /Type /Filespec /F (c.pdf) /UF (c.pdf) /CI << /Score 2 /Title (Zulu) >> >>\nendobj\n" +
+            "13 0 obj\n<< /Type /Filespec /F (d.pdf) /UF (d.pdf) /CI << /Title (Missing score) >> >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 14 >>\n%%EOF\n";
+        return System.Text.Encoding.ASCII.GetBytes(pdf);
+    }
+
+    static byte[] CollectionDateSortPdf()
+    {
+        const string pdf = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles 3 0 R >> /Collection << /Schema << /Date << /Subtype /D /N (Date) >> /File << /Subtype /F /N (File) >> >> /Sort << /S [/Date /File] /A [true true] >> >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n" +
+            "3 0 obj\n<< /Names [(a) 10 0 R (b) 11 0 R (c) 12 0 R] >>\nendobj\n" +
+            "10 0 obj\n<< /Type /Filespec /F (z.pdf) /UF (z.pdf) /CI << /Date (D:20250101010000+02'00') >> >>\nendobj\n" +
+            "11 0 obj\n<< /Type /Filespec /F (a.pdf) /UF (a.pdf) /CI << /Date (D:20241231230000Z) >> >>\nendobj\n" +
+            "12 0 obj\n<< /Type /Filespec /F (b.pdf) /UF (b.pdf) /CI << /Date (D:20250101000000Z) >> >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 13 >>\n%%EOF\n";
+        return System.Text.Encoding.ASCII.GetBytes(pdf);
+    }
+
+    [Fact]
+    public void Collection_applies_initial_view_visible_fields_and_sort_keys()
+    {
+        var doc = PdfDocument.Load(CollectionPdf());
+        var collection = Assert.IsType<PdfDocumentCollection>(doc.GetCollection());
+
+        Assert.Equal(PdfCollectionView.Tile, collection.InitialView);
+        Assert.Equal(new[] { "Score", "Title" }, collection.VisibleFields.Select(field => field.Key));
+        Assert.Equal(new[] { "d.pdf", "b.pdf", "c.pdf", "a.pdf" },
+            doc.GetCollectionItems().Select(file => file.UnicodeFileName));
+    }
+
+    [Fact]
+    public void Collection_sort_compares_pdf_dates_chronologically_and_file_fields_by_name()
+    {
+        var doc = PdfDocument.Load(CollectionDateSortPdf());
+
+        Assert.Equal(new[] { "a.pdf", "z.pdf", "b.pdf" },
+            doc.GetCollectionItems().Select(file => file.UnicodeFileName));
+    }
+
     static byte[] ActiveContentPdf()
     {
         const string pdf = "%PDF-2.0\n" +
