@@ -15,6 +15,8 @@ public sealed record PdfRenderOptions
     public string? OptionalContentConfigurationName { get; init; }
     /// <summary>Reusable interactive layer state; cannot be combined with a configuration name.</summary>
     public OptionalContentState? OptionalContentState { get; init; }
+    /// <summary>Explicit language and user identities for usage rules; omitted fields leave those rules unapplied.</summary>
+    public OptionalContentContext? OptionalContentContext { get; init; }
     /// <summary>Usage event to apply when rendering optional content.</summary>
     public ContentInterpreter.OptionalContentEvent OptionalContentDisplayEvent { get; init; } =
         ContentInterpreter.OptionalContentEvent.View;
@@ -90,6 +92,7 @@ public static class PortableDocument
         interp.OptionalContentState = state;
         interp.OptionalContentDisplayEvent = options.OptionalContentDisplayEvent;
         interp.OptionalContentZoom = scale;
+        interp.OptionalContentContext = options.OptionalContentContext;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }

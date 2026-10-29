@@ -66,11 +66,13 @@ public sealed class OptionalContentState
 
     PdfObject? R(PdfObject? value) => File.Resolve(value);
 
-    PdfDictionary? ResolveGroup(PdfObject value) =>
+    PdfDictionary? ResolveGroup(PdfObject value) => ResolveGroup(File, value);
+
+    static PdfDictionary? ResolveGroup(PdfFile file, PdfObject value) =>
         value is PdfRef reference
-        && File.Xref.TryGetValue(reference.Number, out var entry) && entry.InUse
+        && file.Xref.TryGetValue(reference.Number, out var entry) && entry.InUse
         && reference.Generation == (entry.Compressed ? 0 : entry.GenOrIndex)
-        && R(value) is PdfDictionary group && R(group.Get("Type")).AsName() == "OCG"
+        && file.Resolve(value) is PdfDictionary group && file.Resolve(group.Get("Type")).AsName() == "OCG"
             ? group : null;
 
     PdfArray? ReadArray(PdfObject? value, string entry)
@@ -108,19 +110,21 @@ public sealed class OptionalContentState
     }
 
     public bool IsVisible(PdfDictionary group,
-        ContentInterpreter.OptionalContentEvent displayEvent = ContentInterpreter.OptionalContentEvent.View, double zoom = 1)
+        ContentInterpreter.OptionalContentEvent displayEvent = ContentInterpreter.OptionalContentEvent.View, double zoom = 1,
+        OptionalContentContext? context = null)
     {
         RequireGroup(group);
-        return IsVisibleCore(group, displayEvent, zoom);
+        return IsVisibleCore(group, displayEvent, zoom, context);
     }
 
     /// <summary>
     /// Applies a UI visibility change atomically, respecting radio groups and locks.
-    /// Supply the current render event and zoom when checking usage-driven locked peers.
+    /// Supply the current render event, zoom and context when checking usage-driven locked peers.
     /// Turning a layer OFF never selects another layer. Locked changes throw without modifying state.
     /// </summary>
     public void SetVisibility(PdfDictionary group, bool visible,
-        ContentInterpreter.OptionalContentEvent displayEvent = ContentInterpreter.OptionalContentEvent.View, double zoom = 1)
+        ContentInterpreter.OptionalContentEvent displayEvent = ContentInterpreter.OptionalContentEvent.View, double zoom = 1,
+        OptionalContentContext? context = null)
     {
         RequireGroup(group);
         if (_locked.Contains(group))
@@ -132,19 +136,26 @@ public sealed class OptionalContentState
                     foreach (var peer in radioGroup)
                         if (!ReferenceEquals(peer, group)) peers.Add(peer);
 
-        if (peers.Any(peer => _locked.Contains(peer) && IsVisibleCore(peer, displayEvent, zoom)))
+        if (peers.Any(peer => _locked.Contains(peer) && IsVisibleCore(peer, displayEvent, zoom, context)))
             throw new InvalidOperationException("A visible locked radio-group layer prevents this selection.");
         foreach (var peer in peers)
             if (!_locked.Contains(peer)) _visibility[peer] = false;
         _visibility[group] = visible;
     }
 
-    internal bool IsVisibleCore(PdfDictionary group, ContentInterpreter.OptionalContentEvent displayEvent, double zoom) =>
+    void Warn(string warning)
+    {
+        if (!_warnings.Contains(warning)) _warnings.Add(warning);
+    }
+
+    internal bool IsVisibleCore(PdfDictionary group, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
+        OptionalContentContext? context = null) =>
         _visibility.TryGetValue(group, out var visible) ? visible
-            : !IsOff(File, group, Configuration, DefaultConfiguration, displayEvent, zoom);
+            : !IsOff(File, group, Configuration, DefaultConfiguration, displayEvent, zoom, context, Warn);
 
     internal static bool IsOff(PdfFile file, PdfDictionary ocg, PdfDictionary? cfg,
-        PdfDictionary? defaultConfiguration, ContentInterpreter.OptionalContentEvent displayEvent, double zoom)
+        PdfDictionary? defaultConfiguration, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
+        OptionalContentContext? context = null, Action<string>? warn = null)
     {
         if (cfg is null) return false;
         PdfObject? R(PdfObject? value) => file.Resolve(value);
@@ -152,7 +163,7 @@ public sealed class OptionalContentState
         bool off;
         if (baseState == "Unchanged" && !ReferenceEquals(cfg, defaultConfiguration)
             && defaultConfiguration is not null)
-            off = IsOff(file, ocg, defaultConfiguration, defaultConfiguration, displayEvent, zoom);
+            off = IsOff(file, ocg, defaultConfiguration, defaultConfiguration, displayEvent, zoom, context, warn);
         else
         {
             var baseOff = baseState == "OFF";
@@ -163,6 +174,9 @@ public sealed class OptionalContentState
         if (R(cfg.Get("AS")) is not PdfArray applications) return off;
         var eventName = displayEvent.ToString();
         var zoomOutOfRange = false;
+        bool? contextRecommendation = null;
+        var eventAllowsContext = true;
+        var hasEventRecommendation = false;
         foreach (var application in applications.Items)
         {
             if (R(application) is not PdfDictionary app
@@ -180,6 +194,11 @@ public sealed class OptionalContentState
                 var category = R(categoryValue).AsName();
                 if (category == eventName && R(usage.Get(category)) is PdfDictionary eventUsage)
                 {
+                    if (R(eventUsage.Get(eventName + "State")).AsName() is "ON" or "OFF")
+                    {
+                        hasEventRecommendation = true;
+                        eventAllowsContext &= R(eventUsage.Get(eventName + "State")).AsName() == "ON";
+                    }
                     off = R(eventUsage.Get(eventName + "State")).AsName() switch
                     {
                         "ON" => false,
@@ -196,9 +215,143 @@ public sealed class OptionalContentState
                         || max is { } maxZoom && zoom > maxZoom)
                         zoomOutOfRange = true;
                 }
+                else if (category is "Language" or "User")
+                {
+                    if (UsageRecommendation(file, ocg, usage, app, category, context, warn) is { } recommendation)
+                        contextRecommendation = (contextRecommendation ?? true) && recommendation;
+                }
+                else if (category is not ("View" or "Print" or "Export" or "Zoom"))
+                    warn?.Invoke($"unsupported optional-content usage category {category ?? "(non-name)"}");
             }
         }
+        // Context recommendations can enable an initially OFF layer, but cannot undo
+        // another usage category's OFF recommendation. Legacy rules remain unchanged without context.
+        if (contextRecommendation is { } on)
+            off = !on || hasEventRecommendation && !eventAllowsContext;
         if (zoomOutOfRange) off = true;
         return off;
+    }
+
+    static bool? UsageRecommendation(PdfFile file, PdfDictionary ocg, PdfDictionary usage, PdfDictionary application,
+        string category, OptionalContentContext? context, Action<string>? warn)
+    {
+        PdfObject? R(PdfObject? value) => file.Resolve(value);
+        var value = R(usage.Get(category));
+        if (value is null or PdfNull)
+        {
+            if (usage.Get(category) is PdfRef)
+                warn?.Invoke($"invalid optional-content {category} usage dictionary");
+            return null;
+        }
+        var applicationGroups = R(application.Get("OCGs"));
+        if (applicationGroups is null or PdfNull && application.Get("OCGs") is not PdfRef) return null;
+        if (applicationGroups is not PdfArray groups)
+        {
+            warn?.Invoke($"invalid optional-content {category} application OCGs array");
+            return null;
+        }
+        var selected = false;
+        foreach (var member in groups.Items)
+            if (ResolveGroup(file, member) is { } group)
+                selected |= ReferenceEquals(group, ocg);
+            else warn?.Invoke($"invalid optional-content {category} application OCGs reference");
+        if (!selected) return null;
+        if (value is not PdfDictionary rule)
+        {
+            warn?.Invoke($"invalid optional-content {category} usage dictionary");
+            return null;
+        }
+
+        if (category == "User")
+        {
+            var type = R(rule.Get("Type")).AsName();
+            var names = R(rule.Get("Name"));
+            if (type is not ("Ind" or "Ttl" or "Org")
+                || names is not (PdfString or PdfArray)
+                || names is PdfArray array && (array.Count == 0 || array.Items.Any(x => R(x) is not PdfString)))
+            {
+                warn?.Invoke("invalid optional-content User Type or Name");
+                return null;
+            }
+            var identity = type switch
+            {
+                "Ind" => context?.UserName,
+                "Ttl" => context?.UserTitle,
+                _ => context?.UserOrganization,
+            };
+            if (identity is null)
+            {
+                warn?.Invoke($"unapplied optional-content User {type} rule: caller identity context required");
+                return null;
+            }
+            return names is PdfString name ? name.Text == identity
+                : ((PdfArray)names).Items.Any(x => ((PdfString)R(x)!).Text == identity);
+        }
+
+        if (ReadLanguage(file, rule, warn) is not { } language) return null;
+        if (context?.Language is not { } requested)
+        {
+            warn?.Invoke("unapplied optional-content Language rule: caller language context required");
+            return null;
+        }
+        if (!IsLanguageTag(requested))
+        {
+            warn?.Invoke("invalid optional-content Language context");
+            return null;
+        }
+        if (language.Equals(requested, StringComparison.OrdinalIgnoreCase)) return true;
+        if (R(rule.Get("Preferred")).AsName() != "ON"
+            || !PrimaryLanguage(language).Equals(PrimaryLanguage(requested), StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Exact matches suppress preferred partial matches only within this application's OCGs list.
+        foreach (var member in groups.Items)
+            if (ResolveGroup(file, member) is { } peer && !ReferenceEquals(peer, ocg)
+                && R(peer.Get("Usage")) is PdfDictionary peerUsage
+                && R(peerUsage.Get("Language")) is PdfDictionary peerRule
+                && ReadLanguage(file, peerRule, warn) is { } peerLanguage
+                && peerLanguage.Equals(requested, StringComparison.OrdinalIgnoreCase))
+                return false;
+        return true;
+    }
+
+    static string? ReadLanguage(PdfFile file, PdfDictionary rule, Action<string>? warn)
+    {
+        var language = (file.Resolve(rule.Get("Lang")) as PdfString)?.Text;
+        var preferred = file.Resolve(rule.Get("Preferred"));
+        if (language is null || !IsLanguageTag(language)
+            || preferred is not (null or PdfNull) && preferred.AsName() is not ("ON" or "OFF"))
+        {
+            warn?.Invoke("invalid optional-content Language Lang or Preferred");
+            return null;
+        }
+        return language;
+    }
+
+    static bool IsLanguageTag(string language)
+    {
+        var length = 0;
+        var primary = true;
+        foreach (var c in language)
+        {
+            if (c == '-')
+            {
+                if (length is < 1 or > 8) return false;
+                primary = false;
+                length = 0;
+            }
+            else
+            {
+                if (primary ? !char.IsAsciiLetter(c) : !char.IsAsciiLetterOrDigit(c)) return false;
+                if (++length > 8) return false;
+            }
+        }
+        return language.Length == 0 || length > 0;
+    }
+
+    static ReadOnlySpan<char> PrimaryLanguage(string language)
+    {
+        var separator = language.IndexOf('-');
+        return separator >= 0 ? language.AsSpan(0, separator) : language.AsSpan();
     }
 }

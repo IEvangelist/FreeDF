@@ -37,6 +37,7 @@ public sealed class ContentInterpreter
     readonly Dictionary<PdfDictionary, PdfFont> _fonts = new(ReferenceEqualityComparer.Instance);
     readonly Stack<GState> _stack = new();
     readonly HashSet<PdfDictionary> _activeForms = new(ReferenceEqualityComparer.Instance);
+    readonly Dictionary<PdfDictionary, bool> _optionalContentOff = new(ReferenceEqualityComparer.Instance);
     GState _gs = new();
     PathData _path = new();
     int _pendingClip; // 0 none, 1 nonzero, 2 even-odd
@@ -53,6 +54,7 @@ public sealed class ContentInterpreter
     public OptionalContentState? OptionalContentState { get; set; }
     public OptionalContentEvent OptionalContentDisplayEvent { get; set; } = OptionalContentEvent.View;
     public double OptionalContentZoom { get; set; } = 1;
+    public OptionalContentContext? OptionalContentContext { get; set; }
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -66,6 +68,7 @@ public sealed class ContentInterpreter
     /// <summary>Renders a page. When placed as an element of another page, /I controls isolation and a non-isolated page inherits its backdrop's colour space (11.4.7, 11.6.6).</summary>
     public void Render(PdfPage page, Matrix baseMatrix, bool asPageElement)
     {
+        _optionalContentOff.Clear();
         if (OptionalContentState is { } state)
         {
             if (!ReferenceEquals(state.File, _f))
@@ -104,6 +107,8 @@ public sealed class ContentInterpreter
             finally { if (DrawGraphics) _be.EndGroup(); }
         }
         finally { _be.Restore(); }
+        if (OptionalContentState is { } evaluatedState)
+            foreach (var warning in evaluatedState.Warnings) Warn(warning);
     }
 
     PdfColorSpace? PageGroupColorSpace(PdfObject? obj, PdfDictionary resources, int depth = 0, bool useDefaults = true)
@@ -592,11 +597,17 @@ public sealed class ContentInterpreter
         return valid && result;
     }
 
-    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg) =>
-        OptionalContentState is { } state
-            ? !state.IsVisibleCore(ocg, OptionalContentDisplayEvent, OptionalContentZoom)
+    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg)
+    {
+        if (_optionalContentOff.TryGetValue(ocg, out var off)) return off;
+        off = OptionalContentState is { } state
+            ? !state.IsVisibleCore(ocg, OptionalContentDisplayEvent, OptionalContentZoom, OptionalContentContext)
             : global::PortableDocument.Content.OptionalContentState.IsOff(
-                _f, ocg, cfg, DefaultOptionalContentConfiguration, OptionalContentDisplayEvent, OptionalContentZoom);
+                _f, ocg, cfg, DefaultOptionalContentConfiguration, OptionalContentDisplayEvent, OptionalContentZoom,
+                OptionalContentContext, Warn);
+        _optionalContentOff[ocg] = off;
+        return off;
+    }
 
     void NextLine() { _tlm = Matrix.Translate(0, -_gs.Leading).Then(_tlm); _tm = _tlm; }
 
