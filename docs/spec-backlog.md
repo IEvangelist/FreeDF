@@ -2,7 +2,7 @@
 
 This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md), plus known limitations recorded under rows currently marked Done. Full spec parity is the target. “Safe support” for PDF JavaScript, XFA, RichMedia, and related executable content means parsing, preserving, and exposing the structures without running embedded code.
 
-The current matrix has **13 Partial rows and 2 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/AdoBye.Bench`; they are repository artifacts, not a separately published NuGet package.
+The current matrix has **14 Partial rows and 1 Todo row**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/AdoBye.Bench`; they are repository artifacts, not a separately published NuGet package.
 
 ## Parser and document model
 
@@ -32,7 +32,7 @@ The current matrix has **13 Partial rows and 2 Todo rows**. Two additional rows 
 
 | Clause | Remaining work | Evidence and completion checks |
 |---|---|---|
-| Editor — Existing images and vectors | Implement selection, move, and resize for existing image and vector objects, preserving appearance and page content semantics. | `docs/spec-matrix.md`, editor object enumeration/manipulation source, and `tests/AdoBye.Tests/EditorTests.cs`. Verify saved PDFs render equivalently except for the intended transform. |
+| Editor — Existing images and vectors | The editor now serializes queued move/resize/reset transforms in order and blocks document mutations/saves until pending object edits succeed; save/reopen and rendering tests cover page-level raster/inline images and paths, including rotated pages. Still support existing objects inside Form XObjects and validate complex vector paint/clip/operator ranges. | `docs/spec-matrix.md`, `tools/AdoBye.EditorWeb/wwwroot/index.html`, `tools/AdoBye.EditorWeb/e2e_object_saves.test.cjs`, and `tests/AdoBye.Tests/ExistingObjectTransformTests.cs`. Verify saved PDFs render equivalently except for the intended transform and that failed PUTs cannot be silently saved. |
 | Editor — Redaction limitations (row currently marked Done) | Redaction now disables incremental saves because they retain original bytes; callers must use a full rewrite. Clip vector paths rather than only removing intersecting paths; avoid over-redacting every use of shared forms; replace the outline-title word-overlap heuristic with precise handling. Keep whole-object removal for inline images/masks only where partial rewriting is not implemented. | `docs/spec-matrix.md`, `src/PortableDocument.Document/PdfEditor.cs`, `src/PortableDocument.Render/Redactor.cs`, and `tests/AdoBye.Tests/EditorTests.cs` / `SecurityTests.cs`. Inspect saved object graphs and decoded streams to ensure removed content is not recoverable. |
 | 12.8 — Digital signatures (row currently marked Done) | Add certification signatures and DocMDP, RFC 3161 timestamps, LTV/DSS, and configurable chain-trust validation; make incremental signing work for sources that currently require a non-incremental rewrite. | `docs/spec-matrix.md`, `src/PortableDocument.Document/PdfEditor.Signing.cs`, and `tests/AdoBye.Tests/` signature/security coverage. Validate externally with pyHanko and verify byte-range, revision, and trust-policy outcomes. |
 
