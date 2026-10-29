@@ -20,7 +20,8 @@ PdfDocument? snapshot = null, baseSnapshot = null; byte[]? snapshotBytes = null;
 string fileName = "document.pdf";
 var items = new Dictionary<int, List<Item>>();
 var assets = new Dictionary<string, Asset>();
-var overlayBuilder = new OverlayBuilder(editor, assets);
+var catalog = FontCatalog.Scan();
+var overlayBuilder = new OverlayBuilder(editor, assets, catalog);
 var jsonOpts = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
 
 PdfDocument? pristine = null; bool prepared = false;
@@ -29,7 +30,7 @@ var objEdits = new Dictionary<int, Dictionary<int, ObjEdit>>();
 
 void Reset(PdfEditor e)
 {
-    editor = e; items.Clear(); texts.Clear(); objEdits.Clear(); overlayBuilder = new OverlayBuilder(editor, assets); Changed();
+    editor = e; items.Clear(); texts.Clear(); objEdits.Clear(); overlayBuilder = new OverlayBuilder(editor, assets, catalog); Changed();
 }
 if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); }
 
@@ -172,6 +173,8 @@ app.MapGet("/api/page/{i:int}.png", (int i, int? dpi, int? v, bool? bare) =>
         return Results.File(PdfRenderer.RenderPage(page, Math.Clamp(dpi ?? 48, 16, 300)).ToPng(), "image/png");
     }
 });
+
+app.MapGet("/api/fonts", () => Results.Json(catalog.List(), jsonOpts));
 
 app.MapGet("/api/page/{i:int}/items", (int i) =>
 {

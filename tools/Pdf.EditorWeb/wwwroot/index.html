@@ -85,12 +85,23 @@ let items = [], cur = null, tool = 'select', zoom = 1, preview = false, undo = [
 const $ = id => document.getElementById(id);
 const post = (u, body) => fetch(u, { method: 'POST', body }).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); });
 const status = t => $('status').textContent = t;
-const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace' };
+const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace', Symbol: 'Symbol, serif', ZapfDingbats: '"Zapf Dingbats", "Segoe UI Symbol", serif' };
+const famCss = f => FAM[f] ?? `"${String(f).replace(/"/g, '')}", sans-serif`;
+let fontList = [];
+fetch('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
+const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
-const fontFamily = n => /courier|mono/i.test(n) ? 'Courier' : /times|serif|georgia|garamond|minion/i.test(n) && !/sans/i.test(n) ? 'Times' : 'Helvetica';
+// Maps a PDF font name such as "ABCDEF+Calibri-BoldItalic" to the best installed family, falling back to the standard three.
+const fontFamily = n => {
+  const base = normFont(n.replace(/^[A-Z]{6}\+/, '').replace(/(mt|ps|psmt)?([-,]?(bold|italic|oblique|regular|roman|black|heavy|light))*$/i, ''));
+  let best = null;
+  for (const f of fontList) { const k = normFont(f.family); if (k && base.startsWith(k) && (!best || k.length > normFont(best).length)) best = f.family; }
+  if (best) return best;
+  return /courier|mono/i.test(n) ? 'Courier' : /times|serif|georgia|garamond|minion/i.test(n) && !/sans/i.test(n) ? 'Times' : 'Helvetica';
+};
 
 // Turns an existing page text run into an editable text item; the original operator is removed on the server.
 function convertSpan(s) {
@@ -210,7 +221,7 @@ function paint() {
     e.style.left = it.x * S + 'px'; e.style.top = it.y * S + 'px'; e.style.opacity = it.opacity;
     if (it.type === 'text') {
       e.textContent = it.text; e.style.fontSize = it.size * S + 'px'; e.style.color = it.color || '#000';
-      e.style.fontFamily = FAM[it.font] ?? FAM.Helvetica; e.style.fontWeight = it.bold ? 700 : 400; e.style.fontStyle = it.italic ? 'italic' : 'normal';
+      e.style.fontFamily = famCss(it.font); e.style.fontWeight = it.bold ? 700 : 400; e.style.fontStyle = it.italic ? 'italic' : 'normal';
     } else {
       e.style.width = it.w * S + 'px'; e.style.height = it.h * S + 'px';
       if (it.type === 'image') e.innerHTML = `<img src="/api/asset/${it.asset}">`;
@@ -462,7 +473,7 @@ function props() {
   let h = `<section class="head"><span class="chip">${ic(it.type === 'rect' ? 'square' : it.type)}</span><h2>${names[it.type] ?? it.type}${it.orig != null ? ' <em>from page</em>' : ''}</h2></section>`;
   if (it.type === 'redact') h += `<section><p class="hint">Text, shapes and images touching this box are permanently removed from the saved PDF, then the area is blacked out.</p></section>`;
   if (it.type === 'text') h += `<section><h3>Content</h3><textarea rows="3" data-k="text">${it.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</textarea></section>
-    <section><h3>Typography</h3><div class="row"><label class="fld"><span>Font</span><select data-k="font">${['Helvetica', 'Times', 'Courier'].map(f => `<option ${f === it.font ? 'selected' : ''}>${f}</option>`).join('')}</select></label>${n('size', 'Size', 0.5)}</div>
+    <section><h3>Typography</h3><div class="row"><label class="fld"><span>Font</span><button type="button" class="fpb" id="fpb" style="font-family:${esc(famCss(it.font))}"><b>${esc(it.font)}</b><i>▾</i></button></label>${n('size', 'Size', 0.5)}</div>
     <div class="row"><label class="tgl" title="Bold"><input type="checkbox" data-k="bold" ${it.bold ? 'checked' : ''}>${ic('bold')}</label><label class="tgl" title="Italic"><input type="checkbox" data-k="italic" ${it.italic ? 'checked' : ''}>${ic('italic')}</label><span class="grow"></span></div>${colour('color', 'Colour')}</section>`;
   if (it.type === 'rect' || it.type === 'ellipse') h += `<section><h3>Appearance</h3>${colour('fill', 'Fill', true)}${colour('stroke', 'Stroke', true)}${n('strokeWidth', 'Stroke width', 0.5)}</section>`;
   if (it.type === 'line') h += `<section><h3>Appearance</h3>${colour('stroke', 'Colour')}${n('strokeWidth', 'Width', 0.5)}</section>`;
@@ -471,6 +482,7 @@ function props() {
   h += `${it.type === 'redact' ? '' : `<section><h3>Opacity</h3><div class="range"><input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"><output>${Math.round(it.opacity * 100)}%</output></div></section>`}
     <section class="acts2"><button data-act="dup" title="Duplicate">${ic('copy')}Duplicate</button><button data-act="front" title="Bring to front">${ic('front')}To front</button><button class="danger" data-act="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;
   p.innerHTML = h;
+  if ($('fpb')) $('fpb').onclick = () => openFontPicker($('fpb'), it);
   p.querySelectorAll('[data-k]').forEach(el => {
     el.onfocus = () => pushUndo();
     el.oninput = () => {
@@ -536,6 +548,34 @@ $('tr').onclick = () => setPanel('r', document.querySelector('main').classList.c
 let lastW = innerWidth;
 addEventListener('resize', () => { if ((lastW >= 1000) !== (innerWidth >= 1000) || (lastW >= 760) !== (innerWidth >= 760)) { localStorage.removeItem('panel-l'); localStorage.removeItem('panel-r'); autoPanels(); } lastW = innerWidth; });
 autoPanels();
+
+// ---- Font picker ----
+function openFontPicker(anchor, it) {
+  document.querySelectorAll('.fpop').forEach(x => x.remove());
+  const pop = document.createElement('div'); pop.className = 'fpop';
+  pop.innerHTML = '<input type="search" placeholder="Search fonts…" aria-label="Search fonts"><div class="fl" role="listbox"></div>';
+  const list = pop.querySelector('.fl'), q = pop.querySelector('input');
+  const render = () => {
+    const t = q.value.trim().toLowerCase(), f = fontList.filter(x => x.family.toLowerCase().includes(t));
+    let html = '', sect = null;
+    for (const x of f) {
+      const s = x.standard ? 'Standard PDF fonts' : `Installed fonts`;
+      if (s !== sect) { html += `<div class="fh">${s}</div>`; sect = s; }
+      html += `<button type="button" role="option" class="fo${x.family === it.font ? ' on' : ''}" data-f="${esc(x.family)}" style="font-family:${esc(famCss(x.family))}">${esc(x.family)}</button>`;
+    }
+    list.innerHTML = html || '<div class="fh">No matching fonts</div>';
+    list.querySelectorAll('.fo').forEach(b => b.onclick = () => { pushUndo(); it.font = b.dataset.f; pop.remove(); paint(); queueSave(); props(); });
+    list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+  };
+  q.oninput = render; render();
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  pop.style.left = Math.max(4, Math.min(r.left, innerWidth - pop.offsetWidth - 4)) + 'px';
+  pop.style.top = Math.min(r.bottom + 4, innerHeight - pop.offsetHeight - 4) + 'px';
+  q.focus();
+  const close = e => { if (e.type === 'keydown' ? e.key === 'Escape' : !pop.contains(e.target)) { pop.remove(); removeEventListener('pointerdown', close, true); removeEventListener('keydown', close, true); } };
+  addEventListener('pointerdown', close, true); addEventListener('keydown', close, true);
+}
 
 // ---- Context menu ----
 let clip = null, cmPos = { x: 40, y: 40 };

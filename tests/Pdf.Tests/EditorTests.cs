@@ -147,6 +147,30 @@ public class EditorTests
     }
 
     [Fact]
+    public void Redact_removes_caption_through_editor_save()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "fixtures", "showcase.pdf");
+        var e = PdfEditor.Open(File.ReadAllBytes(path));
+        var page = PdfDocument.Load(e.Save(false)).Pages[0];
+        e.SetContentOverride(0, Redactor.Redact(page, [new Redactor.BoxRect(140, 700, 340, 30)]));
+        e.SetOverlay(0, []);
+        var text = System.Text.Encoding.Latin1.GetString(PdfDocument.Load(e.Save()).Pages[0].GetContents());
+        Assert.DoesNotContain("Vector", text);
+    }
+
+    [Fact]
+    public void Redact_removes_caption_from_showcase()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "fixtures", "showcase.pdf");
+        var page = PdfDocument.Load(File.ReadAllBytes(path)).Pages[0];
+        var (spans, _) = PdfRenderer.Analyze(page);
+        var cap = spans.First(s => s.Text.StartsWith("Vector"));
+        var outp = Redactor.Redact(page, [new Redactor.BoxRect(140, 700, 340, 30)]);
+        var text = System.Text.Encoding.Latin1.GetString(outp);
+        Assert.True(!text.Contains("Vector"), $"span y={cap.Y} size={cap.Size} x={cap.X}");
+    }
+
+    [Fact]
     public void Redact_survives_a_second_pass_through_the_editor()
     {
         var bytes = TestPdf.Build("BT /F1 12 Tf 10 100 Td (Secret) Tj ET", "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
