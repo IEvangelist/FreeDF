@@ -23,7 +23,7 @@ Typed `/GoToE` action metadata (12.6.4.4, Tables 204/205) exposes top-level `/F`
 
 JPX multi-range POC coverage now includes a reference fixture combining an initial PCRL layer with remaining CPRL layers across multiple precincts, pixel-identical to Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4). `JpxTests.MultiRangeSpatialPocFixtureContainsBothProgressionChanges` verifies both encoded ranges. POC-plus-PPM/PPT fixtures additionally verify reordered component samples and packed segments ending at complete packet-header boundaries. Continue with other range/order/packed-header combinations rather than treating these cases as exhaustive.
 
-Known fixture limitation: legacy `ppm-lossless.pdf` and `ppt-lossless.pdf` split their only packet header across packed marker segments, contrary to T.800 A.7.4/A.7.5 packet-header boundary requirements. The binaries remain unchanged pending a dedicated corrective slice; do not treat their successful decoding as proof of conforming segment boundaries. Replace/regenerate the legacy references and review decoder boundary validation separately from the valid `poc-ppm-lossless` and `poc-ppt-lossless` cases.
+The legacy `ppm-lossless.pdf` and `ppt-lossless.pdf` references have been replaced with three-component fixtures whose packed marker segments end at complete packet-header boundaries (T.800 A.7.4/A.7.5), retaining the original grayscale values in all RGB channels. Boundary assertions and exact source/OpenJPEG sample checks accompany the replacements; the POC packed fixtures are unchanged. Decoder rejection of arbitrary mid-header segment splits remains a separate validation follow-up.
 
 ## Rendering and content
 
