@@ -26,6 +26,7 @@ public sealed record PdfAction(
 {
     public PdfGoToAction? GoToDetails { get; init; }
     public PdfRemoteGoToAction? RemoteGoToDetails { get; init; }
+    public PdfEmbeddedGoToAction? EmbeddedGoToDetails { get; init; }
     public PdfUriAction? UriDetails { get; init; }
     public PdfNamedAction? NamedDetails { get; init; }
 }
@@ -86,6 +87,24 @@ public sealed record PdfRemoteGoToAction(
     bool? NewWindow,
     PdfDictionary Dictionary);
 
+/// <summary>
+/// Inert /GoToE metadata (ISO 32000-2:2020, 12.6.4.4, Table 204). Only references
+/// within the current PDF are dereferenced; no embedded content, target file, or destination is accessed.
+/// Missing or wrong-type entries are null and remain available in Dictionary.
+/// Dictionary and array contents are retained without conformance validation or target path traversal.
+/// </summary>
+/// <param name="FileSpecification">The optional /F string or file specification dictionary identifying the target's root document.</param>
+/// <param name="Destination">The required /D name, byte string, or explicit destination array in the target document.</param>
+/// <param name="Target">The /T target dictionary (Table 205), required when /F is absent, retained without resolving its entries or nested targets.</param>
+/// <param name="NewWindow">The optional /NewWindow flag. Null does not imply false; a viewer would use its preference.</param>
+/// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
+public sealed record PdfEmbeddedGoToAction(
+    PdfObject? FileSpecification,
+    PdfObject? Destination,
+    PdfDictionary? Target,
+    bool? NewWindow,
+    PdfDictionary Dictionary);
+
 public sealed record PdfXfaPacket(string? Name, PdfStream Stream);
 
 public static class SafeContentFeatures
@@ -93,7 +112,7 @@ public static class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection, with inert typed metadata for local go-to, remote go-to, URI and named actions.
+    /// Returns action dictionaries for inspection, with inert typed metadata for local, remote and embedded go-to, URI and named actions.
     /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
@@ -269,6 +288,7 @@ public static class SafeContentFeatures
         {
             GoToDetails = type == "GoTo" ? ReadGoToAction(f, action) : null,
             RemoteGoToDetails = type == "GoToR" ? ReadRemoteGoToAction(f, action) : null,
+            EmbeddedGoToDetails = type == "GoToE" ? ReadEmbeddedGoToAction(f, action) : null,
             UriDetails = type == "URI" ? ReadUriAction(f, action) : null,
             NamedDetails = type == "Named" ? ReadNamedAction(f, action) : null,
         });
@@ -302,6 +322,18 @@ public static class SafeContentFeatures
             f.Resolve(action.Get("URI")) as PdfString,
             f.Resolve(action.Get("IsMap")) is PdfBoolean isMap ? isMap.Value : null,
             action);
+
+    static PdfEmbeddedGoToAction ReadEmbeddedGoToAction(PdfFile f, PdfDictionary action)
+    {
+        var file = f.Resolve(action.Get("F"));
+        var destination = f.Resolve(action.Get("D"));
+        return new PdfEmbeddedGoToAction(
+            file is PdfString or PdfDictionary ? file : null,
+            destination is PdfName or PdfString or PdfArray ? destination : null,
+            f.Resolve(action.Get("T")) as PdfDictionary,
+            f.Resolve(action.Get("NewWindow")) is PdfBoolean newWindow ? newWindow.Value : null,
+            action);
+    }
 
     static PdfNamedAction ReadNamedAction(PdfFile f, PdfDictionary action) =>
         new(
