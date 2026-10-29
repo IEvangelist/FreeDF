@@ -28,11 +28,13 @@ PdfDocument? pristine = null; bool prepared = false;
 var texts = new Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)>();
 var objEdits = new Dictionary<int, Dictionary<int, ObjEdit>>();
 
+string? savePath = null; int savedVersion = 0;
+void MarkSaved() => savedVersion = version;
 void Reset(PdfEditor e)
 {
-    editor = e; items.Clear(); texts.Clear(); objEdits.Clear(); overlayBuilder = new OverlayBuilder(editor, assets, catalog); Changed();
+    editor = e; items.Clear(); texts.Clear(); objEdits.Clear(); overlayBuilder = new OverlayBuilder(editor, assets, catalog); Changed(); savePath = null; MarkSaved();
 }
-if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); }
+if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); savePath = Path.GetFullPath(initial); MarkSaved(); }
 
 // Callers hold the lock. Pristine is the document with no overlays and no text edits; text spans are extracted from it so operator indices stay stable.
 PdfDocument Pristine() => pristine ??= PdfDocument.Load(editor.Save(false, false));
@@ -160,7 +162,7 @@ app.MapGet("/api/state", () =>
     {
         var doc = editor.PageCount == 0 ? null : BaseSnap();
         var pages = doc?.Pages.Select((p, i) => new { index = i, id = editor.PageId(i), rotation = p.Rotate, x0 = p.CropBox.Left, top = p.CropBox.Top, width = p.CropBox.Width, height = p.CropBox.Height }) ?? [];
-        return Results.Json(new { version, fileName, pageCount = editor.PageCount, pages });
+        return Results.Json(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null });
     }
 });
 
@@ -255,8 +257,179 @@ app.MapGet("/api/download", () =>
     }
 });
 
+List<(int Page, ContentInterpreter.TextSpan S)>? findCache = null; int findVersion = -1;
+app.MapGet("/api/find", (string q, bool? cs) =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount == 0 || string.IsNullOrEmpty(q)) return Results.Json(Array.Empty<object>(), jsonOpts);
+        if (findCache is null || findVersion != version)
+        {
+            var doc = Snap(); findCache = [];
+            for (var i = 0; i < editor.PageCount; i++)
+                foreach (var s in PdfRenderer.ExtractText(doc.Pages[i])) if (!s.Vertical && !string.IsNullOrEmpty(s.Text)) findCache.Add((i, s));
+            findVersion = version;
+        }
+        var cmp = cs == true ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var hits = new List<object>();
+        foreach (var (page, s) in findCache)
+        {
+            for (var at = s.Text.IndexOf(q, cmp); at >= 0 && hits.Count < 2000; at = s.Text.IndexOf(q, at + q.Length, cmp))
+            {
+                var len = Math.Max(s.Text.Length, 1);
+                hits.Add(new { page, x = s.X + s.Width * at / len, y = s.Y, w = s.Width * q.Length / len, size = s.Size, angle = s.Angle });
+            }
+        }
+        return Results.Json(hits, jsonOpts);
+    }
+});
+
+app.MapPost("/api/close", () => { lock (gate) { Reset(PdfEditor.Create()); fileName = "document.pdf"; } return Results.Ok(); });
+
+app.MapPost("/api/new", (double? w, double? h) =>
+{
+    lock (gate) { Reset(PdfEditor.Open(Blank(w ?? 595.276, h ?? 841.89))); fileName = "Untitled.pdf"; savePath = null; MarkSaved(); }
+    return Results.Ok();
+});
+app.MapPost("/api/blank/{at:int}", (int at, double? w, double? h) =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount > 0 && w is null) { var p = Snap().Pages[Math.Clamp(at - 1, 0, editor.PageCount - 1)]; w = p.CropBox.Width; h = p.CropBox.Height; }
+        editor.ImportPages(PdfDocument.Load(Blank(w ?? 595.276, h ?? 841.89)), null, Math.Clamp(at, 0, editor.PageCount));
+        Changed();
+    }
+    return Results.Ok();
+});
+app.MapPost("/api/duplicate/{i:int}", (int i) =>
+{
+    lock (gate) { editor.ImportPages(Snap(), [i], i + 1); Changed(); }
+    return Results.Ok();
+});
+
+string[] infoKeys = ["Title", "Author", "Subject", "Keywords", "Creator", "Producer"];
+app.MapGet("/api/info", () =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount == 0) return Results.Json(new { }, jsonOpts);
+        var d = BaseSnap();
+        var o = infoKeys.ToDictionary(k => k.ToLowerInvariant(), k => d.Info(k) ?? "");
+        o["pages"] = editor.PageCount.ToString(); o["file"] = fileName;
+        return Results.Json(o, jsonOpts);
+    }
+});
+app.MapPost("/api/info", async (HttpRequest r) =>
+{
+    var d = await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<string, string>>(r.Body, jsonOpts) ?? [];
+    lock (gate) { foreach (var k in infoKeys) if (d.TryGetValue(k.ToLowerInvariant(), out var v)) editor.SetInfo(k, v ?? ""); Changed(); }
+    return Results.Ok();
+});
+
+// Writes the current document back to the file it was opened from; falls back to a download when there is none.
+app.MapPost("/api/save", () =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount == 0) return Results.NotFound();
+        if (savePath is null) return Results.Json(new { saved = false }, jsonOpts);
+        Snap(); File.WriteAllBytes(savePath, snapshotBytes!); MarkSaved();
+        return Results.Json(new { saved = true, path = savePath }, jsonOpts);
+    }
+});
+app.MapPost("/api/saved", (string? name) => { lock (gate) { MarkSaved(); if (!string.IsNullOrWhiteSpace(name)) fileName = name; } return Results.Ok(); });
+
+app.MapGet("/api/export/pdf", (string? pages, string? name) =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount == 0) return Results.NotFound();
+        var doc = Snap();
+        var idx = ParseRange(pages, editor.PageCount);
+        if (idx.Count == 0) return Results.BadRequest("No pages in range");
+        var bytes = idx.Count == editor.PageCount && idx.SequenceEqual(Enumerable.Range(0, idx.Count)) ? snapshotBytes! : PdfEditor.Extract(doc, idx).Save();
+        return Results.File(bytes, "application/pdf", name ?? "export-" + fileName);
+    }
+});
+app.MapGet("/api/export/png", (int page, int? dpi) =>
+{
+    lock (gate)
+    {
+        if (page < 0 || page >= editor.PageCount) return Results.NotFound();
+        return Results.File(PdfRenderer.RenderPage(Snap().Pages[page], Math.Clamp(dpi ?? 150, 16, 600)).ToPng(), "image/png", $"{Path.GetFileNameWithoutExtension(fileName)}-{page + 1}.png");
+    }
+});
+app.MapGet("/api/export/zip", (int? dpi) =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount == 0) return Results.NotFound();
+        var doc = Snap(); var ms = new MemoryStream();
+        using (var z = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+            for (var i = 0; i < editor.PageCount; i++)
+            {
+                using var s = z.CreateEntry($"page-{i + 1:000}.png", System.IO.Compression.CompressionLevel.NoCompression).Open();
+                s.Write(PdfRenderer.RenderPage(doc.Pages[i], Math.Clamp(dpi ?? 150, 16, 600)).ToPng());
+            }
+        return Results.File(ms.ToArray(), "application/zip", $"{Path.GetFileNameWithoutExtension(fileName)}-pages.zip");
+    }
+});
+app.MapGet("/api/export/text", () =>
+{
+    lock (gate)
+    {
+        if (editor.PageCount == 0) return Results.NotFound();
+        var doc = Snap(); var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < editor.PageCount; i++)
+        {
+            if (i > 0) sb.Append('\f');
+            double lastY = double.NaN, lastEnd = 0;
+            foreach (var s in PdfRenderer.ExtractText(doc.Pages[i]).OrderBy(s => Math.Round(s.Y / 3)).ThenBy(s => s.X))
+            {
+                if (!double.IsNaN(lastY) && Math.Abs(s.Y - lastY) > 3) { sb.AppendLine(); lastEnd = 0; }
+                else if (!double.IsNaN(lastY) && s.X - lastEnd > s.Size * 0.15) sb.Append(' ');
+                sb.Append(s.Text); lastY = s.Y; lastEnd = s.X + s.Width;
+            }
+            sb.AppendLine();
+        }
+        return Results.File(new System.Text.UTF8Encoding(false).GetBytes(sb.ToString()), "text/plain; charset=utf-8", Path.GetFileNameWithoutExtension(fileName) + ".txt");
+    }
+});
+
 Console.WriteLine($"PDF editor running at http://localhost:{port}");
 app.Run();
+
+static byte[] Blank(double w, double h)
+{
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    string[] objs =
+    [
+        "<</Type/Catalog/Pages 2 0 R>>", "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        string.Create(inv, $"<</Type/Page/Parent 2 0 R/MediaBox[0 0 {w:0.###} {h:0.###}]/Resources<<>>>>"),
+    ];
+    var sb = new System.Text.StringBuilder("%PDF-2.0\n"); var offs = new List<int>();
+    for (var i = 0; i < objs.Length; i++) { offs.Add(sb.Length); sb.Append($"{i + 1} 0 obj\n{objs[i]}\nendobj\n"); }
+    var xref = sb.Length;
+    sb.Append($"xref\n0 {objs.Length + 1}\n0000000000 65535 f \n");
+    foreach (var o in offs) sb.Append($"{o:0000000000} 00000 n \n");
+    sb.Append($"trailer\n<</Size {objs.Length + 1}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n");
+    return System.Text.Encoding.ASCII.GetBytes(sb.ToString());
+}
+
+// "1-3,5" -> zero-based indices; blank means all pages.
+static List<int> ParseRange(string? s, int count)
+{
+    if (string.IsNullOrWhiteSpace(s)) return Enumerable.Range(0, count).ToList();
+    var r = new List<int>();
+    foreach (var part in s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        var ab = part.Split('-', 2, StringSplitOptions.TrimEntries);
+        if (!int.TryParse(ab[0], out var a)) continue;
+        var b = ab.Length == 2 ? (int.TryParse(ab[1], out var bb) ? bb : count) : a;
+        for (var p = Math.Min(a, b); p <= Math.Max(a, b); p++) if (p >= 1 && p <= count) r.Add(p - 1);
+    }
+    return r;
+}
 
 static string Hex(RgbColor c) => $"#{(int)Math.Round(c.R * 255):x2}{(int)Math.Round(c.G * 255):x2}{(int)Math.Round(c.B * 255):x2}";
 

@@ -22,6 +22,15 @@
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V4h10v5M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v6H7z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-fullx" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-fitw" viewBox="0 0 24 24"><path d="M3 5v14M21 5v14M7 12h10M7 12l3-3M7 12l3 3M17 12l-3-3M17 12l-3 3"/></symbol>
+  <symbol id="i-fitp" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="1.5"/><path d="M9 8h6M9 12h6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-zoomin" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-zoomout" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -40,8 +49,8 @@
   <div class="brand"><span class="logo">C#</span><strong>PDF Editor</strong></div>
   <div class="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="pages"></span></div>
   <div class="group">
-    <label class="btn" title="Open a PDF"><svg class="i"><use href="#i-open"/></svg><span class="lbl">Open</span><input id="open" type="file" accept="application/pdf" hidden></label>
-    <label class="btn" title="Append pages from another PDF"><svg class="i"><use href="#i-merge"/></svg><span class="lbl">Merge</span><input id="merge" type="file" accept="application/pdf" hidden></label>
+    <button id="fileBtn" title="File menu" aria-haspopup="menu"><svg class="i"><use href="#i-open"/></svg><span class="lbl">File</span><svg class="i"><use href="#i-down"/></svg></button>
+    <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" hidden>
   </div>
   <span class="sp"></span>
   <div class="group">
@@ -51,6 +60,11 @@
     <button id="title" class="icon" title="Set document title"><svg class="i"><use href="#i-tag"/></svg></button>
   </div>
   <span class="sp"></span>
+  <div class="group">
+    <button id="pr" class="icon" title="Print (Ctrl+P)"><svg class="i"><use href="#i-print"/></svg></button>
+    <button id="fb" class="icon" title="Find (Ctrl+F)"><svg class="i"><use href="#i-search"/></svg></button>
+    <button id="fs" class="icon" title="Full screen (F11)"><svg class="i"><use href="#i-full"/></svg></button>
+  </div>
   <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg><span class="lbl">Download</span></button>
   <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
 </header>
@@ -70,9 +84,24 @@
       <span class="grow"></span>
       <button id="prev" title="Show the real rendered output"><svg class="i"><use href="#i-eye"/></svg>Preview</button>
       <span class="sp"></span>
-      <div class="group">
-        <button id="zo" class="icon" title="Zoom out"><svg class="i"><use href="#i-zoomout"/></svg></button><span id="zv">100%</span><button id="zi" class="icon" title="Zoom in"><svg class="i"><use href="#i-zoomin"/></svg></button>
+      <div class="group" id="nav">
+        <button id="pp" class="icon" title="Previous page (PageUp)"><svg class="i"><use href="#i-up"/></svg></button>
+        <input id="pn" type="text" inputmode="numeric" aria-label="Page number" title="Go to page"><span id="pt">/ 0</span>
+        <button id="np" class="icon" title="Next page (PageDown)"><svg class="i"><use href="#i-down"/></svg></button>
       </div>
+      <span class="sp"></span>
+      <div class="group">
+        <button id="fw" class="icon" title="Fit width (Ctrl+9)"><svg class="i"><use href="#i-fitw"/></svg></button>
+        <button id="fp" class="icon" title="Fit page (Ctrl+0)"><svg class="i"><use href="#i-fitp"/></svg></button>
+        <button id="zo" class="icon" title="Zoom out (Ctrl+-)"><svg class="i"><use href="#i-zoomout"/></svg></button><button id="zv" title="Zoom presets (Ctrl+1 = 100%)">100%</button><button id="zi" class="icon" title="Zoom in (Ctrl++)"><svg class="i"><use href="#i-zoomin"/></svg></button>
+      </div>
+    </div>
+    <div id="findbar" hidden>
+      <svg class="i"><use href="#i-search"/></svg><input id="fq" placeholder="Find in document" autocomplete="off"><span id="fc"></span>
+      <button id="fcs" class="icon" title="Match case">Aa</button>
+      <button id="fpv" class="icon" title="Previous (Shift+Enter)"><svg class="i"><use href="#i-up"/></svg></button>
+      <button id="fnx" class="icon" title="Next (Enter)"><svg class="i"><use href="#i-down"/></svg></button>
+      <button id="fx" class="icon" title="Close (Esc)"><svg class="i"><use href="#i-close"/></svg></button>
     </div>
     <div id="view"><div id="empty"><svg class="i"><use href="#i-file"/></svg><strong>No document open</strong><span>Open a PDF or drop one here.</span></div></div>
   </div>
@@ -81,7 +110,7 @@
 <footer><span id="status">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
 <script>
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
-let items = [], cur = null, tool = 'select', zoom = 1, preview = false, undo = [], saveT = 0, editing = false;
+let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
 const $ = id => document.getElementById(id);
 const post = (u, body) => fetch(u, { method: 'POST', body }).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); });
 const status = t => $('status').textContent = t;
@@ -115,7 +144,7 @@ function convertSpan(s) {
 async function refresh() {
   await flush();
   state = await (await fetch('/api/state')).json();
-  $('name').textContent = state.pageCount ? state.fileName : 'No document';
+  $('name').textContent = state.pageCount ? state.fileName + (state.dirty ? ' •' : '') : 'No document';
   $('pages').textContent = state.pageCount ? `${state.pageCount} page${state.pageCount === 1 ? '' : 's'}` : '';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
   const t = $('thumbs'); t.innerHTML = '';
@@ -158,8 +187,9 @@ function build() {
   const p = state.pages[sel], v = $('view'), r = p.rotation;
   const swap = r === 90 || r === 270;
   const w0 = swap ? p.height : p.width, h0 = swap ? p.width : p.height;
-  const fit = Math.min((v.clientWidth - 48) / w0, (v.clientHeight - 48) / h0);
-  S = Math.max(fit, 0.2) * zoom;
+  const fitP = Math.max(Math.min((v.clientWidth - 48) / w0, (v.clientHeight - 48) / h0), 0.2);
+  if (fitMode === 'width') zoom = Math.max((v.clientWidth - 48) / w0, 0.2) / fitP;
+  S = fitP * zoom;
   const dw = w0 * S, dh = h0 * S, Lw = p.width * S, Lh = p.height * S;
   geom = { r, dw, dh, Lw, Lh };
   const dpi = Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))));
@@ -167,7 +197,7 @@ function build() {
   const tf = { 0: '', 90: `translate(${dw}px,0) rotate(90deg)`, 180: `translate(${dw}px,${dh}px) rotate(180deg)`, 270: `translate(0,${dh}px) rotate(270deg)` }[r] ?? '';
   const layer = $('layer'); layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
   layer.onpointerdown = layerDown;
-  $('zv').textContent = Math.round(zoom * 100) + '%';
+  $('zv').textContent = Math.round(S * 72 / 96 * 100) + '%'; fitP0 = fitP; navUpdate();
   paint(); props();
 }
 
@@ -180,6 +210,7 @@ function toLayer(cx, cy) {
 function paint() {
   const layer = $('layer'); if (!layer) return;
   layer.innerHTML = '';
+  paintFind(layer);
   if (tool === 'select') {
     for (const o of objs) {
       if (o.edit?.delete) continue;
@@ -448,6 +479,7 @@ async function flush() {
   if (okey() !== origKey) { origKey = okey(); const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now()); }
   const th = document.querySelectorAll('.thumb img')[i];
   if (th) th.src = `/api/page/${i}.png?dpi=40&t=${Date.now()}`;
+  refreshDirty();
 }
 
 function props() {
@@ -514,8 +546,8 @@ $('del').onclick = () => state.pageCount && confirm('Delete this page?') && act(
 $('title').onclick = () => { const t = prompt('Document title'); if (t) act(() => post('/api/title?t=' + encodeURIComponent(t))); };
 $('dl').onclick = async () => { if (state.pageCount) { await flush(); location.href = '/api/download'; } };
 document.querySelectorAll('#tools [data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
-$('zi').onclick = () => { zoom = Math.min(4, zoom * 1.25); state.pageCount && build(); };
-$('zo').onclick = () => { zoom = Math.max(0.25, zoom / 1.25); state.pageCount && build(); };
+$('zi').onclick = () => zoomBy(1.25);
+$('zo').onclick = () => zoomBy(1 / 1.25);
 $('prev').onclick = async () => { await flush(); preview = !preview; $('prev').classList.toggle('on', preview); state.version++; build(); };
 $('img').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f || !state.pageCount) return;
@@ -527,6 +559,204 @@ $('img').onchange = async e => {
   cur = { id: crypto.randomUUID(), type: 'image', x: 40, y: 40, w, h: w * a.h / a.w, text: '', font: 'Helvetica', size: 12, bold: false, italic: false, color: '#000000', fill: '', stroke: '', strokeWidth: 0, opacity: 1, asset: a.id, x2: 0, y2: 0 };
   items.push(cur); paint(); props(); queueSave();
 };
+// ---- Navigation, zoom, find, print, full screen, file menu ----
+async function refreshDirty() {
+  const s = await (await fetch('/api/state')).json(); state.dirty = s.dirty; state.canSave = s.canSave; state.fileName = s.fileName;
+  $('name').textContent = s.pageCount ? s.fileName + (s.dirty ? ' •' : '') : 'No document';
+}
+function navUpdate() {
+  $('pn').value = state.pageCount ? sel + 1 : ''; $('pt').textContent = '/ ' + (state.pageCount || 0);
+  $('pp').disabled = sel <= 0; $('np').disabled = sel >= state.pageCount - 1;
+}
+async function goPage(i) {
+  if (!state.pageCount) return;
+  i = Math.max(0, Math.min(state.pageCount - 1, i)); if (i === sel) { navUpdate(); return; }
+  await flush(); sel = i; await select();
+}
+function zoomBy(f) { fitMode = null; zoom = Math.max(0.1, Math.min(8, zoom * f)); state.pageCount && build(); }
+function zoomTo(pct) { fitMode = null; zoom = (pct / 100 * 96 / 72) / fitP0; state.pageCount && build(); }
+function fitPage() { fitMode = 'page'; zoom = 1; state.pageCount && build(); }
+function fitWidth() { fitMode = 'width'; state.pageCount && build(); }
+$('pp').onclick = () => goPage(sel - 1); $('np').onclick = () => goPage(sel + 1);
+$('pn').onkeydown = e => { if (e.key === 'Enter') { goPage(parseInt($('pn').value) - 1); $('pn').blur(); } e.stopPropagation(); };
+$('pn').onfocus = () => $('pn').select(); $('pn').onblur = navUpdate;
+$('fw').onclick = fitWidth; $('fp').onclick = fitPage;
+$('zv').onclick = () => {
+  const r = $('zv').getBoundingClientRect(), m = buildMenu([
+    { label: 'Fit page', key: mod + '0', run: fitPage }, { label: 'Fit width', key: mod + '9', run: fitWidth }, { label: 'Actual size', key: mod + '1', run: () => zoomTo(100) }, '-',
+    ...[50, 75, 100, 125, 150, 200, 300, 400].map(p => ({ label: p + '%', run: () => zoomTo(p) }))]);
+  openMenuAt(m, r.left, r.bottom + 4);
+};
+function openMenuAt(m, x, y) {
+  closeMenu(); document.body.appendChild(m);
+  m.style.left = Math.max(4, Math.min(x, innerWidth - m.offsetWidth - 4)) + 'px'; m.style.top = Math.max(4, Math.min(y, innerHeight - m.offsetHeight - 4)) + 'px';
+  m.querySelector('.cm-i:not(:disabled)')?.focus();
+}
+$('view').addEventListener('wheel', e => { if (e.ctrlKey && state.pageCount) { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); } }, { passive: false });
+
+// Full screen
+const toggleFull = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
+$('fs').onclick = toggleFull;
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement; $('fs').innerHTML = ic(on ? 'fullx' : 'full'); $('fs').title = on ? 'Exit full screen (Esc)' : 'Full screen (F11)';
+  state.pageCount && build();
+});
+
+// Find
+let hits = [], hitI = -1, findCase = false, findT = 0;
+function paintFind(layer) {
+  hits.forEach((h, i) => {
+    if (h.page !== sel) return;
+    const d = document.createElement('div'); d.className = 'hit' + (i === hitI ? ' cur' : '');
+    d.style.left = h.x * S + 'px'; d.style.top = (h.y - 0.92 * h.size) * S + 'px'; d.style.width = Math.max(h.w, 2) * S + 'px'; d.style.height = 1.15 * h.size * S + 'px';
+    layer.appendChild(d);
+  });
+}
+async function runFind() {
+  const q = $('fq').value;
+  hits = q ? await (await fetch(`/api/find?q=${encodeURIComponent(q)}&cs=${findCase}`)).json() : [];
+  hitI = hits.length ? Math.max(0, hits.findIndex(h => h.page >= sel)) : -1;
+  findShow();
+}
+async function findShow() {
+  $('fc').textContent = hits.length ? `${hitI + 1} of ${hits.length}${hits.length >= 2000 ? '+' : ''}` : $('fq').value ? 'No results' : '';
+  if (hitI >= 0 && hits[hitI].page !== sel) await goPage(hits[hitI].page); else paint();
+}
+const findStep = d => { if (!hits.length) return; hitI = (hitI + d + hits.length) % hits.length; findShow(); };
+function openFind() { $('findbar').hidden = false; $('fq').focus(); $('fq').select(); }
+function closeFind() { $('findbar').hidden = true; hits = []; hitI = -1; $('fc').textContent = ''; paint(); }
+$('fb').onclick = () => $('findbar').hidden ? openFind() : closeFind();
+$('fx').onclick = closeFind; $('fnx').onclick = () => findStep(1); $('fpv').onclick = () => findStep(-1);
+$('fcs').onclick = () => { findCase = !findCase; $('fcs').classList.toggle('on', findCase); runFind(); };
+$('fq').oninput = () => { clearTimeout(findT); findT = setTimeout(runFind, 150); };
+$('fq').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); if (hitI < 0 || e.isComposing) return runFind(); findStep(e.shiftKey ? -1 : 1); } else if (e.key === 'Escape') closeFind(); };
+
+// Print: renders every page at 150 dpi into a hidden frame and invokes the browser print dialog.
+async function printDoc() {
+  if (!state.pageCount) return; await flush();
+  const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
+  const imgs = state.pages.map((p, i) => {
+    const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
+    return `<section style="width:${w}pt;height:${h}pt"><img src="${location.origin}/api/page/${i}.png?dpi=150&t=${Date.now()}"></section>`;
+  }).join('');
+  f.srcdoc = `<!doctype html><style>@page{margin:0}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{width:100%;height:100%;display:block}</style>${imgs}`;
+  f.onload = async () => {
+    const d = f.contentDocument; await Promise.all([...d.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; })));
+    f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => f.remove(), 60000);
+  };
+  document.body.appendChild(f);
+}
+$('pr').onclick = printDoc;
+
+// Modal dialogs
+function modal(title, body, okLabel, onOk) {
+  document.querySelector('.mdl')?.remove();
+  const o = document.createElement('div'); o.className = 'mdl';
+  o.innerHTML = `<div class="dlg" role="dialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><div class="dbody">${body}</div><div class="dfoot"><button class="dc">Cancel</button><button class="primary dok">${esc(okLabel)}</button></div></div>`;
+  const close = () => o.remove();
+  o.querySelector('.dc').onclick = close; o.onpointerdown = e => { if (e.target === o) close(); };
+  const ok = async () => { try { if (await onOk(o) !== false) close(); } catch (e) { status(e.message); } };
+  o.querySelector('.dok').onclick = ok;
+  o.onkeydown = e => { if (e.key === 'Escape') close(); else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); ok(); } e.stopPropagation(); };
+  document.body.appendChild(o); (o.querySelector('input,textarea,select'))?.focus();
+}
+const PAGE_SIZES = { A4: [595.276, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.276], Letter: [612, 792], Legal: [612, 1008], Tabloid: [792, 1224] };
+const confirmDiscard = () => !state.dirty || confirm('You have unsaved changes. Discard them?');
+function newDoc() {
+  if (!confirmDiscard()) return;
+  modal('New document', `<label>Page size<select id="nps">${Object.keys(PAGE_SIZES).map(k => `<option>${k}</option>`).join('')}</select></label>
+    <label>Orientation<select id="nor"><option>Portrait</option><option>Landscape</option></select></label>`, 'Create', o => {
+    let [w, h] = PAGE_SIZES[o.querySelector('#nps').value]; if (o.querySelector('#nor').value === 'Landscape') [w, h] = [h, w];
+    return act(() => post(`/api/new?w=${w}&h=${h}`)).then(() => { sel = 0; });
+  });
+}
+function insertBlank(at) { return act(() => post(`/api/blank/${at}`)).then(() => goPage(at)); }
+function docProps() {
+  fetch('/api/info').then(r => r.json()).then(d => {
+    const f = (k, l) => `<label>${l}<input data-i="${k}" value="${esc(d[k] ?? '')}"></label>`;
+    modal('Document properties', f('title', 'Title') + f('author', 'Author') + f('subject', 'Subject') + f('keywords', 'Keywords') + f('creator', 'Creator') + f('producer', 'Producer')
+      + `<p class="dnote">${esc(d.file)} · ${d.pages} page${d.pages === '1' ? '' : 's'}</p>`, 'Apply', o => {
+      const b = {}; o.querySelectorAll('[data-i]').forEach(e => b[e.dataset.i] = e.value);
+      return act(() => post('/api/info', JSON.stringify(b)));
+    });
+  });
+}
+const dlUrl = u => { const a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); };
+async function saveDoc() {
+  if (!state.pageCount) return; await flush();
+  const r = await (await fetch('/api/save', { method: 'POST' })).json();
+  if (r.saved) { await refresh(); status('Saved to ' + r.path); } else saveAs();
+}
+function saveAs() {
+  if (!state.pageCount) return;
+  flush().then(() => modal('Save as', `<label>File name<input id="sn" value="${esc(state.fileName.replace(/^edited-/, ''))}"></label><p class="dnote">The PDF is downloaded to your browser's download folder.</p>`, 'Save', async o => {
+    let n = o.querySelector('#sn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
+    dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refresh();
+  }));
+}
+function exportPdf() {
+  if (!state.pageCount) return;
+  flush().then(() => modal('Export pages as PDF', `<label>Pages<input id="er" placeholder="All, or e.g. 1-3, 5" value="${sel + 1}"></label><p class="dnote">Leave blank to export every page.</p>`, 'Export',
+    o => { dlUrl(`/api/export/pdf?pages=${encodeURIComponent(o.querySelector('#er').value)}&name=export.pdf`); }));
+}
+function exportImages() {
+  if (!state.pageCount) return;
+  flush().then(() => modal('Export as images', `<label>Resolution<select id="ed"><option value="96">96 dpi (screen)</option><option value="150" selected>150 dpi</option><option value="300">300 dpi (print)</option></select></label>
+    <label>Scope<select id="es"><option value="p">Current page (PNG)</option><option value="a">All pages (ZIP)</option></select></label>`, 'Export', o => {
+    const dpi = o.querySelector('#ed').value; dlUrl(o.querySelector('#es').value === 'p' ? `/api/export/png?page=${sel}&dpi=${dpi}` : `/api/export/zip?dpi=${dpi}`);
+  }));
+}
+const exportText = () => state.pageCount && flush().then(() => dlUrl('/api/export/text'));
+async function closeDoc() { if (!confirmDiscard()) return; await act(() => post('/api/close')); }
+const pickFile = id => { const i = $(id); i.value = ''; i.click(); };
+function openFileMenu() {
+  const has = !!state.pageCount, r = $('fileBtn').getBoundingClientRect();
+  openMenuAt(buildMenu([
+    { label: 'New…', key: 'Alt+N', run: newDoc },
+    { label: 'Open…', key: mod + 'O', run: () => confirmDiscard() && pickFile('open') },
+    '-',
+    { label: 'Save', key: mod + 'S', disabled: !has, run: saveDoc },
+    { label: 'Save as…', key: mod + 'Shift+S', disabled: !has, run: saveAs },
+    '-',
+    { label: 'Insert', disabled: !has, sub: [
+      { label: 'Blank page before current', run: () => insertBlank(sel) }, { label: 'Blank page after current', run: () => insertBlank(sel + 1) },
+      { label: 'Duplicate current page', run: () => act(() => post(`/api/duplicate/${sel}`)).then(() => goPage(sel + 1)) }, '-',
+      { label: 'Pages from another PDF…', run: () => pickFile('merge') }] },
+    { label: 'Export', disabled: !has, sub: [
+      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }] },
+    '-',
+    { label: 'Print…', key: mod + 'P', disabled: !has, run: printDoc },
+    { label: 'Document properties…', disabled: !has, run: docProps },
+    '-',
+    { label: 'Close document', disabled: !has, run: closeDoc },
+  ]), r.left, r.bottom + 4);
+}
+$('fileBtn').onclick = openFileMenu;
+$('dl').onclick = saveAs; $('dl').title = 'Save a copy (download)';
+addEventListener('beforeunload', e => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+// Global shortcuts (captured so they run before the editing shortcuts below)
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase(), typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || editing || document.querySelector('.mdl');
+  const m = e.ctrlKey || e.metaKey;
+  if (m && k === 'f') { e.preventDefault(); openFind(); return; }
+  if (m && k === 'p') { e.preventDefault(); printDoc(); return; }
+  if (m && k === 's') { e.preventDefault(); e.shiftKey ? saveAs() : saveDoc(); return; }
+  if (m && k === 'o') { e.preventDefault(); confirmDiscard() && pickFile('open'); return; }
+  if (e.altKey && k === 'n') { e.preventDefault(); newDoc(); return; }
+  if (m && k === '0') { e.preventDefault(); fitPage(); return; }
+  if (m && k === '9') { e.preventDefault(); fitWidth(); return; }
+  if (m && k === '1') { e.preventDefault(); zoomTo(100); return; }
+  if (m && (k === '=' || k === '+')) { e.preventDefault(); zoomBy(1.25); return; }
+  if (m && k === '-') { e.preventDefault(); zoomBy(1 / 1.25); return; }
+  if (e.key === 'F3' || (m && k === 'g')) { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); return; }
+  if (typing || cur || curObj) return;
+  if (e.key === 'PageDown' || e.key === 'ArrowRight') { e.preventDefault(); goPage(sel + 1); }
+  else if (e.key === 'PageUp' || e.key === 'ArrowLeft') { e.preventDefault(); goPage(sel - 1); }
+  else if (e.key === 'Home') { e.preventDefault(); goPage(0); }
+  else if (e.key === 'End') { e.preventDefault(); goPage(state.pageCount - 1); }
+}, true);
+
 addEventListener('resize', () => state.pageCount && build());
 addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); document.body.id = 'drop'; } });
 addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''; });
