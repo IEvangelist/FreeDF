@@ -5,7 +5,7 @@ namespace PortableDocument.Content;
 
 /// <summary>
 /// ICC profile reader/evaluator (ICC.1 v2/v4) converting device values to sRGB. Supports matrix/TRC RGB, gray TRC, and
-/// LUT profiles (lut8, lut16, lutAToB) for RGB/CMYK via the A2B0/A2B1 tag. PCS is D50 XYZ or Lab; output is sRGB (Bradford D50 → D65).
+/// LUT profiles (lut8, lut16, lutAToB) for RGB/CMYK via A2B0/A2B1/A2B2. PCS is D50 XYZ or Lab; output is sRGB (Bradford D50 → D65).
 /// Evaluation is allocation-free; CMYK/RGB LUT profiles bake a 17-point grid after enough calls to amortise the cost.
 /// </summary>
 public sealed class IccProfile
@@ -18,9 +18,18 @@ public sealed class IccProfile
     readonly Kind _kind;
     Curve[] _trc = [];
     float[] _m = new float[9]; // profile RGB -> linear sRGB
-    Lut? _lut;
-    float[]? _grid; int _gridN; int _calls;
+    readonly Transform[] _transforms = [new(), new(), new(), new()];
+    double[] _whiteScale = [1, 1, 1];
+    float[] _absoluteM = new float[9];
     const int GridPoints = 17;
+
+    sealed class Transform
+    {
+        public Lut? Lut;
+        public float[]? Grid;
+        public int Calls;
+        public readonly object Gate = new();
+    }
 
     // ---------------------------------------------------------------- curves
 
@@ -199,22 +208,44 @@ public sealed class IccProfile
         }
         static uint Sig(string s) => (uint)(s[0] << 24 | s[1] << 16 | s[2] << 8 | s[3]);
 
-        // LUT-based transform takes priority (as lcms does); required for CMYK.
-        foreach (var t in new[] { "A2B0", "A2B1" })
-            if (tags.TryGetValue(Sig(t), out var tg) && ReadLut(data, tg.Off, tg.Size, n, pcsLab, major) is { } lut)
+        // ICC.1:2022 8.10.2: requested A2B table, then A2B0, then matrix/TRC.
+        Lut? ReadTag(string name) => tags.TryGetValue(Sig(name), out var tag)
+            ? ReadLut(data, tag.Off, tag.Size, n, pcsLab, major) : null;
+        var perceptual = ReadTag("A2B0");
+        var relative = ReadTag("A2B1") ?? perceptual;
+        var saturation = ReadTag("A2B2") ?? perceptual;
+        IccProfile? Configure(IccProfile p)
+        {
+            p._transforms[(int)RenderingIntent.Perceptual].Lut = perceptual;
+            p._transforms[(int)RenderingIntent.RelativeColorimetric].Lut = relative;
+            p._transforms[(int)RenderingIntent.Saturation].Lut = saturation;
+            p._transforms[(int)RenderingIntent.AbsoluteColorimetric].Lut = relative;
+            // ICC.1:2022 6.3.2.2 (4)-(6): source media white / destination D50 media white.
+            // As in lcms _cmsReadMediaWhitePoint, v2 display profiles use D50.
+            if (!(major < 4 && cls == 0x6D6E7472) && tags.TryGetValue(Sig("wtpt"), out var wp)
+                && wp.Size >= 20 && BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(wp.Off)) == 0x58595A20)
             {
-                var p = new IccProfile(n, Kind.Lut) { _lut = lut };
-                p.DetectSrgb();
-                return p;
+                double[] d50 = [0.9642, 1, 0.8249];
+                for (var i = 0; i < 3; i++)
+                {
+                    var white = S15(data, wp.Off + 8 + 4 * i);
+                    if (!(white > 0)) return null;
+                    p._whiteScale[i] = white / d50[i];
+                }
             }
-        if (n == 4) return null;
+            p.DetectSrgb();
+            return p;
+        }
+        IccProfile? LutOnly() => relative is not null ? Configure(new IccProfile(n, Kind.Lut)) : null;
+        if (perceptual is not null && relative is not null && saturation is not null)
+            return Configure(new IccProfile(n, Kind.Lut));
+        if (n == 4) return LutOnly();
 
         if (n == 1)
         {
-            if (!tags.TryGetValue(Sig("kTRC"), out var k) || ReadCurve(d, k.Off, out var kc) < 0) return null;
+            if (!tags.TryGetValue(Sig("kTRC"), out var k) || ReadCurve(d, k.Off, out var kc) < 0) return LutOnly();
             var g = new IccProfile(1, Kind.Gray) { _trc = [kc!] };
-            g.DetectSrgb();
-            return g;
+            return Configure(g);
         }
 
         var curves = new Curve[3];
@@ -222,9 +253,9 @@ public sealed class IccProfile
         string[] cn = ["rTRC", "gTRC", "bTRC"], xn = ["rXYZ", "gXYZ", "bXYZ"];
         for (var i = 0; i < 3; i++)
         {
-            if (!tags.TryGetValue(Sig(cn[i]), out var c) || ReadCurve(d, c.Off, out var cv) < 0) return null;
+            if (!tags.TryGetValue(Sig(cn[i]), out var c) || ReadCurve(d, c.Off, out var cv) < 0) return LutOnly();
             curves[i] = cv!;
-            if (!tags.TryGetValue(Sig(xn[i]), out var x) || x.Size < 20 || BinaryPrimitives.ReadUInt32BigEndian(d[x.Off..]) != 0x58595A20) return null;
+            if (!tags.TryGetValue(Sig(xn[i]), out var x) || x.Size < 20 || BinaryPrimitives.ReadUInt32BigEndian(d[x.Off..]) != 0x58595A20) return LutOnly();
             for (var j = 0; j < 3; j++) xyz[j * 3 + i] = S15(d, x.Off + 8 + 4 * j); // column i = colorant i
         }
         var prof = new IccProfile(3, Kind.Matrix) { _trc = curves };
@@ -232,7 +263,12 @@ public sealed class IccProfile
         for (var r = 0; r < 3; r++)
             for (var c = 0; c < 3; c++)
                 prof._m[r * 3 + c] = (float)(XyzToRgb[r * 3] * xyz[c] + XyzToRgb[r * 3 + 1] * xyz[3 + c] + XyzToRgb[r * 3 + 2] * xyz[6 + c]);
-        prof.DetectSrgb();
+        if (Configure(prof) is null) return null;
+        for (var r = 0; r < 3; r++)
+            for (var c = 0; c < 3; c++)
+                prof._absoluteM[r * 3 + c] = (float)(XyzToRgb[r * 3] * prof._whiteScale[0] * xyz[c]
+                    + XyzToRgb[r * 3 + 1] * prof._whiteScale[1] * xyz[3 + c]
+                    + XyzToRgb[r * 3 + 2] * prof._whiteScale[2] * xyz[6 + c]);
         return prof;
     }
 
@@ -344,7 +380,7 @@ public sealed class IccProfile
         return EncodeTable[i] + (EncodeTable[i + 1] - EncodeTable[i]) * (p - i);
     }
 
-    static void PcsToSrgb(Pcs pcs, float p0, float p1, float p2, Span<float> rgb)
+    void PcsToSrgb(Pcs pcs, float p0, float p1, float p2, Span<float> rgb, RenderingIntent intent)
     {
         double X, Y, Z;
         if (pcs == Pcs.Xyz) { const double s = 65535.0 / 32768.0; X = p0 * s; Y = p1 * s; Z = p2 * s; }
@@ -360,43 +396,63 @@ public sealed class IccProfile
             static double Inv(double t) => t > 6.0 / 29 ? t * t * t : 3 * (6.0 / 29) * (6.0 / 29) * (t - 4.0 / 29);
             X = 0.9642 * Inv(fx); Y = Inv(fy); Z = 0.8249 * Inv(fz);
         }
+        XyzToSrgb(X, Y, Z, rgb, intent);
+    }
+
+    void XyzToSrgb(double X, double Y, double Z, Span<float> rgb, RenderingIntent intent)
+    {
+        if (intent == RenderingIntent.AbsoluteColorimetric)
+        {
+            X *= _whiteScale[0]; Y *= _whiteScale[1]; Z *= _whiteScale[2];
+        }
         var r = XyzToRgb[0] * X + XyzToRgb[1] * Y + XyzToRgb[2] * Z;
         var g = XyzToRgb[3] * X + XyzToRgb[4] * Y + XyzToRgb[5] * Z;
         var bl = XyzToRgb[6] * X + XyzToRgb[7] * Y + XyzToRgb[8] * Z;
         rgb[0] = Encode((float)r); rgb[1] = Encode((float)g); rgb[2] = Encode((float)bl);
     }
 
-    void EvalExact(ReadOnlySpan<double> c, Span<float> rgb)
+    void EvalExact(ReadOnlySpan<double> c, Span<float> rgb, RenderingIntent intent = RenderingIntent.RelativeColorimetric)
     {
+        if (_transforms[(int)intent].Lut is { } lut)
+        {
+            Span<float> p = stackalloc float[3];
+            lut.Eval(c, p);
+            PcsToSrgb(lut.Pcs, p[0], p[1], p[2], rgb, intent);
+            return;
+        }
         switch (_kind)
         {
             case Kind.Gray:
                 {
                     var y = _trc[0].Eval((float)Math.Clamp(c[0], 0, 1));
+                    if (intent == RenderingIntent.AbsoluteColorimetric)
+                    {
+                        XyzToSrgb(0.9642 * y, y, 0.8249 * y, rgb, intent);
+                        break;
+                    }
                     var e = Encode(y);
                     rgb[0] = rgb[1] = rgb[2] = e; break;
                 }
             case Kind.Matrix:
                 {
                     float r = _trc[0].Eval((float)Math.Clamp(c[0], 0, 1)), g = _trc[1].Eval((float)Math.Clamp(c[1], 0, 1)), b = _trc[2].Eval((float)Math.Clamp(c[2], 0, 1));
-                    rgb[0] = Encode(_m[0] * r + _m[1] * g + _m[2] * b);
-                    rgb[1] = Encode(_m[3] * r + _m[4] * g + _m[5] * b);
-                    rgb[2] = Encode(_m[6] * r + _m[7] * g + _m[8] * b);
+                    var m = intent == RenderingIntent.AbsoluteColorimetric ? _absoluteM : _m;
+                    rgb[0] = Encode(m[0] * r + m[1] * g + m[2] * b);
+                    rgb[1] = Encode(m[3] * r + m[4] * g + m[5] * b);
+                    rgb[2] = Encode(m[6] * r + m[7] * g + m[8] * b);
                     break;
                 }
             default:
                 {
-                    Span<float> p = stackalloc float[3];
-                    _lut!.Eval(c, p);
-                    PcsToSrgb(_lut.Pcs, p[0], p[1], p[2], rgb);
-                    break;
+                    throw new NotSupportedException($"ICC profile has no transform for {intent}.");
                 }
         }
     }
 
     void DetectSrgb()
     {
-        if (Components == 1 || Components == 4) { IsSrgb = false; return; }
+        if (_kind != Kind.Matrix || _transforms.Any(t => t.Lut is not null)
+            || _whiteScale.Any(s => Math.Abs(s - 1) > 0.0001)) { IsSrgb = false; return; }
         Span<float> o = stackalloc float[3];
         var ok = true;
         double[][] samples = [[0, 0, 0], [1, 1, 1], [0.5, 0.5, 0.5], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.2, 0.6, 0.9], [0.9, 0.4, 0.1]];
@@ -409,38 +465,54 @@ public sealed class IccProfile
     }
 
     public RgbColor ToSrgb(ReadOnlySpan<double> c)
+        => ToSrgb(c, RenderingIntent.RelativeColorimetric);
+
+    public RgbColor ToSrgb(ReadOnlySpan<double> c, RenderingIntent intent)
     {
+        if ((uint)intent > (uint)RenderingIntent.AbsoluteColorimetric) intent = RenderingIntent.RelativeColorimetric;
         if (IsSrgb) return new(Math.Clamp(c[0], 0, 1), Math.Clamp(c[1], 0, 1), Math.Clamp(c[2], 0, 1));
         Span<float> o = stackalloc float[3];
-        if (_kind == Kind.Lut && Components >= 3)
+        var transform = _transforms[(int)intent];
+        if (transform.Lut is not null && Components >= 3)
         {
-            var grid = _grid;
-            if (grid is null && ++_calls > 4096) { BuildGrid(); grid = _grid; }
+            var grid = System.Threading.Volatile.Read(ref transform.Grid);
+            if (grid is null && System.Threading.Interlocked.Increment(ref transform.Calls) > 4096)
+            {
+                lock (transform.Gate)
+                {
+                    grid = transform.Grid;
+                    if (grid is null)
+                    {
+                        grid = BuildGrid(intent);
+                        System.Threading.Volatile.Write(ref transform.Grid, grid);
+                    }
+                }
+            }
             if (grid is not null) { Lookup(grid, c, o); return new(o[0], o[1], o[2]); }
         }
-        EvalExact(c, o);
+        EvalExact(c, o, intent);
         return new(o[0], o[1], o[2]);
     }
 
-    void BuildGrid()
+    float[] BuildGrid(RenderingIntent intent)
     {
         var n = GridPoints; var comps = Components;
         var total = 1; for (var i = 0; i < comps; i++) total *= n;
         var g = new float[total * 3];
-        var inp = new double[comps]; Span<float> o = stackalloc float[3];
+        Span<double> inp = stackalloc double[comps]; Span<float> o = stackalloc float[3];
         for (var idx = 0; idx < total; idx++)
         {
             var t = idx;
             for (var d = comps - 1; d >= 0; d--) { inp[d] = (t % n) / (double)(n - 1); t /= n; }
-            EvalExact(inp, o);
+            EvalExact(inp, o, intent);
             g[idx * 3] = o[0]; g[idx * 3 + 1] = o[1]; g[idx * 3 + 2] = o[2];
         }
-        _gridN = n; _grid = g;
+        return g;
     }
 
     void Lookup(float[] grid, ReadOnlySpan<double> c, Span<float> o)
     {
-        var comps = Components; var n = _gridN;
+        var comps = Components; var n = GridPoints;
         Span<int> i0 = stackalloc int[4]; Span<float> fr = stackalloc float[4]; Span<int> stride = stackalloc int[4];
         var s = 1;
         for (var d = comps - 1; d >= 0; d--) { stride[d] = s; s *= n; }

@@ -131,11 +131,11 @@ public class IccTests
         Assert.Null(IccProfile.TryParse(bad));
     }
 
-    static RenderedPage RenderIcc(byte[] icc, int n, string content, string alternate = "")
+    static RenderedPage RenderIcc(byte[] icc, int n, string content, string alternate = "", string resources = "", string objects = "")
     {
         var data = Encoding.Latin1.GetString(icc);
         var obj = $"5 0 obj\n<< /N {n} /Length {data.Length} {alternate} >>\nstream\n{data}\nendstream\nendobj\n";
-        var pdf = TestPdf.Build(content, "/ColorSpace << /CS0 [/ICCBased 5 0 R] >>", obj, brokenXref: true);
+        var pdf = TestPdf.Build(content, "/ColorSpace << /CS0 [/ICCBased 5 0 R] >> " + resources, obj + objects, brokenXref: true);
         return DocumentRenderer.RenderPage(PdfDocument.Load(pdf).Pages[0], 72);
     }
 
@@ -166,6 +166,360 @@ public class IccTests
     }
 
     static PdfObject Object(string value) => new PdfLexer(Encoding.ASCII.GetBytes(value)).ReadObject()!;
+
+    static byte[] ConstantLabLut(int lightness)
+    {
+        var b = new List<byte>();
+        U32(b, Sig("mft2")); U32(b, 0);
+        b.AddRange([3, 3, 2, 0]);
+        foreach (var v in new double[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 }) S15(b, v);
+        U16(b, 2); U16(b, 2);
+        for (var i = 0; i < 3; i++) { U16(b, 0); U16(b, 65535); }
+        for (var i = 0; i < 8; i++)
+        {
+            U16(b, (int)Math.Round(lightness / 100.0 * 65280));
+            U16(b, 0x8000); U16(b, 0x8000);
+        }
+        for (var i = 0; i < 3; i++) { U16(b, 0); U16(b, 65535); }
+        return [.. b];
+    }
+
+    static byte[] IntentProfile(bool relative = true, bool saturation = true, bool dimWhite = false, int version = 4)
+    {
+        var tags = new List<(string, byte[])> { ("A2B0", ConstantLabLut(20)) };
+        if (relative) tags.Add(("A2B1", ConstantLabLut(50)));
+        if (saturation) tags.Add(("A2B2", ConstantLabLut(80)));
+        var scale = dimWhite ? 0.5 : 1;
+        tags.Add(("wtpt", Xyz(0.9642 * scale, scale, 0.8249 * scale)));
+        var profile = Profile("RGB ", "Lab ", [.. tags]);
+        profile[8] = (byte)version;
+        if (version >= 4) Encoding.ASCII.GetBytes("scnr").CopyTo(profile, 12);
+        return profile;
+    }
+
+    static void AssertIntentColor(int red, RenderingIntent intent) => Assert.InRange(red, intent switch
+    {
+        RenderingIntent.Perceptual => 47,
+        RenderingIntent.Saturation => 197,
+        _ => 118
+    }, intent switch
+    {
+        RenderingIntent.Perceptual => 49,
+        RenderingIntent.Saturation => 199,
+        _ => 120
+    });
+
+    [Theory]
+    [InlineData(RenderingIntent.Perceptual)]
+    [InlineData(RenderingIntent.RelativeColorimetric)]
+    [InlineData(RenderingIntent.Saturation)]
+    [InlineData(RenderingIntent.AbsoluteColorimetric)]
+    public void IntentTables_SelectRequestedTransform(RenderingIntent intent)
+    {
+        var profile = IccProfile.TryParse(IntentProfile())!;
+        Assert.False(profile.IsSrgb);
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, intent);
+        Assert.Equal(Round(profile.ToSrgb([0.3, 0.4, 0.5], RenderingIntent.RelativeColorimetric)),
+            Round(profile.ToSrgb([0.3, 0.4, 0.5])));
+    }
+
+    [Theory]
+    [InlineData(RenderingIntent.RelativeColorimetric)]
+    [InlineData(RenderingIntent.AbsoluteColorimetric)]
+    [InlineData(RenderingIntent.Saturation)]
+    public void MissingIntentTable_FallsBackToA2B0(RenderingIntent intent)
+    {
+        var profile = IccProfile.TryParse(IntentProfile(relative: false, saturation: false))!;
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, RenderingIntent.Perceptual);
+    }
+
+    [Fact]
+    public void MissingSaturationTable_DoesNotFallBackToRelative()
+    {
+        var profile = IccProfile.TryParse(IntentProfile(saturation: false))!;
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], RenderingIntent.Saturation)).R, RenderingIntent.Perceptual);
+    }
+
+    [Fact]
+    public void A2B1OnlyProfile_PreservesExistingRelativeSupport_WithoutInventingOtherTransforms()
+    {
+        var data = Profile("RGB ", "Lab ", ("A2B1", ConstantLabLut(50)));
+        var profile = IccProfile.TryParse(data)!;
+        Assert.NotNull(profile);
+        AssertIntentColor(Round(profile.ToSrgb([0.5, 0.5, 0.5])).R, RenderingIntent.RelativeColorimetric);
+        AssertIntentColor(Round(profile.ToSrgb([0.5, 0.5, 0.5], RenderingIntent.AbsoluteColorimetric)).R,
+            RenderingIntent.AbsoluteColorimetric);
+        Assert.Throws<NotSupportedException>(() => profile.ToSrgb([0.5, 0.5, 0.5], RenderingIntent.Perceptual));
+        Assert.Throws<NotSupportedException>(() => profile.ToSrgb([0.5, 0.5, 0.5], RenderingIntent.Saturation));
+    }
+
+    [Theory]
+    [InlineData(2, 118, 120)]
+    [InlineData(4, 84, 87)]
+    public void AbsoluteIntent_UsesRelativeTableAndMediaWhite_WithV2DisplayRule(int version, int low, int high)
+    {
+        var profile = IccProfile.TryParse(IntentProfile(dimWhite: true, version: version))!;
+        Assert.InRange(Round(profile.ToSrgb([0.5, 0.5, 0.5], RenderingIntent.AbsoluteColorimetric)).R, low, high);
+        AssertIntentColor(Round(profile.ToSrgb([0.5, 0.5, 0.5])).R, RenderingIntent.RelativeColorimetric);
+    }
+
+    [Fact]
+    public void IntentGrids_RemainIsolated_WhenSharedProfileAlternatesIntents()
+    {
+        var (file, space) = IccSpace(IntentProfile(dimWhite: true), 3);
+        var first = PdfColorSpace.Parse(file, space);
+        Assert.Same(first, PdfColorSpace.Parse(file, space));
+        var other = IccSpace(IntentProfile(dimWhite: true), 3);
+        var second = PdfColorSpace.Parse(other.File, other.Space);
+        RenderingIntent[] intents = [RenderingIntent.Saturation, RenderingIntent.AbsoluteColorimetric,
+            RenderingIntent.Perceptual, RenderingIntent.RelativeColorimetric];
+        var exact = intents.Select(i => Round(first.ToRgb([0.25, 0.5, 0.75], i))).ToArray();
+        for (var j = 0; j < intents.Length; j++)
+        {
+            for (var k = 0; k < 4100; k++) second.ToRgb([0.25, 0.5, 0.75], intents[j]);
+            for (var k = 0; k < intents.Length; k++)
+                Assert.Equal(exact[k], Round(first.ToRgb([0.25, 0.5, 0.75], intents[k])));
+        }
+    }
+
+    [Theory]
+    [InlineData("Perceptual", RenderingIntent.Perceptual)]
+    [InlineData("RelativeColorimetric", RenderingIntent.RelativeColorimetric)]
+    [InlineData("Saturation", RenderingIntent.Saturation)]
+    [InlineData("AbsoluteColorimetric", RenderingIntent.AbsoluteColorimetric)]
+    [InlineData("UnknownIntent", RenderingIntent.RelativeColorimetric)]
+    public void RenderingIntentOperator_AffectsPainting(string name, RenderingIntent expected)
+    {
+        var page = RenderIcc(IntentProfile(), 3,
+            $"/CS0 cs 0.5 0.5 0.5 sc /Perceptual ri /{name} ri 0 0 200 200 re f");
+        AssertIntentColor(Px(page, 100, 100).R, expected);
+    }
+
+    [Theory]
+    [InlineData("Saturation", RenderingIntent.Saturation)]
+    [InlineData("UnknownIntent", RenderingIntent.RelativeColorimetric)]
+    public void ExtGStateIntent_OverridesOperator_AndQRestoresIt(string name, RenderingIntent expected)
+    {
+        var page = RenderIcc(IntentProfile(), 3,
+            "/CS0 cs 0.5 0.5 0.5 sc /Perceptual ri q /G0 gs 0 0 100 200 re f Q 100 0 100 200 re f",
+            resources: $"/ExtGState << /G0 << /RI /{name} >> >>");
+        AssertIntentColor(Px(page, 50, 100).R, expected);
+        AssertIntentColor(Px(page, 150, 100).R, RenderingIntent.Perceptual);
+    }
+
+    [Fact]
+    public void RenderingIntentOperator_QRestoresIt_WithoutResettingColor()
+    {
+        var page = RenderIcc(IntentProfile(), 3,
+            "/CS0 cs 0.5 0.5 0.5 sc /Saturation ri q /Perceptual ri 0 0 100 200 re f Q 100 0 100 200 re f");
+        AssertIntentColor(Px(page, 50, 100).R, RenderingIntent.Perceptual);
+        AssertIntentColor(Px(page, 150, 100).R, RenderingIntent.Saturation);
+    }
+
+    [Theory]
+    [InlineData("", RenderingIntent.Saturation)]
+    [InlineData("/Intent /Perceptual", RenderingIntent.Perceptual)]
+    [InlineData("/Intent /UnknownIntent", RenderingIntent.RelativeColorimetric)]
+    public void ImageIntent_OverridesGraphicsState_WithoutLeaking(string entry, RenderingIntent expected)
+    {
+        var image = $"6 0 obj\n<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /CS0 {entry} /Length 3 >>\nstream\n@@@\nendstream\nendobj\n";
+        var page = RenderIcc(IntentProfile(), 3,
+            "/Saturation ri q 100 0 0 200 0 0 cm /Im0 Do Q /CS0 cs 0.5 0.5 0.5 sc 100 0 100 200 re f",
+            resources: "/XObject << /Im0 6 0 R >>", objects: image);
+        AssertIntentColor(Px(page, 50, 100).R, expected);
+        AssertIntentColor(Px(page, 150, 100).R, RenderingIntent.Saturation);
+    }
+
+    [Fact]
+    public void ImageDecoder_LegacyApiDefaultsToRelative()
+    {
+        var (file, space) = IccSpace(IntentProfile(), 3);
+        var dict = (PdfDictionary)Object("<< /Width 1 /Height 1 /BitsPerComponent 8 >>");
+        dict.Entries["ColorSpace"] = space;
+        var image = ImageDecoder.Decode(file, new PdfStream(dict, [128, 128, 128]),
+            (PdfDictionary)Object("<< >>"), out var mask, out var warning);
+        Assert.NotNull(image);
+        Assert.False(mask);
+        Assert.Null(warning);
+        AssertIntentColor(image!.Rgba[0], RenderingIntent.RelativeColorimetric);
+    }
+
+    [Theory]
+    [InlineData("Indexed")]
+    [InlineData("Separation")]
+    [InlineData("DeviceN")]
+    [InlineData("Pattern")]
+    public void WrapperColorSpaces_PropagateIntent(string kind)
+    {
+        var (file, icc) = IccSpace(IntentProfile(), 3);
+        var function = Object("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [1 1 1] /N 1 >>");
+        PdfObject[] args = kind switch
+        {
+            "Indexed" => [new PdfName(kind), icc, new PdfInteger(0), new PdfString([128, 128, 128])],
+            "Separation" => [new PdfName(kind), new PdfName("Spot"), icc, function],
+            "DeviceN" => [new PdfName(kind), new PdfArray([new PdfName("Spot")]), icc, function],
+            _ => [new PdfName(kind), icc]
+        };
+        var wrapper = PdfColorSpace.Parse(file, new PdfArray([.. args]));
+        double[] input = kind == "Pattern" ? [0.5, 0.5, 0.5] : [0];
+        foreach (var intent in new[] { RenderingIntent.Perceptual, RenderingIntent.Saturation, RenderingIntent.RelativeColorimetric })
+            AssertIntentColor(Round(wrapper.ToRgb(input, intent)).R, intent);
+    }
+
+    [Fact]
+    public void AbsoluteIntent_MatrixAndGray_ApplyMediaWhite()
+    {
+        var matrixData = MatrixRgb(Identity());
+        matrixData[8] = 4;
+        Encoding.ASCII.GetBytes("scnr").CopyTo(matrixData, 12);
+        // The last tag is wtpt in this synthetic profile.
+        var whiteOffset = (int)BinaryPrimitives.ReadUInt32BigEndian(matrixData.AsSpan(132 + 6 * 12 + 4));
+        for (var k = 0; k < 3; k++)
+        {
+            var value = BinaryPrimitives.ReadInt32BigEndian(matrixData.AsSpan(whiteOffset + 8 + k * 4));
+            BinaryPrimitives.WriteInt32BigEndian(matrixData.AsSpan(whiteOffset + 8 + k * 4), value / 2);
+        }
+        var matrix = IccProfile.TryParse(matrixData)!;
+        Assert.False(matrix.IsSrgb);
+        Assert.InRange(Round(matrix.ToSrgb([0.5, 0.5, 0.5])).R, 187, 189);
+        Assert.InRange(Round(matrix.ToSrgb([0.5, 0.5, 0.5], RenderingIntent.AbsoluteColorimetric)).R, 136, 138);
+
+        var grayData = Profile("GRAY", "XYZ ", ("kTRC", Identity()), ("wtpt", Xyz(0.4821, 0.5, 0.41245)));
+        grayData[8] = 4;
+        Encoding.ASCII.GetBytes("scnr").CopyTo(grayData, 12);
+        var gray = IccProfile.TryParse(grayData)!;
+        Assert.InRange(Round(gray.ToSrgb([0.5])).R, 187, 189);
+        Assert.InRange(Round(gray.ToSrgb([0.5], RenderingIntent.AbsoluteColorimetric)).R, 136, 138);
+    }
+
+    [Fact]
+    public void IntentEvaluation_DoesNotAllocatePerSample()
+    {
+        var profile = IccProfile.TryParse(IntentProfile())!;
+        double[] input = [0.25, 0.5, 0.75];
+        foreach (var intent in Enum.GetValues<RenderingIntent>())
+        {
+            for (var i = 0; i < 4200; i++) profile.ToSrgb(input, intent);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 1000; i++) profile.ToSrgb(input, intent);
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(0L, allocated);
+        }
+    }
+
+    [Fact]
+    public void Stroke_UsesIntent()
+    {
+        var page = RenderIcc(IntentProfile(), 3,
+            "/CS0 CS 0.5 0.5 0.5 SC /Saturation ri 100 w 0 100 m 200 100 l S");
+        AssertIntentColor(Px(page, 100, 100).R, RenderingIntent.Saturation);
+    }
+
+    static string StreamObject(int number, string dict, string content) =>
+        $"{number} 0 obj\n<< {dict} /Length {content.Length} >>\nstream\n{content}\nendstream\nendobj\n";
+
+    [Fact]
+    public void Type3Text_InheritsIntent()
+    {
+        var glyph = StreamObject(6, "", "1000 0 0 0 1000 1000 d1 0 0 1000 1000 re f");
+        const string font = "/Font << /F0 << /Type /Font /Subtype /Type3 /FontBBox [0 0 1000 1000] /FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << /A 6 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1000] >> >>";
+        var page = RenderIcc(IntentProfile(), 3,
+            "/CS0 cs 0.5 0.5 0.5 sc /Saturation ri BT /F0 100 Tf 50 50 Td (A) Tj ET",
+            resources: font, objects: glyph);
+        AssertIntentColor(Px(page, 100, 100).R, RenderingIntent.Saturation);
+    }
+
+    [Fact]
+    public void Shading_UsesIntent()
+    {
+        const string shading = "/Shading << /Sh0 << /ShadingType 2 /ColorSpace /CS0 /Coords [0 0 200 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [1 1 1] /N 1 >> /Extend [true true] >> >>";
+        var page = RenderIcc(IntentProfile(), 3, "/Saturation ri /Sh0 sh", resources: shading);
+        AssertIntentColor(Px(page, 100, 100).R, RenderingIntent.Saturation);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MeshShading_UsesIntent_WithAndWithoutFunction(bool function)
+    {
+        var data = new List<byte>();
+        foreach (var (x, y) in new (byte, byte)[] { (0, 0), (255, 0), (0, 255), (255, 255) })
+        {
+            data.Add(x); data.Add(y); data.Add(128);
+            if (!function) data.AddRange([128, 128]);
+        }
+        var fn = function ? "/Function << /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [1 1 1] /N 1 >>" : "";
+        var decode = function ? "0 1" : "0 1 0 1 0 1";
+        var mesh = StreamObject(6,
+            $"/ShadingType 5 /ColorSpace /CS0 /BitsPerCoordinate 8 /BitsPerComponent 8 /VerticesPerRow 2 /Decode [0 200 0 200 {decode}] {fn}",
+            Encoding.Latin1.GetString(data.ToArray()));
+        var page = RenderIcc(IntentProfile(), 3, "/Saturation ri /Sh0 sh",
+            resources: "/Shading << /Sh0 6 0 R >>", objects: mesh);
+        AssertIntentColor(Px(page, 100, 100).R, RenderingIntent.Saturation);
+    }
+
+    [Fact]
+    public void SoftMaskBackdrop_UsesExtGStateIntent_RegardlessOfEntryOrder()
+    {
+        var mask = StreamObject(6, "/Type /XObject /Subtype /Form /BBox [0 0 200 200] /Group << /S /Transparency /CS [/ICCBased 5 0 R] >>", "");
+        var page = RenderIcc(IntentProfile(), 3, "/G0 gs 0 g 0 0 200 200 re f",
+            resources: "/ExtGState << /G0 << /SMask << /S /Luminosity /BC [0.5 0.5 0.5] /G 6 0 R >> /RI /Saturation >> >>",
+            objects: mask);
+        Assert.InRange(Px(page, 100, 100).R, 55, 59);
+    }
+
+    [Fact]
+    public void SoftMaskContent_InheritsIntent()
+    {
+        var mask = StreamObject(6, "/Type /XObject /Subtype /Form /BBox [0 0 200 200] /Group << /S /Transparency /CS /DeviceRGB >>",
+            "/CS0 cs 0.5 0.5 0.5 sc 0 0 200 200 re f");
+        var page = RenderIcc(IntentProfile(), 3, "/Saturation ri /G0 gs 0 g 0 0 200 200 re f",
+            resources: "/ExtGState << /G0 << /SMask << /S /Luminosity /G 6 0 R >> >> >>",
+            objects: mask);
+        Assert.InRange(Px(page, 100, 100).R, 55, 59);
+    }
+
+    [Fact]
+    public void Painting_DefaultsToRelative()
+    {
+        var page = RenderIcc(IntentProfile(), 3, "/CS0 cs 0.5 0.5 0.5 sc 0 0 200 200 re f");
+        AssertIntentColor(Px(page, 100, 100).R, RenderingIntent.RelativeColorimetric);
+    }
+
+    [Theory]
+    [InlineData("", RenderingIntent.Saturation)]
+    [InlineData("/Intent /Perceptual", RenderingIntent.Perceptual)]
+    [InlineData("/Intent /UnknownIntent", RenderingIntent.RelativeColorimetric)]
+    public void InlineImage_UsesIntent(string entry, RenderingIntent expected)
+    {
+        var page = RenderIcc(IntentProfile(), 3,
+            $"/Saturation ri 200 0 0 200 0 0 cm BI /W 1 /H 1 /BPC 8 /CS /CS0 {entry} ID @@@ EI");
+        AssertIntentColor(Px(page, 100, 100).R, expected);
+    }
+
+    [Fact]
+    public void ColoredTilingPattern_InheritsIntent()
+    {
+        var pattern = StreamObject(6,
+            "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 20 20] /XStep 20 /YStep 20",
+            "/CS0 cs 0.5 0.5 0.5 sc 0 0 20 20 re f");
+        var page = RenderIcc(IntentProfile(), 3,
+            "/Saturation ri /Pattern cs /P0 scn 0 0 200 200 re f",
+            resources: "/Pattern << /P0 6 0 R >>", objects: pattern);
+        AssertIntentColor(Px(page, 110, 110).R, RenderingIntent.Saturation);
+    }
+
+    [Fact]
+    public void Form_InheritsIntent_AndRestoresCallerIntent()
+    {
+        var form = StreamObject(6, "/Type /XObject /Subtype /Form /BBox [0 0 200 200]",
+            "/CS0 cs 0.5 0.5 0.5 sc 0 0 100 200 re f /Perceptual ri");
+        var page = RenderIcc(IntentProfile(), 3,
+            "/Saturation ri /F0 Do /CS0 cs 0.5 0.5 0.5 sc 100 0 100 200 re f",
+            resources: "/XObject << /F0 6 0 R >>", objects: form);
+        AssertIntentColor(Px(page, 50, 100).R, RenderingIntent.Saturation);
+        AssertIntentColor(Px(page, 150, 100).R, RenderingIntent.Saturation);
+    }
 
     static (PdfFile File, PdfArray Space) IccSpace(byte[] data, int n, string alternate = "")
     {

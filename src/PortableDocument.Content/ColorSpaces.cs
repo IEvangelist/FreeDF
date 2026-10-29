@@ -6,6 +6,7 @@ public abstract class PdfColorSpace
 {
     public abstract int Components { get; }
     public abstract RgbColor ToRgb(ReadOnlySpan<double> c);
+    public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => ToRgb(c);
     public virtual double[] InitialColor => new double[Components];
     public virtual double[] DefaultDecode(int bpc) => Enumerable.Range(0, Components).SelectMany(_ => new double[] { 0, 1 }).ToArray();
 
@@ -74,6 +75,7 @@ public abstract class PdfColorSpace
     {
         public override int Components => profile.Components;
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => profile.ToSrgb(c);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => profile.ToSrgb(c, intent);
     }
 
     /// <summary>CIE XYZ (relative to a given white point) to sRGB: Bradford adaptation to D65, linear sRGB matrix, sRGB transfer curve.</summary>
@@ -175,22 +177,25 @@ public abstract class PdfColorSpace
 
     sealed class Indexed(PdfColorSpace baseCs, byte[] lookup, int hival) : PdfColorSpace
     {
+        readonly double[] _decode = baseCs.DefaultDecode(8);
         public override int Components => 1;
         public override double[] DefaultDecode(int bpc) => [0, (1 << bpc) - 1];
 
-        public override RgbColor ToRgb(ReadOnlySpan<double> c)
+        public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent)
         {
             var i = Math.Clamp((int)Math.Round(c[0]), 0, hival);
             var n = baseCs.Components;
-            var comps = new double[n];
-            var dec = baseCs.DefaultDecode(8);
+            Span<double> comps = n <= 16 ? stackalloc double[n] : new double[n];
+            var dec = _decode;
             for (var k = 0; k < n; k++)
             {
                 var o = i * n + k;
                 var v = o < lookup.Length ? lookup[o] / 255.0 : 0;
                 comps[k] = dec[2 * k] + v * (dec[2 * k + 1] - dec[2 * k]);
             }
-            return baseCs.ToRgb(comps);
+            return baseCs.ToRgb(comps, intent);
         }
     }
 
@@ -199,10 +204,12 @@ public abstract class PdfColorSpace
         public override int Components => n;
         public override double[] InitialColor => Enumerable.Repeat(1.0, n).ToArray();
 
-        public override RgbColor ToRgb(ReadOnlySpan<double> c)
+        public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent)
         {
             if (allNone) return new(1, 1, 1);
-            return alt.ToRgb(fn.Evaluate(c.ToArray()));
+            return alt.ToRgb(fn.Evaluate(c.ToArray()), intent);
         }
     }
 
@@ -212,6 +219,7 @@ public abstract class PdfColorSpace
         public PdfColorSpace? Underlying => under;
         public override int Components => under?.Components ?? 0;
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => under is null ? RgbColor.Black : under.ToRgb(c);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => under is null ? RgbColor.Black : under.ToRgb(c, intent);
     }
 
     public static PdfColorSpace Parse(PdfFile f, PdfObject? obj, PdfDictionary? resources = null, int depth = 0)

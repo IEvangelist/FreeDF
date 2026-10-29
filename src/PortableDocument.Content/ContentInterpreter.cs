@@ -8,6 +8,7 @@ sealed class GState
     public Matrix Ctm = Matrix.Identity;
     public PdfColorSpace FillCs = PdfColorSpace.Gray, StrokeCs = PdfColorSpace.Gray;
     public double[] FillColor = [0], StrokeColor = [0];
+    public RenderingIntent Intent = RenderingIntent.RelativeColorimetric;
     public PdfObject? FillPattern, StrokePattern;
     public double LineWidth = 1, MiterLimit = 10, DashPhase;
     public LineCap Cap; public LineJoin Join;
@@ -427,7 +428,8 @@ public sealed class ContentInterpreter
             case "j": _gs.Join = (LineJoin)Math.Clamp((int)N(a, 0), 0, 2); break;
             case "M": _gs.MiterLimit = N(a, 0); break;
             case "d": if (a.Count >= 2 && a[0] is PdfArray da) { _gs.Dash = da.Items.Select(x => x.AsNumber() ?? 0).ToArray(); _gs.DashPhase = N(a, 1); } break;
-            case "ri": case "i": break;
+            case "ri": if (a.Count > 0 && a[0] is PdfName intent) _gs.Intent = RenderingIntentNames.Parse(intent.Value); break;
+            case "i": break;
             case "gs": if (a.Count > 0 && a[0] is PdfName gn && R(res.Get("ExtGState")) is PdfDictionary egd && R(egd.Get(gn.Value)) is PdfDictionary g) ApplyExtGState(g, res); break;
 
             case "m": _path.MoveTo(N(a, 0), N(a, 1)); break;
@@ -615,6 +617,8 @@ public sealed class ContentInterpreter
 
     void ApplyExtGState(PdfDictionary g, PdfDictionary res)
     {
+        // Apply before /SMask regardless of dictionary entry order.
+        if (R(g.Get("RI")) is PdfName intent) _gs.Intent = RenderingIntentNames.Parse(intent.Value);
         foreach (var (k, v0) in g.Entries)
         {
             var v = R(v0);
@@ -657,12 +661,12 @@ public sealed class ContentInterpreter
         {
             var c = ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
             var gcs = R(R(g.Dict.Get("Group")) is PdfDictionary gd ? gd.Get("CS") : null) is { } cso ? PdfColorSpace.Parse(_f, cso, res) : null;
-            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c);
+            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c, _gs.Intent);
             else bc = c.Length switch
             {
                 1 => new RgbColor(c[0], c[0], c[0]),
                 3 => new RgbColor(c[0], c[1], c[2]),
-                4 => PdfColorSpace.Cmyk.ToRgb(c),
+                4 => PdfColorSpace.Cmyk.ToRgb(c, _gs.Intent),
                 _ => bc
             };
         }
@@ -670,11 +674,12 @@ public sealed class ContentInterpreter
         if (R(sm.Get("TR")) is { } tro && tro is not PdfName && PdfFunction.Parse(_f, tro) is { } trf)
             transfer = x => { var o = trf.Evaluate([x]); return o.Length > 0 ? o[0] : x; };
         var ctm = _gs.Ctm;
+        var intent = _gs.Intent;
         _gs.SoftMaskActive = true;
         _be.SetSoftMask(off =>
         {
             var sb = _be; var saved = _gs;
-            _be = off; _gs = new GState { Ctm = ctm };
+            _be = off; _gs = new GState { Ctm = ctm, Intent = intent };
             try { DoForm(g, res); }
             finally { _be = sb; _gs = saved; }
         }, lum, bc, transfer);
@@ -703,7 +708,7 @@ public sealed class ContentInterpreter
         var cs = stroke ? _gs.StrokeCs : _gs.FillCs;
         var c = stroke ? _gs.StrokeColor : _gs.FillColor;
         if (c.Length < cs.Components) c = [.. c, .. new double[cs.Components - c.Length]];
-        return cs.Components == 0 ? RgbColor.Black : cs.ToRgb(c);
+        return cs.Components == 0 ? RgbColor.Black : cs.ToRgb(c, _gs.Intent);
     }
 
     void Paint(bool fill, bool evenOdd, bool stroke)
@@ -783,7 +788,7 @@ public sealed class ContentInterpreter
             for (var i = i0; i <= i1; i++)
             {
                 _be.Save();
-                _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm) };
+                _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm), Intent = savedGs.Intent };
                 if (uncolored) { _gs.FillCs = PdfColorSpace.Rgb; _gs.FillColor = [color.R, color.G, color.B]; _gs.StrokeCs = PdfColorSpace.Rgb; _gs.StrokeColor = _gs.FillColor; }
                 var r = new PathData(); r.Rect(bb[0], bb[1], bb[2] - bb[0], bb[3] - bb[1]);
                 _be.Clip(r, _gs.Ctm, false);
@@ -1028,6 +1033,7 @@ public sealed class ContentInterpreter
     void Shade(PdfObject? shObj, PdfDictionary res, Matrix? shadingToDevice)
     {
         if (!DrawGraphics) return;
+        var intent = _gs.Intent;
         var d = shObj as PdfDictionary ?? (shObj as PdfStream)?.Dict;
         if (d is null) return;
         var m = shadingToDevice ?? _gs.Ctm;
@@ -1069,7 +1075,7 @@ public sealed class ContentInterpreter
             if (fns is null) return RgbColor.Black;
             double[] comps = fns.Length == 1 ? fns[0].Evaluate([t]) : fns.Select(fn => fn.Evaluate([t])[0]).ToArray();
             if (comps.Length < cs.Components) comps = [.. comps, .. new double[cs.Components - comps.Length]];
-            return cs.ToRgb(comps);
+            return cs.ToRgb(comps, intent);
         }
 
         double[] Arr(string k) => R(d.Get(k)) is PdfArray a ? a.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [];
@@ -1137,7 +1143,7 @@ public sealed class ContentInterpreter
                 if (sx < dom[0] || sx > dom[1] || sy < dom[2] || sy > dom[3] || fns is null) return null;
                 double[] comps = fns.Length == 1 ? fns[0].Evaluate([sx, sy]) : fns.Select(fn => fn.Evaluate([sx, sy])[0]).ToArray();
                 if (comps.Length < cs.Components) comps = [.. comps, .. new double[cs.Components - comps.Length]];
-                return cs.ToRgb(comps);
+                return cs.ToRgb(comps, intent);
             }, _gs.FillAlpha, _gs.BlendMode);
         }
         else if (type is >= 4 and <= 7 && shObj is PdfStream ms)
@@ -1148,7 +1154,7 @@ public sealed class ContentInterpreter
             var mesh = MeshShading.Decode(type, _f.DecodeStream(ms), dec, Int("BitsPerCoordinate", 8), Int("BitsPerComponent", 8),
                 type == 5 ? 0 : Int("BitsPerFlag", 8), nComps, Int("VerticesPerRow", 0), m);
             var shader = MeshShading.ToShader(mesh, comps => fns is null
-                ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps)
+                ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps, intent)
                 : EvalT(comps[0]));
             _be.PaintShader(shader, _gs.FillAlpha, _gs.BlendMode);
         }
@@ -1222,7 +1228,7 @@ public sealed class ContentInterpreter
     void DrawImage(PdfStream xs, PdfDictionary res)
     {
         if (!DrawGraphics) return;
-        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn);
+        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn, _gs.Intent);
         if (warn is not null) Warn(warn);
         if (img is null) return;
         _be.DrawImage(img, _gs.Ctm, _gs.FillAlpha, isMask ? Color(false) : RgbColor.Black, _gs.BlendMode);
