@@ -50,6 +50,7 @@ public sealed class ContentInterpreter
     public PdfDictionary? OptionalContentConfiguration { get; set; }
     public PdfDictionary? DefaultOptionalContentConfiguration { get; set; }
     public OptionalContentEvent OptionalContentDisplayEvent { get; set; } = OptionalContentEvent.View;
+    public double OptionalContentZoom { get; set; } = 1;
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -533,30 +534,43 @@ public sealed class ContentInterpreter
     {
         if (R(cfg.Get("AS")) is not PdfArray applications) return off;
         var eventName = OptionalContentDisplayEvent.ToString();
-        var category = eventName;
-        var stateKey = eventName + "State";
+        var zoomOutOfRange = false;
         foreach (var application in applications.Items)
         {
             if (R(application) is not PdfDictionary app
                 || R(app.Get("Event")).AsName() != eventName
-                || R(app.Get("Category")) is not PdfArray categories
-                || !categories.Items.Any(value => R(value).AsName() == category))
+                || R(app.Get("Category")) is not PdfArray categories)
                 continue;
             if (R(app.Get("OCGs")) is PdfArray groups
                 && !groups.Items.Any(value => ReferenceEquals(R(value), ocg)))
                 continue;
             if (R(app.Get("OCGs")) is PdfDictionary group && !ReferenceEquals(group, ocg))
                 continue;
-            if (R(ocg.Get("Usage")) is not PdfDictionary usage
-                || R(usage.Get(category)) is not PdfDictionary eventUsage)
-                continue;
-            off = R(eventUsage.Get(stateKey)).AsName() switch
+            if (R(ocg.Get("Usage")) is not PdfDictionary usage) continue;
+            foreach (var categoryValue in categories.Items)
             {
-                "ON" => false,
-                "OFF" => true,
-                _ => off,
-            };
+                var category = R(categoryValue).AsName();
+                if (category == eventName && R(usage.Get(category)) is PdfDictionary eventUsage)
+                {
+                    off = R(eventUsage.Get(eventName + "State")).AsName() switch
+                    {
+                        "ON" => false,
+                        "OFF" => true,
+                        _ => off,
+                    };
+                }
+                else if (category == "Zoom" && OptionalContentDisplayEvent == OptionalContentEvent.View
+                    && R(usage.Get("Zoom")) is PdfDictionary zoom)
+                {
+                    var min = R(zoom.Get("min")).AsNumber();
+                    var max = R(zoom.Get("max")).AsNumber();
+                    if (min is { } minZoom && OptionalContentZoom < minZoom
+                        || max is { } maxZoom && OptionalContentZoom > maxZoom)
+                        zoomOutOfRange = true;
+                }
+            }
         }
+        if (zoomOutOfRange) off = true;
         return off;
     }
 

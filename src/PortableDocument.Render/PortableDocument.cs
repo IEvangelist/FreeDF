@@ -85,6 +85,7 @@ public static class PortableDocument
         interp.DefaultOptionalContentConfiguration = defaultConfiguration;
         interp.OptionalContentConfiguration = selectedConfiguration;
         interp.OptionalContentDisplayEvent = options.OptionalContentDisplayEvent;
+        interp.OptionalContentZoom = scale;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }

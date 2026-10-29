@@ -249,6 +249,28 @@ public class RenderTests
     }
 
     [Fact]
+    public void Optional_content_zoom_usage_hides_layers_outside_configured_range()
+    {
+        const string content = "/OC /M BDC 1 0 0 rg 0 0 200 200 re f EMC";
+        const string resources = "/Properties << /M 6 0 R >>";
+        const string objects =
+            "5 0 obj\n<< /Type /OCG /Usage << /View << /ViewState /ON >> /Zoom << /min 0.75 /max 1.5 >> >> >>\nendobj\n" +
+            "6 0 obj\n<< /Type /OCMD /OCGs [5 0 R] >>\nendobj\n";
+        const string optionalContent =
+            "/OCProperties << /OCGs [5 0 R] /D << /BaseState /OFF /AS [" +
+            "<< /Event /View /Category [/View /Zoom] /OCGs [5 0 R] >>" +
+            "] >> >>";
+        var doc = PdfDocument.Load(TestPdf.Build(content, resources, objects,
+            brokenXref: true, extraCatalog: optionalContent));
+
+        var inRange = DocumentRenderer.RenderPage(doc.Pages[0], 72);
+        Assert.Equal((255, 0, 0), Px(inRange, 100, 100));
+
+        var outOfRange = DocumentRenderer.RenderPage(doc.Pages[0], 144);
+        Assert.Equal((255, 255, 255), Px(outOfRange, 100, 100));
+    }
+
+    [Fact]
     public void RotatesPage()
     {
         var bytes = TestPdf.Build("1 0 0 rg 0 0 100 100 re f", mediaBox: "[0 0 200 100]");
