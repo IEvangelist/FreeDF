@@ -430,12 +430,29 @@ function setEdit(o, [x0, y0, x1, y1]) {
   const sx = w0 > 0.01 ? (x1 - x0) / w0 : 1, sy = h0 > 0.01 ? (y1 - y0) / h0 : 1;
   o.edit = { ...(o.edit ?? {}), delete: false, sx, sy, tx: x0 - sx * o.x0, ty: y0 - sy * o.y0 };
 }
-async function saveObj(o) {
+let objectSave = Promise.resolve();
+const objectSaveErrors = new Map();
+function saveObj(o) {
   const e = o.edit; const empty = !e || (!e.delete && e.sx === 1 && e.sy === 1 && e.tx === 0 && e.ty === 0 && !e.fill && !e.stroke);
   if (empty) o.edit = null;
-  await fetch(`/api/page/${sel}/objects/${o.index}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o.edit ?? null) });
-  const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now());
-  const th = document.querySelectorAll('.thumb img')[sel]; if (th) th.src = `/api/page/${sel}.png?dpi=40&t=${Date.now()}`;
+  const page = sel, url = `/api/page/${page}/objects/${o.index}`, body = JSON.stringify(o.edit ?? null);
+  objectSave = objectSave.then(async () => {
+    try {
+      const response = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+      if (!response.ok) throw new Error(`${url} ${response.status}`);
+      if (sel === page) {
+        const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now());
+      }
+      const th = document.querySelectorAll('.thumb img')[page]; if (th) th.src = `/api/page/${page}.png?dpi=40&t=${Date.now()}`;
+      await refreshDirty();
+      objectSaveErrors.delete(url);
+    } catch (error) {
+      objectSaveErrors.set(url, error);
+      status(`Object edit was not saved: ${error.message}. Retry the edit before saving.`);
+      return;
+    }
+  });
+  return objectSave;
 }
 function selectObj(o) { cur = null; curObj = o; paint(); props(); }
 
@@ -488,6 +505,9 @@ function objProps() {
 
 function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
 async function flush() {
+  let pending;
+  do { pending = objectSave; await pending; } while (pending !== objectSave);
+  if (objectSaveErrors.size) throw new Error('Object edits have not been saved. Retry the failed edits before saving.');
   if (!saveT || !state.pageCount) return;
   clearTimeout(saveT); saveT = 0;
   const i = sel;
@@ -554,7 +574,7 @@ function props() {
   });
 }
 
-async function act(fn) { try { await fn(); await refresh(); } catch (e) { status(e.message); } }
+async function act(fn) { try { await flush(); await fn(); await refresh(); } catch (e) { status(e.message); } }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 
 $('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.target.files[0]));
