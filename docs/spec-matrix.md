@@ -44,7 +44,8 @@ Full spec parity is the goal; this table is the honest current state.
 | Editing existing page text in place (convert run to editable object, original operator removed, advance preserved; font becomes a standard font; page-level text only, not inside form XObjects) | Done |
 | Moving/resizing existing images and vector objects | **Todo** |
 | Form filling (text and checkbox/radio fields, with editor UI) | Done |
-| Incremental save, redaction, signing, object/xref streams on save, encrypted save | **Todo** |
+| Redaction (`Redactor.Redact`: removes intersecting text runs, paths, images and forms from the content stream, then paints an opaque box; whole-object granularity, no web UI yet) | Done |
+| Incremental save, signing, object/xref streams on save, encrypted save | **Todo** |
 
 ## Render comparison
 

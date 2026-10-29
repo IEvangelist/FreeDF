@@ -127,6 +127,26 @@ public class EditorTests
     }
 
     [Fact]
+    public void Redact_removes_text_and_objects_under_the_rect_and_keeps_the_rest()
+    {
+        const string content = "BT /F1 12 Tf 10 100 Td (Secret) Tj ET BT /F1 12 Tf 10 20 Td (Keep) Tj ET 1 0 0 rg 150 100 20 20 re f 0 0 1 rg 150 20 20 20 re f";
+        var bytes = TestPdf.Build(content, "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
+        var doc = PdfDocument.Load(bytes);
+        var red = Redactor.Redact(doc.Pages[0], [new Redactor.BoxRect(0, 70, 200, 50)]);
+        var text = System.Text.Encoding.Latin1.GetString(red);
+        Assert.DoesNotContain("Secret", text);
+        Assert.Contains("Keep", text);
+
+        var e = PdfEditor.Open(bytes);
+        e.SetContentOverride(0, red);
+        var (spans, objs) = PdfRenderer.Analyze(PdfDocument.Load(e.Save()).Pages[0]);
+        Assert.Equal(["Keep"], spans.Select(s => s.Text.Trim()).Where(t => t.Length > 0).ToArray());
+        Assert.Contains(objs, o => o.Fill == new Pdf.Content.RgbColor(0, 0, 1));
+        Assert.DoesNotContain(objs, o => o.Fill == new Pdf.Content.RgbColor(1, 0, 0));
+        Assert.Contains(objs, o => o.Fill == new Pdf.Content.RgbColor(0, 0, 0) && o.Y0 >= 69 && o.Y1 <= 121);
+    }
+
+    [Fact]
     public void Extract_text_and_remove_operator_keeps_following_text_in_place()
     {
         const string content = "BT /F1 20 Tf 10 100 Td (Hello) Tj 0 -30 Td [(Wor) -100 (ld)] TJ ( Again) Tj ET 1 0 0 rg 0 0 5 5 re f";
