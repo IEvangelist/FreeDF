@@ -2,6 +2,7 @@
 
 Status: **Done** = implemented and covered by tests, **Partial** = implemented with known gaps, **Todo** = not implemented.
 Full spec parity is the goal; this table is the honest current state.
+See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
 ## Parser (`PortableDocument.Core`, `PortableDocument.Document`)
 
@@ -15,8 +16,8 @@ Full spec parity is the goal; this table is the honest current state.
 | 7.6 | Encryption (Standard RC4/AES, public-key) | Done | Standard handler R2-R6 read **and write** (RC4 40/128, AESV2, AESV3; pikepdf-verified). Public-key handler (Adobe.PubSec, adbe.pkcs7.s5, CMS EnvelopedData, AES-256 content) read/write with X509 certs - round-trip tested only, no third-party validator available. Permission flags enforced by `PdfEditor` (`PdfPermissions`) |
 | 7.7 | Document structure: page tree, inheritance | Done | |
 | 7.8-7.9 | Content streams, resources, functions (types 0,2,3,4) | Done | |
-| 7.10-7.11 | File specs, embedded files, data structures | Todo | |
-| 12 | Annotations, forms, outlines, actions | Partial | Outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, embedded files. Annotation normal-appearance (/AP /N, /AS) rendered per 12.5.5 with generated default appearances for annotations lacking /AP (highlight, underline, strikeout, squiggly, square, circle, line, polygon, ink, free text). Form filling for text/button/choice fields (`PdfEditor.SetFieldValue`; multiline, comb, alignment, MK borders/backgrounds). Not yet: other action types |
+| 7.10-7.11 | File specs, embedded files, data structures | Partial | Reads file specifications from the Names/EmbeddedFiles name tree and associated-file arrays on the catalog, pages, and annotations. Exposes file-name variants, description, IDs, volatility, AFRelationship, embedded-file Params and raw stream/dictionary objects; decoded bytes remain available. No embedded code is executed. Not yet: /RF, collections, and /AF on other object types |
+| 12 | Annotations, forms, outlines, actions | Partial | Outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, limited embedded-file and associated-file access (see 7.10-7.11). Annotation normal-appearance (/AP /N, /AS) rendered per 12.5.5 with generated default appearances for annotations lacking /AP (highlight, underline, strikeout, squiggly, square, circle, line, polygon, ink, free text). Form filling for text/button/choice fields (`PdfEditor.SetFieldValue`; multiline, comb, alignment, MK borders/backgrounds). Not yet: other action types |
 | 14 | Metadata, tagged PDF, logical structure | Partial | Info, XMP packet, tagged flag, language. `PdfDocument.Structure`: StructTreeRoot/StructElem walk (bounded depth/nodes, cycle-safe), RoleMap, ParentTree, MCID mapping for page content (not inside Form XObjects), /Alt /ActualText /Lang; structure-ordered text extraction (`StructuredTextExtractor`) |
 | 14.8/PDF/A,UA | Validation | Partial | Heuristic validators: PDF/A-1b/2b/3b (fonts embedded, no encryption, XMP + identification, output intent, no transparency for A-1, device colour) and PDF/UA-1/2 (MarkInfo, Lang, Title + DisplayDocTitle, Figure alt text, heading nesting, table structure). Clause numbers approximate; no deep ICC/XMP-schema/tag-coverage checks. Not a conformance certification |
 | Robustness | Fuzz/truncation tests | Done | Deterministic mutation of all fixtures (400-seed run green): only PdfException (or NotSupported for unsupported filters), timeouts enforced. Caps added: lexer nesting 200, inflate 1 GiB, raster 100M px, JBIG2/CCITT budgets |
@@ -35,7 +36,7 @@ Full spec parity is the goal; this table is the honest current state.
 | 11 | Transparency: alpha, blend modes | Partial | Alpha + all 16 blend modes (separable and Hue/Saturation/Color/Luminosity, checked against the spec formulas; /BM arrays use the first known name) + isolated/non-isolated/knockout form groups (11.4, layers allocated only when needed; backdrop removal per 11.4.8) + ExtGState soft masks (Luminosity and Alpha, /BC in the group's /CS, /TR function) **Done**. Not done: page-level /Group /I and /CS (page is composited over opaque white sRGB; only /K knockout is honoured), per-object knockout inside non-form content. Clips applied while a soft mask is active now survive clearing the mask |
 | 8.11 | Optional content (OCG/OCMD) | Partial | Default config only |
 | 10 | Rendering intents, overprint, halftones, transfer funcs | Todo | |
-| 13 | Multimedia, 3D, RichMedia, XFA, JavaScript | Out of scope | Not renderable statically |
+| 13 | Multimedia, 3D, RichMedia, XFA, JavaScript | Todo | Parse, preserve, and expose these structures safely without executing embedded code; JavaScript/XFA/RichMedia are not yet fully exposed. Not all content is renderable statically |
 
 ## Editor
 

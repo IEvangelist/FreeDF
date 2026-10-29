@@ -9,7 +9,41 @@ public sealed record PdfAnnotation(string Subtype, PdfRect Rect, string? Content
 
 public sealed record PdfFormField(string FullName, string? FieldType, string? Value, int Flags, PdfDictionary Dict);
 
-public sealed record PdfEmbeddedFile(string Name, string? MimeType, long? Size, byte[] Data);
+public sealed record PdfEmbeddedFile(string Name, string? MimeType, long? Size, byte[] Data)
+{
+    public string? CreationDate { get; init; }
+    public string? ModificationDate { get; init; }
+    public byte[]? Checksum { get; init; }
+    public PdfDictionary? Parameters { get; init; }
+    public PdfStream? Stream { get; init; }
+}
+
+public sealed record PdfFileSpecification(
+    string Name,
+    string? FileName,
+    string? UnicodeFileName,
+    string? DosFileName,
+    string? MacFileName,
+    string? UnixFileName,
+    string? Description,
+    IReadOnlyList<string> Id,
+    bool? IsVolatile,
+    string? AFRelationship,
+    IReadOnlyDictionary<string, PdfEmbeddedFile> EmbeddedFiles,
+    PdfDictionary Dictionary);
+
+public enum PdfAssociatedFileScope
+{
+    Catalog,
+    Page,
+    Annotation,
+}
+
+public sealed record PdfAssociatedFile(
+    PdfAssociatedFileScope Scope,
+    PdfFileSpecification FileSpecification,
+    int? PageIndex = null,
+    int? AnnotationIndex = null);
 
 public static class DocumentFeatures
 {
@@ -173,33 +207,124 @@ public static class DocumentFeatures
         acc.Add(new PdfFormField(name, ft, rv is PdfString s ? s.Text : rv is PdfName n ? n.Value : null, ff, d));
     }
 
-    /// <summary>Files from the Names/EmbeddedFiles tree.</summary>
-    public static IReadOnlyList<PdfEmbeddedFile> GetEmbeddedFiles(this PdfDocument doc)
+    /// <summary>File specifications from the Names/EmbeddedFiles name tree.</summary>
+    public static IReadOnlyList<PdfFileSpecification> GetFileSpecifications(this PdfDocument doc)
     {
         var f = doc.File;
-        var list = new List<PdfEmbeddedFile>();
+        var list = new List<PdfFileSpecification>();
         if (f.Resolve(f.Catalog.Get("Names")) is PdfDictionary names && f.Resolve(names.Get("EmbeddedFiles")) is PdfDictionary tree)
-            Collect(f, tree, list, 0);
+            CollectFileSpecifications(f, tree, list, 0, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance));
         return list;
     }
 
-    static void Collect(PdfFile f, PdfDictionary node, List<PdfEmbeddedFile> acc, int depth)
+    /// <summary>Associated file specifications on the catalog, pages, and annotations.</summary>
+    public static IReadOnlyList<PdfAssociatedFile> GetAssociatedFiles(this PdfDocument doc)
     {
-        if (depth > MaxDepth) return;
+        var f = doc.File;
+        var list = new List<PdfAssociatedFile>();
+        AddAssociatedFiles(f, f.Catalog.Get("AF"), PdfAssociatedFileScope.Catalog, null, null, list);
+        for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
+        {
+            var page = doc.Pages[pageIndex];
+            AddAssociatedFiles(f, page.Dict.Get("AF"), PdfAssociatedFileScope.Page, pageIndex, null, list);
+            if (f.Resolve(page.Dict.Get("Annots")) is not PdfArray annotations) continue;
+            for (var annotationIndex = 0; annotationIndex < annotations.Count; annotationIndex++)
+                if (f.Resolve(annotations[annotationIndex]) is PdfDictionary annotation)
+                    AddAssociatedFiles(f, annotation.Get("AF"), PdfAssociatedFileScope.Annotation, pageIndex, annotationIndex, list);
+        }
+        return list;
+    }
+
+    /// <summary>Embedded file streams from the Names/EmbeddedFiles tree, preferring /UF over /F.</summary>
+    public static IReadOnlyList<PdfEmbeddedFile> GetEmbeddedFiles(this PdfDocument doc)
+    {
+        var list = new List<PdfEmbeddedFile>();
+        foreach (var spec in doc.GetFileSpecifications())
+            if (spec.EmbeddedFiles.TryGetValue("UF", out var embedded) || spec.EmbeddedFiles.TryGetValue("F", out embedded))
+                list.Add(embedded with { Name = spec.Name });
+        return list;
+    }
+
+    static void CollectFileSpecifications(PdfFile f, PdfDictionary node, List<PdfFileSpecification> acc, int depth, HashSet<PdfDictionary> seen)
+    {
+        if (depth > MaxDepth || !seen.Add(node)) return;
         if (f.Resolve(node.Get("Names")) is PdfArray pairs)
             for (var i = 0; i + 1 < pairs.Count; i += 2)
-            {
-                if (f.Resolve(pairs[i]) is not PdfString nm || f.Resolve(pairs[i + 1]) is not PdfDictionary spec) continue;
-                if (f.Resolve(spec.Get("EF")) is not PdfDictionary ef) continue;
-                var stream = f.Resolve(ef.Get("UF") ?? ef.Get("F")) as PdfStream;
-                if (stream is null) continue;
-                var p = f.Resolve(stream.Dict.Get("Params")) as PdfDictionary;
-                acc.Add(new PdfEmbeddedFile(nm.Text, f.Resolve(stream.Dict.Get("Subtype")).AsName(),
-                    p is null ? null : (long?)f.Resolve(p.Get("Size")).AsNumber(), f.DecodeStream(stream)));
-            }
+                if (f.Resolve(pairs[i]) is PdfString nm && f.Resolve(pairs[i + 1]) is PdfDictionary spec)
+                    acc.Add(ReadFileSpecification(f, spec, nm.Text));
         if (f.Resolve(node.Get("Kids")) is PdfArray kids)
-            foreach (var k in kids.Items) if (f.Resolve(k) is PdfDictionary kd) Collect(f, kd, acc, depth + 1);
+            foreach (var k in kids.Items)
+                if (f.Resolve(k) is PdfDictionary kd)
+                    CollectFileSpecifications(f, kd, acc, depth + 1, seen);
     }
+
+    static void AddAssociatedFiles(
+        PdfFile f,
+        PdfObject? associatedFiles,
+        PdfAssociatedFileScope scope,
+        int? pageIndex,
+        int? annotationIndex,
+        List<PdfAssociatedFile> acc)
+    {
+        if (f.Resolve(associatedFiles) is not PdfArray files) return;
+        foreach (var file in files.Items)
+            if (f.Resolve(file) is PdfDictionary spec)
+                acc.Add(new PdfAssociatedFile(scope, ReadFileSpecification(f, spec, FileName(f, spec) ?? ""), pageIndex, annotationIndex));
+    }
+
+    static PdfFileSpecification ReadFileSpecification(PdfFile f, PdfDictionary spec, string name)
+    {
+        var embedded = new Dictionary<string, PdfEmbeddedFile>(StringComparer.Ordinal);
+        if (f.Resolve(spec.Get("EF")) is PdfDictionary ef)
+        {
+            var byStream = new Dictionary<PdfStream, PdfEmbeddedFile>(ReferenceEqualityComparer.Instance);
+            foreach (var (platform, value) in ef.Entries)
+            {
+                if (f.Resolve(value) is not PdfStream stream) continue;
+                if (!byStream.TryGetValue(stream, out var file))
+                {
+                    var parameters = f.Resolve(stream.Dict.Get("Params")) as PdfDictionary;
+                    file = new PdfEmbeddedFile(
+                        name,
+                        f.Resolve(stream.Dict.Get("Subtype")).AsName(),
+                        parameters is null ? null : (long?)f.Resolve(parameters.Get("Size")).AsNumber(),
+                        f.DecodeStream(stream))
+                    {
+                        CreationDate = PdfStringValue(f, parameters?.Get("CreationDate")),
+                        ModificationDate = PdfStringValue(f, parameters?.Get("ModDate")),
+                        Checksum = f.Resolve(parameters?.Get("CheckSum")) is PdfString checksum ? checksum.Bytes : null,
+                        Parameters = parameters,
+                        Stream = stream,
+                    };
+                    byStream.Add(stream, file);
+                }
+                embedded[platform] = file;
+            }
+        }
+
+        var ids = f.Resolve(spec.Get("ID")) is PdfArray idArray
+            ? idArray.Items.Select(value => PdfStringValue(f, value)).Where(value => value is not null).Select(value => value!).ToArray()
+            : [];
+        return new PdfFileSpecification(
+            name,
+            PdfStringValue(f, spec.Get("F")),
+            PdfStringValue(f, spec.Get("UF")),
+            PdfStringValue(f, spec.Get("DOS")),
+            PdfStringValue(f, spec.Get("Mac")),
+            PdfStringValue(f, spec.Get("Unix")),
+            PdfStringValue(f, spec.Get("Desc")),
+            ids,
+            f.Resolve(spec.Get("V")) is PdfBoolean isVolatile ? isVolatile.Value : null,
+            f.Resolve(spec.Get("AFRelationship")).AsName(),
+            embedded,
+            spec);
+    }
+
+    static string? FileName(PdfFile f, PdfDictionary spec) =>
+        PdfStringValue(f, spec.Get("UF")) ?? PdfStringValue(f, spec.Get("F"));
+
+    static string? PdfStringValue(PdfFile f, PdfObject? value) =>
+        f.Resolve(value) is PdfString text ? text.Text : null;
 
     /// <summary>Page label for a zero-based page index per the Catalog /PageLabels number tree.</summary>
     public static string GetPageLabel(this PdfDocument doc, int index)
