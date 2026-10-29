@@ -24,6 +24,13 @@ sealed class GState
 
 public sealed class ContentInterpreter
 {
+    public enum OptionalContentEvent
+    {
+        View,
+        Print,
+        Export,
+    }
+
     readonly PdfFile _f;
     IRenderBackend _be;
     readonly IFontFallback _fallback;
@@ -42,6 +49,7 @@ public sealed class ContentInterpreter
     public List<string> Warnings { get; } = [];
     public PdfDictionary? OptionalContentConfiguration { get; set; }
     public PdfDictionary? DefaultOptionalContentConfiguration { get; set; }
+    public OptionalContentEvent OptionalContentDisplayEvent { get; set; } = OptionalContentEvent.View;
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -507,14 +515,49 @@ public sealed class ContentInterpreter
     {
         if (cfg is null) return false;
         var baseState = R(cfg.Get("BaseState")).AsName();
+        bool off;
         if (baseState == "Unchanged" && !ReferenceEquals(cfg, DefaultOptionalContentConfiguration)
             && DefaultOptionalContentConfiguration is { } defaultConfiguration)
-            return OcgOff(ocg, defaultConfiguration);
-        var baseOff = baseState == "OFF";
-        bool Contains(string key) => R(cfg.Get(key)) is PdfArray arr && arr.Items.Any(x => ReferenceEquals(R(x), ocg));
-        if (Contains("OFF")) return true;
-        if (Contains("ON")) return false;
-        return baseOff;
+            off = OcgOff(ocg, defaultConfiguration);
+        else
+        {
+            var baseOff = baseState == "OFF";
+            bool Contains(string key) => R(cfg.Get(key)) is PdfArray arr && arr.Items.Any(x => ReferenceEquals(R(x), ocg));
+            off = Contains("OFF") || !Contains("ON") && baseOff;
+        }
+
+        return ApplyUsageApplications(ocg, cfg, off);
+    }
+
+    bool ApplyUsageApplications(PdfDictionary ocg, PdfDictionary cfg, bool off)
+    {
+        if (R(cfg.Get("AS")) is not PdfArray applications) return off;
+        var eventName = OptionalContentDisplayEvent.ToString();
+        var category = eventName;
+        var stateKey = eventName + "State";
+        foreach (var application in applications.Items)
+        {
+            if (R(application) is not PdfDictionary app
+                || R(app.Get("Event")).AsName() != eventName
+                || R(app.Get("Category")) is not PdfArray categories
+                || !categories.Items.Any(value => R(value).AsName() == category))
+                continue;
+            if (R(app.Get("OCGs")) is PdfArray groups
+                && !groups.Items.Any(value => ReferenceEquals(R(value), ocg)))
+                continue;
+            if (R(app.Get("OCGs")) is PdfDictionary group && !ReferenceEquals(group, ocg))
+                continue;
+            if (R(ocg.Get("Usage")) is not PdfDictionary usage
+                || R(usage.Get(category)) is not PdfDictionary eventUsage)
+                continue;
+            off = R(eventUsage.Get(stateKey)).AsName() switch
+            {
+                "ON" => false,
+                "OFF" => true,
+                _ => off,
+            };
+        }
+        return off;
     }
 
     void NextLine() { _tlm = Matrix.Translate(0, -_gs.Leading).Then(_tlm); _tm = _tlm; }

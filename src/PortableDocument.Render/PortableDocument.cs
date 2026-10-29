@@ -13,6 +13,9 @@ public sealed record PdfRenderOptions
 {
     /// <summary>Name of a catalog /OCProperties /Configs entry; omitted selects the default /D configuration.</summary>
     public string? OptionalContentConfigurationName { get; init; }
+    /// <summary>Usage event to apply when rendering optional content.</summary>
+    public ContentInterpreter.OptionalContentEvent OptionalContentDisplayEvent { get; init; } =
+        ContentInterpreter.OptionalContentEvent.View;
 }
 
 public static class PortableDocument
@@ -64,20 +67,24 @@ public static class PortableDocument
         return (interp.TextSpans, interp.Objects);
     }
 
+    public static RenderedPage RenderPage(PdfPage page, double dpi = 96, IRenderBackendFactory? factory = null) =>
+        RenderPage(page, new PdfRenderOptions(), dpi, factory);
+
     public static RenderedPage RenderPage(
         PdfPage page,
+        PdfRenderOptions options,
         double dpi = 96,
-        IRenderBackendFactory? factory = null,
-        PdfRenderOptions? options = null)
+        IRenderBackendFactory? factory = null)
     {
         var scale = dpi / 72.0 * page.UserUnit;
         var m = PageMatrix(page, scale, out var w, out var h);
         using var raster = new SoftwareRasterizer(w, h);
         var interp = new ContentInterpreter(page.Document.File, raster);
         var (defaultConfiguration, selectedConfiguration) =
-            ResolveOptionalContentConfiguration(page, options?.OptionalContentConfigurationName);
+            ResolveOptionalContentConfiguration(page, options.OptionalContentConfigurationName);
         interp.DefaultOptionalContentConfiguration = defaultConfiguration;
         interp.OptionalContentConfiguration = selectedConfiguration;
+        interp.OptionalContentDisplayEvent = options.OptionalContentDisplayEvent;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }

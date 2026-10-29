@@ -1,4 +1,5 @@
 using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
+using PortableDocument.Content;
 using PortableDocument.Document;
 using PortableDocument.Render;
 using Xunit;
@@ -196,20 +197,55 @@ public class RenderTests
         Assert.Equal((255, 0, 0), Px(defaultView, 50, 100));
         Assert.Equal((255, 255, 255), Px(defaultView, 150, 100));
 
-        var layerA = DocumentRenderer.RenderPage(doc.Pages[0], 72, options: new PdfRenderOptions { OptionalContentConfigurationName = "Layer A" });
+        var layerA = DocumentRenderer.RenderPage(doc.Pages[0], new PdfRenderOptions { OptionalContentConfigurationName = "Layer A" }, 72);
         Assert.Equal((255, 0, 0), Px(layerA, 50, 100));
         Assert.Equal((255, 255, 255), Px(layerA, 150, 100));
 
-        var layerB = DocumentRenderer.RenderPage(doc.Pages[0], 72, options: new PdfRenderOptions { OptionalContentConfigurationName = "Layer B" });
+        var layerB = DocumentRenderer.RenderPage(doc.Pages[0], new PdfRenderOptions { OptionalContentConfigurationName = "Layer B" }, 72);
         Assert.Equal((255, 255, 255), Px(layerB, 50, 100));
         Assert.Equal((0, 0, 255), Px(layerB, 150, 100));
 
-        var unchanged = DocumentRenderer.RenderPage(doc.Pages[0], 72, options: new PdfRenderOptions { OptionalContentConfigurationName = "Unchanged" });
+        var unchanged = DocumentRenderer.RenderPage(doc.Pages[0], new PdfRenderOptions { OptionalContentConfigurationName = "Unchanged" }, 72);
         Assert.Equal((255, 0, 0), Px(unchanged, 50, 100));
         Assert.Equal((255, 255, 255), Px(unchanged, 150, 100));
 
-        Assert.Throws<ArgumentException>(() => DocumentRenderer.RenderPage(doc.Pages[0], 72,
-            options: new PdfRenderOptions { OptionalContentConfigurationName = "missing" }));
+        Assert.Throws<ArgumentException>(() => DocumentRenderer.RenderPage(doc.Pages[0],
+            new PdfRenderOptions { OptionalContentConfigurationName = "missing" }, 72));
+    }
+
+    [Fact]
+    public void Optional_content_usage_applications_follow_render_event()
+    {
+        const string content = "/OC /M BDC 1 0 0 rg 0 0 200 200 re f EMC";
+        const string resources = "/Properties << /M 6 0 R >>";
+        const string objects =
+            "5 0 obj\n<< /Type /OCG /Name (layer) /Usage << " +
+            "/View << /ViewState /OFF >> /Print << /PrintState /ON >> /Export << /ExportState /OFF >>" +
+            " >> >>\nendobj\n" +
+            "6 0 obj\n<< /Type /OCMD /OCGs [5 0 R] >>\nendobj\n";
+        const string optionalContent =
+            "/OCProperties << /OCGs [5 0 R] /D << /BaseState /ON /AS [" +
+            "<< /Event /View /Category [/View] /OCGs [5 0 R] >> " +
+            "<< /Event /Print /Category [/Print] /OCGs [5 0 R] >> " +
+            "<< /Event /Export /Category [/Export] /OCGs [5 0 R] >>" +
+            "] >> >>";
+        var doc = PdfDocument.Load(TestPdf.Build(content, resources, objects,
+            brokenXref: true, extraCatalog: optionalContent));
+
+        var view = DocumentRenderer.RenderPage(doc.Pages[0], 72);
+        Assert.Equal((255, 255, 255), Px(view, 100, 100));
+
+        var print = DocumentRenderer.RenderPage(doc.Pages[0], new PdfRenderOptions
+        {
+            OptionalContentDisplayEvent = ContentInterpreter.OptionalContentEvent.Print,
+        }, 72);
+        Assert.Equal((255, 0, 0), Px(print, 100, 100));
+
+        var export = DocumentRenderer.RenderPage(doc.Pages[0], new PdfRenderOptions
+        {
+            OptionalContentDisplayEvent = ContentInterpreter.OptionalContentEvent.Export,
+        }, 72);
+        Assert.Equal((255, 255, 255), Px(export, 100, 100));
     }
 
     [Fact]
