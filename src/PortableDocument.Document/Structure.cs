@@ -10,12 +10,15 @@ public abstract class StructNode
     public int? PageIndex { get; internal set; }
 }
 
-/// <summary>Marked-content reference (an integer kid or an /MCR dictionary): content sequence <see cref="Mcid"/> on a page or form XObject.</summary>
+/// <summary>Marked-content reference (an integer kid or an /MCR dictionary): content sequence <see cref="Mcid"/> on a page or non-page content stream.</summary>
 public sealed class StructMarkedContent : StructNode
 {
     public int Mcid { get; internal set; }
-    /// <summary>Content stream (form XObject) holding the marked content, when /Stm was given; null for the page's own content.</summary>
+    /// <summary>Content stream (for example a form or annotation appearance) holding the marked content, when /Stm was given; null for the page's own content.</summary>
     public PdfStream? Stream { get; internal set; }
+    /// <summary>Resolved /StmOwn: the object referencing <see cref="Stream"/>, commonly an annotation owning an appearance stream.
+    /// This is not a substitute for the stream's /StructParents entry (ISO 32000-2 Table 357).</summary>
+    public PdfObject? StreamOwner { get; internal set; }
 }
 
 /// <summary>Object reference (/OBJR), typically an annotation or XObject that belongs to the element.</summary>
@@ -191,12 +194,20 @@ public sealed class StructureTree
                 {
                     if (parent is null || NonNegativeInteger(d.Get("MCID")) is not { } mcid) return;
                     var stream = F.Resolve(d.Get("Stm")) as PdfStream;
-                    if (d.Get("Stm") is not null && stream is null) return;
+                    if (d.Get("Stm") is not null && (d.Get("Stm") is not PdfRef || stream is null)) return;
+                    PdfObject? streamOwner = null;
+                    if (d.Get("StmOwn") is { } rawOwner)
+                    {
+                        if (stream is null || rawOwner is not PdfRef) return;
+                        streamOwner = F.Resolve(rawOwner);
+                        if (streamOwner is null or PdfNull) return;
+                    }
                     node = new StructMarkedContent
                     {
                         Mcid = mcid,
                         PageIndex = PageOf(d.Get("Pg")) ?? inheritedPage,
                         Stream = stream,
+                        StreamOwner = streamOwner,
                     };
                 }
                 else if (type == "OBJR")
@@ -261,7 +272,7 @@ public sealed class StructureTree
         return _mcidMap!.GetValueOrDefault((pageIndex, mcid));
     }
 
-    /// <summary>The marked-content reference for an MCID in a particular form stream, independent of its page placements.</summary>
+    /// <summary>The marked-content reference for an MCID in a particular non-page stream, independent of its page placements or /StmOwn.</summary>
     public StructMarkedContent? FindMarkedContent(PdfStream stream, int mcid)
     {
         BuildMcidMaps();
@@ -325,8 +336,14 @@ public sealed class StructureTree
         return ElementFromParentTree(_doc.Pages[pageIndex].Dict, mcid);
     }
 
-    /// <summary>The owning element via a form stream's /StructParents key and its stream-local MCID.</summary>
+    /// <summary>The owning element via a non-page content stream's /StructParents key and its stream-local MCID.</summary>
     public StructElement? ElementFromParentTree(PdfStream stream, int mcid) => ElementFromParentTree(stream.Dict, mcid);
+
+    /// <summary>The owning element via the referenced content stream's /StructParents, or the page's /StructParents when /Stm is absent.
+    /// /StmOwn identifies an object referencing the stream; its /StructParent or /StructParents never replaces the content stream's key.</summary>
+    public StructElement? ElementFromParentTree(StructMarkedContent content) =>
+        content.Stream is { } stream ? ElementFromParentTree(stream, content.Mcid)
+        : content.PageIndex is { } page ? ElementFromParentTree(page, content.Mcid) : null;
 
     StructElement? ElementFromParentTree(PdfDictionary owner, int mcid)
     {
