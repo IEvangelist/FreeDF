@@ -22,7 +22,28 @@ public sealed record PdfAction(
     PdfObject? JavaScript,
     int? PageIndex = null,
     int? AnnotationIndex = null,
-    string? FieldName = null);
+    string? FieldName = null)
+{
+    public PdfRemoteGoToAction? RemoteGoToDetails { get; init; }
+}
+
+/// <summary>
+/// Inert /GoToR metadata (ISO 32000-2:2020, 12.6.4.3, Table 203). Only references
+/// within the current PDF are dereferenced; no target file or destination is opened or resolved.
+/// Missing or wrong-type entries are null and remain available in Dictionary.
+/// Dictionary and array contents are retained without conformance validation.
+/// </summary>
+/// <param name="FileSpecification">The /F string or file specification dictionary, without reading embedded data.</param>
+/// <param name="Destination">The /D name, byte string, or explicit destination array. Remote page numbers are zero-based.</param>
+/// <param name="StructureDestination">The optional /SD array, retained without interpreting its remote structure element ID.</param>
+/// <param name="NewWindow">The optional /NewWindow flag. Null does not imply false; a viewer would use its preference.</param>
+/// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
+public sealed record PdfRemoteGoToAction(
+    PdfObject? FileSpecification,
+    PdfObject? Destination,
+    PdfArray? StructureDestination,
+    bool? NewWindow,
+    PdfDictionary Dictionary);
 
 public sealed record PdfXfaPacket(string? Name, PdfStream Stream);
 
@@ -31,8 +52,8 @@ public static class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection. JavaScript payloads are returned as PDF objects
-    /// and are never interpreted or executed.
+    /// Returns action dictionaries for inspection, with inert typed metadata for remote go-to actions.
+    /// Payloads are never interpreted or executed, and external files and destinations are never accessed.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
     {
@@ -203,10 +224,25 @@ public static class SafeContentFeatures
             type == "JavaScript" ? f.Resolve(action.Get("JS")) : null,
             pageIndex,
             annotationIndex,
-            fieldName));
+            fieldName)
+        {
+            RemoteGoToDetails = type == "GoToR" ? ReadRemoteGoToAction(f, action) : null,
+        });
         if (action.Get("Next") is { } next)
             AddActionChain(f, next, scope, $"{trigger}/Next", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
         ancestors.Remove(action);
+    }
+
+    static PdfRemoteGoToAction ReadRemoteGoToAction(PdfFile f, PdfDictionary action)
+    {
+        var file = f.Resolve(action.Get("F"));
+        var destination = f.Resolve(action.Get("D"));
+        return new PdfRemoteGoToAction(
+            file is PdfString or PdfDictionary ? file : null,
+            destination is PdfName or PdfString or PdfArray ? destination : null,
+            f.Resolve(action.Get("SD")) as PdfArray,
+            f.Resolve(action.Get("NewWindow")) is PdfBoolean newWindow ? newWindow.Value : null,
+            action);
     }
 
     static string? StringValue(PdfFile f, PdfObject? value) =>

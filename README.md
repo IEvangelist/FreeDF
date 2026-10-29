@@ -32,6 +32,12 @@ var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
 
 Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. Product/tool names remain unchanged while the product name is undecided. Historical benchmark reports retain their original identities and measurements.
 
+### Inert remote go-to actions
+
+`document.GetActions()` retains each original action `Dictionary`. For `/S /GoToR`, `RemoteGoToDetails` also exposes the `/F` file specification (string or dictionary), `/D` destination (name, byte string, or array), optional `/SD` structure destination array, and nullable `/NewWindow` boolean. Only indirect references within the source PDF are dereferenced; external files, embedded file contents, and remote destinations are never opened, loaded, or executed.
+
+These are inspection values, not validated navigation targets (ISO 32000-2:2020, 12.6.4.3, Table 203; file specifications in 7.11). Missing or wrong-type entries are null in the typed view and remain available in the raw dictionary. Nested dictionaries and arrays are preserved without validation or normalisation. Explicit remote destination page numbers are zero-based, not local page references; a missing `/NewWindow` remains null rather than defaulting to false.
+
 ### Interactive optional-content layers
 
 `PortableDocument.Content.OptionalContentState` provides reusable, in-memory layer state for a document's default or named configuration. Its `Groups`, `RadioButtonGroups`, and `IsLocked` expose registered layers and configuration rules. Pass a registered group dictionary to `SetVisibility`, then render with `new PdfRenderOptions { OptionalContentState = state }`. State and `OptionalContentConfigurationName` are mutually exclusive.
