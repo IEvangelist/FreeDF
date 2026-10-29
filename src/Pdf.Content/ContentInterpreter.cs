@@ -67,7 +67,7 @@ public sealed class ContentInterpreter
             var ap = R(a.Get("AP")) as PdfDictionary;
             var n = R(ap?.Get("N"));
             if (n is PdfDictionary states) n = R(R(a.Get("AS")).AsName() is { } s ? states.Get(s) : null);
-            if (n is not PdfStream xs) continue;
+            if (n is not PdfStream xs && (xs = SynthAppearance(a, ra)!) is null) continue;
             var r = ra.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
             double rx0 = Math.Min(r[0], r[2]), ry0 = Math.Min(r[1], r[3]), rw = Math.Abs(r[2] - r[0]), rh = Math.Abs(r[3] - r[1]);
             var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, rw, rh];
@@ -84,6 +84,141 @@ public sealed class ContentInterpreter
     }
 
     void Warn(string s) { if (!Warnings.Contains(s)) Warnings.Add(s); }
+
+    double[] Nums(PdfObject? o) => R(o) is PdfArray a ? a.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [];
+
+    static string ColorOps(double[] c, bool stroke) => c.Length switch
+    {
+        1 => $"{c[0]:0.###} {(stroke ? "G" : "g")} ",
+        3 => $"{c[0]:0.###} {c[1]:0.###} {c[2]:0.###} {(stroke ? "RG" : "rg")} ",
+        4 => $"{c[0]:0.###} {c[1]:0.###} {c[2]:0.###} {c[3]:0.###} {(stroke ? "K" : "k")} ",
+        _ => "",
+    };
+
+    /// <summary>Default appearance (12.5.5 fallback) for markup annotations lacking /AP: highlight, underline, strikeout, squiggly, square, circle, line, polygon/polyline, ink and free text. Content is in page space; BBox is the annotation Rect.</summary>
+    PdfStream? SynthAppearance(PdfDictionary a, PdfArray rectArr)
+    {
+        var sub = R(a.Get("Subtype")).AsName();
+        var rect = Nums(rectArr);
+        var c = Nums(a.Get("C"));
+        var ic = Nums(a.Get("IC"));
+        var ca = R(a.Get("CA")).AsNumber() ?? 1;
+        double bw = 1;
+        var dash = "";
+        if (R(a.Get("BS")) is PdfDictionary bs)
+        {
+            bw = R(bs.Get("W")).AsNumber() ?? 1;
+            if (R(bs.Get("S")).AsName() == "D") dash = "[3] 0 d ";
+        }
+        else if (Nums(a.Get("Border")) is { Length: >= 3 } bo) bw = bo[2];
+        var sb = new System.Text.StringBuilder();
+        var res = new Dictionary<string, PdfObject>();
+        var gs = new Dictionary<string, PdfObject> { ["CA"] = new PdfReal(ca), ["ca"] = new PdfReal(ca) };
+        double x0 = Math.Min(rect[0], rect[2]), y0 = Math.Min(rect[1], rect[3]), x1 = Math.Max(rect[0], rect[2]), y1 = Math.Max(rect[1], rect[3]);
+        var q = Nums(a.Get("QuadPoints"));
+        string P(double x, double y, string op) => $"{x:0.###} {y:0.###} {op}\n";
+        switch (sub)
+        {
+            case "Highlight" when q.Length >= 8:
+                gs["BM"] = new PdfName("Multiply");
+                sb.Append(ColorOps(c.Length == 0 ? [1, 1, 0] : c, false));
+                for (var i = 0; i + 8 <= q.Length; i += 8)
+                    sb.Append(P(q[i], q[i + 1], "m")).Append(P(q[i + 2], q[i + 3], "l")).Append(P(q[i + 6], q[i + 7], "l")).Append(P(q[i + 4], q[i + 5], "l")).Append("h f\n");
+                break;
+            case "Underline" or "StrikeOut" or "Squiggly" when q.Length >= 8:
+                sb.Append(ColorOps(c.Length == 0 ? [0] : c, true)).Append($"{Math.Max(bw, 1):0.##} w\n");
+                for (var i = 0; i + 8 <= q.Length; i += 8)
+                {
+                    double ax = q[i + 4], ay = q[i + 5], bx = q[i + 6], by = q[i + 7];
+                    if (sub == "StrikeOut") { ax = (q[i] + q[i + 4]) / 2; ay = (q[i + 1] + q[i + 5]) / 2; bx = (q[i + 2] + q[i + 6]) / 2; by = (q[i + 3] + q[i + 7]) / 2; }
+                    if (sub == "Squiggly")
+                    {
+                        var len = Math.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+                        var steps = Math.Max(1, (int)(len / 2));
+                        double dx = (bx - ax) / len, dy = (by - ay) / len;
+                        sb.Append(P(ax, ay, "m"));
+                        for (var s = 1; s <= steps; s++)
+                        {
+                            var t = s * 2.0; var off = s % 2 == 0 ? 0 : 2;
+                            sb.Append(P(ax + dx * t - dy * off, ay + dy * t + dx * off, "l"));
+                        }
+                        sb.Append("S\n");
+                    }
+                    else sb.Append(P(ax, ay, "m")).Append(P(bx, by, "l")).Append("S\n");
+                }
+                break;
+            case "Square" or "Circle":
+            {
+                var h = bw / 2;
+                double rx = x0 + h, ry = y0 + h, rw = x1 - x0 - bw, rh = y1 - y0 - bw;
+                if (rw <= 0 || rh <= 0) return null;
+                var fill = ic.Length > 0; var stroke = bw > 0;
+                if (fill) sb.Append(ColorOps(ic, false));
+                if (stroke) sb.Append(ColorOps(c.Length == 0 ? [0] : c, true)).Append($"{bw:0.##} w {dash}\n");
+                if (sub == "Square") sb.Append($"{rx:0.###} {ry:0.###} {rw:0.###} {rh:0.###} re\n");
+                else
+                {
+                    const double k = 0.5522847498; double cx = rx + rw / 2, cy = ry + rh / 2, ox = rw / 2 * k, oy = rh / 2 * k;
+                    sb.Append(P(rx, cy, "m"))
+                      .Append($"{rx:0.###} {cy + oy:0.###} {cx - ox:0.###} {ry + rh:0.###} {cx:0.###} {ry + rh:0.###} c\n")
+                      .Append($"{cx + ox:0.###} {ry + rh:0.###} {rx + rw:0.###} {cy + oy:0.###} {rx + rw:0.###} {cy:0.###} c\n")
+                      .Append($"{rx + rw:0.###} {cy - oy:0.###} {cx + ox:0.###} {ry:0.###} {cx:0.###} {ry:0.###} c\n")
+                      .Append($"{cx - ox:0.###} {ry:0.###} {rx:0.###} {cy - oy:0.###} {rx:0.###} {cy:0.###} c h\n");
+                }
+                sb.Append(fill && stroke ? "B\n" : fill ? "f\n" : stroke ? "S\n" : "n\n");
+                break;
+            }
+            case "Line" when Nums(a.Get("L")) is { Length: >= 4 } l:
+                sb.Append(ColorOps(c.Length == 0 ? [0] : c, true)).Append($"{bw:0.##} w {dash}\n").Append(P(l[0], l[1], "m")).Append(P(l[2], l[3], "l")).Append("S\n");
+                break;
+            case "Polygon" or "PolyLine" when Nums(a.Get("Vertices")) is { Length: >= 4 } v:
+            {
+                var fill = sub == "Polygon" && ic.Length > 0;
+                if (fill) sb.Append(ColorOps(ic, false));
+                sb.Append(ColorOps(c.Length == 0 ? [0] : c, true)).Append($"{bw:0.##} w {dash}\n");
+                for (var i = 0; i + 1 < v.Length; i += 2) sb.Append(P(v[i], v[i + 1], i == 0 ? "m" : "l"));
+                sb.Append(sub == "Polygon" ? (fill ? "h B\n" : "s\n") : "S\n");
+                break;
+            }
+            case "Ink" when R(a.Get("InkList")) is PdfArray ink:
+                sb.Append(ColorOps(c.Length == 0 ? [0] : c, true)).Append($"{bw:0.##} w 1 J 1 j\n");
+                foreach (var stroke in ink.Items)
+                {
+                    var pts = Nums(stroke);
+                    for (var i = 0; i + 1 < pts.Length; i += 2) sb.Append(P(pts[i], pts[i + 1], i == 0 ? "m" : "l"));
+                    sb.Append("S\n");
+                }
+                break;
+            case "FreeText" when R(a.Get("Contents")) is PdfString txt:
+            {
+                var da = R(a.Get("DA")) is PdfString ds ? ds.Text : "0 g";
+                var size = 12.0;
+                var m = System.Text.RegularExpressions.Regex.Match(da, @"([\d.]+)\s+Tf");
+                if (m.Success) double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out size);
+                if (size <= 0) size = 12;
+                var colorOps = System.Text.RegularExpressions.Regex.Replace(da, @"/\S+\s+[\d.]+\s+Tf", "");
+                if (ic.Length > 0) sb.Append("q ").Append(ColorOps(ic, false)).Append($"{x0:0.###} {y0:0.###} {x1 - x0:0.###} {y1 - y0:0.###} re f Q\n");
+                if (c.Length > 0 && bw > 0) sb.Append("q ").Append(ColorOps(c, true)).Append($"{bw:0.##} w {x0 + bw / 2:0.###} {y0 + bw / 2:0.###} {x1 - x0 - bw:0.###} {y1 - y0 - bw:0.###} re S Q\n");
+                sb.Append($"q {x0:0.###} {y0:0.###} {x1 - x0:0.###} {y1 - y0:0.###} re W n BT {colorOps} /Helv {size:0.##} Tf {size * 1.15:0.##} TL {x0 + 2:0.###} {y1 - 2 - size:0.###} Td\n");
+                foreach (var line in txt.Text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+                    sb.Append($"({line.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)")}) Tj T*\n");
+                sb.Append("ET Q\n");
+                res["Font"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["Helv"] = new PdfDictionary(new Dictionary<string, PdfObject>
+                    { ["Type"] = new PdfName("Font"), ["Subtype"] = new PdfName("Type1"), ["BaseFont"] = new PdfName("Helvetica"), ["Encoding"] = new PdfName("WinAnsiEncoding") }) });
+                break;
+            }
+            default: return null;
+        }
+        if (sb.Length == 0) return null;
+        res["ExtGState"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["G0"] = new PdfDictionary(gs) });
+        var body = System.Text.Encoding.Latin1.GetBytes("/G0 gs\n" + sb);
+        return new PdfStream(new PdfDictionary(new Dictionary<string, PdfObject>
+        {
+            ["BBox"] = new PdfArray([new PdfReal(x0), new PdfReal(y0), new PdfReal(x1), new PdfReal(y1)]),
+            ["Resources"] = new PdfDictionary(res),
+            ["Length"] = new PdfInteger(body.Length),
+        }), body);
+    }
 
     PdfObject? R(PdfObject? o) => _f.Resolve(o);
 

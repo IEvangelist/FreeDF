@@ -86,6 +86,52 @@ public class EditorTests
         Assert.NotEqual(before, after);
     }
 
+    static byte[] FormPdf()
+    {
+        const string s = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R 6 0 R] >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [4 0 R 5 0 R 6 0 R] >>\nendobj\n" +
+            "4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Tx /T (ml) /Ff 4096 /Rect [10 150 150 290] /MK << /BG [1 1 0.8] /BC [0 0 0] >> /P 3 0 R >>\nendobj\n" +
+            "5 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Tx /T (comb) /Ff 16777216 /MaxLen 8 /Rect [10 100 150 130] /MK << /BC [0 0 1] >> /P 3 0 R >>\nendobj\n" +
+            "6 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (combo) /Opt [[(a) (Alpha)] [(b) (Beta)]] /Rect [10 50 150 80] /P 3 0 R >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 7 >>\n%%EOF\n";
+        return System.Text.Encoding.ASCII.GetBytes(s);
+    }
+
+    [Fact]
+    public void Multiline_comb_and_choice_fields_get_appearances_with_borders()
+    {
+        var e = PdfEditor.Open(PdfDocument.Load(FormPdf()));
+        var before = Render(Reload(e.Save()), 0);
+        Assert.True(e.SetFieldValue("ml", "The quick brown fox jumps over the lazy dog again and again"));
+        Assert.True(e.SetFieldValue("comb", "ABC"));
+        Assert.True(e.SetFieldValue("combo", "b"));
+        var d = Reload(e.Save());
+        var after = Render(d, 0);
+        Assert.NotEqual(before, after);
+        // MK background (light yellow) is drawn inside the multiline box: pixel at (20, 300-160)
+        var o = (140 * 300 + 20) * 4;
+        Assert.True(after[o] > 240 && after[o + 1] > 240 && after[o + 2] < 230);
+        Assert.Contains(d.GetFormFields(), x => x.FullName == "combo" && x.Value == "b");
+    }
+
+    [Fact]
+    public void Annotations_without_AP_get_default_appearances()
+    {
+        const string s = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Annots [4 0 R 5 0 R] >>\nendobj\n" +
+            "4 0 obj\n<< /Type /Annot /Subtype /Highlight /Rect [20 150 120 170] /QuadPoints [20 170 120 170 20 150 120 150] /C [1 0 0] >>\nendobj\n" +
+            "5 0 obj\n<< /Type /Annot /Subtype /Square /Rect [20 20 100 80] /C [0 0 1] /IC [0 1 0] >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 6 >>\n%%EOF\n";
+        var px = Render(PdfDocument.Load(System.Text.Encoding.ASCII.GetBytes(s)), 0);
+        int At(int x, int y) => (y * 200 + x) * 4;
+        Assert.True(px[At(60, 40)] > 200 && px[At(60, 40) + 1] < 60);   // highlight (red) over white (multiply)
+        Assert.True(px[At(60, 140)] < 60 && px[At(60, 140) + 1] > 200); // square interior (green)
+    }
+
     [Fact]
     public void Set_field_value_roundtrips_and_generates_appearance()
     {
