@@ -44,7 +44,9 @@ Full spec parity is the goal; this table is the honest current state.
 | Editing existing page text in place (convert run to editable object, original operator removed, advance preserved; font becomes a standard font; page-level text only, not inside form XObjects) | Done |
 | Moving/resizing existing images and vector objects | **Todo** |
 | Form filling (text and checkbox/radio fields, with editor UI) | Done |
-| Redaction (`Redactor.Redact`: removes intersecting text runs, paths, images and forms from the content stream, then paints an opaque box; whole-object granularity, no web UI yet) | Done |
+| Redaction (`Redactor.Redact`: removes intersecting text runs, paths, images and forms from the content stream, then paints an opaque box; whole-object granularity; web tool + `X` shortcut, verified end to end) | Done |
+| Web editor: context menus (clipboard, arrange/z-order, align, redact), Shift/Alt drag modifiers, collapsible responsive panels | Done |
+| Web editor fonts: standard 14 + installed TrueType (glyf) fonts embedded as subsets (Type0/Identity-H, ToUnicode); synthetic bold/italic when a face is missing. Not yet: .ttc collections, CFF .otf, alignment/underline/spacing | Partial |
 | Incremental save, signing, object/xref streams on save, encrypted save | **Todo** |
 
 ## Render comparison
