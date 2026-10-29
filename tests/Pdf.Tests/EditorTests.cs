@@ -377,6 +377,37 @@ public class EditorTests
     }
 
     [Fact]
+    public void Redaction_removes_form_fields_and_blanks_outline_titles_under_the_rect()
+    {
+        var sb = new System.Text.StringBuilder("%PDF-1.7\n");
+        void Obj(int n, string body) => sb.Append($"{n} 0 obj\n{body}\nendobj\n");
+        var content = "BT /F1 20 Tf 10 100 Td (Salaries) Tj ET";
+        Obj(1, "<< /Type /Catalog /Pages 2 0 R /Outlines 6 0 R /AcroForm << /Fields [8 0 R 9 0 R] >> >>");
+        Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+        Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Annots [8 0 R 9 0 R] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>");
+        Obj(4, $"<< /Length {content.Length} >>\nstream\n{content}\nendstream");
+        Obj(6, "<< /Type /Outlines /First 7 0 R /Last 10 0 R /Count 2 >>");
+        Obj(7, "<< /Title (Salaries overview) /Parent 6 0 R /Next 10 0 R /Dest [3 0 R /Fit] >>");
+        Obj(10, "<< /Title (Introduction) /Parent 6 0 R /Prev 7 0 R /Dest [3 0 R /Fit] >>");
+        Obj(8, "<< /Type /Annot /Subtype /Widget /FT /Tx /T (secretfield) /V (TOPSECRETVALUE) /Rect [10 140 100 160] /P 3 0 R >>");
+        Obj(9, "<< /Type /Annot /Subtype /Widget /FT /Tx /T (otherfield) /V (harmless) /Rect [10 10 100 30] /P 3 0 R >>");
+        sb.Append("trailer\n<< /Root 1 0 R /Size 11 >>\n%%EOF\n");
+        var e = PdfEditor.Open(System.Text.Encoding.Latin1.GetBytes(sb.ToString()));
+        // Page text at y=100 (box y=100 from top), widget 8 at box y 40..60.
+        Redactor.Apply(e, 0, [new Redactor.BoxRect(0, 85, 200, 30), new Redactor.BoxRect(0, 35, 120, 30)]);
+        var saved = e.Save();
+        var raw = System.Text.Encoding.Latin1.GetString(saved);
+        var norm = raw.Replace("\0", "");
+        bool Has(string s) => norm.Contains(s) || norm.Contains(Convert.ToHexString(System.Text.Encoding.ASCII.GetBytes(s)), StringComparison.OrdinalIgnoreCase) || norm.Contains(Convert.ToHexString(System.Text.Encoding.BigEndianUnicode.GetBytes(s)), StringComparison.OrdinalIgnoreCase);
+        Assert.False(Has("TOPSECRETVALUE"));
+        Assert.False(Has("secretfield"));
+        Assert.False(Has("Salaries"));
+        Assert.True(Has("harmless"));
+        Assert.True(Has("Introduction"));
+        Assert.True(Has("redacted"));
+    }
+
+    [Fact]
     public void Overlay_draws_on_top_and_base_save_excludes_it()
     {
         var e = PdfEditor.Open(Cff());

@@ -16,10 +16,12 @@ public sealed class FontCatalog
     readonly Dictionary<string, List<FontFace>> _families = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, (byte[] Data, TrueTypeFont Font)> _loaded = [];
 
-    public static FontCatalog Scan()
+    public static FontCatalog Scan(IEnumerable<string>? extraDirs = null)
     {
         var c = new FontCatalog();
         var dirs = new List<string> { Environment.GetFolderPath(Environment.SpecialFolder.Fonts) };
+        dirs.AddRange((Environment.GetEnvironmentVariable("PDF_EDITOR_FONT_DIRS") ?? "").Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries));
+        if (extraDirs is not null) dirs.AddRange(extraDirs);
         var home = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         dirs.Add(System.IO.Path.Combine(home, "Microsoft", "Windows", "Fonts"));
         dirs.AddRange(["/usr/share/fonts", "/usr/local/share/fonts", "/Library/Fonts", "/System/Library/Fonts",
@@ -231,9 +233,11 @@ public static class FontSubsetter
             }
         }
 
+        // Glyph IDs are kept, but nothing past the highest glyph in use needs an entry.
+        var newN = used.Max + 1;
         using var gl = new MemoryStream();
-        var newLoca = new byte[(numGlyphs + 1) * 4];
-        for (var g = 0; g < numGlyphs; g++)
+        var newLoca = new byte[(newN + 1) * 4];
+        for (var g = 0; g < newN; g++)
         {
             System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(newLoca.AsSpan(g * 4), (uint)gl.Length);
             if (!used.Contains(g)) continue;
@@ -241,7 +245,7 @@ public static class FontSubsetter
             gl.Write(d, glyf.Off + s, e - s);
             while (gl.Length % 4 != 0) gl.WriteByte(0);
         }
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(newLoca.AsSpan(numGlyphs * 4), (uint)gl.Length);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(newLoca.AsSpan(newN * 4), (uint)gl.Length);
 
         var tables = new SortedDictionary<string, byte[]>(StringComparer.Ordinal);
         foreach (var tag in new[] { "head", "hhea", "maxp", "hmtx", "cvt ", "fpgm", "prep" })
@@ -249,6 +253,18 @@ public static class FontSubsetter
         tables["glyf"] = gl.ToArray(); tables["loca"] = newLoca;
         tables["head"][8] = tables["head"][9] = tables["head"][10] = tables["head"][11] = 0;
         tables["head"][50] = 0; tables["head"][51] = 1;
+        if (newN < numGlyphs && tables.ContainsKey("hhea") && tables.ContainsKey("hmtx"))
+        {
+            tables["maxp"][4] = (byte)(newN >> 8); tables["maxp"][5] = (byte)newN;
+            var nh = tables["hhea"][34] << 8 | tables["hhea"][35];
+            var newNh = Math.Min(nh, newN);
+            tables["hhea"][34] = (byte)(newNh >> 8); tables["hhea"][35] = (byte)newNh;
+            var hm = tables["hmtx"];
+            var nhm = new byte[newNh * 4 + (newN - newNh) * 2];
+            Array.Copy(hm, nhm, newNh * 4);
+            if (newN > newNh) Array.Copy(hm, nh * 4, nhm, newNh * 4, (newN - newNh) * 2);
+            tables["hmtx"] = nhm;
+        }
 
         var count = tables.Count;
         var outp = new MemoryStream();

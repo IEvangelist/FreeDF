@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\tools\Pdf.EditorWeb\FontCatalog.cs" Link="EditorWeb\FontCatalog.cs" />
+    <Compile Include="..\..\tools\Pdf.EditorWeb\OverlayBuilder.cs" Link="EditorWeb\OverlayBuilder.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="..\fixtures\**\*" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

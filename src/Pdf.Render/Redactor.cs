@@ -15,7 +15,7 @@ namespace Pdf.Render;
 /// <item>Images: a partly covered raster image is re-encoded with the covered pixels blanked; a fully covered one is removed.</item>
 /// <item>Form XObjects: text and images inside forms are redacted in the form's own stream (a form shared by several pages or invocations is redacted everywhere, which over-removes but never leaks).</item>
 /// <item>Vector paths, inline images and image masks that touch a rectangle are removed whole.</item>
-/// <item>With a <see cref="PdfEditor"/>: annotations under a rectangle are removed and XMP/Info/thumbnail metadata is scrubbed.</item>
+/// <item>With a <see cref="PdfEditor"/>: annotations under a rectangle are removed (with their AcroForm field entries), outline titles sharing a word with redacted text are blanked, and XMP/Info/thumbnail metadata is scrubbed.</item>
 /// </list>
 /// </summary>
 public static class Redactor
@@ -24,7 +24,7 @@ public static class Redactor
     public readonly record struct BoxRect(double X, double Y, double W, double H);
 
     sealed record NewImage(string Name, byte[] Data, int W, int H, byte[]? Alpha, int Form);
-    sealed record Plan(byte[] Page, Dictionary<int, byte[]> Forms, List<NewImage> Images);
+    sealed record Plan(byte[] Page, Dictionary<int, byte[]> Forms, List<NewImage> Images, List<string> HitText);
 
     /// <summary>Returns the redacted page content for <paramref name="page"/> (form XObjects and images are removed whole in this overload); set it with <see cref="PdfEditor.SetContentOverride"/>.</summary>
     public static byte[] Redact(PdfPage page, IReadOnlyList<BoxRect> rects)
@@ -91,6 +91,12 @@ public static class Redactor
             double x0 = Math.Min(v[0], v[2]) - box.Left, x1 = Math.Max(v[0], v[2]) - box.Left, y0 = box.Top - Math.Max(v[1], v[3]), y1 = box.Top - Math.Min(v[1], v[3]);
             return rects.Any(r => x0 < r.X + r.W && x1 > r.X && y0 < r.Y + r.H && y1 > r.Y);
         });
+        editor.PruneRemovedFormFields();
+        // Outline titles that share a word with redacted text are blanked (conservative: may rewrite a title that merely shares a word).
+        var words = plan.HitText.SelectMany(t => t.Split([' ', '\t', '\n', ',', '.', ';', ':', '-', '(', ')'], StringSplitOptions.RemoveEmptyEntries))
+            .Where(w => w.Length >= 3).Select(w => w.ToLowerInvariant()).ToHashSet();
+        if (words.Count > 0)
+            editor.RedactOutlineTitles(title => title.Split([' ', '\t', '\n', ',', '.', ';', ':', '-', '(', ')'], StringSplitOptions.RemoveEmptyEntries).Any(w => words.Contains(w.ToLowerInvariant())));
         editor.ScrubMetadata();
     }
 
@@ -135,7 +141,7 @@ public static class Redactor
 
         var streams = spans.Select(s => s.Form).Concat(objects.Select(o => o.Form)).Append(0).Distinct().ToList();
         var forms = new Dictionary<int, byte[]>();
-        var images = new List<NewImage>();
+        var images = new List<NewImage>(); var hitText = new List<string>();
         var pageContent = page.GetContents();
         var imgCounter = 0; var prefix = Guid.NewGuid().ToString("N")[..8];
 
@@ -158,7 +164,7 @@ public static class Redactor
                 if (removals.ContainsKey(sp.Index)) continue;
                 if (sp.Pieces is null)
                 {
-                    if (Hit(sp.X, sp.Y - sp.Size * 0.25, sp.X + Math.Max(sp.Width, sp.Size * 0.1), sp.Y + sp.Size * 1.25)) removals[sp.Index] = N(sp.Advance);
+                    if (Hit(sp.X, sp.Y - sp.Size * 0.25, sp.X + Math.Max(sp.Width, sp.Size * 0.1), sp.Y + sp.Size * 1.25)) { removals[sp.Index] = N(sp.Advance); hitText.Add(sp.Text); }
                     continue;
                 }
                 var any = false; var sb = new StringBuilder(); var run = new StringBuilder();
@@ -175,7 +181,7 @@ public static class Redactor
                     }
                     Flush();
                 }
-                if (any) removals[sp.Index] = sb.ToString();
+                if (any) { removals[sp.Index] = sb.ToString(); hitText.Add(sp.Text); }
             }
 
             var edits = new List<ContentRewriter.ObjectEdit>();
@@ -200,7 +206,7 @@ public static class Redactor
             content = ContentRewriter.ReplaceText(content, removals);
             if (form == 0) pageContent = content; else forms[form] = content;
         }
-        return new Plan(pageContent, forms, images);
+        return new Plan(pageContent, forms, images, hitText);
     }
 
     // Blanks pixels whose centre maps (through the image CTM) into a redaction rectangle; the alpha plane is null when everything is opaque.

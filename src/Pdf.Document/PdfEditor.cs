@@ -58,7 +58,7 @@ public sealed partial class PdfEditor
             _objs[num] = new PdfDictionary(merged);
             _pages.Add(num);
         }
-        var cat = new Dictionary<string, PdfObject>((_objs[_catalog] as PdfDictionary ?? throw new PdfParseException("catalog is not a dictionary")).Entries) { ["Pages"] = new PdfRef(_pagesRoot, 0) };
+        var cat = new Dictionary<string, PdfObject>((_objs.GetValueOrDefault(_catalog) as PdfDictionary ?? throw new PdfParseException("catalog is not a dictionary")).Entries) { ["Pages"] = new PdfRef(_pagesRoot, 0) };
         _objs[_catalog] = new PdfDictionary(cat);
     }
 
@@ -427,6 +427,66 @@ public sealed partial class PdfEditor
         if (final.Count == 0) e.Remove("Annots"); else e["Annots"] = new PdfArray(final);
         _objs[_pages[index]] = new PdfDictionary(e);
         return gone;
+    }
+
+    /// <summary>Drops AcroForm fields whose widgets were all removed (see <see cref="RemoveAnnotations"/>) so field values cannot outlive a redacted widget. Returns the number of field entries removed.</summary>
+    public int PruneRemovedFormFields()
+    {
+        if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || form.Get("Fields") is not { } fieldsObj || Res(fieldsObj) is not PdfArray fields) return 0;
+        var dropped = 0;
+        List<PdfObject> Prune(IEnumerable<PdfObject> items)
+        {
+            var keep = new List<PdfObject>();
+            foreach (var it in items)
+            {
+                if (it is PdfRef r && _deleted.Contains(r.Number)) { dropped++; continue; }
+                if (Res(it) is PdfDictionary fd && fd.Get("Kids") is { } kidsObj && Res(kidsObj) is PdfArray kids)
+                {
+                    var before = kids.Count;
+                    var nk = Prune(kids.Items);
+                    if (nk.Count == 0 && before > 0) { dropped++; if (it is PdfRef fr) _deleted.Add(fr.Number); continue; }
+                    if (nk.Count != before)
+                    {
+                        var e = new Dictionary<string, PdfObject>(fd.Entries) { ["Kids"] = new PdfArray(nk) };
+                        if (it is PdfRef fr2) _objs[fr2.Number] = new PdfDictionary(e);
+                    }
+                }
+                keep.Add(it);
+            }
+            return keep;
+        }
+        var kept = Prune(fields.Items);
+        if (dropped == 0) return 0;
+        if (fieldsObj is PdfRef fref) _objs[fref.Number] = new PdfArray(kept);
+        else
+        {
+            var fe = new Dictionary<string, PdfObject>(form.Entries) { ["Fields"] = new PdfArray(kept) };
+            var af = ((PdfDictionary)_objs[_catalog]).Get("AcroForm");
+            if (af is PdfRef aref) _objs[aref.Number] = new PdfDictionary(fe);
+            else _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(((PdfDictionary)_objs[_catalog]).Entries) { ["AcroForm"] = new PdfDictionary(fe) });
+        }
+        return dropped;
+    }
+
+    /// <summary>Replaces the title of every outline item for which <paramref name="matches"/> is true (outline titles can echo redacted text). Returns the number rewritten.</summary>
+    public int RedactOutlineTitles(Func<string, bool> matches, string replacement = "[redacted]")
+    {
+        if (Res(((PdfDictionary)_objs[_catalog]).Get("Outlines")) is not PdfDictionary root) return 0;
+        var seen = new HashSet<int>(); var changed = 0;
+        void Walk(PdfObject? first)
+        {
+            for (var cur = first; cur is PdfRef r && seen.Add(r.Number) && _objs.TryGetValue(r.Number, out var o) && o is PdfDictionary d; cur = d.Get("Next"))
+            {
+                if (Res(d.Get("Title")) is PdfString ts && matches(ts.Text))
+                {
+                    _objs[r.Number] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { ["Title"] = new PdfString(Utf16(replacement)) });
+                    changed++;
+                }
+                Walk(d.Get("First"));
+            }
+        }
+        Walk(root.Get("First"));
+        return changed;
     }
 
     /// <summary>Removes XMP metadata, Info entries other than Producer and page thumbnails, which can echo redacted content.</summary>
