@@ -146,15 +146,18 @@ public class ValidationTests
     const string XmpUa = "<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='1'><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>";
 
     // Graphics-only tagged document; structXml elements are objects 7.. (K of the Document element listed in `kids`).
-    static byte[] Ua(string kids, params string[] elems)
+    static byte[] Ua(string kids, params string[] elems) => UaWithClassMap(kids, "", elems);
+
+    static byte[] UaWithClassMap(string kids, string classMap, params string[] elems)
     {
+        var classMapEntry = classMap.Length == 0 ? "" : $" /ClassMap << {classMap} >>";
         var objs = new List<string>
         {
             "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R /MarkInfo << /Marked true >> /Lang (en) /ViewerPreferences << /DisplayDocTitle true >> /Metadata 6 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /StructParents 0 >>",
             ObjPdf.Stream(""),
-            "<< /Type /StructTreeRoot /K 7 0 R /ParentTree << /Nums [0 []] >> >>",
+            $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree << /Nums [0 []] >>{classMapEntry} >>",
             ObjPdf.Xmp(XmpUa),
             $"<< /S /Document /K [{kids}] >>",
         };
@@ -204,8 +207,73 @@ public class ValidationTests
     [Fact]
     public void UaTableWithHeaderIsClean()
     {
-        var r = Ua1(Ua("8 0 R", "<< /S /Table /K [9 0 R 10 0 R] >>", "<< /S /TR /K [11 0 R 11 0 R] >>", "<< /S /TR /K [12 0 R 12 0 R] >>", "<< /S /TH >>", "<< /S /TD >>"));
+        var r = Ua1(Ua("8 0 R", "<< /S /Table /K [9 0 R 10 0 R] >>", "<< /S /TR /K [11 0 R 11 0 R] >>", "<< /S /TR /K [12 0 R 12 0 R] >>", "<< /S /TH /A << /O /Table /Scope /Column >> >>", "<< /S /TD >>"));
         Assert.DoesNotContain(r.Findings, f => f.RuleId.StartsWith("PDFUA-TABLE") || f.RuleId == "PDFUA-ROW-CHILD");
+    }
+
+    [Fact]
+    public void UaTableHeaderAssociationsAcceptDirectAndClassAttributes()
+    {
+        var r = Ua1(UaWithClassMap("8 0 R", "/ColumnHeader << /O /Table /Scope /Column >> /HeaderRefs << /O /Table /Headers [(h1)] >>",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH /ID (h1) /C /ColumnHeader >>",
+            "<< /S /TD /C /HeaderRefs >>",
+            "<< /S /TD /C /HeaderRefs >>",
+            "<< /S /TD /C /HeaderRefs >>"));
+
+        Assert.DoesNotContain(r.Findings, f => f.RuleId.StartsWith("PDFUA-TABLE-"));
+    }
+
+    [Fact]
+    public void UaTableWithoutScopeGetsARecommendationNotAnError()
+    {
+        var r = Ua1(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>"));
+
+        Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-SCOPE-RECOMMENDED" && f.Severity == ValidationSeverity.Info);
+        Assert.DoesNotContain(r.Findings, f => f.RuleId == "PDFUA-TABLE-SCOPE" && f.Severity == ValidationSeverity.Error);
+    }
+
+    [Fact]
+    public void UaTableReportsInvalidHeaderScopeAndReferences()
+    {
+        var r = Ua1(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH /ID (h1) /A << /O /Table /Scope /Diagonal >> >>",
+            "<< /S /TH /ID (h1) /A << /O /Table /Scope /Column >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(missing)] >> >>",
+            "<< /S /TD /A << /O /Table /Headers /h1 >> >>"));
+
+        Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-SCOPE");
+        Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-HEADER-ID-DUPLICATE");
+        Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-HEADERS-REFERENCE");
+        Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-HEADERS-FORMAT");
+    }
+
+    [Fact]
+    public void Ua2TableRequiresHeadersOnEveryDataCellWhenHeadersAreUsed()
+    {
+        var pdf = Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH /ID (h1) /A << /O /Table /Scope /Column >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(h1)] >> >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>");
+        var r = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+
+        Assert.Equal(2, r.Findings.Count(f => f.RuleId == "PDFUA-TABLE-HEADERS-CONSISTENCY"));
     }
 
     [Fact]
