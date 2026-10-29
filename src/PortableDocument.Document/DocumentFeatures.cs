@@ -31,7 +31,10 @@ public sealed record PdfFileSpecification(
     string? AFRelationship,
     IReadOnlyDictionary<string, PdfEmbeddedFile> EmbeddedFiles,
     PdfDictionary Dictionary,
-    PdfDictionary? CollectionItem);
+    PdfDictionary? CollectionItem,
+    IReadOnlyList<PdfRelatedFile> RelatedFiles);
+
+public sealed record PdfRelatedFile(string Platform, string? FileName, PdfDictionary Dictionary);
 
 public sealed record PdfDocumentCollection(
     string? View,
@@ -46,6 +49,7 @@ public enum PdfAssociatedFileScope
     Annotation,
     AcroForm,
     FormField,
+    StructureElement,
 }
 
 public sealed record PdfAssociatedFile(
@@ -53,7 +57,8 @@ public sealed record PdfAssociatedFile(
     PdfFileSpecification FileSpecification,
     int? PageIndex = null,
     int? AnnotationIndex = null,
-    string? FieldName = null);
+    string? FieldName = null,
+    string? StructureRole = null);
 
 public static class DocumentFeatures
 {
@@ -255,6 +260,12 @@ public static class DocumentFeatures
                     CollectFieldAssociatedFiles(f, field, "", 0, seen, list);
             }
         }
+        if (f.Resolve(f.Catalog.Get("StructTreeRoot")) is PdfDictionary structureRoot)
+        {
+            var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            var visited = 0;
+            CollectStructureAssociatedFiles(f, structureRoot.Get("K"), 0, seen, ref visited, list);
+        }
         for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
         {
             var page = doc.Pages[pageIndex];
@@ -265,6 +276,39 @@ public static class DocumentFeatures
                     AddAssociatedFiles(f, annotation.Get("AF"), PdfAssociatedFileScope.Annotation, pageIndex, annotationIndex, list);
         }
         return list;
+    }
+
+    static void CollectStructureAssociatedFiles(
+        PdfFile f,
+        PdfObject? value,
+        int depth,
+        HashSet<PdfDictionary> seen,
+        ref int visited,
+        List<PdfAssociatedFile> acc)
+    {
+        if (depth > MaxDepth || ++visited > 10_000) return;
+        var resolved = f.Resolve(value);
+        if (resolved is PdfArray array)
+        {
+            foreach (var child in array.Items)
+                CollectStructureAssociatedFiles(f, child, depth + 1, seen, ref visited, acc);
+            return;
+        }
+        if (resolved is not PdfDictionary element || !seen.Add(element)) return;
+        var type = f.Resolve(element.Get("Type")).AsName();
+        var role = f.Resolve(element.Get("S")).AsName();
+        if (type != "StructElem" && role is null) return;
+        if (element.Get("AF") is { } associatedFiles && f.Resolve(associatedFiles) is PdfArray files)
+        {
+            foreach (var file in files.Items)
+                if (f.Resolve(file) is PdfDictionary spec)
+                    acc.Add(new PdfAssociatedFile(
+                        PdfAssociatedFileScope.StructureElement,
+                        ReadFileSpecification(f, spec, FileName(f, spec) ?? ""),
+                        StructureRole: role));
+        }
+        if (element.Get("K") is { } kids)
+            CollectStructureAssociatedFiles(f, kids, depth + 1, seen, ref visited, acc);
     }
 
     static void CollectFieldAssociatedFiles(
@@ -375,7 +419,20 @@ public static class DocumentFeatures
             f.Resolve(spec.Get("AFRelationship")).AsName(),
             embedded,
             spec,
-            f.Resolve(spec.Get("CI")) as PdfDictionary);
+            f.Resolve(spec.Get("CI")) as PdfDictionary,
+            ReadRelatedFiles(f, spec.Get("RF")));
+    }
+
+    static IReadOnlyList<PdfRelatedFile> ReadRelatedFiles(PdfFile f, PdfObject? value)
+    {
+        if (f.Resolve(value) is not PdfDictionary related) return [];
+        var files = new List<PdfRelatedFile>();
+        foreach (var (platform, relatedFiles) in related.Entries)
+            if (f.Resolve(relatedFiles) is PdfArray array)
+                foreach (var file in array.Items)
+                    if (f.Resolve(file) is PdfDictionary spec)
+                        files.Add(new PdfRelatedFile(platform, FileName(f, spec) ?? "", spec));
+        return files;
     }
 
     static string? FileName(PdfFile f, PdfDictionary spec) =>

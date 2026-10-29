@@ -54,14 +54,17 @@ public class DocumentFeatureTests
     static byte[] FileSpecificationPdf()
     {
         const string pdf = "%PDF-2.0\n" +
-            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] /AcroForm << /AF [5 0 R] /Fields [7 0 R] >> /Collection << /View /D /Schema << /Title << /Subtype /S /N (Title) >> >> /Sort << /S /Title /A true >> >> >>\nendobj\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] /AcroForm << /AF [5 0 R] /Fields [7 0 R] >> /Collection << /View /D /Schema << /Title << /Subtype /S /N (Title) >> >> /Sort << /S /Title /A true >> >> /StructTreeRoot 23 0 R >>\nendobj\n" +
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
             "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /AF [5 0 R] /Annots [4 0 R] >>\nendobj\n" +
             "4 0 obj\n<< /Type /Annot /Subtype /FileAttachment /Rect [10 10 20 20] /AF [5 0 R] >>\nendobj\n" +
-            "5 0 obj\n<< /Type /Filespec /F (fallback.txt) /UF (unicode.txt) /DOS (DOS.TXT) /Mac (Mac.txt) /Unix (unix.txt) /Desc (attachment description) /ID [(first-id) (second-id)] /V true /AFRelationship /Data /CI << /Title (A report) >> /EF << /F 6 0 R /UF 6 0 R >> >>\nendobj\n" +
+            "5 0 obj\n<< /Type /Filespec /F (fallback.txt) /UF (unicode.txt) /DOS (DOS.TXT) /Mac (Mac.txt) /Unix (unix.txt) /Desc (attachment description) /ID [(first-id) (second-id)] /V true /AFRelationship /Data /CI << /Title (A report) >> /RF << /F [22 0 R] >> /EF << /F 6 0 R /UF 6 0 R >> >>\nendobj\n" +
             "6 0 obj\n<< /Type /EmbeddedFile /Subtype /text#2Fplain /Params << /Size 5 /CreationDate (D:20260101000000Z) /ModDate (D:20260102000000Z) /CheckSum <01020304> >> /Length 5 >>\nstream\nhello\nendstream\nendobj\n" +
             "7 0 obj\n<< /T (attachedField) /AF [5 0 R] /Kids [7 0 R] >>\nendobj\n" +
-            "trailer\n<< /Root 1 0 R /Size 8 >>\n%%EOF\n";
+            "22 0 obj\n<< /Type /Filespec /F (source.dat) /RF << /F [5 0 R] >> >>\nendobj\n" +
+            "23 0 obj\n<< /Type /StructTreeRoot /K 24 0 R >>\nendobj\n" +
+            "24 0 obj\n<< /Type /StructElem /S /Figure /AF [5 0 R] /K 24 0 R >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 25 >>\n%%EOF\n";
         return System.Text.Encoding.ASCII.GetBytes(pdf);
     }
 
@@ -81,6 +84,10 @@ public class DocumentFeatureTests
         Assert.Equal(new[] { "first-id", "second-id" }, spec.Id);
         Assert.True(spec.IsVolatile);
         Assert.Equal("Data", spec.AFRelationship);
+        var related = Assert.Single(spec.RelatedFiles);
+        Assert.Equal("F", related.Platform);
+        Assert.Equal("source.dat", related.FileName);
+        Assert.NotNull(related.Dictionary.Get("RF"));
         Assert.Equal("A report", doc.File.Resolve(spec.CollectionItem?.Get("Title")) is PdfString title ? title.Text : null);
 
         var embedded = spec.EmbeddedFiles["UF"];
@@ -95,10 +102,11 @@ public class DocumentFeatureTests
         Assert.NotNull(embedded.Stream);
 
         var associated = doc.GetAssociatedFiles();
-        Assert.Equal(5, associated.Count);
+        Assert.Equal(6, associated.Count);
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Catalog);
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.AcroForm);
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.FormField && file.FieldName == "attachedField");
+        Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.StructureElement && file.StructureRole == "Figure");
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Page && file.PageIndex == 0);
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Annotation && file.PageIndex == 0 && file.AnnotationIndex == 0);
 
