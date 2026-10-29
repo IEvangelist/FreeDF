@@ -112,4 +112,66 @@ public class DocumentFeatureTests
         Assert.Equal("attachment", legacy.Name);
         Assert.Equal("hello", System.Text.Encoding.ASCII.GetString(legacy.Data));
     }
+
+    static byte[] ActiveContentPdf()
+    {
+        const string pdf = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R /Names << /JavaScript << /Names [(named) 5 0 R] >> >> /AA << /WC 18 0 R >> /AcroForm << /Fields [7 0 R] /XFA [(template) 8 0 R (datasets) 9 0 R] >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [6 0 R 19 0 R] /AA << /O 10 0 R >> >>\nendobj\n" +
+            "4 0 obj\n<< /S /JavaScript /JS (open-action-code) /Next [12 0 R 13 0 R] >>\nendobj\n" +
+            "5 0 obj\n<< /S /JavaScript /JS 14 0 R >>\nendobj\n" +
+            "6 0 obj\n<< /Type /Annot /Subtype /Text /Rect [10 10 20 20] /A 11 0 R /AA << /E 15 0 R >> >>\nendobj\n" +
+            "7 0 obj\n<< /T (form) /A 16 0 R /AA << /K 17 0 R >> >>\nendobj\n" +
+            "8 0 obj\n<< /Type /EmbeddedFile /Subtype /application#2Fxml /Length 10 >>\nstream\n<template>\nendstream\nendobj\n" +
+            "9 0 obj\n<< /Type /EmbeddedFile /Subtype /application#2Fxml /Length 10 >>\nstream\n<datasets>\nendstream\nendobj\n" +
+            "10 0 obj\n<< /S /URI /URI (https://example.com) >>\nendobj\n" +
+            "11 0 obj\n<< /S /JavaScript /JS (annotation-action-code) >>\nendobj\n" +
+            "12 0 obj\n<< /S /URI /URI (https://example.org) >>\nendobj\n" +
+            "13 0 obj\n<< /S /JavaScript /JS (next-action-code) >>\nendobj\n" +
+            "14 0 obj\n<< /Length 17 >>\nstream\nnamed-action-code\nendstream\nendobj\n" +
+            "15 0 obj\n<< /S /Launch /F (opaque-target) >>\nendobj\n" +
+            "16 0 obj\n<< /S /JavaScript /JS (field-action-code) >>\nendobj\n" +
+            "17 0 obj\n<< /S /JavaScript /JS (field-key-action-code) >>\nendobj\n" +
+            "18 0 obj\n<< /S /URI /URI (https://cycle.example) /Next 18 0 R >>\nendobj\n" +
+            "19 0 obj\n<< /Type /Annot /Subtype /RichMedia /Rect [20 20 100 100] /RichMediaContent << /Assets << /Names [(movie) 20 0 R] >> >> /RichMediaSettings << /Activation << /Condition /XA >> >> >>\nendobj\n" +
+            "20 0 obj\n<< /Type /Filespec /F (movie.mp4) /EF << /F 21 0 R >> >>\nendobj\n" +
+            "21 0 obj\n<< /Type /EmbeddedFile /Subtype /video#2Fmp4 /Length 4 >>\nstream\ndata\nendstream\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 22 >>\n%%EOF\n";
+        return System.Text.Encoding.ASCII.GetBytes(pdf);
+    }
+
+    [Fact]
+    public void Actions_and_xfa_are_exposed_as_opaque_data_without_execution()
+    {
+        var doc = PdfDocument.Load(ActiveContentPdf());
+        var actions = doc.GetActions();
+
+        Assert.Equal(10, actions.Count);
+        Assert.Contains(actions, action => action.Scope == PdfActionScope.Catalog
+            && action.Trigger == "OpenAction" && action.ActionType == "JavaScript"
+            && action.JavaScript is PdfString { Text: "open-action-code" });
+        Assert.Contains(actions, action => action.Trigger == "OpenAction/Next[1]"
+            && action.JavaScript is PdfString { Text: "next-action-code" });
+        Assert.Contains(actions, action => action.Scope == PdfActionScope.NamedJavaScript
+            && action.Name == "named" && action.JavaScript is PdfStream);
+        Assert.Contains(actions, action => action.Scope == PdfActionScope.FormField
+            && action.FieldName == "form" && action.JavaScript is PdfString { Text: "field-action-code" });
+        Assert.Contains(actions, action => action.Scope == PdfActionScope.Annotation
+            && action.JavaScript is PdfString { Text: "annotation-action-code" });
+        Assert.Contains(actions, action => action.ActionType == "Launch"
+            && action.Dictionary.Get("F") is PdfString { Text: "opaque-target" });
+
+        var xfa = Assert.IsType<PdfArray>(doc.GetXfaData());
+        Assert.Equal("template", Assert.IsType<PdfString>(xfa[0]).Text);
+        Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(doc.File.Resolve(xfa[1])).RawData));
+
+        var richMedia = Assert.Single(doc.Pages[0].GetAnnotations(), annotation => annotation.Subtype == "RichMedia");
+        Assert.NotNull(richMedia.Dict.Get("RichMediaContent"));
+        var roundTrip = PdfDocument.Load(PdfEditor.Open(doc).Save());
+        Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
+            roundTrip.File.Resolve(Assert.IsType<PdfArray>(roundTrip.GetXfaData())[1])).RawData));
+        Assert.Contains(roundTrip.GetActions(), action => action.JavaScript is PdfString { Text: "open-action-code" });
+        Assert.NotNull(Assert.Single(roundTrip.Pages[0].GetAnnotations(), annotation => annotation.Subtype == "RichMedia").Dict.Get("RichMediaContent"));
+    }
 }
