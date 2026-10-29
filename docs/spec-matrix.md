@@ -46,7 +46,8 @@ Full spec parity is the goal; this table is the honest current state.
 | Form filling (text and checkbox/radio fields, with editor UI) | Done |
 | Redaction (`Redactor.Redact`: removes intersecting text runs, paths, images and forms from the content stream, then paints an opaque box; whole-object granularity; web tool + `X` shortcut, verified end to end) | Done |
 | Web editor: context menus (clipboard, arrange/z-order, align, redact), Shift/Alt drag modifiers, collapsible responsive panels | Done |
-| Web editor fonts: standard 14 + installed TrueType (glyf) fonts embedded as subsets (Type0/Identity-H, ToUnicode); synthetic bold/italic when a face is missing. Not yet: .ttc collections, CFF .otf, alignment/underline/spacing | Partial |
+| Web editor fonts: standard 14 + installed TrueType (glyf) fonts embedded as subsets (Type0/Identity-H, ToUnicode); synthetic bold/italic when a face is missing. Text alignment (left/centre/right), underline, strikethrough, letter spacing and line height. Not yet: .ttc collections, CFF .otf | Partial |
+| Web editor shell: File menu (new, open, save, save as, insert pages, export PDF/images/text, print, properties, close), find with highlights, print, full screen, page navigation, fit width/page and zoom presets, dirty tracking | Done |
 | Incremental save, signing, object/xref streams on save, encrypted save | **Todo** |
 
 ## Render comparison
