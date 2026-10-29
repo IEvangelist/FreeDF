@@ -91,11 +91,12 @@ public sealed record PdfRemoteGoToAction(
 /// Inert /GoToE metadata (ISO 32000-2:2020, 12.6.4.4, Table 204). Only references
 /// within the current PDF are dereferenced; no embedded content, target file, or destination is accessed.
 /// Missing or wrong-type entries are null and remain available in Dictionary.
-/// Dictionary and array contents are retained without conformance validation or target path traversal.
+/// Dictionary and array contents are retained without conformance validation.
+/// TargetPath exposes bounded local target-path metadata without following the path into other documents.
 /// </summary>
 /// <param name="FileSpecification">The optional /F string or file specification dictionary identifying the target's root document.</param>
 /// <param name="Destination">The required /D name, byte string, or explicit destination array in the target document.</param>
-/// <param name="Target">The /T target dictionary (Table 205), required when /F is absent, retained without resolving its entries or nested targets.</param>
+/// <param name="Target">The original /T target dictionary (Table 205), required when /F is absent, retained unchanged.</param>
 /// <param name="NewWindow">The optional /NewWindow flag. Null does not imply false; a viewer would use its preference.</param>
 /// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
 public sealed record PdfEmbeddedGoToAction(
@@ -103,7 +104,46 @@ public sealed record PdfEmbeddedGoToAction(
     PdfObject? Destination,
     PdfDictionary? Target,
     bool? NewWindow,
-    PdfDictionary Dictionary);
+    PdfDictionary Dictionary)
+{
+    /// <summary>Bounded inert Table 205 metadata for Target; the original dictionary remains unchanged.</summary>
+    public PdfEmbeddedGoToTarget? TargetPath { get; init; }
+}
+
+/// <summary>Why a dictionary-valued nested /T was not expanded in the typed target path.</summary>
+public enum PdfEmbeddedGoToTargetBoundary
+{
+    None,
+    Cycle,
+    DepthLimit,
+}
+
+/// <summary>
+/// Inert target-path metadata (ISO 32000-2:2020, 12.6.4.4, Table 205).
+/// Only current-PDF indirect values are resolved; no document, name-tree, page, annotation,
+/// or destination lookup occurs. Missing or wrong-type fields are null in the typed view.
+/// Conditional requiredness and attachment/tree semantics are not validated.
+/// Original dictionaries retain all raw references, malformed values, and unknown entries.
+/// </summary>
+/// <param name="Relationship">The /R name: /P denotes a parent and /C a child. Unknown names are retained without interpretation.</param>
+/// <param name="Name">The /N byte string identifying an EmbeddedFiles name-tree target for /R /C, without decoding its bytes.</param>
+/// <param name="Page">The /P integer or byte string identifying an attachment's page for /R /C, without lookup.</param>
+/// <param name="Annotation">The /A integer or text string identifying the file-attachment annotation, without lookup or decoding.</param>
+/// <param name="NestedTarget">The optional nested /T path element, if it is a dictionary and expansion is within bounds.</param>
+/// <param name="NestedTargetBoundary">Cycle or depth boundary for an unexpanded dictionary-valued /T; otherwise None. The raw /T remains in Dictionary.</param>
+/// <param name="Dictionary">The original target dictionary, including the raw /T even when expansion stops.</param>
+public sealed record PdfEmbeddedGoToTarget(
+    PdfName? Relationship,
+    PdfString? Name,
+    PdfObject? Page,
+    PdfObject? Annotation,
+    PdfEmbeddedGoToTarget? NestedTarget,
+    PdfEmbeddedGoToTargetBoundary NestedTargetBoundary,
+    PdfDictionary Dictionary)
+{
+    /// <summary>Maximum number of target dictionaries exposed in a typed path, including its root.</summary>
+    public const int MaxPathLength = 64;
+}
 
 public sealed record PdfXfaPacket(string? Name, PdfStream Stream);
 
@@ -327,12 +367,47 @@ public static class SafeContentFeatures
     {
         var file = f.Resolve(action.Get("F"));
         var destination = f.Resolve(action.Get("D"));
+        var target = f.Resolve(action.Get("T")) as PdfDictionary;
         return new PdfEmbeddedGoToAction(
             file is PdfString or PdfDictionary ? file : null,
             destination is PdfName or PdfString or PdfArray ? destination : null,
-            f.Resolve(action.Get("T")) as PdfDictionary,
+            target,
             f.Resolve(action.Get("NewWindow")) is PdfBoolean newWindow ? newWindow.Value : null,
-            action);
+            action)
+        {
+            TargetPath = target is null ? null : ReadEmbeddedGoToTarget(
+                f, target, 1, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance)),
+        };
+    }
+
+    static PdfEmbeddedGoToTarget ReadEmbeddedGoToTarget(
+        PdfFile f,
+        PdfDictionary target,
+        int length,
+        HashSet<PdfDictionary> seen)
+    {
+        seen.Add(target);
+        var page = f.Resolve(target.Get("P"));
+        var annotation = f.Resolve(target.Get("A"));
+        PdfEmbeddedGoToTarget? nested = null;
+        var boundary = PdfEmbeddedGoToTargetBoundary.None;
+        if (f.Resolve(target.Get("T")) is PdfDictionary next)
+        {
+            if (seen.Contains(next))
+                boundary = PdfEmbeddedGoToTargetBoundary.Cycle;
+            else if (length >= PdfEmbeddedGoToTarget.MaxPathLength)
+                boundary = PdfEmbeddedGoToTargetBoundary.DepthLimit;
+            else
+                nested = ReadEmbeddedGoToTarget(f, next, length + 1, seen);
+        }
+        return new PdfEmbeddedGoToTarget(
+            f.Resolve(target.Get("R")) as PdfName,
+            f.Resolve(target.Get("N")) as PdfString,
+            page is PdfInteger or PdfString ? page : null,
+            annotation is PdfInteger or PdfString ? annotation : null,
+            nested,
+            boundary,
+            target);
     }
 
     static PdfNamedAction ReadNamedAction(PdfFile f, PdfDictionary action) =>
