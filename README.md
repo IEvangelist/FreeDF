@@ -9,6 +9,10 @@ Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to t
 
 Build and test: `dotnet build PortableDocument.slnx -c Release` then `dotnet test PortableDocument.slnx -c Release`.
 
+The browser editor can select image and simple vector paint objects inside uniquely used indirect Form XObjects invoked directly from page content. Shared or repeated Forms (including hidden layer invocations) remain group-editable, without rewriting shared children. Ownership checks are conservative: unused resource aliases and streams containing inline images can also disable child edits. While Form child edits exist, graphic-group edits and page import/delete/reorder/rotate/insert/duplicate return a visible conflict; reset the child edits, or save and reopen before those operations. This is not a copy-on-write, arbitrary nested-Form, or general complex-path/clipping editor.
+
+The HTTP editor regression runs with `dotnet test tests/AdoBye.Tests/AdoBye.Tests.csproj --filter FullyQualifiedName~FormObjectHttpTests`. It builds the editor, starts a test-owned localhost server for each case, verifies save/reopen output and rejected operations, and stops each server afterward.
+
 `PortableDocument.slnx` is the canonical solution. Package versions are managed centrally in root `Directory.Packages.props`; project `PackageReference` entries omit versions. Change dependency versions there, while keeping tool-only dependencies referenced only by the relevant tools.
 
 NativeAOT: production libraries enable compatibility analysis; see `tools/AdoBye.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.

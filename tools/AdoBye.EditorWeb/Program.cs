@@ -93,6 +93,18 @@ static double[]? ObjectMatrix(ContentInterpreter.PageObject o, ObjEdit e)
     return [m.A, m.B, m.C, m.D, m.E, m.F];
 }
 
+static bool IsReset(ObjEdit? e) => e is null ||
+    (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null);
+
+IResult FormEditConflict(string message) => Results.Text(message, statusCode: StatusCodes.Status409Conflict);
+IResult? PageMutationConflict() => formObjEdits.Count > 0
+    ? FormEditConflict("Save and reopen the document, or reset Form child edits, before changing pages.")
+    : null;
+
+bool HasGraphicGroupEdits() => Enumerable.Range(0, editor.PageCount).Any(page =>
+    objEdits.TryGetValue(editor.PageId(page), out var edits) &&
+    edits.Keys.Any(index => PageText(page).Objects[index].Kind == "form"));
+
 // Pushes the current items to the editor: overlays for new objects, content rewrites to remove text that was converted into editable objects.
 void Prepare()
 {
@@ -233,15 +245,20 @@ app.MapPut("/api/page/{i:int}/objects/{n:int}", async (int i, int n, HttpRequest
         var o = objects[n];
         if (o.Form != 0)
         {
-            if (!FormObjectEditPolicy.IsEditable(o, AmbiguousFormObjects(i)) || !pristineBack.TryGetValue(o.Form, out var formNum)) return Results.NotFound();
+            if (!IsReset(e) && HasGraphicGroupEdits())
+                return FormEditConflict("Reset graphic-group edits before editing Form children, or save and reopen the document.");
+            if (!FormObjectEditPolicy.IsEditable(o, AmbiguousFormObjects(i)) || !pristineBack.TryGetValue(o.Form, out var formNum))
+                return FormEditConflict("This Form is shared, repeated, or cannot be proven unique (including hidden invocations). Transform its graphic group instead.");
             var key = (formNum, o.Start, o.End);
-            if (e is null || (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null)) formObjEdits.Remove(key);
-            else formObjEdits[key] = e;
+            if (IsReset(e)) formObjEdits.Remove(key);
+            else if (e is not null) formObjEdits[key] = e;
         }
         else
         {
+            if (!IsReset(e) && o.Kind == "form" && formObjEdits.Count > 0)
+                return FormEditConflict("Reset Form child edits before editing graphic groups, or save and reopen the document.");
             if (!objEdits.TryGetValue(id, out var d)) objEdits[id] = d = [];
-            if (e is null || (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null)) d.Remove(n); else d[n] = e;
+            if (IsReset(e)) d.Remove(n); else if (e is not null) d[n] = e;
         }
         Changed();
         return Results.Ok();
@@ -309,16 +326,37 @@ app.MapPost("/api/open", async (HttpRequest r) =>
 app.MapPost("/api/import", async (HttpRequest r) =>
 {
     var (_, bytes) = await ReadUpload(r);
-    lock (gate) { editor.ImportPages(PdfDocument.Load(bytes)); Changed(); }
+    lock (gate)
+    {
+        if (PageMutationConflict() is { } conflict) return conflict;
+        editor.ImportPages(PdfDocument.Load(bytes)); Changed();
+    }
     return Results.Ok();
 });
 
-app.MapPost("/api/delete/{i:int}", (int i) => { lock (gate) { editor.DeletePage(i); Changed(); } return Results.Ok(); });
-app.MapPost("/api/move/{from:int}/{to:int}", (int from, int to) => { lock (gate) { editor.MovePage(from, to); Changed(); } return Results.Ok(); });
+app.MapPost("/api/delete/{i:int}", (int i) =>
+{
+    lock (gate)
+    {
+        if (PageMutationConflict() is { } conflict) return conflict;
+        editor.DeletePage(i); Changed();
+    }
+    return Results.Ok();
+});
+app.MapPost("/api/move/{from:int}/{to:int}", (int from, int to) =>
+{
+    lock (gate)
+    {
+        if (PageMutationConflict() is { } conflict) return conflict;
+        editor.MovePage(from, to); Changed();
+    }
+    return Results.Ok();
+});
 app.MapPost("/api/rotate/{i:int}/{delta:int}", (int i, int delta) =>
 {
     lock (gate)
     {
+        if (PageMutationConflict() is { } conflict) return conflict;
         var cur = Snap().Pages[i].Rotate;
         editor.SetRotation(i, ((cur + delta) % 360 + 360) % 360);
         Changed();
@@ -387,6 +425,7 @@ app.MapPost("/api/blank/{at:int}", (int at, double? w, double? h) =>
 {
     lock (gate)
     {
+        if (PageMutationConflict() is { } conflict) return conflict;
         if (editor.PageCount > 0 && w is null) { var p = Snap().Pages[Math.Clamp(at - 1, 0, editor.PageCount - 1)]; w = p.CropBox.Width; h = p.CropBox.Height; }
         editor.ImportPages(PdfDocument.Load(Blank(w ?? 595.276, h ?? 841.89)), null, Math.Clamp(at, 0, editor.PageCount));
         Changed();
@@ -395,7 +434,11 @@ app.MapPost("/api/blank/{at:int}", (int at, double? w, double? h) =>
 });
 app.MapPost("/api/duplicate/{i:int}", (int i) =>
 {
-    lock (gate) { editor.ImportPages(Snap(), [i], i + 1); Changed(); }
+    lock (gate)
+    {
+        if (PageMutationConflict() is { } conflict) return conflict;
+        editor.ImportPages(Snap(), [i], i + 1); Changed();
+    }
     return Results.Ok();
 });
 
