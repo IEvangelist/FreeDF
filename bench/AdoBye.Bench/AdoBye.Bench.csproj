@@ -11,13 +11,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.*" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
     <ProjectReference Include="..\..\src\AdoBye.Render\AdoBye.Render.csproj" />
     <ProjectReference Include="..\..\src\AdoBye.Document\AdoBye.Document.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\fixtures\**\*" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\samples\03-typography-embedded.pdf" Link="fixtures\03-typography-embedded.pdf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\samples\06-patterns-shadings.pdf" Link="fixtures\06-patterns-shadings.pdf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\samples\09-images.pdf" Link="fixtures\09-images.pdf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
