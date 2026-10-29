@@ -47,7 +47,11 @@ public static class CcittDecoder
     }
 
     /// <summary>Returns packed 1-bit rows (MSB first). Black pixels are 0 unless <paramref name="blackIs1"/>.</summary>
-    public static byte[] Decode(byte[] data, int k, int columns, int rows, bool blackIs1, bool byteAlign, int heightHint)
+    public static byte[] Decode(byte[] data, int k, int columns, int rows, bool blackIs1, bool byteAlign, int heightHint) =>
+        Decode(data, k, columns, rows, blackIs1, byteAlign, heightHint, out _);
+
+    /// <summary>As above, also reporting the bytes consumed (including a trailing EOFB for K &lt; 0), for concatenated MMR bitmaps as used by JBIG2.</summary>
+    public static byte[] Decode(byte[] data, int k, int columns, int rows, bool blackIs1, bool byteAlign, int heightHint, out int consumedBytes)
     {
         if (columns <= 0) columns = 1728;
         var maxRows = rows > 0 ? rows : heightHint > 0 ? heightHint : int.MaxValue;
@@ -82,6 +86,9 @@ public static class CcittDecoder
             (refLine, cur) = (cur.ToList(), refLine);
             if (!ok) break;
         }
+        if (k < 0 && br.Peek(24) == 0x001001) br.Skip(24);
+        br.Align();
+        consumedBytes = (int)Math.Min(data.Length, br.Pos >> 3);
         var res = new byte[stride * (rows > 0 ? rows : Math.Max(output.Count, heightHint))];
         Array.Fill(res, blackIs1 ? (byte)0 : (byte)0xFF);
         for (var i = 0; i < output.Count && (i + 1) * stride <= res.Length; i++) output[i].CopyTo(res, i * stride);

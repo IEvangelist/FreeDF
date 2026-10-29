@@ -31,6 +31,14 @@ public static class ImageDecoder
             data = CcittDecoder.Decode(data, Pi("K", 0), Pi("Columns", 1728), Pi("Rows", 0), Pb("BlackIs1"), Pb("EncodedByteAlign"), h);
             bpc = 1;
         }
+        else if (codec is "JBIG2Decode")
+        {
+            byte[]? globals = R(parms?.Get("JBIG2Globals")) is PdfStream gs ? f.DecodeStream(gs, out _, out _) : null;
+            var jb = Jbig2Decoder.Decode(data, globals, w, h, out var jbWarn);
+            if (jb is null) { warning = jbWarn ?? "JBIG2 could not be decoded"; return null; }
+            warning = jbWarn;
+            data = jb; bpc = 1;
+        }
         else if (codec is not null)
         {
             warning = $"image codec {codec} not supported";
