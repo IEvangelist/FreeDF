@@ -19,6 +19,8 @@ Local `/GoTo` action metadata (12.6.4.2, Table 202) is also exposed through `GoT
 
 Typed `/Named` action metadata (12.6.4.11, Table 216) now retains `/N` names, including unrecognised names, and original dictionaries without execution or dispatch. `tests/AdoBye.Tests/NamedActionTests.cs` covers direct/indirect names, missing and malformed entries, unrelated subtypes, and cyclic `/Next` chains.
 
+Typed `/GoToE` action metadata (12.6.4.4, Tables 204/205) exposes top-level `/F`, `/D`, opaque `/T`, and nullable `/NewWindow` through `EmbeddedGoToDetails`, preserving original dictionaries without loading embedded content or navigating. `tests/AdoBye.Tests/EmbeddedGoToActionTests.cs` adds direct/indirect, malformed-entry, and chain coverage. Continue with typed Table 205 target-path semantics without traversing or activating embedded documents; `/SD` is not defined for GoToE.
+
 JPX multi-range POC coverage now includes a reference fixture combining an initial PCRL layer with remaining CPRL layers across multiple precincts, pixel-identical to Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4). `JpxTests.MultiRangeSpatialPocFixtureContainsBothProgressionChanges` verifies both encoded ranges. Continue with other range/order combinations and POC-plus-packed-header fixtures rather than treating this case as exhaustive.
 
 ## Rendering and content
