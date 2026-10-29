@@ -2,6 +2,11 @@
 
 Each case writes name.pdf (one /Im0 image XObject using JPXDecode), name.bin (the reference pixels
 decoded by OpenJPEG through Pillow, 8-bit interleaved) and name.meta ("MODE width height tolerance").
+
+POC + packed-header cases follow T.800 (11/2015) A.6.6/A.7.4/A.7.5, including complete
+packet-header boundaries between marker segments, and require exact OpenJPEG/source equality.
+The legacy single-packet ppm-lossless/ppt-lossless cases retain mid-header splits accepted by
+OpenJPEG; these still need replacement and must not be used as normative conformance examples.
 """
 import io
 import os
@@ -137,6 +142,7 @@ def _packed_segments(marker, payload, split_at):
 
 
 def pack_packet_headers(data, marker):
+    """Relocates complete single-code-block packet headers, preserving packet order."""
     if not data.startswith(b"\xff\x4f"):
         raise ValueError("packed-header fixture requires a raw codestream")
 
@@ -156,31 +162,59 @@ def pack_packet_headers(data, marker):
         raise ValueError("fixture requires a bounded tile-part")
 
     pos = sot + 12
+    tile_header = bytearray()
+    packet_lengths = []
     while pos < tile_end:
         current, next_pos = _marker(data, pos)
         if current == 0xFF93:
             sod = pos
             break
+        if current == 0xFF58:
+            value = 0
+            for byte in data[pos + 5:next_pos]:
+                value = value << 7 | (byte & 0x7f)
+                if byte & 0x80 == 0:
+                    packet_lengths.append(value)
+                    value = 0
+            if data[next_pos - 1] & 0x80:
+                raise ValueError("incomplete PLT packet length")
+        else:
+            tile_header += data[pos:next_pos]
         pos = next_pos
     else:
         raise ValueError("tile-part has no SOD marker")
 
-    packet = data[sod + 2:tile_end]
-    header_length = _packet_header_length(packet)
-    header = packet[:header_length]
-    body = packet[header_length:]
+    payload = data[sod + 2:tile_end]
+    if not packet_lengths:
+        packet_lengths = [len(payload)]
+    if sum(packet_lengths) != len(payload):
+        raise ValueError("PLT lengths do not match tile packet data")
+    header = bytearray()
+    body = bytearray()
+    header_ends = []
+    offset = 0
+    for length in packet_lengths:
+        packet = payload[offset:offset + length]
+        header_length = _packet_header_length(packet)
+        header += packet[:header_length]
+        header_ends.append(len(header))
+        body += packet[header_length:]
+        offset += length
 
     if marker == "PPM":
         payload = len(header).to_bytes(4, "big") + header
-        segments = _packed_segments(0xFF60, payload, 5)
-        result = bytearray(data[:sot] + segments + data[sot:sod + 2] + body + data[tile_end:])
+        segments = _packed_segments(0xFF60, payload, 4 + header_ends[0] if len(header_ends) > 1 else 5)
+        result = bytearray(data[:sot] + segments + data[sot:sot + 12] + tile_header +
+                           b"\xff\x93" + body + data[tile_end:])
         shifted_sot = sot + len(segments)
-        new_psot = psot - header_length
+        new_psot = 14 + len(tile_header) + len(body)
     elif marker == "PPT":
-        segments = _packed_segments(0xFF61, header, max(1, len(header) // 2))
-        result = bytearray(data[:sod] + segments + data[sod:sod + 2] + body + data[tile_end:])
+        segments = _packed_segments(0xFF61, header,
+                                    header_ends[0] if len(header_ends) > 1 else max(1, len(header) // 2))
+        result = bytearray(data[:sot + 12] + tile_header + segments +
+                           b"\xff\x93" + body + data[tile_end:])
         shifted_sot = sot
-        new_psot = psot + len(segments) - header_length
+        new_psot = 14 + len(tile_header) + len(segments) + len(body)
     else:
         raise ValueError(f"unknown packed-header marker {marker}")
 
@@ -188,8 +222,9 @@ def pack_packet_headers(data, marker):
     return bytes(result)
 
 
-def add_poc(data, layers, resolutions, components, end_components=None, malformed=None, tile_poc=False):
-    """Adds an RLCP POC and reorders a single-tile-part LRCP stream using its PLT lengths."""
+def add_poc(data, layers, resolutions, components, end_components=None, malformed=None, tile_poc=False,
+            poc_ranges=None):
+    """Reorders a one-precinct-per-resolution LRCP stream using PLT lengths."""
     data = bytearray(data)
     if data[:2] != b"\xff\x4f":
         raise ValueError("POC fixture must be a raw JPEG 2000 codestream")
@@ -208,7 +243,9 @@ def add_poc(data, layers, resolutions, components, end_components=None, malforme
         raise ValueError("codestream has no COD or SOT marker")
 
     comp_end = components if end_components is None else end_components
-    record = bytes((0, 0)) + struct.pack(">H", layers) + bytes((resolutions, comp_end, 1))
+    ranges = poc_ranges if poc_ranges is not None else [(0, 0, layers, resolutions, comp_end, 1)]
+    record = b"".join(bytes((rs, cs)) + struct.pack(">H", le) + bytes((re, ce, prog))
+                      for rs, cs, le, re, ce, prog in ranges)
     if malformed == "length":
         record = record[:-1]
     elif malformed == "order":
@@ -269,8 +306,21 @@ def add_poc(data, layers, resolutions, components, end_components=None, malforme
 
     source = {(layer, resolution, component): (layer * resolutions + resolution) * components + component
               for layer in range(layers) for resolution in range(resolutions) for component in range(components)}
-    ordered = [source[layer, resolution, component]
-               for resolution in range(resolutions) for layer in range(layers) for component in range(components)]
+    ordered = []
+    schedule_ranges = poc_ranges if poc_ranges is not None else [(0, 0, layers, resolutions, components, 1)]
+    for rs, cs, le, re, ce, prog in schedule_ranges:
+        packets_in_range = [(layer, resolution, component)
+                            for layer in range(le) for resolution in range(rs, re)
+                            for component in range(cs, ce)]
+        if prog == 1:
+            packets_in_range.sort(key=lambda packet: (packet[1], packet[0], packet[2]))
+        elif prog == 4:
+            packets_in_range.sort(key=lambda packet: (packet[2], packet[1], packet[0]))
+        else:
+            raise ValueError("fixture supports only one-precinct RLCP or CPRL ranges")
+        ordered.extend(source[packet] for packet in packets_in_range)
+    if len(ordered) != packet_count or len(set(ordered)) != packet_count:
+        raise ValueError("POC ranges must cover every packet exactly once")
     new_lengths = [packet_lengths[index] for index in ordered]
     packet_data = b"".join(packets[index] for index in ordered)
 
@@ -514,6 +564,31 @@ def emit_multi_range_spatial_poc(name, im):
     print("wrote", name, "RGB", w, h, len(data), "bytes")
 
 
+def emit_poc_packed(marker):
+    # T.800 (11/2015) A.6.6/A.7.4/A.7.5: POC orders relocated headers and packet bodies.
+    # One layer/resolution/code-block per component keeps header extraction unambiguous.
+    im = picture(8, 8, 19)
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG2000", no_jp2=True, progression="LRCP", num_resolutions=1,
+            irreversible=False, mct=0, plt=True)
+    original = buf.getvalue()
+    poc = add_poc(original, layers=1, resolutions=1, components=3,
+                  poc_ranges=[(0, 1, 1, 1, 3, 1), (0, 0, 1, 1, 1, 4)])
+    data = pack_packet_headers(poc, marker)
+    expected = np.asarray(im)
+    for label, codestream in (("original", original), ("POC", poc), (marker, data)):
+        ref = Image.open(io.BytesIO(codestream))
+        ref.load()
+        if ref.mode != "RGB" or not np.array_equal(np.asarray(ref), expected):
+            raise ValueError(f"OpenJPEG sample mismatch for {label} POC/packed-header fixture")
+    name = "poc-" + marker.lower() + "-lossless"
+    make_pdf(os.path.join(OUT, name + ".pdf"), im.width, im.height, data,
+             {"ColorSpace": Name.DeviceRGB})
+    open(os.path.join(OUT, name + ".bin"), "wb").write(expected.tobytes())
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"RGB {im.width} {im.height} 0")
+    print("wrote", name, "RGB", im.width, im.height, len(data), "bytes")
+
+
 def main():
     rgb = picture(96, 72)
     gray = rgb.convert("L")
@@ -560,6 +635,8 @@ def main():
     packed = Image.fromarray((np.arange(64, dtype=np.uint8).reshape((8, 8)) + 64), "L")
     emit("ppm-lossless", packed, packed="PPM", num_resolutions=1, irreversible=False)
     emit("ppt-lossless", packed, packed="PPT", num_resolutions=1, irreversible=False)
+    for marker in ("PPM", "PPT"):
+        emit_poc_packed(marker)
 
 
 if __name__ == "__main__":

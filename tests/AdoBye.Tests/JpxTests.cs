@@ -170,6 +170,54 @@ public class JpxTests
             data.AsSpan(markerPos + 4, 14).ToArray());
     }
 
+    [Theory]
+    [InlineData("poc-ppm-lossless", 0xFF60)]
+    [InlineData("poc-ppt-lossless", 0xFF61)]
+    public void PocPackedHeadersPreserveProgressionAndComponentSamples(string name, int marker)
+    {
+        var data = Codestream(name);
+        var cod = FindMarker(data, 0xFF52);
+        Assert.Equal(0, data[cod + 5]); // Default LRCP differs from the POC schedule.
+        Assert.Equal(1, ReadU16(data, cod + 6));
+        Assert.Equal(0, data[cod + 8]);
+        Assert.Equal(0, data[cod + 9]);
+        var poc = FindMarker(data, 0xFF5F);
+        Assert.Equal(16, ReadU16(data, poc + 2));
+        Assert.Equal(
+            new byte[] { 0, 1, 0, 1, 1, 3, 1, 0, 0, 0, 1, 1, 1, 4 },
+            data.AsSpan(poc + 4, 14).ToArray());
+
+        var sot = FindMarker(data, 0xFF90);
+        var sod = FindMarker(data, 0xFF93);
+        var first = FindMarker(data, marker);
+        var second = first + 2 + ReadU16(data, first + 2);
+        Assert.True(poc < sot);
+        Assert.True(marker == 0xFF60 ? second < sot : first > sot && second < sod);
+        Assert.Equal(marker, ReadU16(data, second));
+        Assert.Equal(0, data[first + 4]);
+        Assert.Equal(1, data[second + 4]);
+        // Each segment ends after a complete three-byte packet header (T.800 A.7.4/A.7.5).
+        Assert.Equal(marker == 0xFF60 ? 10 : 6, ReadU16(data, first + 2));
+        Assert.Equal(9, ReadU16(data, second + 2));
+        Assert.Equal((uint)(data.Length - 2 - sot), ReadU32(data, sot + 6));
+        Assert.Equal(0xFFD9, ReadU16(data, data.Length - 2));
+
+        var headers = data.AsSpan(first + 5, ReadU16(data, first + 2) - 3).ToArray()
+            .Concat(data.AsSpan(second + 5, ReadU16(data, second + 2) - 3).ToArray()).ToArray();
+        if (marker == 0xFF60)
+        {
+            Assert.Equal(9u, ReadU32(headers, 0));
+            headers = headers[4..];
+        }
+        Assert.Equal(new byte[] { 0xDF, 0x81, 0xE0, 0xDF, 0x81, 0xE0, 0xDF, 0x81, 0xD0 }, headers);
+
+        var image = JpxDecoder.Decode(data, 3, false, false, out var warning);
+        Assert.NotNull(image);
+        Assert.Null(warning);
+        Assert.Equal(3, image.Components);
+        Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), image.Samples);
+    }
+
     [Fact]
     public void RejectsPpmMarkerInTilePartHeader()
     {
