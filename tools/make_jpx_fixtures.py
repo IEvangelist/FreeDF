@@ -3,10 +3,8 @@
 Each case writes name.pdf (one /Im0 image XObject using JPXDecode), name.bin (the reference pixels
 decoded by OpenJPEG through Pillow, 8-bit interleaved) and name.meta ("MODE width height tolerance").
 
-POC + packed-header cases follow T.800 (11/2015) A.6.6/A.7.4/A.7.5, including complete
+Packed-header cases follow T.800 (11/2015) A.7.4/A.7.5 (and A.6.6 for POC), including complete
 packet-header boundaries between marker segments, and require exact OpenJPEG/source equality.
-The legacy single-packet ppm-lossless/ppt-lossless cases retain mid-header splits accepted by
-OpenJPEG; these still need replacement and must not be used as normative conformance examples.
 """
 import io
 import os
@@ -130,8 +128,10 @@ def _packet_header_length(packet):
     return header_length
 
 
-def _packed_segments(marker, payload, split_at):
-    parts = (payload[:split_at], payload[split_at:])
+def _packed_segments(marker, payload, header_ends):
+    if not header_ends or header_ends[-1] != len(payload):
+        raise ValueError("packed payload must end at a complete packet-header boundary")
+    parts = (payload[:header_ends[0]], payload[header_ends[0]:]) if len(header_ends) > 1 else (payload,)
     encoded = bytearray()
     for index, part in enumerate(parts):
         encoded += marker.to_bytes(2, "big")
@@ -203,14 +203,13 @@ def pack_packet_headers(data, marker):
 
     if marker == "PPM":
         payload = len(header).to_bytes(4, "big") + header
-        segments = _packed_segments(0xFF60, payload, 4 + header_ends[0] if len(header_ends) > 1 else 5)
+        segments = _packed_segments(0xFF60, payload, [4 + end for end in header_ends])
         result = bytearray(data[:sot] + segments + data[sot:sot + 12] + tile_header +
                            b"\xff\x93" + body + data[tile_end:])
         shifted_sot = sot + len(segments)
         new_psot = 14 + len(tile_header) + len(body)
     elif marker == "PPT":
-        segments = _packed_segments(0xFF61, header,
-                                    header_ends[0] if len(header_ends) > 1 else max(1, len(header) // 2))
+        segments = _packed_segments(0xFF61, header, header_ends)
         result = bytearray(data[:sot + 12] + tile_header + segments +
                            b"\xff\x93" + body + data[tile_end:])
         shifted_sot = sot
@@ -496,6 +495,8 @@ def emit(name, im, tol=0, extra=None, expected_mode=None, packed=None, **kw):
     ref = Image.open(io.BytesIO(data))
     ref.load()
     arr = np.asarray(ref)
+    if packed is not None and (ref.mode != im.mode or not np.array_equal(arr, np.asarray(im))):
+        raise ValueError(f"OpenJPEG sample mismatch for {packed} packed-header fixture")
     if arr.dtype == np.uint16:
         arr = (arr >> 8).astype(np.uint8)
     mode = {1: "L", 2: "LA", 3: "RGB", 4: "RGBA"}[1 if arr.ndim == 2 else arr.shape[2]]
@@ -632,9 +633,9 @@ def main():
     emit_poc("poc-tile-rlcp", rgb, tile_poc=True)
     emit_multi_range_spatial_poc("poc-spatial-multirange", rgb)
 
-    packed = Image.fromarray((np.arange(64, dtype=np.uint8).reshape((8, 8)) + 64), "L")
-    emit("ppm-lossless", packed, packed="PPM", num_resolutions=1, irreversible=False)
-    emit("ppt-lossless", packed, packed="PPT", num_resolutions=1, irreversible=False)
+    packed = Image.fromarray((np.arange(64, dtype=np.uint8).reshape((8, 8)) + 64), "L").convert("RGB")
+    emit("ppm-lossless", packed, packed="PPM", num_resolutions=1, irreversible=False, mct=0, plt=True)
+    emit("ppt-lossless", packed, packed="PPT", num_resolutions=1, irreversible=False, mct=0, plt=True)
     for marker in ("PPM", "PPT"):
         emit_poc_packed(marker)
 

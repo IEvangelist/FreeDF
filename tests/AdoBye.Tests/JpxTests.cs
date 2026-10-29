@@ -53,6 +53,53 @@ public class JpxTests
     }
 
     [Theory]
+    [InlineData("ppm-lossless", 0xFF60)]
+    [InlineData("ppt-lossless", 0xFF61)]
+    public void PackedHeadersEndAtCompletePacketBoundariesAndPreserveLegacyRgbSamples(string name, int marker)
+    {
+        var data = Codestream(name);
+        var cod = FindMarker(data, 0xFF52);
+        Assert.Equal(1, ReadU16(data, cod + 6));
+        Assert.Equal(0, data[cod + 8]);
+        Assert.Equal(0, data[cod + 9]);
+        var sot = FindMarker(data, 0xFF90);
+        var sod = FindMarker(data, 0xFF93);
+        var first = FindMarker(data, marker);
+        var second = first + 2 + ReadU16(data, first + 2);
+        Assert.True(marker == 0xFF60 ? second < sot : first > sot && second < sod);
+        Assert.Equal(marker, ReadU16(data, second));
+        Assert.Equal(0, data[first + 4]);
+        Assert.Equal(1, data[second + 4]);
+        Assert.Equal(marker == 0xFF60 ? 10 : 6, ReadU16(data, first + 2));
+        Assert.Equal(9, ReadU16(data, second + 2));
+        Assert.Equal(marker == 0xFF60 ? sot : sod, second + 2 + ReadU16(data, second + 2));
+        Assert.Equal((uint)(data.Length - 2 - sot), ReadU32(data, sot + 6));
+        Assert.Equal(0xFFD9, ReadU16(data, data.Length - 2));
+
+        var firstHeaders = data.AsSpan(first + 5, ReadU16(data, first + 2) - 3).ToArray();
+        if (marker == 0xFF60)
+        {
+            Assert.Equal(9u, ReadU32(firstHeaders, 0));
+            firstHeaders = firstHeaders[4..];
+        }
+        // Each component's complete single-code-block header is CF B4 B8 (T.800 A.7.4/A.7.5).
+        Assert.Equal(new byte[] { 0xCF, 0xB4, 0xB8 }, firstHeaders);
+        Assert.Equal(new byte[] { 0xCF, 0xB4, 0xB8, 0xCF, 0xB4, 0xB8 },
+            data.AsSpan(second + 5, ReadU16(data, second + 2) - 3).ToArray());
+
+        var expected = Enumerable.Range(64, 64).SelectMany(value => Enumerable.Repeat((byte)value, 3)).ToArray();
+        Assert.Equal("RGB 8 8 0", File.ReadAllText(Path.Combine(Dir, name + ".meta")));
+        Assert.Equal(expected, File.ReadAllBytes(Path.Combine(Dir, name + ".bin")));
+        var image = JpxDecoder.Decode(data, 3, false, false, out var warning);
+        Assert.NotNull(image);
+        Assert.Null(warning);
+        Assert.Equal(8, image.Width);
+        Assert.Equal(8, image.Height);
+        Assert.Equal(3, image.Components);
+        Assert.Equal(expected, image.Samples);
+    }
+
+    [Theory]
     [InlineData("ppm-lossless", 0xFF60, "duplicate PPM")]
     [InlineData("ppt-lossless", 0xFF61, "duplicate PPT")]
     public void RejectsDuplicatePackedHeaderMarkerIndices(string name, int marker, string warning)
