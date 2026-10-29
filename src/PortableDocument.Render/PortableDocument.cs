@@ -13,6 +13,8 @@ public sealed record PdfRenderOptions
 {
     /// <summary>Name of a catalog /OCProperties /Configs entry; omitted selects the default /D configuration.</summary>
     public string? OptionalContentConfigurationName { get; init; }
+    /// <summary>Reusable interactive layer state; cannot be combined with a configuration name.</summary>
+    public OptionalContentState? OptionalContentState { get; init; }
     /// <summary>Usage event to apply when rendering optional content.</summary>
     public ContentInterpreter.OptionalContentEvent OptionalContentDisplayEvent { get; init; } =
         ContentInterpreter.OptionalContentEvent.View;
@@ -80,39 +82,16 @@ public static class PortableDocument
         var m = PageMatrix(page, scale, out var w, out var h);
         using var raster = new SoftwareRasterizer(w, h);
         var interp = new ContentInterpreter(page.Document.File, raster);
-        var (defaultConfiguration, selectedConfiguration) =
-            ResolveOptionalContentConfiguration(page, options.OptionalContentConfigurationName);
-        interp.DefaultOptionalContentConfiguration = defaultConfiguration;
-        interp.OptionalContentConfiguration = selectedConfiguration;
+        if (options.OptionalContentState is not null && options.OptionalContentConfigurationName is not null)
+            throw new ArgumentException("Specify optional-content state or a configuration name, not both.", nameof(options));
+        var state = options.OptionalContentState ?? new OptionalContentState(page.Document, options.OptionalContentConfigurationName);
+        if (!ReferenceEquals(state.Document, page.Document))
+            throw new ArgumentException("Optional-content state belongs to another document.", nameof(options));
+        interp.OptionalContentState = state;
         interp.OptionalContentDisplayEvent = options.OptionalContentDisplayEvent;
         interp.OptionalContentZoom = scale;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
-    }
-
-    static (PdfDictionary? Default, PdfDictionary? Selected) ResolveOptionalContentConfiguration(PdfPage page, string? name)
-    {
-        var file = page.Document.File;
-        if (file.Resolve(file.Catalog.Get("OCProperties")) is not PdfDictionary properties)
-        {
-            if (name is null) return (null, null);
-            throw new ArgumentException($"No optional-content configuration named '{name}' exists.", nameof(name));
-        }
-
-        var defaultConfiguration = file.Resolve(properties.Get("D")) as PdfDictionary;
-        if (name is null || defaultConfiguration is not null
-            && file.Resolve(defaultConfiguration.Get("Name")) is PdfString defaultName
-            && defaultName.Text == name)
-            return (defaultConfiguration, defaultConfiguration);
-
-        if (file.Resolve(properties.Get("Configs")) is PdfArray configurations)
-            foreach (var value in configurations.Items)
-                if (file.Resolve(value) is PdfDictionary configuration
-                    && file.Resolve(configuration.Get("Name")) is PdfString configName
-                    && configName.Text == name)
-                    return (defaultConfiguration, configuration);
-
-        throw new ArgumentException($"No optional-content configuration named '{name}' exists.", nameof(name));
     }
 }
 

@@ -27,3 +27,11 @@ var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
 ```
 
 Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. Product/tool names remain unchanged while the product name is undecided. Historical benchmark reports retain their original identities and measurements.
+
+### Interactive optional-content layers
+
+`PortableDocument.Content.OptionalContentState` provides reusable, in-memory layer state for a document's default or named configuration. Its `Groups`, `RadioButtonGroups`, and `IsLocked` expose registered layers and configuration rules. Pass a registered group dictionary to `SetVisibility`, then render with `new PdfRenderOptions { OptionalContentState = state }`. State and `OptionalContentConfigurationName` are mutually exclusive.
+
+Selecting a radio-group member hides its peers; turning it off does not select a replacement. A locked target, or a visible locked peer that would need to turn off, rejects the entire change with `InvalidOperationException`. Supply the current render event and zoom to `SetVisibility` when usage applications affect locked peers. User overrides take precedence over usage applications; untouched layers continue to follow the render event and zoom.
+
+Omitted `/RBGroups` in a named configuration inherits the default configuration's groups; `[]` clears them. `/Locked` does not inherit. These rules do not normalize initial visibility or prevent configuration/usage-driven changes. Malformed rule references are ignored with warnings available on the state and rendered page. Changes do not modify or persist PDF dictionaries; existing editor saves preserve the original rules. This API never runs embedded actions or scripts.
