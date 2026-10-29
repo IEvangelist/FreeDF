@@ -101,6 +101,7 @@ internal sealed class JpxCodestream
     sealed class TileState
     {
         public MemoryStream Data = new();
+        public readonly List<TilePartData> Parts = [];
         public bool HeaderDone;
         public int Prog = -1, Layers, Mct;
         public bool Sop, Eph;
@@ -110,6 +111,10 @@ internal sealed class JpxCodestream
         public readonly Dictionary<int, JpxQuant> Qcc = [];
         public readonly Dictionary<int, int> Roi = [];
     }
+
+    sealed record TilePartData(int Start, int Length, byte[]? PacketHeaders);
+
+    sealed class PackedHeaderException(string message) : Exception(message);
 
     // main header defaults
     int _prog, _layers, _mct;
@@ -169,13 +174,20 @@ internal sealed class JpxCodestream
         if (end - p < 4 || U16(p) != 0xFF4F) { Warning = "JPX: missing SOC marker"; return false; }
         p += 2;
         var tiles = new Dictionary<int, TileState>();
+        var ppmMarkers = new SortedDictionary<int, byte[]>();
         var sizSeen = false;
-        while (p + 4 <= end)
+        while (p + 2 <= end)
         {
             var m = U16(p);
             if (m == 0xFF90) break;
-            if (m == 0xFFD9) return Finish(tiles);
+            if (m == 0xFFD9)
+            {
+                if (ppmMarkers.Count > 0) { Warning = "JPX: PPM data has no tile-part"; return false; }
+                return Finish(tiles);
+            }
+            if (p + 4 > end) { Warning = "JPX: truncated main-header marker segment"; return false; }
             var len = U16(p + 2);
+            if (len < 2 || (long)p + 2 + len > end) { Warning = "JPX: invalid main-header marker segment length"; return false; }
             var body = p + 4;
             switch (m)
             {
@@ -185,12 +197,21 @@ internal sealed class JpxCodestream
                 case 0xFF5C: _qcd = ParseQuant(body, len - 2); break;
                 case 0xFF5D: ParseQcc(body, len - 2, _qcc); break;
                 case 0xFF5E: ParseRgn(body, _roi); break;
-                case 0xFF60: Warning = "JPX: packed packet headers (PPM) are not supported"; return false;
+                case 0xFF61: Warning = "JPX: PPT marker segment is only valid in a tile-part header"; return false;
+                case 0xFF60:
+                    if (len < 4) { Warning = "JPX: malformed PPM marker segment"; return false; }
+                    var ppmIndex = _d[body];
+                    if (ppmMarkers.ContainsKey(ppmIndex)) { Warning = $"JPX: duplicate PPM marker index {ppmIndex}"; return false; }
+                    ppmMarkers.Add(ppmIndex, _d.AsSpan(body + 1, len - 3).ToArray());
+                    break;
             }
             p += 2 + len;
         }
         if (!sizSeen || _cod is null || _qcd is null) { Warning = "JPX: incomplete main header"; return false; }
         if (Csiz is < 1 or > 16384 || (long)(Xsiz - XOsiz) * (Ysiz - YOsiz) > 400_000_000L) { Warning = "JPX: unsupported image size"; return false; }
+        if (!HasContiguousIndices(ppmMarkers, out var missingPpmIndex)) { Warning = $"JPX: missing PPM marker index {missingPpmIndex}"; return false; }
+        var ppmData = JoinPackedSegments(ppmMarkers);
+        var ppmPos = 0;
         _ntx = CeilDiv(Xsiz - XTOsiz, XTsiz); _nty = CeilDiv(Ysiz - YTOsiz, YTsiz);
         CW = new int[Csiz]; CH = new int[Csiz]; Planes = new ushort[Csiz][];
         for (var c = 0; c < Csiz; c++)
@@ -199,21 +220,37 @@ internal sealed class JpxCodestream
             CH[c] = CeilDiv(Ysiz, Yr[c]) - CeilDiv(YOsiz, Yr[c]);
             Planes[c] = new ushort[(long)CW[c] * CH[c]];
         }
-        while (p + 12 <= end && U16(p) == 0xFF90)
+        while (p + 2 <= end && U16(p) == 0xFF90)
         {
             var sot = p;
+            if (p + 12 > end || U16(p + 2) != 10) { Warning = "JPX: malformed SOT marker segment"; return false; }
             var isot = U16(p + 4);
             long psot = (uint)U32(p + 6);
+            if (psot != 0 && psot < 14) { Warning = "JPX: invalid tile-part length"; return false; }
+            if (psot != 0 && (long)sot + psot > end) { Warning = "JPX: truncated tile-part"; return false; }
             p += 12;
             var tpEnd = psot == 0 ? end : (int)Math.Min(end, sot + psot);
             if (psot == 0 && tpEnd - 2 >= p && U16(tpEnd - 2) == 0xFFD9) tpEnd -= 2;
+            byte[]? ppmPartHeaders = null;
+            if (ppmData is not null)
+            {
+                if (!TryTakePpmHeaders(ppmData, ref ppmPos, out ppmPartHeaders, out var error))
+                {
+                    Warning = "JPX: " + error;
+                    return false;
+                }
+            }
             if (isot >= _ntx * _nty) { p = tpEnd; continue; }
             if (!tiles.TryGetValue(isot, out var ts)) tiles[isot] = ts = new TileState();
+            var pptMarkers = new SortedDictionary<int, byte[]>();
+            var sodSeen = false;
             while (p + 2 <= tpEnd)
             {
                 var m = U16(p);
-                if (m == 0xFF93) { p += 2; break; }
+                if (m == 0xFF93) { p += 2; sodSeen = true; break; }
+                if (p + 4 > tpEnd) { Warning = "JPX: truncated tile-part marker segment"; return false; }
                 var len = U16(p + 2);
+                if (len < 2 || (long)p + 2 + len > tpEnd) { Warning = "JPX: invalid tile-part marker segment length"; return false; }
                 var body = p + 4;
                 switch (m)
                 {
@@ -224,14 +261,63 @@ internal sealed class JpxCodestream
                     case 0xFF5C: ts.Qcd = ParseQuant(body, len - 2); break;
                     case 0xFF5D: ParseQcc(body, len - 2, ts.Qcc); break;
                     case 0xFF5E: ParseRgn(body, ts.Roi); break;
-                    case 0xFF61: Warning = "JPX: packed packet headers (PPT) are not supported"; return false;
+                    case 0xFF60: Warning = "JPX: PPM marker segment is only valid in the main header"; return false;
+                    case 0xFF61:
+                        if (ppmData is not null) { Warning = "JPX: PPM and PPT markers cannot be combined"; return false; }
+                        if (len < 4) { Warning = "JPX: malformed PPT marker segment"; return false; }
+                        var pptIndex = _d[body];
+                        if (pptMarkers.ContainsKey(pptIndex)) { Warning = $"JPX: duplicate PPT marker index {pptIndex}"; return false; }
+                        pptMarkers.Add(pptIndex, _d.AsSpan(body + 1, len - 3).ToArray());
+                        break;
                 }
                 p += 2 + len;
             }
-            if (p < tpEnd) ts.Data.Write(_d, p, tpEnd - p);
+            if (!sodSeen) { Warning = "JPX: missing SOD marker"; return false; }
+            if (!HasContiguousIndices(pptMarkers, out var missingPptIndex)) { Warning = $"JPX: missing PPT marker index {missingPptIndex}"; return false; }
+            var packetHeaders = ppmPartHeaders ?? JoinPackedSegments(pptMarkers);
+            ts.Parts.Add(new TilePartData(p, tpEnd - p, ppmData is not null || pptMarkers.Count > 0 ? packetHeaders : null));
             p = tpEnd;
         }
+        if (ppmData is not null && ppmPos != ppmData.Length) { Warning = "JPX: unused PPM packet-header data"; return false; }
+        foreach (var ts in tiles.Values)
+        {
+            if (ts.Parts.Exists(part => part.PacketHeaders is not null)) continue;
+            foreach (var part in ts.Parts) ts.Data.Write(_d, part.Start, part.Length);
+            ts.Parts.Clear();
+        }
         return Finish(tiles);
+    }
+
+    static byte[]? JoinPackedSegments(SortedDictionary<int, byte[]> segments)
+    {
+        if (segments.Count == 0) return null;
+        using var joined = new MemoryStream();
+        foreach (var segment in segments.Values) joined.Write(segment);
+        return joined.ToArray();
+    }
+
+    static bool HasContiguousIndices(SortedDictionary<int, byte[]> segments, out int missingIndex)
+    {
+        missingIndex = 0;
+        foreach (var index in segments.Keys)
+        {
+            if (index != missingIndex) return false;
+            missingIndex++;
+        }
+        return true;
+    }
+
+    static bool TryTakePpmHeaders(byte[] data, ref int pos, out byte[] headers, out string error)
+    {
+        headers = [];
+        error = "";
+        if (data.Length - pos < 4) { error = "truncated PPM Nppm field"; return false; }
+        var length = (uint)(data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]);
+        pos += 4;
+        if (length > data.Length - pos) { error = "truncated PPM packet-header payload"; return false; }
+        headers = data.AsSpan(pos, (int)length).ToArray();
+        pos += (int)length;
+        return true;
     }
 
     bool Finish(Dictionary<int, TileState> tiles)
@@ -239,6 +325,11 @@ internal sealed class JpxCodestream
         foreach (var (idx, ts) in tiles)
         {
             try { DecodeTile(idx, ts); }
+            catch (PackedHeaderException e)
+            {
+                Warning = $"JPX: tile {idx} {e.Message}";
+                return false;
+            }
             catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidDataException or NotSupportedException)
             {
                 Warning ??= $"JPX: tile {idx} decode error ({e.Message})";
@@ -366,17 +457,54 @@ internal sealed class JpxCodestream
         var end = (int)ts.Data.Length;
         var pos = 0;
         var pend = new List<Pending>();
-        try
+        if (ts.Parts.Exists(part => part.PacketHeaders is not null))
         {
-            foreach (var pk in order)
+            var packetIndex = 0;
+            foreach (var part in ts.Parts)
             {
-                if (pos >= end) break;
-                var tc = comps[pk.C];
-                var res = tc.Res[pk.R];
-                ReadPacket(data, ref pos, end, res, res.Prec[pk.P], pk.L, tc.Cod.Style, pend);
+                var partPos = part.Start;
+                var partEnd = part.Start + part.Length;
+                var headerPos = 0;
+                var headers = part.PacketHeaders;
+                if (headers is null)
+                {
+                    while (partPos < partEnd && packetIndex < order.Count)
+                    {
+                        var pk = order[packetIndex++];
+                        var tc = comps[pk.C];
+                        var res = tc.Res[pk.R];
+                        ReadPacket(_d, ref partPos, partEnd, null, ref headerPos, res, res.Prec[pk.P], pk.L, tc.Cod.Style, pend);
+                    }
+                    continue;
+                }
+                while (headerPos < headers.Length && packetIndex < order.Count)
+                {
+                    var pk = order[packetIndex++];
+                    var tc = comps[pk.C];
+                    var res = tc.Res[pk.R];
+                    try { ReadPacket(_d, ref partPos, partEnd, headers, ref headerPos, res, res.Prec[pk.P], pk.L, tc.Cod.Style, pend); }
+                    catch (IndexOutOfRangeException) { throw new PackedHeaderException("contains a truncated packet header"); }
+                }
+                if (headerPos < headers.Length) throw new PackedHeaderException("has more packet headers than the tile packet order");
+                if (partPos < partEnd) throw new PackedHeaderException("has unreferenced tile-part packet data");
             }
+            if (packetIndex < order.Count) throw new PackedHeaderException("has missing packet headers");
         }
-        catch (IndexOutOfRangeException) { Warning ??= "JPX: truncated tile data"; }
+        else
+        {
+            try
+            {
+                var headerPos = 0;
+                foreach (var pk in order)
+                {
+                    if (pos >= end) break;
+                    var tc = comps[pk.C];
+                    var res = tc.Res[pk.R];
+                    ReadPacket(data, ref pos, end, null, ref headerPos, res, res.Prec[pk.P], pk.L, tc.Cod.Style, pend);
+                }
+            }
+            catch (IndexOutOfRangeException) { Warning ??= "JPX: truncated tile data"; }
+        }
 
         DecodeBlocks(comps);
         for (var c = 0; c < Csiz; c++) comps[c].Out = Synthesize(comps[c]);
@@ -595,10 +723,13 @@ internal sealed class JpxCodestream
 
     static int Log2(int n) => 31 - System.Numerics.BitOperations.LeadingZeroCount((uint)n);
 
-    void ReadPacket(byte[] d, ref int pos, int end, TRes res, TPrec prec, int layer, int style, List<Pending> pend)
+    void ReadPacket(byte[] d, ref int pos, int end, byte[]? packedHeaders, ref int headerPos, TRes res, TPrec prec, int layer, int style, List<Pending> pend)
     {
         if (pos + 6 <= end && d[pos] == 0xFF && d[pos + 1] == 0x91) pos += 6;
-        var br = new JpxBits(d, pos, end);
+        var packetHeaderData = packedHeaders ?? d;
+        var packetHeaderPos = packedHeaders is null ? pos : headerPos;
+        var packetHeaderEnd = packedHeaders?.Length ?? end;
+        var br = new JpxBits(packetHeaderData, packetHeaderPos, packetHeaderEnd);
         pend.Clear();
         if (br.Bit() != 0)
         {
@@ -649,11 +780,25 @@ internal sealed class JpxCodestream
                 }
             }
         }
-        if (br.Overrun) throw new IndexOutOfRangeException();
-        pos = br.Align();
-        if (pos + 2 <= end && d[pos] == 0xFF && d[pos + 1] == 0x92) pos += 2;
+        if (br.Overrun)
+        {
+            if (packedHeaders is not null) throw new PackedHeaderException("contains a truncated packet header");
+            throw new IndexOutOfRangeException();
+        }
+        var alignedPos = br.Align();
+        if (packedHeaders is null)
+        {
+            pos = alignedPos;
+            if (pos + 2 <= end && d[pos] == 0xFF && d[pos + 1] == 0x92) pos += 2;
+        }
+        else
+        {
+            headerPos = alignedPos;
+            if (headerPos + 2 <= packetHeaderEnd && packetHeaderData[headerPos] == 0xFF && packetHeaderData[headerPos + 1] == 0x92) headerPos += 2;
+        }
         foreach (var pd in pend)
         {
+            if (packedHeaders is not null && pd.Len > end - pos) throw new PackedHeaderException("contains truncated packet data");
             var n = Math.Min(pd.Len, end - pos);
             if (n < 0) throw new IndexOutOfRangeException();
             pd.Cb.Append(d.AsSpan(pos, n));

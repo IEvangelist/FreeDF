@@ -46,10 +46,155 @@ def make_pdf(path, w, h, data, extra=None):
     pdf.save(path)
 
 
-def emit(name, im, tol=0, extra=None, expected_mode=None, **kw):
+class PacketBits:
+    def __init__(self, data):
+        self.data = data
+        self.pos = 0
+        self.count = 0
+        self.current = 0
+
+    def bit(self):
+        if self.count == 0:
+            previous = self.current
+            self.current = self.data[self.pos]
+            self.pos += 1
+            self.count = 7 if previous == 0xFF else 8
+        self.count -= 1
+        return self.current >> self.count & 1
+
+    def bits(self, count):
+        value = 0
+        for _ in range(count):
+            value = value << 1 | self.bit()
+        return value
+
+    def tag_tree(self, threshold):
+        low = 0
+        value = 0x7FFFFFFF
+        while low < threshold and low < value:
+            if self.bit():
+                value = low
+            else:
+                low += 1
+        return value < threshold
+
+    def align(self):
+        if self.current == 0xFF and self.pos < len(self.data):
+            self.pos += 1
+        return self.pos
+
+
+def _marker(data, pos):
+    marker = int.from_bytes(data[pos:pos + 2], "big")
+    if marker in (0xFF4F, 0xFFD9, 0xFF93):
+        return marker, pos + 2
+    length = int.from_bytes(data[pos + 2:pos + 4], "big")
+    if length < 2:
+        raise ValueError(f"invalid marker length at offset {pos}")
+    return marker, pos + 2 + length
+
+
+def _packet_header_length(packet):
+    bits = PacketBits(packet)
+    if bits.bit():
+        if bits.tag_tree(1):
+            threshold = 1
+            while not bits.tag_tree(threshold):
+                threshold += 1
+            if bits.bit() == 0:
+                passes = 1
+            elif bits.bit() == 0:
+                passes = 2
+            else:
+                value = bits.bits(2)
+                if value != 3:
+                    passes = 3 + value
+                else:
+                    value = bits.bits(5)
+                    passes = 6 + value if value != 31 else 37 + bits.bits(7)
+            block_length = 3
+            while bits.bit():
+                block_length += 1
+            data_length = bits.bits(block_length + (passes.bit_length() - 1))
+            if data_length != len(packet) - bits.pos:
+                raise ValueError("fixture must encode one complete code-block packet")
+    header_length = bits.align()
+    if header_length <= 0 or header_length >= len(packet):
+        raise ValueError("fixture packet must have separate header and code-block data")
+    return header_length
+
+
+def _packed_segments(marker, payload, split_at):
+    parts = (payload[:split_at], payload[split_at:])
+    encoded = bytearray()
+    for index, part in enumerate(parts):
+        encoded += marker.to_bytes(2, "big")
+        encoded += (len(part) + 3).to_bytes(2, "big")
+        encoded.append(index)
+        encoded += part
+    return bytes(encoded)
+
+
+def pack_packet_headers(data, marker):
+    if not data.startswith(b"\xff\x4f"):
+        raise ValueError("packed-header fixture requires a raw codestream")
+
+    pos = 2
+    while pos < len(data):
+        current, next_pos = _marker(data, pos)
+        if current == 0xFF90:
+            sot = pos
+            break
+        pos = next_pos
+    else:
+        raise ValueError("codestream has no tile-part")
+
+    psot = int.from_bytes(data[sot + 6:sot + 10], "big")
+    tile_end = sot + psot
+    if psot == 0 or tile_end > len(data):
+        raise ValueError("fixture requires a bounded tile-part")
+
+    pos = sot + 12
+    while pos < tile_end:
+        current, next_pos = _marker(data, pos)
+        if current == 0xFF93:
+            sod = pos
+            break
+        pos = next_pos
+    else:
+        raise ValueError("tile-part has no SOD marker")
+
+    packet = data[sod + 2:tile_end]
+    header_length = _packet_header_length(packet)
+    header = packet[:header_length]
+    body = packet[header_length:]
+
+    if marker == "PPM":
+        payload = len(header).to_bytes(4, "big") + header
+        segments = _packed_segments(0xFF60, payload, 5)
+        result = bytearray(data[:sot] + segments + data[sot:sod + 2] + body + data[tile_end:])
+        shifted_sot = sot + len(segments)
+        new_psot = psot - header_length
+    elif marker == "PPT":
+        segments = _packed_segments(0xFF61, header, max(1, len(header) // 2))
+        result = bytearray(data[:sod] + segments + data[sod:sod + 2] + body + data[tile_end:])
+        shifted_sot = sot
+        new_psot = psot + len(segments) - header_length
+    else:
+        raise ValueError(f"unknown packed-header marker {marker}")
+
+    result[shifted_sot + 6:shifted_sot + 10] = new_psot.to_bytes(4, "big")
+    return bytes(result)
+
+
+def emit(name, im, tol=0, extra=None, expected_mode=None, packed=None, **kw):
     buf = io.BytesIO()
+    if packed is not None:
+        kw["no_jp2"] = True
     im.save(buf, format="JPEG2000", **kw)
     data = buf.getvalue()
+    if packed is not None:
+        data = pack_packet_headers(data, packed)
     ref = Image.open(io.BytesIO(data))
     ref.load()
     arr = np.asarray(ref)
@@ -105,6 +250,10 @@ def main():
     g16 = np.asarray(gray).astype(np.uint16) * 257
     g16 = g16 ^ np.random.default_rng(5).integers(0, 256, g16.shape).astype(np.uint16)
     emit("gray16-lossless", Image.fromarray(g16, "I;16"))
+
+    packed = Image.fromarray((np.arange(64, dtype=np.uint8).reshape((8, 8)) + 64), "L")
+    emit("ppm-lossless", packed, packed="PPM", num_resolutions=1, irreversible=False)
+    emit("ppt-lossless", packed, packed="PPT", num_resolutions=1, irreversible=False)
 
 
 if __name__ == "__main__":
