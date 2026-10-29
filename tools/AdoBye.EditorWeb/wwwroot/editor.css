@@ -20,7 +20,7 @@ button:hover, label.btn:hover { background: var(--hover); color: var(--fg); }
 button:active, label.btn:active { background: var(--line); }
 button:focus-visible, label.btn:focus-within, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button:disabled { opacity: .4; cursor: default; }
-button.icon, label.btn.icon { width: var(--h); padding: 0; }
+button.icon, label.btn.icon { width: var(--h); min-width: var(--h); min-height: var(--h); padding: 0; flex: 0 0 auto; }
 button.ghost { height: 22px; width: 22px; padding: 0; color: var(--mut); }
 button.mini { height: 24px; width: 24px; padding: 0; background: #0e1013cc; color: var(--fg-2); border-color: var(--line-2); backdrop-filter: blur(6px); }
 button.mini.danger:hover, button.danger:hover { color: var(--danger); background: var(--danger-bg); }
@@ -67,8 +67,9 @@ footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 .thumb .acts { position: absolute; top: 12px; right: 12px; display: none; gap: 4px; }
 .thumb:hover .acts { display: flex; }
 
-#center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#center { display: flex; flex-direction: column; min-width: 0; min-height: 0; container: editor-center / inline-size; }
 #tools { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 12px; overflow-x: auto; scrollbar-width: none; background: var(--panel); border-bottom: 1px solid var(--line); }
+#tools > :not(.grow) { flex-shrink: 0; }
 #tools .grow, .grow { flex: 1; }
 #zv { min-width: 44px; text-align: center; color: var(--fg-2); font-variant-numeric: tabular-nums; font-size: 12px; }
 #view { flex: 1; overflow: auto; display: flex; padding: 32px; background: #0b0c0f; }
@@ -194,7 +195,44 @@ button:disabled { opacity: .4; cursor: default; }
 .dfoot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 16px; }
 .dfoot button { border: 1px solid var(--line-2); padding: 0 16px; }
 .dfoot button.primary { border-color: transparent; }
-@media (max-width: 760px) { #nav, #pt, #nav + .sp { display: none; } #findbar { left: 12px; right: 12px; } #fq { flex: 1; width: auto; } }
+@media (max-width: 760px) {
+  body { grid-template-rows: 48px minmax(0, 1fr) auto; }
+  header { overflow-x: auto; scrollbar-width: thin; }
+  header .sp { display: none; }
+  main { position: relative; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+  #center { grid-column: 1; grid-row: 1; }
+  #thumbs, #props { position: absolute; top: 0; bottom: 0; z-index: 20; width: min(280px, 88vw); box-shadow: 0 8px 24px #0009; }
+  #thumbs { left: 0; }
+  #props { right: 0; }
+  #tools { height: auto; min-height: 44px; flex-wrap: wrap; align-content: center; overflow: visible; padding: 6px 8px; }
+  #tools .grow, #tools > .sp { display: none; }
+  #tools .seg { order: 1; flex: 0 0 100%; width: 100%; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+  #tools #nav { order: 2; }
+  #tools #lock { order: 3; }
+  #tools #prev { order: 4; }
+  #tools > .group:last-child { order: 5; margin-left: auto; }
+  #pn { width: 44px; min-width: 44px; height: 44px; }
+  #pt { display: inline; }
+  #view { padding: 12px; }
+  footer { min-height: 32px; padding: 4px 10px; }
+  #findbar { left: 12px; right: 12px; }
+  #fq { flex: 1; width: auto; }
+}
+@container editor-center (max-width: 900px) {
+  #tools { height: auto; min-height: 44px; flex-wrap: wrap; align-content: center; overflow: visible; padding-block: 4px; }
+  #tools .grow, #tools > .sp { display: none; }
+  #tools .seg { flex: 0 0 100%; }
+}
+@media (max-width: 720px) {
+  :root { --h: 44px; }
+  #tools .seg button, #tools .seg label.btn { height: 44px; }
+}
+@media (pointer: coarse) {
+  :root { --h: 44px; }
+  .seg button, .seg label.btn { height: 44px; }
+  button.ghost, button.mini { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .hd { width: 14px; height: 14px; }
+}
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4150; background-clip: padding-box; border: 2px solid transparent; }

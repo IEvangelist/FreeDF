@@ -791,6 +791,11 @@ addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''
 addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); document.body.id = ''; act(() => upload(state.pageCount ? '/api/import' : '/api/open', e.dataTransfer.files[0])); } });
 function setPanel(side, open, user) {
   const m = document.querySelector('main'), b = $(side === 'l' ? 'tl' : 'tr');
+  if (user && open && innerWidth <= 760) {
+    const other = side === 'l' ? 'r' : 'l', ob = $(other === 'l' ? 'tl' : 'tr');
+    m.classList.add('hide-' + other); ob.classList.remove('on'); ob.setAttribute('aria-pressed', 'false');
+    localStorage.setItem('panel-' + other, '0');
+  }
   m.classList.toggle('hide-' + side, !open); b.classList.toggle('on', open); b.setAttribute('aria-pressed', open);
   if (user) localStorage.setItem('panel-' + side, open ? '1' : '0');
   if (state.pageCount) setTimeout(() => build(), 220);
