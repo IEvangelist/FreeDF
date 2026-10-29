@@ -11,8 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="PdfPig" />
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
     <ProjectReference Include="..\..\src\PortableDocument.Document\PortableDocument.Document.csproj" />
   </ItemGroup>

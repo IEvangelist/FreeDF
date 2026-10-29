@@ -1,0 +1,23 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/bench/">
+    <Project Path="bench/AdoBye.Bench/AdoBye.Bench.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/PortableDocument.Content/PortableDocument.Content.csproj" />
+    <Project Path="src/PortableDocument.Core/PortableDocument.Core.csproj" />
+    <Project Path="src/PortableDocument.Document/PortableDocument.Document.csproj" />
+    <Project Path="src/PortableDocument.Render/PortableDocument.Render.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AdoBye.Tests/AdoBye.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/AdoBye.AotSmoke/AdoBye.AotSmoke.csproj" />
+    <Project Path="tools/AdoBye.RenderCompare/AdoBye.RenderCompare.csproj" />
+  </Folder>
+</Solution>

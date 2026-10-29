@@ -7,7 +7,9 @@ Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to t
 - `samples/` 26 example PDFs, see `samples/README.md`
 - `docs/spec-matrix.md` spec coverage and known gaps
 
-Build and test: `dotnet build AdoBye.sln -c Release` then `dotnet test AdoBye.sln -c Release`.
+Build and test: `dotnet build AdoBye.slnx -c Release` then `dotnet test AdoBye.slnx -c Release`.
+
+`AdoBye.slnx` is the canonical solution. Package versions are managed centrally in root `Directory.Packages.props`; project `PackageReference` entries omit versions. Change dependency versions there, while keeping tool-only dependencies referenced only by the relevant tools.
 
 NativeAOT: production libraries enable compatibility analysis; see `tools/AdoBye.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.
 
@@ -24,4 +26,4 @@ var spans = Pdf.ExtractText(document.Pages[0]);
 var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
 ```
 
-Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. Product/tool names and `AdoBye.sln` remain unchanged while the product name is undecided. Historical benchmark reports retain their original identities and measurements.
+Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. Product/tool names remain unchanged while the product name is undecided. Historical benchmark reports retain their original identities and measurements.
