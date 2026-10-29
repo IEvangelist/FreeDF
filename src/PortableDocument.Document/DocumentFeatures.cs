@@ -87,6 +87,27 @@ public sealed record PdfRichMediaAsset(
     string Name,
     PdfFileSpecification FileSpecification);
 
+public sealed record PdfRichMediaInstance(
+    string? Subtype,
+    PdfObject? Asset,
+    PdfDictionary? Parameters,
+    PdfDictionary Dictionary);
+
+public sealed record PdfRichMediaConfiguration(
+    int PageIndex,
+    int AnnotationIndex,
+    string? Name,
+    string? Subtype,
+    IReadOnlyList<PdfRichMediaInstance> Instances,
+    PdfDictionary Dictionary);
+
+public sealed record PdfRichMediaSettings(
+    int PageIndex,
+    int AnnotationIndex,
+    PdfDictionary? Activation,
+    PdfDictionary? Deactivation,
+    PdfDictionary Dictionary);
+
 public static class DocumentFeatures
 {
     const int MaxDepth = 64;
@@ -367,6 +388,71 @@ public static class DocumentFeatures
             }
         }
         return assets;
+    }
+
+    /// <summary>Returns RichMedia configurations and instances as inert PDF data; nothing is activated.</summary>
+    public static IReadOnlyList<PdfRichMediaConfiguration> GetRichMediaConfigurations(this PdfDocument doc)
+    {
+        var f = doc.File;
+        var configurations = new List<PdfRichMediaConfiguration>();
+        for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
+        {
+            if (f.Resolve(doc.Pages[pageIndex].Dict.Get("Annots")) is not PdfArray annotations) continue;
+            for (var annotationIndex = 0; annotationIndex < annotations.Count; annotationIndex++)
+            {
+                if (f.Resolve(annotations[annotationIndex]) is not PdfDictionary annotation
+                    || f.Resolve(annotation.Get("Subtype")).AsName() != "RichMedia"
+                    || f.Resolve(annotation.Get("RichMediaContent")) is not PdfDictionary content
+                    || f.Resolve(content.Get("Configurations")) is not PdfArray configs)
+                    continue;
+                foreach (var value in configs.Items)
+                {
+                    if (f.Resolve(value) is not PdfDictionary config) continue;
+                    var instances = new List<PdfRichMediaInstance>();
+                    if (f.Resolve(config.Get("Instances")) is PdfArray instanceArray)
+                        foreach (var instanceValue in instanceArray.Items)
+                            if (f.Resolve(instanceValue) is PdfDictionary instance)
+                                instances.Add(new PdfRichMediaInstance(
+                                    f.Resolve(instance.Get("Subtype")).AsName(),
+                                    f.Resolve(instance.Get("Asset")),
+                                    f.Resolve(instance.Get("Params")) as PdfDictionary,
+                                    instance));
+                    configurations.Add(new PdfRichMediaConfiguration(
+                        pageIndex,
+                        annotationIndex,
+                        PdfStringValue(f, config.Get("Name")),
+                        f.Resolve(config.Get("Subtype")).AsName(),
+                        instances,
+                        config));
+                }
+            }
+        }
+        return configurations;
+    }
+
+    /// <summary>Returns inert RichMedia activation settings; conditions are not acted upon.</summary>
+    public static IReadOnlyList<PdfRichMediaSettings> GetRichMediaSettings(this PdfDocument doc)
+    {
+        var f = doc.File;
+        var settings = new List<PdfRichMediaSettings>();
+        for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
+        {
+            if (f.Resolve(doc.Pages[pageIndex].Dict.Get("Annots")) is not PdfArray annotations) continue;
+            for (var annotationIndex = 0; annotationIndex < annotations.Count; annotationIndex++)
+            {
+                if (f.Resolve(annotations[annotationIndex]) is not PdfDictionary annotation
+                    || f.Resolve(annotation.Get("Subtype")).AsName() != "RichMedia"
+                    || f.Resolve(annotation.Get("RichMediaSettings")) is not PdfDictionary dictionary)
+                    continue;
+                settings.Add(new PdfRichMediaSettings(
+                    pageIndex,
+                    annotationIndex,
+                    f.Resolve(dictionary.Get("Activation")) as PdfDictionary,
+                    f.Resolve(dictionary.Get("Deactivation")) as PdfDictionary,
+                    dictionary));
+            }
+        }
+        return settings;
     }
 
     static void CollectRichMediaAssets(
