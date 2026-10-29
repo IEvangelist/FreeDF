@@ -135,3 +135,20 @@ Times are microseconds per document; allocations below retain BenchmarkDotNet's 
 | Already open, first extract | vector.pdf | 7,636.4 | 7,796.7 | 5.69 | 5.48 | 1.02x |
 
 Vector fresh-open extraction improves by about 11% and already-open vector extraction by about 18% against the preceding matched baseline, with lower managed allocations. It **still misses both 2x and 3x**. Text fresh-open means are close to the preceding run within its error range; already-open patterns vary substantially and now measure 2.14x, not the baseline's 3.02x. The already-open AdoBye pattern case still has a minimum-iteration-time warning. No across-the-board speedup is claimed. All six preflight documents still pass, and the full suite now passes 312 tests.
+
+### Bounded post-gate profile and rejected inflater experiment
+
+A Release profile of 500 fresh `vector.pdf` opens/extractions after the path gate still attributes 14.87% exclusive CPU samples to `PdfLexer.TryNumber`, 6.45% to `ReadObject`, 6.34% to Flate decoding, and 5.92% to Latin1 string creation. Whole-process sampling also includes background/runtime work (23.83% in `Monitor.Enter_Slowpath`), which is not attributed to an application lock without stack evidence. Sampled allocation totals were approximately 1.73 GB byte arrays, 429 MB `PdfReal`, 274 MB strings, 260 MB `PdfKeyword`, 96 MB double arrays, 66 MB LINQ numeric iterators, and 53 MB graphics-state clones. These are aggregate sampled estimates for 500 repetitions, not per-document allocation measurements. Path geometry is no longer a leading allocator.
+
+The final bounded experiment pooled only the 81,920-byte inflate scratch buffer, returned it in `finally`, cleared returned storage, and retained the original read chunk size and output ownership. Both new output-independence/raw-deflate-fallback regression tests and the full 314-test experimental suite passed. All six strict corpus preflights continued to pass. The [eight-case experimental CSV](results/2026-10-29-inflate-rejected.csv) is retained, but **the pooling change and experiment-only tests were reverted**: fresh vector CPU time did not improve, and the text change was not compelling against the concurrently faster PdfPig control. Lower allocations alone did not justify retaining this change as a vector-speed fix.
+
+Same machine/runtime/stock GC and measurement settings as above; exact experimental filters were `"*Text*vector.pdf*" "*Text*text.pdf*"`. Times are microseconds, allocations MB (1,048,576 bytes), and ratios are PdfPig/AdoBye quotients of means:
+
+| Operation | Document | AdoBye mean (us) | PdfPig mean (us) | AdoBye MB | PdfPig MB | Mean ratio |
+|---|---|---:|---:|---:|---:|---:|
+| Open + extract | text.pdf | 4,246 | 11,161 | 5.83 | 13.62 | 2.63x |
+| Open + extract | vector.pdf | 5,861 | 7,933 | 5.48 | 5.54 | 1.35x |
+| Already open, first extract | text.pdf | 4,262 | 11,107 | 5.79 | 13.55 | 2.61x |
+| Already open, first extract | vector.pdf | 6,756 | 7,881 | 5.45 | 5.48 | 1.17x |
+
+Compared with the retained path-gate control, fresh vector went from 5,700.9 to 5,861 us (about 2.8% longer), while already-open vector was noisy (experimental error +/-783.7 us). Text's roughly 3.6% shorter fresh mean accompanied a roughly 6% shorter PdfPig mean. Thus the retained implementation remains the preceding 12-case result/control, including vector **1.34x fresh / 1.02x already-open**, not 3x. Further eliminating token object allocations or decompression copies needs broader parser ownership/API changes and is deferred rather than attempted as an unbounded rewrite.
