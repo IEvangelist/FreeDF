@@ -53,23 +53,23 @@ python samples\_gen\check.py samples\*.pdf   # structural check with pikepdf
 
 Layout: `_gen/pdfkit.py` is a small raw-PDF builder (objects, content streams, CFF/TrueType subsetting, shadings, annotations, tagging); `_gen/theme.py` holds the palette and page furniture; one `gen_NN_*.py` per sample; `_gen/fonts/` holds the OFL/Bitstream fonts (see `LICENSES.txt`). Encryption is applied last with pikepdf.
 
-`tools/Pdf.Samples` (C#, not in the solution) validates every sample with this repo's parser/renderer and can repack files:
+`tools/AdoBye.Samples` (C#, not in the solution) validates every sample with this repo's parser/renderer and can repack files:
 
 ```powershell
-dotnet run --project tools/Pdf.Samples -c Release -- validate samples --out samples/_gen/out
-dotnet run --project tools/Pdf.Samples -c Release -- repack samples/20-report.pdf samples/26-repacked-object-streams.pdf
+dotnet run --project tools/AdoBye.Samples -c Release -- validate samples --out samples/_gen/out
+dotnet run --project tools/AdoBye.Samples -c Release -- repack samples/20-report.pdf samples/26-repacked-object-streams.pdf
 ```
 
-`tests/Pdf.Tests/SamplesTests.cs` opens every `samples/*.pdf` (using the passwords above) and renders page 1 without exceptions or renderer warnings.
+`tests/AdoBye.Tests/SamplesTests.cs` opens every `samples/*.pdf` (using the passwords above) and renders page 1 without exceptions or renderer warnings.
 
 ## Validation
 
 * **pikepdf / qpdf**: every file opens and passes `check()` (`_gen/check.py`).
 * **Our renderer**: all pages of all samples render with zero warnings.
-* **Edge (PDFium) comparison** (`tools/Pdf.RenderCompare`, 2 % tolerance): page 1 of every sample passes (under 1 % differing pixels) except the two harness-related cases below.
+* **Edge (PDFium) comparison** (`tools/AdoBye.RenderCompare`, 2 % tolerance): page 1 of every sample passes (under 1 % differing pixels) except the two harness-related cases below.
 
 ```powershell
-dotnet run --project tools/Pdf.RenderCompare -c Release -- samples/24-poster.pdf --out samples/_gen/cmp
+dotnet run --project tools/AdoBye.RenderCompare -c Release -- samples/24-poster.pdf --out samples/_gen/cmp
 ```
 
 Known differences and notes:

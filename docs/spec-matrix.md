@@ -3,7 +3,7 @@
 Status: **Done** = implemented and covered by tests, **Partial** = implemented with known gaps, **Todo** = not implemented.
 Full spec parity is the goal; this table is the honest current state.
 
-## Parser (`Pdf.Core`, `Pdf.Document`)
+## Parser (`AdoBye.Core`, `AdoBye.Document`)
 
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Full spec parity is the goal; this table is the honest current state.
 | Robustness | Fuzz/truncation tests | Done | Deterministic mutation of all fixtures (400-seed run green): only PdfException (or NotSupported for unsupported filters), timeouts enforced. Caps added: lexer nesting 200, inflate 1 GiB, raster 100M px, JBIG2/CCITT budgets |
 | Perf | Hot paths | Partial | Rasterizer/JPEG already tuned earlier; added static system-font cache. text.pdf 96dpi render 107→98 ms, vector.pdf 246→243 ms; load scales linearly (1000 pages ≈12 ms) |
 
-## Renderer (`Pdf.Content`, `Pdf.Render`)
+## Renderer (`AdoBye.Content`, `AdoBye.Render`)
 
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
@@ -48,21 +48,21 @@ Full spec parity is the goal; this table is the honest current state.
 | Form filling (text and checkbox/radio fields, with editor UI) | Done |
 | Redaction (`Redactor.Apply`): glyph-level removal of text under the rect (page and form XObject text, advances preserved for the rest), partially covered images are decoded and the covered region blanked (re-encoded Flate), forms recursed into (shared forms are over-redacted for every use), annotations whose /Rect intersects are removed, XMP/Info metadata scrubbed, opaque box painted. Paths, inline images and image masks that intersect are removed whole. AcroForm /Fields entries whose widgets were removed are pruned, and outline titles sharing a word (3+ chars) with redacted text are replaced by `[redacted]` (heuristic, may over-blank). Not done: incremental saves keep the original bytes (use full save); vector paths are not clipped | Done (see limits) |
 | Web editor: context menus (clipboard, arrange/z-order, align, redact), Shift/Alt drag modifiers, collapsible responsive panels | Done |
-| Web editor fonts: standard 14 + installed fonts embedded as subsets: glyf TrueType (Type0/Identity-H, CIDFontType2), CFF-flavoured OpenType (.otf; name-keyed CFF subset and embedded as FontFile3 /CIDFontType0C, CID-keyed CFF embedded whole), .ttc/.otc collections (face extracted to a standalone sfnt), ToUnicode on all. Characters missing from the chosen font are split into runs using a fallback font (Segoe UI, Arial, symbol/CJK families, then any installed face). Synthetic bold/italic when a face is missing. Alignment, underline, strikethrough, letter spacing, line height. TrueType subsets truncate loca/hmtx to the highest used glyph id. Extra font folders via env `PDF_EDITOR_FONT_DIRS`. Verified end to end (`tools/Pdf.EditorWeb/e2e_fonts.py` against a live server: original-font edit, CFF .otf, ttc Cambria Math, CJK fallback): pikepdf/qpdf decode clean, pdfminer.six and pypdf extract every inserted string, own extractor round-trips, and Edge (`Pdf.RenderCompare --channel msedge`) renders the edited files within tolerance (1.5% and 0.2% differing pixels). xunit coverage in `EditorFontTests`. CID-keyed CFF and CJK subsets remain large (whole table / high-gid prefix) | Done |
+| Web editor fonts: standard 14 + installed fonts embedded as subsets: glyf TrueType (Type0/Identity-H, CIDFontType2), CFF-flavoured OpenType (.otf; name-keyed CFF subset and embedded as FontFile3 /CIDFontType0C, CID-keyed CFF embedded whole), .ttc/.otc collections (face extracted to a standalone sfnt), ToUnicode on all. Characters missing from the chosen font are split into runs using a fallback font (Segoe UI, Arial, symbol/CJK families, then any installed face). Synthetic bold/italic when a face is missing. Alignment, underline, strikethrough, letter spacing, line height. TrueType subsets truncate loca/hmtx to the highest used glyph id. Extra font folders via env `PDF_EDITOR_FONT_DIRS`. Verified end to end (`tools/AdoBye.EditorWeb/e2e_fonts.py` against a live server: original-font edit, CFF .otf, ttc Cambria Math, CJK fallback): pikepdf/qpdf decode clean, pdfminer.six and pypdf extract every inserted string, own extractor round-trips, and Edge (`AdoBye.RenderCompare --channel msedge`) renders the edited files within tolerance (1.5% and 0.2% differing pixels). xunit coverage in `EditorFontTests`. CID-keyed CFF and CJK subsets remain large (whole table / high-gid prefix) | Done |
 | Web editor shell: File menu (new, open, save, save as, insert pages, export PDF/images/text, print, properties, close), find with highlights, print, full screen, page navigation, fit width/page and zoom presets, dirty tracking | Done |
 | Incremental save, object/xref streams on save, encrypted save | **Done** |
 | 12.8 Digital signatures: sign (adbe.pkcs7.detached, SHA-256, incremental, optional visible appearance; `PdfEditor.Sign`/`SignFile`) and verify (ByteRange digest, CMS signature, signer, whole-document coverage, modified-after-signing) | **Done** (pyHanko-validated). Not supported: certification/DocMDP, RFC 3161 timestamps, LTV/DSS, chain-trust policy (reported only), `Sign` re-saves non-incremental sources |
 
 ## Samples
 
-`samples/` holds 26 polished example PDFs (typography, vector art, shadings, transparency, colour spaces, images, annotations, AcroForm, outlines, page boxes, embedded files, optional content, AES-256 encryption, tagged PDF, report, brochure, invoice, résumé, poster, dashboard). They are generated by `samples/_gen` (Python) and `tools/Pdf.Samples` (C# validator and PdfEditor repack), validated with pikepdf, our renderer and the Edge compare harness, and covered by `SamplesTests`. See [samples/README.md](../samples/README.md) for the index and the feature each file demonstrates.
+`samples/` holds 26 polished example PDFs (typography, vector art, shadings, transparency, colour spaces, images, annotations, AcroForm, outlines, page boxes, embedded files, optional content, AES-256 encryption, tagged PDF, report, brochure, invoice, résumé, poster, dashboard). They are generated by `samples/_gen` (Python) and `tools/AdoBye.Samples` (C# validator and PdfEditor repack), validated with pikepdf, our renderer and the Edge compare harness, and covered by `SamplesTests`. See [samples/README.md](../samples/README.md) for the index and the feature each file demonstrates.
 
 ## Render comparison
 
-`tools/Pdf.RenderCompare` renders with our renderer and with the browser's built-in PDF viewer (PDFium in Chrome/Edge, via Playwright), crops the page, and reports the fraction of pixels that differ beyond a 3x3-neighbourhood tolerance, plus diff images and `report.json`.
+`tools/AdoBye.RenderCompare` renders with our renderer and with the browser's built-in PDF viewer (PDFium in Chrome/Edge, via Playwright), crops the page, and reports the fraction of pixels that differ beyond a 3x3-neighbourhood tolerance, plus diff images and `report.json`.
 
 ```
-dotnet run --project tools/Pdf.RenderCompare -- tests/fixtures --out compare-out [--channel msedge|chrome] [--dpi 96] [--page-tolerance 0.02]
+dotnet run --project tools/AdoBye.RenderCompare -- tests/fixtures --out compare-out [--channel msedge|chrome] [--dpi 96] [--page-tolerance 0.02]
 ```
 
 Independent rasterizers differ in anti-aliasing and font hinting, so tolerances are per-fixture, not zero.

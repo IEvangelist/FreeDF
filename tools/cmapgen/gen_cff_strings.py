@@ -1,4 +1,4 @@
-"""Generates src/Pdf.Content/CffStandardStrings.cs from fontTools tables."""
+"""Generates src/AdoBye.Content/CffStandardStrings.cs from fontTools tables."""
 import os
 from fontTools.cffLib import cffStandardStrings as s
 from fontTools.encodings.StandardEncoding import StandardEncoding as se
@@ -17,9 +17,9 @@ def block(items):
     return '\n'.join(lines)
 
 
-out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'Pdf.Content', 'CffStandardStrings.cs')
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'AdoBye.Content', 'CffStandardStrings.cs')
 open(out, 'w', newline='\n').write(
-    'namespace Pdf.Content;\n\n'
+    'namespace AdoBye.Content;\n\n'
     '/// <summary>The 391 CFF standard strings (CFF spec appendix A) and Adobe StandardEncoding, generated from fontTools by tools/cmapgen/gen_cff_strings.py.</summary>\n'
     'internal static class CffStandardStrings\n{\n    public static readonly string[] Strings =\n    [\n' + block(s) +
     '\n    ];\n\n    /// <summary>StandardEncoding code to glyph name (".notdef" when unassigned).</summary>\n'
