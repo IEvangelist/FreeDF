@@ -21,7 +21,8 @@ public sealed class SystemFontFallback : IFontFallback, ICjkFontFallback
     [
         Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "/usr/share/fonts", "/usr/local/share/fonts", "/Library/Fonts", "/System/Library/Fonts"
     ];
-    readonly Dictionary<string, TrueTypeFont?> _cache = [];
+    // Shared across interpreters: locating and parsing an installed font is far more expensive than rendering a page of text.
+    static readonly Dictionary<string, TrueTypeFont?> _cache = [];
 
     static readonly Dictionary<string, string[]> CjkSans = new()
     {
@@ -79,24 +80,27 @@ public sealed class SystemFontFallback : IFontFallback, ICjkFontFallback
     {
         string[] candidates;
         var key = (fixedPitch ? "cour" : serif ? "times" : "arial") + (bold ? "b" : "") + (italic ? "i" : "");
-        if (_cache.TryGetValue(key, out var cached)) return cached;
-        if (fixedPitch) candidates = bold ? italic ? ["courbi.ttf"] : ["courbd.ttf"] : italic ? ["couri.ttf"] : ["cour.ttf", "LiberationMono-Regular.ttf", "DejaVuSansMono.ttf"];
-        else if (serif) candidates = bold ? italic ? ["timesbi.ttf"] : ["timesbd.ttf"] : italic ? ["timesi.ttf"] : ["times.ttf", "LiberationSerif-Regular.ttf", "DejaVuSerif.ttf"];
-        else candidates = bold ? italic ? ["arialbi.ttf"] : ["arialbd.ttf"] : italic ? ["ariali.ttf"] : ["arial.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf"];
-        TrueTypeFont? font = null;
-        foreach (var c in candidates)
+        lock (_cache)
         {
-            foreach (var d in Dirs)
+            if (_cache.TryGetValue(key, out var cached)) return cached;
+            if (fixedPitch) candidates = bold ? italic ? ["courbi.ttf"] : ["courbd.ttf"] : italic ? ["couri.ttf"] : ["cour.ttf", "LiberationMono-Regular.ttf", "DejaVuSansMono.ttf"];
+            else if (serif) candidates = bold ? italic ? ["timesbi.ttf"] : ["timesbd.ttf"] : italic ? ["timesi.ttf"] : ["times.ttf", "LiberationSerif-Regular.ttf", "DejaVuSerif.ttf"];
+            else candidates = bold ? italic ? ["arialbi.ttf"] : ["arialbd.ttf"] : italic ? ["ariali.ttf"] : ["arial.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf"];
+            TrueTypeFont? font = null;
+            foreach (var c in candidates)
             {
-                if (!Directory.Exists(d)) continue;
-                var p = Directory.EnumerateFiles(d, c, SearchOption.AllDirectories).FirstOrDefault();
-                if (p is null) continue;
-                try { font = new TrueTypeFont(File.ReadAllBytes(p)); } catch (IOException) { }
+                foreach (var d in Dirs)
+                {
+                    if (!Directory.Exists(d)) continue;
+                    var p = Directory.EnumerateFiles(d, c, SearchOption.AllDirectories).FirstOrDefault();
+                    if (p is null) continue;
+                    try { font = new TrueTypeFont(File.ReadAllBytes(p)); } catch (IOException) { }
+                    if (font is not null) break;
+                }
                 if (font is not null) break;
             }
-            if (font is not null) break;
+            return _cache[key] = font;
         }
-        return _cache[key] = font;
     }
 }
 

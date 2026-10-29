@@ -191,15 +191,16 @@ public sealed class PdfDecryptor
             var e = aes.EncryptCbc(k1, k[16..32], PaddingMode.None);
             var mod = 0; for (var i = 0; i < 16; i++) mod += e[i];
             k = (mod % 3) switch { 0 => SHA256.HashData(e), 1 => SHA384.HashData(e), _ => SHA512.HashData(e) };
-            if (round >= 63 && e[^1] <= round - 32) break;
+            if (round >= 63 && e[^1] <= round - 31) break;
         }
         return k[..32];
     }
 
     static byte[] AesCbcNoPad(byte[] key, byte[] iv, byte[] data)
     {
-        using var aes = Aes.Create(); aes.Key = key;
-        return aes.DecryptCbc(data, iv, PaddingMode.None);
+        using var aes = Aes.Create();
+        try { aes.Key = key; return aes.DecryptCbc(data, iv, PaddingMode.None); }
+        catch (CryptographicException e) { throw new PdfParseException("Invalid encryption data: " + e.Message); }
     }
 
     public static byte[] Rc4(byte[] key, byte[] data)
@@ -229,7 +230,8 @@ public sealed class PdfDecryptor
         var key = ObjKey(num, gen, m);
         if (m == Method.Rc4) return Rc4(key, data);
         if (data.Length < 32) return data.Length >= 16 ? [] : data;
-        using var aes = Aes.Create(); aes.Key = key;
+        using var aes = Aes.Create();
+        try { aes.Key = key; } catch (CryptographicException) { return []; }
         var iv = data[..16]; var body = data[16..(16 + (data.Length - 16) / 16 * 16)];
         try { return aes.DecryptCbc(body, iv, PaddingMode.PKCS7); }
         catch (CryptographicException)

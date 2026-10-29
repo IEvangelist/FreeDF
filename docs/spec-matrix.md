@@ -17,8 +17,10 @@ Full spec parity is the goal; this table is the honest current state.
 | 7.8-7.9 | Content streams, resources, functions (types 0,2,3,4) | Done | |
 | 7.10-7.11 | File specs, embedded files, data structures | Todo | |
 | 12 | Annotations, forms, outlines, actions | Partial | Outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, embedded files. Annotation normal-appearance (/AP /N, /AS) rendered per 12.5.5 with generated default appearances for annotations lacking /AP (highlight, underline, strikeout, squiggly, square, circle, line, polygon, ink, free text). Form filling for text/button/choice fields (`PdfEditor.SetFieldValue`; multiline, comb, alignment, MK borders/backgrounds). Not yet: other action types |
-| 14 | Metadata, tagged PDF, logical structure | Partial | Info, XMP packet, tagged flag, language. Structure tree walking not yet |
-| 14.8/PDF/A,UA | Validation | Todo | |
+| 14 | Metadata, tagged PDF, logical structure | Partial | Info, XMP packet, tagged flag, language. `PdfDocument.Structure`: StructTreeRoot/StructElem walk (bounded depth/nodes, cycle-safe), RoleMap, ParentTree, MCID mapping for page content (not inside Form XObjects), /Alt /ActualText /Lang; structure-ordered text extraction (`StructuredTextExtractor`) |
+| 14.8/PDF/A,UA | Validation | Partial | Heuristic validators: PDF/A-1b/2b/3b (fonts embedded, no encryption, XMP + identification, output intent, no transparency for A-1, device colour) and PDF/UA-1/2 (MarkInfo, Lang, Title + DisplayDocTitle, Figure alt text, heading nesting, table structure). Clause numbers approximate; no deep ICC/XMP-schema/tag-coverage checks. Not a conformance certification |
+| Robustness | Fuzz/truncation tests | Done | Deterministic mutation of all fixtures (400-seed run green): only PdfException (or NotSupported for unsupported filters), timeouts enforced. Caps added: lexer nesting 200, inflate 1 GiB, raster 100M px, JBIG2/CCITT budgets |
+| Perf | Hot paths | Partial | Rasterizer/JPEG already tuned earlier; added static system-font cache. text.pdf 96dpi render 107→98 ms, vector.pdf 246→243 ms; load scales linearly (1000 pages ≈12 ms) |
 
 ## Renderer (`Pdf.Content`, `Pdf.Render`)
 

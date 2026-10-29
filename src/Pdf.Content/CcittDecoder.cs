@@ -1,5 +1,7 @@
 namespace Pdf.Content;
 
+using Pdf.Core;
+
 /// <summary>CCITT Group 3 (1D, mixed 2D) and Group 4 decoder per ITU-T T.4/T.6 as used by /CCITTFaxDecode (ISO 32000-2 §7.4.6).</summary>
 public static class CcittDecoder
 {
@@ -54,6 +56,7 @@ public static class CcittDecoder
     public static byte[] Decode(byte[] data, int k, int columns, int rows, bool blackIs1, bool byteAlign, int heightHint, out int consumedBytes)
     {
         if (columns <= 0) columns = 1728;
+        if (columns > 1 << 24) throw new PdfParseException($"CCITT column count {columns} is too large");
         var maxRows = rows > 0 ? rows : heightHint > 0 ? heightHint : int.MaxValue;
         var stride = (columns + 7) / 8;
         var output = new List<byte[]>();
@@ -83,6 +86,7 @@ public static class CcittDecoder
             cur.Clear();
             var ok = is1D ? Row1D(br, cur, columns) : Row2D(br, cur, refLine, columns);
             output.Add(Render(cur, columns, stride, blackIs1));
+            if ((long)output.Count * stride > 1L << 29) throw new PdfParseException("CCITT output exceeds the size limit");
             (refLine, cur) = (cur.ToList(), refLine);
             if (!ok) break;
         }

@@ -38,7 +38,7 @@ public sealed class PdfFile
             if (f.Trailer.Get("Root") is null || f.Resolve(f.Trailer.Get("Root")) is not PdfDictionary) throw new PdfParseException("bad root");
         }
         catch (PdfPasswordException) { throw; }
-        catch (Exception e) when (e is PdfParseException or IndexOutOfRangeException or ArgumentException or FormatException or InvalidCastException or KeyNotFoundException)
+        catch (Exception e) when (e is PdfParseException or IndexOutOfRangeException or ArgumentException or FormatException or InvalidCastException or KeyNotFoundException or InvalidOperationException or NullReferenceException or OverflowException)
         {
             f.Repair();
         }
@@ -309,7 +309,7 @@ public sealed class PdfFile
                 try
                 {
                     var data = DecodeStream(st);
-                    var n = (int)st.Dict.Get("N").AsNumber()!.Value;
+                    var n = (int)(st.Dict.Get("N").AsNumber() ?? 0);
                     var lx = new PdfLexer(data);
                     for (var i = 0; i < n; i++)
                     {
@@ -317,7 +317,7 @@ public sealed class PdfFile
                         Xref[(int)on.Value] = new XrefEntry(true, true, num, i);
                     }
                 }
-                catch (Exception e) when (e is PdfParseException or NotSupportedException) { }
+                catch (Exception e) when (e is PdfParseException or NotSupportedException or InvalidOperationException or ArgumentException or OverflowException) { }
             }
         }
         if (merged.Get("Root") is null)

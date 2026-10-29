@@ -107,9 +107,10 @@ public sealed class TrueTypeFont
 
     public int GlyphByName(string name)
     {
-        if (_postNames is null)
+        var names = _postNames;
+        if (names is null)
         {
-            _postNames = [];
+            names = [];
             if (_tables.TryGetValue("post", out var p) && U32(p.Off) == 0x00020000)
             {
                 var n = U16(p.Off + 32);
@@ -119,12 +120,13 @@ public sealed class TrueTypeFont
                 for (var g = 0; g < n; g++)
                 {
                     var idx = U16(idxOff + g * 2);
-                    if (idx >= 258 && idx - 258 < strs.Count) _postNames.TryAdd(strs[idx - 258], g);
-                    else if (idx < 258) _postNames.TryAdd(MacGlyphNames.Get(idx), g);
+                    if (idx >= 258 && idx - 258 < strs.Count) names.TryAdd(strs[idx - 258], g);
+                    else if (idx < 258) names.TryAdd(MacGlyphNames.Get(idx), g);
                 }
             }
+            _postNames = names;
         }
-        return _postNames.GetValueOrDefault(name);
+        return names.GetValueOrDefault(name);
     }
 
     /// <summary>Returns outline in font units scaled to 1/1000 em, or null when the glyph has no contours.</summary>

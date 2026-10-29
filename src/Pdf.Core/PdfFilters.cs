@@ -52,15 +52,28 @@ public static class PdfFilters
         return (data, null, null);
     }
 
+    const long MaxInflated = 1L << 30;
+
+    static void InflateInto(Stream z, MemoryStream output)
+    {
+        var buf = new byte[81920];
+        int n;
+        while ((n = z.Read(buf, 0, buf.Length)) > 0)
+        {
+            output.Write(buf, 0, n);
+            if (output.Length > MaxInflated) throw new PdfParseException("Decompressed stream exceeds the size limit");
+        }
+    }
+
     public static byte[] Flate(byte[] src)
     {
         var output = new MemoryStream();
         try
         {
             using var z = new ZLibStream(new MemoryStream(src), CompressionMode.Decompress);
-            z.CopyTo(output);
+            InflateInto(z, output);
         }
-        catch (InvalidDataException)
+        catch (Exception e) when (e is InvalidDataException or IOException)
         {
             // Truncated/corrupt data: keep what was decoded, which matches common reader behaviour.
         }
@@ -69,9 +82,9 @@ public static class PdfFilters
             try
             {
                 using var df = new DeflateStream(new MemoryStream(src, 2, src.Length - 2), CompressionMode.Decompress);
-                df.CopyTo(output);
+                InflateInto(df, output);
             }
-            catch (InvalidDataException) { }
+            catch (Exception e) when (e is InvalidDataException or IOException) { }
         }
         return output.ToArray();
     }

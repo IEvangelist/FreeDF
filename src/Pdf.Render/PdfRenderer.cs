@@ -24,8 +24,13 @@ public static class PdfRenderer
             case 270: m = m.Then(new Matrix(0, 1, -1, 0, h, 0)); nw = h; nh = w; break;
         }
         m = m.Then(new Matrix(1, 0, 0, -1, 0, nh)).Then(Matrix.Scale(scale, scale));
-        width = Math.Max(1, (int)Math.Ceiling(nw * scale - 1e-6));
-        height = Math.Max(1, (int)Math.Ceiling(nh * scale - 1e-6));
+        var pw = Math.Ceiling(nw * scale - 1e-6);
+        var ph = Math.Ceiling(nh * scale - 1e-6);
+        if (!(pw < SoftwareRasterizer.MaxDimension) || !(ph < SoftwareRasterizer.MaxDimension) || double.IsNaN(pw) || double.IsNaN(ph))
+            throw new Pdf.Core.PdfParseException($"Page size {nw:0.##}x{nh:0.##} at scale {scale:0.##} is not renderable");
+        width = Math.Max(1, (int)pw);
+        height = Math.Max(1, (int)ph);
+        if ((long)width * height > SoftwareRasterizer.MaxPixels) throw new Pdf.Core.PdfParseException($"Page raster {width}x{height} exceeds the pixel limit");
         return m;
     }
 

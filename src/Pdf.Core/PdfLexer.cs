@@ -31,6 +31,15 @@ public sealed class PdfLexer
     }
 
     /// <summary>Reads next object; returns null at EOF. Closers (']' '>>') are returned as keywords.</summary>
+    int _nesting;
+    const int MaxNesting = 200;
+
+    // Bounds array/dictionary recursion so hostile input cannot overflow the stack. Exceptions abandon the lexer, so no unwind is needed.
+    void Enter()
+    {
+        if (++_nesting > MaxNesting) throw new PdfParseException("object nesting too deep");
+    }
+
     public PdfObject? ReadObject(bool resolveRefs = true)
     {
         SkipWhite();
@@ -197,6 +206,7 @@ public sealed class PdfLexer
 
     PdfArray ReadArrayBody(bool resolveRefs)
     {
+        Enter();
         var items = new List<PdfObject>();
         while (true)
         {
@@ -204,11 +214,13 @@ public sealed class PdfLexer
             if (o is null || o is PdfKeyword { Value: "]" }) break;
             items.Add(o);
         }
+        _nesting--;
         return new PdfArray(items);
     }
 
     PdfDictionary ReadDictBody(bool resolveRefs)
     {
+        Enter();
         var d = new Dictionary<string, PdfObject>();
         while (true)
         {
@@ -220,6 +232,7 @@ public sealed class PdfLexer
             if (v is PdfKeyword { Value: ">>" }) { d[name.Value] = PdfNull.Instance; break; }
             d[name.Value] = v;
         }
+        _nesting--;
         return new PdfDictionary(d);
     }
 }

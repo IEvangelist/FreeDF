@@ -286,7 +286,7 @@ public static class Jbig2Decoder
 
     static Bitmap NewBitmap(int w, int h)
     {
-        if (w < 0 || h < 0 || (long)w * h > 400_000_000) throw new InvalidOperationException("bad JBIG2 bitmap size");
+        if (w < 0 || h < 0 || (long)w * h > 100_000_000) throw new InvalidOperationException("bad JBIG2 bitmap size");
         return new Bitmap(w, h);
     }
 
@@ -510,6 +510,7 @@ public static class Jbig2Decoder
 
         var widths = new int[numNew];
         int hcHeight = 0, done = 0;
+        long symPixels = 0;
         while (done < numNew)
         {
             int dh;
@@ -526,6 +527,8 @@ public static class Jbig2Decoder
                 if (done >= numNew) throw new InvalidOperationException("too many symbols");
                 symW += dw; totW += symW;
                 if (symW < 0) throw new InvalidOperationException("bad symbol width");
+                symPixels += (long)symW * hcHeight;
+                if (symPixels > 50_000_000) throw new InvalidOperationException("symbol dictionary too large");
                 if (!huff)
                 {
                     var bm = NewBitmap(symW, hcHeight);
