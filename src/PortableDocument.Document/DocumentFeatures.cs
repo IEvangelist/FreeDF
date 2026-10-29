@@ -119,6 +119,35 @@ public sealed record PdfRichMediaSettings(
     int AnnotationIndex,
     PdfDictionary? Activation,
     PdfDictionary? Deactivation,
+    PdfDictionary Dictionary)
+{
+    public PdfRichMediaActivation? ActivationDetails { get; init; }
+    public PdfRichMediaDeactivation? DeactivationDetails { get; init; }
+}
+
+public sealed record PdfRichMediaActivation(
+    string Condition,
+    PdfRichMediaAnimation? Animation,
+    PdfObject? View,
+    PdfDictionary? Configuration,
+    PdfRichMediaPresentation? Presentation,
+    PdfDictionary Dictionary);
+
+public sealed record PdfRichMediaDeactivation(string Condition, PdfDictionary Dictionary);
+
+public sealed record PdfRichMediaAnimation(
+    string Subtype,
+    long PlayCount,
+    double Speed,
+    PdfDictionary Dictionary);
+
+public sealed record PdfRichMediaPresentation(
+    string Style,
+    bool Transparent,
+    bool NavigationPane,
+    bool? Toolbar,
+    bool PassContextClick,
+    PdfDictionary? Window,
     PdfDictionary Dictionary);
 
 public sealed record Pdf3DAnnotation(
@@ -626,10 +655,69 @@ public static class DocumentFeatures
                     annotationIndex,
                     f.Resolve(dictionary.Get("Activation")) as PdfDictionary,
                     f.Resolve(dictionary.Get("Deactivation")) as PdfDictionary,
-                    dictionary));
+                    dictionary)
+                {
+                    ActivationDetails = ReadRichMediaActivation(f, f.Resolve(dictionary.Get("Activation")) as PdfDictionary),
+                    DeactivationDetails = ReadRichMediaDeactivation(f, f.Resolve(dictionary.Get("Deactivation")) as PdfDictionary),
+                });
             }
         }
         return settings;
+    }
+
+    static PdfRichMediaActivation? ReadRichMediaActivation(PdfFile f, PdfDictionary? activation)
+    {
+        if (activation is null) return null;
+        var animation = f.Resolve(activation.Get("Animation")) as PdfDictionary;
+        var presentation = f.Resolve(activation.Get("Presentation")) as PdfDictionary;
+        var condition = f.Resolve(activation.Get("Condition")).AsName();
+        return new PdfRichMediaActivation(
+            condition is "XA" or "PO" or "PV" ? condition : "XA",
+            ReadRichMediaAnimation(f, animation),
+            f.Resolve(activation.Get("View")),
+            f.Resolve(activation.Get("Configuration")) as PdfDictionary,
+            ReadRichMediaPresentation(f, presentation),
+            activation);
+    }
+
+    static PdfRichMediaDeactivation? ReadRichMediaDeactivation(PdfFile f, PdfDictionary? deactivation)
+    {
+        if (deactivation is null) return null;
+        var condition = f.Resolve(deactivation.Get("Condition")).AsName();
+        return new PdfRichMediaDeactivation(
+            condition is "XD" or "PC" or "PI" ? condition : "XD",
+            deactivation);
+    }
+
+    static PdfRichMediaAnimation? ReadRichMediaAnimation(PdfFile f, PdfDictionary? animation)
+    {
+        if (animation is null) return null;
+        var subtype = f.Resolve(animation.Get("Subtype")).AsName();
+        var playCount = f.Resolve(animation.Get("PlayCount")) switch
+        {
+            PdfInteger integer => integer.Value,
+            _ => -1,
+        };
+        var speed = f.Resolve(animation.Get("Speed")).AsNumber();
+        return new PdfRichMediaAnimation(
+            subtype is "None" or "Linear" or "Oscillating" ? subtype : "None",
+            playCount,
+            speed is > 0 ? speed.Value : 1,
+            animation);
+    }
+
+    static PdfRichMediaPresentation? ReadRichMediaPresentation(PdfFile f, PdfDictionary? presentation)
+    {
+        if (presentation is null) return null;
+        var style = f.Resolve(presentation.Get("Style")).AsName();
+        return new PdfRichMediaPresentation(
+            style is "Embedded" or "Windowed" ? style : "Embedded",
+            f.Resolve(presentation.Get("Transparent")) is PdfBoolean transparent && transparent.Value,
+            f.Resolve(presentation.Get("NavigationPane")) is PdfBoolean navigationPane && navigationPane.Value,
+            f.Resolve(presentation.Get("Toolbar")) is PdfBoolean toolbar ? toolbar.Value : null,
+            f.Resolve(presentation.Get("PassContextClick")) is PdfBoolean passContextClick && passContextClick.Value,
+            f.Resolve(presentation.Get("Window")) as PdfDictionary,
+            presentation);
     }
 
     /// <summary>Returns 3D annotation references as inert PDF objects; model data is never decoded or activated.</summary>

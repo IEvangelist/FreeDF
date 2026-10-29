@@ -216,7 +216,7 @@ public class DocumentFeatureTests
             "16 0 obj\n<< /S /JavaScript /JS (field-action-code) >>\nendobj\n" +
             "17 0 obj\n<< /S /JavaScript /JS (field-key-action-code) >>\nendobj\n" +
             "18 0 obj\n<< /S /URI /URI (https://cycle.example) /Next 18 0 R >>\nendobj\n" +
-            "19 0 obj\n<< /Type /Annot /Subtype /RichMedia /Rect [20 20 100 100] /RichMediaContent << /Assets << /Names [(movie) 20 0 R] >> /Configurations [22 0 R] >> /RichMediaSettings << /Activation << /Condition /XA >> >> >>\nendobj\n" +
+            "19 0 obj\n<< /Type /Annot /Subtype /RichMedia /Rect [20 20 100 100] /RichMediaContent << /Assets << /Names [(movie) 20 0 R] >> /Configurations [22 0 R] >> /RichMediaSettings << /Activation << /Condition /PV /Animation << /Subtype /Linear /PlayCount 3 /Speed 1.5 >> /View 30 0 R /Configuration 22 0 R /Presentation << /Style /Windowed /Transparent true /NavigationPane true /Toolbar false /PassContextClick true /Window 31 0 R >> >> /Deactivation << /Condition /PC >> >> >>\nendobj\n" +
             "20 0 obj\n<< /Type /Filespec /F (movie.mp4) /EF << /F 21 0 R >> >>\nendobj\n" +
             "21 0 obj\n<< /Type /EmbeddedFile /Subtype /video#2Fmp4 /Length 4 >>\nstream\ndata\nendstream\nendobj\n" +
             "22 0 obj\n<< /Type /RichMediaConfiguration /Subtype /Video /Name (Movie) /Instances [23 0 R] >>\nendobj\n" +
@@ -224,10 +224,22 @@ public class DocumentFeatureTests
             "28 0 obj\n<< /Type /Annot /Subtype /3D /Rect [120 20 200 100] /3DD 29 0 R /3DV 30 0 R /3DA << /A /PO /DIS /I >> >>\nendobj\n" +
             "29 0 obj\n<< /Type /3D /Subtype /U3D /Length 8 >>\nstream\nmodeldat\nendstream\nendobj\n" +
             "30 0 obj\n<< /XN (Default view) /IN (Default node) /MS /M >>\nendobj\n" +
+            "31 0 obj\n<< /Type /RichMediaWindow /Width << /Default 320 /Max 600 /Min 100 >> /Height << /Default 240 /Max 500 /Min 80 >> /Position << /HAlign /Center /VAlign /Far /HOffset 12 /VOffset 20 >> >>\nendobj\n" +
             "25 0 obj\n<< /Type /Outlines /First 26 0 R >>\nendobj\n" +
             "26 0 obj\n<< /Title (scripted outline) /A 27 0 R >>\nendobj\n" +
             "27 0 obj\n<< /S /JavaScript /JS (outline-action-code) >>\nendobj\n" +
-            "trailer\n<< /Root 1 0 R /Size 31 >>\n%%EOF\n";
+            "trailer\n<< /Root 1 0 R /Size 32 >>\n%%EOF\n";
+        return System.Text.Encoding.ASCII.GetBytes(pdf);
+    }
+
+    static byte[] DefaultRichMediaSettingsPdf()
+    {
+        const string pdf = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [4 0 R] >>\nendobj\n" +
+            "4 0 obj\n<< /Type /Annot /Subtype /RichMedia /Rect [0 0 50 50] /RichMediaSettings << /Activation << /Animation << >> /Presentation << >> >> /Deactivation << >> >> >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 5 >>\n%%EOF\n";
         return System.Text.Encoding.ASCII.GetBytes(pdf);
     }
 
@@ -284,7 +296,21 @@ public class DocumentFeatureTests
         Assert.Same(richMediaAsset.FileSpecification.Dictionary, richMediaInstance.Asset);
         Assert.Equal(0.5, doc.File.Resolve(richMediaInstance.Parameters?.Get("Volume")).AsNumber());
         var richMediaSettings = Assert.Single(doc.GetRichMediaSettings());
-        Assert.Equal("XA", doc.File.Resolve(richMediaSettings.Activation?.Get("Condition")).AsName());
+        var activation = Assert.IsType<PdfRichMediaActivation>(richMediaSettings.ActivationDetails);
+        Assert.Equal("PV", activation.Condition);
+        Assert.Equal("Linear", activation.Animation?.Subtype);
+        Assert.Equal(3, activation.Animation?.PlayCount);
+        Assert.Equal(1.5, activation.Animation?.Speed);
+        Assert.Same(doc.File.GetObject(30), activation.View);
+        Assert.Same(doc.File.GetObject(22), activation.Configuration);
+        Assert.Equal("Windowed", activation.Presentation?.Style);
+        Assert.True(activation.Presentation?.Transparent);
+        Assert.True(activation.Presentation?.NavigationPane);
+        Assert.False(activation.Presentation?.Toolbar);
+        Assert.True(activation.Presentation?.PassContextClick);
+        Assert.Same(doc.File.GetObject(31), activation.Presentation?.Window);
+        Assert.Equal("PC", richMediaSettings.DeactivationDetails?.Condition);
+        Assert.Same(richMediaSettings.Activation, activation.Dictionary);
         var threeD = Assert.Single(doc.Get3DAnnotations());
         Assert.Equal(0, threeD.PageIndex);
         Assert.Equal("modeldat", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(threeD.Data).RawData));
@@ -299,8 +325,28 @@ public class DocumentFeatureTests
         Assert.NotNull(Assert.Single(roundTrip.Pages[0].GetAnnotations(), annotation => annotation.Subtype == "RichMedia").Dict.Get("RichMediaContent"));
         Assert.Equal("movie.mp4", Assert.Single(roundTrip.GetRichMediaAssets()).FileSpecification.FileName);
         Assert.Equal("Movie", Assert.Single(roundTrip.GetRichMediaConfigurations()).Name);
-        Assert.Equal("XA", roundTrip.File.Resolve(Assert.Single(roundTrip.GetRichMediaSettings()).Activation?.Get("Condition")).AsName());
+        var roundTripSettings = Assert.Single(roundTrip.GetRichMediaSettings());
+        Assert.Equal("PV", roundTripSettings.ActivationDetails?.Condition);
+        Assert.Equal("Windowed", roundTripSettings.ActivationDetails?.Presentation?.Style);
+        Assert.Equal("PC", roundTripSettings.DeactivationDetails?.Condition);
         Assert.Equal("modeldat", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
             Assert.Single(roundTrip.Get3DAnnotations()).Data).RawData));
+    }
+
+    [Fact]
+    public void Rich_media_settings_expose_spec_defaults_without_activating_content()
+    {
+        var settings = Assert.Single(PdfDocument.Load(DefaultRichMediaSettingsPdf()).GetRichMediaSettings());
+
+        Assert.Equal("XA", settings.ActivationDetails?.Condition);
+        Assert.Equal("None", settings.ActivationDetails?.Animation?.Subtype);
+        Assert.Equal(-1, settings.ActivationDetails?.Animation?.PlayCount);
+        Assert.Equal(1, settings.ActivationDetails?.Animation?.Speed);
+        Assert.Equal("Embedded", settings.ActivationDetails?.Presentation?.Style);
+        Assert.False(settings.ActivationDetails?.Presentation?.Transparent);
+        Assert.False(settings.ActivationDetails?.Presentation?.NavigationPane);
+        Assert.Null(settings.ActivationDetails?.Presentation?.Toolbar);
+        Assert.False(settings.ActivationDetails?.Presentation?.PassContextClick);
+        Assert.Equal("XD", settings.DeactivationDetails?.Condition);
     }
 }
