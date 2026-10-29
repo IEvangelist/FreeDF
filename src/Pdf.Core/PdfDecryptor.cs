@@ -113,7 +113,7 @@ public sealed class PdfDecryptor
     }
 
     // ISO 32000-2 Algorithm 2.B
-    static byte[] Hash2B(byte[] pwd, byte[] salt, byte[] udata)
+    internal static byte[] Hash2B(byte[] pwd, byte[] salt, byte[] udata)
     {
         var k = SHA256.HashData([.. pwd, .. salt, .. udata]);
         for (var round = 0; ; round++)

@@ -1,3 +1,4 @@
+using Pdf.Core;
 using Pdf.Document;
 using Pdf.Render;
 using Xunit;
@@ -97,6 +98,49 @@ public class EditorTests
             "6 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (combo) /Opt [[(a) (Alpha)] [(b) (Beta)]] /Rect [10 50 150 80] /P 3 0 R >>\nendobj\n" +
             "trailer\n<< /Root 1 0 R /Size 7 >>\n%%EOF\n";
         return System.Text.Encoding.ASCII.GetBytes(s);
+    }
+
+    [Fact]
+    public void Object_streams_compression_and_encryption_roundtrip()
+    {
+        var src = Features();
+        var e = PdfEditor.Open(src);
+        var plain = e.Save();
+        var packed = e.Save(options: new PdfWriteOptions { Compress = true, ObjectStreams = true });
+        Assert.True(packed.Length < plain.Length);
+        var d = Reload(packed);
+        Assert.Equal(src.Pages.Count, d.Pages.Count);
+        for (var i = 0; i < d.Pages.Count; i++) Assert.Equal(Render(Reload(plain), i), Render(d, i));
+
+        var locked = e.Save(options: new PdfWriteOptions { Compress = true, ObjectStreams = true, Encryption = new PdfEncryption { UserPassword = "u", OwnerPassword = "o", Permissions = -3904 } });
+        Assert.Throws<PdfPasswordException>(() => PdfDocument.Load(locked, "wrong"));
+        var un = PdfDocument.Load(locked, "u");
+        Assert.True(un.File.IsEncrypted);
+        Assert.Equal(Render(Reload(plain), 0), Render(un, 0));
+        Assert.Equal(Render(Reload(plain), 0), Render(PdfDocument.Load(locked, "o"), 0));
+
+        var classic = e.Save(options: new PdfWriteOptions { Encryption = new PdfEncryption { UserPassword = "x" } });
+        Assert.Equal(Render(Reload(plain), 0), Render(PdfDocument.Load(classic, "x"), 0));
+    }
+
+    [Theory]
+    [InlineData("cff")]
+    [InlineData("features")]
+    public void Incremental_save_preserves_original_bytes_and_applies_edits(string which)
+    {
+        var path = which == "cff" ? Fx("fonts", "cff.pdf") : Fx("features", "features.pdf");
+        var original = File.ReadAllBytes(path);
+        var e = PdfEditor.Open(PdfDocument.Load(original));
+        Assert.True(e.CanSaveIncremental);
+        e.SetInfo("Title", "Incremental");
+        e.SetRotation(0, 90);
+        var upd = e.SaveIncremental();
+        Assert.True(upd.Length > original.Length);
+        Assert.True(upd.AsSpan(0, original.Length).SequenceEqual(original));
+        var d = Reload(upd);
+        Assert.Equal("Incremental", d.Info("Title"));
+        Assert.Equal(90, d.Pages[0].Rotate);
+        Assert.Equal(PdfDocument.Load(original).Pages.Count, d.Pages.Count);
     }
 
     [Fact]

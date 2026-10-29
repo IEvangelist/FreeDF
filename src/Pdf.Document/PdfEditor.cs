@@ -31,6 +31,7 @@ public sealed class PdfEditor
     PdfEditor(PdfDocument doc)
     {
         var f = doc.File;
+        _src = f;
         _version = string.Compare(f.Version, "1.7", StringComparison.Ordinal) < 0 ? "1.7" : f.Version;
         foreach (var (num, e) in f.Xref)
         {
@@ -381,7 +382,12 @@ public sealed class PdfEditor
         if (content is null) _contentOverrides.Remove(_pages[index]); else _contentOverrides[_pages[index]] = content;
     }
 
-    public byte[] Save(bool applyOverlays = true, bool applyContentEdits = true)
+    PdfFile? _src;
+
+    /// <summary>True when the editor was opened from an intact, unencrypted file, so <see cref="SaveIncremental"/> can append an update.</summary>
+    public bool CanSaveIncremental => _src is { IsEncrypted: false, Repaired: false };
+
+    Dictionary<int, PdfObject> BuildObjects(bool applyOverlays, bool applyContentEdits, out int next)
     {
         var kids = new PdfArray(_pages.Select(n => (PdfObject)new PdfRef(n, 0)).ToList());
         var objs = new Dictionary<int, PdfObject>(_objs)
@@ -391,7 +397,7 @@ public sealed class PdfEditor
                 ["Type"] = new PdfName("Pages"), ["Kids"] = kids, ["Count"] = new PdfInteger(_pages.Count),
             }),
         };
-        var next = _next;
+        next = _next;
         if (applyContentEdits)
             foreach (var n in _pages)
                 if (_contentOverrides.TryGetValue(n, out var bytes))
@@ -403,6 +409,34 @@ public sealed class PdfEditor
         if (applyOverlays)
             foreach (var n in _pages)
                 if (_overlays.TryGetValue(n, out var ov)) objs[n] = ApplyOverlay((PdfDictionary)objs[n], ov, objs, ref next);
-        return PdfWriter.Write(objs, _catalog, _info == 0 ? null : _info, _version, _deleted);
+        return objs;
+    }
+
+    /// <summary>Full rewrite. <paramref name="options"/> enables compression, object/xref streams and AES-256 encryption.</summary>
+    public byte[] Save(bool applyOverlays = true, bool applyContentEdits = true, PdfWriteOptions? options = null)
+    {
+        var objs = BuildObjects(applyOverlays, applyContentEdits, out _);
+        return PdfWriter.Write(objs, _catalog, _info == 0 ? null : _info, _version, _deleted, null, options);
+    }
+
+    /// <summary>Appends changed and new objects to the original bytes (7.5.6), leaving the original content intact.</summary>
+    public byte[] SaveIncremental(bool applyOverlays = true, bool applyContentEdits = true)
+    {
+        if (!CanSaveIncremental) throw new InvalidOperationException("Incremental save needs an intact, unencrypted source file.");
+        var f = _src!;
+        var objs = BuildObjects(applyOverlays, applyContentEdits, out var next);
+        var changed = new Dictionary<int, PdfObject>();
+        foreach (var (n, o) in objs)
+        {
+            if (_deleted.Contains(n)) continue;
+            var orig = f.Xref.TryGetValue(n, out var xe) && xe.InUse ? f.GetObject(n) : null;
+            if (!ReferenceEquals(orig, o)) changed[n] = o;
+        }
+        var data = f.Data;
+        var sx = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length)).LastIndexOf("startxref", StringComparison.Ordinal);
+        var tailText = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length))[(sx + 9)..].Trim();
+        var prev = long.Parse(new string(tailText.TakeWhile(char.IsDigit).ToArray()));
+        var isStream = !(prev < data.Length && System.Text.Encoding.Latin1.GetString(data, (int)prev, Math.Min(4, data.Length - (int)prev)) == "xref");
+        return PdfWriter.WriteIncremental(data, prev, changed, next, _catalog, _info == 0 ? null : _info, f.Resolve(f.Trailer.Get("ID")), isStream);
     }
 }

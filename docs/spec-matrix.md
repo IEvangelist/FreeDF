@@ -16,7 +16,7 @@ Full spec parity is the goal; this table is the honest current state.
 | 7.7 | Document structure: page tree, inheritance | Done | |
 | 7.8-7.9 | Content streams, resources, functions (types 0,2,3,4) | Done | |
 | 7.10-7.11 | File specs, embedded files, data structures | Todo | |
-| 12 | Annotations, forms, outlines, actions | Partial | Outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, embedded files. Annotation normal-appearance (/AP /N, /AS) rendered per 12.5.5 (no generated appearances for annotations lacking /AP). Form filling for text/button fields (`PdfEditor.SetFieldValue`, generated single-line Helvetica appearance). Not yet: choice/multiline/comb fields, other action types |
+| 12 | Annotations, forms, outlines, actions | Partial | Outlines, named dests, annotation list (URI/GoTo), AcroForm field tree, page labels, embedded files. Annotation normal-appearance (/AP /N, /AS) rendered per 12.5.5 with generated default appearances for annotations lacking /AP (highlight, underline, strikeout, squiggly, square, circle, line, polygon, ink, free text). Form filling for text/button/choice fields (`PdfEditor.SetFieldValue`; multiline, comb, alignment, MK borders/backgrounds). Not yet: other action types |
 | 14 | Metadata, tagged PDF, logical structure | Partial | Info, XMP packet, tagged flag, language. Structure tree walking not yet |
 | 14.8/PDF/A,UA | Validation | Todo | |
 
@@ -59,3 +59,5 @@ dotnet run --project tools/Pdf.RenderCompare -- tests/fixtures --out compare-out
 ```
 
 Independent rasterizers differ in anti-aliasing and font hinting, so tolerances are per-fixture, not zero.
+
+| Writer: object streams + xref streams, Flate compression, AES-256 (V5/R6) encrypted save with user/owner passwords, incremental save (PdfEditor.Save(options), SaveIncremental); verified with qpdf/pikepdf. Not yet: AES-128/RC4 writing, signatures, public-key encryption | Done |
