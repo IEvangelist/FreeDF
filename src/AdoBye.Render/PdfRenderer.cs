@@ -35,7 +35,17 @@ public static class PdfRenderer
     }
 
     /// <summary>Text-showing operators of the page's own content (not forms), positioned in CropBox space: points, origin top-left, y down, unrotated.</summary>
-    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page) => Analyze(page).Spans;
+    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page)
+    {
+        var box = page.CropBox;
+        using var raster = new SoftwareRasterizer(1, 1);
+        var interp = new ContentInterpreter(page.Document.File, raster)
+        {
+            TextSpans = [], DrawAnnotations = false, DrawGraphics = false
+        };
+        interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
+        return interp.TextSpans;
+    }
 
     /// <summary>Text spans plus painted graphics objects, in the same CropBox space as <see cref="ExtractText"/>.</summary>
     public static (List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects) Analyze(PdfPage page)

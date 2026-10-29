@@ -4,6 +4,24 @@ using AdoBye.Content;
 using AdoBye.Document;
 using AdoBye.Render;
 
+if (args is ["--profile-text", var file, var count])
+{
+    var bytes = ComparisonCorpus.Read(file);
+    var iterations = int.Parse(count, System.Globalization.CultureInfo.InvariantCulture);
+    long characters = 0;
+    for (var i = 0; i < iterations; i++)
+        foreach (var text in ComparisonCorpus.Text(PdfDocument.Load(bytes)))
+            characters += text.Length;
+    Console.WriteLine($"Profile workload: {iterations} fresh opens/extractions of {file}, {characters} characters.");
+    return;
+}
+
+if (args.Contains("--preflight"))
+{
+    Console.WriteLine($"Accepted documents: {string.Join(", ", ComparisonCorpus.ValidatedFiles)}");
+    return;
+}
+
 BenchmarkSwitcher.FromAssembly(typeof(RenderBench).Assembly).Run(args);
 
 [MemoryDiagnoser]

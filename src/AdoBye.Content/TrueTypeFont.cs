@@ -11,6 +11,7 @@ public sealed class TrueTypeFont
     public bool HasGlyf => _glyf > 0 && _loca > 0;
     public bool IsCff => _tables.ContainsKey("CFF ");
     readonly List<(int Platform, int Encoding, int Off)> _cmaps = [];
+    readonly List<int> _preferredCmaps = [];
     Dictionary<string, int>? _postNames;
 
     public TrueTypeFont(byte[] data)
@@ -35,13 +36,25 @@ public sealed class TrueTypeFont
             var cnt = U16(cm.Off + 2);
             for (var i = 0; i < cnt; i++) _cmaps.Add((U16(cm.Off + 4 + i * 8), U16(cm.Off + 6 + i * 8), cm.Off + (int)U32(cm.Off + 8 + i * 8)));
         }
+        foreach (var (platform, encoding) in new[] { (3, 10), (3, 1), (0, 4), (0, 3), (0, 6), (0, 0), (0, 1), (0, 2) })
+            foreach (var cmap in _cmaps)
+                if (cmap.Platform == platform && cmap.Encoding == encoding)
+                {
+                    _preferredCmaps.Add(cmap.Off);
+                    break;
+                }
     }
 
     public int NumGlyphs => _numGlyphs;
     uint U32(int o) => o + 4 <= _d.Length ? (uint)(_d[o] << 24 | _d[o + 1] << 16 | _d[o + 2] << 8 | _d[o + 3]) : 0;
     int U16(int o) => o + 2 <= _d.Length ? _d[o] << 8 | _d[o + 1] : 0;
     int S16(int o) => (short)U16(o);
-    public bool HasCmap(int platform, int enc) => _cmaps.Any(c => c.Platform == platform && c.Encoding == enc);
+    public bool HasCmap(int platform, int enc)
+    {
+        foreach (var cmap in _cmaps)
+            if (cmap.Platform == platform && cmap.Encoding == enc) return true;
+        return false;
+    }
 
     public double Advance(int gid)
     {
@@ -58,8 +71,11 @@ public sealed class TrueTypeFont
 
     public int LookupAny(int code)
     {
-        foreach (var (pl, en) in new[] { (3, 10), (3, 1), (0, 4), (0, 3), (0, 6), (0, 0), (0, 1), (0, 2) })
-            if (HasCmap(pl, en)) { var g = Lookup(pl, en, code); if (g != 0) return g; }
+        foreach (var offset in _preferredCmaps)
+        {
+            var g = LookupSub(offset, code);
+            if (g != 0) return g;
+        }
         return 0;
     }
 

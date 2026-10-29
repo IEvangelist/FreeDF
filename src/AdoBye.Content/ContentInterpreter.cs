@@ -270,7 +270,7 @@ public sealed class ContentInterpreter
 
     static (double, double, double, double) UnitSquare(Matrix m) => Bounds(m, [(0, 0), (1, 0), (0, 1), (1, 1)], 0);
 
-    static (double, double, double, double) Bounds(Matrix m, IEnumerable<(double X, double Y)> pts, double pad)
+    static (double, double, double, double) Bounds(Matrix m, ReadOnlySpan<(double X, double Y)> pts, double pad)
     {
         double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
         foreach (var (px, py) in pts) { var (x, y) = m.Apply(px, py); x0 = Math.Min(x0, x); y0 = Math.Min(y0, y); x1 = Math.Max(x1, x); y1 = Math.Max(y1, y); }
@@ -295,7 +295,7 @@ public sealed class ContentInterpreter
                     var pts = new List<(double, double)>();
                     for (var i = 0; i + 1 < _path.Pts.Count; i += 2) pts.Add((_path.Pts[i], _path.Pts[i + 1]));
                     var sc = Math.Sqrt(Math.Abs(_gs.Ctm.Det));
-                    AddObject("path", pathStart, end, _gs.Ctm, Bounds(_gs.Ctm, pts, stroke ? _gs.LineWidth * sc / 2 : 0), fill, stroke);
+                    AddObject("path", pathStart, end, _gs.Ctm, Bounds(_gs.Ctm, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pts), stroke ? _gs.LineWidth * sc / 2 : 0), fill, stroke);
                 }
                 pathStart = -1;
                 break;
@@ -481,6 +481,7 @@ public sealed class ContentInterpreter
 
     void ApplySoftMask(PdfObject? v, PdfDictionary res)
     {
+        if (!DrawGraphics) return;
         if (v is not PdfDictionary sm) { _be.SetSoftMask(null, false, default); _gs.SoftMaskActive = false; return; }
         if (R(sm.Get("G")) is not PdfStream g) return;
         var lum = R(sm.Get("S")).AsName() == "Luminosity";
@@ -542,12 +543,12 @@ public sealed class ContentInterpreter
     {
         var p = _path; _path = new PathData();
         var clip = _pendingClip; _pendingClip = 0;
-        if (_hiddenDepth == 0 && !p.IsEmpty)
+        if (DrawGraphics && _hiddenDepth == 0 && !p.IsEmpty)
         {
             if (fill) FillPath(p, evenOdd);
             if (stroke) _be.Stroke(p, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
         }
-        if (clip != 0) _be.Clip(p, _gs.Ctm, clip == 2);
+        if (DrawGraphics && clip != 0) _be.Clip(p, _gs.Ctm, clip == 2);
     }
 
     StrokeStyle Style() => new(_gs.LineWidth, _gs.Cap, _gs.Join, _gs.MiterLimit, _gs.Dash, _gs.DashPhase);
@@ -641,6 +642,8 @@ public sealed class ContentInterpreter
 
     /// <summary>When set, text operators in the page content and in form XObjects reached by indirect reference are recorded here; <see cref="TextSpan.Form"/> is 0 for the page.</summary>
     public List<TextSpan>? TextSpans { get; set; }
+    /// <summary>Disable painting and image/glyph-outline decoding when collecting text only.</summary>
+    public bool DrawGraphics { get; set; } = true;
     int _runDepth, _spanIndex, _collectDepth = 1, _curForm;
 
     int CurrentMcid()
@@ -667,9 +670,8 @@ public sealed class ContentInterpreter
         void Show(byte[] bytes)
         {
             List<TextGlyph>? rec = pieces is null ? null : [];
-            ShowText(bytes, res, rec);
+            ShowText(bytes, res, rec, sb);
             if (rec is not null) pieces!.Add(new TextPiece(null, rec));
-            if (sb is not null && font is not null) foreach (var r in font.Decode(bytes)) sb.Append(font.ToUnicode(r));
         }
 
         if (op == "TJ")
@@ -700,7 +702,7 @@ public sealed class ContentInterpreter
             _curForm, _gs.FontRef, font, font.Vertical ? null : pieces));
     }
 
-    void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null)
+    void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null, System.Text.StringBuilder? text = null)
     {
         var font = _gs.Font;
         if (font is null || _hiddenDepth > 0 && false) return;
@@ -708,6 +710,7 @@ public sealed class ContentInterpreter
         var off = 0;
         foreach (var run in font.Decode(s))
         {
+            text?.Append(font.ToUnicode(run));
             var fs = _gs.FontSize;
             var trm = new Matrix(fs * _gs.HScale, 0, 0, fs, 0, _gs.Rise).Then(_tm).Then(_gs.Ctm);
             if (rec is not null && fs != 0)
@@ -717,7 +720,7 @@ public sealed class ContentInterpreter
                 rec.Add(new TextGlyph(s[off..Math.Min(s.Length, off + run.ByteLength)], bx0, by0, bx1, by1, adv));
             }
             off += run.ByteLength;
-            if (!hidden)
+            if (DrawGraphics && !hidden)
             {
                 if (font.IsType3) DrawType3(font, run.Code, trm);
                 else if (font.GetGlyph(run.Code) is { } outline)
@@ -827,6 +830,7 @@ public sealed class ContentInterpreter
     // ---- Shadings ----
     void Shade(PdfObject? shObj, PdfDictionary res, Matrix? shadingToDevice)
     {
+        if (!DrawGraphics) return;
         var d = shObj as PdfDictionary ?? (shObj as PdfStream)?.Dict;
         if (d is null) return;
         var m = shadingToDevice ?? _gs.Ctm;
@@ -995,6 +999,7 @@ public sealed class ContentInterpreter
 
     void DrawImage(PdfStream xs, PdfDictionary res)
     {
+        if (!DrawGraphics) return;
         var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn);
         if (warn is not null) Warn(warn);
         if (img is null) return;

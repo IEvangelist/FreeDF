@@ -63,12 +63,12 @@ public sealed class PdfLexer
         }
         var start = Pos;
         while (Pos < _d.Length && IsRegular(_d[Pos])) Pos++;
-        var tok = Encoding.Latin1.GetString(_d, start, Pos - start);
-        if (TryNumber(tok, out var num))
+        if (TryNumber(_d.AsSpan(start, Pos - start), out var num))
         {
             if (resolveRefs && num is PdfInteger n1 && n1.Value >= 0) return TryRef(n1, start) ?? num;
             return num;
         }
+        var tok = Encoding.Latin1.GetString(_d, start, Pos - start);
         return tok switch
         {
             "true" => new PdfBoolean(true),
@@ -98,27 +98,31 @@ public sealed class PdfLexer
         return null;
     }
 
-    static bool TryNumber(string t, out PdfObject o)
+    static bool TryNumber(ReadOnlySpan<byte> t, out PdfObject o)
     {
         o = null!;
         if (t.Length == 0) return false;
         var c = t[0];
-        if (!(char.IsDigit(c) || c is '+' or '-' or '.')) return false;
-        // Tolerate "--5", "5-" and similar malformed numbers the way real-world readers do.
+        if (!(c is >= (byte)'0' and <= (byte)'9' or (byte)'+' or (byte)'-' or (byte)'.')) return false;
+        // Preserve repeated leading signs and trailing non-digits after a decimal point.
         var s = t;
         var neg = false;
-        while (s.Length > 0 && s[0] is '+' or '-') { if (s[0] == '-') neg = true; s = s[1..]; }
+        while (s.Length > 0 && s[0] is (byte)'+' or (byte)'-') { if (s[0] == '-') neg = true; s = s[1..]; }
         if (s.Length == 0) return false;
-        if (s.All(char.IsDigit))
+        var digits = 0;
+        while (digits < s.Length && s[digits] is >= (byte)'0' and <= (byte)'9') digits++;
+        if (digits == s.Length)
         {
-            if (long.TryParse(s, out var l)) { o = new PdfInteger(neg ? -l : l); return true; }
+            if (long.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var l)) { o = new PdfInteger(neg ? -l : l); return true; }
             if (double.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var big)) { o = new PdfReal(neg ? -big : big); return true; }
             return false;
         }
-        var dot = s.IndexOf('.');
+        var dot = s.IndexOf((byte)'.');
         if (dot < 0) return false;
-        var cleaned = s[..(dot + 1)] + new string(s[(dot + 1)..].TakeWhile(char.IsDigit).ToArray());
-        if (cleaned == ".") { o = new PdfReal(0); return true; }
+        var end = dot + 1;
+        while (end < s.Length && s[end] is >= (byte)'0' and <= (byte)'9') end++;
+        var cleaned = s[..end];
+        if (cleaned.Length == 1) { o = new PdfReal(0); return true; }
         if (double.TryParse(cleaned, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d))
         { o = new PdfReal(neg ? -d : d); return true; }
         return false;

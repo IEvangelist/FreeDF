@@ -434,7 +434,12 @@ public sealed class PdfFont
         }
         foreach (var c in s)
         {
-            var w = _hasWidth[c] ? _widths[c] : FallbackWidth(c);
+            if (!_hasWidth[c])
+            {
+                _widths[c] = FallbackWidth(c);
+                _hasWidth[c] = true;
+            }
+            var w = _widths[c];
             yield return new GlyphRun(c, 1, IsType3 ? w * Type3Matrix[0] : w / 1000.0);
         }
     }
