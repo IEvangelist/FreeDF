@@ -349,11 +349,11 @@ public sealed class ContentInterpreter
         while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
     }
 
-    /// <summary>A painted graphics object (path, image or form XObject) located by byte range in its owning stream: the page content (<paramref name="Form"/> 0) or a form XObject (its object number).</summary>
+    /// <summary>A painted graphics object or clipping path located by byte range in its owning stream: the page content (<paramref name="Form"/> 0) or a form XObject (its object number).</summary>
     public sealed record PageObject(int Index, string Kind, int Start, int End, Matrix Ctm, double X0, double Y0, double X1, double Y1,
         bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth, int Form = 0, PdfStream? Stream = null, int Ref = 0);
 
-    /// <summary>When set, painted objects in the page content (not in forms) are recorded here.</summary>
+    /// <summary>When set, page-content paint objects and clipping paths are recorded here.</summary>
     public List<PageObject>? Objects { get; set; }
 
     static int SkipWhite(byte[] d, int p) { while (p < d.Length && PdfLexer.IsWhite(d[p])) p++; return p; }
@@ -378,14 +378,16 @@ public sealed class ContentInterpreter
                 if (pathStart < 0) pathStart = SkipWhite(content, stmtStart);
                 break;
             case "S": case "s": case "f": case "F": case "f*": case "B": case "B*": case "b": case "b*": case "n":
-                if (op != "n" && pathStart >= 0 && _pendingClip == 0 && _hiddenDepth == 0 && !_path.IsEmpty)
+                if ((op != "n" || _pendingClip != 0) && pathStart >= 0 && _hiddenDepth == 0 && !_path.IsEmpty)
                 {
                     var stroke = op is "S" or "s" or "B" or "B*" or "b" or "b*";
-                    var fill = op is not ("S" or "s");
+                    var fill = op is "f" or "F" or "f*" or "B" or "B*" or "b" or "b*";
                     var pts = new List<(double, double)>();
                     for (var i = 0; i + 1 < _path.Pts.Count; i += 2) pts.Add((_path.Pts[i], _path.Pts[i + 1]));
                     var sc = Math.Sqrt(Math.Abs(_gs.Ctm.Det));
-                    AddObject("path", pathStart, end, _gs.Ctm, Bounds(_gs.Ctm, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pts), stroke ? _gs.LineWidth * sc / 2 : 0), fill, stroke);
+                    var kind = op == "n" ? "clip-path" : _pendingClip != 0 ? "clipped-path" : "path";
+                    AddObject(kind, pathStart, end, _gs.Ctm,
+                        Bounds(_gs.Ctm, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pts), stroke ? _gs.LineWidth * sc / 2 : 0), fill, stroke);
                 }
                 pathStart = -1;
                 break;
