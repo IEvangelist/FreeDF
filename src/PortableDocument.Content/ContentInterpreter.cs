@@ -40,6 +40,8 @@ public sealed class ContentInterpreter
     int _hiddenDepth;
     int _type3Depth;
     public List<string> Warnings { get; } = [];
+    public PdfDictionary? OptionalContentConfiguration { get; set; }
+    public PdfDictionary? DefaultOptionalContentConfiguration { get; set; }
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -422,7 +424,8 @@ public sealed class ContentInterpreter
 
     bool IsHidden(PdfDictionary oc)
     {
-        var cfg = R(R(_f.Catalog.Get("OCProperties")) is PdfDictionary ocp ? ocp.Get("D") : null) as PdfDictionary;
+        var cfg = OptionalContentConfiguration ?? DefaultOptionalContentConfiguration
+            ?? R(R(_f.Catalog.Get("OCProperties")) is PdfDictionary ocp ? ocp.Get("D") : null) as PdfDictionary;
         var type = R(oc.Get("Type")).AsName();
         if (type == "OCMD")
         {
@@ -503,7 +506,11 @@ public sealed class ContentInterpreter
     bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg)
     {
         if (cfg is null) return false;
-        var baseOff = R(cfg.Get("BaseState")).AsName() == "OFF";
+        var baseState = R(cfg.Get("BaseState")).AsName();
+        if (baseState == "Unchanged" && !ReferenceEquals(cfg, DefaultOptionalContentConfiguration)
+            && DefaultOptionalContentConfiguration is { } defaultConfiguration)
+            return OcgOff(ocg, defaultConfiguration);
+        var baseOff = baseState == "OFF";
         bool Contains(string key) => R(cfg.Get(key)) is PdfArray arr && arr.Items.Any(x => ReferenceEquals(R(x), ocg));
         if (Contains("OFF")) return true;
         if (Contains("ON")) return false;

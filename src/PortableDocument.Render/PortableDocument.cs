@@ -1,4 +1,5 @@
 using PortableDocument.Content;
+using PortableDocument.Core;
 using PortableDocument.Document;
 
 namespace PortableDocument.Render;
@@ -6,6 +7,12 @@ namespace PortableDocument.Render;
 public sealed record RenderedPage(int Width, int Height, byte[] Rgba, IReadOnlyList<string> Warnings)
 {
     public byte[] ToPng() => PngWriter.Encode(Width, Height, Rgba);
+}
+
+public sealed record PdfRenderOptions
+{
+    /// <summary>Name of a catalog /OCProperties /Configs entry; omitted selects the default /D configuration.</summary>
+    public string? OptionalContentConfigurationName { get; init; }
 }
 
 public static class PortableDocument
@@ -57,14 +64,47 @@ public static class PortableDocument
         return (interp.TextSpans, interp.Objects);
     }
 
-    public static RenderedPage RenderPage(PdfPage page, double dpi = 96, IRenderBackendFactory? factory = null)
+    public static RenderedPage RenderPage(
+        PdfPage page,
+        double dpi = 96,
+        IRenderBackendFactory? factory = null,
+        PdfRenderOptions? options = null)
     {
         var scale = dpi / 72.0 * page.UserUnit;
         var m = PageMatrix(page, scale, out var w, out var h);
         using var raster = new SoftwareRasterizer(w, h);
         var interp = new ContentInterpreter(page.Document.File, raster);
+        var (defaultConfiguration, selectedConfiguration) =
+            ResolveOptionalContentConfiguration(page, options?.OptionalContentConfigurationName);
+        interp.DefaultOptionalContentConfiguration = defaultConfiguration;
+        interp.OptionalContentConfiguration = selectedConfiguration;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
+    }
+
+    static (PdfDictionary? Default, PdfDictionary? Selected) ResolveOptionalContentConfiguration(PdfPage page, string? name)
+    {
+        var file = page.Document.File;
+        if (file.Resolve(file.Catalog.Get("OCProperties")) is not PdfDictionary properties)
+        {
+            if (name is null) return (null, null);
+            throw new ArgumentException($"No optional-content configuration named '{name}' exists.", nameof(name));
+        }
+
+        var defaultConfiguration = file.Resolve(properties.Get("D")) as PdfDictionary;
+        if (name is null || defaultConfiguration is not null
+            && file.Resolve(defaultConfiguration.Get("Name")) is PdfString defaultName
+            && defaultName.Text == name)
+            return (defaultConfiguration, defaultConfiguration);
+
+        if (file.Resolve(properties.Get("Configs")) is PdfArray configurations)
+            foreach (var value in configurations.Items)
+                if (file.Resolve(value) is PdfDictionary configuration
+                    && file.Resolve(configuration.Get("Name")) is PdfString configName
+                    && configName.Text == name)
+                    return (defaultConfiguration, configuration);
+
+        throw new ArgumentException($"No optional-content configuration named '{name}' exists.", nameof(name));
     }
 }
 

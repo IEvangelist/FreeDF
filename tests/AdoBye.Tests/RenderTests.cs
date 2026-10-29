@@ -173,6 +173,46 @@ public class RenderTests
     }
 
     [Fact]
+    public void Optional_content_named_configuration_can_be_selected_for_rendering()
+    {
+        const string content =
+            "/OC /A BDC 1 0 0 rg 0 0 100 200 re f EMC " +
+            "/OC /B BDC 0 0 1 rg 100 0 100 200 re f EMC";
+        const string resources = "/Properties << /A 5 0 R /B 6 0 R >>";
+        const string objects =
+            "5 0 obj\n<< /Type /OCG /Name (A) >>\nendobj\n" +
+            "6 0 obj\n<< /Type /OCG /Name (B) >>\nendobj\n";
+        const string optionalContent =
+            "/OCProperties << /OCGs [5 0 R 6 0 R] " +
+            "/D << /Name (Default) /BaseState /ON /OFF [6 0 R] >> " +
+            "/Configs [" +
+            "<< /Name (Layer A) /BaseState /OFF /ON [5 0 R] >> " +
+            "<< /Name (Layer B) /BaseState /OFF /ON [6 0 R] >> " +
+            "<< /Name (Unchanged) /BaseState /Unchanged >>" +
+            "] >>";
+        var doc = PdfDocument.Load(TestPdf.Build(content, resources, objects, brokenXref: true, extraCatalog: optionalContent));
+
+        var defaultView = DocumentRenderer.RenderPage(doc.Pages[0], 72);
+        Assert.Equal((255, 0, 0), Px(defaultView, 50, 100));
+        Assert.Equal((255, 255, 255), Px(defaultView, 150, 100));
+
+        var layerA = DocumentRenderer.RenderPage(doc.Pages[0], 72, options: new PdfRenderOptions { OptionalContentConfigurationName = "Layer A" });
+        Assert.Equal((255, 0, 0), Px(layerA, 50, 100));
+        Assert.Equal((255, 255, 255), Px(layerA, 150, 100));
+
+        var layerB = DocumentRenderer.RenderPage(doc.Pages[0], 72, options: new PdfRenderOptions { OptionalContentConfigurationName = "Layer B" });
+        Assert.Equal((255, 255, 255), Px(layerB, 50, 100));
+        Assert.Equal((0, 0, 255), Px(layerB, 150, 100));
+
+        var unchanged = DocumentRenderer.RenderPage(doc.Pages[0], 72, options: new PdfRenderOptions { OptionalContentConfigurationName = "Unchanged" });
+        Assert.Equal((255, 0, 0), Px(unchanged, 50, 100));
+        Assert.Equal((255, 255, 255), Px(unchanged, 150, 100));
+
+        Assert.Throws<ArgumentException>(() => DocumentRenderer.RenderPage(doc.Pages[0], 72,
+            options: new PdfRenderOptions { OptionalContentConfigurationName = "missing" }));
+    }
+
+    [Fact]
     public void RotatesPage()
     {
         var bytes = TestPdf.Build("1 0 0 rg 0 0 100 100 re f", mediaBox: "[0 0 200 100]");
