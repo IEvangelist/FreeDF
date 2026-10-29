@@ -41,6 +41,8 @@
   <symbol id="i-front" viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="2"/><path d="M10 21h9a2 2 0 002-2v-9"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5"/></symbol>
   <symbol id="i-redact" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1" fill="currentColor"/><path d="M5 4h6M13 4h6M5 20h8"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 017.5-2"/></symbol>
   <symbol id="i-sidel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
   <symbol id="i-sider" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
 </defs></svg>
@@ -82,6 +84,7 @@
         <label class="btn icon" title="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
       </div>
       <span class="grow"></span>
+      <button id="lock" class="icon toggle" title="Lock positions and sizes (Ctrl+Shift+L)" aria-pressed="false"><svg class="i"><use href="#i-unlock"/></svg></button>
       <button id="prev" title="Show the real rendered output"><svg class="i"><use href="#i-eye"/></svg>Preview</button>
       <span class="sp"></span>
       <div class="group" id="nav">
@@ -111,6 +114,8 @@
 <script>
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
+let locked = localStorage.getItem('lock-geom') === '1';
+const GEOM = new Set(['x', 'y', 'w', 'h', 'x2', 'y2']);
 const $ = id => document.getElementById(id);
 const post = (u, body) => fetch(u, { method: 'POST', body }).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); });
 const status = t => $('status').textContent = t;
@@ -275,6 +280,7 @@ function paint() {
 }
 
 function handle(parent, cls, x, y, cursor, down) {
+  if (locked) return;
   const h = document.createElement('div'); h.className = 'hd';
   h.style.left = `calc(${x} - 5px)`; h.style.top = `calc(${y} - 5px)`; h.style.cursor = cursor;
   h.onpointerdown = down; parent.appendChild(h);
@@ -284,6 +290,7 @@ function boxHandles(e, it) {
     handle(e, k, x, y, c, ev => startResize(ev, it, k, e));
 }
 function lineHandles(layer, it) {
+  if (locked) return;
   for (const [a, b] of [['x', 'y'], ['x2', 'y2']]) {
     const d = document.createElement('div'); d.className = 'hd'; d.style.left = it[a] * S - 5 + 'px'; d.style.top = it[b] * S - 5 + 'px'; d.style.cursor = 'crosshair';
     d.onpointerdown = ev => drag(ev, () => { }, (p, s, e) => {
@@ -320,6 +327,7 @@ function constrainBox(b0, k, dx, dy, e, lockRatio) {
 }
 
 function startMove(ev, it) {
+  if (locked) { ev.stopPropagation(); cur = it; curObj = null; paint(); props(); return; }
   cur = it; curObj = null; let o;
   drag(ev, () => { o = { ...it }; paint(); props(); },
     (p, s, e) => {
@@ -332,6 +340,7 @@ function startMove(ev, it) {
 }
 
 function startResize(ev, it, k, el) {
+  if (locked) return;
   let o, w0, h0;
   drag(ev, () => { o = { ...it }; w0 = el.offsetWidth / S; h0 = el.offsetHeight / S; },
     (p, s, e) => {
@@ -431,6 +440,7 @@ async function saveObj(o) {
 function selectObj(o) { cur = null; curObj = o; paint(); props(); }
 
 function startObjMove(ev, o) {
+  if (locked) { ev.stopPropagation(); selectObj(o); return; }
   let b0;
   drag(ev, () => { selectObj(o); b0 = oBox(o); },
     (p, s, e) => {
@@ -441,6 +451,7 @@ function startObjMove(ev, o) {
     () => saveObj(o));
 }
 function startObjResize(ev, o, k) {
+  if (locked) return;
   let b0;
   drag(ev, () => { b0 = oBox(o); },
     (p, s, e) => {
@@ -453,7 +464,7 @@ function deleteObj(o) { pushUndo(); o.edit = { ...(o.edit ?? { sx: 1, sy: 1, tx:
 
 function objProps() {
   const o = curObj, p = $('props'), b = oBox(o), kinds = { path: 'Shape', image: 'Image', form: 'Graphic group' };
-  const num = (k, label, v) => `<label class="fld"><span>${label}</span><input type="number" step="1" data-o="${k}" value="${+v.toFixed(2)}"></label>`;
+  const num = (k, label, v) => `<label class="fld"><span>${label}</span><input type="number" step="1" data-o="${k}"   value="${+v.toFixed(2)}"${locked ? ' disabled title="Locked"' : ''}></label>`;
   const colour = (k, label, v) => `<label class="fld"><span>${label}</span><div class="swatch"><input type="color" data-oc="${k}" value="${o.edit?.[k] || v}"><code>${(o.edit?.[k] || v).toUpperCase()}</code></div></label>`;
   p.innerHTML = `<section class="head"><span class="chip">${ic(o.kind === 'image' ? 'image' : o.kind === 'form' ? 'file' : 'square')}</span><h2>${kinds[o.kind] ?? o.kind} <em>from page</em></h2></section>
     <section><h3>Position</h3><div class="row">${num('x', 'X', b[0])}${num('y', 'Y', b[1])}</div><div class="row">${num('w', 'Width', b[2] - b[0])}${num('h', 'Height', b[3] - b[1])}</div></section>
@@ -504,7 +515,7 @@ function props() {
     });
     return;
   }
-  const it = cur, n = (k, label, step = 1) => `<label class="fld"><span>${label}</span><input type="number" step="${step}" data-k="${k}" value="${+(+it[k] || 0).toFixed(2)}"></label>`;
+  const it = cur, n = (k, label, step = 1) => `<label class="fld"><span>${label}</span><input type="number" step="${step}" data-k="${k}" value="${+(+it[k] || 0).toFixed(2)}"${locked && GEOM.has(k) ? ' disabled title="Locked"' : ''}></label>`;
   const colour = (k, label, none) => `<label class="fld"><span>${label}</span><div class="swatch"><input type="color" data-k="${k}" value="${it[k] || '#000000'}"><code>${(it[k] || 'none').toUpperCase()}</code>${none ? `<button class="ghost" data-none="${k}" title="No ${label.toLowerCase()}">${ic('x')}</button>` : ''}</div></label>`;
   const names = { text: 'Text', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', image: 'Image', redact: 'Redaction' };
   let h = `<section class="head"><span class="chip">${ic(it.type === 'rect' ? 'square' : it.type)}</span><h2>${names[it.type] ?? it.type}${it.orig != null ? ' <em>from page</em>' : ''}</h2></section>`;
@@ -556,6 +567,14 @@ $('dl').onclick = async () => { if (state.pageCount) { await flush(); location.h
 document.querySelectorAll('#tools [data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 $('zi').onclick = () => zoomBy(1.25);
 $('zo').onclick = () => zoomBy(1 / 1.25);
+const applyLock = () => {
+  const b = $('lock'); b.classList.toggle('on', locked); b.setAttribute('aria-pressed', locked);
+  b.querySelector('use').setAttribute('href', locked ? '#i-lock' : '#i-unlock');
+  document.body.classList.toggle('locked', locked); localStorage.setItem('lock-geom', locked ? '1' : '0');
+};
+const toggleLock = () => { locked = !locked; applyLock(); status(locked ? 'Positions and sizes locked: edit text, images and colours freely.' : 'Positions and sizes unlocked.'); paint(); props(); };
+$('lock').onclick = toggleLock; applyLock();
+addEventListener('keydown', e => { if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleLock(); } });
 $('prev').onclick = async () => { await flush(); preview = !preview; $('prev').classList.toggle('on', preview); state.version++; build(); };
 $('img').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f || !state.pageCount) return;
@@ -834,6 +853,7 @@ function arrange(it, mode) {
   });
 }
 function alignTo(it, mode) {
+  if (locked) { status('Positions and sizes are locked.'); return; }
   const b = bboxOf(it), W = geom.Lw / S, H = geom.Lh / S;
   const dx = { left: -b.x, center: (W - b.w) / 2 - b.x, right: W - b.w - b.x }[mode] ?? 0;
   const dy = { top: -b.y, middle: (H - b.h) / 2 - b.y, bottom: H - b.h - b.y }[mode] ?? 0;
@@ -966,12 +986,14 @@ addEventListener('keydown', e => {
   }
   if (cur) {
     const d = e.shiftKey ? 10 : 1, mv = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
+    if (mv && locked) { e.preventDefault(); status('Positions and sizes are locked.'); return; }
     if (mv) { e.preventDefault(); pushUndo(); cur.x += mv[0]; cur.y += mv[1]; if (cur.type === 'line') { cur.x2 += mv[0]; cur.y2 += mv[1]; } paint(); props(); queueSave(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { pushUndo(); items = items.filter(x => x !== cur); cur = null; paint(); props(); queueSave(); return; }
     if (e.key === 'Escape') { cur = null; paint(); props(); return; }
   }
   if (curObj) {
     const d = e.shiftKey ? 10 : 1, mv = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
+    if (mv && locked) { e.preventDefault(); status('Positions and sizes are locked.'); return; }
     if (mv) { e.preventDefault(); pushUndo(); const b = oBox(curObj); setEdit(curObj, [b[0] + mv[0], b[1] + mv[1], b[2] + mv[0], b[3] + mv[1]]); paint(); props(); saveObj(curObj); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteObj(curObj); return; }
     if (e.key === 'Escape') { curObj = null; paint(); props(); return; }

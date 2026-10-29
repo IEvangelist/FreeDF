@@ -202,3 +202,6 @@ button:disabled { opacity: .4; cursor: default; }
 .tgl.tx { font-weight: 700; font-size: 13px; }
 .row.seg.al { padding: 2px; width: max-content; }
 .row.seg.al svg.i { fill: none; }
+
+.locked .it, .locked .obj { cursor: default; }
+.locked .it.txt { cursor: text; }
