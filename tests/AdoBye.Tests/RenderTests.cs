@@ -148,6 +148,30 @@ public class RenderTests
         Assert.Equal((255, 255, 255), Px(p2, 150, 100));
     }
 
+    static RenderedPage RenderOptionalContentExpression(string expression) =>
+        DocumentRenderer.RenderPage(PdfDocument.Load(TestPdf.Build(
+            "/OC /M BDC 1 0 0 rg 0 0 200 200 re f EMC",
+            "/Properties << /M 6 0 R >>",
+            "5 0 obj\n<< /Type /OCG /Name (layer) >>\nendobj\n" +
+            $"6 0 obj\n<< /Type /OCMD /OCGs [5 0 R] /P /AllOff /VE {expression} >>\nendobj\n",
+            brokenXref: true)).Pages[0], 72);
+
+    [Fact]
+    public void Optional_content_visibility_expressions_override_legacy_policy()
+    {
+        var and = RenderOptionalContentExpression("[/And 5 0 R 5 0 R]");
+        Assert.Equal((255, 0, 0), Px(and, 100, 100));
+
+        var not = RenderOptionalContentExpression("[/Not 5 0 R]");
+        Assert.Equal((255, 255, 255), Px(not, 100, 100));
+
+        var nested = RenderOptionalContentExpression("[/Or [/Not 5 0 R] [/And 5 0 R 5 0 R]]");
+        Assert.Equal((255, 0, 0), Px(nested, 100, 100));
+
+        var malformed = RenderOptionalContentExpression("[/Not 5 0 R 5 0 R]");
+        Assert.Equal((255, 255, 255), Px(malformed, 100, 100));
+    }
+
     [Fact]
     public void RotatesPage()
     {

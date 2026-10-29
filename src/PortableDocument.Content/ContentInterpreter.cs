@@ -426,6 +426,17 @@ public sealed class ContentInterpreter
         var type = R(oc.Get("Type")).AsName();
         if (type == "OCMD")
         {
+            if (R(oc.Get("VE")) is { } expression)
+            {
+                var budget = 0;
+                var expressionVisible = EvaluateVisibilityExpression(expression, cfg, 0, ref budget, out var valid);
+                if (!valid)
+                {
+                    Warn("invalid optional-content visibility expression");
+                    return true;
+                }
+                return !expressionVisible;
+            }
             // Visibility policy AnyOn (default) / AllOn / AnyOff / AllOff over OCGs.
             var ocgs = R(oc.Get("OCGs"));
             var list = ocgs is PdfArray oa ? oa.Items.Select(R).OfType<PdfDictionary>().ToList() : ocgs is PdfDictionary od ? [od] : [];
@@ -436,6 +447,57 @@ public sealed class ContentInterpreter
             return !visible;
         }
         return OcgOff(oc, cfg);
+    }
+
+    bool EvaluateVisibilityExpression(PdfObject? value, PdfDictionary? cfg, int depth, ref int budget, out bool valid)
+    {
+        valid = true;
+        if (depth > 64 || ++budget > 10_000)
+        {
+            valid = false;
+            return false;
+        }
+
+        var expression = R(value);
+        if (expression is PdfDictionary ocg)
+        {
+            if (R(ocg.Get("Type")).AsName() != "OCG")
+            {
+                valid = false;
+                return false;
+            }
+            return !OcgOff(ocg, cfg);
+        }
+        if (expression is not PdfArray array || array.Count < 2 || R(array[0]).AsName() is not { } op)
+        {
+            valid = false;
+            return false;
+        }
+
+        if (op == "Not")
+        {
+            if (array.Count != 2)
+            {
+                valid = false;
+                return false;
+            }
+            var child = EvaluateVisibilityExpression(array[1], cfg, depth + 1, ref budget, out valid);
+            return valid && !child;
+        }
+        if (op is not ("And" or "Or") || array.Count < 3)
+        {
+            valid = false;
+            return false;
+        }
+
+        var result = op == "And";
+        for (var i = 1; i < array.Count; i++)
+        {
+            var child = EvaluateVisibilityExpression(array[i], cfg, depth + 1, ref budget, out var childValid);
+            if (!childValid) valid = false;
+            result = op == "And" ? result && child : result || child;
+        }
+        return valid && result;
     }
 
     bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg)
