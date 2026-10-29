@@ -161,6 +161,27 @@ public class DocumentFeatureTests
         return System.Text.Encoding.ASCII.GetBytes(pdf);
     }
 
+    static byte[] MalformedCyclicEmbeddedFilesPdf()
+    {
+        const string pdf = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles 3 0 R >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n" +
+            "3 0 obj\n<< /Names [17 4 0 R (valid) 4 0 R (dangling)] /Kids [5 0 R] >>\nendobj\n" +
+            "4 0 obj\n<< /Type /Filespec /F (actual.txt) >>\nendobj\n" +
+            "5 0 obj\n<< /Names [(nested) 4 0 R] /Kids [3 0 R] >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 6 >>\n%%EOF\n";
+        return System.Text.Encoding.ASCII.GetBytes(pdf);
+    }
+
+    [Fact]
+    public void Embedded_file_name_tree_skips_malformed_pairs_and_stops_cycles()
+    {
+        var files = PdfDocument.Load(MalformedCyclicEmbeddedFilesPdf()).GetFileSpecifications();
+
+        Assert.Equal(new[] { "valid", "nested" }, files.Select(file => file.Name));
+        Assert.All(files, file => Assert.Equal("actual.txt", file.FileName));
+    }
+
     static byte[] CollectionDateSortPdf()
     {
         const string pdf = "%PDF-2.0\n" +
