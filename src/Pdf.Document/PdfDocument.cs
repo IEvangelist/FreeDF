@@ -75,8 +75,21 @@ public sealed class PdfDocument
 
     PdfDocument(PdfFile f) { File = f; }
 
-    public static PdfDocument Open(string path, string password = "") => new PdfDocument(PdfFile.Open(path, password)).Init();
-    public static PdfDocument Load(byte[] data, string password = "") => new PdfDocument(PdfFile.Load(data, password)).Init();
+    StructureTree? _structure;
+    bool _structureLoaded;
+
+    /// <summary>Parsed logical structure tree (ISO 32000-2 14.7), or null when the document has no StructTreeRoot.</summary>
+    public StructureTree? Structure
+    {
+        get
+        {
+            if (!_structureLoaded) { _structure = StructureTree.Parse(this); _structureLoaded = true; }
+            return _structure;
+        }
+    }
+
+    public static PdfDocument Open(string path, string password = "", System.Security.Cryptography.X509Certificates.X509Certificate2? certificate = null) => new PdfDocument(PdfFile.Open(path, password, certificate)).Init();
+    public static PdfDocument Load(byte[] data, string password = "", System.Security.Cryptography.X509Certificates.X509Certificate2? certificate = null) => new PdfDocument(PdfFile.Load(data, password, certificate)).Init();
 
     PdfDocument Init()
     {

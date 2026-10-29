@@ -11,8 +11,10 @@ public sealed class PdfWriteOptions
     public bool Compress { get; init; }
     /// <summary>Pack non-stream objects into object streams and write a cross-reference stream (PDF 1.5+).</summary>
     public bool ObjectStreams { get; init; }
-    /// <summary>AES-256 encryption; the document key is generated fresh on every write.</summary>
+    /// <summary>Encryption (AES-256 by default; AES-128, RC4 or public-key via <see cref="PdfEncryption"/>); the document key is generated fresh on every write.</summary>
     public PdfEncryption? Encryption { get; init; }
+    /// <summary>When set, receives the mapping from input object numbers to the numbers used in the written file.</summary>
+    public Dictionary<int, int>? ObjectMapOut { get; init; }
 }
 
 /// <summary>Serializes an object graph to a fresh PDF (classic xref or xref/object streams, optionally compressed and encrypted), or appends an incremental update. Unreachable objects are dropped and numbers are reassigned on full writes.</summary>
@@ -23,6 +25,7 @@ public static class PdfWriter
         public readonly Dictionary<int, int>? Map = map;
         public readonly PdfEncryptor? Enc = enc;
         public readonly bool Compress = compress;
+        public int Num;
     }
 
     public static byte[] Write(IReadOnlyDictionary<int, PdfObject> objects, int root, int? info, string version = "1.7", ISet<int>? excluded = null, byte[]? id = null, PdfWriteOptions? options = null)
@@ -50,10 +53,11 @@ public static class PdfWriter
         Reach(root);
         if (info is { } inf) Reach(inf);
         while (queue.Count > 0) Scan(objects[queue.Dequeue()]);
+        if (options.ObjectMapOut is { } mapOut) foreach (var (k, v) in map) mapOut[k] = v;
 
         if (options.ObjectStreams && string.Compare(version, "1.5", StringComparison.Ordinal) < 0) version = "1.5";
-        var enc = options.Encryption is null ? null : new PdfEncryptor(options.Encryption);
         id ??= RandomNumberGenerator.GetBytes(16);
+        var enc = options.Encryption is null ? null : new PdfEncryptor(options.Encryption, id);
         var ms = new MemoryStream();
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
         W("%PDF-" + version + "\n%\u00E2\u00E3\u00CF\u00D3\n");
@@ -91,7 +95,7 @@ public static class PdfWriter
         {
             if (packed.ContainsKey(i + 1)) continue;
             var o = objects[order[i]];
-            Emit(i + 1, () => WriteObject(ms, o, ctx));
+            Emit(i + 1, () => { ctx.Num = i + 1; WriteObject(ms, o, ctx); });
         }
         if (enc is not null) Emit(encNum, () => WriteObject(ms, enc.Dict, new Ctx(map, null, false)));
         foreach (var (num, members) in chunks)
@@ -109,7 +113,7 @@ public static class PdfWriter
             {
                 ["Type"] = new PdfName("ObjStm"), ["N"] = new PdfInteger(members.Count), ["First"] = new PdfInteger(hb.Length),
             }), [.. hb, .. body.ToArray()]);
-            Emit(num, () => WriteObject(ms, st, new Ctx(map, enc, true)));
+            Emit(num, () => WriteObject(ms, st, new Ctx(map, enc, true) { Num = num }));
         }
 
         var hex = Convert.ToHexString(id);
@@ -229,7 +233,7 @@ public static class PdfWriter
             case PdfBoolean b: W(b.Value ? "true" : "false"); break;
             case PdfInteger i: W(i.Value.ToString(CultureInfo.InvariantCulture)); break;
             case PdfReal r: W(Real(r.Value)); break;
-            case PdfString s: W("<" + Convert.ToHexString(ctx.Enc is null ? s.Bytes : ctx.Enc.Encrypt(s.Bytes)) + ">"); break;
+            case PdfString s: W("<" + Convert.ToHexString(ctx.Enc is null ? s.Bytes : ctx.Enc.Encrypt(s.Bytes, ctx.Num)) + ">"); break;
             case PdfName n: W(Name(n.Value)); break;
             case PdfRef r: W(ctx.Map is null ? $"{r.Number} 0 R" : ctx.Map.TryGetValue(r.Number, out var nn) ? $"{nn} 0 R" : "null"); break;
             case PdfArray a:
@@ -242,7 +246,7 @@ public static class PdfWriter
                     var data = st.RawData;
                     var addFlate = ctx.Compress && !st.Dict.Entries.ContainsKey("Filter") && data.Length >= 32;
                     if (addFlate) data = Deflate(data);
-                    if (ctx.Enc is not null && !(type == "Metadata" && !ctx.Enc.EncryptMetadata)) data = ctx.Enc.Encrypt(data);
+                    if (ctx.Enc is not null && !(type == "Metadata" && !ctx.Enc.EncryptMetadata)) data = ctx.Enc.Encrypt(data, ctx.Num);
                     W("<<");
                     foreach (var (k, v) in st.Dict.Entries)
                     {

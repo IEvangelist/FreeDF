@@ -20,15 +20,16 @@ public sealed class PdfFile
 
     PdfDecryptor? _dec;
     string _password = "";
+    System.Security.Cryptography.X509Certificates.X509Certificate2? _cert;
     int _encObj = -1;
     public bool IsEncrypted => _dec is not null;
     public PdfDecryptor? Decryptor => _dec;
 
-    public static PdfFile Open(string path, string password = "") => Load(File.ReadAllBytes(path), password);
+    public static PdfFile Open(string path, string password = "", System.Security.Cryptography.X509Certificates.X509Certificate2? certificate = null) => Load(File.ReadAllBytes(path), password, certificate);
 
-    public static PdfFile Load(byte[] data, string password = "")
+    public static PdfFile Load(byte[] data, string password = "", System.Security.Cryptography.X509Certificates.X509Certificate2? certificate = null)
     {
-        var f = new PdfFile(data) { _password = password };
+        var f = new PdfFile(data) { _password = password, _cert = certificate };
         f.ParseHeader();
         try
         {
@@ -55,7 +56,7 @@ public sealed class PdfFile
         Version = s[(i + 5)..end];
     }
 
-    public PdfDictionary Catalog => (PdfDictionary)Resolve(Trailer.Get("Root"))!;
+    public PdfDictionary Catalog => Resolve(Trailer.Get("Root")) as PdfDictionary ?? throw new PdfParseException("Document catalog is missing or not a dictionary");
 
     public PdfObject? Resolve(PdfObject? o)
     {
@@ -84,7 +85,7 @@ public sealed class PdfFile
         if (raw is PdfRef r) _encObj = r.Number;
         var enc = Resolve(raw) as PdfDictionary ?? throw new PdfParseException("bad /Encrypt");
         var id = Resolve(Trailer.Get("ID")) is PdfArray { Items.Count: > 0 } ia && Resolve(ia.Items[0]) is PdfString s ? s.Bytes : [];
-        _dec = PdfDecryptor.Create(enc, id, Resolve, password);
+        _dec = PdfDecryptor.Create(enc, id, Resolve, password, _cert);
         // Drop anything parsed before the key was known (strings/streams were still ciphertext).
         var keep = _encObj >= 0 && _cache.TryGetValue(_encObj, out var e) ? e : null;
         _cache.Clear(); _objStmCache.Clear();
@@ -266,8 +267,12 @@ public sealed class PdfFile
         ReadOnlySpan<byte> span = Data;
         while (at < Data.Length && ws.FindCaptures(span, at, caps, out var range) == RegexSearchStatus.Match)
         {
-            var num = int.Parse(Encoding.ASCII.GetString(Data, caps[1].Index, caps[1].Length));
-            var gen = int.Parse(Encoding.ASCII.GetString(Data, caps[2].Index, caps[2].Length));
+            if (!int.TryParse(Encoding.ASCII.GetString(Data, caps[1].Index, caps[1].Length), out var num)
+                || !int.TryParse(Encoding.ASCII.GetString(Data, caps[2].Index, caps[2].Length), out var gen))
+            {
+                at = Math.Max(range.Index + range.Length, at + 1);
+                continue;
+            }
             Xref[num] = new XrefEntry(true, false, range.Index, gen);
             at = Math.Max(range.Index + range.Length, at + 1);
         }

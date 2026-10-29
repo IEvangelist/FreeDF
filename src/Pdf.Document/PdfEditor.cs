@@ -4,9 +4,9 @@ namespace Pdf.Document;
 
 /// <summary>
 /// Mutable document model: page delete/reorder/rotate, merge/split via page import, Info edits, and full save.
-/// Saving writes a fresh unencrypted file (encryption is dropped; see spec matrix).
+/// Saving writes a fresh file, unencrypted unless <see cref="PdfWriteOptions.Encryption"/> is set; permission flags of an opened encrypted file are enforced.
 /// </summary>
-public sealed class PdfEditor
+public sealed partial class PdfEditor
 {
     static readonly string[] Inheritable = ["Resources", "MediaBox", "CropBox", "Rotate"];
 
@@ -64,12 +64,13 @@ public sealed class PdfEditor
 
     public static PdfEditor Create() => new();
     public static PdfEditor Open(PdfDocument doc) => new(doc);
-    public static PdfEditor Open(byte[] data, string password = "") => new(PdfDocument.Load(data, password));
+    public static PdfEditor Open(byte[] data, string password = "", System.Security.Cryptography.X509Certificates.X509Certificate2? certificate = null) => new(PdfDocument.Load(data, password, certificate));
 
     void Check(int i) { if ((uint)i >= (uint)_pages.Count) throw new ArgumentOutOfRangeException(nameof(i)); }
 
     public void DeletePage(int index)
     {
+        Require(PdfPermissions.Assemble);
         Check(index);
         _deleted.Add(_pages[index]);
         _pages.RemoveAt(index);
@@ -77,6 +78,7 @@ public sealed class PdfEditor
 
     public void MovePage(int from, int to)
     {
+        Require(PdfPermissions.Assemble);
         Check(from); Check(to);
         var n = _pages[from];
         _pages.RemoveAt(from);
@@ -85,6 +87,7 @@ public sealed class PdfEditor
 
     public void SetRotation(int index, int degrees)
     {
+        Require(PdfPermissions.Assemble);
         Check(index);
         if (degrees % 90 != 0) throw new ArgumentException("rotation must be a multiple of 90", nameof(degrees));
         var d = (PdfDictionary)_objs[_pages[index]];
@@ -94,6 +97,7 @@ public sealed class PdfEditor
 
     public void SetInfo(string key, string value)
     {
+        Require(PdfPermissions.Modify);
         var entries = _info != 0 && _objs.TryGetValue(_info, out var o) && o is PdfDictionary d
             ? new Dictionary<string, PdfObject>(d.Entries) : [];
         if (_info == 0) _info = _next++;
@@ -112,6 +116,7 @@ public sealed class PdfEditor
     /// <summary>Copies pages (with everything they reference) from another document, inserting at <paramref name="insertAt"/> (default: end).</summary>
     public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null)
     {
+        Require(PdfPermissions.Assemble);
         var f = src.File;
         var chosen = (indices ?? Enumerable.Range(0, src.Pages.Count)).ToList();
         var srcNum = new Dictionary<PdfDictionary, int>(ReferenceEqualityComparer.Instance);
@@ -378,8 +383,69 @@ public sealed class PdfEditor
     /// <summary>Replaces the page's content stream(s) at save time with <paramref name="content"/>; null clears the override.</summary>
     public void SetContentOverride(int index, byte[]? content)
     {
+        Require(PdfPermissions.Modify);
         Check(index);
         if (content is null) _contentOverrides.Remove(_pages[index]); else _contentOverrides[_pages[index]] = content;
+    }
+
+    readonly Dictionary<int, (byte[] Data, IReadOnlyDictionary<string, PdfObject>? XObjects)> _streamOverrides = [];
+    readonly Dictionary<int, Dictionary<string, PdfObject>> _pageXObjects = [];
+
+    /// <summary>Replaces the decoded data of an existing stream (e.g. a form XObject) at save time; <paramref name="xobjects"/> are added to its /Resources /XObject. Null data clears the override.</summary>
+    public void SetStreamOverride(int objectNumber, byte[]? data, IReadOnlyDictionary<string, PdfObject>? xobjects = null)
+    {
+        if (data is null) _streamOverrides.Remove(objectNumber); else _streamOverrides[objectNumber] = (data, xobjects);
+    }
+
+    public void ClearStreamOverrides() => _streamOverrides.Clear();
+
+    /// <summary>Adds an XObject resource to a page at save time (names must not collide with the page's own).</summary>
+    public void AddPageXObject(int index, string name, PdfObject value)
+    {
+        Check(index);
+        if (!_pageXObjects.TryGetValue(_pages[index], out var d)) _pageXObjects[_pages[index]] = d = [];
+        d[name] = value;
+    }
+
+    public void ClearPageXObjects() => _pageXObjects.Clear();
+
+    /// <summary>Removes annotations (and popups of removed parents) of a page for which <paramref name="remove"/> returns true. Returns how many were removed.</summary>
+    public int RemoveAnnotations(int index, Func<PdfDictionary, bool> remove)
+    {
+        Check(index);
+        var page = (PdfDictionary)_objs[_pages[index]];
+        var arrRef = page.Get("Annots");
+        if (Res(arrRef) is not PdfArray arr) return 0;
+        var removed = new HashSet<int>(); var kept = new List<PdfObject>(); var gone = 0;
+        foreach (var item in arr.Items)
+        {
+            if (Res(item) is PdfDictionary d && remove(d)) { gone++; if (item is PdfRef r) { removed.Add(r.Number); _deleted.Add(r.Number); } if (d.Get("Popup") is PdfRef pr) { removed.Add(pr.Number); _deleted.Add(pr.Number); } }
+            else kept.Add(item);
+        }
+        var final = kept.Where(k => !(k is PdfRef kr && removed.Contains(kr.Number))).ToList();
+        var e = new Dictionary<string, PdfObject>(page.Entries);
+        if (final.Count == 0) e.Remove("Annots"); else e["Annots"] = new PdfArray(final);
+        _objs[_pages[index]] = new PdfDictionary(e);
+        return gone;
+    }
+
+    /// <summary>Removes XMP metadata, Info entries other than Producer and page thumbnails, which can echo redacted content.</summary>
+    public void ScrubMetadata()
+    {
+        var cat = (PdfDictionary)_objs[_catalog];
+        var ce = new Dictionary<string, PdfObject>(cat.Entries);
+        ce.Remove("Metadata"); ce.Remove("PieceInfo");
+        _objs[_catalog] = new PdfDictionary(ce);
+        if (_info != 0 && _objs.TryGetValue(_info, out var io) && io is PdfDictionary info)
+            _objs[_info] = new PdfDictionary(info.Entries.Where(kv => kv.Key == "Producer").ToDictionary(kv => kv.Key, kv => kv.Value));
+        foreach (var n in _pages.ToList())
+        {
+            var d = (PdfDictionary)_objs[n];
+            if (!d.Entries.ContainsKey("Thumb") && !d.Entries.ContainsKey("Metadata") && !d.Entries.ContainsKey("PieceInfo")) continue;
+            var e = new Dictionary<string, PdfObject>(d.Entries);
+            e.Remove("Thumb"); e.Remove("Metadata"); e.Remove("PieceInfo");
+            _objs[n] = new PdfDictionary(e);
+        }
     }
 
     PdfFile? _src;
@@ -398,6 +464,21 @@ public sealed class PdfEditor
             }),
         };
         next = _next;
+        foreach (var (n, xo) in _pageXObjects)
+        {
+            if (!objs.TryGetValue(n, out var po) || po is not PdfDictionary pd) continue;
+            objs[n] = WithXObjects(pd, xo, objs);
+        }
+        if (applyContentEdits)
+            foreach (var (n, (data, xo)) in _streamOverrides)
+            {
+                if (!objs.TryGetValue(n, out var so) || so is not PdfStream st) continue;
+                var e = new Dictionary<string, PdfObject>(st.Dict.Entries);
+                e.Remove("Filter"); e.Remove("DecodeParms"); e.Remove("DL"); e["Length"] = new PdfInteger(data.Length);
+                var sd = new PdfDictionary(e);
+                if (xo is { Count: > 0 }) sd = WithXObjects(sd, xo, objs);
+                objs[n] = new PdfStream(sd, data);
+            }
         if (applyContentEdits)
             foreach (var n in _pages)
                 if (_contentOverrides.TryGetValue(n, out var bytes))
@@ -412,6 +493,16 @@ public sealed class PdfEditor
         return objs;
     }
 
+    PdfDictionary WithXObjects(PdfDictionary owner, IReadOnlyDictionary<string, PdfObject> xo, Dictionary<int, PdfObject> objs)
+    {
+        PdfObject? R(PdfObject? o) => o is PdfRef r && objs.TryGetValue(r.Number, out var v) ? v : o;
+        var res = R(owner.Get("Resources")) is PdfDictionary rd ? new Dictionary<string, PdfObject>(rd.Entries) : [];
+        var merged = res.TryGetValue("XObject", out var c) && R(c) is PdfDictionary cd ? new Dictionary<string, PdfObject>(cd.Entries) : [];
+        foreach (var (k, v) in xo) merged[k] = v;
+        res["XObject"] = new PdfDictionary(merged);
+        return new PdfDictionary(new Dictionary<string, PdfObject>(owner.Entries) { ["Resources"] = new PdfDictionary(res) });
+    }
+
     /// <summary>Full rewrite. <paramref name="options"/> enables compression, object/xref streams and AES-256 encryption.</summary>
     public byte[] Save(bool applyOverlays = true, bool applyContentEdits = true, PdfWriteOptions? options = null)
     {
@@ -423,12 +514,18 @@ public sealed class PdfEditor
     public byte[] SaveIncremental(bool applyOverlays = true, bool applyContentEdits = true)
     {
         if (!CanSaveIncremental) throw new InvalidOperationException("Incremental save needs an intact, unencrypted source file.");
-        var f = _src!;
         var objs = BuildObjects(applyOverlays, applyContentEdits, out var next);
+        return AppendUpdate(objs, next);
+    }
+
+    byte[] AppendUpdate(Dictionary<int, PdfObject> objs, int next) => AppendUpdate(_src!, objs, next, _catalog, _info == 0 ? null : _info, _deleted);
+
+    static byte[] AppendUpdate(PdfFile f, Dictionary<int, PdfObject> objs, int next, int catalog, int? info, ISet<int> deleted)
+    {
         var changed = new Dictionary<int, PdfObject>();
         foreach (var (n, o) in objs)
         {
-            if (_deleted.Contains(n)) continue;
+            if (deleted.Contains(n)) continue;
             var orig = f.Xref.TryGetValue(n, out var xe) && xe.InUse ? f.GetObject(n) : null;
             if (!ReferenceEquals(orig, o)) changed[n] = o;
         }
@@ -437,6 +534,6 @@ public sealed class PdfEditor
         var tailText = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length))[(sx + 9)..].Trim();
         var prev = long.Parse(new string(tailText.TakeWhile(char.IsDigit).ToArray()));
         var isStream = !(prev < data.Length && System.Text.Encoding.Latin1.GetString(data, (int)prev, Math.Min(4, data.Length - (int)prev)) == "xref");
-        return PdfWriter.WriteIncremental(data, prev, changed, next, _catalog, _info == 0 ? null : _info, f.Resolve(f.Trailer.Get("ID")), isStream);
+        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream);
     }
 }

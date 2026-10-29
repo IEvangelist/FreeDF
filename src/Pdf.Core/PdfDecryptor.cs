@@ -19,22 +19,45 @@ public sealed class PdfDecryptor
     public int Permissions { get; }
     public int Revision { get; }
 
-    PdfDecryptor(byte[] key, Method stm, Method str, int v, bool encMeta, int p, int r)
-    { _key = key; _stm = stm; _str = str; _v = v; EncryptMetadata = encMeta; Permissions = p; Revision = r; }
+    PdfDecryptor(byte[] key, Method stm, Method str, int v, bool encMeta, int p, int r, int keyBits, bool owner, bool pubKey)
+    {
+        _key = key; _stm = stm; _str = str; _v = v; EncryptMetadata = encMeta; Permissions = p; Revision = r;
+        KeyLength = keyBits; IsOwner = owner; IsPublicKey = pubKey;
+        EncryptionMethod = (stm == Method.None ? str : stm) switch
+        {
+            Method.AesV3 => PdfEncryptionMethod.Aes256,
+            Method.AesV2 => PdfEncryptionMethod.Aes128,
+            _ => keyBits <= 40 ? PdfEncryptionMethod.Rc4_40 : PdfEncryptionMethod.Rc4_128,
+        };
+    }
 
-    public static PdfDecryptor Create(PdfDictionary enc, byte[] id0, Func<PdfObject?, PdfObject?> resolve, string password)
+    /// <summary>Key length in bits.</summary>
+    public int KeyLength { get; }
+    public PdfEncryptionMethod EncryptionMethod { get; }
+    /// <summary>True when the owner password was supplied (all permissions are then effectively granted).</summary>
+    public bool IsOwner { get; }
+    /// <summary>True for the public-key (Adobe.PubSec) handler.</summary>
+    public bool IsPublicKey { get; }
+    /// <summary>The /P value as flags (§7.6.4.2, Table 22).</summary>
+    public PdfPermissions PermissionFlags => PdfPermissionHelper.FromP(Permissions);
+    /// <summary>True when <paramref name="p"/> may be exercised: always for the owner, otherwise per the /P flags.</summary>
+    public bool IsAllowed(PdfPermissions p) => IsOwner || (PermissionFlags & p) == p;
+
+    public static PdfDecryptor Create(PdfDictionary enc, byte[] id0, Func<PdfObject?, PdfObject?> resolve, string password, System.Security.Cryptography.X509Certificates.X509Certificate2? certificate = null)
     {
         var filter = resolve(enc.Get("Filter")).AsName();
-        if (filter != "Standard") throw new PdfParseException($"Unsupported security handler /{filter} (public-key handlers need a recipient certificate)");
+        if (filter is not ("Standard" or "Adobe.PubSec")) throw new PdfParseException($"Unsupported security handler /{filter}");
+        var pub = filter == "Adobe.PubSec";
         int Int(string k, int d = 0) => (int)(resolve(enc.Get(k)).AsNumber() ?? d);
         byte[] Bytes(string k) => (resolve(enc.Get(k)) as PdfString)?.Bytes ?? [];
         var v = Int("V"); var r = Int("R"); var p = Int("P");
         var length = Int("Length", 40);
         var encMeta = resolve(enc.Get("EncryptMetadata")) is not PdfBoolean { Value: false };
         Method stm = Method.Rc4, str = Method.Rc4;
+        PdfDictionary? cf = null;
         if (v >= 4)
         {
-            var cf = resolve(enc.Get("CF")) as PdfDictionary;
+            cf = resolve(enc.Get("CF")) as PdfDictionary;
             Method Of(string key)
             {
                 var name = resolve(enc.Get(key)).AsName() ?? "Identity";
@@ -43,26 +66,65 @@ public sealed class PdfDecryptor
                 if (d is null) return Method.None;
                 var l = (int)(resolve(d.Get("Length")).AsNumber() ?? 0);
                 if (l > 0 && v == 4 && length == 40) length = l <= 40 ? l * 8 : l; // CF /Length is in bytes in practice
+                if (pub && resolve(d.Get("EncryptMetadata")) is PdfBoolean { Value: false }) encMeta = false;
                 return resolve(d.Get("CFM")).AsName() switch { "V2" => Method.Rc4, "AESV2" => Method.AesV2, "AESV3" => Method.AesV3, _ => Method.None };
             }
             stm = Of("StmF"); str = Of("StrF");
             if (v == 4) length = 128;
         }
         if (v == 1) length = 40;
+        if (pub) return CreatePubSec(enc, cf, resolve, certificate, v, length, stm, str, encMeta);
         var o = Bytes("O"); var u = Bytes("U");
-        byte[]? key;
+        byte[]? key; var owner = false;
         if (r >= 5)
         {
-            key = TryKeyV5(r, o, u, Bytes("OE"), Bytes("UE"), password);
+            key = TryKeyV5(r, o, u, Bytes("OE"), Bytes("UE"), password, out owner);
         }
         else
         {
             var n = r == 2 ? 5 : Math.Clamp(length / 8, 5, 16);
-            key = TryUser(password, o, u, p, id0, r, n, encMeta)
-                  ?? TryUser(UserFromOwner(password, o, r, n), o, u, p, id0, r, n, encMeta);
+            key = TryUser(password, o, u, p, id0, r, n, encMeta);
+            if (key is null)
+            {
+                key = TryUser(UserFromOwner(password, o, r, n), o, u, p, id0, r, n, encMeta);
+                owner = key is not null;
+            }
         }
         if (key is null) throw new PdfPasswordException("Incorrect or missing password");
-        return new PdfDecryptor(key, stm, str, v, encMeta, p, r);
+        return new PdfDecryptor(key, stm, str, v, encMeta, p, r, v >= 5 ? 256 : length, owner, false);
+    }
+
+    // Public-key handler (§7.6.5): the file key is a hash of the CMS-protected seed, the recipient blobs and (if clear metadata) 0xFFFFFFFF.
+    static PdfDecryptor CreatePubSec(PdfDictionary enc, PdfDictionary? cf, Func<PdfObject?, PdfObject?> resolve, System.Security.Cryptography.X509Certificates.X509Certificate2? cert, int v, int length, Method stm, Method str, bool encMeta)
+    {
+        if (cert is null || !cert.HasPrivateKey) throw new PdfPasswordException("Public-key encrypted: a recipient certificate with a private key is required");
+        var recips = resolve(enc.Get("Recipients")) as PdfArray;
+        if (recips is null && cf is not null)
+            foreach (var d in cf.Entries.Values)
+                if (resolve(d) is PdfDictionary cd && resolve(cd.Get("Recipients")) is PdfArray ra) { recips = ra; break; }
+        if (recips is null) throw new PdfParseException("Adobe.PubSec dictionary without /Recipients");
+        var blobs = recips.Items.Select(i => (resolve(i) as PdfString)?.Bytes ?? []).ToList();
+        byte[]? plain = null;
+        foreach (var b in blobs)
+        {
+            try
+            {
+                var cms = new System.Security.Cryptography.Pkcs.EnvelopedCms();
+                cms.Decode(b);
+                cms.Decrypt(new System.Security.Cryptography.X509Certificates.X509Certificate2Collection(cert));
+                plain = cms.ContentInfo.Content;
+                break;
+            }
+            catch (CryptographicException) { }
+        }
+        if (plain is null || plain.Length < 24) throw new PdfPasswordException("The certificate is not a recipient of this document");
+        var p = (plain[20] << 24) | (plain[21] << 16) | (plain[22] << 8) | plain[23];
+        var input = new List<byte>(plain.Take(20));
+        foreach (var b in blobs) input.AddRange(b);
+        if (!encMeta) input.AddRange([0xFF, 0xFF, 0xFF, 0xFF]);
+        var hash = v >= 5 ? SHA256.HashData(input.ToArray()) : SHA1.HashData(input.ToArray());
+        var n = v >= 5 ? 32 : Math.Clamp(length / 8, 5, 16);
+        return new PdfDecryptor(hash.Take(n).ToArray(), stm, str, v, encMeta, p, v >= 5 ? 6 : 4, v >= 5 ? 256 : n * 8, false, true);
     }
 
     static byte[] PadPwd(string pwd) { var b = System.Text.Encoding.Latin1.GetBytes(pwd); return [.. b.Take(32), .. Pad.Take(32 - Math.Min(32, b.Length))]; }
@@ -99,8 +161,9 @@ public sealed class PdfDecryptor
         return data;
     }
 
-    static byte[]? TryKeyV5(int r, byte[] o, byte[] u, byte[] oe, byte[] ue, string password)
+    static byte[]? TryKeyV5(int r, byte[] o, byte[] u, byte[] oe, byte[] ue, string password, out bool owner)
     {
+        owner = false;
         if (u.Length < 48 || o.Length < 48) return null;
         var pwd = System.Text.Encoding.UTF8.GetBytes(password).Take(127).ToArray();
         byte[] H(byte[] salt, byte[] udata) => r == 5 ? SHA256.HashData([.. pwd, .. salt, .. udata]) : Hash2B(pwd, salt, udata);
@@ -108,7 +171,10 @@ public sealed class PdfDecryptor
         if (H(u[32..40], []).AsSpan().SequenceEqual(u.AsSpan(0, 32)))
             return AesCbcNoPad(H(u[40..48], []), new byte[16], ue.Take(32).ToArray());
         if (H(o[32..40], u48).AsSpan().SequenceEqual(o.AsSpan(0, 32)))
+        {
+            owner = true;
             return AesCbcNoPad(H(o[40..48], u48), new byte[16], oe.Take(32).ToArray());
+        }
         return null;
     }
 
@@ -166,7 +232,11 @@ public sealed class PdfDecryptor
         using var aes = Aes.Create(); aes.Key = key;
         var iv = data[..16]; var body = data[16..(16 + (data.Length - 16) / 16 * 16)];
         try { return aes.DecryptCbc(body, iv, PaddingMode.PKCS7); }
-        catch (CryptographicException) { return aes.DecryptCbc(body, iv, PaddingMode.None); }
+        catch (CryptographicException)
+        {
+            try { return aes.DecryptCbc(body, iv, PaddingMode.None); }
+            catch (CryptographicException) { return []; }
+        }
     }
 
     public PdfObject Decrypt(PdfObject o, int num, int gen) => o switch

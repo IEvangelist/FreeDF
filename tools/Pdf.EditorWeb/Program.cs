@@ -341,14 +341,15 @@ app.MapPost("/api/save", () =>
 app.MapPost("/api/saved", (string? name) => { lock (gate) { MarkSaved(); if (!string.IsNullOrWhiteSpace(name)) fileName = name; } return Results.Ok(); });
 
 // Compressed (object/xref streams) export, optionally AES-256 protected.
-app.MapGet("/api/export/secure", (string? user, string? owner, string? name) =>
+app.MapGet("/api/export/secure", (string? user, string? owner, string? name, string? method) =>
 {
     lock (gate)
     {
         if (editor.PageCount == 0) return Results.NotFound();
         Prepare();
         var enc = string.IsNullOrEmpty(user) && string.IsNullOrEmpty(owner) ? null
-            : new PdfEncryption { UserPassword = user ?? "", OwnerPassword = string.IsNullOrEmpty(owner) ? (user ?? "") : owner };
+            : new PdfEncryption { UserPassword = user ?? "", OwnerPassword = string.IsNullOrEmpty(owner) ? (user ?? "") : owner,
+                Method = (method?.ToLowerInvariant()) switch { "aes128" => PdfEncryptionMethod.Aes128, "rc4128" => PdfEncryptionMethod.Rc4_128, "rc440" => PdfEncryptionMethod.Rc4_40, _ => PdfEncryptionMethod.Aes256 } };
         var bytes = editor.Save(options: new PdfWriteOptions { Compress = true, ObjectStreams = true, Encryption = enc });
         return Results.File(bytes, "application/pdf", name ?? (enc is null ? "compressed-" : "protected-") + fileName);
     }
