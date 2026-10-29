@@ -29,7 +29,7 @@ Typed `/Named` metadata exposes `/N` through `NamedDetails`, retaining standard 
 
 Typed `/GoToE` metadata exposes top-level `/F`, `/D`, `/T`, and nullable `/NewWindow` through `EmbeddedGoToDetails` (12.6.4.4, Tables 204/205). `/T` remains an opaque dictionary: nested target entries are not resolved or traversed, embedded contents are not loaded, and no navigation occurs. Missing or wrong-type entries remain available in the original dictionary. Typed target-path semantics remain a gap; `/SD` is not a GoToE field.
 
-JPX POC coverage additionally includes a three-layer, multi-precinct fixture that changes from one PCRL layer to the remaining CPRL layers. Its decoded pixels match Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4) exactly, and tests verify both progression records. This closes one multi-range/spatial-order coverage case, not every POC combination; POC combined with packed headers still needs reference fixtures.
+JPX POC coverage additionally includes a three-layer, multi-precinct fixture that changes from one PCRL layer to the remaining CPRL layers. Its decoded pixels match Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4) exactly, and tests verify both progression records. POC-plus-PPM/PPT fixtures exercise component reordering and packed segments ending at complete packet-header boundaries, with exact decoded samples. These are bounded reference cases, not exhaustive POC coverage; legacy packed-header fixture limitations are recorded in the backlog.
 
 ## Renderer (`PortableDocument.Content`, `PortableDocument.Render`)
 

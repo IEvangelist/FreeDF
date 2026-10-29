@@ -21,7 +21,9 @@ Typed `/Named` action metadata (12.6.4.11, Table 216) now retains `/N` names, in
 
 Typed `/GoToE` action metadata (12.6.4.4, Tables 204/205) exposes top-level `/F`, `/D`, opaque `/T`, and nullable `/NewWindow` through `EmbeddedGoToDetails`, preserving original dictionaries without loading embedded content or navigating. `tests/AdoBye.Tests/EmbeddedGoToActionTests.cs` adds direct/indirect, malformed-entry, and chain coverage. Continue with typed Table 205 target-path semantics without traversing or activating embedded documents; `/SD` is not defined for GoToE.
 
-JPX multi-range POC coverage now includes a reference fixture combining an initial PCRL layer with remaining CPRL layers across multiple precincts, pixel-identical to Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4). `JpxTests.MultiRangeSpatialPocFixtureContainsBothProgressionChanges` verifies both encoded ranges. Continue with other range/order combinations and POC-plus-packed-header fixtures rather than treating this case as exhaustive.
+JPX multi-range POC coverage now includes a reference fixture combining an initial PCRL layer with remaining CPRL layers across multiple precincts, pixel-identical to Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4). `JpxTests.MultiRangeSpatialPocFixtureContainsBothProgressionChanges` verifies both encoded ranges. POC-plus-PPM/PPT fixtures additionally verify reordered component samples and packed segments ending at complete packet-header boundaries. Continue with other range/order/packed-header combinations rather than treating these cases as exhaustive.
+
+Known fixture limitation: legacy `ppm-lossless.pdf` and `ppt-lossless.pdf` split their only packet header across packed marker segments, contrary to T.800 A.7.4/A.7.5 packet-header boundary requirements. The binaries remain unchanged pending a dedicated corrective slice; do not treat their successful decoding as proof of conforming segment boundaries. Replace/regenerate the legacy references and review decoder boundary validation separately from the valid `poc-ppm-lossless` and `poc-ppt-lossless` cases.
 
 ## Rendering and content
 
