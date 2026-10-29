@@ -30,6 +30,13 @@ public sealed record PdfFileSpecification(
     bool? IsVolatile,
     string? AFRelationship,
     IReadOnlyDictionary<string, PdfEmbeddedFile> EmbeddedFiles,
+    PdfDictionary Dictionary,
+    PdfDictionary? CollectionItem);
+
+public sealed record PdfDocumentCollection(
+    string? View,
+    PdfDictionary? Schema,
+    PdfDictionary? Sort,
     PdfDictionary Dictionary);
 
 public enum PdfAssociatedFileScope
@@ -51,6 +58,18 @@ public sealed record PdfAssociatedFile(
 public static class DocumentFeatures
 {
     const int MaxDepth = 64;
+
+    /// <summary>Collection dictionary (Catalog /Collection), preserving its specification-defined entries.</summary>
+    public static PdfDocumentCollection? GetCollection(this PdfDocument doc)
+    {
+        var f = doc.File;
+        if (f.Resolve(f.Catalog.Get("Collection")) is not PdfDictionary collection) return null;
+        return new PdfDocumentCollection(
+            f.Resolve(collection.Get("View")).AsName(),
+            f.Resolve(collection.Get("Schema")) as PdfDictionary,
+            f.Resolve(collection.Get("Sort")) as PdfDictionary,
+            collection);
+    }
 
     /// <summary>XMP metadata packet (Catalog /Metadata), decoded as UTF-8.</summary>
     public static string? GetXmpMetadata(this PdfDocument doc)
@@ -355,7 +374,8 @@ public static class DocumentFeatures
             f.Resolve(spec.Get("V")) is PdfBoolean isVolatile ? isVolatile.Value : null,
             f.Resolve(spec.Get("AFRelationship")).AsName(),
             embedded,
-            spec);
+            spec,
+            f.Resolve(spec.Get("CI")) as PdfDictionary);
     }
 
     static string? FileName(PdfFile f, PdfDictionary spec) =>

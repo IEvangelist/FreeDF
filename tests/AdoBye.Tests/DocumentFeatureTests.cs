@@ -1,3 +1,4 @@
+using PortableDocument.Core;
 using PortableDocument.Document;
 using Xunit;
 
@@ -53,11 +54,11 @@ public class DocumentFeatureTests
     static byte[] FileSpecificationPdf()
     {
         const string pdf = "%PDF-2.0\n" +
-            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] /AcroForm << /AF [5 0 R] /Fields [7 0 R] >> >>\nendobj\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] /AcroForm << /AF [5 0 R] /Fields [7 0 R] >> /Collection << /View /D /Schema << /Title << /Subtype /S /N (Title) >> >> /Sort << /S /Title /A true >> >> >>\nendobj\n" +
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
             "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /AF [5 0 R] /Annots [4 0 R] >>\nendobj\n" +
             "4 0 obj\n<< /Type /Annot /Subtype /FileAttachment /Rect [10 10 20 20] /AF [5 0 R] >>\nendobj\n" +
-            "5 0 obj\n<< /Type /Filespec /F (fallback.txt) /UF (unicode.txt) /DOS (DOS.TXT) /Mac (Mac.txt) /Unix (unix.txt) /Desc (attachment description) /ID [(first-id) (second-id)] /V true /AFRelationship /Data /EF << /F 6 0 R /UF 6 0 R >> >>\nendobj\n" +
+            "5 0 obj\n<< /Type /Filespec /F (fallback.txt) /UF (unicode.txt) /DOS (DOS.TXT) /Mac (Mac.txt) /Unix (unix.txt) /Desc (attachment description) /ID [(first-id) (second-id)] /V true /AFRelationship /Data /CI << /Title (A report) >> /EF << /F 6 0 R /UF 6 0 R >> >>\nendobj\n" +
             "6 0 obj\n<< /Type /EmbeddedFile /Subtype /text#2Fplain /Params << /Size 5 /CreationDate (D:20260101000000Z) /ModDate (D:20260102000000Z) /CheckSum <01020304> >> /Length 5 >>\nstream\nhello\nendstream\nendobj\n" +
             "7 0 obj\n<< /T (attachedField) /AF [5 0 R] /Kids [7 0 R] >>\nendobj\n" +
             "trailer\n<< /Root 1 0 R /Size 8 >>\n%%EOF\n";
@@ -80,6 +81,7 @@ public class DocumentFeatureTests
         Assert.Equal(new[] { "first-id", "second-id" }, spec.Id);
         Assert.True(spec.IsVolatile);
         Assert.Equal("Data", spec.AFRelationship);
+        Assert.Equal("A report", doc.File.Resolve(spec.CollectionItem?.Get("Title")) is PdfString title ? title.Text : null);
 
         var embedded = spec.EmbeddedFiles["UF"];
         Assert.Equal("text/plain", embedded.MimeType);
@@ -99,6 +101,12 @@ public class DocumentFeatureTests
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.FormField && file.FieldName == "attachedField");
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Page && file.PageIndex == 0);
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Annotation && file.PageIndex == 0 && file.AnnotationIndex == 0);
+
+        var collection = Assert.IsType<PdfDocumentCollection>(doc.GetCollection());
+        Assert.Equal("D", collection.View);
+        Assert.NotNull(collection.Schema?.Get("Title"));
+        Assert.NotNull(collection.Sort?.Get("S"));
+        Assert.Same(collection.Dictionary, doc.File.Resolve(doc.File.Catalog.Get("Collection")));
 
         var legacy = Assert.Single(doc.GetEmbeddedFiles());
         Assert.Equal("attachment", legacy.Name);
