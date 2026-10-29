@@ -9,6 +9,33 @@ namespace AdoBye.Tests;
 public class OutlineRedactionTests
 {
     [Theory]
+    [InlineData("caf\u00e9", "Before cafe\u0301, after.", "Before [redacted], after.")]
+    [InlineData("cafe\u0301", "Before CAF\u00c9, after.", "Before [redacted], after.")]
+    [InlineData("cafe\u0301", "cafe\u0301 / CAF\u00c9", "[redacted] / [redacted]")]
+    [InlineData("e\u0301\u0323", "Before e\u0323\u0301 after", "Before [redacted] after")]
+    [InlineData("Top Secret", "\tTop \t\r\n\u00a0Secret\u00a0 notes\n", "\t[redacted]\u00a0 notes\n")]
+    [InlineData("Top \t\r\n\u00a0Secret", "Top Secret / Top\u00a0Secret", "[redacted] / [redacted]")]
+    [InlineData("caf\u00e9 Secret", "cafe\u0301\tSECRET / Caf\u00e9\r\nSecret", "[redacted] / [redacted]")]
+    [InlineData("caf\u00e9 Secret", "cafe\u0301 news / Secret notes", "cafe\u0301 news / Secret notes")]
+    [InlineData("caf\u00e9", "cafe\u0301s / MyCAF\u00c9 / cafe\u0301_1", "cafe\u0301s / MyCAF\u00c9 / cafe\u0301_1")]
+    [InlineData("Top Secret", "Top\tSecrets / MyTop\nSecret", "Top\tSecrets / MyTop\nSecret")]
+    [InlineData("caf\u00e9 Secret", "cafe\u0301-Secret / cafe\u0301, Secret", "cafe\u0301-Secret / cafe\u0301, Secret")]
+    [InlineData("caf\u00e9", "cafe / cafe\u0301\u0301", "cafe / cafe\u0301\u0301")]
+    [InlineData("Top Secret", "TopSecret", "TopSecret")]
+    [InlineData("Top Secret", "Top\u200bSecret", "Top\u200bSecret")]
+    [InlineData("fine", "\ufb01ne / FINE", "\ufb01ne / [redacted]")]
+    [InlineData("caf\u00e9", "  re\u0301sume\u0301\tcafe\u0301\nnai\u0308ve  ", "  re\u0301sume\u0301\t[redacted]\nnai\u0308ve  ")]
+    public void Matches_canonical_unicode_and_whitespace_runs_without_changing_surroundings(string text, string title, string expected)
+    {
+        var bytes = Build(Text(text), [title]);
+        Assert.Equal(text, Assert.Single(DocumentRenderer.ExtractText(PdfDocument.Load(bytes).Pages[0])).Text);
+        var editor = PdfEditor.Open(bytes);
+        Redactor.Apply(editor, 0, [new(0, 0, 600, 200)]);
+
+        Assert.Equal(expected, Assert.Single(PdfDocument.Load(editor.Save()).GetOutlines()).Title);
+    }
+
+    [Theory]
     [InlineData("Top Secret", "Top Secret", "[redacted]")]
     [InlineData("Top Secret", "Before TOP SECRET, after top secret.", "Before [redacted], after [redacted].")]
     [InlineData("Top Secret", "Top stories and Secret history", "Top stories and Secret history")]
@@ -95,6 +122,17 @@ public class OutlineRedactionTests
     }
 
     [Fact]
+    public void Normalized_matches_choose_longest_phrase_and_preserve_original_ranges()
+    {
+        var editor = PdfEditor.Open(Build(Text("caf\u00e9") + " " + Text("cafe\u0301 Secret", 60),
+            ["\tcafe\u0301 \r\nSecret / CAF\u00c9\u00a0  Secret / cafe\u0301  \n"]));
+        Redactor.Apply(editor, 0, [new(0, 0, 600, 200)]);
+
+        Assert.Equal("\t[redacted] / [redacted] / [redacted]  \n",
+            Assert.Single(PdfDocument.Load(editor.Save()).GetOutlines()).Title);
+    }
+
+    [Fact]
     public void Keeps_phrase_across_TJ_strings_and_word_spacing()
     {
         var editor = PdfEditor.Open(Build("BT /F1 12 Tf 10 100 Td [(Top) -250 (Sec) 20 (ret)] TJ ET",
@@ -118,14 +156,14 @@ public class OutlineRedactionTests
     }
 
     static string Text(string text, int y = 100) =>
-        $"BT /F1 12 Tf 10 {y} Td <{Convert.ToHexString(Encoding.Latin1.GetBytes(text))}> Tj ET";
+        $"BT /F1 12 Tf 10 {y} Td <{Convert.ToHexString(Encoding.Latin1.GetBytes(text.Replace('\u0301', '\u0001').Replace('\u0323', '\u0002')))}> Tj ET";
 
     static byte[] Build(string content, string[] titles, string? child = null, bool form = false)
     {
         var sb = new StringBuilder("%PDF-1.7\n");
         void Obj(int n, string body) => sb.Append($"{n} 0 obj\n{body}\nendobj\n");
         static string Title(string title) => $"<FEFF{Convert.ToHexString(Encoding.BigEndianUnicode.GetBytes(title))}>";
-        const string font = "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> >>";
+        const string font = "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 8 0 R >> >>";
         Obj(1, "<< /Type /Catalog /Pages 2 0 R /Outlines 5 0 R >>");
         Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
         var xobjects = form ? "/XObject << /Fm 6 0 R >>" : "";
@@ -135,6 +173,8 @@ public class OutlineRedactionTests
         Obj(5, $"<< /Type /Outlines /First 10 0 R /Last {9 + titles.Length} 0 R /Count {titles.Length + (child is null ? 0 : 1)} >>");
         Obj(6, $"<< /Type /XObject /Subtype /Form /BBox [0 0 600 200] /Resources << {font} >> /Length {content.Length} >>\nstream\n{content}\nendstream");
         Obj(7, child is null ? "null" : $"<< /Title {Title(child)} /Parent 10 0 R /Dest [3 0 R /Fit] >>");
+        const string cmap = "begincmap\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n6 beginbfchar\n<01> <0301>\n<02> <0323>\n<09> <0009>\n<0A> <000A>\n<0D> <000D>\n<A0> <00A0>\nendbfchar\nendcmap";
+        Obj(8, $"<< /Length {cmap.Length} >>\nstream\n{cmap}\nendstream");
         for (var i = 0; i < titles.Length; i++)
         {
             Obj(100 + i, Title(titles[i]));

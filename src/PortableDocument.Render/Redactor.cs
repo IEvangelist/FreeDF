@@ -37,8 +37,9 @@ public static class Redactor
     /// <summary>
     /// Redacts page <paramref name="pageIndex"/> of <paramref name="editor"/> in place: page content, form XObject internals,
     /// partially covered images, annotations under the rectangles and document metadata. In outline titles, replaces
-    /// literal contiguous removed text (trimmed) at word boundaries with [redacted], using invariant case-insensitive
-    /// matching. Letters, marks, numbers, connector punctuation and surrogate code units are word characters.
+    /// contiguous removed text (trimmed) at word boundaries with [redacted], using canonical Unicode equivalence,
+    /// whitespace-run equivalence and invariant case-insensitive matching. Punctuation remains literal.
+    /// Letters, marks, numbers, connector punctuation and surrogate code units are word characters.
     /// </summary>
     public static void Apply(PdfEditor editor, int pageIndex, IReadOnlyList<BoxRect> rects)
     {
@@ -96,17 +97,57 @@ public static class Redactor
             return rects.Any(r => x0 < r.X + r.W && x1 > r.X && y0 < r.Y + r.H && y1 > r.Y);
         });
         editor.PruneRemovedFormFields();
-        var phrases = plan.HitText.Select(t => t.Trim()).Where(t => t.Length > 0)
+        var phrases = plan.HitText.Select(t => NormalizeOutlineText(t).Text.Trim()).Where(t => t.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(t => t.Length).ThenBy(t => t, StringComparer.Ordinal).ToArray();
         if (phrases.Length > 0)
         {
-            // Match literal phrases, longest first, without splitting words or reprocessing replacements.
+            // Match normalized phrases, longest first, and replace only their original title ranges.
             const string word = @"[\p{L}\p{M}\p{N}\p{Pc}\p{Cs}]";
             var matches = new Regex($@"(?<!{word})(?:{string.Join("|", phrases.Select(Regex.Escape))})(?!{word})",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            editor.TransformOutlineTitles(title => matches.Replace(title, "[redacted]"));
+            editor.TransformOutlineTitles(title =>
+            {
+                var normalized = NormalizeOutlineText(title);
+                var result = new StringBuilder();
+                var end = 0;
+                foreach (Match match in matches.Matches(normalized.Text))
+                {
+                    var start = normalized.Starts[match.Index];
+                    result.Append(title, end, start - end).Append("[redacted]");
+                    end = normalized.Ends[match.Index + match.Length - 1];
+                }
+                return result.Append(title, end, title.Length - end).ToString();
+            });
         }
         editor.ScrubMetadata();
+    }
+
+    static (string Text, List<int> Starts, List<int> Ends) NormalizeOutlineText(string text)
+    {
+        var normalized = new StringBuilder();
+        var starts = new List<int>();
+        var ends = new List<int>();
+        var elements = StringInfo.GetTextElementEnumerator(text);
+        while (elements.MoveNext())
+        {
+            var element = elements.GetTextElement();
+            var start = elements.ElementIndex;
+            var end = start + element.Length;
+            if (element.All(char.IsWhiteSpace))
+            {
+                if (normalized.Length > 0 && normalized[^1] == ' ')
+                {
+                    ends[^1] = end;
+                    continue;
+                }
+                element = " ";
+            }
+            else element = element.Normalize(NormalizationForm.FormD);
+            normalized.Append(element);
+            // A decomposed/reordered text element still maps to its complete original range.
+            foreach (var _ in element) { starts.Add(start); ends.Add(end); }
+        }
+        return (normalized.ToString(), starts, ends);
     }
 
     static byte[] Deflate(byte[] d)
