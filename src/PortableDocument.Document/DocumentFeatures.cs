@@ -47,6 +47,15 @@ public sealed record PdfDocumentCollection(
 {
     public IReadOnlyList<PdfCollectionField> SchemaFields { get; init; } = [];
     public PdfCollectionSort? SortDefinition { get; init; }
+    public PdfCollectionView InitialView { get; init; }
+    public IReadOnlyList<PdfCollectionField> VisibleFields { get; init; } = [];
+}
+
+public enum PdfCollectionView
+{
+    Details,
+    Tile,
+    Hidden,
 }
 
 public sealed record PdfCollectionField(
@@ -131,14 +140,25 @@ public static class DocumentFeatures
         if (f.Resolve(f.Catalog.Get("Collection")) is not PdfDictionary collection) return null;
         var schema = f.Resolve(collection.Get("Schema")) as PdfDictionary;
         var sort = f.Resolve(collection.Get("Sort")) as PdfDictionary;
+        var schemaFields = ReadCollectionSchemaFields(f, schema);
         return new PdfDocumentCollection(
             f.Resolve(collection.Get("View")).AsName(),
             schema,
             sort,
             collection)
         {
-            SchemaFields = ReadCollectionSchemaFields(f, schema),
+            SchemaFields = schemaFields,
             SortDefinition = ReadCollectionSort(f, sort),
+            InitialView = f.Resolve(collection.Get("View")).AsName() switch
+            {
+                "T" => PdfCollectionView.Tile,
+                "H" => PdfCollectionView.Hidden,
+                _ => PdfCollectionView.Details,
+            },
+            VisibleFields = schemaFields
+                .Where(field => field.Visible != false)
+                .OrderBy(field => field.Order ?? 0)
+                .ToArray(),
         };
     }
 
@@ -176,6 +196,147 @@ public static class DocumentFeatures
             _ => [],
         };
         return new PdfCollectionSort(fields, ascending, sort);
+    }
+
+    /// <summary>Collection file specifications, ordered by the collection's declared sort keys.</summary>
+    public static IReadOnlyList<PdfFileSpecification> GetCollectionItems(this PdfDocument doc)
+    {
+        var collection = doc.GetCollection();
+        if (collection is null) return [];
+        var files = doc.GetFileSpecifications();
+        if (collection.SortDefinition is not { Fields.Count: > 0 } sort) return files;
+
+        var fields = collection.SchemaFields.ToDictionary(field => field.Key, StringComparer.Ordinal);
+        return files.OrderBy(file => file, Comparer<PdfFileSpecification>.Create((left, right) =>
+        {
+            for (var index = 0; index < sort.Fields.Count; index++)
+            {
+                if (!fields.TryGetValue(sort.Fields[index], out var field)) continue;
+                var comparison = CompareCollectionValues(doc.File, left, right, field);
+                if (comparison == 0) continue;
+                return sort.Ascending.ElementAtOrDefault(index) ?? true ? comparison : -comparison;
+            }
+            return 0;
+        })).ToArray();
+    }
+
+    static int CompareCollectionValues(PdfFile f, PdfFileSpecification left, PdfFileSpecification right, PdfCollectionField field)
+    {
+        var leftValue = CollectionSortValue(f, left, field);
+        var rightValue = CollectionSortValue(f, right, field);
+        if (leftValue is null) return rightValue is null ? 0 : -1;
+        if (rightValue is null) return 1;
+
+        return field.Subtype switch
+        {
+            "S" or "F" or "Desc" => StringComparer.Ordinal.Compare((string)leftValue, (string)rightValue),
+            "D" or "ModDate" or "CreationDate" => ((long)leftValue).CompareTo((long)rightValue),
+            "N" or "Size" or "CompressedSize" => ((double)leftValue).CompareTo((double)rightValue),
+            _ => 0,
+        };
+    }
+
+    static object? CollectionSortValue(PdfFile f, PdfFileSpecification spec, PdfCollectionField field)
+    {
+        var item = spec.CollectionItem;
+        var value = item?.Get(field.Key);
+        return field.Subtype switch
+        {
+            "S" => PdfStringValue(f, value),
+            "D" => CollectionDateValue(f, value),
+            "N" => f.Resolve(value).AsNumber(),
+            "F" => spec.UnicodeFileName ?? spec.FileName,
+            "Desc" => spec.Description,
+            "ModDate" => CollectionEmbeddedDate(spec, "ModDate"),
+            "CreationDate" => CollectionEmbeddedDate(spec, "CreationDate"),
+            "Size" => CollectionEmbeddedNumber(spec, "Size"),
+            "CompressedSize" => CollectionCompressedSize(f, spec),
+            _ => null,
+        };
+    }
+
+    static long? CollectionDateValue(PdfFile f, PdfObject? value) =>
+        PdfStringValue(f, value) is { } text ? ParseCollectionDate(text) : null;
+
+    static long? CollectionEmbeddedDate(PdfFileSpecification spec, string key)
+    {
+        var file = PreferredEmbeddedFile(spec);
+        var text = key == "ModDate" ? file?.ModificationDate : file?.CreationDate;
+        return text is null ? null : ParseCollectionDate(text);
+    }
+
+    static double? CollectionEmbeddedNumber(PdfFileSpecification spec, string key) =>
+        key == "Size" ? PreferredEmbeddedFile(spec)?.Size : null;
+
+    static double? CollectionCompressedSize(PdfFile f, PdfFileSpecification spec) =>
+        f.Resolve(PreferredEmbeddedFile(spec)?.Stream?.Dict.Get("Length")).AsNumber();
+
+    static PdfEmbeddedFile? PreferredEmbeddedFile(PdfFileSpecification spec) =>
+        spec.EmbeddedFiles.TryGetValue("UF", out var unicodeFile) ? unicodeFile
+            : spec.EmbeddedFiles.TryGetValue("F", out var file) ? file
+            : null;
+
+    static long? ParseCollectionDate(string value)
+    {
+        if (!value.StartsWith("D:", StringComparison.Ordinal)) return null;
+        var index = 2;
+        if (!ReadDateComponent(value, ref index, 4, out var year)) return null;
+        var month = 1;
+        var day = 1;
+        var hour = 0;
+        var minute = 0;
+        var second = 0;
+        if (ReadDateComponent(value, ref index, 2, out var dateMonth, optional: true)) month = dateMonth;
+        if (ReadDateComponent(value, ref index, 2, out var dateDay, optional: true)) day = dateDay;
+        if (ReadDateComponent(value, ref index, 2, out var dateHour, optional: true)) hour = dateHour;
+        if (ReadDateComponent(value, ref index, 2, out var dateMinute, optional: true)) minute = dateMinute;
+        if (ReadDateComponent(value, ref index, 2, out var dateSecond, optional: true)) second = dateSecond;
+
+        var offsetMinutes = 0;
+        if (index < value.Length && value[index] == 'Z')
+        {
+            index++;
+        }
+        else if (index < value.Length && value[index] is '+' or '-')
+        {
+            var sign = value[index++] == '+' ? 1 : -1;
+            if (!ReadDateComponent(value, ref index, 2, out var offsetHours)) return null;
+            if (index < value.Length && value[index] == '\'') index++;
+            var offsetMinutePart = 0;
+            if (index < value.Length && char.IsDigit(value[index]))
+            {
+                if (!ReadDateComponent(value, ref index, 2, out offsetMinutePart)) return null;
+                if (index < value.Length && value[index] == '\'') index++;
+            }
+            if (offsetHours > 23 || offsetMinutePart > 59) return null;
+            offsetMinutes = sign * (offsetHours * 60 + offsetMinutePart);
+        }
+
+        if (index != value.Length) return null;
+        try
+        {
+            return new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc).Ticks
+                - TimeSpan.FromMinutes(offsetMinutes).Ticks;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    static bool ReadDateComponent(string value, ref int index, int length, out int component, bool optional = false)
+    {
+        component = 0;
+        var start = index;
+        while (index < value.Length && index - start < length && char.IsDigit(value[index])) index++;
+        if (index - start == length)
+        {
+            component = int.Parse(value.AsSpan(start, length), System.Globalization.CultureInfo.InvariantCulture);
+            return true;
+        }
+        if (optional && start == index) return false;
+        index = start;
+        return false;
     }
 
     /// <summary>XMP metadata packet (Catalog /Metadata), decoded as UTF-8.</summary>
