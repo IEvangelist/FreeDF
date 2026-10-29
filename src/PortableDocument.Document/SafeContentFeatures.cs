@@ -27,6 +27,7 @@ public sealed record PdfAction(
     public PdfGoToAction? GoToDetails { get; init; }
     public PdfRemoteGoToAction? RemoteGoToDetails { get; init; }
     public PdfUriAction? UriDetails { get; init; }
+    public PdfNamedAction? NamedDetails { get; init; }
 }
 
 /// <summary>
@@ -56,6 +57,18 @@ public sealed record PdfUriAction(
     PdfDictionary Dictionary);
 
 /// <summary>
+/// Inert /Named metadata (ISO 32000-2:2020, 12.6.4.11, Table 216). Only references
+/// within the current PDF are dereferenced; no named action is executed or dispatched.
+/// Missing or wrong-type entries are null and remain available in Dictionary.
+/// Names are retained without restricting them to the standard names in Table 215.
+/// </summary>
+/// <param name="Name">The required /N name, including unrecognised names, without interpretation.</param>
+/// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
+public sealed record PdfNamedAction(
+    PdfName? Name,
+    PdfDictionary Dictionary);
+
+/// <summary>
 /// Inert /GoToR metadata (ISO 32000-2:2020, 12.6.4.3, Table 203). Only references
 /// within the current PDF are dereferenced; no target file or destination is opened or resolved.
 /// Missing or wrong-type entries are null and remain available in Dictionary.
@@ -80,7 +93,7 @@ public static class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection, with inert typed metadata for local go-to, remote go-to and URI actions.
+    /// Returns action dictionaries for inspection, with inert typed metadata for local go-to, remote go-to, URI and named actions.
     /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
@@ -257,6 +270,7 @@ public static class SafeContentFeatures
             GoToDetails = type == "GoTo" ? ReadGoToAction(f, action) : null,
             RemoteGoToDetails = type == "GoToR" ? ReadRemoteGoToAction(f, action) : null,
             UriDetails = type == "URI" ? ReadUriAction(f, action) : null,
+            NamedDetails = type == "Named" ? ReadNamedAction(f, action) : null,
         });
         if (action.Get("Next") is { } next)
             AddActionChain(f, next, scope, $"{trigger}/Next", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
@@ -287,6 +301,11 @@ public static class SafeContentFeatures
         new(
             f.Resolve(action.Get("URI")) as PdfString,
             f.Resolve(action.Get("IsMap")) is PdfBoolean isMap ? isMap.Value : null,
+            action);
+
+    static PdfNamedAction ReadNamedAction(PdfFile f, PdfDictionary action) =>
+        new(
+            f.Resolve(action.Get("N")) as PdfName,
             action);
 
     static string? StringValue(PdfFile f, PdfObject? value) =>
