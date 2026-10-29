@@ -2,8 +2,11 @@ using System.Buffers.Binary;
 using System.Text;
 using Pdf.Content;
 
-/// <summary>One installed TrueType (glyf) font file.</summary>
-public sealed record FontFace(string Family, bool Bold, bool Italic, string Path, string PostScript);
+/// <summary>One installed font face: TrueType (glyf) or CFF-flavoured OpenType, from a single-font file or a .ttc/.otc collection member (<paramref name="Face"/> ≥ 0).</summary>
+public sealed record FontFace(string Family, bool Bold, bool Italic, string Path, string PostScript, int Face = -1)
+{
+    public string Key => Face < 0 ? Path : $"{Path}#{Face}";
+}
 
 /// <summary>Installed system fonts grouped by family (name ID 1), found by reading only each file's table directory, name, head and OS/2 tables.</summary>
 public sealed class FontCatalog
@@ -26,8 +29,8 @@ public sealed class FontCatalog
             foreach (var f in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories))
             {
                 var ext = System.IO.Path.GetExtension(f).ToLowerInvariant();
-                if (ext is not (".ttf" or ".otf")) continue;
-                try { if (Read(f) is { } face) c.Add(face); } catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { }
+                if (ext is not (".ttf" or ".otf" or ".ttc" or ".otc")) continue;
+                try { foreach (var face in Read(f)) c.Add(face); } catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { }
             }
         return c;
     }
@@ -53,19 +56,95 @@ public sealed class FontCatalog
         return l.OrderBy(v => (v.Bold != bold ? 2 : 0) + (v.Italic != italic ? 1 : 0)).First();
     }
 
+    /// <summary>The font as a standalone sfnt (a collection member is extracted) and its parsed form.</summary>
     public (byte[] Data, TrueTypeFont Font) Load(FontFace f)
     {
         lock (_loaded)
         {
-            if (!_loaded.TryGetValue(f.Path, out var v)) _loaded[f.Path] = v = (File.ReadAllBytes(f.Path), null!);
-            if (v.Font is null) _loaded[f.Path] = v = (v.Data, new TrueTypeFont(v.Data));
+            if (!_loaded.TryGetValue(f.Key, out var v))
+            {
+                var raw = File.ReadAllBytes(f.Path);
+                _loaded[f.Key] = v = (f.Face >= 0 ? ExtractFace(raw, f.Face) : raw, null!);
+            }
+            if (v.Font is null) _loaded[f.Key] = v = (v.Data, new TrueTypeFont(v.Data));
             return v;
         }
     }
 
-    static FontFace? Read(string path)
+    /// <summary>Copies one member of a TrueType collection into a standalone sfnt so the rest of the pipeline needs no collection awareness.</summary>
+    public static byte[] ExtractFace(byte[] ttc, int face)
+    {
+        uint U32(int o) => BinaryPrimitives.ReadUInt32BigEndian(ttc.AsSpan(o));
+        var count = (int)U32(8);
+        if (face < 0 || face >= count) throw new ArgumentException("No such font in the collection.");
+        var dir = (int)U32(12 + face * 4);
+        var n = BinaryPrimitives.ReadUInt16BigEndian(ttc.AsSpan(dir + 4));
+        var hdrLen = 12 + n * 16;
+        var output = new MemoryStream();
+        var hdr = new byte[hdrLen];
+        Array.Copy(ttc, dir, hdr, 0, hdrLen);
+        var off = hdrLen;
+        var body = new MemoryStream();
+        for (var i = 0; i < n; i++)
+        {
+            var e = 12 + i * 16;
+            var o = (int)U32(dir + e + 8); var l = (int)U32(dir + e + 12);
+            BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(e + 8), (uint)(off + body.Length));
+            body.Write(ttc, o, l);
+            while (body.Length % 4 != 0) body.WriteByte(0);
+        }
+        output.Write(hdr); body.WriteTo(output);
+        return output.ToArray();
+    }
+
+    static readonly string[] FallbackFamilies =
+    [
+        "Segoe UI", "Arial", "Segoe UI Symbol", "Microsoft YaHei", "Malgun Gothic", "MS Gothic", "Yu Gothic", "Noto Sans", "Noto Sans CJK SC",
+        "DejaVu Sans", "Liberation Sans", "Arial Unicode MS", "Cambria Math",
+    ];
+    readonly Dictionary<(int, bool, bool), FontFace?> _fallback = [];
+
+    bool Covers(FontFace f, int rune)
+    {
+        try { return Load(f).Font.LookupAny(rune) > 0; }
+        catch (Exception e) when (e is IOException or ArgumentException or IndexOutOfRangeException or NotSupportedException or InvalidDataException) { return false; }
+    }
+
+    /// <summary>An installed face that has a glyph for <paramref name="rune"/>: well-known broad-coverage families first, then any face.</summary>
+    public FontFace? Fallback(int rune, bool bold, bool italic)
+    {
+        lock (_fallback)
+        {
+            if (_fallback.TryGetValue((rune, bold, italic), out var hit)) return hit;
+            FontFace? found = null;
+            foreach (var fam in FallbackFamilies)
+                if (Resolve(fam, bold, italic) is { } f && Covers(f, rune)) { found = f; break; }
+            found ??= _families.Values.SelectMany(l => l).FirstOrDefault(f => Covers(f, rune));
+            return _fallback[(rune, bold, italic)] = found;
+        }
+    }
+
+    static IEnumerable<FontFace> Read(string path)
     {
         using var fs = File.OpenRead(path);
+        var hdr = new byte[12];
+        if (fs.Read(hdr) < 12) yield break;
+        if (BinaryPrimitives.ReadUInt32BigEndian(hdr) == 0x74746366)
+        {
+            var count = (int)Math.Min(BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(8)), 256u);
+            var offsets = new int[count];
+            var raw = new byte[count * 4]; fs.ReadExactly(raw);
+            for (var i = 0; i < count; i++) offsets[i] = (int)BinaryPrimitives.ReadUInt32BigEndian(raw.AsSpan(i * 4));
+            for (var i = 0; i < count; i++)
+                if (ReadFace(fs, offsets[i], path, i) is { } f) yield return f;
+            yield break;
+        }
+        if (ReadFace(fs, 0, path, -1) is { } single) yield return single;
+    }
+
+    static FontFace? ReadFace(FileStream fs, long dirOffset, string path, int faceIndex)
+    {
+        fs.Seek(dirOffset, SeekOrigin.Begin);
         Span<byte> hdr = stackalloc byte[12];
         if (fs.Read(hdr) < 12) return null;
         var tag = BinaryPrimitives.ReadUInt32BigEndian(hdr);
@@ -75,7 +154,7 @@ public sealed class FontCatalog
         var t = new Dictionary<string, (int Off, int Len)>();
         for (var i = 0; i < n; i++)
             t[Encoding.ASCII.GetString(dir, i * 16, 4)] = ((int)BinaryPrimitives.ReadUInt32BigEndian(dir.AsSpan(i * 16 + 8)), (int)BinaryPrimitives.ReadUInt32BigEndian(dir.AsSpan(i * 16 + 12)));
-        if (!t.ContainsKey("glyf") || !t.TryGetValue("name", out var nm) || !t.TryGetValue("head", out var hd)) return null;
+        if (!(t.ContainsKey("glyf") || t.ContainsKey("CFF ")) || !t.TryGetValue("name", out var nm) || !t.TryGetValue("head", out var hd)) return null;
         byte[] Get((int Off, int Len) r) { var b = new byte[Math.Min(r.Len, 1 << 20)]; fs.Seek(r.Off, SeekOrigin.Begin); fs.ReadExactly(b); return b; }
         var name = Get(nm); var head = Get(hd);
         var mac = BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(44));
@@ -84,7 +163,7 @@ public sealed class FontCatalog
         var style = Name(name, 2) ?? "";
         var bold = (mac & 1) != 0 || style.Contains("Bold", StringComparison.OrdinalIgnoreCase);
         var italic = (mac & 2) != 0 || style.Contains("Italic", StringComparison.OrdinalIgnoreCase) || style.Contains("Oblique", StringComparison.OrdinalIgnoreCase);
-        return new FontFace(family.Trim(), bold, italic, path, ps ?? family.Replace(" ", ""));
+        return new FontFace(family.Trim(), bold, italic, path, ps ?? family.Replace(" ", ""), faceIndex);
     }
 
     static string? Name(byte[] d, int id)
@@ -200,5 +279,133 @@ public static class FontSubsetter
         outp.Write(hdr);
         foreach (var data in tables.Values) { outp.Write(data); for (var i = data.Length; i % 4 != 0; i++) outp.WriteByte(0); }
         return outp.ToArray();
+    }
+}
+
+/// <summary>
+/// Shrinks a name-keyed CFF table by replacing the charstrings of unused glyphs with a bare <c>endchar</c>; glyph IDs, charset and the
+/// subroutines are untouched. CID-keyed CFF is returned as null (caller embeds it whole).
+/// </summary>
+public static class CffSubsetter
+{
+    static (int Count, int[] Offs, int DataStart, int End) Index(byte[] d, int p)
+    {
+        var count = d[p] << 8 | d[p + 1];
+        if (count == 0) return (0, [], p + 2, p + 2);
+        int os = d[p + 2];
+        var offs = new int[count + 1];
+        for (var i = 0; i <= count; i++) { var v = 0; for (var k = 0; k < os; k++) v = v << 8 | d[p + 3 + i * os + k]; offs[i] = v; }
+        var start = p + 3 + (count + 1) * os - 1;
+        return (count, offs, start, start + offs[count]);
+    }
+
+    static byte[] BuildIndex(IReadOnlyList<byte[]> items)
+    {
+        var total = items.Sum(i => i.Length) + 1;
+        var os = total < 256 ? 1 : total < 65536 ? 2 : total < 1 << 24 ? 3 : 4;
+        var ms = new MemoryStream();
+        ms.WriteByte((byte)(items.Count >> 8)); ms.WriteByte((byte)items.Count);
+        if (items.Count == 0) return ms.ToArray();
+        ms.WriteByte((byte)os);
+        var cur = 1;
+        void Off(int v) { for (var k = os - 1; k >= 0; k--) ms.WriteByte((byte)(v >> (8 * k))); }
+        Off(cur);
+        foreach (var i in items) { cur += i.Length; Off(cur); }
+        foreach (var i in items) ms.Write(i);
+        return ms.ToArray();
+    }
+
+    static byte[] Int5(int v) => [29, (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v];
+
+    sealed record Entry(int Op, int Start, int OpStart, int End, double[] Vals);
+
+    static List<Entry>? ParseDict(byte[] d, int s, int e)
+    {
+        var list = new List<Entry>(); var vals = new List<double>(); var p = s; var st = s;
+        while (p < e)
+        {
+            int b = d[p];
+            if (b <= 21)
+            {
+                var op = b; var opStart = p; p++;
+                if (b == 12) { op = 1200 + d[p]; p++; }
+                list.Add(new Entry(op, st, opStart, p, vals.ToArray())); vals.Clear(); st = p;
+            }
+            else if (b == 28) { vals.Add((short)(d[p + 1] << 8 | d[p + 2])); p += 3; }
+            else if (b == 29) { vals.Add(d[p + 1] << 24 | d[p + 2] << 16 | d[p + 3] << 8 | d[p + 4]); p += 5; }
+            else if (b == 30) { p++; while (p < e) { var x = d[p++]; if ((x & 0xF) == 0xF || x >> 4 == 0xF) break; } vals.Add(0); }
+            else if (b is >= 32 and <= 246) { vals.Add(b - 139); p++; }
+            else if (b is >= 247 and <= 250) { vals.Add((b - 247) * 256 + d[p + 1] + 108); p += 2; }
+            else if (b is >= 251 and <= 254) { vals.Add(-(b - 251) * 256 - d[p + 1] - 108); p += 2; }
+            else return null;
+        }
+        return list;
+    }
+
+    public static byte[]? Subset(byte[] cff, IReadOnlySet<int> keep)
+    {
+        try
+        {
+            var name = Index(cff, cff[2]);
+            var top = Index(cff, name.End);
+            if (top.Count != 1) return null;
+            var ts = top.DataStart + top.Offs[0]; var te = top.DataStart + top.Offs[1];
+            var entries = ParseDict(cff, ts, te);
+            if (entries is null || entries.Any(x => x.Op == 1230)) return null;
+            var csEntry = entries.FirstOrDefault(x => x.Op == 17);
+            if (csEntry is null) return null;
+            var csStart = (int)csEntry.Vals[0];
+            var cs = Index(cff, csStart);
+            if (cs.End > cff.Length) return null;
+            var items = new byte[cs.Count][];
+            for (var g = 0; g < cs.Count; g++)
+                items[g] = g == 0 || keep.Contains(g) ? cff[(cs.DataStart + cs.Offs[g])..(cs.DataStart + cs.Offs[g + 1])] : [0x0E];
+            var newCs = BuildIndex(items);
+            var csDelta = newCs.Length - (cs.End - csStart);
+
+            byte[] MakeTop(int deltaTop)
+            {
+                int Shift(int o) => o >= cs.End ? o + deltaTop + csDelta : o + deltaTop;
+                var ms = new MemoryStream();
+                foreach (var e in entries)
+                {
+                    var op = cff[e.OpStart..e.End];
+                    switch (e.Op)
+                    {
+                        case 15: ms.Write(Int5(e.Vals[0] > 2 ? Shift((int)e.Vals[0]) : (int)e.Vals[0])); ms.Write(op); break;
+                        case 16: ms.Write(Int5(e.Vals[0] > 1 ? Shift((int)e.Vals[0]) : (int)e.Vals[0])); ms.Write(op); break;
+                        case 17: ms.Write(Int5(csStart + deltaTop)); ms.Write(op); break;
+                        case 18: ms.Write(Int5((int)e.Vals[0])); ms.Write(Int5(Shift((int)e.Vals[1]))); ms.Write(op); break;
+                        default: ms.Write(cff, e.Start, e.End - e.Start); break;
+                    }
+                }
+                return ms.ToArray();
+            }
+            var oldTopLen = top.End - name.End;
+            var deltaTop = BuildIndex([MakeTop(0)]).Length - oldTopLen;
+            var newTop = BuildIndex([MakeTop(deltaTop)]);
+            if (newTop.Length - oldTopLen != deltaTop) return null;
+
+            var priv = entries.FirstOrDefault(x => x.Op == 18);
+            if (priv is not null)
+            {
+                var pOff = (int)priv.Vals[1]; var pSize = (int)priv.Vals[0];
+                var pd = ParseDict(cff, pOff, pOff + pSize);
+                if (pd?.FirstOrDefault(x => x.Op == 19) is { } subrs)
+                {
+                    int Sh(int o) => o >= cs.End ? o + deltaTop + csDelta : o + deltaTop;
+                    if (Sh(pOff + (int)subrs.Vals[0]) - Sh(pOff) != (int)subrs.Vals[0]) return null;
+                }
+            }
+
+            var outp = new MemoryStream();
+            outp.Write(cff, 0, name.End);
+            outp.Write(newTop);
+            outp.Write(cff, top.End, csStart - top.End);
+            outp.Write(newCs);
+            outp.Write(cff, cs.End, cff.Length - cs.End);
+            return outp.ToArray();
+        }
+        catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or OverflowException) { return null; }
     }
 }

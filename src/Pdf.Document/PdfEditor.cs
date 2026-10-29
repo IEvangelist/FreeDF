@@ -33,7 +33,7 @@ public sealed partial class PdfEditor
         var f = doc.File;
         _src = f;
         _version = string.Compare(f.Version, "1.7", StringComparison.Ordinal) < 0 ? "1.7" : f.Version;
-        foreach (var (num, e) in f.Xref)
+        foreach (var (num, e) in f.Xref.ToList())
         {
             if (!e.InUse) continue;
             var o = f.GetObject(num);
@@ -58,7 +58,7 @@ public sealed partial class PdfEditor
             _objs[num] = new PdfDictionary(merged);
             _pages.Add(num);
         }
-        var cat = new Dictionary<string, PdfObject>(((PdfDictionary)_objs[_catalog]).Entries) { ["Pages"] = new PdfRef(_pagesRoot, 0) };
+        var cat = new Dictionary<string, PdfObject>((_objs[_catalog] as PdfDictionary ?? throw new PdfParseException("catalog is not a dictionary")).Entries) { ["Pages"] = new PdfRef(_pagesRoot, 0) };
         _objs[_catalog] = new PdfDictionary(cat);
     }
 

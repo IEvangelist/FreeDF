@@ -14,8 +14,16 @@ public static class ContentRewriter
     /// Each is replaced by an equivalent advance so following text and text state are unchanged.
     /// <paramref name="removals"/> maps operator index to the horizontal advance in thousandths of text space (TJ number).
     /// </summary>
-    public static byte[] RemoveText(byte[] content, IReadOnlyDictionary<int, double> removals)
+    public static byte[] RemoveText(byte[] content, IReadOnlyDictionary<int, double> removals) =>
+        ReplaceText(content, removals.ToDictionary(kv => kv.Key, kv => F(kv.Value)));
+
+    /// <summary>
+    /// Replaces text-showing operators (indexed as in <see cref="RemoveText"/>) by a <c>TJ</c> whose array body is the dictionary value,
+    /// keeping the operator's own Tw/Tc/T* side effects.
+    /// </summary>
+    public static byte[] ReplaceText(byte[] content, IReadOnlyDictionary<int, string> arrayBodies)
     {
+        var removals = arrayBodies;
         if (removals.Count == 0) return content;
         var lx = new PdfLexer(content);
         var ops = new List<PdfObject>();
@@ -33,7 +41,7 @@ public static class ContentRewriter
                     var sb = new StringBuilder("\n");
                     if (k.Value == "\"") sb.Append($"{F(ops.ElementAtOrDefault(0).AsNumber() ?? 0)} Tw {F(ops.ElementAtOrDefault(1).AsNumber() ?? 0)} Tc ");
                     if (k.Value is "'" or "\"") sb.Append("T* ");
-                    sb.Append($"[{F(adj)}] TJ\n");
+                    sb.Append('[').Append(adj).Append("] TJ\n");
                     // Keep leading whitespace/comments before the operands; replace from the first operand.
                     var from = FirstOperandStart(content, stmtStart);
                     output.Write(content, copied, from - copied);
@@ -48,8 +56,11 @@ public static class ContentRewriter
         return output.ToArray();
     }
 
-    /// <summary>A replacement of one painted object's byte range: deleted, or wrapped in <c>q [colours] [cm] … Q</c>.</summary>
-    public sealed record ObjectEdit(int Start, int End, bool Delete, double[]? Matrix, double[]? Fill, double[]? Stroke);
+    /// <summary>
+    /// A replacement of one painted object's byte range: deleted, replaced by <paramref name="Replacement"/>, or wrapped in
+    /// <c>q [Clip] [colours] [cm] … Q</c>. <paramref name="Clip"/> is clip-path text in the object's own user space.
+    /// </summary>
+    public sealed record ObjectEdit(int Start, int End, bool Delete, double[]? Matrix, double[]? Fill, double[]? Stroke, string? Clip = null, string? Replacement = null);
 
     /// <summary>Applies non-overlapping object edits. Offsets refer to <paramref name="content"/>.</summary>
     public static byte[] EditObjects(byte[] content, IEnumerable<ObjectEdit> edits)
@@ -60,9 +71,11 @@ public static class ContentRewriter
         {
             if (e.Start < copied || e.End > content.Length) continue;
             output.Write(content, copied, e.Start - copied);
-            if (!e.Delete)
+            if (e.Replacement is not null) output.Write(Encoding.ASCII.GetBytes(e.Replacement));
+            else if (!e.Delete)
             {
                 var sb = new StringBuilder("q ");
+                if (e.Clip is not null) sb.Append(e.Clip).Append(' ');
                 if (e.Matrix is { Length: 6 } m) sb.Append(string.Join(' ', m.Select(F))).Append(" cm ");
                 if (e.Fill is { Length: 3 } f) sb.Append($"{F(f[0])} {F(f[1])} {F(f[2])} rg ");
                 if (e.Stroke is { Length: 3 } s) sb.Append($"{F(s[0])} {F(s[1])} {F(s[2])} RG ");

@@ -138,6 +138,7 @@ function convertSpan(s) {
   const it = { id: crypto.randomUUID(), type: 'text', x: s.x, y: s.y - 0.95 * s.size, w: 0, h: 0, text: s.text, font: fontFamily(s.font),
     size: s.size, bold: /bold|black|heavy/i.test(s.font), italic: /italic|oblique/i.test(s.font), color: s.color, fill: '', stroke: '', strokeWidth: 0,
     opacity: 1, asset: '', x2: 0, y2: 0, orig: s.index };
+  it.oStyle = `${it.font}|${it.bold}|${it.italic}`;
   items.push(it); cur = it; curObj = null; paint(); props(); queueSave();
 }
 

@@ -38,7 +38,28 @@ void Reset(PdfEditor e)
 if (initial is not null) { Reset(PdfEditor.Open(File.ReadAllBytes(initial))); fileName = Path.GetFileName(initial); savePath = Path.GetFullPath(initial); MarkSaved(); }
 
 // Callers hold the lock. Pristine is the document with no overlays and no text edits; text spans are extracted from it so operator indices stay stable.
-PdfDocument Pristine() => pristine ??= PdfDocument.Load(editor.Save(false, false));
+// Its object numbers differ from the editor's (a full save renumbers), so PristineBack maps them back.
+Dictionary<int, int> pristineBack = [];
+PdfDocument Pristine()
+{
+    if (pristine is null)
+    {
+        var map = new Dictionary<int, int>();
+        pristine = PdfDocument.Load(editor.Save(false, false, new PdfWriteOptions { ObjectMapOut = map }));
+        pristineBack = map.ToDictionary(kv => kv.Value, kv => kv.Key);
+    }
+    return pristine;
+}
+
+const long FormSpan = 10_000_000;
+static long SpanKey(ContentInterpreter.TextSpan s) => s.Form == 0 ? s.Index : s.Form * FormSpan + s.Index;
+
+// Spans of form XObjects can be edited only when each (form, index) is seen once on the page, because editing rewrites the shared form stream.
+IEnumerable<ContentInterpreter.TextSpan> EditableSpans(List<ContentInterpreter.TextSpan> spans)
+{
+    var dup = spans.Where(s => s.Form != 0).GroupBy(s => (s.Form, s.Index)).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+    return spans.Where(s => s.Form == 0 || !dup.Contains((s.Form, s.Index)));
+}
 
 (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects) PageText(int i)
 {
@@ -59,6 +80,7 @@ static double[]? Rgb(string? hex) => hex is { Length: 7 } && hex[0] == '#'
 void Prepare()
 {
     if (prepared) return;
+    editor.ClearStreamOverrides(); editor.ClearPageXObjects();
     for (var i = 0; i < editor.PageCount; i++)
     {
         items.TryGetValue(editor.PageId(i), out var allItems);
@@ -81,20 +103,32 @@ void Prepare()
                     }
                     return new ContentRewriter.ObjectEdit(o.Start, o.End, e.Delete, m, Rgb(e.Fill), Rgb(e.Stroke));
                 }));
-            var removals = spans.Where(s => origs.Contains(s.Index)).ToDictionary(s => s.Index, s => s.Advance);
+            var removals = spans.Where(s => s.Form == 0 && origs.Contains(s.Index)).ToDictionary(s => s.Index, s => s.Advance);
             editor.SetContentOverride(i, ContentRewriter.RemoveText(content, removals));
+            foreach (var g in EditableSpans(spans).Where(s => s.Form != 0 && origs.Contains(SpanKey(s))).GroupBy(s => s.Form))
+            {
+                if (Pristine().File.GetObject(g.Key) is not PdfStream fs || !pristineBack.TryGetValue(g.Key, out var formNum)) continue;
+                var fcontent = Pristine().File.DecodeStream(fs);
+                editor.SetStreamOverride(formNum, ContentRewriter.RemoveText(fcontent, g.ToDictionary(s => s.Index, s => s.Advance)));
+            }
         }
         else editor.SetContentOverride(i, null);
         if (redacts.Count > 0)
         {
             // Redact the page as edited so far; overlay items that touch a redaction are dropped too.
-            var edited = PdfDocument.Load(editor.Save(false)).Pages[i];
-            editor.SetContentOverride(i, Redactor.Redact(edited, redacts));
+            Redactor.Apply(editor, i, redacts);
             list = list?.Where(x => !redacts.Any(r => x.X < r.X + r.W && x.X + Math.Max(x.W, x.Type == "text" ? x.Size * Math.Max(x.Text.Length, 1) * 0.5 : 0) > r.X && x.Y < r.Y + r.H && x.Y + Math.Max(x.H, x.Type == "text" ? x.Size : 0) > r.Y)).ToList();
         }
         if (list is { Count: > 0 })
         {
-            var (content, res) = overlayBuilder.Build(list, Pristine().Pages[i].CropBox);
+            var page = i;
+            var (content, res) = overlayBuilder.Build(list, Pristine().Pages[i].CropBox, it =>
+            {
+                if (it.Orig is not { } key) return null;
+                var span = PageText(page).Spans.FirstOrDefault(s => SpanKey(s) == key);
+                if (span?.Font is null || span.FontRef == 0 || !pristineBack.TryGetValue(span.FontRef, out var fnum)) return null;
+                return new OverlayBuilder.OrigFont(span.Font, new PdfRef(fnum, 0));
+            });
             editor.SetOverlay(i, content, res);
         }
         else editor.SetOverlay(i, []);
@@ -109,17 +143,17 @@ PdfDocument Snap()
     return snapshot;
 }
 PdfDocument BaseSnap() { Prepare(); return baseSnapshot ??= PdfDocument.Load(editor.Save(false)); }
-void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; prepared = false; }
+void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); prepared = false; }
 
 app.MapGet("/api/page/{i:int}/text", (int i) =>
 {
     lock (gate)
     {
-        var spans = PageText(i).Spans
+        var spans = EditableSpans(PageText(i).Spans)
             .Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
             .Select(s => new
             {
-                index = s.Index, text = s.Text, x = s.X, y = s.Y, width = s.Width, size = s.Size, font = s.FontName,
+                index = SpanKey(s), text = s.Text, x = s.X, y = s.Y, width = s.Width, size = s.Size, font = s.FontName,
                 color = $"#{(int)Math.Round(s.Color.R * 255):x2}{(int)Math.Round(s.Color.G * 255):x2}{(int)Math.Round(s.Color.B * 255):x2}",
             });
         return Results.Json(spans, jsonOpts);
@@ -132,7 +166,7 @@ app.MapGet("/api/page/{i:int}/objects", (int i) =>
     {
         var id = editor.PageId(i);
         objEdits.TryGetValue(id, out var oe);
-        var list = PageText(i).Objects.Select(o => new
+        var list = PageText(i).Objects.Where(o => o.Form == 0).Select(o => new
         {
             index = o.Index, kind = o.Kind, x0 = o.X0, y0 = o.Y0, x1 = o.X1, y1 = o.Y1,
             hasFill = o.HasFill, hasStroke = o.HasStroke, lineWidth = o.LineWidth,
@@ -149,7 +183,7 @@ app.MapPut("/api/page/{i:int}/objects/{n:int}", async (int i, int n, HttpRequest
     lock (gate)
     {
         var id = editor.PageId(i);
-        if (n < 0 || n >= PageText(i).Objects.Count) return Results.NotFound();
+        if (n < 0 || n >= PageText(i).Objects.Count || PageText(i).Objects[n].Form != 0) return Results.NotFound();
         if (!objEdits.TryGetValue(id, out var d)) objEdits[id] = d = [];
         if (e is null || (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && !e.Delete && e.Fill is null && e.Stroke is null)) d.Remove(n); else d[n] = e;
         Changed();

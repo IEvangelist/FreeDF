@@ -302,6 +302,80 @@ public class EditorTests
         Assert.Equal(spans[2].X, after[2].X, 2);
     }
 
+    const string FormFont = "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>";
+
+    static byte[] FormTextPdf()
+    {
+        const string form = "BT /F1 20 Tf 10 10 Td (SECRETFORM) Tj ET";
+        var objs = $"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 200 50] /Resources << {FormFont} >> /Length {form.Length} >>\nstream\n{form}\nendstream\nendobj\n"
+            + "6 0 obj\n<< /Type /Annot /Subtype /Text /Rect [10 140 40 170] /Contents (SECRETNOTE) >>\nendobj\n"
+            + "7 0 obj\n<< /Title (SECRETTITLE) >>\nendobj\n";
+        var bytes = TestPdf.Build("q 1 0 0 1 0 100 cm /Fm1 Do Q BT /F1 20 Tf 10 20 Td (KEEPME) Tj ET",
+            $"{FormFont} /XObject << /Fm1 5 0 R >> >> /Annots [6 0 R] /Pad << ", objs, brokenXref: true);
+        return bytes;
+    }
+
+    [Fact]
+    public void Form_xobject_text_is_listed_and_removable()
+    {
+        var bytes = FormTextPdf();
+        var page = PdfDocument.Load(bytes).Pages[0];
+        var spans = PdfRenderer.ExtractText(page);
+        var f = Assert.Single(spans, s => s.Form != 0);
+        Assert.Equal("SECRETFORM", f.Text);
+        Assert.Contains(spans, s => s.Form == 0 && s.Text == "KEEPME");
+
+        var map = new Dictionary<int, int>();
+        var e = PdfEditor.Open(bytes);
+        var doc = PdfDocument.Load(e.Save(false, false, new PdfWriteOptions { ObjectMapOut = map }));
+        var (spans2, _) = PdfRenderer.Analyze(doc.Pages[0]);
+        var fs = spans2.Single(s => s.Form != 0);
+        var data = doc.File.DecodeStream((PdfStream)doc.File.GetObject(fs.Form)!);
+        var back = map.ToDictionary(kv => kv.Value, kv => kv.Key);
+        var e2 = e;
+        e2.SetStreamOverride(back[fs.Form], ContentRewriter.RemoveText(data, new Dictionary<int, double> { [fs.Index] = fs.Advance }));
+        var after = PdfRenderer.ExtractText(PdfDocument.Load(e2.Save()).Pages[0]);
+        Assert.DoesNotContain(after, s => s.Text.Contains("SECRETFORM"));
+        Assert.Contains(after, s => s.Text == "KEEPME");
+    }
+
+    [Fact]
+    public void Redaction_is_glyph_level_and_scrubs_forms_annotations_and_metadata()
+    {
+        var bytes = FormTextPdf();
+        var e = PdfEditor.Open(bytes);
+        e.SetInfo("Title", "SECRETTITLE");
+        // Covers the form text (page y 100..150 -> box y 50..100) and the annotation, plus the first three glyphs of KEEPME.
+        var kee = PdfRenderer.ExtractText(PdfDocument.Load(bytes).Pages[0]).First(s => s.Text == "KEEPME");
+        var gw = kee.Width / 6;
+        Redactor.Apply(e, 0, [new Redactor.BoxRect(0, 25, 200, 50), new Redactor.BoxRect(kee.X - 1, kee.Y - kee.Size, gw * 3 + 1, kee.Size * 1.3)]);
+        var saved = e.Save();
+        var raw = System.Text.Encoding.Latin1.GetString(saved);
+        Assert.DoesNotContain("SECRETFORM", raw);
+        Assert.DoesNotContain("SECRETNOTE", raw);
+        Assert.DoesNotContain("SECRETTITLE", raw);
+        var page = PdfDocument.Load(saved).Pages[0];
+        var text = string.Concat(PdfRenderer.ExtractText(page).Select(s => s.Text));
+        Assert.DoesNotContain("KEE", text);
+        Assert.Contains("ME", text);
+    }
+
+    [Fact]
+    public void Redaction_blanks_only_the_covered_part_of_an_image()
+    {
+        var img = "7 0 obj\n<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 6 >>\nstream\n"
+            + "\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\nendstream\nendobj\n";
+        var bytes = TestPdf.Build("q 100 0 0 50 0 100 cm /Im1 Do Q", "/XObject << /Im1 7 0 R >>", img, brokenXref: true);
+        var e = PdfEditor.Open(bytes);
+        Redactor.Apply(e, 0, [new Redactor.BoxRect(0, 50, 50, 50)]);
+        var d = PdfDocument.Load(e.Save());
+        var rgba = PdfRenderer.RenderPage(d.Pages[0], 72).Rgba;
+        int W = 200;
+        int Px(int x, int y) => rgba[(y * W + x) * 4];
+        Assert.True(Px(25, 75) < 40, "covered half is black");
+        Assert.True(Px(75, 75) > 200, "uncovered half is intact");
+    }
+
     [Fact]
     public void Overlay_draws_on_top_and_base_save_excludes_it()
     {

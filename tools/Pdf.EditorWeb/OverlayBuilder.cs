@@ -10,8 +10,8 @@ using Pdf.Render;
 public sealed record Item(
     string Id, string Type, double X, double Y, double W, double H,
     string? Text, string? Font, double Size, bool Bold, bool Italic, string? Color,
-    string? Fill, string? Stroke, double StrokeWidth, double Opacity, string? Asset, double X2, double Y2, int? Orig = null,
-    string? Align = null, bool Underline = false, bool Strike = false, double Spacing = 0, double LineHeight = 0);
+    string? Fill, string? Stroke, double StrokeWidth, double Opacity, string? Asset, double X2, double Y2, long? Orig = null,
+    string? Align = null, bool Underline = false, bool Strike = false, double Spacing = 0, double LineHeight = 0, string? OStyle = null);
 
 public sealed record Asset(byte[] Data, string Mime);
 
@@ -24,7 +24,26 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
     {
         public FontFace Face = face; public byte[] Data = data; public TrueTypeFont Font = font; public string Key = key;
         public SortedDictionary<int, int> Uni = [];
+        Dictionary<int, int>? _cid;
+
+        /// <summary>The Identity-H code for a glyph: the GID, or the CID for a CID-keyed CFF font.</summary>
+        public int Code(int gid)
+        {
+            if (!Font.IsCff || Font.HasGlyf) return gid;
+            if (_cid is null)
+            {
+                _cid = [];
+                var cff = new CffFont(Data.AsSpan(FontSubsetter.TableOffset(Data, "CFF "), FontSubsetter.TableLength(Data, "CFF ")).ToArray());
+                if (cff.IsCid) for (var c = 0; c < 65536; c++) { var g = cff.GlyphByCid(c); if (g > 0) _cid.TryAdd(g, c); }
+            }
+            return _cid.Count == 0 ? gid : _cid.GetValueOrDefault(gid, gid);
+        }
     }
+
+    /// <summary>The embedded program of an existing page font, reused when editing text that was drawn with it.</summary>
+    public sealed record OrigFont(PdfFont Font, PdfRef Ref);
+
+    sealed record Seg(string Text, Embedded? Emb, OrigFont? Orig);
 
     static string N(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
@@ -61,8 +80,15 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
         }
         static PdfDictionary Dict(params (string, PdfObject)[] kv) => new(kv.ToDictionary(x => x.Item1, x => x.Item2));
 
-        var subset = FontSubsetter.Subset(e.Data, new HashSet<int>(e.Uni.Keys));
-        var tag = string.Concat(Enumerable.Range(0, 6).Select(i => (char)('A' + (Math.Abs(HashCode.Combine(e.Face.Path, e.Uni.Count, e.Uni.Keys.Sum())) >> (i * 3)) % 26)));
+        var cffFont = e.Font.IsCff && !e.Font.HasGlyf;
+        byte[] subset;
+        if (cffFont)
+        {
+            var cffTable = e.Data.AsSpan(FontSubsetter.TableOffset(e.Data, "CFF "), FontSubsetter.TableLength(e.Data, "CFF ")).ToArray();
+            subset = CffSubsetter.Subset(cffTable, new HashSet<int>(e.Uni.Keys)) ?? cffTable;
+        }
+        else subset = FontSubsetter.Subset(e.Data, new HashSet<int>(e.Uni.Keys));
+        var tag = string.Concat(Enumerable.Range(0, 6).Select(i => (char)('A' + (Math.Abs(HashCode.Combine(e.Face.Key, e.Uni.Count, e.Uni.Keys.Sum())) >> (i * 3)) % 26)));
         var name = tag + "+" + new string(e.Face.PostScript.Where(c => c is > ' ' and < '\u007f' and not ('(' or ')' or '[' or ']' or '{' or '}' or '<' or '>' or '/' or '%')).ToArray());
         var upm = e.Font.UnitsPerEm;
         int Tbl(string t) => FontSubsetter.TableOffset(e.Data, t);
@@ -73,26 +99,32 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
         var angle = post >= 0 ? S16(post + 4) + (e.Data[post + 6] << 8 | e.Data[post + 7]) / 65536.0 : 0;
         var cap = os2 >= 0 && FontSubsetter.TableLength(e.Data, "OS/2") >= 90 ? S16(os2 + 88) : ascent;
 
-        var file = editor.AddObject(Stream(subset, ("Length1", new PdfInteger(subset.Length))));
+        var file = cffFont
+            ? editor.AddObject(Stream(subset, ("Subtype", new PdfName("CIDFontType0C"))))
+            : editor.AddObject(Stream(subset, ("Length1", new PdfInteger(subset.Length))));
         var desc = editor.AddObject(Dict(
             ("Type", new PdfName("FontDescriptor")), ("FontName", new PdfName(name)),
             ("Flags", new PdfInteger(4 | (e.Face.Italic ? 64 : 0))),
             ("FontBBox", new PdfArray([new PdfInteger((long)K(S16(head + 36))), new PdfInteger((long)K(S16(head + 38))), new PdfInteger((long)K(S16(head + 40))), new PdfInteger((long)K(S16(head + 42)))])),
             ("ItalicAngle", new PdfReal(angle)), ("Ascent", new PdfInteger((long)K(ascent))), ("Descent", new PdfInteger((long)K(descent))),
-            ("CapHeight", new PdfInteger((long)K(cap == 0 ? ascent : cap))), ("StemV", new PdfInteger(e.Face.Bold ? 140 : 80)), ("FontFile2", file)));
+            ("CapHeight", new PdfInteger((long)K(cap == 0 ? ascent : cap))), ("StemV", new PdfInteger(e.Face.Bold ? 140 : 80)), (cffFont ? "FontFile3" : "FontFile2", file)));
         var w = new List<PdfObject>();
-        foreach (var gid in e.Uni.Keys) { w.Add(new PdfInteger(gid)); w.Add(new PdfArray([new PdfInteger((long)Math.Round(e.Font.Advance(gid)))])); }
-        var cid = editor.AddObject(Dict(
-            ("Type", new PdfName("Font")), ("Subtype", new PdfName("CIDFontType2")), ("BaseFont", new PdfName(name)),
+        foreach (var gid in e.Uni.Keys) { w.Add(new PdfInteger(e.Code(gid))); w.Add(new PdfArray([new PdfInteger((long)Math.Round(e.Font.Advance(gid)))])); }
+        var cidDict = new List<(string, PdfObject)>
+        {
+            ("Type", new PdfName("Font")), ("Subtype", new PdfName(cffFont ? "CIDFontType0" : "CIDFontType2")), ("BaseFont", new PdfName(name)),
             ("CIDSystemInfo", Dict(("Registry", new PdfString(Encoding.ASCII.GetBytes("Adobe"))), ("Ordering", new PdfString(Encoding.ASCII.GetBytes("Identity"))), ("Supplement", new PdfInteger(0)))),
-            ("FontDescriptor", desc), ("CIDToGIDMap", new PdfName("Identity")), ("DW", new PdfInteger(1000)), ("W", new PdfArray(w))));
+            ("FontDescriptor", desc), ("DW", new PdfInteger(1000)), ("W", new PdfArray(w)),
+        };
+        if (!cffFont) cidDict.Add(("CIDToGIDMap", new PdfName("Identity")));
+        var cid = editor.AddObject(Dict([.. cidDict]));
 
         var cm = new StringBuilder("/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n/CMapName /Adobe-Identity-UCS def /CMapType 2 def\n1 begincodespacerange <0000> <FFFF> endcodespacerange\n");
         foreach (var chunk in e.Uni.Chunk(100))
         {
             cm.Append(chunk.Length).Append(" beginbfchar\n");
             foreach (var (g, u) in chunk)
-                cm.Append('<').Append(g.ToString("X4")).Append("> <").Append(u > 0xFFFF ? char.ConvertFromUtf32(u).Select(c => ((int)c).ToString("X4")).Aggregate((a, b) => a + b) : u.ToString("X4")).Append(">\n");
+                cm.Append('<').Append(e.Code(g).ToString("X4")).Append("> <").Append(u > 0xFFFF ? char.ConvertFromUtf32(u).Select(c => ((int)c).ToString("X4")).Aggregate((a, b) => a + b) : u.ToString("X4")).Append(">\n");
             cm.Append("endbfchar\n");
         }
         cm.Append("endcmap CMapName currentdict /CMap defineresource pop end end\n");
@@ -118,7 +150,7 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
         return sb.Append(')').ToString();
     }
 
-    public (byte[] Content, Dictionary<string, IReadOnlyDictionary<string, PdfObject>> Resources) Build(IEnumerable<Item> source, PdfRect box)
+    public (byte[] Content, Dictionary<string, IReadOnlyDictionary<string, PdfObject>> Resources) Build(IEnumerable<Item> source, PdfRect box, Func<Item, OrigFont?>? original = null)
     {
         var items = source.ToList();
         var sb = new StringBuilder();
@@ -126,37 +158,65 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
         double Px(double x) => box.Left + x;
         double Py(double y) => box.Top - y;
 
-        // Installed fonts are embedded as subsets, so first gather the glyphs each one needs on this page.
+        // Installed fonts are embedded as subsets; the glyphs each needs are collected while the text is split into runs.
         var emb = new Dictionary<string, Embedded>();
-        Embedded? Face(Item it, out FontFace? face)
+        Embedded GetEmb(FontFace face)
         {
-            face = FontCatalog.Standard.Contains(it.Font ?? "Helvetica") ? null : catalog.Resolve(it.Font, it.Bold, it.Italic);
-            return face is not null && emb.TryGetValue(face.Path, out var e) ? e : null;
-        }
-        double Measure(Item it, Embedded? ef, string line, double size)
-        {
-            var font = ef?.Font;
-            if (font is null)
+            if (!emb.TryGetValue(face.Key, out var e))
             {
-                // Arial, Times New Roman and Courier New are metric-compatible with the standard Helvetica, Times and Courier.
-                var proxy = (it.Font ?? "Helvetica") switch { "Times" => "Times New Roman", "Courier" => "Courier New", _ => "Arial" };
-                var f = catalog.Resolve(proxy, it.Bold, it.Italic);
-                if (f is not null) font = catalog.Load(f).Item2;
+                var (data, tt) = catalog.Load(face);
+                emb[face.Key] = e = new Embedded(face, data, tt, "EdE" + emb.Count);
             }
+            return e;
+        }
+        double MeasureStd(Item it, string line, double size)
+        {
+            // Arial, Times New Roman and Courier New are metric-compatible with the standard Helvetica, Times and Courier.
+            var proxy = (it.Font ?? "Helvetica") switch { "Times" => "Times New Roman", "Courier" => "Courier New", _ => "Arial" };
+            var f = catalog.Resolve(proxy, it.Bold, it.Italic);
+            var font = f is not null ? catalog.Load(f).Item2 : null;
             if (font is null) return line.Length * size * 0.5;
             double w = 0;
             foreach (var rn in line.EnumerateRunes()) w += font.Advance(font.LookupAny(rn.Value));
             return w / 1000.0 * size;
         }
-        foreach (var it in items.Where(i => i.Type == "text"))
+        double MeasureSeg(Item it, Seg s, double size)
         {
-            if (FontCatalog.Standard.Contains(it.Font ?? "Helvetica") || catalog.Resolve(it.Font, it.Bold, it.Italic) is not { } face) continue;
-            if (!emb.TryGetValue(face.Path, out var e))
+            if (s.Emb is { } e)
             {
-                var (data, tt) = catalog.Load(face);
-                emb[face.Path] = e = new Embedded(face, data, tt, "EdE" + emb.Count);
+                double w = 0;
+                foreach (var rn in s.Text.EnumerateRunes()) w += e.Font.Advance(e.Font.LookupAny(rn.Value));
+                return w / 1000.0 * size;
             }
-            foreach (var r in (it.Text ?? "").EnumerateRunes()) { var gid = e.Font.LookupAny(r.Value); if (gid > 0) e.Uni.TryAdd(gid, r.Value); }
+            if (s.Orig is { } o)
+            {
+                double w = 0;
+                foreach (var rn in s.Text.EnumerateRunes()) if (o.Font.TryEncode(rn.Value, out _, out var gw)) w += gw;
+                return w * size;
+            }
+            return MeasureStd(it, s.Text, size);
+        }
+        static bool StdCovers(int r) => r < 256 || Cp1252High.IndexOf((char)Math.Min(r, 0xFFFF)) >= 0 && r <= 0xFFFF;
+        // Splits a line into runs: the original page font where it has the glyph, then the chosen font, then any installed font that has it.
+        List<Seg> Segment(Item it, string line, OrigFont? orig, Embedded? primary)
+        {
+            var segs = new List<(Embedded? E, OrigFont? O, StringBuilder T)>();
+            foreach (var rn in line.EnumerateRunes())
+            {
+                Embedded? e = null; OrigFont? o = null;
+                if (orig is not null && orig.Font.TryEncode(rn.Value, out _, out _)) o = orig;
+                else if (primary is not null)
+                {
+                    if (primary.Font.LookupAny(rn.Value) > 0 || char.IsControl((char)Math.Min(rn.Value, 0xFFFF))) e = primary;
+                    else if (catalog.Fallback(rn.Value, it.Bold, it.Italic) is { } fb) e = GetEmb(fb);
+                    else e = primary;
+                }
+                else if (!StdCovers(rn.Value) && catalog.Fallback(rn.Value, it.Bold, it.Italic) is { } fb2) e = GetEmb(fb2);
+                if (e is not null) { var gid = e.Font.LookupAny(rn.Value); if (gid > 0) e.Uni.TryAdd(gid, rn.Value); }
+                if (segs.Count == 0 || segs[^1].E != e || segs[^1].O != o) segs.Add((e, o, new StringBuilder()));
+                segs[^1].T.Append(rn.ToString());
+            }
+            return segs.Select(s => new Seg(s.T.ToString(), s.E, s.O)).ToList();
         }
         foreach (var it in items)
         {
@@ -177,41 +237,57 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                     var size = it.Size > 0 ? it.Size : 12;
                     var lines = (it.Text ?? "").Replace("\r", "").Split('\n');
                     var lead = size * (it.LineHeight > 0 ? it.LineHeight : 1.2); var tc = it.Spacing;
-                    var ef = Face(it, out var face);
-                    var widths = lines.Select(l => Measure(it, ef, l, size) + tc * l.EnumerateRunes().Count()).ToArray();
+                    var face = FontCatalog.Standard.Contains(it.Font ?? "Helvetica") ? null : catalog.Resolve(it.Font, it.Bold, it.Italic);
+                    var ef = face is null ? null : GetEmb(face);
+                    // The page's own font is reused only while the user has not changed the family or style.
+                    var orig = it.Orig is not null && it.OStyle is not null && it.OStyle == $"{it.Font}|{it.Bold.ToString().ToLowerInvariant()}|{it.Italic.ToString().ToLowerInvariant()}" ? original?.Invoke(it) : null;
+                    var segLines = lines.Select(l => Segment(it, l, orig, ef)).ToList();
+                    var widths = segLines.Select((segs, li) => segs.Sum(s => MeasureSeg(it, s, size)) + tc * lines[li].EnumerateRunes().Count()).ToArray();
                     var boxW = it.W > 0 ? it.W : widths.Max();
                     double Left(int li) => it.Align switch { "center" => (boxW - widths[li]) / 2, "right" => boxW - widths[li], _ => 0 };
                     var rule = new StringBuilder();
-                    string fkey = "";
                     var synthBold = ef is not null && it.Bold && !face!.Bold; var skew = ef is not null && it.Italic && !face!.Italic ? 0.2 : 0;
-                    if (ef is null)
+                    string StdKey()
                     {
                         var bf = BaseFont(it.Font, it.Bold, it.Italic);
-                        fkey = "EdF" + bf.Replace("-", "");
-                        if (!_fonts.TryGetValue(fkey, out var f))
+                        var key = "EdF" + bf.Replace("-", "");
+                        if (!_fonts.TryGetValue(key, out var f))
                         {
                             var fd = new Dictionary<string, PdfObject> { ["Type"] = new PdfName("Font"), ["Subtype"] = new PdfName("Type1"), ["BaseFont"] = new PdfName(bf) };
                             if (bf is not ("Symbol" or "ZapfDingbats")) fd["Encoding"] = new PdfName("WinAnsiEncoding");
-                            _fonts[fkey] = f = editor.AddObject(new PdfDictionary(fd));
+                            _fonts[key] = f = editor.AddObject(new PdfDictionary(fd));
                         }
-                        fonts[fkey] = f;
+                        fonts[key] = f;
+                        return key;
                     }
-                    else fkey = ef.Key;
                     sb.Append($"{N(r)} {N(g2)} {N(b)} rg\n");
                     if (synthBold) sb.Append($"{N(r)} {N(g2)} {N(b)} RG\n{N(size * 0.03)} w\n2 Tr\n");
-                    sb.Append($"BT\n/{fkey} {N(size)} Tf\n{N(tc)} Tc\n");
+                    sb.Append($"BT\n{N(tc)} Tc\n");
                     for (var li = 0; li < lines.Length; li++)
                     {
                         var x = Px(it.X) + Left(li); var y = Py(it.Y) - size * 0.95 - li * lead;
-                        string shown;
-                        if (ef is not null)
+                        sb.Append($"1 0 {N(skew)} 1 {N(x)} {N(y)} Tm\n");
+                        foreach (var seg in segLines[li])
                         {
-                            var hex = new StringBuilder("<");
-                            foreach (var rn in lines[li].EnumerateRunes()) hex.Append(ef.Font.LookupAny(rn.Value).ToString("X4"));
-                            shown = hex + ">";
+                            string key, shown;
+                            if (seg.Emb is { } se)
+                            {
+                                key = se.Key;
+                                var hex = new StringBuilder("<");
+                                foreach (var rn in seg.Text.EnumerateRunes()) hex.Append(se.Code(se.Font.LookupAny(rn.Value)).ToString("X4"));
+                                shown = hex + ">";
+                            }
+                            else if (seg.Orig is { } so)
+                            {
+                                key = "EdO" + so.Ref.Number;
+                                fonts[key] = so.Ref;
+                                var hex = new StringBuilder("<");
+                                foreach (var rn in seg.Text.EnumerateRunes()) if (so.Font.TryEncode(rn.Value, out var bytes, out _)) hex.Append(Convert.ToHexString(bytes));
+                                shown = hex + ">";
+                            }
+                            else { key = StdKey(); shown = Escape(seg.Text); }
+                            sb.Append($"/{key} {N(size)} Tf\n{shown} Tj\n");
                         }
-                        else shown = Escape(lines[li]);
-                        sb.Append($"1 0 {N(skew)} 1 {N(x)} {N(y)} Tm\n{shown} Tj\n");
                         if (it.Underline) rule.Append($"{N(x)} {N(y - size * 0.14)} {N(widths[li])} {N(Math.Max(size * 0.06, 0.5))} re\n");
                         if (it.Strike) rule.Append($"{N(x)} {N(y + size * 0.3)} {N(widths[li])} {N(Math.Max(size * 0.06, 0.5))} re\n");
                     }

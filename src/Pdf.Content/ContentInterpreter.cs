@@ -250,7 +250,7 @@ public sealed class ContentInterpreter
                 }
                 if (collect) Observe(k.Value, ops, res, content, stmtStart, lx.Pos, ref pathStart);
                 try { Exec(k.Value, ops, res); }
-                catch (Exception e) when (e is InvalidCastException or ArgumentOutOfRangeException or IndexOutOfRangeException or NotSupportedException or KeyNotFoundException or InvalidOperationException)
+                catch (Exception e) when (e is InvalidCastException or ArgumentException or IndexOutOfRangeException or NotSupportedException or KeyNotFoundException or InvalidOperationException or OverflowException or NullReferenceException or FormatException or InvalidDataException or AggregateException)
                 { Warn($"operator {k.Value}: {e.GetType().Name}"); }
                 ops.Clear(); stmtStart = lx.Pos;
             }
