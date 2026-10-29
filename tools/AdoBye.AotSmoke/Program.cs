@@ -42,6 +42,7 @@ Console.WriteLine($"PASS NativeAOT: dynamic-code={RuntimeFeature.IsDynamicCodeSu
 static void Smoke(byte[] bytes)
 {
     var document = PdfDocument.Load(bytes);
+    GlyphNameSmoke.Run(document.File);
     Check(document.Pages.Count == 1, "page count");
     Check(Text(document) == "AB\u3042", "embedded CJK text and predefined CMap resources");
     var rendered = DocumentRenderer.RenderPage(document.Pages[0], 72);

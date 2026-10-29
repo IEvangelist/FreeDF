@@ -7,6 +7,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources\predefined-cmaps.bin" LogicalName="PortableDocument.Content.Resources.predefined-cmaps.bin" />
     <EmbeddedResource Include="Resources\glyphlist.txt" LogicalName="PortableDocument.Content.Resources.glyphlist.txt" />
+    <EmbeddedResource Include="Resources\zapfdingbats.txt" LogicalName="PortableDocument.Content.Resources.zapfdingbats.txt" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -1,2 +1,4 @@
 *.pdf binary
 *.png binary
+src/PortableDocument.Content/Resources/glyphlist.txt text eol=lf
+src/PortableDocument.Content/Resources/zapfdingbats.txt text eol=lf

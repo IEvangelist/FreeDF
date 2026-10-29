@@ -117,8 +117,8 @@ public sealed class PdfFont
     TrueTypeFont? _tt;
     CffFont? _cff;
     Type1Font? _t1;
-    Dictionary<int, int>? _cffUni;
-    Dictionary<int, string>? _t1Uni;
+    Dictionary<string, int>? _cffUni;
+    Dictionary<string, string>? _t1Uni;
     CMap? _cmap;
     string _ordering = "";
     Dictionary<int, int>? _cidToUni;
@@ -340,7 +340,7 @@ public sealed class PdfFont
             if (_ordering is "Japan1" or "GB1" or "CNS1" or "Korea1" && CidToUnicode(_ordering).TryGetValue(code, out var u0)) return char.ConvertFromUtf32(u0);
             return "";
         }
-        if (code < 256 && (_names[code] ?? _t1?.EncodingName(code)) is { } n && NameToUnicode(n) is { } u) return u;
+        if (code < 256 && (_names[code] ?? _t1?.EncodingName(code)) is { } n && UnicodeForName(n) is { } u) return u;
         return code is >= 32 and < 127 ? ((char)code).ToString() : "";
     }
 
@@ -398,6 +398,7 @@ public sealed class PdfFont
                 var u = ToUnicode(c);
                 if (u.Length == 0) continue;
                 var cp = char.ConvertToUtf32(u, 0);
+                if (u.Length != (cp > 0xFFFF ? 2 : 1)) continue;
                 if (_reverse.ContainsKey(cp)) continue;
                 var g = GetGlyph(c);
                 if (g is null || g.IsEmpty && !char.IsWhiteSpace(u, 0)) continue;
@@ -462,15 +463,15 @@ public sealed class PdfFont
         if (name is not null)
         {
             if (t1.HasGlyph(name)) return name;
-            if (NameToUnicode(name) is { Length: > 0 } u)
+            if (UnicodeForName(name) is { Length: > 0 } u)
             {
                 if (_t1Uni is null)
                 {
                     _t1Uni = [];
                     foreach (var gn in t1.GlyphNames)
-                        if (NameToUnicode(gn) is { Length: > 0 } gu) _t1Uni.TryAdd(char.ConvertToUtf32(gu, 0), gn);
+                        if (UnicodeForName(gn) is { Length: > 0 } gu) _t1Uni.TryAdd(gu, gn);
                 }
-                if (_t1Uni.TryGetValue(char.ConvertToUtf32(u, 0), out var ug)) return ug;
+                if (_t1Uni.TryGetValue(u, out var ug)) return ug;
             }
         }
         return t1.EncodingName(code) is { } bn && t1.HasGlyph(bn) ? bn : null;
@@ -489,15 +490,15 @@ public sealed class PdfFont
         {
             var g = cff.GlyphByName(name);
             if (g > 0) return g;
-            if (NameToUnicode(name) is { Length: > 0 } u)
+            if (UnicodeForName(name) is { Length: > 0 } u)
             {
                 if (_cffUni is null)
                 {
                     _cffUni = [];
                     for (var i = cff.GlyphCount - 1; i > 0; i--)
-                        if (NameToUnicode(cff.GlyphName(i)) is { Length: > 0 } gu) _cffUni[char.ConvertToUtf32(gu, 0)] = i;
+                        if (UnicodeForName(cff.GlyphName(i)) is { Length: > 0 } gu) _cffUni[gu] = i;
                 }
-                if (_cffUni.TryGetValue(char.ConvertToUtf32(u, 0), out var ug)) return ug;
+                if (_cffUni.TryGetValue(u, out var ug)) return ug;
             }
         }
         return cff.GlyphByCode(code);
@@ -518,7 +519,7 @@ public sealed class PdfFont
             if (name is not null)
             {
                 if (FontFile is not null) { var g = _tt.GlyphByName(name); if (g > 0) return g; }
-                if (NameToUnicode(name) is { } u && u.Length > 0) { var g = _tt.LookupAny(char.ConvertToUtf32(u, 0)); if (g > 0) return g; }
+                if (UnicodeForName(name) is { } u && u.Length > 0) { var g = _tt.LookupAny(char.ConvertToUtf32(u, 0)); if (g > 0) return g; }
             }
         }
         // Symbolic TrueType: (3,0) with 0xF000 offset, or (1,0) direct.
@@ -562,30 +563,9 @@ public sealed class PdfFont
         return name is null ? null : _f.Resolve(CharProcs.Get(name)) as PdfStream;
     }
 
-    static readonly Dictionary<string, string> Aglite = new()
-    {
-        ["space"] = " ", ["bullet"] = "\u2022", ["endash"] = "\u2013", ["emdash"] = "\u2014", ["quoteleft"] = "\u2018", ["quoteright"] = "\u2019",
-        ["quotedblleft"] = "\u201C", ["quotedblright"] = "\u201D", ["quotedblbase"] = "\u201E", ["quotesinglbase"] = "\u201A", ["ellipsis"] = "\u2026",
-        ["fi"] = "\uFB01", ["fl"] = "\uFB02", ["dagger"] = "\u2020", ["daggerdbl"] = "\u2021", ["trademark"] = "\u2122", ["Euro"] = "\u20AC",
-        ["exclam"] = "!", ["quotedbl"] = "\"", ["numbersign"] = "#", ["dollar"] = "$", ["percent"] = "%", ["ampersand"] = "&", ["quotesingle"] = "'",
-        ["parenleft"] = "(", ["parenright"] = ")", ["asterisk"] = "*", ["plus"] = "+", ["comma"] = ",", ["hyphen"] = "-", ["minus"] = "\u2212", ["period"] = ".",
-        ["slash"] = "/", ["colon"] = ":", ["semicolon"] = ";", ["less"] = "<", ["equal"] = "=", ["greater"] = ">", ["question"] = "?", ["at"] = "@",
-        ["bracketleft"] = "[", ["backslash"] = "\\", ["bracketright"] = "]", ["asciicircum"] = "^", ["underscore"] = "_", ["grave"] = "`",
-        ["braceleft"] = "{", ["bar"] = "|", ["braceright"] = "}", ["asciitilde"] = "~", ["nbspace"] = "\u00A0",
-        ["zero"] = "0", ["one"] = "1", ["two"] = "2", ["three"] = "3", ["four"] = "4", ["five"] = "5", ["six"] = "6", ["seven"] = "7", ["eight"] = "8", ["nine"] = "9",
-        ["copyright"] = "\u00A9", ["registered"] = "\u00AE", ["degree"] = "\u00B0", ["section"] = "\u00A7", ["paragraph"] = "\u00B6", ["multiply"] = "\u00D7", ["divide"] = "\u00F7",
-        ["eacute"] = "\u00E9", ["egrave"] = "\u00E8", ["agrave"] = "\u00E0", ["aacute"] = "\u00E1", ["udieresis"] = "\u00FC", ["odieresis"] = "\u00F6", ["adieresis"] = "\u00E4",
-        ["germandbls"] = "\u00DF", ["ntilde"] = "\u00F1", ["ccedilla"] = "\u00E7", ["Adieresis"] = "\u00C4", ["Odieresis"] = "\u00D6", ["Udieresis"] = "\u00DC",
-    };
+    string? UnicodeForName(string name) => GlyphList.Lookup(name, BaseFont == "ZapfDingbats" ||
+        BaseFont.Length > 7 && BaseFont[6] == '+' && BaseFont.AsSpan(7).SequenceEqual("ZapfDingbats"));
 
-    public static string? NameToUnicode(string n)
-    {
-        if (n.Length == 1) return n;
-        if (Aglite.TryGetValue(n, out var s)) return s;
-        if (GlyphList.Lookup(n) is var gl and >= 0) return char.ConvertFromUtf32(gl);
-        if (n.StartsWith("uni") && n.Length >= 7 && int.TryParse(n.AsSpan(3, 4), System.Globalization.NumberStyles.HexNumber, null, out var u)) return ((char)u).ToString();
-        if (n.StartsWith('u') && n.Length is >= 5 and <= 7 && int.TryParse(n.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out var u2) && u2 <= 0x10FFFF) return char.ConvertFromUtf32(u2);
-        var dot = n.IndexOf('.');
-        return dot > 0 ? NameToUnicode(n[..dot]) : null;
-    }
+    /// <summary>Maps an Adobe glyph name to its complete Unicode sequence, or null when no component maps.</summary>
+    public static string? NameToUnicode(string n) => GlyphList.Lookup(n);
 }
