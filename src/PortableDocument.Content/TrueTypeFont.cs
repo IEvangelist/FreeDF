@@ -1,18 +1,24 @@
 namespace PortableDocument.Content;
 
-/// <summary>Minimal TrueType/OpenType-glyf reader: outlines, cmap (0, 4, 6, 12), hmtx, post names.</summary>
+/// <summary>Minimal TrueType/OpenType-glyf reader: outlines, cmap (0, 4, 6, 12), hmtx, post names and vertical GSUB single substitutions.</summary>
 public sealed class TrueTypeFont
 {
     readonly byte[] _d;
     readonly Dictionary<string, (int Off, int Len)> _tables = [];
+    readonly Dictionary<string, IReadOnlyList<VerticalLookup>?> _verticalLookups = [];
+    readonly object _verticalGate = new();
+    string[] _warnings = [];
     public int UnitsPerEm { get; private set; } = 1000;
     int _locaFormat, _numGlyphs, _numHMetrics;
     int _loca, _glyf, _hmtx;
     public bool HasGlyf => _glyf > 0 && _loca > 0;
     public bool IsCff => _tables.ContainsKey("CFF ");
+    public IReadOnlyList<string> Warnings => Volatile.Read(ref _warnings);
     readonly List<(int Platform, int Encoding, int Off)> _cmaps = [];
     readonly List<int> _preferredCmaps = [];
     Dictionary<string, int>? _postNames;
+
+    sealed record VerticalLookup(IReadOnlyList<Dictionary<int, int>> Subtables);
 
     public TrueTypeFont(byte[] data)
     {
@@ -77,6 +83,320 @@ public sealed class TrueTypeFont
             if (g != 0) return g;
         }
         return 0;
+    }
+
+    /// <summary>Applies the selected OpenType vertical alternate features to one glyph.</summary>
+    public int SubstituteVertical(int glyphId, string? unicode)
+    {
+        if (glyphId < 0 || !_tables.TryGetValue("GSUB", out var table)) return glyphId;
+        var script = ScriptTag(unicode);
+        IReadOnlyList<VerticalLookup>? lookups;
+        lock (_verticalGate)
+        {
+            if (!_verticalLookups.TryGetValue(script, out lookups))
+            {
+                try { lookups = ParseVerticalLookups(table, script); }
+                catch (NotSupportedException)
+                {
+                    Warn("font GSUB: unsupported table version; original glyph retained");
+                    lookups = null;
+                }
+                catch (InvalidDataException)
+                {
+                    Warn("font GSUB: malformed vertical substitution data; original glyph retained");
+                    lookups = null;
+                }
+                _verticalLookups[script] = lookups;
+            }
+        }
+        if (lookups is null) return glyphId;
+        foreach (var lookup in lookups)
+            foreach (var subtable in lookup.Subtables)
+                if (subtable.TryGetValue(glyphId, out var replacement))
+                {
+                    glyphId = replacement;
+                    break;
+                }
+        return glyphId;
+    }
+
+    static string ScriptTag(string? unicode)
+    {
+        if (string.IsNullOrEmpty(unicode)) return "DFLT";
+        if (!System.Text.Rune.TryGetRuneAt(unicode, 0, out var rune)) return "DFLT";
+        var cp = rune.Value;
+        if (cp is >= 0x3040 and <= 0x30FF or >= 0x31F0 and <= 0x31FF or >= 0xFF66 and <= 0xFF9D or >= 0x1B000 and <= 0x1B16F) return "kana";
+        if (cp is >= 0x3400 and <= 0x4DBF or >= 0x4E00 and <= 0x9FFF or >= 0xF900 and <= 0xFAFF or >= 0x20000 and <= 0x3134F or >= 0x3005 and <= 0x3007) return "hani";
+        if (cp is >= 0x1100 and <= 0x11FF or >= 0x3130 and <= 0x318F or >= 0xAC00 and <= 0xD7AF) return "hang";
+        if (cp is >= 0x0041 and <= 0x024F or >= 0x1E00 and <= 0x1EFF) return "latn";
+        if (cp is >= 0x0370 and <= 0x03FF or >= 0x1F00 and <= 0x1FFF) return "grek";
+        if (cp is >= 0x0400 and <= 0x052F) return "cyrl";
+        return "DFLT";
+    }
+
+    void Warn(string message)
+    {
+        if (!_warnings.Contains(message)) Volatile.Write(ref _warnings, [.. _warnings, message]);
+    }
+
+    IReadOnlyList<VerticalLookup>? ParseVerticalLookups((int Off, int Len) table, string scriptTag)
+    {
+        if (table.Off < 0 || table.Len < 0 || (long)table.Off + table.Len > _d.Length)
+            throw new InvalidDataException("GSUB table is outside the font data");
+        var reader = new GsubReader(_d, table.Off, table.Len, _numGlyphs, Warn);
+        return reader.Parse(scriptTag);
+    }
+
+    sealed class GsubReader(byte[] data, int start, int length, int numGlyphs, Action<string> warn)
+    {
+        sealed record Feature(string Tag, int Offset);
+
+        void Need(int offset, int count)
+        {
+            if (offset < 0 || count < 0 || (long)offset + count > length)
+                throw new InvalidDataException("GSUB offset is outside its table");
+        }
+
+        int U16(int offset)
+        {
+            Need(offset, 2);
+            return data[start + offset] << 8 | data[start + offset + 1];
+        }
+
+        int S16(int offset) => (short)U16(offset);
+
+        uint U32(int offset)
+        {
+            Need(offset, 4);
+            return (uint)(data[start + offset] << 24 | data[start + offset + 1] << 16 | data[start + offset + 2] << 8 | data[start + offset + 3]);
+        }
+
+        int Relative(int origin, int offset)
+        {
+            var result = (long)origin + offset;
+            if (offset == 0 || result >= length) throw new InvalidDataException("GSUB relative offset is invalid");
+            return (int)result;
+        }
+
+        string Tag(int offset)
+        {
+            Need(offset, 4);
+            return System.Text.Encoding.ASCII.GetString(data, start + offset, 4);
+        }
+
+        public IReadOnlyList<VerticalLookup>? Parse(string scriptTag)
+        {
+            var major = U16(0);
+            var minor = U16(2);
+            if (major != 1 || minor > 1) throw new NotSupportedException();
+            var scriptList = Relative(0, U16(4));
+            var featureList = Relative(0, U16(6));
+            var lookupList = Relative(0, U16(8));
+            if (minor == 1)
+            {
+                var variations = U32(10);
+                if (variations != 0)
+                {
+                    if (variations >= length) throw new InvalidDataException("GSUB FeatureVariations offset is invalid");
+                    warn("font GSUB: FeatureVariations unsupported; default vertical features used");
+                }
+            }
+
+            var scripts = ReadScripts(scriptList);
+            var features = ReadFeatures(featureList);
+            var lookupOffsets = ReadLookupOffsets(lookupList);
+            if (!scripts.TryGetValue(scriptTag, out var scriptOffset) && !scripts.TryGetValue("DFLT", out scriptOffset))
+                return [];
+            var langSysOffset = U16(scriptOffset);
+            if (langSysOffset == 0) return [];
+            var langSys = Relative(scriptOffset, langSysOffset);
+            Need(langSys, 6);
+            if (U16(langSys) != 0) throw new InvalidDataException("GSUB lookupOrder must be null");
+            var requiredFeature = U16(langSys + 2);
+            var featureCount = U16(langSys + 4);
+            Need(langSys + 6, featureCount * 2);
+            var featureIndices = new List<int>(featureCount + 1);
+            if (requiredFeature != 0xFFFF) featureIndices.Add(requiredFeature);
+            for (var i = 0; i < featureCount; i++) featureIndices.Add(U16(langSys + 6 + i * 2));
+            foreach (var featureIndex in featureIndices)
+                if (featureIndex >= features.Count) throw new InvalidDataException("GSUB feature index is invalid");
+
+            var verticalFeatureIndices = featureIndices
+                .Where(i => features[i].Tag == "vrt2")
+                .Distinct()
+                .ToArray();
+            if (verticalFeatureIndices.Length == 0)
+                verticalFeatureIndices = featureIndices.Where(i => features[i].Tag == "vert").Distinct().ToArray();
+            if (verticalFeatureIndices.Length == 0) return [];
+
+            var selectedLookups = new SortedSet<int>();
+            foreach (var featureIndex in verticalFeatureIndices)
+            {
+                var feature = features[featureIndex];
+                Need(feature.Offset, 4);
+                var count = U16(feature.Offset + 2);
+                Need(feature.Offset + 4, count * 2);
+                for (var i = 0; i < count; i++)
+                {
+                    var lookupIndex = U16(feature.Offset + 4 + i * 2);
+                    if (lookupIndex >= lookupOffsets.Length) throw new InvalidDataException("GSUB lookup index is invalid");
+                    selectedLookups.Add(lookupIndex);
+                }
+            }
+
+            var result = new List<VerticalLookup>(selectedLookups.Count);
+            foreach (var index in selectedLookups)
+                if (ReadSingleLookup(lookupOffsets[index]) is { } lookup) result.Add(lookup);
+            return result;
+        }
+
+        Dictionary<string, int> ReadScripts(int offset)
+        {
+            var count = U16(offset);
+            Need(offset + 2, count * 6);
+            var result = new Dictionary<string, int>(count);
+            for (var i = 0; i < count; i++)
+            {
+                var record = offset + 2 + i * 6;
+                var tag = Tag(record);
+                result.TryAdd(tag, Relative(offset, U16(record + 4)));
+            }
+            return result;
+        }
+
+        List<Feature> ReadFeatures(int offset)
+        {
+            var count = U16(offset);
+            Need(offset + 2, count * 6);
+            var result = new List<Feature>(count);
+            for (var i = 0; i < count; i++)
+            {
+                var record = offset + 2 + i * 6;
+                result.Add(new Feature(Tag(record), Relative(offset, U16(record + 4))));
+            }
+            return result;
+        }
+
+        int[] ReadLookupOffsets(int offset)
+        {
+            var count = U16(offset);
+            Need(offset + 2, count * 2);
+            var result = new int[count];
+            for (var i = 0; i < count; i++) result[i] = Relative(offset, U16(offset + 2 + i * 2));
+            return result;
+        }
+
+        VerticalLookup? ReadSingleLookup(int offset)
+        {
+            Need(offset, 6);
+            var type = U16(offset);
+            var flags = U16(offset + 2);
+            var count = U16(offset + 4);
+            Need(offset + 6, count * 2);
+            if (type != 1)
+            {
+                warn($"font GSUB: vertical lookup type {type} unsupported; lookup skipped");
+                return null;
+            }
+            if (flags != 0)
+            {
+                warn("font GSUB: vertical lookup flags unsupported; lookup skipped");
+                return null;
+            }
+            var subtables = new List<Dictionary<int, int>>(count);
+            for (var i = 0; i < count; i++)
+            {
+                var subtableOffset = Relative(offset, U16(offset + 6 + i * 2));
+                var format = U16(subtableOffset);
+                if (format is not (1 or 2))
+                {
+                    warn($"font GSUB: SingleSubst format {format} unsupported; subtable skipped");
+                    continue;
+                }
+                subtables.Add(ReadSingleSubtable(subtableOffset, format));
+            }
+            return new VerticalLookup(subtables);
+        }
+
+        Dictionary<int, int> ReadSingleSubtable(int offset, int format)
+        {
+            var coverageOffset = Relative(offset, U16(offset + 2));
+            var coverage = ReadCoverage(coverageOffset);
+            var result = new Dictionary<int, int>(coverage.Count);
+            if (format == 1)
+            {
+                var delta = S16(offset + 4);
+                foreach (var glyph in coverage)
+                {
+                    var substitute = (glyph + delta) & 0xFFFF;
+                    ValidateGlyph(substitute);
+                    result[glyph] = substitute;
+                }
+            }
+            else
+            {
+                var count = U16(offset + 4);
+                if (count != coverage.Count) throw new InvalidDataException("GSUB substitute count does not match coverage");
+                Need(offset + 6, count * 2);
+                for (var i = 0; i < count; i++)
+                {
+                    var substitute = U16(offset + 6 + i * 2);
+                    ValidateGlyph(substitute);
+                    result[coverage[i]] = substitute;
+                }
+            }
+            return result;
+        }
+
+        List<int> ReadCoverage(int offset)
+        {
+            var format = U16(offset);
+            var count = U16(offset + 2);
+            var result = new List<int>();
+            if (format == 1)
+            {
+                Need(offset + 4, count * 2);
+                var previous = -1;
+                for (var i = 0; i < count; i++)
+                {
+                    var glyph = U16(offset + 4 + i * 2);
+                    ValidateGlyph(glyph);
+                    if (glyph <= previous) throw new InvalidDataException("GSUB coverage glyphs are not ordered");
+                    result.Add(glyph);
+                    previous = glyph;
+                }
+            }
+            else if (format == 2)
+            {
+                Need(offset + 4, count * 6);
+                var previous = -1;
+                for (var i = 0; i < count; i++)
+                {
+                    var record = offset + 4 + i * 6;
+                    var first = U16(record);
+                    var last = U16(record + 2);
+                    if (first > last || first <= previous || U16(record + 4) != result.Count)
+                        throw new InvalidDataException("GSUB coverage ranges are invalid");
+                    for (var glyph = first; glyph <= last; glyph++)
+                    {
+                        ValidateGlyph(glyph);
+                        result.Add(glyph);
+                    }
+                    previous = last;
+                }
+            }
+            else
+            {
+                throw new InvalidDataException("GSUB coverage format is invalid");
+            }
+            return result;
+        }
+
+        void ValidateGlyph(int glyph)
+        {
+            if (glyph >= 0x10000 || numGlyphs > 0 && glyph >= numGlyphs)
+                throw new InvalidDataException("GSUB glyph index is invalid");
+        }
     }
 
     int LookupSub(int off, int code)

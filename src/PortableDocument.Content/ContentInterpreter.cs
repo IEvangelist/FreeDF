@@ -903,18 +903,23 @@ public sealed class ContentInterpreter
             if (DrawGraphics && !hidden)
             {
                 if (font.IsType3) DrawType3(font, run.Code, trm);
-                else if (font.GetGlyph(run.Code) is { } outline)
+                else
                 {
-                    var m = Matrix.Scale(0.001, 0.001).Then(trm);
-                    var mode = _gs.RenderMode;
-                    if (mode is 0 or 2 or 4 or 6) FillGlyph(outline, m);
-                    if (mode is 1 or 2 or 5 or 6)
+                    var outline = font.GetGlyph(run.Code, font.ToUnicode(run));
+                    foreach (var warning in font.Warnings) Warn(warning);
+                    if (outline is not null)
                     {
-                        // Stroke width is in user space, so stroke with the text-space transform folded into the path.
-                        var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(glyphToUser));
-                        _be.Stroke(up, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
+                        var m = Matrix.Scale(0.001, 0.001).Then(trm);
+                        var mode = _gs.RenderMode;
+                        if (mode is 0 or 2 or 4 or 6) FillGlyph(outline, m);
+                        if (mode is 1 or 2 or 5 or 6)
+                        {
+                            // Stroke width is in user space, so stroke with the text-space transform folded into the path.
+                            var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(glyphToUser));
+                            _be.Stroke(up, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
+                        }
+                        if (mode >= 4) { _textClip ??= new PathData(); _textClip.Append(outline.Transform(m)); }
                     }
-                    if (mode >= 4) { _textClip ??= new PathData(); _textClip.Append(outline.Transform(m)); }
                 }
             }
             _tm = (font.Vertical ? Matrix.Translate(0, advance) : Matrix.Translate(advance * _gs.HScale, 0)).Then(_tm);

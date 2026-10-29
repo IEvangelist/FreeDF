@@ -114,11 +114,12 @@ public sealed class PdfFont
     public bool IsType3 { get; }
     /// <summary>
     /// The encoding CMap selects vertical writing. W2/DW2 place the selected CID outlines;
-    /// OpenType GSUB vert/vrt2 substitution is not performed (vertical CMap CID mappings are honored).
+    /// OpenType GSUB vert/vrt2 substitutions are applied to supported embedded OpenType outlines.
     /// </summary>
     public bool Vertical { get; }
     public PdfStream? FontFile { get; }
     TrueTypeFont? _tt;
+    TrueTypeFont? _openTypeLayout;
     CffFont? _cff;
     Type1Font? _t1;
     Dictionary<string, int>? _cffUni;
@@ -127,6 +128,7 @@ public sealed class PdfFont
     string _ordering = "";
     Dictionary<int, int>? _cidToUni;
     public bool HasOutlines => _tt?.HasGlyf == true || _cff is not null || _t1 is not null;
+    public IReadOnlyList<string> Warnings => _openTypeLayout?.Warnings ?? Array.Empty<string>();
     readonly PdfFile _f;
     readonly string?[] _names = new string?[256];
     readonly double[] _widths = new double[256];
@@ -140,7 +142,7 @@ public sealed class PdfFont
     bool _symbolic;
     bool _fallbackUsed;
     Dictionary<int, int>? _toUnicode;
-    readonly Dictionary<int, PathData?> _glyphCache = [];
+    readonly Dictionary<(int Code, string Unicode), PathData?> _glyphCache = [];
     public PdfDictionary? CharProcs { get; }
     public PdfDictionary? Type3Resources { get; }
     public double[] Type3Matrix { get; private set; } = [0.001, 0, 0, 0.001, 0, 0];
@@ -215,6 +217,7 @@ public sealed class PdfFont
                 {
                     var tt = new TrueTypeFont(ffData);
                     if (tt.HasGlyf) _tt = tt;
+                    if (tt.HasGlyf || tt.IsCff) _openTypeLayout = tt;
                 }
                 catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
             }
@@ -239,6 +242,7 @@ public sealed class PdfFont
             _tt ??= fallback.Find(BaseFont, bold, italic, mono, serif);
             _fallbackUsed = true;
         }
+        _openTypeLayout ??= _tt;
 
         if (!IsType0) BuildSimpleEncoding(dict, fontDict);
         if (f.Resolve(dict.Get("ToUnicode")) is PdfStream tu) _toUnicode = ParseToUnicode(f.DecodeStream(tu));
@@ -293,7 +297,7 @@ public sealed class PdfFont
 
     /// <summary>
     /// Vertical displacement w1y and origin vector v in em units (9.7.4.3).
-    /// This places the selected CID's outline; it does not perform OpenType vertical glyph substitution.
+    /// This places the selected CID's outline; vertical glyph substitution does not change these metrics.
     /// </summary>
     internal (double Advance, double X, double Y) VerticalMetrics(GlyphRun run) =>
         _cidVerticalMetrics.TryGetValue(run.Code, out var m)
@@ -582,13 +586,17 @@ public sealed class PdfFont
     }
 
     /// <summary>Glyph outline in 1/1000 em units.</summary>
-    public PathData? GetGlyph(int code)
+    public PathData? GetGlyph(int code, string? unicode = null)
     {
-        if (_glyphCache.TryGetValue(code, out var p)) return p;
+        var verticalUnicode = Vertical && IsType0 ? unicode ?? ToUnicode(code) : "";
+        var key = (code, verticalUnicode);
+        if (_glyphCache.TryGetValue(key, out var p)) return p;
         p = null;
         if (_cff is not null)
         {
             var cg = CffGlyphId(code);
+            if (Vertical && IsType0 && _openTypeLayout is not null)
+                cg = _openTypeLayout.SubstituteVertical(cg, verticalUnicode);
             if (cg > 0 || IsType0) p = _cff.GetOutline(cg);
         }
         else if (_t1 is not null)
@@ -598,9 +606,11 @@ public sealed class PdfFont
         else if (_tt is not null)
         {
             var gid = GlyphIdFor(code);
+            if (Vertical && IsType0 && _openTypeLayout is not null)
+                gid = _openTypeLayout.SubstituteVertical(gid, verticalUnicode);
             if (gid > 0 || FontFile is not null && IsType0) p = _tt.GetOutline(gid);
         }
-        _glyphCache[code] = p;
+        _glyphCache[key] = p;
         return p;
     }
 
