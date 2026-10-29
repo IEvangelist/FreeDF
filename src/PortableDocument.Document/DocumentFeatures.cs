@@ -81,6 +81,12 @@ public sealed record PdfAssociatedFile(
     string? FieldName = null,
     string? StructureRole = null);
 
+public sealed record PdfRichMediaAsset(
+    int PageIndex,
+    int AnnotationIndex,
+    string Name,
+    PdfFileSpecification FileSpecification);
+
 public static class DocumentFeatures
 {
     const int MaxDepth = 64;
@@ -339,6 +345,52 @@ public static class DocumentFeatures
                     AddAssociatedFiles(f, annotation.Get("AF"), PdfAssociatedFileScope.Annotation, pageIndex, annotationIndex, list);
         }
         return list;
+    }
+
+    /// <summary>Returns RichMedia asset file specifications without activating or executing the media.</summary>
+    public static IReadOnlyList<PdfRichMediaAsset> GetRichMediaAssets(this PdfDocument doc)
+    {
+        var f = doc.File;
+        var assets = new List<PdfRichMediaAsset>();
+        for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
+        {
+            if (f.Resolve(doc.Pages[pageIndex].Dict.Get("Annots")) is not PdfArray annotations) continue;
+            for (var annotationIndex = 0; annotationIndex < annotations.Count; annotationIndex++)
+            {
+                if (f.Resolve(annotations[annotationIndex]) is not PdfDictionary annotation
+                    || f.Resolve(annotation.Get("Subtype")).AsName() != "RichMedia"
+                    || f.Resolve(annotation.Get("RichMediaContent")) is not PdfDictionary content
+                    || f.Resolve(content.Get("Assets")) is not PdfDictionary tree)
+                    continue;
+                CollectRichMediaAssets(f, tree, pageIndex, annotationIndex, 0,
+                    new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance), assets);
+            }
+        }
+        return assets;
+    }
+
+    static void CollectRichMediaAssets(
+        PdfFile f,
+        PdfDictionary node,
+        int pageIndex,
+        int annotationIndex,
+        int depth,
+        HashSet<PdfDictionary> seen,
+        List<PdfRichMediaAsset> assets)
+    {
+        if (depth > MaxDepth || !seen.Add(node)) return;
+        if (f.Resolve(node.Get("Names")) is PdfArray pairs)
+            for (var i = 0; i + 1 < pairs.Count; i += 2)
+                if (f.Resolve(pairs[i]) is PdfString name && f.Resolve(pairs[i + 1]) is PdfDictionary spec)
+                    assets.Add(new PdfRichMediaAsset(
+                        pageIndex,
+                        annotationIndex,
+                        name.Text,
+                        ReadFileSpecification(f, spec, name.Text)));
+        if (f.Resolve(node.Get("Kids")) is PdfArray kids)
+            foreach (var kid in kids.Items)
+                if (f.Resolve(kid) is PdfDictionary child)
+                    CollectRichMediaAssets(f, child, pageIndex, annotationIndex, depth + 1, seen, assets);
     }
 
     static void CollectStructureAssociatedFiles(

@@ -209,11 +209,16 @@ public class DocumentFeatureTests
 
         var richMedia = Assert.Single(doc.Pages[0].GetAnnotations(), annotation => annotation.Subtype == "RichMedia");
         Assert.NotNull(richMedia.Dict.Get("RichMediaContent"));
+        var richMediaAsset = Assert.Single(doc.GetRichMediaAssets());
+        Assert.Equal("movie", richMediaAsset.Name);
+        Assert.Equal("movie.mp4", richMediaAsset.FileSpecification.FileName);
+        Assert.Equal("video/mp4", richMediaAsset.FileSpecification.EmbeddedFiles["F"].MimeType);
         var roundTrip = PdfDocument.Load(PdfEditor.Open(doc).Save());
         Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
             roundTrip.File.Resolve(Assert.IsType<PdfArray>(roundTrip.GetXfaData())[1])).RawData));
         Assert.Equal(new[] { "template", "datasets" }, roundTrip.GetXfaPackets().Select(packet => packet.Name));
         Assert.Contains(roundTrip.GetActions(), action => action.JavaScript is PdfString { Text: "open-action-code" });
         Assert.NotNull(Assert.Single(roundTrip.Pages[0].GetAnnotations(), annotation => annotation.Subtype == "RichMedia").Dict.Get("RichMediaContent"));
+        Assert.Equal("movie.mp4", Assert.Single(roundTrip.GetRichMediaAssets()).FileSpecification.FileName);
     }
 }
