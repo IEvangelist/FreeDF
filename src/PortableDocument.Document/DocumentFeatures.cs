@@ -108,6 +108,14 @@ public sealed record PdfRichMediaSettings(
     PdfDictionary? Deactivation,
     PdfDictionary Dictionary);
 
+public sealed record Pdf3DAnnotation(
+    int PageIndex,
+    int AnnotationIndex,
+    PdfObject? Data,
+    PdfObject? DefaultView,
+    PdfDictionary? Activation,
+    PdfDictionary Dictionary);
+
 public static class DocumentFeatures
 {
     const int MaxDepth = 64;
@@ -453,6 +461,31 @@ public static class DocumentFeatures
             }
         }
         return settings;
+    }
+
+    /// <summary>Returns 3D annotation references as inert PDF objects; model data is never decoded or activated.</summary>
+    public static IReadOnlyList<Pdf3DAnnotation> Get3DAnnotations(this PdfDocument doc)
+    {
+        var f = doc.File;
+        var annotations3D = new List<Pdf3DAnnotation>();
+        for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
+        {
+            if (f.Resolve(doc.Pages[pageIndex].Dict.Get("Annots")) is not PdfArray annotations) continue;
+            for (var annotationIndex = 0; annotationIndex < annotations.Count; annotationIndex++)
+            {
+                if (f.Resolve(annotations[annotationIndex]) is not PdfDictionary annotation
+                    || f.Resolve(annotation.Get("Subtype")).AsName() != "3D")
+                    continue;
+                annotations3D.Add(new Pdf3DAnnotation(
+                    pageIndex,
+                    annotationIndex,
+                    f.Resolve(annotation.Get("3DD")),
+                    f.Resolve(annotation.Get("3DV")),
+                    f.Resolve(annotation.Get("3DA")) as PdfDictionary,
+                    annotation));
+            }
+        }
+        return annotations3D;
     }
 
     static void CollectRichMediaAssets(

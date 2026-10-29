@@ -142,7 +142,7 @@ public class DocumentFeatureTests
         const string pdf = "%PDF-2.0\n" +
             "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R /Names << /JavaScript << /Names [(named) 5 0 R] >> >> /AA << /WC 18 0 R >> /Outlines 25 0 R /AcroForm << /Fields [7 0 R] /XFA [(template) 8 0 R (datasets) 9 0 R] >> >>\nendobj\n" +
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
-            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [6 0 R 19 0 R] /AA << /O 10 0 R >> >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [6 0 R 19 0 R 28 0 R] /AA << /O 10 0 R >> >>\nendobj\n" +
             "4 0 obj\n<< /S /JavaScript /JS (open-action-code) /Next [12 0 R 13 0 R] >>\nendobj\n" +
             "5 0 obj\n<< /S /JavaScript /JS 14 0 R >>\nendobj\n" +
             "6 0 obj\n<< /Type /Annot /Subtype /Text /Rect [10 10 20 20] /A 11 0 R /AA << /E 15 0 R >> >>\nendobj\n" +
@@ -163,10 +163,13 @@ public class DocumentFeatureTests
             "21 0 obj\n<< /Type /EmbeddedFile /Subtype /video#2Fmp4 /Length 4 >>\nstream\ndata\nendstream\nendobj\n" +
             "22 0 obj\n<< /Type /RichMediaConfiguration /Subtype /Video /Name (Movie) /Instances [23 0 R] >>\nendobj\n" +
             "23 0 obj\n<< /Type /RichMediaInstance /Subtype /Video /Asset 20 0 R /Params << /Volume 0.5 >> >>\nendobj\n" +
+            "28 0 obj\n<< /Type /Annot /Subtype /3D /Rect [120 20 200 100] /3DD 29 0 R /3DV 30 0 R /3DA << /A /PO /DIS /I >> >>\nendobj\n" +
+            "29 0 obj\n<< /Type /3D /Subtype /U3D /Length 8 >>\nstream\nmodeldat\nendstream\nendobj\n" +
+            "30 0 obj\n<< /XN (Default view) /IN (Default node) /MS /M >>\nendobj\n" +
             "25 0 obj\n<< /Type /Outlines /First 26 0 R >>\nendobj\n" +
             "26 0 obj\n<< /Title (scripted outline) /A 27 0 R >>\nendobj\n" +
             "27 0 obj\n<< /S /JavaScript /JS (outline-action-code) >>\nendobj\n" +
-            "trailer\n<< /Root 1 0 R /Size 28 >>\n%%EOF\n";
+            "trailer\n<< /Root 1 0 R /Size 31 >>\n%%EOF\n";
         return System.Text.Encoding.ASCII.GetBytes(pdf);
     }
 
@@ -224,6 +227,12 @@ public class DocumentFeatureTests
         Assert.Equal(0.5, doc.File.Resolve(richMediaInstance.Parameters?.Get("Volume")).AsNumber());
         var richMediaSettings = Assert.Single(doc.GetRichMediaSettings());
         Assert.Equal("XA", doc.File.Resolve(richMediaSettings.Activation?.Get("Condition")).AsName());
+        var threeD = Assert.Single(doc.Get3DAnnotations());
+        Assert.Equal(0, threeD.PageIndex);
+        Assert.Equal("modeldat", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(threeD.Data).RawData));
+        var defaultView = Assert.IsType<PdfDictionary>(threeD.DefaultView);
+        Assert.Equal("Default view", doc.File.Resolve(defaultView.Get("XN")) is PdfString viewName ? viewName.Text : null);
+        Assert.Equal("PO", doc.File.Resolve(threeD.Activation?.Get("A")).AsName());
         var roundTrip = PdfDocument.Load(PdfEditor.Open(doc).Save());
         Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
             roundTrip.File.Resolve(Assert.IsType<PdfArray>(roundTrip.GetXfaData())[1])).RawData));
@@ -233,5 +242,7 @@ public class DocumentFeatureTests
         Assert.Equal("movie.mp4", Assert.Single(roundTrip.GetRichMediaAssets()).FileSpecification.FileName);
         Assert.Equal("Movie", Assert.Single(roundTrip.GetRichMediaConfigurations()).Name);
         Assert.Equal("XA", roundTrip.File.Resolve(Assert.Single(roundTrip.GetRichMediaSettings()).Activation?.Get("Condition")).AsName());
+        Assert.Equal("modeldat", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
+            Assert.Single(roundTrip.Get3DAnnotations()).Data).RawData));
     }
 }
