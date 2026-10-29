@@ -714,6 +714,7 @@ function exportImages() {
   }));
 }
 const exportText = () => state.pageCount && flush().then(() => dlUrl('/api/export/text'));
+const exportSecure = () => { if (!state.pageCount) return; const u = prompt('Open password (leave empty for compressed, unprotected copy)', ''); if (u === null) return; const o = u ? prompt('Owner password (blank = same as open password)', '') : ''; if (o === null) return; flush().then(() => dlUrl('/api/export/secure?user=' + encodeURIComponent(u) + '&owner=' + encodeURIComponent(o))); };
 async function closeDoc() { if (!confirmDiscard()) return; await act(() => post('/api/close')); }
 const pickFile = id => { const i = $(id); i.value = ''; i.click(); };
 function openFileMenu() {
@@ -730,7 +731,7 @@ function openFileMenu() {
       { label: 'Duplicate current page', run: () => act(() => post(`/api/duplicate/${sel}`)).then(() => goPage(sel + 1)) }, '-',
       { label: 'Pages from another PDF…', run: () => pickFile('merge') }] },
     { label: 'Export', disabled: !has, sub: [
-      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }] },
+      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }, { label: 'Compressed / password-protected PDF…', run: exportSecure }] },
     '-',
     { label: 'Print…', key: mod + 'P', disabled: !has, run: printDoc },
     { label: 'Document properties…', disabled: !has, run: docProps },
