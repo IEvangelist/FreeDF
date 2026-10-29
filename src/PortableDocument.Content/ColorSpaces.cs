@@ -53,10 +53,9 @@ public abstract class PdfColorSpace
     }
 
     sealed record IccResult(PdfColorSpace? Space);
-    sealed record CachedIccProfile(IccProfile? Profile);
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfStream, IccResult> IccCache = new();
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, CachedIccProfile> ProfilesByHash = new();
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IccProfile?> ProfilesByHash = new();
 
     static PdfColorSpace Device(int n) => n switch { 1 => Gray, 4 => Cmyk, _ => Rgb };
 
@@ -66,7 +65,7 @@ public abstract class PdfColorSpace
         byte[] data;
         try { data = f.DecodeStream(s); } catch (Exception) { return new(null); }
         var key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data));
-        var prof = ProfilesByHash.GetOrAdd(key, _ => new(IccProfile.TryParse(data))).Profile;
+        var prof = ProfilesByHash.GetOrAdd(key, _ => IccProfile.TryParse(data));
         if (prof is null || prof.Components != n) return new(null);
         return new(prof.IsSrgb ? Rgb : new IccBased(prof));
     }
