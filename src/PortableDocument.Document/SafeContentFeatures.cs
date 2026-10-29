@@ -27,6 +27,7 @@ public sealed record PdfAction(
     public PdfGoToAction? GoToDetails { get; init; }
     public PdfRemoteGoToAction? RemoteGoToDetails { get; init; }
     public PdfEmbeddedGoToAction? EmbeddedGoToDetails { get; init; }
+    public PdfGoToDpAction? GoToDpDetails { get; init; }
     public PdfUriAction? UriDetails { get; init; }
     public PdfNamedAction? NamedDetails { get; init; }
 }
@@ -110,6 +111,18 @@ public sealed record PdfEmbeddedGoToAction(
     public PdfEmbeddedGoToTarget? TargetPath { get; init; }
 }
 
+/// <summary>
+/// Inert /GoToDp metadata (ISO 32000-2:2020, 12.6.4.5, Table 206).
+/// Only a local indirect /Dp reference resolving to a /Type /DPart dictionary is exposed;
+/// the DPart tree and its Start/End pages are not resolved, validated, or navigated.
+/// Missing or malformed values remain available in Dictionary.
+/// </summary>
+/// <param name="DPart">The referenced /Type /DPart dictionary, or null when /Dp is missing, direct, or malformed.</param>
+/// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
+public sealed record PdfGoToDpAction(
+    PdfDictionary? DPart,
+    PdfDictionary Dictionary);
+
 /// <summary>Why a dictionary-valued nested /T was not expanded in the typed target path.</summary>
 public enum PdfEmbeddedGoToTargetBoundary
 {
@@ -152,7 +165,7 @@ public static class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection, with inert typed metadata for local, remote and embedded go-to, URI and named actions.
+    /// Returns action dictionaries for inspection, with inert typed metadata for local, remote, embedded, and DPart go-to, URI and named actions.
     /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
@@ -329,6 +342,7 @@ public static class SafeContentFeatures
             GoToDetails = type == "GoTo" ? ReadGoToAction(f, action) : null,
             RemoteGoToDetails = type == "GoToR" ? ReadRemoteGoToAction(f, action) : null,
             EmbeddedGoToDetails = type == "GoToE" ? ReadEmbeddedGoToAction(f, action) : null,
+            GoToDpDetails = type == "GoToDp" ? ReadGoToDpAction(f, action) : null,
             UriDetails = type == "URI" ? ReadUriAction(f, action) : null,
             NamedDetails = type == "Named" ? ReadNamedAction(f, action) : null,
         });
@@ -378,6 +392,16 @@ public static class SafeContentFeatures
             TargetPath = target is null ? null : ReadEmbeddedGoToTarget(
                 f, target, 1, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance)),
         };
+    }
+
+    static PdfGoToDpAction ReadGoToDpAction(PdfFile f, PdfDictionary action)
+    {
+        var dPart = action.Get("Dp") is PdfRef reference
+            ? f.Resolve(reference) as PdfDictionary
+            : null;
+        if (f.Resolve(dPart?.Get("Type")).AsName() != "DPart")
+            dPart = null;
+        return new PdfGoToDpAction(dPart, action);
     }
 
     static PdfEmbeddedGoToTarget ReadEmbeddedGoToTarget(
