@@ -146,6 +146,14 @@ internal static partial class PdfUAChecks
     static void Tables(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
+        var idCounts = tree.Elements()
+            .Where(e => !string.IsNullOrEmpty(e.Id))
+            .GroupBy(e => e.Id!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var headerTargets = tree.Elements()
+            .Where(e => e.StandardType == "TH" && !string.IsNullOrEmpty(e.Id))
+            .GroupBy(e => e.Id!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
         foreach (var t in tree.Elements().Where(e => e.StandardType == "Table"))
         {
             var rows = new List<StructElement>();
@@ -180,6 +188,7 @@ internal static partial class PdfUAChecks
             if (!hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
             if (widths.Distinct().Count() > 1)
                 c.Add("PDFUA-TABLE-IRREGULAR", ValidationSeverity.Warning, "table rows have differing column counts", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
+            TableHeaderAssociations(c, tree, rows, idCounts, headerTargets);
         }
         foreach (var cell in tree.Elements().Where(e => e.StandardType is "TH" or "TD" or "TR"))
         {
@@ -187,6 +196,84 @@ internal static partial class PdfUAChecks
             if (cell.Parent is null || !expected.Contains(cell.Parent.StandardType))
                 c.Add("PDFUA-TABLE-PARENT", ValidationSeverity.Error, $"{cell.StandardType} is not inside {string.Join("/", expected)}", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
         }
+    }
+
+    static PdfObject? TableAttribute(ValidationContext c, StructureTree tree, StructElement element, string key)
+    {
+        var f = c.F;
+
+        PdfObject? Find(PdfObject? raw)
+        {
+            var value = f.Resolve(raw);
+            if (value is PdfDictionary dict)
+                return f.Resolve(dict.Get("O")).AsName() == "Table" ? f.Resolve(dict.Get(key)) : null;
+            if (value is PdfArray array)
+                foreach (var item in array.Items)
+                    if (Find(item) is { } attribute) return attribute;
+            return null;
+        }
+
+        if (Find(element.Dict.Get("A")) is { } direct) return direct;
+        if (f.Resolve(tree.Root.Get("ClassMap")) is not PdfDictionary classMap) return null;
+
+        var classes = f.Resolve(element.Dict.Get("C")) switch
+        {
+            PdfName name => new[] { name.Value },
+            PdfArray array => array.Items.Select(item => f.Resolve(item).AsName()).OfType<string>(),
+            _ => [],
+        };
+        foreach (var name in classes)
+            if (Find(classMap.Get(name)) is { } attribute) return attribute;
+        return null;
+    }
+
+    static void TableHeaderAssociations(ValidationContext c, StructureTree tree, List<StructElement> rows, Dictionary<string, int> idCounts, Dictionary<string, StructElement[]> headerTargets)
+    {
+        var f = c.F;
+        var cells = rows.SelectMany(row => row.ChildElements)
+            .Where(cell => cell.StandardType is "TH" or "TD")
+            .ToArray();
+        var headerAttributes = new Dictionary<StructElement, PdfObject?>();
+
+        foreach (var cell in cells)
+        {
+            var scope = TableAttribute(c, tree, cell, "Scope");
+            if (scope is not null)
+            {
+                if (cell.StandardType != "TH" || f.Resolve(scope).AsName() is not ("Row" or "Column" or "Both"))
+                    c.Add("PDFUA-TABLE-SCOPE", ValidationSeverity.Error, $"/Scope on {cell.StandardType} must be a name with value /Row, /Column, or /Both", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+            }
+            else if (c.Part == 1 && cell.StandardType == "TH")
+                c.Add("PDFUA-TABLE-SCOPE-RECOMMENDED", ValidationSeverity.Info, "TH should have a /Scope attribute; whether the table's header relationships can be determined without it requires semantic review", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+
+            var cellHeaders = TableAttribute(c, tree, cell, "Headers");
+            headerAttributes[cell] = cellHeaders;
+            if (cell.Id is { Length: > 0 } id && cell.StandardType == "TH" && idCounts.GetValueOrDefault(id) > 1)
+                c.Add("PDFUA-TABLE-HEADER-ID-DUPLICATE", ValidationSeverity.Error, $"TH /ID '{id}' is not unique in the structure tree", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+            if (cellHeaders is null) continue;
+
+            if (f.Resolve(cellHeaders) is not PdfArray idArray)
+            {
+                c.Add("PDFUA-TABLE-HEADERS-FORMAT", ValidationSeverity.Error, "/Headers must be an array of header-cell ID strings", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+                continue;
+            }
+
+            foreach (var rawId in idArray.Items)
+            {
+                if (f.Resolve(rawId) is not PdfString headerId || string.IsNullOrWhiteSpace(headerId.Text))
+                {
+                    c.Add("PDFUA-TABLE-HEADERS-FORMAT", ValidationSeverity.Error, "/Headers entries must be non-empty text strings", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+                    continue;
+                }
+
+                if (!headerTargets.TryGetValue(headerId.Text, out var targets) || targets.Length != 1 || idCounts.GetValueOrDefault(headerId.Text) != 1)
+                    c.Add("PDFUA-TABLE-HEADERS-REFERENCE", ValidationSeverity.Error, $"/Headers references '{headerId.Text}', which does not identify a unique TH structure element", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+            }
+        }
+
+        if (c.Part == 2 && headerAttributes.Values.Any(value => value is not null))
+            foreach (var cell in cells.Where(cell => cell.StandardType == "TD" && headerAttributes[cell] is null))
+                c.Add("PDFUA-TABLE-HEADERS-CONSISTENCY", ValidationSeverity.Error, "TD has no /Headers attribute although /Headers is used in this table", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
     }
 
     static void Lists(ValidationContext c, StructureTree tree)
