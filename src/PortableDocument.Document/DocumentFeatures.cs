@@ -32,7 +32,17 @@ public sealed record PdfFileSpecification(
     IReadOnlyDictionary<string, PdfEmbeddedFile> EmbeddedFiles,
     PdfDictionary Dictionary,
     PdfDictionary? CollectionItem,
-    IReadOnlyList<PdfRelatedFile> RelatedFiles);
+    IReadOnlyList<PdfRelatedFile> RelatedFiles)
+{
+    /// <summary>The /FS file-system name (ISO 32000-2, Table 43), without interpreting or opening the file name.</summary>
+    public string? FileSystem { get; init; }
+
+    /// <summary>The /Thumb image stream (ISO 32000-2, Table 43), retained without decoding or rendering.</summary>
+    public PdfStream? Thumbnail { get; init; }
+
+    /// <summary>The /EP encrypted-payload dictionary (ISO 32000-2, Table 43), retained without decrypting the payload.</summary>
+    public PdfDictionary? EncryptedPayload { get; init; }
+}
 
 public sealed record PdfRelatedFile(string Platform, string? FileName, PdfDictionary Dictionary)
 {
@@ -1066,7 +1076,12 @@ public static class DocumentFeatures
             embedded,
             spec,
             f.Resolve(spec.Get("CI")) as PdfDictionary,
-            ReadRelatedFiles(f, spec.Get("RF"), new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance) { spec }, 0));
+            ReadRelatedFiles(f, spec.Get("RF"), new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance) { spec }, 0))
+        {
+            FileSystem = f.Resolve(spec.Get("FS")).AsName(),
+            Thumbnail = f.Resolve(spec.Get("Thumb")) as PdfStream,
+            EncryptedPayload = f.Resolve(spec.Get("EP")) as PdfDictionary,
+        };
     }
 
     static IReadOnlyList<PdfRelatedFile> ReadRelatedFiles(
