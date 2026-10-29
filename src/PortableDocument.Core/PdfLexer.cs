@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Text;
 
 namespace PortableDocument.Core;
@@ -9,6 +10,21 @@ public class PdfParseException(string message) : Exception(message);
 /// <summary>Tokenizer + object parser used for both file bodies and content streams (ISO 32000-2 §7.2-7.3).</summary>
 public sealed class PdfLexer
 {
+    // Only fixed operators are shared; arbitrary input must not grow a process-wide cache.
+    static readonly FrozenDictionary<int, PdfKeyword> ShortKeywords =
+        ("q Q cm w J j M d ri i gs m l c v y h re S s f F f* B B* b b* n W W* " +
+         "BT ET Tc Tw Tz TL Tf Tr Ts Td TD Tm T* Tj TJ ' \" d0 d1 " +
+         "CS cs SC SCN sc scn G g RG rg K k sh Do BI ID EI MP DP BMC BDC EMC BX EX")
+        .Split(' ').ToFrozenDictionary(s => ShortKeywordKey(Encoding.ASCII.GetBytes(s)), s => new PdfKeyword(s));
+
+    static int ShortKeywordKey(ReadOnlySpan<byte> token) => token.Length switch
+    {
+        1 => token[0] | 1 << 24,
+        2 => token[0] | token[1] << 8 | 2 << 24,
+        3 => token[0] | token[1] << 8 | token[2] << 16 | 3 << 24,
+        _ => 0
+    };
+
     readonly byte[] _d;
     public int Pos;
     public PdfLexer(byte[] data, int pos = 0) { _d = data; Pos = pos; }
@@ -63,11 +79,13 @@ public sealed class PdfLexer
         }
         var start = Pos;
         while (Pos < _d.Length && IsRegular(_d[Pos])) Pos++;
-        if (TryNumber(_d.AsSpan(start, Pos - start), out var num))
+        var token = _d.AsSpan(start, Pos - start);
+        if (TryNumber(token, out var num))
         {
             if (resolveRefs && num is PdfInteger n1 && n1.Value >= 0) return TryRef(n1, start) ?? num;
             return num;
         }
+        if (ShortKeywords.TryGetValue(ShortKeywordKey(token), out var keyword)) return keyword;
         var tok = Encoding.Latin1.GetString(_d, start, Pos - start);
         return tok switch
         {
