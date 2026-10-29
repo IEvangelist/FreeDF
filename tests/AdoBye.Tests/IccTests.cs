@@ -211,6 +211,20 @@ public class IccTests
         Assert.InRange(color.B, 185, 191);
     }
 
+    [Fact]
+    public void IccBased_RepeatedCorruptProfile_UsesAlternateAcrossStreams()
+    {
+        const string alternate = "/Alternate [/CalGray << /WhitePoint [0.9642 1 0.8249] >>]";
+        var first = IccSpace([9, 9, 9], 1, alternate);
+        var second = IccSpace([9, 9, 9], 1, alternate);
+
+        var firstColor = Round(PdfColorSpace.Parse(first.File, first.Space).ToRgb([0.5]));
+        var secondColor = Round(PdfColorSpace.Parse(second.File, second.Space).ToRgb([0.5]));
+
+        Assert.InRange(firstColor.R, 185, 191);
+        Assert.Equal(firstColor, secondColor);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("/Filter /Unsupported")]
