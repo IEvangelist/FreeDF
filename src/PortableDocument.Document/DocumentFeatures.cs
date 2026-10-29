@@ -156,6 +156,27 @@ public sealed record Pdf3DAnnotation(
     PdfObject? Data,
     PdfObject? DefaultView,
     PdfDictionary? Activation,
+    PdfDictionary Dictionary)
+{
+    public Pdf3DView? DefaultViewDetails { get; init; }
+}
+
+public sealed record Pdf3DView(
+    string? ExternalName,
+    string? InternalName,
+    string? MatrixSource,
+    PdfArray? CameraToWorld,
+    PdfObject? U3DPath,
+    double? CenterOfOrbit,
+    PdfDictionary? Projection,
+    PdfStream? Overlay,
+    PdfDictionary? Background,
+    PdfDictionary? RenderMode,
+    PdfDictionary? LightingScheme,
+    PdfArray? Measurements,
+    PdfArray? CrossSections,
+    PdfArray? Nodes,
+    bool? ResetNodes,
     PdfDictionary Dictionary);
 
 public static class DocumentFeatures
@@ -733,16 +754,43 @@ public static class DocumentFeatures
                 if (f.Resolve(annotations[annotationIndex]) is not PdfDictionary annotation
                     || f.Resolve(annotation.Get("Subtype")).AsName() != "3D")
                     continue;
+                var defaultView = f.Resolve(annotation.Get("3DV"));
                 annotations3D.Add(new Pdf3DAnnotation(
                     pageIndex,
                     annotationIndex,
                     f.Resolve(annotation.Get("3DD")),
-                    f.Resolve(annotation.Get("3DV")),
+                    defaultView,
                     f.Resolve(annotation.Get("3DA")) as PdfDictionary,
-                    annotation));
+                    annotation)
+                {
+                    DefaultViewDetails = Read3DView(f, defaultView),
+                });
             }
         }
         return annotations3D;
+    }
+
+    static Pdf3DView? Read3DView(PdfFile f, PdfObject? value)
+    {
+        if (f.Resolve(value) is not PdfDictionary view) return null;
+        var externalName = PdfStringValue(f, view.Get("XN"));
+        return new Pdf3DView(
+            externalName,
+            PdfStringValue(f, view.Get("IN")) ?? externalName,
+            f.Resolve(view.Get("MS")).AsName(),
+            f.Resolve(view.Get("C2W")) as PdfArray,
+            f.Resolve(view.Get("U3DPath")),
+            f.Resolve(view.Get("CO")).AsNumber(),
+            f.Resolve(view.Get("P")) as PdfDictionary,
+            f.Resolve(view.Get("O")) as PdfStream,
+            f.Resolve(view.Get("BG")) as PdfDictionary,
+            f.Resolve(view.Get("RM")) as PdfDictionary,
+            f.Resolve(view.Get("LS")) as PdfDictionary,
+            f.Resolve(view.Get("MA")) as PdfArray,
+            f.Resolve(view.Get("SA")) as PdfArray,
+            f.Resolve(view.Get("NA")) as PdfArray,
+            f.Resolve(view.Get("NR")) is PdfBoolean resetNodes ? resetNodes.Value : null,
+            view);
     }
 
     static void CollectRichMediaAssets(

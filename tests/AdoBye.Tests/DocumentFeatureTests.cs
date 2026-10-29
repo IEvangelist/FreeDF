@@ -223,7 +223,7 @@ public class DocumentFeatureTests
             "23 0 obj\n<< /Type /RichMediaInstance /Subtype /Video /Asset 20 0 R /Params << /Volume 0.5 >> >>\nendobj\n" +
             "28 0 obj\n<< /Type /Annot /Subtype /3D /Rect [120 20 200 100] /3DD 29 0 R /3DV 30 0 R /3DA << /A /PO /DIS /I >> >>\nendobj\n" +
             "29 0 obj\n<< /Type /3D /Subtype /U3D /Length 8 >>\nstream\nmodeldat\nendstream\nendobj\n" +
-            "30 0 obj\n<< /XN (Default view) /IN (Default node) /MS /M >>\nendobj\n" +
+            "30 0 obj\n<< /Type /3DView /XN (Default view) /IN (Default node) /MS /M /C2W [1 0 0 0 1 0 0 0 1 1 2 3] /CO 2 /P << /Subtype /Perspective /FOV 60 >> /BG << /CS /DeviceRGB /C [1 1 1] >> /RM << /Subtype /Solid >> /LS << /Subtype /Artwork >> /SA [] /NA [] /NR true /Vendor (opaque) >>\nendobj\n" +
             "31 0 obj\n<< /Type /RichMediaWindow /Width << /Default 320 /Max 600 /Min 100 >> /Height << /Default 240 /Max 500 /Min 80 >> /Position << /HAlign /Center /VAlign /Far /HOffset 12 /VOffset 20 >> >>\nendobj\n" +
             "25 0 obj\n<< /Type /Outlines /First 26 0 R >>\nendobj\n" +
             "26 0 obj\n<< /Title (scripted outline) /A 27 0 R >>\nendobj\n" +
@@ -316,6 +316,20 @@ public class DocumentFeatureTests
         Assert.Equal("modeldat", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(threeD.Data).RawData));
         var defaultView = Assert.IsType<PdfDictionary>(threeD.DefaultView);
         Assert.Equal("Default view", doc.File.Resolve(defaultView.Get("XN")) is PdfString viewName ? viewName.Text : null);
+        var viewDetails = Assert.IsType<Pdf3DView>(threeD.DefaultViewDetails);
+        Assert.Equal("Default view", viewDetails.ExternalName);
+        Assert.Equal("Default node", viewDetails.InternalName);
+        Assert.Equal("M", viewDetails.MatrixSource);
+        Assert.Equal(12, viewDetails.CameraToWorld?.Count);
+        Assert.Equal(2, viewDetails.CenterOfOrbit);
+        Assert.Equal("Perspective", doc.File.Resolve(viewDetails.Projection?.Get("Subtype")).AsName());
+        Assert.NotNull(viewDetails.Background);
+        Assert.NotNull(viewDetails.RenderMode);
+        Assert.NotNull(viewDetails.LightingScheme);
+        Assert.Empty(viewDetails.CrossSections!.Items);
+        Assert.Empty(viewDetails.Nodes!.Items);
+        Assert.True(viewDetails.ResetNodes);
+        Assert.Same(defaultView, viewDetails.Dictionary);
         Assert.Equal("PO", doc.File.Resolve(threeD.Activation?.Get("A")).AsName());
         var roundTrip = PdfDocument.Load(PdfEditor.Open(doc).Save());
         Assert.Equal("<template>", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
@@ -329,6 +343,11 @@ public class DocumentFeatureTests
         Assert.Equal("PV", roundTripSettings.ActivationDetails?.Condition);
         Assert.Equal("Windowed", roundTripSettings.ActivationDetails?.Presentation?.Style);
         Assert.Equal("PC", roundTripSettings.DeactivationDetails?.Condition);
+        var roundTripView = Assert.IsType<Pdf3DView>(Assert.Single(roundTrip.Get3DAnnotations()).DefaultViewDetails);
+        Assert.Equal("Default view", roundTripView.ExternalName);
+        Assert.Equal("M", roundTripView.MatrixSource);
+        Assert.Equal(12, roundTripView.CameraToWorld?.Count);
+        Assert.Equal("opaque", roundTrip.File.Resolve(roundTripView.Dictionary.Get("Vendor")) is PdfString vendor ? vendor.Text : null);
         Assert.Equal("modeldat", System.Text.Encoding.ASCII.GetString(Assert.IsType<PdfStream>(
             Assert.Single(roundTrip.Get3DAnnotations()).Data).RawData));
     }
