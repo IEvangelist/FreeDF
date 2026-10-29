@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions;
 using PortableDocument.Content;
 using PortableDocument.Core;
 using PortableDocument.Document;
@@ -15,7 +16,7 @@ namespace PortableDocument.Render;
 /// <item>Images: a partly covered raster image is re-encoded with the covered pixels blanked; a fully covered one is removed.</item>
 /// <item>Form XObjects: text and images inside forms are redacted in the form's own stream (a form shared by several pages or invocations is redacted everywhere, which over-removes but never leaks).</item>
 /// <item>Vector paths, inline images and image masks that touch a rectangle are removed whole.</item>
-/// <item>With a <see cref="PdfEditor"/>: annotations under a rectangle are removed (with their AcroForm field entries), outline titles sharing a word with redacted text are blanked, and XMP/Info/thumbnail metadata is scrubbed.</item>
+/// <item>With a <see cref="PdfEditor"/>: annotations under a rectangle are removed (with their AcroForm field entries), matching redacted phrases in outline titles are replaced, and XMP/Info/thumbnail metadata is scrubbed.</item>
 /// </list>
 /// </summary>
 public static class Redactor
@@ -35,7 +36,9 @@ public static class Redactor
 
     /// <summary>
     /// Redacts page <paramref name="pageIndex"/> of <paramref name="editor"/> in place: page content, form XObject internals,
-    /// partially covered images, annotations under the rectangles and document metadata.
+    /// partially covered images, annotations under the rectangles and document metadata. In outline titles, replaces
+    /// literal contiguous removed text (trimmed) at word boundaries with [redacted], using invariant case-insensitive
+    /// matching. Letters, marks, numbers, connector punctuation and surrogate code units are word characters.
     /// </summary>
     public static void Apply(PdfEditor editor, int pageIndex, IReadOnlyList<BoxRect> rects)
     {
@@ -93,11 +96,16 @@ public static class Redactor
             return rects.Any(r => x0 < r.X + r.W && x1 > r.X && y0 < r.Y + r.H && y1 > r.Y);
         });
         editor.PruneRemovedFormFields();
-        // Outline titles that share a word with redacted text are blanked (conservative: may rewrite a title that merely shares a word).
-        var words = plan.HitText.SelectMany(t => t.Split([' ', '\t', '\n', ',', '.', ';', ':', '-', '(', ')'], StringSplitOptions.RemoveEmptyEntries))
-            .Where(w => w.Length >= 3).Select(w => w.ToLowerInvariant()).ToHashSet();
-        if (words.Count > 0)
-            editor.RedactOutlineTitles(title => title.Split([' ', '\t', '\n', ',', '.', ';', ':', '-', '(', ')'], StringSplitOptions.RemoveEmptyEntries).Any(w => words.Contains(w.ToLowerInvariant())));
+        var phrases = plan.HitText.Select(t => t.Trim()).Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(t => t.Length).ThenBy(t => t, StringComparer.Ordinal).ToArray();
+        if (phrases.Length > 0)
+        {
+            // Match literal phrases, longest first, without splitting words or reprocessing replacements.
+            const string word = @"[\p{L}\p{M}\p{N}\p{Pc}\p{Cs}]";
+            var matches = new Regex($@"(?<!{word})(?:{string.Join("|", phrases.Select(Regex.Escape))})(?!{word})",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            editor.TransformOutlineTitles(title => matches.Replace(title, "[redacted]"));
+        }
         editor.ScrubMetadata();
     }
 
@@ -168,21 +176,37 @@ public static class Redactor
                     if (Hit(sp.X, sp.Y - sp.Size * 0.25, sp.X + Math.Max(sp.Width, sp.Size * 0.1), sp.Y + sp.Size * 1.25)) { removals[sp.Index] = N(sp.Advance); hitText.Add(sp.Text); }
                     continue;
                 }
-                var any = false; var sb = new StringBuilder(); var run = new StringBuilder();
+                var any = false; var sb = new StringBuilder(); var run = new StringBuilder(); var hit = new StringBuilder();
                 void Flush() { if (run.Length > 0) { sb.Append('<').Append(run).Append('>'); run.Clear(); } }
+                void FlushHit() { if (hit.Length > 0) { hitText.Add(hit.ToString()); hit.Clear(); } }
                 foreach (var p in sp.Pieces)
                 {
-                    if (p.Adj is { } adj) { Flush(); sb.Append(N(adj)).Append(' '); continue; }
+                    if (p.Adj is { } adj)
+                    {
+                        Flush(); sb.Append(N(adj)).Append(' ');
+                        if (adj <= -200 && hit.Length > 0) hit.Append(' ');
+                        continue;
+                    }
                     foreach (var g in p.Glyphs!)
                     {
                         var inset = Math.Abs(g.X1 - g.X0) * 0.05;
                         var lo = Math.Min(g.X0, g.X1) + inset; var hi = Math.Max(g.X0, g.X1) - inset;
-                        if (Hit(lo, g.Y0, hi, g.Y1)) { any = true; Flush(); sb.Append(N(g.Adv)).Append(' '); }
-                        else run.Append(Convert.ToHexString(g.Bytes));
+                        if (Hit(lo, g.Y0, hi, g.Y1))
+                        {
+                            any = true; Flush(); sb.Append(N(g.Adv)).Append(' ');
+                            if (sp.Font is { } font)
+                                foreach (var glyph in font.Decode(g.Bytes)) hit.Append(font.ToUnicode(glyph));
+                        }
+                        else { FlushHit(); run.Append(Convert.ToHexString(g.Bytes)); }
                     }
                     Flush();
                 }
-                if (any) { removals[sp.Index] = sb.ToString(); hitText.Add(sp.Text); }
+                FlushHit();
+                if (any)
+                {
+                    removals[sp.Index] = sb.ToString();
+                    if (sp.Font is null) hitText.Add(sp.Text);
+                }
             }
 
             var edits = new List<ContentRewriter.ObjectEdit>();

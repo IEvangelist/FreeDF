@@ -471,16 +471,33 @@ public sealed partial class PdfEditor
     /// <summary>Replaces the title of every outline item for which <paramref name="matches"/> is true (outline titles can echo redacted text). Returns the number rewritten.</summary>
     public int RedactOutlineTitles(Func<string, bool> matches, string replacement = "[redacted]")
     {
+        var rewritten = 0;
+        TransformOutlineTitles(title =>
+        {
+            if (!matches(title)) return title;
+            rewritten++;
+            return replacement;
+        });
+        return rewritten;
+    }
+
+    /// <summary>Transforms outline titles without changing their destinations or hierarchy. Returns the number of titles changed.</summary>
+    public int TransformOutlineTitles(Func<string, string> transform)
+    {
         if (Res(((PdfDictionary)_objs[_catalog]).Get("Outlines")) is not PdfDictionary root) return 0;
         var seen = new HashSet<int>(); var changed = 0;
         void Walk(PdfObject? first)
         {
             for (var cur = first; cur is PdfRef r && seen.Add(r.Number) && _objs.TryGetValue(r.Number, out var o) && o is PdfDictionary d; cur = d.Get("Next"))
             {
-                if (Res(d.Get("Title")) is PdfString ts && matches(ts.Text))
+                if (Res(d.Get("Title")) is PdfString ts)
                 {
-                    _objs[r.Number] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { ["Title"] = new PdfString(Utf16(replacement)) });
-                    changed++;
+                    var title = transform(ts.Text);
+                    if (title != ts.Text)
+                    {
+                        _objs[r.Number] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { ["Title"] = new PdfString(Utf16(title)) });
+                        changed++;
+                    }
                 }
                 Walk(d.Get("First"));
             }
