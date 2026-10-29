@@ -2,6 +2,7 @@ using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Buffers.Binary;
 using System.Text;
 using PortableDocument.Content;
+using PortableDocument.Core;
 using PortableDocument.Document;
 using PortableDocument.Render;
 using Xunit;
@@ -130,10 +131,10 @@ public class IccTests
         Assert.Null(IccProfile.TryParse(bad));
     }
 
-    static RenderedPage RenderIcc(byte[] icc, int n, string content)
+    static RenderedPage RenderIcc(byte[] icc, int n, string content, string alternate = "")
     {
         var data = Encoding.Latin1.GetString(icc);
-        var obj = $"5 0 obj\n<< /N {n} /Length {data.Length} >>\nstream\n{data}\nendstream\nendobj\n";
+        var obj = $"5 0 obj\n<< /N {n} /Length {data.Length} {alternate} >>\nstream\n{data}\nendstream\nendobj\n";
         var pdf = TestPdf.Build(content, "/ColorSpace << /CS0 [/ICCBased 5 0 R] >>", obj, brokenXref: true);
         return DocumentRenderer.RenderPage(PdfDocument.Load(pdf).Pages[0], 72);
     }
@@ -162,5 +163,128 @@ public class IccTests
         Assert.True(Px(p, 100, 100).R < 80, Px(p, 100, 100).ToString());
         var q = RenderIcc([9, 9, 9, 9], 3, "/CS0 cs 1 0 0 sc 0 0 200 200 re f");
         Assert.Equal((255, 0, 0), Px(q, 100, 100));
+    }
+
+    static PdfObject Object(string value) => new PdfLexer(Encoding.ASCII.GetBytes(value)).ReadObject()!;
+
+    static (PdfFile File, PdfArray Space) IccSpace(byte[] data, int n, string alternate = "")
+    {
+        var dict = (PdfDictionary)Object($"<< /N {n} {alternate} >>");
+        return (PdfFile.Load(TestPdf.Build("")), new PdfArray([new PdfName("ICCBased"), new PdfStream(dict, data)]));
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    public void IccBased_SupportedProfile_TakesPrecedenceOverAlternate(int version)
+    {
+        var profile = MatrixRgb(Identity());
+        profile[8] = (byte)version;
+        var page = RenderIcc(profile, 3, "/CS0 cs 0.5 0.5 0.5 sc 0 0 200 200 re f",
+            "/Alternate /DeviceRGB");
+        Assert.InRange(Px(page, 100, 100).R, 185, 191);
+    }
+
+    [Fact]
+    public void IccBased_UnsupportedProfile_UsesAlternateWithoutSourceTransform()
+    {
+        var unsupported = Profile("Lab ", "Lab ");
+        Assert.Null(IccProfile.TryParse(unsupported));
+        var page = RenderIcc(unsupported, 3, "/CS0 cs 50 0 0 sc 0 0 200 200 re f",
+            "/Range [0 100 -128 127 -128 127] /Alternate [/Lab << /WhitePoint [0.9642 1 0.8249] >>]");
+        var color = Px(page, 100, 100);
+        Assert.InRange(color.R, 118, 120);
+        Assert.InRange(color.G, 118, 120);
+        Assert.InRange(color.B, 118, 120);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IccBased_CorruptOrMismatchedProfile_UsesValidAlternate(bool mismatched)
+    {
+        var (file, space) = IccSpace(mismatched ? MatrixRgb(Identity()) : [9, 9, 9], 1,
+            "/Alternate [/CalGray << /WhitePoint [0.9642 1 0.8249] >>]");
+        var color = Round(PdfColorSpace.Parse(file, space).ToRgb([0.5]));
+        Assert.InRange(color.R, 185, 191);
+        Assert.InRange(color.G, 185, 191);
+        Assert.InRange(color.B, 185, 191);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/Filter /Unsupported")]
+    public void IccBased_UnusableProfile_CanUseIndexedAlternate(string filter)
+    {
+        var (file, space) = IccSpace([9, 9, 9], 1,
+            $"{filter} /Alternate [/Indexed /DeviceRGB 1 <FF00000000FF>]");
+        if (filter.Length > 0) Assert.Throws<NotSupportedException>(() => file.DecodeStream((PdfStream)space[1]));
+        var alternate = PdfColorSpace.Parse(file, space);
+        Assert.Equal(1, alternate.Components);
+        Assert.Equal((255, 0, 0), Round(alternate.ToRgb([0])));
+        Assert.Equal((0, 0, 255), Round(alternate.ToRgb([1])));
+    }
+
+    [Fact]
+    public void IccBased_SupportedProfile_RemainsCachedAcrossResourceContexts()
+    {
+        var (file, space) = IccSpace(MatrixRgb(Identity()), 3, "/Alternate /Alt");
+        var resources = (PdfDictionary)Object("<< /ColorSpace << /Alt /DeviceRGB >> >>");
+        var profile = PdfColorSpace.Parse(file, space, resources);
+        Assert.InRange(Round(profile.ToRgb([0.5, 0.5, 0.5])).R, 185, 191);
+        Assert.Same(profile, PdfColorSpace.Parse(file, space));
+    }
+
+    [Theory]
+    [InlineData(1, "", "DeviceGray")]
+    [InlineData(3, "", "DeviceRGB")]
+    [InlineData(4, "", "DeviceCMYK")]
+    [InlineData(1, "/Alternate /Unknown", "DeviceGray")]
+    [InlineData(3, "/Alternate /Unknown", "DeviceRGB")]
+    [InlineData(3, "/Alternate 17", "DeviceRGB")]
+    [InlineData(3, "/Alternate null", "DeviceRGB")]
+    [InlineData(3, "/Alternate []", "DeviceRGB")]
+    [InlineData(1, "/Alternate [/Unknown]", "DeviceGray")]
+    [InlineData(3, "/Alternate [/Indexed]", "DeviceRGB")]
+    [InlineData(1, "/Alternate [/Separation /Spot /DeviceGray null]", "DeviceGray")]
+    [InlineData(3, "/Alternate /Pattern", "DeviceRGB")]
+    [InlineData(1, "/Alternate [/Pattern /DeviceGray]", "DeviceGray")]
+    [InlineData(3, "/Alternate [/Pattern /DeviceRGB]", "DeviceRGB")]
+    [InlineData(1, "/Alternate /DeviceRGB", "DeviceGray")]
+    [InlineData(3, "/Alternate /DeviceGray", "DeviceRGB")]
+    [InlineData(4, "/Alternate /DeviceRGB", "DeviceCMYK")]
+    public void IccBased_AbsentInvalidOrMismatchedAlternate_UsesDevice(int n, string alternate, string device)
+    {
+        var (file, space) = IccSpace([9, 9, 9], n, alternate);
+        Assert.Same(PdfColorSpace.Parse(file, new PdfName(device)), PdfColorSpace.Parse(file, space));
+    }
+
+    [Fact]
+    public void IccBased_NamedAlternate_IsResolvedForEachResourceContext()
+    {
+        var (file, space) = IccSpace([9, 9, 9], 3, "/Range [0 100 -128 127 -128 127] /Alternate /Alt");
+        var labResources = (PdfDictionary)Object("<< /ColorSpace << /Alt /Other /Other [/Lab << /WhitePoint [0.9642 1 0.8249] >>] >> >>");
+        var rgbResources = (PdfDictionary)Object("<< /ColorSpace << /Alt /DeviceRGB >> >>");
+        var patternResources = (PdfDictionary)Object("<< /ColorSpace << /Alt [/Pattern /DeviceRGB] >> >>");
+        var first = PdfColorSpace.Parse(file, space, labResources);
+        Assert.InRange(Round(first.ToRgb([50, 0, 0])).R, 118, 120);
+        Assert.Same(PdfColorSpace.Rgb, PdfColorSpace.Parse(file, space, rgbResources));
+        Assert.Same(PdfColorSpace.Rgb, PdfColorSpace.Parse(file, space, patternResources));
+        Assert.Same(PdfColorSpace.Rgb, PdfColorSpace.Parse(file, space));
+        Assert.Equal(Round(first.ToRgb([50, 0, 0])),
+            Round(PdfColorSpace.Parse(file, space, labResources).ToRgb([50, 0, 0])));
+    }
+
+    [Fact]
+    public void IccBased_CyclicAlternate_TerminatesWithDeviceFallback()
+    {
+        var (file, space) = IccSpace([9, 9, 9], 3, "/Alternate /Alt");
+        var resources = (PdfDictionary)Object("<< /ColorSpace << /Alt /Alt >> >>");
+        Assert.Same(PdfColorSpace.Rgb, PdfColorSpace.Parse(file, space, resources));
+        resources = new PdfDictionary(new Dictionary<string, PdfObject>
+        {
+            ["ColorSpace"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["Alt"] = space })
+        });
+        Assert.Same(PdfColorSpace.Rgb, PdfColorSpace.Parse(file, space, resources));
     }
 }

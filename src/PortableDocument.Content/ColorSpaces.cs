@@ -52,21 +52,22 @@ public abstract class PdfColorSpace
         }
     }
 
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfStream, PdfColorSpace> IccCache = new();
+    sealed record IccResult(PdfColorSpace? Space);
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfStream, IccResult> IccCache = new();
     static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IccProfile?> ProfilesByHash = new();
 
     static PdfColorSpace Device(int n) => n switch { 1 => Gray, 4 => Cmyk, _ => Rgb };
 
-    /// <summary>Builds an ICCBased space; falls back to the device space of the same component count when the profile is unusable.</summary>
-    static PdfColorSpace BuildIcc(PdfFile f, PdfStream s, int n)
+    /// <summary>Caches only the profile result; an Alternate may depend on the current resources.</summary>
+    static IccResult BuildIcc(PdfFile f, PdfStream s, int n)
     {
-        var dev = Device(n);
         byte[] data;
-        try { data = f.DecodeStream(s); } catch (Exception) { return dev; }
+        try { data = f.DecodeStream(s); } catch (Exception) { return new(null); }
         var key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data));
         var prof = ProfilesByHash.GetOrAdd(key, _ => IccProfile.TryParse(data));
-        if (prof is null || prof.Components != n) return dev;
-        return prof.IsSrgb ? Rgb : new IccBased(prof);
+        if (prof is null || prof.Components != n) return new(null);
+        return new(prof.IsSrgb ? Rgb : new IccBased(prof));
     }
 
     sealed class IccBased(IccProfile profile) : PdfColorSpace
@@ -214,9 +215,12 @@ public abstract class PdfColorSpace
     }
 
     public static PdfColorSpace Parse(PdfFile f, PdfObject? obj, PdfDictionary? resources = null, int depth = 0)
+        => TryParse(f, obj, resources, depth) ?? Gray;
+
+    static PdfColorSpace? TryParse(PdfFile f, PdfObject? obj, PdfDictionary? resources, int depth)
     {
         obj = f.Resolve(obj);
-        if (depth > 8) return Gray;
+        if (depth > 8) return null;
         if (obj is PdfName n)
         {
             switch (n.Value)
@@ -227,10 +231,10 @@ public abstract class PdfColorSpace
                 case "Pattern": return new PatternCs(null);
             }
             if (resources is not null && f.Resolve(resources.Get("ColorSpace")) is PdfDictionary csd && csd.Get(n.Value) is { } named)
-                return Parse(f, named, resources, depth + 1);
-            return Gray;
+                return TryParse(f, named, resources, depth + 1);
+            return null;
         }
-        if (obj is not PdfArray a || a.Count == 0) return Gray;
+        if (obj is not PdfArray a || a.Count == 0) return null;
         var kind = f.Resolve(a[0]).AsName();
         switch (kind)
         {
@@ -254,13 +258,16 @@ public abstract class PdfColorSpace
                     if (a.Count > 1 && f.Resolve(a[1]) is PdfStream s)
                     {
                         var n2 = (int)(f.Resolve(s.Dict.Get("N")).AsNumber() ?? 3);
-                        return IccCache.GetValue(s, _ => BuildIcc(f, s, n2));
+                        var profile = IccCache.GetValue(s, _ => BuildIcc(f, s, n2)).Space;
+                        if (profile is not null) return profile;
+                        var alternate = TryParse(f, s.Dict.Get("Alternate"), resources, depth + 1);
+                        return alternate is not null and not PatternCs && alternate.Components == n2 ? alternate : Device(n2);
                     }
                     return Rgb;
                 }
             case "Indexed" or "I":
                 {
-                    if (a.Count < 4) return Gray;
+                    if (a.Count < 4) return null;
                     var bcs = Parse(f, a[1], resources, depth + 1);
                     var hival = (int)(f.Resolve(a[2]).AsNumber() ?? 255);
                     var lookup = f.Resolve(a[3]) switch { PdfString ps => ps.Bytes, PdfStream st => f.DecodeStream(st), _ => [] };
@@ -268,16 +275,16 @@ public abstract class PdfColorSpace
                 }
             case "Separation" or "DeviceN":
                 {
-                    if (a.Count < 4) return Gray;
+                    if (a.Count < 4) return null;
                     var names = kind == "Separation" ? [f.Resolve(a[1]).AsName() ?? ""] : (f.Resolve(a[1]) as PdfArray)?.Items.Select(x => f.Resolve(x).AsName() ?? "").ToArray() ?? [];
                     var alt = Parse(f, a[2], resources, depth + 1);
                     var fn = PdfFunction.Parse(f, a[3]);
-                    if (fn is null) return Gray;
+                    if (fn is null) return null;
                     return new Tint(alt, fn, Math.Max(1, names.Length), names.Length > 0 && names.All(x => x == "None"));
                 }
             case "Pattern":
                 return new PatternCs(a.Count > 1 ? Parse(f, a[1], resources, depth + 1) : null);
         }
-        return Gray;
+        return null;
     }
 }
