@@ -37,13 +37,16 @@ public enum PdfAssociatedFileScope
     Catalog,
     Page,
     Annotation,
+    AcroForm,
+    FormField,
 }
 
 public sealed record PdfAssociatedFile(
     PdfAssociatedFileScope Scope,
     PdfFileSpecification FileSpecification,
     int? PageIndex = null,
-    int? AnnotationIndex = null);
+    int? AnnotationIndex = null,
+    string? FieldName = null);
 
 public static class DocumentFeatures
 {
@@ -223,6 +226,16 @@ public static class DocumentFeatures
         var f = doc.File;
         var list = new List<PdfAssociatedFile>();
         AddAssociatedFiles(f, f.Catalog.Get("AF"), PdfAssociatedFileScope.Catalog, null, null, list);
+        if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary form)
+        {
+            AddAssociatedFiles(f, form.Get("AF"), PdfAssociatedFileScope.AcroForm, null, null, list);
+            if (f.Resolve(form.Get("Fields")) is PdfArray fields)
+            {
+                var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+                foreach (var field in fields.Items)
+                    CollectFieldAssociatedFiles(f, field, "", 0, seen, list);
+            }
+        }
         for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
         {
             var page = doc.Pages[pageIndex];
@@ -233,6 +246,31 @@ public static class DocumentFeatures
                     AddAssociatedFiles(f, annotation.Get("AF"), PdfAssociatedFileScope.Annotation, pageIndex, annotationIndex, list);
         }
         return list;
+    }
+
+    static void CollectFieldAssociatedFiles(
+        PdfFile f,
+        PdfObject? field,
+        string prefix,
+        int depth,
+        HashSet<PdfDictionary> seen,
+        List<PdfAssociatedFile> acc)
+    {
+        if (depth > MaxDepth || f.Resolve(field) is not PdfDictionary dict || !seen.Add(dict)) return;
+        var partialName = PdfStringValue(f, dict.Get("T"));
+        var name = partialName is null ? prefix : prefix.Length == 0 ? partialName : prefix + "." + partialName;
+        if (dict.Get("AF") is { } associatedFiles && f.Resolve(associatedFiles) is PdfArray files)
+        {
+            foreach (var file in files.Items)
+                if (f.Resolve(file) is PdfDictionary spec)
+                    acc.Add(new PdfAssociatedFile(
+                        PdfAssociatedFileScope.FormField,
+                        ReadFileSpecification(f, spec, FileName(f, spec) ?? ""),
+                        FieldName: name));
+        }
+        if (f.Resolve(dict.Get("Kids")) is PdfArray kids)
+            foreach (var child in kids.Items)
+                CollectFieldAssociatedFiles(f, child, name, depth + 1, seen, acc);
     }
 
     /// <summary>Embedded file streams from the Names/EmbeddedFiles tree, preferring /UF over /F.</summary>

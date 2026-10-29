@@ -53,13 +53,14 @@ public class DocumentFeatureTests
     static byte[] FileSpecificationPdf()
     {
         const string pdf = "%PDF-2.0\n" +
-            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] >>\nendobj\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] /AcroForm << /AF [5 0 R] /Fields [7 0 R] >> >>\nendobj\n" +
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
             "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /AF [5 0 R] /Annots [4 0 R] >>\nendobj\n" +
             "4 0 obj\n<< /Type /Annot /Subtype /FileAttachment /Rect [10 10 20 20] /AF [5 0 R] >>\nendobj\n" +
             "5 0 obj\n<< /Type /Filespec /F (fallback.txt) /UF (unicode.txt) /DOS (DOS.TXT) /Mac (Mac.txt) /Unix (unix.txt) /Desc (attachment description) /ID [(first-id) (second-id)] /V true /AFRelationship /Data /EF << /F 6 0 R /UF 6 0 R >> >>\nendobj\n" +
             "6 0 obj\n<< /Type /EmbeddedFile /Subtype /text#2Fplain /Params << /Size 5 /CreationDate (D:20260101000000Z) /ModDate (D:20260102000000Z) /CheckSum <01020304> >> /Length 5 >>\nstream\nhello\nendstream\nendobj\n" +
-            "trailer\n<< /Root 1 0 R /Size 7 >>\n%%EOF\n";
+            "7 0 obj\n<< /T (attachedField) /AF [5 0 R] /Kids [7 0 R] >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 8 >>\n%%EOF\n";
         return System.Text.Encoding.ASCII.GetBytes(pdf);
     }
 
@@ -92,8 +93,10 @@ public class DocumentFeatureTests
         Assert.NotNull(embedded.Stream);
 
         var associated = doc.GetAssociatedFiles();
-        Assert.Equal(3, associated.Count);
+        Assert.Equal(5, associated.Count);
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Catalog);
+        Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.AcroForm);
+        Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.FormField && file.FieldName == "attachedField");
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Page && file.PageIndex == 0);
         Assert.Contains(associated, file => file.Scope == PdfAssociatedFileScope.Annotation && file.PageIndex == 0 && file.AnnotationIndex == 0);
 
