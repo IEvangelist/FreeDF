@@ -17,6 +17,7 @@ public static class ImageDecoder
         PdfColorSpace cs = isMask ? PdfColorSpace.Gray : PdfColorSpace.Parse(f, d.Get("ColorSpace"), res);
         double[]? decode = R(d.Get("Decode")) is PdfArray da ? da.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : null;
 
+        JpxImage? jpxAlpha = null;
         if (codec is "DCTDecode")
         {
             var jpg = JpegDecoder.Decode(data, out var jw, out var jh, out var jn);
@@ -38,6 +39,18 @@ public static class ImageDecoder
             if (jb is null) { warning = jbWarn ?? "JBIG2 could not be decoded"; return null; }
             warning = jbWarn;
             data = jb; bpc = 1;
+        }
+        else if (codec is "JPXDecode")
+        {
+            var csObj = R(d.Get("ColorSpace"));
+            var indexed = csObj is PdfArray { Items.Count: > 0 } ca && R(ca.Items[0]) is PdfName { Value: "Indexed" or "I" };
+            var smaskInData = (int)(R(d.Get("SMaskInData")).AsNumber() ?? 0);
+            var jx = JpxDecoder.Decode(data, csObj is null ? 0 : cs.Components, indexed, smaskInData > 0, out var jxWarn);
+            if (jx is null) { warning = jxWarn ?? "JPX could not be decoded"; return null; }
+            warning = jxWarn;
+            data = jx.Samples; w = jx.Width; h = jx.Height; bpc = 8;
+            if (csObj is null || cs.Components != jx.Components) cs = jx.Components switch { 1 => PdfColorSpace.Gray, 4 => PdfColorSpace.Cmyk, _ => PdfColorSpace.Rgb };
+            if (smaskInData > 0) jpxAlpha = jx;
         }
         else if (codec is not null)
         {
@@ -104,6 +117,19 @@ public static class ImageDecoder
                     if (masked) alpha = 0;
                 }
                 rgba[p + 3] = (byte)alpha;
+            }
+        }
+
+        if (jpxAlpha?.Alpha is { } ja)
+        {
+            var pre = jpxAlpha.PremultipliedAlpha;
+            for (var i = 0; i < ja.Length; i++)
+            {
+                var p = i * 4;
+                var a = ja[i];
+                if (pre && a > 0 && a < 255)
+                    for (var k = 0; k < 3; k++) rgba[p + k] = (byte)Math.Min(255, (rgba[p + k] * 255 + a / 2) / a);
+                rgba[p + 3] = (byte)(rgba[p + 3] * a / 255);
             }
         }
 
