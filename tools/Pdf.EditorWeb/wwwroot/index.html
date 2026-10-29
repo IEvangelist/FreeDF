@@ -31,13 +31,16 @@
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></symbol>
   <symbol id="i-front" viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="2"/><path d="M10 21h9a2 2 0 002-2v-9"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5"/></symbol>
+  <symbol id="i-sidel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-sider" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
 </defs></svg>
 <header>
+  <button id="tl" class="icon toggle on" title="Toggle pages panel ([)" aria-pressed="true"><svg class="i"><use href="#i-sidel"/></svg></button>
   <div class="brand"><span class="logo">C#</span><strong>PDF Editor</strong></div>
   <div class="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="pages"></span></div>
   <div class="group">
-    <label class="btn" title="Open a PDF"><svg class="i"><use href="#i-open"/></svg>Open<input id="open" type="file" accept="application/pdf" hidden></label>
-    <label class="btn" title="Append pages from another PDF"><svg class="i"><use href="#i-merge"/></svg>Merge<input id="merge" type="file" accept="application/pdf" hidden></label>
+    <label class="btn" title="Open a PDF"><svg class="i"><use href="#i-open"/></svg><span class="lbl">Open</span><input id="open" type="file" accept="application/pdf" hidden></label>
+    <label class="btn" title="Append pages from another PDF"><svg class="i"><use href="#i-merge"/></svg><span class="lbl">Merge</span><input id="merge" type="file" accept="application/pdf" hidden></label>
   </div>
   <span class="sp"></span>
   <div class="group">
@@ -47,7 +50,8 @@
     <button id="title" class="icon" title="Set document title"><svg class="i"><use href="#i-tag"/></svg></button>
   </div>
   <span class="sp"></span>
-  <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg>Download</button>
+  <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg><span class="lbl">Download</span></button>
+  <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
 </header>
 <main>
   <div id="thumbs"></div>
@@ -72,7 +76,7 @@
   </div>
   <aside id="props"></aside>
 </main>
-<footer><span id="status">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span></footer>
+<footer><span id="status">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
 <script>
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, preview = false, undo = [], saveT = 0, editing = false;
@@ -233,7 +237,11 @@ function boxHandles(e, it) {
 function lineHandles(layer, it) {
   for (const [a, b] of [['x', 'y'], ['x2', 'y2']]) {
     const d = document.createElement('div'); d.className = 'hd'; d.style.left = it[a] * S - 5 + 'px'; d.style.top = it[b] * S - 5 + 'px'; d.style.cursor = 'crosshair';
-    d.onpointerdown = ev => drag(ev, () => { }, p => { it[a] = p[0] / S; it[b] = p[1] / S; paint(); });
+    d.onpointerdown = ev => drag(ev, () => { }, (p, s, e) => {
+      let x = p[0] / S, y = p[1] / S;
+      if (e?.shiftKey) { const ox = it[a === 'x' ? 'x2' : 'x'], oy = it[a === 'x' ? 'y2' : 'y'], dx = x - ox, dy = y - oy, an = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, l = Math.hypot(dx, dy); x = ox + l * Math.cos(an); y = oy + l * Math.sin(an); }
+      it[a] = x; it[b] = y; paint();
+    });
     layer.appendChild(d);
   }
 }
@@ -241,16 +249,33 @@ function lineHandles(layer, it) {
 function drag(ev, onStart, onMove, onEnd) {
   ev.preventDefault(); ev.stopPropagation();
   const start = toLayer(ev.clientX, ev.clientY); pushUndo(); onStart(start);
-  const mv = e => onMove(toLayer(e.clientX, e.clientY), start);
-  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); onEnd?.(); queueSave(); props(); };
-  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  let last = ev;
+  const mv = e => { last = e; onMove(toLayer(e.clientX, e.clientY), start, e); };
+  // Pressing or releasing a modifier mid-drag re-applies the last pointer position.
+  const key = e => { if (e.key === 'Shift' || e.key === 'Alt') onMove(toLayer(last.clientX, last.clientY), start, e); };
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('keydown', key); removeEventListener('keyup', key); onEnd?.(); queueSave(); props(); };
+  addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('keydown', key); addEventListener('keyup', key);
+}
+
+// Applies Shift (keep proportions / square) and Alt (resize about the centre) to a box being dragged by corner k.
+function constrainBox(b0, k, dx, dy, e, lockRatio) {
+  const [x0, y0, x1, y1] = b0, w0 = x1 - x0, h0 = y1 - y0, sx = k.includes('w') ? -1 : 1, sy = k.includes('n') ? -1 : 1;
+  let dw = sx * dx, dh = sy * dy;
+  if (e?.shiftKey || lockRatio) {
+    const s = Math.abs(dw / w0) > Math.abs(dh / h0) ? dw / w0 : dh / h0;
+    dw = s * w0; dh = s * h0;
+  }
+  const f = e?.altKey ? 2 : 1, nw = Math.max(2, w0 + dw * f), nh = Math.max(2, h0 + dh * f);
+  if (e?.altKey) { const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; return [cx - nw / 2, cy - nh / 2, cx + nw / 2, cy + nh / 2]; }
+  return [sx > 0 ? x0 : x1 - nw, sy > 0 ? y0 : y1 - nh, sx > 0 ? x0 + nw : x1, sy > 0 ? y0 + nh : y1];
 }
 
 function startMove(ev, it) {
   cur = it; curObj = null; let o;
   drag(ev, () => { o = { ...it }; paint(); props(); },
-    (p, s) => {
-      const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+    (p, s, e) => {
+      let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+      if (e?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
       it.x = o.x + dx; it.y = o.y + dy;
       if (it.type === 'line') { it.x2 = o.x2 + dx; it.y2 = o.y2 + dy; }
       paint();
@@ -260,14 +285,11 @@ function startMove(ev, it) {
 function startResize(ev, it, k, el) {
   let o, w0, h0;
   drag(ev, () => { o = { ...it }; w0 = el.offsetWidth / S; h0 = el.offsetHeight / S; },
-    (p, s) => {
-      let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+    (p, s, e) => {
+      const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
       if (it.type === 'text') { it.size = Math.max(4, Math.round(o.size * (h0 + (k[0] === 'n' ? -dy : dy)) / h0 * 10) / 10); paint(); return; }
-      if (it.type === 'image') dy = (k === 'se' || k === 'nw' ? dx : -dx) * o.h / o.w;
-      if (k.includes('w')) { it.x = o.x + dx; it.w = o.w - dx; } else it.w = o.w + dx;
-      if (k.includes('n')) { it.y = o.y + dy; it.h = o.h - dy; } else it.h = o.h + dy;
-      if (it.w < 4) { it.w = 4; it.x = k.includes('w') ? o.x + o.w - 4 : it.x; }
-      if (it.h < 4) { it.h = 4; it.y = k.includes('n') ? o.y + o.h - 4 : it.y; }
+      const [x0, y0, x1, y1] = constrainBox([o.x, o.y, o.x + o.w, o.y + o.h], k, dx, dy, e, it.type === 'image');
+      it.x = x0; it.y = y0; it.w = Math.max(4, x1 - x0); it.h = Math.max(4, y1 - y0);
       paint();
     });
 }
@@ -285,9 +307,18 @@ function layerDown(ev) {
   }
   if (kind === 'rect' || kind === 'ellipse') { base.fill = '#7c5cff'; base.stroke = '#000000'; base.strokeWidth = 0; }
   drag(ev, s => { it = { ...base, x: s[0] / S, y: s[1] / S, x2: s[0] / S, y2: s[1] / S }; items.push(it); cur = it; },
-    (p, s) => {
-      if (kind === 'line') { it.x2 = p[0] / S; it.y2 = p[1] / S; }
-      else { it.x = Math.min(s[0], p[0]) / S; it.y = Math.min(s[1], p[1]) / S; it.w = Math.abs(p[0] - s[0]) / S; it.h = Math.abs(p[1] - s[1]) / S; }
+    (p, s, e) => {
+      if (kind === 'line') {
+        let x = p[0] / S, y = p[1] / S;
+        if (e?.shiftKey) { const dx = x - it.x, dy = y - it.y, a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, l = Math.hypot(dx, dy); x = it.x + l * Math.cos(a); y = it.y + l * Math.sin(a); }
+        it.x2 = x; it.y2 = y;
+      } else {
+        let dx = p[0] - s[0], dy = p[1] - s[1];
+        if (e?.shiftKey) { const m = Math.max(Math.abs(dx), Math.abs(dy)); dx = Math.sign(dx || 1) * m; dy = Math.sign(dy || 1) * m; }
+        let ax = s[0], ay = s[1], bx = s[0] + dx, by = s[1] + dy;
+        if (e?.altKey) { ax = s[0] - dx; ay = s[1] - dy; }
+        it.x = Math.min(ax, bx) / S; it.y = Math.min(ay, by) / S; it.w = Math.abs(bx - ax) / S; it.h = Math.abs(by - ay) / S;
+      }
       paint();
     },
     () => {
@@ -352,21 +383,19 @@ function selectObj(o) { cur = null; curObj = o; paint(); props(); }
 function startObjMove(ev, o) {
   let b0;
   drag(ev, () => { selectObj(o); b0 = oBox(o); },
-    (p, s) => { const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S; setEdit(o, [b0[0] + dx, b0[1] + dy, b0[2] + dx, b0[3] + dy]); paint(); },
+    (p, s, e) => {
+      let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+      if (e?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+      setEdit(o, [b0[0] + dx, b0[1] + dy, b0[2] + dx, b0[3] + dy]); paint();
+    },
     () => saveObj(o));
 }
 function startObjResize(ev, o, k) {
   let b0;
   drag(ev, () => { b0 = oBox(o); },
-    (p, s) => {
-      let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
-      let [x0, y0, x1, y1] = b0;
-      if (o.kind === 'image') dy = (k === 'se' || k === 'nw' ? dx : -dx) * (y1 - y0) / (x1 - x0);
-      if (k.includes('w')) x0 += dx; else x1 += dx;
-      if (k.includes('n')) y0 += dy; else y1 += dy;
-      if (x1 - x0 < 2) { if (k.includes('w')) x0 = x1 - 2; else x1 = x0 + 2; }
-      if (y1 - y0 < 2) { if (k.includes('n')) y0 = y1 - 2; else y1 = y0 + 2; }
-      setEdit(o, [x0, y0, x1, y1]); paint();
+    (p, s, e) => {
+      const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
+      setEdit(o, constrainBox(b0, k, dx, dy, e, o.kind === 'image')); paint();
     },
     () => saveObj(o));
 }
@@ -486,9 +515,35 @@ addEventListener('resize', () => state.pageCount && build());
 addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); document.body.id = 'drop'; } });
 addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''; });
 addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); document.body.id = ''; act(() => upload(state.pageCount ? '/api/import' : '/api/open', e.dataTransfer.files[0])); } });
+function setPanel(side, open, user) {
+  const m = document.querySelector('main'), b = $(side === 'l' ? 'tl' : 'tr');
+  m.classList.toggle('hide-' + side, !open); b.classList.toggle('on', open); b.setAttribute('aria-pressed', open);
+  if (user) localStorage.setItem('panel-' + side, open ? '1' : '0');
+  if (state.pageCount) setTimeout(() => build(), 220);
+}
+function autoPanels() {
+  // Saved choice wins; otherwise collapse panels as the window narrows.
+  const pref = s => localStorage.getItem('panel-' + s), w = innerWidth;
+  setPanel('l', pref('l') ? pref('l') === '1' : w >= 760);
+  setPanel('r', pref('r') ? pref('r') === '1' : w >= 1000);
+}
+$('tl').onclick = () => setPanel('l', document.querySelector('main').classList.contains('hide-l'), true);
+$('tr').onclick = () => setPanel('r', document.querySelector('main').classList.contains('hide-r'), true);
+let lastW = innerWidth;
+addEventListener('resize', () => { if ((lastW >= 1000) !== (innerWidth >= 1000) || (lastW >= 760) !== (innerWidth >= 760)) { localStorage.removeItem('panel-l'); localStorage.removeItem('panel-r'); autoPanels(); } lastW = innerWidth; });
+autoPanels();
+
 addEventListener('keydown', e => {
   if (editing || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+  if (e.key === '[') { $('tl').click(); return; }
+  if (e.key === ']') { $('tr').click(); return; }
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); doUndo(); return; }
+  if (e.ctrlKey && e.key.toLowerCase() === 'd' && cur) {
+    e.preventDefault(); pushUndo();
+    const c = { ...cur, id: crypto.randomUUID(), x: cur.x + 12, y: cur.y + 12, orig: null };
+    if (c.type === 'line') { c.x2 += 12; c.y2 += 12; }
+    items.push(c); cur = c; paint(); props(); queueSave(); return;
+  }
   if (cur) {
     const d = e.shiftKey ? 10 : 1, mv = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
     if (mv) { e.preventDefault(); pushUndo(); cur.x += mv[0]; cur.y += mv[1]; if (cur.type === 'line') { cur.x2 += mv[0]; cur.y2 += mv[1]; } paint(); props(); queueSave(); return; }
