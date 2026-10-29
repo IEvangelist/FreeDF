@@ -13,19 +13,11 @@ public sealed class StructuredTextExtractor
     readonly PdfDocument _doc;
     readonly Dictionary<int, Dictionary<(int Form, int Mcid), string>> _pageText = [];
     readonly Dictionary<PdfStream, int> _streamNumbers = new(ReferenceEqualityComparer.Instance);
-    readonly HashSet<PdfStream> _structuredStreams = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Emit /Alt for elements (typically figures) that carry no text of their own.</summary>
     public bool IncludeAlt { get; init; }
 
-    public StructuredTextExtractor(PdfDocument doc)
-    {
-        _doc = doc;
-        if (doc.Structure is { } tree)
-            foreach (var e in tree.Elements())
-                foreach (var mc in e.MarkedContent)
-                    if (mc.Stream is { } stream) _structuredStreams.Add(stream);
-    }
+    public StructuredTextExtractor(PdfDocument doc) => _doc = doc;
 
     /// <summary>Text of the whole document in structure order, or null when the document is untagged.</summary>
     public static string? Extract(PdfDocument doc, bool includeAlt = false) => new StructuredTextExtractor(doc) { IncludeAlt = includeAlt }.Extract();
@@ -72,16 +64,14 @@ public sealed class StructuredTextExtractor
         var seen = new HashSet<(int Form, int Index)>();
         foreach (var s in spans)
         {
-            if (s.Mcid < 0) continue;
             var form = s.Form;
+            var mcid = s.Mcid;
             if (form > 0 && _doc.File.GetObject(form) is PdfStream stream)
-            {
                 _streamNumbers[stream] = form;
-                // Untagged forms invoked inside page marked content retain the caller's page MCID.
-                if (stream.Dict.Get("StructParents") is null && !_structuredStreams.Contains(stream)) form = 0;
-            }
+            if (mcid < 0) { form = 0; mcid = s.EnclosingPageMcid; }
+            if (mcid < 0) continue;
             if (form != 0 && !seen.Add((form, s.Index))) continue;
-            var key = (form, s.Mcid);
+            var key = (form, mcid);
             if (!sbs.TryGetValue(key, out var sb)) sbs[key] = sb = new StringBuilder();
             if (last.TryGetValue(key, out var p) && NeedsSpace(p, s) && sb.Length > 0 && !char.IsWhiteSpace(sb[^1]) && s.Text.Length > 0 && !char.IsWhiteSpace(s.Text[0])) sb.Append(' ');
             sb.Append(s.Text);
