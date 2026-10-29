@@ -43,6 +43,24 @@ public sealed record PdfDocumentCollection(
     string? View,
     PdfDictionary? Schema,
     PdfDictionary? Sort,
+    PdfDictionary Dictionary)
+{
+    public IReadOnlyList<PdfCollectionField> SchemaFields { get; init; } = [];
+    public PdfCollectionSort? SortDefinition { get; init; }
+}
+
+public sealed record PdfCollectionField(
+    string Key,
+    string? Subtype,
+    string? Name,
+    double? Order,
+    bool? Visible,
+    bool? Editable,
+    PdfDictionary Dictionary);
+
+public sealed record PdfCollectionSort(
+    IReadOnlyList<string> Fields,
+    IReadOnlyList<bool?> Ascending,
     PdfDictionary Dictionary);
 
 public enum PdfAssociatedFileScope
@@ -72,11 +90,53 @@ public static class DocumentFeatures
     {
         var f = doc.File;
         if (f.Resolve(f.Catalog.Get("Collection")) is not PdfDictionary collection) return null;
+        var schema = f.Resolve(collection.Get("Schema")) as PdfDictionary;
+        var sort = f.Resolve(collection.Get("Sort")) as PdfDictionary;
         return new PdfDocumentCollection(
             f.Resolve(collection.Get("View")).AsName(),
-            f.Resolve(collection.Get("Schema")) as PdfDictionary,
-            f.Resolve(collection.Get("Sort")) as PdfDictionary,
-            collection);
+            schema,
+            sort,
+            collection)
+        {
+            SchemaFields = ReadCollectionSchemaFields(f, schema),
+            SortDefinition = ReadCollectionSort(f, sort),
+        };
+    }
+
+    static IReadOnlyList<PdfCollectionField> ReadCollectionSchemaFields(PdfFile f, PdfDictionary? schema)
+    {
+        if (schema is null) return [];
+        var fields = new List<PdfCollectionField>();
+        foreach (var (key, value) in schema.Entries)
+            if (f.Resolve(value) is PdfDictionary field)
+                fields.Add(new PdfCollectionField(
+                    key,
+                    f.Resolve(field.Get("Subtype")).AsName(),
+                    PdfStringValue(f, field.Get("N")),
+                    f.Resolve(field.Get("O")).AsNumber(),
+                    f.Resolve(field.Get("V")) is PdfBoolean visible ? visible.Value : null,
+                    f.Resolve(field.Get("E")) is PdfBoolean editable ? editable.Value : null,
+                    field));
+        return fields;
+    }
+
+    static PdfCollectionSort? ReadCollectionSort(PdfFile f, PdfDictionary? sort)
+    {
+        if (sort is null) return null;
+        var fields = f.Resolve(sort.Get("S")) switch
+        {
+            PdfArray array => array.Items.Select(value => f.Resolve(value).AsName()).Where(name => name is not null).Select(name => name!).ToArray(),
+            PdfName name => [name.Value],
+            _ => [],
+        };
+        var ascending = f.Resolve(sort.Get("A")) switch
+        {
+            PdfArray array => array.Items.Select(value =>
+                f.Resolve(value) is PdfBoolean direction ? (bool?)direction.Value : null).ToArray(),
+            PdfBoolean direction => Enumerable.Repeat<bool?>(direction.Value, fields.Length).ToArray(),
+            _ => [],
+        };
+        return new PdfCollectionSort(fields, ascending, sort);
     }
 
     /// <summary>XMP metadata packet (Catalog /Metadata), decoded as UTF-8.</summary>

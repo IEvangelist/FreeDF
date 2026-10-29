@@ -54,7 +54,7 @@ public class DocumentFeatureTests
     static byte[] FileSpecificationPdf()
     {
         const string pdf = "%PDF-2.0\n" +
-            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] /AcroForm << /AF [5 0 R] /Fields [7 0 R] >> /Collection << /View /D /Schema << /Title << /Subtype /S /N (Title) >> >> /Sort << /S /Title /A true >> >> /StructTreeRoot 23 0 R >>\nendobj\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(attachment) 5 0 R] >> >> /AF [5 0 R] /AcroForm << /AF [5 0 R] /Fields [7 0 R] >> /Collection << /View /D /Schema << /Title << /Subtype /S /N (Title) >> /Date << /Subtype /D /N (Date) /O 1 /V false /E true >> >> /Sort << /S [/Title /Date] /A [true false] >> >> /StructTreeRoot 23 0 R >>\nendobj\n" +
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
             "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /AF [5 0 R] /Annots [4 0 R] >>\nendobj\n" +
             "4 0 obj\n<< /Type /Annot /Subtype /FileAttachment /Rect [10 10 20 20] /AF [5 0 R] >>\nendobj\n" +
@@ -117,6 +117,19 @@ public class DocumentFeatureTests
         Assert.Equal("D", collection.View);
         Assert.NotNull(collection.Schema?.Get("Title"));
         Assert.NotNull(collection.Sort?.Get("S"));
+        Assert.Collection(collection.SchemaFields,
+            field => Assert.Equal("Title", field.Key),
+            field =>
+            {
+                Assert.Equal("Date", field.Key);
+                Assert.Equal("D", field.Subtype);
+                Assert.Equal("Date", field.Name);
+                Assert.Equal(1d, field.Order);
+                Assert.False(field.Visible);
+                Assert.True(field.Editable);
+            });
+        Assert.Equal(new[] { "Title", "Date" }, collection.SortDefinition?.Fields);
+        Assert.Equal(new bool?[] { true, false }, collection.SortDefinition?.Ascending);
         Assert.Same(collection.Dictionary, doc.File.Resolve(doc.File.Catalog.Get("Collection")));
 
         var legacy = Assert.Single(doc.GetEmbeddedFiles());
