@@ -73,6 +73,7 @@ try
         Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors));
         return;
     }
+    await EditorHeader.Empty(page);
     await page.Locator("#fileBtn").ClickAsync();
     await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).ClickAsync();
     await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
@@ -175,6 +176,7 @@ try
     await page.WaitForFunctionAsync("!document.querySelector('.mdl') && !document.getElementById('name').textContent.includes('•')");
     Check(await page.EvaluateAsync<int>("window.saveRenders.length") == 0, "Saving does not rerender unchanged pages or thumbnails: " + await page.EvaluateAsync<string>("JSON.stringify(window.saveRenders)"));
     Check(errors.IsEmpty, "No browser errors during editing: " + string.Join("\n", errors));
+    await EditorHeader.Open(page, false, []);
     var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
     if (artifacts is not null)
     {
@@ -209,6 +211,7 @@ try
     await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "mobile.pdf", MimeType = "application/pdf", Buffer = await File.ReadAllBytesAsync(downloaded) });
     await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'mobile.pdf'");
     Check(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth"), "Mobile layout");
+    await EditorHeader.Open(page, true, await File.ReadAllBytesAsync(downloaded));
     Check(await page.EvaluateAsync<bool>("[...document.querySelectorAll('main.hide-l .thumb img')].every(img => getComputedStyle(img).visibility === 'hidden')"), "Collapsed mobile thumbnails stay hidden");
     await page.Locator("#fileBtn").ClickAsync();
     Check(await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).IsVisibleAsync(), "Mobile file controls");

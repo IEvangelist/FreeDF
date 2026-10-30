@@ -50,11 +50,11 @@
 <header>
   <button id="tl" class="icon toggle on" title="Toggle pages panel ([)" aria-pressed="true"><svg class="i"><use href="#i-sidel"/></svg></button>
   <div class="brand"><span class="logo">Ab</span><strong>AdoBye</strong></div>
-  <div class="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="pages"></span></div>
   <div class="group">
     <button id="fileBtn" title="File menu" aria-haspopup="menu"><svg class="i"><use href="#i-open"/></svg><span class="lbl">File</span><svg class="i"><use href="#i-down"/></svg></button>
     <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" hidden>
   </div>
+  <div class="doc empty" id="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="dstate" hidden></span><span id="pages"></span></div>
   <span class="sp"></span>
   <div class="group">
     <button id="rl" class="icon" title="Rotate page left"><svg class="i"><use href="#i-rotl"/></svg></button>
@@ -242,7 +242,7 @@ function queueThumbnail(img, url) {
 async function refresh(retainedUndo = null) {
   await flush();
   state = await (await request('/api/state')).json();
-  $('name').textContent = state.pageCount ? state.fileName + (state.dirty ? ' •' : '') : 'No document';
+  setDocLabel(state);
   $('pages').textContent = state.pageCount ? `${state.pageCount} page${state.pageCount === 1 ? '' : 's'}` : '';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
   thumbnailObserver?.disconnect();
@@ -797,9 +797,15 @@ $('img').onchange = async e => {
   items.push(cur); paint(); props(); queueSave();
 };
 // ---- Navigation, zoom, find, print, full screen, file menu ----
+function setDocLabel(s) {
+  const has = !!s.pageCount, n = $('name'), d = $('dstate');
+  n.textContent = has ? s.fileName : 'No document'; n.title = has ? s.fileName : '';
+  d.hidden = !has; d.textContent = s.dirty ? 'Unsaved' : 'Saved'; d.dataset.dirty = !!s.dirty;
+  $('doc').classList.toggle('empty', !has);
+}
 async function refreshDirty() {
   const s = await (await request('/api/state')).json(); state.dirty = s.dirty; state.canSave = s.canSave; state.fileName = s.fileName;
-  $('name').textContent = s.pageCount ? s.fileName + (s.dirty ? ' •' : '') : 'No document';
+  setDocLabel(s);
 }
 function navUpdate() {
   $('pn').value = state.pageCount ? sel + 1 : ''; $('pt').textContent = '/ ' + (state.pageCount || 0);
