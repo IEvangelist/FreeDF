@@ -21,6 +21,8 @@ public sealed class Type1Font
     public bool HasBuiltInEncoding { get; private set; }
 
     const int MaxMasters = 16, MaxAxes = 4, MaxMapPoints = 12, MaxKeywordTokens = 2048;
+    // OtherSubr 18 with 16 masters takes 6 * 16 operands plus the count and entry number.
+    const int StackSize = 6 * MaxMasters + 32;
 
     /// <summary>True when the font dictionary carries a valid /WeightVector (Adobe TN #5015 section 3.2: 2 to 16 masters summing to 1.0).</summary>
     public bool IsMultipleMaster => _weights is not null;
@@ -405,7 +407,8 @@ public sealed class Type1Font
 
     double Run(string name, PathData? path, double ox, double oy, int depth)
     {
-        var st = new double[64];
+        var st = new double[StackSize];
+        var overflow = false;
         var sp = 0;
         var ps = new List<double>();
         double x = ox, y = oy, sbx = 0, wx = 0;
@@ -448,7 +451,7 @@ public sealed class Type1Font
                     else if (b <= 250) v = (b - 247) * 256 + cs[p++] + 108;
                     else if (b <= 254) v = -(b - 251) * 256 - cs[p++] - 108;
                     else { v = cs[p] << 24 | cs[p + 1] << 16 | cs[p + 2] << 8 | cs[p + 3]; p += 4; }
-                    if (sp < st.Length) st[sp++] = v;
+                    if (sp < st.Length) st[sp++] = v; else { overflow = true; done = true; }
                     continue;
                 }
                 switch (b)
@@ -540,6 +543,12 @@ public sealed class Type1Font
 
         try { Exec(_glyphs[name], 0); }
         catch (IndexOutOfRangeException) { }
+        if (overflow)
+        {
+            // An operand-stack overflow means the charstring is malformed (or needs more than 16 masters): drop the glyph rather than draw a wrong one.
+            path?.Ops.Clear(); path?.Pts.Clear();
+            return 0;
+        }
         if (open) path?.Close();
         return wx * scale;
     }

@@ -171,6 +171,29 @@ public class Type1MultipleMasterTests
         Assert.Equal(760, f.Advance("A"), 6);
     }
 
+    [Fact]
+    public void Sixteen_master_otherSubr_18_blends_96_operands()
+    {
+        var f = Font("type1-mm.pdf", "F4");
+        Assert.Equal(16, f.MasterCount);
+        // all weights 1/16: value = base + 7.5 * step
+        Assert.Equal(575, f.Advance("A"), 6);
+        var a = f.GetOutline("A")!;
+        double[] expected = [50, 0, 157.5, 15, 230, 125, 327.5, 70];
+        for (var i = 0; i < expected.Length; i++) Assert.Equal(expected[i], a.Pts[i], 6);
+    }
+
+    [Fact]
+    public void Operand_stack_overflow_drops_the_glyph_instead_of_drawing_it()
+    {
+        var f = Font("type1-mm.pdf", "F4");
+        Assert.Null(f.GetOutline("X"));
+        Assert.Equal(0, f.Advance("X"));
+        // 100 padding operands exceed the old 64-entry stack but are legal here
+        Assert.Equal((50, 150, 0, 100), Bounds(f.GetOutline("Y")!));
+        Assert.Equal(500, f.Advance("Y"), 6);
+    }
+
     // ----------------------------------------------------------------- rendering
 
     static RenderedPage Render() => DocumentRenderer.RenderPage(PdfDocument.Open(Fx("type1-mm.pdf")).Pages[0], 72);

@@ -173,6 +173,24 @@ PROG2 = {
 def adv(wx, w): return blend(wx.v, w)
 
 
+# 16 masters (the TN #5015 maximum), OtherSubr 18 needs 6 * 16 = 96 operands: value i of master m is base_i + m * (i + 1), weights all 1/16
+W16 = [Fr(1, 16)] * 16
+
+
+def ramp(base, c): return B(*[base + m * c for m in range(16)])
+
+
+PROG16 = {
+    '.notdef': [0, 500, 'hsbw', 'endchar'],
+    'A': [50, ramp(500, 10), 'hsbw', 0, 0, 'rmoveto',
+          ramp(100, 1), ramp(0, 2), ramp(50, 3), ramp(80, 4), ramp(60, 5), ramp(-100, 6), 'rrcurveto', 'closepath', 'endchar'],
+    # 100 padding operands (beyond the old 64-entry stack) before a box
+    'Y': [50, 500, 'hsbw'] + [1] * 100 + [0, 0, 'rmoveto', 100, 'hlineto', 100, 'vlineto', -100, 'hlineto', 'closepath', 'endchar'],
+    # operand-stack overflow: must be rejected, not drawn
+    'X': [50, 500, 'hsbw', 0, 0, 'rmoveto'] + [1] * 200 + ['hlineto', 'closepath', 'endchar'],
+}
+
+
 def make_mm():
     enc4 = {65: 'A', 66: 'B', 67: 'C', 68: 'D'}
     mm4, a1, a2 = mm_font_split('TestMM4', 4, W4, AXES4, PROG4, enc4, False)
@@ -180,11 +198,13 @@ def make_mm():
     mm2, b1, b2 = mm_font_split('TestMM2', 2, W2, AXES2, PROG2, {65: 'A', 66: 'O'}, False, split6=False)
     widths4 = [adv(WX['A'], W4), 500, adv(WX['C'], W4), adv(WX['D'], W4)]
     widths2 = [adv(WX2['A'], W2), adv(WX2['O'], W2)]
+    mm16, c1, c2 = mm_font_split('TestMM16', 16, W16, '', PROG16, {65: 'A', 66: 'Y', 67: 'X'}, False, split6=False)
     print('F1 advances', [float(x) for x in widths4], 'F2 advances', [float(x) for x in widths2])
 
     def fonts(pdf):
         return {'/F1': font_obj(pdf, 'TestMM4', mm4, a1, a2, 65, widths4, Name.MMType1),
                 '/F3': font_obj(pdf, 'TestMM4Snap', snap, s1, s2, 65, widths4),
+                '/F4': font_obj(pdf, 'TestMM16', mm16, c1, c2, 65, [575, 500, 500], Name.MMType1),
                 '/F2': font_obj(pdf, 'TestMM2', mm2, b1, b2, 65, widths2, Name.MMType1)}
     g.page_pdf(os.path.join(OUT, 'type1-mm.pdf'), fonts,
                'BT /F1 100 Tf 10 220 Td (ABCD) Tj ET BT /F3 100 Tf 10 120 Td (ABCD) Tj ET BT /F2 100 Tf 10 20 Td (AB) Tj ET', 450, 300)
