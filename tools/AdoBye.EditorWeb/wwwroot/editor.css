@@ -54,9 +54,17 @@ main.hide-r { --rw: 0px; }
 main.hide-l #thumbs, main.hide-r #props { visibility: hidden; padding-left: 0; padding-right: 0; overflow: hidden; border-width: 0; }
 button.toggle.on { color: var(--accent-2); background: var(--accent-bg); }
 header #tl { margin-left: -4px; }
-a.sponsor { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: var(--h); height: var(--h); border-radius: var(--r); color: var(--fg-2); }
-a.sponsor:hover { background: var(--hover); color: #ff7aa8; }
-a.sponsor:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:root { --sponsor: #db61a2; --sponsor-2: #f08cbc; --sponsor-bg: #db61a22e; }
+a.sponsor { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: var(--h); height: var(--h); border-radius: var(--r); color: var(--sponsor); }
+a.sponsor svg.i { fill: #db61a233; }
+a.sponsor:hover { background: var(--sponsor-bg); color: var(--sponsor-2); }
+a.sponsor:active { background: #db61a24d; }
+a.sponsor:focus-visible, a.sponsor-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a.sponsor-badge { display: inline-flex; align-items: center; gap: 5px; flex: none; margin-left: auto; height: 22px; padding: 0 10px 0 8px; border: 1px solid #db61a266; border-radius: 11px; background: var(--sponsor-bg); color: var(--sponsor-2); font-size: 12px; font-weight: 600; text-decoration: none; }
+a.sponsor-badge svg.i { width: 13px; height: 13px; fill: currentColor; }
+a.sponsor-badge:hover { background: #db61a24d; color: #fff; }
+a.sponsor-badge:active { background: #db61a266; }
+@media (max-width: 600px) { a.sponsor-badge { display: none; } }
 footer #keys { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { footer #keys, footer .sp { display: none; } .brand strong { display: none; } }
