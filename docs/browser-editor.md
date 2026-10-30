@@ -50,6 +50,61 @@ history-based router requiring a Pages 404 rewrite. No special MIME overrides,
 cross-origin isolation headers, threads, COOP/COEP, or server configuration are
 required on Pages. `.nojekyll` preserves the `_framework` folder.
 
+### Startup failures
+
+The worker's .NET resource loader retries failed network requests and HTTP 5xx
+responses up to four total attempts, waiting 250, 750 and 1750 ms between attempts.
+Each fetch has a 15-second deadline. Retries revalidate the same static URL instead
+of reusing a cached failure; successful first attempts retain normal browser caching.
+The loader preserves the runtime-provided resource integrity hash. Runtime-level
+download retries are disabled so they cannot multiply this budget. The initial
+`dotnet.js` module import also has four attempts, using a fresh query only after
+a failed import because browsers cache failed module imports by URL.
+Unchanged downloads have no additional delay. No PDF bytes enter this loader.
+An HTTP 4xx response exposed to the loader fails immediately. Chromium can instead
+reject an error response or corrupt body as a generic fetch/integrity `TypeError`;
+these indistinguishable failures use the same four-attempt bound, without ever
+disabling integrity verification.
+
+If startup fails, the inactive editor is replaced by an accessible error with a
+keyboard-operable **Reload editor** button. A 90-second worker startup deadline
+also covers a module graph or runtime initialization that never settles.
+Reload does not clear the previous IndexedDB recovery copy. The HTTP editor does
+not use the WASM loader and keeps its existing behavior.
+
+Pages serves the observed runtime assets with `Cache-Control: max-age=600`,
+ETags and `Vary: Accept-Encoding`; this repository cannot configure custom Pages
+response headers. Compression is disabled in this publish, and there is no
+service worker. The runtime manifest in `dotnet.js` names fingerprinted assemblies
+and native/runtime modules. A cached manifest crossing a deployment can therefore
+refer to an asset that no longer exists; Reload is the recovery action, not an
+integrity bypass or a fallback to an unrelated asset.
+
+The observed live cold-boot failures were HTTP 503s for varying existing WASM
+assets, not missing filenames or integrity mismatches. The same URLs returned
+HTTP 200 on direct checks; default Chromium later succeeded too. This supports
+transient delivery failure, but does **not** establish HTTP/2 stream exhaustion.
+The SDK already limits downloads to 16 concurrent requests; its former retries
+used the same cache policy with only a short final delay. Asset bundling, trimming,
+and concurrency are unchanged rather than speculatively changing the PDF runtime.
+
+`AdoBye.EditorSmoke --boot <published-wwwroot> <evidence-directory>` measures
+three fresh-context cold starts and injects transient HTTP 503/network/module
+failures, permanent failures, missing resources and corrupted integrity payloads.
+It also simulates a worker that never becomes ready. It checks recovery,
+terminal errors, bounded attempts, keyboard Reload, mobile
+layout and context-wide static-GET-only traffic (including the worker).
+`--boot-baseline` measures just the three unmodified cold starts. Both use the
+profile harness's Chromium viewport/device scale, CDP-disabled cache, navigation
+clock and two animation frames before recording readiness. Timings are local,
+not claims about public-site network latency.
+In the boot-hardening comparison, two three-context runs per version, ordered
+hardened/baseline/baseline/hardened under one validation lock, measured medians
+of **888 ms before / 914 ms after** (six observations each; +26 ms, 2.9%).
+Individual values ranged 843-1027 ms before and 881-1044 ms after. This is a
+small sampled difference within substantial run-to-run variation, not proof of
+zero overhead or of public-network performance.
+
 ## Editor operation inventory
 
 | Existing editor action | Browser host |
