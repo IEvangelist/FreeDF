@@ -78,12 +78,30 @@ public sealed record Pdf3DStream(
     PdfObject? Resources,
     PdfObject? OnInstantiate,
     Pdf3DAnimationStyle? AnimationStyle,
-    PdfStream Stream);
+    PdfStream Stream)
+{
+    /// <summary>Typed view/detail traversal hit a work limit; the raw stream dictionary is unchanged.</summary>
+    public bool Truncated { get; init; }
+}
 
 /// <summary>Inert 3D feature readers shared by the 3D annotation and view APIs.</summary>
 static class ThreeDFeatures
 {
-    public static Pdf3DStream? ReadStream(PdfFile f, PdfObject? value)
+    internal sealed class ReadContext
+    {
+        int remaining = 1024;
+        public bool Truncated;
+        public Dictionary<PdfStream, Pdf3DStream> Streams { get; } = new(ReferenceEqualityComparer.Instance);
+        public Dictionary<PdfDictionary, Pdf3DView> Views { get; } = new(ReferenceEqualityComparer.Instance);
+        public bool Take()
+        {
+            if (remaining > 0) { remaining--; return true; }
+            Truncated = true;
+            return false;
+        }
+    }
+
+    public static Pdf3DStream? ReadStream(PdfFile f, PdfObject? value, ReadContext ctx)
     {
         var resolved = f.Resolve(value);
         var viaReference = false;
@@ -93,14 +111,23 @@ static class ThreeDFeatures
             viaReference = true;
         }
         if (resolved is not PdfStream stream) return null;
+        if (ctx.Streams.TryGetValue(stream, out var cached))
+            return cached.ViaReference == viaReference ? cached : cached with { ViaReference = viaReference };
+        if (!ctx.Take()) return new Pdf3DStream(f.Resolve(stream.Dict.Get("Subtype")).AsName(), f.Resolve(stream.Dict.Get("Subtype")).AsName() is "U3D" or "PRC", viaReference, [],
+            f.Resolve(stream.Dict.Get("DV")), f.Resolve(stream.Dict.Get("Resources")), f.Resolve(stream.Dict.Get("OnInstantiate")),
+            null, stream) { Truncated = true };
         var d = stream.Dict;
         var views = new List<Pdf3DView>();
         if (f.Resolve(d.Get("VA")) is PdfArray array)
-            foreach (var item in array.Items)
-                if (DocumentFeatures.Read3DView(f, item) is { } view)
+            for (var i = 0; i < array.Count; i++)
+            {
+                if (i >= 64) { ctx.Truncated = true; break; }
+                if (DocumentFeatures.Read3DView(f, array[i], ctx) is { } view)
                     views.Add(view);
+                else if (ctx.Truncated) break;
+            }
         var subtype = f.Resolve(d.Get("Subtype")).AsName();
-        return new Pdf3DStream(
+        var result = new Pdf3DStream(
             subtype,
             subtype is "U3D" or "PRC",
             viaReference,
@@ -109,13 +136,15 @@ static class ThreeDFeatures
             f.Resolve(d.Get("Resources")),
             f.Resolve(d.Get("OnInstantiate")),
             ReadAnimationStyle(f, d.Get("AN")),
-            stream);
+            stream) { Truncated = ctx.Truncated };
+        ctx.Streams[stream] = result;
+        return result;
     }
 
-    public static Pdf3DView? SelectView(PdfFile f, PdfObject? selector, Pdf3DStream? stream)
+    public static Pdf3DView? SelectView(PdfFile f, PdfObject? selector, Pdf3DStream? stream, ReadContext ctx)
     {
         var resolved = f.Resolve(selector);
-        if (resolved is PdfDictionary) return DocumentFeatures.Read3DView(f, resolved);
+        if (resolved is PdfDictionary) return DocumentFeatures.Read3DView(f, resolved, ctx);
         var views = stream?.Views ?? [];
         switch (resolved)
         {
@@ -128,7 +157,7 @@ static class ThreeDFeatures
             case PdfName { Value: "L" }:
                 return views.Count > 0 ? views[^1] : null;
             case PdfName { Value: "D" } when stream is not null:
-                return SelectView(f, stream.DefaultView, stream with { DefaultView = null }) ?? (views.Count > 0 ? views[0] : null);
+                return SelectView(f, stream.DefaultView, stream with { DefaultView = null }, ctx) ?? (views.Count > 0 ? views[0] : null);
             default:
                 return null;
         }
@@ -203,11 +232,11 @@ static class ThreeDFeatures
             ? new Pdf3DLightingScheme(f.Resolve(scheme.Get("Subtype")).AsName(), scheme)
             : null;
 
-    public static IReadOnlyList<Pdf3DMeasure> ReadMeasures(PdfFile f, PdfObject? value) =>
-        Each(f, value, d => new Pdf3DMeasure(f.Resolve(d.Get("Subtype")).AsName(), d));
+    public static IReadOnlyList<Pdf3DMeasure> ReadMeasures(PdfFile f, PdfObject? value, ReadContext ctx) =>
+        Each(f, value, ctx, d => new Pdf3DMeasure(f.Resolve(d.Get("Subtype")).AsName(), d));
 
-    public static IReadOnlyList<Pdf3DCrossSection> ReadCrossSections(PdfFile f, PdfObject? value) =>
-        Each(f, value, d => new Pdf3DCrossSection(
+    public static IReadOnlyList<Pdf3DCrossSection> ReadCrossSections(PdfFile f, PdfObject? value, ReadContext ctx) =>
+        Each(f, value, ctx, d => new Pdf3DCrossSection(
             f.Resolve(d.Get("C")) as PdfArray,
             f.Resolve(d.Get("O")) as PdfArray,
             f.Resolve(d.Get("PO")).AsNumber() ?? 0.5,
@@ -216,21 +245,25 @@ static class ThreeDFeatures
             f.Resolve(d.Get("IC")) as PdfArray,
             d));
 
-    public static IReadOnlyList<Pdf3DNode> ReadNodes(PdfFile f, PdfObject? value) =>
-        Each(f, value, d => new Pdf3DNode(
+    public static IReadOnlyList<Pdf3DNode> ReadNodes(PdfFile f, PdfObject? value, ReadContext ctx) =>
+        Each(f, value, ctx, d => new Pdf3DNode(
             f.Resolve(d.Get("N")) is PdfString name ? name.Text : null,
             f.Resolve(d.Get("O")).AsNumber(),
             f.Resolve(d.Get("V")) is PdfBoolean visible ? visible.Value : null,
             f.Resolve(d.Get("M")) as PdfArray,
             d));
 
-    static IReadOnlyList<T> Each<T>(PdfFile f, PdfObject? value, Func<PdfDictionary, T> read)
+    static IReadOnlyList<T> Each<T>(PdfFile f, PdfObject? value, ReadContext ctx, Func<PdfDictionary, T> read)
     {
         var list = new List<T>();
         if (f.Resolve(value) is PdfArray array)
-            foreach (var item in array.Items)
-                if (f.Resolve(item) is PdfDictionary d)
+            for (var i = 0; i < array.Count; i++)
+            {
+                if (i >= 256) { ctx.Truncated = true; break; }
+                if (!ctx.Take()) break;
+                if (f.Resolve(array[i]) is PdfDictionary d)
                     list.Add(read(d));
+            }
         return list;
     }
 

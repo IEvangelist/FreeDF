@@ -190,6 +190,8 @@ public sealed record Pdf3DAnnotation(
     PdfDictionary? Activation,
     PdfDictionary Dictionary)
 {
+    /// <summary>Typed 3D detail traversal hit a work limit; raw annotation data is preserved.</summary>
+    public bool Truncated { get; init; }
     public Pdf3DView? DefaultViewDetails { get; init; }
 
     /// <summary>Typed 3D stream (or 3D reference target) from /3DD (ISO 32000-1:2008 Tables 298, 300, 303); null when /3DD is not a stream.</summary>
@@ -226,6 +228,8 @@ public sealed record Pdf3DView(
     bool? ResetNodes,
     PdfDictionary Dictionary)
 {
+    /// <summary>Typed detail lists are incomplete because a work limit was reached; raw arrays are preserved.</summary>
+    public bool Truncated { get; init; }
     public Pdf3DProjection? ProjectionDetails { get; init; }
     public Pdf3DBackground? BackgroundDetails { get; init; }
     public Pdf3DRenderMode? RenderModeDetails { get; init; }
@@ -844,6 +848,7 @@ public static class DocumentFeatures
     {
         var f = doc.File;
         var annotations3D = new List<Pdf3DAnnotation>();
+        var context = new ThreeDFeatures.ReadContext();
         for (var pageIndex = 0; pageIndex < doc.Pages.Count; pageIndex++)
         {
             if (f.Resolve(doc.Pages[pageIndex].Dict.Get("Annots")) is not PdfArray annotations) continue;
@@ -853,7 +858,9 @@ public static class DocumentFeatures
                     || f.Resolve(annotation.Get("Subtype")).AsName() != "3D")
                     continue;
                 var defaultView = f.Resolve(annotation.Get("3DV"));
-                var stream = ThreeDFeatures.ReadStream(f, annotation.Get("3DD"));
+                var stream = ThreeDFeatures.ReadStream(f, annotation.Get("3DD"), context);
+                var details = Read3DView(f, defaultView, context);
+                var selected = ThreeDFeatures.SelectView(f, defaultView ?? stream?.DefaultView ?? new PdfInteger(0), stream, context);
                 annotations3D.Add(new Pdf3DAnnotation(
                     pageIndex,
                     annotationIndex,
@@ -862,25 +869,26 @@ public static class DocumentFeatures
                     f.Resolve(annotation.Get("3DA")) as PdfDictionary,
                     annotation)
                 {
-                    DefaultViewDetails = Read3DView(f, defaultView),
+                    DefaultViewDetails = details,
                     StreamDetails = stream,
                     ActivationDetails = ThreeDFeatures.ReadActivation(f, annotation.Get("3DA")),
                     Interactive = f.Resolve(annotation.Get("3DI")) is not PdfBoolean { Value: false },
                     ViewBox = f.Resolve(annotation.Get("3DB")) as PdfArray,
-                    ResolvedDefaultView = defaultView is null
-                        ? ThreeDFeatures.SelectView(f, stream?.DefaultView ?? new PdfInteger(0), stream)
-                        : ThreeDFeatures.SelectView(f, defaultView, stream),
+                    ResolvedDefaultView = selected,
+                    Truncated = context.Truncated || stream?.Truncated == true,
                 });
             }
         }
         return annotations3D;
     }
 
-    internal static Pdf3DView? Read3DView(PdfFile f, PdfObject? value)
+    internal static Pdf3DView? Read3DView(PdfFile f, PdfObject? value, ThreeDFeatures.ReadContext context)
     {
         if (f.Resolve(value) is not PdfDictionary view) return null;
+        if (context.Views.TryGetValue(view, out var cached)) return cached;
+        if (!context.Take()) return null;
         var externalName = PdfStringValue(f, view.Get("XN"));
-        return new Pdf3DView(
+        var result = new Pdf3DView(
             externalName,
             PdfStringValue(f, view.Get("IN")) ?? externalName,
             f.Resolve(view.Get("MS")).AsName(),
@@ -902,10 +910,13 @@ public static class DocumentFeatures
             BackgroundDetails = ThreeDFeatures.ReadBackground(f, view.Get("BG")),
             RenderModeDetails = ThreeDFeatures.ReadRenderMode(f, view.Get("RM")),
             LightingSchemeDetails = ThreeDFeatures.ReadLightingScheme(f, view.Get("LS")),
-            MeasureDetails = ThreeDFeatures.ReadMeasures(f, view.Get("MA")),
-            CrossSectionDetails = ThreeDFeatures.ReadCrossSections(f, view.Get("SA")),
-            NodeDetails = ThreeDFeatures.ReadNodes(f, view.Get("NA")),
+            MeasureDetails = ThreeDFeatures.ReadMeasures(f, view.Get("MA"), context),
+            CrossSectionDetails = ThreeDFeatures.ReadCrossSections(f, view.Get("SA"), context),
+            NodeDetails = ThreeDFeatures.ReadNodes(f, view.Get("NA"), context),
+            Truncated = context.Truncated,
         };
+        context.Views[view] = result;
+        return result;
     }
 
     static void CollectRichMediaAssets(

@@ -6,6 +6,40 @@ namespace AdoBye.Tests;
 
 public class MultimediaThreeDTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10000)]
+    public void Shared3DStreamsAndLargeViewArraysHaveBoundedDetailWork(int nodes)
+    {
+        var pdf = "%PDF-2.0\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n" +
+            "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n" +
+            "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [" +
+            string.Join(" ", Enumerable.Repeat("4 0 R", 500)) + "] >> endobj\n" +
+            "4 0 obj << /Subtype /3D /3DD 5 0 R >> endobj\n" +
+            "5 0 obj << /Type /3D /Subtype /U3D /VA [" +
+            string.Join(" ", Enumerable.Range(10, 100).Select(i => $"{i} 0 R")) +
+            "] /Length 0 >> stream\n\nendstream\nendobj\n" +
+            "6 0 obj [" + string.Join(" ", Enumerable.Repeat("<< /N (shared) >>", nodes)) + "] endobj\n" +
+            string.Join("\n", Enumerable.Range(10, 100).Select(i => $"{i} 0 obj << /Type /3DView /NA 6 0 R /MA 6 0 R /SA 6 0 R >> endobj")) +
+            "\ntrailer << /Root 1 0 R /Size 110 >>\n%%EOF\n";
+        var doc = PdfDocument.Load(System.Text.Encoding.ASCII.GetBytes(pdf));
+        var annotations = doc.Get3DAnnotations();
+        Assert.Equal(500, annotations.Count);
+        var stream = Assert.IsType<Pdf3DStream>(annotations[0].StreamDetails);
+        Assert.True(stream.Truncated);
+        Assert.InRange(stream.Views.Count, 1, 64);
+        Assert.InRange(stream.Views.Sum(v => v.NodeDetails.Count + v.MeasureDetails.Count + v.CrossSectionDetails.Count), 0, 1024);
+        Assert.All(annotations, a => { Assert.Same(stream, a.StreamDetails); Assert.True(a.Truncated); });
+        Assert.All(stream.Views, v =>
+        {
+            Assert.Equal(nodes, v.Nodes!.Count);
+            Assert.InRange(v.NodeDetails.Count, 0, 256);
+            Assert.InRange(v.MeasureDetails.Count, 0, 256);
+            Assert.InRange(v.CrossSectionDetails.Count, 0, 256);
+        });
+        if (nodes > 0) Assert.Contains(stream.Views, v => v.Truncated);
+    }
+
     static byte[] MultimediaPdf()
     {
         const string pdf = "%PDF-2.0\n" +
