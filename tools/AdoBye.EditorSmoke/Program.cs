@@ -77,8 +77,8 @@ try
     if (mergeOnly)
     {
         await EditorMerge.Run(page);
-        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
-        Console.WriteLine("PASS: multi-file Merge PDFs (flag/remove encrypted, reorder, page range, insert position), page count, render, save and reopen.");
+        Check(network.IsEmpty && EditorMerge.ExpectedErrors(errors, ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + System.Text.Json.JsonSerializer.Serialize(errors) + "\nNetwork: " + string.Join("\n", network));
+        Console.WriteLine("PASS: keyboard merge controls/focus/Escape, inline server rejection with retained choices, direct later-frame rejection preserving state/history/assets and undo, multi-file order/range/insertion, render/save/reopen.");
         return;
     }
     if (recoveryOnly)

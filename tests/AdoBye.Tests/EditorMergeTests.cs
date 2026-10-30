@@ -174,6 +174,28 @@ public class EditorMergeTests
         Assert.Equal(count, Reload(editor).Pages.Count);
     }
 
+    [Theory]
+    [InlineData("22-", "|999")]
+    [InlineData("17-", "|")]
+    public void RejectedLaterFramePreservesSessionHistoryAssetsAndRecovery(string second, string ranges)
+    {
+        var session = Open("01-");
+        var png = PortableDocument.Render.PngWriter.Encode(1, 1, [255, 0, 0, 255]);
+        using var asset = Json(session, "POST", "/api/asset", png);
+        var id = asset.RootElement.GetProperty("id").GetString()!;
+        session.Handle("PUT", "/api/page/0/items", NoQuery,
+            JsonSerializer.SerializeToUtf8Bytes(new { items = Array.Empty<object>(), historyAssets = new[] { id }, clipboardAssets = new[] { id } }));
+        var before = session.Handle("GET", "/api/state", NoQuery, null).Data;
+        using var recovery = Json(session, "GET", "/api/recovery");
+        Assert.ThrowsAny<Exception>(() => session.Handle("POST", "/api/import-batch", Q(("ranges", ranges)),
+            Frames(File.ReadAllBytes(Sample("20-")), File.ReadAllBytes(Sample(second)))));
+        Assert.Equal(before, session.Handle("GET", "/api/state", NoQuery, null).Data);
+        using var after = Json(session, "GET", "/api/recovery");
+        foreach (var property in recovery.RootElement.EnumerateObject().Where(p => p.Name != "document"))
+            Assert.Equal(property.Value.GetRawText(), after.RootElement.GetProperty(property.Name).GetRawText());
+        Assert.Equal(png, session.Handle("GET", "/api/asset/" + id, NoQuery, null).Data);
+    }
+
     [Fact]
     public void OriginalThreeArgumentImportSignatureRemainsAvailable()
     {

@@ -844,13 +844,13 @@ function props() {
 function updateBase() {
   if (state.pageCount) return build(true).catch(reportError);
 }
-async function act(fn) {
+async function act(fn, onError = reportError) {
   status(host ? 'Processing locally in WebAssembly...' : 'Processing...');
   try {
     await new Promise(resolve => setTimeout(resolve, 0));
     await flush(); await fn(); await refresh();
     status(host ? 'Ready. PDFs stay on this device. Save downloads a copy.' : 'Ready.');
-  } catch (e) { reportError(e); }
+  } catch (e) { onError(e); }
 }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 
@@ -984,12 +984,22 @@ function modal(title, body, okLabel, onOk) {
   document.querySelector('.mdl')?.remove();
   const o = document.createElement('div'); o.className = 'mdl';
   o.innerHTML = `<div class="dlg" role="dialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><div class="dbody">${body}</div><div class="dfoot"><button class="dc">Cancel</button><button class="primary dok">${esc(okLabel)}</button></div></div>`;
-  const close = () => o.remove();
+  const opener = document.activeElement;
+  const close = () => { o.remove(); if (opener?.isConnected) opener.focus(); };
   o.querySelector('.dc').onclick = close; o.onpointerdown = e => { if (e.target === o) close(); };
-  const ok = async () => { try { if (await onOk(o) !== false) close(); } catch (e) { status(e.message); } };
+  const ok = async () => { try { if (await onOk(o) !== false) close(); } catch (e) { const error = o.querySelector('[data-error]'); if (error) error.textContent = e.message; status(e.message); } };
   o.querySelector('.dok').onclick = ok;
-  o.onkeydown = e => { if (e.key === 'Escape') close(); else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); ok(); } e.stopPropagation(); };
-  document.body.appendChild(o); (o.querySelector('input,textarea,select'))?.focus();
+  o.onkeydown = e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Enter' && e.target.matches('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit])')) { e.preventDefault(); ok(); }
+    else if (e.key === 'Tab') {
+      const controls = [...o.querySelectorAll('button,input,textarea,select,a[href]')].filter(el => !el.disabled && el.getClientRects().length);
+      const next = controls.indexOf(document.activeElement) + (e.shiftKey ? -1 : 1);
+      if (next < 0 || next >= controls.length) { e.preventDefault(); controls[(next + controls.length) % controls.length]?.focus(); }
+    }
+    e.stopPropagation();
+  };
+  document.body.appendChild(o); (o.querySelector('input,textarea,select') || o.querySelector('button'))?.focus();
   return o;
 }
 const PAGE_SIZES = { A4: [595.276, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.276], Letter: [612, 792], Legal: [612, 1008], Tabloid: [792, 1224] };
@@ -1008,9 +1018,11 @@ function mergePdfs(files = []) {
   if (!state.pageCount) return status('Open a PDF first, then choose File > Merge PDFs.');
   const list = [], n = state.pageCount;
   const o = modal('Merge PDFs', `<div id="mg"></div><button id="mga" type="button">Add PDFs…</button>
+    <p class="merr" data-error role="alert"></p>
     <label>Insert at<select id="mat"><option value="${n}">End of document</option><option value="0">Beginning</option><option value="${sel + 1}">After current page (${sel + 1})</option><option value="p">Before page number…</option></select></label>
     <label id="mpl" hidden>Before page<input id="mpn" type="number" min="1" max="${n + 1}" value="${n + 1}"></label>
     <p class="dnote">Files merge in the order listed, as one step. Pages are copied on this device; nothing is uploaded and passwords are never stored. Form fields, bookmarks, page labels and links between merged pages are kept. Not carried over: document JavaScript, tagged structure, layers, attachments, signatures, and links to pages you leave out.</p>`, 'Merge', async () => {
+    o.querySelector('[data-error]').textContent = '';
     if (!list.length) throw new Error('Add at least one PDF.');
     if (list.some(e => e.error)) throw new Error('Remove the files that cannot be merged first.');
     for (const e of list) {
@@ -1026,7 +1038,8 @@ function mergePdfs(files = []) {
       const body = new FormData(); body.append('f', await packFiles(list.map(e => e.file)));
       const query = `at=${at}&ranges=${encodeURIComponent(list.map(e => e.range).join('|'))}&names=${encodeURIComponent(JSON.stringify(list.map(e => e.file.name)))}`;
       result = await (await request(`/api/import-batch?${query}`, { method: 'POST', body })).json();
-    });
+    }, error => { o.querySelector('[data-error]').textContent = error.message; reportError(error); });
+    if (!result) return false;
     if (result) { await goPage(result.first); status(`Merged ${result.count} page${result.count === 1 ? '' : 's'} from ${result.files} file${result.files === 1 ? '' : 's'}. Ready.`); }
   });
   const render = () => {
@@ -1039,7 +1052,10 @@ function mergePdfs(files = []) {
     const b = ev.target.closest('[data-m]'); if (!b) return;
     const i = +b.closest('.mrow').dataset.i, j = b.dataset.m === 'up' ? i - 1 : i + 1;
     if (b.dataset.m === 'rm') list.splice(i, 1); else [list[i], list[j]] = [list[j], list[i]];
+    const row = b.dataset.m === 'rm' ? Math.min(i, list.length - 1) : j;
     render();
+    const buttons = row >= 0 ? [...o.querySelectorAll(`.mrow[data-i="${row}"] [data-m]`)] : [];
+    (buttons.find(el => el.dataset.m === b.dataset.m && !el.disabled) || buttons.find(el => !el.disabled) || o.querySelector('#mga')).focus();
   };
   o.querySelector('#mg').oninput = ev => { if (ev.target.matches('.mr')) list[+ev.target.closest('.mrow').dataset.i].range = ev.target.value; };
   o.querySelector('#mat').onchange = ev => { o.querySelector('#mpl').hidden = ev.target.value !== 'p'; };
