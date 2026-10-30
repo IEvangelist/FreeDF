@@ -63,6 +63,12 @@ single-threaded WASM for Pages compatibility, and disables trimming to preserve
 the shared editor's reflection-based JSON payloads. Initial download is larger
 than a trimmed/AOT-specialized app; no `wasm-tools` workload is required.
 
+The shared session preserves unique indirect Form-child editing. Shared,
+repeated, hidden, nested or ambiguous children remain withheld. Graphic-group
+edits cannot be combined with Form-child edits, and page mutations require
+saving/reopening or resetting pending Form-child edits; the HTTP adapter retains
+409 conflict responses and the browser presents the same conflict message.
+
 Bundled font resources reuse `samples/_gen/fonts/Vera.ttf` and `VeraBd.ttf`.
 Their redistribution notice is shipped as `bitstream-vera-license.txt`. They
 are PDF rendering substitutes, not a change to the editor's visual design.
