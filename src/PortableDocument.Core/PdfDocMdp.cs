@@ -76,7 +76,7 @@ static class PdfDocMdpChanges
     {
         undetermined = false;
         PdfFile old;
-        try { old = PdfFile.Load(data[..(int)signedEnd]); }
+        try { old = cur.LoadRevision(signedEnd); }
         catch (Exception e) when (e is PdfParseException or ArgumentException or InvalidOperationException) { undetermined = true; return []; }
         if (old.Repaired || cur.Repaired) { undetermined = true; return []; }
 

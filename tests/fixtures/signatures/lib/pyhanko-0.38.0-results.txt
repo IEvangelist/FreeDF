@@ -1,0 +1,20 @@
+StandardDiffPolicy was not designed to support DocMDP level 3 (MDPPerm.ANNOTATE). Unexpected validation results may occur.
+StandardDiffPolicy was not designed to support DocMDP level 3 (MDPPerm.ANNOTATE). Unexpected validation results may occur.
+certified-p1-approved.pdf Certify intact=True valid=True docmdp_ok=False modification_level=ModificationLevel.FORM_FILLING
+certified-p1-approved.pdf Approve intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE
+certified-p1-dss.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.LTA_UPDATES
+certified-p1-filled.pdf Certify intact=True valid=True docmdp_ok=False modification_level=ModificationLevel.FORM_FILLING
+certified-p1.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE
+certified-p2-approved.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.FORM_FILLING
+certified-p2-approved.pdf Approve intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE
+certified-p2-filled.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.FORM_FILLING
+certified-p2.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE
+certified-p3-approved.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.FORM_FILLING
+certified-p3-approved.pdf Approve intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE
+certified-p3-filled.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.FORM_FILLING
+certified-p3.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE
+doctimestamp.pdf Signature1 intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.LTA_UPDATES
+doctimestamp.pdf DocTimeStamp1 DTS intact=True valid=True
+encrypted-certified-p2-approved.pdf Certify intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.LTA_UPDATES
+encrypted-certified-p2-approved.pdf Approve intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE
+encrypted-incremental-signed.pdf Signature1 intact=True valid=True docmdp_ok=True modification_level=ModificationLevel.NONE

@@ -18,6 +18,9 @@ public sealed class PdfFile
 
     PdfFile(byte[] data) { Data = data; }
 
+    /// <summary>Re-reads the first <paramref name="length"/> bytes of this file (an earlier revision) with the credentials this file was opened with.</summary>
+    public PdfFile LoadRevision(long length) => Load(Data[..(int)length], _password, _cert);
+
     PdfDecryptor? _dec;
     string _password = "";
     System.Security.Cryptography.X509Certificates.X509Certificate2? _cert;

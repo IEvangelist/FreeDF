@@ -12,7 +12,7 @@ namespace AdoBye.Tests;
 /// <summary>Certification signatures / DocMDP (ISO 32000-2 §12.8.2.2), encrypted incremental signing, document timestamps (§12.8.5) and /DSS reading (§12.8.4.3).</summary>
 public class DocMdpTests
 {
-    static byte[] FormPdf()
+    internal static byte[] FormPdf()
     {
         const string s = "%PDF-2.0\n" +
             "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>\nendobj\n" +
@@ -29,7 +29,7 @@ public class DocMdpTests
         => PdfEditor.SignFile(source ?? FormPdf(), new PdfSignOptions { Certificate = cert, FieldName = "Certify", Certify = p });
 
     /// <summary>Appends an incremental update that applies <paramref name="edit"/> to a mutable copy of the parsed objects.</summary>
-    static byte[] Update(byte[] pdf, Action<PdfFile, Dictionary<int, PdfObject>> edit)
+    internal static byte[] Update(byte[] pdf, Action<PdfFile, Dictionary<int, PdfObject>> edit)
     {
         var f = PdfFile.Load(pdf);
         var changed = new Dictionary<int, PdfObject>();
@@ -41,11 +41,11 @@ public class DocMdpTests
         return PdfWriter.WriteIncremental(pdf, prev, changed, size, ((PdfRef)f.Trailer.Get("Root")!).Number, (f.Trailer.Get("Info") as PdfRef)?.Number, f.Resolve(f.Trailer.Get("ID")), xrefStream);
     }
 
-    static int Num(PdfFile f, Func<PdfDictionary, bool> pred) => f.Xref.Keys.Order().First(n => f.GetObject(n) is PdfDictionary d && pred(d));
+    internal static int Num(PdfFile f, Func<PdfDictionary, bool> pred) => f.Xref.Keys.Order().First(n => f.GetObject(n) is PdfDictionary d && pred(d));
 
-    static PdfDictionary D(PdfFile f, int n) => (PdfDictionary)f.GetObject(n);
+    internal static PdfDictionary D(PdfFile f, int n) => (PdfDictionary)f.GetObject(n);
 
-    static PdfDictionary With(PdfDictionary d, string k, PdfObject v) => new(new Dictionary<string, PdfObject>(d.Entries) { [k] = v });
+    internal static PdfDictionary With(PdfDictionary d, string k, PdfObject v) => new(new Dictionary<string, PdfObject>(d.Entries) { [k] = v });
 
     static PdfSignatureInfo Cert1(byte[] pdf) => PdfEditor.VerifySignatures(pdf)[0];
 
@@ -334,18 +334,12 @@ public class DocMdpTests
 
     // --- /DSS (read side) ---
 
-    [Fact]
-    public void Document_security_store_is_read_and_matched_to_the_signature()
+    internal static byte[] WithDss(byte[] signed, X509Certificate2 cert, out string key)
     {
-        using var cert = Cert("Certifier");
-        var signed = Certified(PdfDocMdpPermission.NoChanges, cert);
-        Assert.Null(PdfEditor.ReadDocumentSecurityStore(signed));
-        Assert.False(Cert1(signed).HasValidationInformation);
-
         var f0 = PdfFile.Load(signed);
         var contents = ((PdfString)D(f0, Num(f0, d => f0.Resolve(d.Get("Type")).AsName() == "Sig")).Get("Contents")!).Bytes;
-        var key = Convert.ToHexString(SHA1.HashData(contents));
-        var withDss = Update(signed, (f, ch) =>
+        var k = key = Convert.ToHexString(SHA1.HashData(contents));
+        return Update(signed, (f, ch) =>
         {
             var next = f.Xref.Keys.Max() + 1;
             ch[next] = new PdfStream(new PdfDictionary(), cert.Export(X509ContentType.Cert));
@@ -358,7 +352,7 @@ public class DocMdpTests
                 ["CRLs"] = new PdfArray([new PdfRef(next + 1, 0)]),
                 ["VRI"] = new PdfDictionary(new Dictionary<string, PdfObject>
                 {
-                    [key] = new PdfDictionary(new Dictionary<string, PdfObject>
+                    [k] = new PdfDictionary(new Dictionary<string, PdfObject>
                     {
                         ["Cert"] = new PdfArray([new PdfRef(next, 0)]), ["CRL"] = new PdfArray([new PdfRef(next + 1, 0)]),
                         ["TU"] = new PdfString(Encoding.ASCII.GetBytes("D:20260101000000Z")),
@@ -366,6 +360,17 @@ public class DocMdpTests
                 }),
             }));
         });
+    }
+
+    [Fact]
+    public void Document_security_store_is_read_and_matched_to_the_signature()
+    {
+        using var cert = Cert("Certifier");
+        var signed = Certified(PdfDocMdpPermission.NoChanges, cert);
+        Assert.Null(PdfEditor.ReadDocumentSecurityStore(signed));
+        Assert.False(Cert1(signed).HasValidationInformation);
+
+        var withDss = WithDss(signed, cert, out var key);
         var dss = Assert.IsType<PdfDocumentSecurityStore>(PdfEditor.ReadDocumentSecurityStore(withDss));
         Assert.Equal((1, 1, 0), (dss.Certificates, dss.Crls, dss.Ocsps));
         var vri = Assert.Single(dss.Vri);
@@ -399,8 +404,10 @@ public class DocMdpTests
                 ch[n] = With(D(f, n), "V", new PdfString(Encoding.Latin1.GetBytes("Grace")));
             }));
         }
+        File.WriteAllBytes(Path.Combine(dir, "certified-p1-dss.pdf"), WithDss(Certified(PdfDocMdpPermission.NoChanges, cert), cert, out _));
         File.WriteAllBytes(Path.Combine(dir, "doctimestamp.pdf"), Stamp(PdfEditor.Open(FormPdf()).Sign(new PdfSignOptions { Certificate = cert }), tsa, DateTimeOffset.UtcNow));
         var enc = PdfEditor.Open(FormPdf()).Save(options: new PdfWriteOptions { Encryption = new PdfEncryption { UserPassword = "u", OwnerPassword = "o" } });
+        File.WriteAllBytes(Path.Combine(dir, "encrypted-certified-p2-approved.pdf"), PdfEditor.SignFile(PdfEditor.SignFile(enc, new PdfSignOptions { Certificate = cert, FieldName = "Certify", Certify = PdfDocMdpPermission.FormFillAndSign }, "u"), new PdfSignOptions { Certificate = cert, FieldName = "Approve" }, "u"));
         File.WriteAllBytes(Path.Combine(dir, "encrypted-incremental-signed.pdf"), PdfEditor.Open(enc, "u").Sign(new PdfSignOptions { Certificate = cert }));
     }
 }
