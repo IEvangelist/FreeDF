@@ -32,6 +32,13 @@ static class EditorHeader
     static async Task Order(IPage page, string where)
     {
         Check(await page.EvaluateAsync<bool>("""
+            () => { const a = document.getElementById('sponsor'), r = a.getBoundingClientRect(), mobile = innerWidth <= 720;
+              return a.tagName === 'A' && a.href === 'https://github.com/sponsors/IEvangelist?frequency=one-time' && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer'
+                && a.getAttribute('aria-label') === 'Sponsor (one-time) on GitHub' && a.title === a.getAttribute('aria-label')
+                && r.width >= (mobile ? 44 : 30) && r.height >= (mobile ? 44 : 30) && !document.querySelector('link[rel=preconnect],link[rel=prefetch],link[rel=dns-prefetch]')
+                && before(document.getElementById('fs'), a) && before(a, document.getElementById('dl')); function before(x, y) { return !!(x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING); } }
+            """), where + ": one-time Sponsor link is a plain anchor (href, new tab, noopener noreferrer, label, hit target, no preconnect) beside the right-hand actions");
+        Check(await page.EvaluateAsync<bool>("""
             () => { const q = id => document.getElementById(id), brand = document.querySelector('header .brand'), file = q('fileBtn'), doc = q('doc'),
                 before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
               return before(brand, file) && before(file, doc) && before(file, q('dl')) && before(doc, q('rl')); }
