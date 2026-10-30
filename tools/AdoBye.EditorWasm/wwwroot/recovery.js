@@ -112,7 +112,7 @@ export async function createRecovery({ capture, ui, flush, button, onError }) {
       if (!enabled || method === 'GET') return;
       const path = url.split('?')[0];
       if (['/api/new', '/api/open', '/api/close'].includes(path)) { paused = false; clearing = false; }
-      if (['/api/asset', '/api/asset-cancel', '/api/asset-history', '/api/recovery'].includes(path)) return;
+      if (['/api/asset', '/api/asset-cancel', '/api/asset-history', '/api/recovery', '/api/inspect'].includes(path)) return;
       coreDirty = true; schedule();
     },
     uiChanged: schedule,

@@ -37,9 +37,13 @@ header { display: flex; align-items: center; gap: 6px; padding: 0 12px; backgrou
 .brand { display: flex; align-items: center; gap: 9px; margin-right: 6px; }
 .logo { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(135deg, #4c8dff, #2f5fd0); color: #fff; font-weight: 700; font-size: 11px; letter-spacing: -.02em; }
 .brand strong { font-size: 13px; font-weight: 650; letter-spacing: -.005em; }
-.doc { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 auto 0 8px; padding: 0 10px; height: 28px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--fg-2); }
+.doc { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 auto 0 4px; padding: 0 10px; height: 28px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--fg-2); }
 .doc svg.i { color: var(--mut); width: 14px; height: 14px; }
-#name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+#name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; min-width: 0; color: var(--fg); }
+.doc.empty #name { color: var(--mut); }
+#dstate { flex: none; font-size: 11px; color: var(--mut); }
+#dstate::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+#dstate[data-dirty="true"] { color: #e0a43a; }
 #pages { color: var(--mut); font-size: 12px; }
 #pages:not(:empty)::before { content: "·"; margin-right: 8px; }
 
@@ -50,11 +54,14 @@ main.hide-r { --rw: 0px; }
 main.hide-l #thumbs, main.hide-r #props { visibility: hidden; padding-left: 0; padding-right: 0; overflow: hidden; border-width: 0; }
 button.toggle.on { color: var(--accent-2); background: var(--accent-bg); }
 header #tl { margin-left: -4px; }
+a.sponsor { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: var(--h); height: var(--h); border-radius: var(--r); color: var(--fg-2); }
+a.sponsor:hover { background: var(--hover); color: #ff7aa8; }
+a.sponsor:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 footer #keys { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { footer #keys, footer .sp { display: none; } .brand strong { display: none; } }
 @media (max-width: 900px) { header .lbl { display: none; } header .btn, header button.primary { padding: 0; width: var(--h); justify-content: center; } .doc #pages { display: none; } }
-@media (max-width: 720px) { .doc { display: none; } header .sp { flex: 1; height: auto; background: none; margin: 0; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
+@media (max-width: 720px) { .doc { flex: none; margin-right: 0; padding: 0 8px; } .doc > svg.i { display: none; } #name { max-width: 28vw; } #dstate { font-size: 0; } #dstate::before { margin-right: 0; width: 7px; height: 7px; } header .sp { flex: 1; height: auto; background: none; margin: 0; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
 @media (max-width: 600px) {
   main { --lw: 0px; --rw: 0px; position: relative; }
   #thumbs, #props { visibility: hidden; }
@@ -202,6 +209,12 @@ button:disabled { opacity: .4; cursor: default; }
 .dbody input, .dbody select { height: 32px; padding: 0 9px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
 .dbody input:focus, .dbody select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-bg); }
 .dnote { margin: 0; color: var(--mut); font-size: 12px; }
+.mrow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.mrow .mn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrow .mb { display: flex; gap: 4px; }
+.mrow .mr, .mrow .merr { grid-column: 1 / -1; }
+.mrow .merr { color: var(--danger); font-size: 12px; }
+#mg { max-height: 240px; overflow: auto; }
 .dfoot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 16px; }
 .dfoot button { border: 1px solid var(--line-2); padding: 0 16px; }
 .dfoot button.primary { border-color: transparent; }

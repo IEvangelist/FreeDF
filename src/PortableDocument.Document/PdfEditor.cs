@@ -43,7 +43,10 @@ public sealed partial class PdfEditor
         }
         var rootRef = f.Trailer.Get("Root") as PdfRef ?? throw new PdfParseException("no catalog reference");
         _catalog = rootRef.Number;
-        _pagesRoot = _next++;
+        // Reuse the source's page-tree root when it is a plain flat /Pages node so an unchanged page list serializes identically (no spurious update).
+        _pagesRoot = f.Catalog.Get("Pages") is PdfRef pr && f.Resolve(pr) is PdfDictionary pd && pd.Entries.Keys.All(k => k is "Type" or "Kids" or "Count")
+            && f.Resolve(pd.Get("Kids")) is PdfArray ka && ka.Items.All(k => k is PdfRef kr && f.Resolve(kr) is PdfDictionary kd && f.Resolve(kd.Get("Kids")) is null)
+            ? pr.Number : _next++;
         _objs[_pagesRoot] = new PdfDictionary();
         if (f.Trailer.Get("Info") is PdfRef ir) _info = ir.Number;
 
@@ -113,18 +116,39 @@ public sealed partial class PdfEditor
         return b;
     }
 
-    /// <summary>Copies pages (with everything they reference) from another document, inserting at <paramref name="insertAt"/> (default: end).</summary>
-    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null)
+    /// <summary>Sets (or replaces) an entry of the document catalog, e.g. /Outlines, /PageLabels, /Names or /AcroForm; the value may reference objects from <see cref="AddObject"/> or <see cref="ImportValue"/>. /Type and /Pages are managed by the editor and cannot be set.</summary>
+    public void SetCatalogEntry(string key, PdfObject value)
+    {
+        Require(PdfPermissions.Modify);
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(value);
+        if (key is "Type" or "Pages") throw new ArgumentException($"/{key} is managed by the editor", nameof(key));
+        var d = (PdfDictionary)_objs[_catalog];
+        _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { [key] = value });
+    }
+
+    // Weak keys: remembering an import must not keep the (possibly large, possibly decrypted) source document alive.
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfDocument, Dictionary<int, int>> _importMaps = [];
+
+    /// <summary>
+    /// Copies pages (with everything they reference) from another document, inserting at <paramref name="insertAt"/> (default: end).
+    /// The editor remembers which source objects it has copied (without holding on to <paramref name="src"/>), so catalog-level structures
+    /// such as form fields or layers can be brought over afterwards with <see cref="ImportValue"/> without duplicating objects.
+    /// </summary>
+    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null) =>
+        ImportPages(src, indices, insertAt, null);
+
+    /// <summary>Copies pages with optional form, outline and page-label merging.</summary>
+    public void ImportPages(PdfDocument src, IEnumerable<int>? indices, int? insertAt, PdfImportOptions? options)
     {
         Require(PdfPermissions.Assemble);
         var f = src.File;
         var chosen = (indices ?? Enumerable.Range(0, src.Pages.Count)).ToList();
-        var srcNum = new Dictionary<PdfDictionary, int>(ReferenceEqualityComparer.Instance);
-        foreach (var (n, e) in f.Xref) if (e.InUse && f.GetObject(n) is PdfDictionary d) srcNum[d] = n;
-
-        var allPageNums = new HashSet<int>();
-        foreach (var p in src.Pages) if (srcNum.TryGetValue(p.Dict, out var n)) allPageNums.Add(n);
-
+        var (srcNum, allPageNums) = PageNumbers(src);
+        var at = insertAt ?? _pages.Count;
+        var oldCount = _pages.Count;
+        var destLabels = options is { PageLabels: true } ? CurrentLabelRanges() : null;
+        var pageMap = new Dictionary<int, int>();
         var map = new Dictionary<int, int>();
         var work = new Queue<int>();
         var newPages = new List<int>();
@@ -133,44 +157,83 @@ public sealed partial class PdfEditor
             var p = src.Pages[i];
             var n = srcNum.TryGetValue(p.Dict, out var sn) ? sn : -1 - newPages.Count;
             var dst = _next++;
-            if (n >= 0) map[n] = dst;
+            if (n >= 0) { map[n] = dst; pageMap.TryAdd(n, dst); }
             newPages.Add(dst);
             var merged = new Dictionary<string, PdfObject>(p.Dict.Entries);
             foreach (var k in Inheritable) if (!merged.ContainsKey(k) && p.Inherited.TryGetValue(k, out var v)) merged[k] = v;
             merged.Remove("Parent");
-            _objs[dst] = new PdfDictionary(merged.ToDictionary(kv => kv.Key, kv => Copy(kv.Value)));
+            _objs[dst] = new PdfDictionary(merged.ToDictionary(kv => kv.Key, kv => CopyFrom(f, map, allPageNums, work, kv.Value)));
         }
-        while (work.Count > 0)
-        {
-            var n = work.Dequeue();
-            _objs[map[n]] = Copy(f.GetObject(n));
-        }
+        PdfObject? drCopy = options is { Forms: true } && f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary sf && f.Resolve(sf.Get("DR")) is PdfDictionary sdr
+            ? CopyFrom(f, map, allPageNums, work, sdr) : null;
+        Drain(f, map, allPageNums, work);
         foreach (var dst in newPages)
         {
             var d = (PdfDictionary)_objs[dst];
             var e = new Dictionary<string, PdfObject>(d.Entries) { ["Parent"] = new PdfRef(_pagesRoot, 0) };
             _objs[dst] = new PdfDictionary(e);
         }
-        _pages.InsertRange(insertAt ?? _pages.Count, newPages);
+        _pages.InsertRange(at, newPages);
+        if (options is { Forms: true }) MergeForms(src, newPages, drCopy);
+        if (options is { Outlines: true }) MergeOutlines(src, pageMap, options.OutlineTitle, newPages.Count > 0 ? newPages[0] : 0);
+        if (destLabels is not null) MergePageLabels(src, chosen, destLabels, oldCount, at);
+        _importMaps.AddOrUpdate(src, map);
+    }
 
-        PdfObject Copy(PdfObject? o) => o switch
-        {
-            PdfRef r => Remap(r),
-            PdfArray a => new PdfArray(a.Items.Select(Copy).ToList()),
-            PdfStream s => new PdfStream((PdfDictionary)Copy(s.Dict), s.RawData),
-            PdfDictionary d => new PdfDictionary(d.Entries.ToDictionary(kv => kv.Key, kv => Copy(kv.Value))),
-            null => PdfNull.Instance,
-            _ => o,
-        };
+    /// <summary>
+    /// Deep-copies a value from <paramref name="src"/> (e.g. its /AcroForm or /OCProperties) into this document, reusing objects copied by the latest
+    /// <see cref="ImportPages"/> call for the same source. References to pages that were not imported become null.
+    /// </summary>
+    public PdfObject ImportValue(PdfDocument src, PdfObject? value)
+    {
+        Require(PdfPermissions.Modify);
+        var f = src.File;
+        var (_, allPageNums) = PageNumbers(src);
+        var map = ImportMap(src);
+        var work = new Queue<int>();
+        var copy = CopyFrom(f, map, allPageNums, work, value);
+        Drain(f, map, allPageNums, work);
+        return copy;
+    }
 
-        PdfObject Remap(PdfRef r)
+    Dictionary<int, int> ImportMap(PdfDocument src) => _importMaps.GetValue(src, _ => []);
+
+    static (Dictionary<PdfDictionary, int> ByDict, HashSet<int> Pages) PageNumbers(PdfDocument src)
+    {
+        var f = src.File;
+        var srcNum = new Dictionary<PdfDictionary, int>(ReferenceEqualityComparer.Instance);
+        foreach (var (n, e) in f.Xref) if (e.InUse && f.GetObject(n) is PdfDictionary d) srcNum[d] = n;
+        var pages = new HashSet<int>();
+        foreach (var p in src.Pages) if (srcNum.TryGetValue(p.Dict, out var n)) pages.Add(n);
+        return (srcNum, pages);
+    }
+
+    void Drain(PdfFile f, Dictionary<int, int> map, HashSet<int> pageNums, Queue<int> work)
+    {
+        while (work.Count > 0)
         {
-            if (map.TryGetValue(r.Number, out var m)) return new PdfRef(m, 0);
-            if (allPageNums.Contains(r.Number)) return PdfNull.Instance; // page not being imported
-            var n = _next++;
-            map[r.Number] = n; work.Enqueue(r.Number);
-            return new PdfRef(n, 0);
+            var n = work.Dequeue();
+            _objs[map[n]] = CopyFrom(f, map, pageNums, work, f.GetObject(n));
         }
+    }
+
+    PdfObject CopyFrom(PdfFile f, Dictionary<int, int> map, HashSet<int> pageNums, Queue<int> work, PdfObject? o) => o switch
+    {
+        PdfRef r => Remap(r, map, pageNums, work),
+        PdfArray a => new PdfArray(a.Items.Select(i => CopyFrom(f, map, pageNums, work, i)).ToList()),
+        PdfStream s => new PdfStream((PdfDictionary)CopyFrom(f, map, pageNums, work, s.Dict), s.RawData),
+        PdfDictionary d => new PdfDictionary(d.Entries.ToDictionary(kv => kv.Key, kv => CopyFrom(f, map, pageNums, work, kv.Value))),
+        null => PdfNull.Instance,
+        _ => o,
+    };
+
+    PdfObject Remap(PdfRef r, Dictionary<int, int> map, HashSet<int> pageNums, Queue<int> work)
+    {
+        if (map.TryGetValue(r.Number, out var m)) return new PdfRef(m, 0);
+        if (pageNums.Contains(r.Number)) return PdfNull.Instance; // page not being imported
+        var n = _next++;
+        map[r.Number] = n; work.Enqueue(r.Number);
+        return new PdfRef(n, 0);
     }
 
     /// <summary>New document containing only the given pages of <paramref name="src"/>.</summary>
@@ -186,6 +249,26 @@ public sealed partial class PdfEditor
 
     /// <summary>Adds an object (e.g. a font dictionary or image XObject) and returns a reference to it.</summary>
     public PdfRef AddObject(PdfObject o) { var n = _next++; _objs[n] = o; return new PdfRef(n, 0); }
+
+    /// <summary>Allocates an object number to be filled with <see cref="SetObject"/>, for structures whose members reference each other (e.g. outline items).</summary>
+    public PdfRef ReserveObject()
+    {
+        var r = AddObject(PdfNull.Instance);
+        _reserved.Add(r.Number);
+        return r;
+    }
+
+    readonly HashSet<int> _reserved = [];
+
+    /// <summary>Fills an object obtained from <see cref="ReserveObject"/>; other objects (pages, catalog, imported content) cannot be replaced this way.</summary>
+    public void SetObject(PdfRef reference, PdfObject o)
+    {
+        Require(PdfPermissions.Modify);
+        ArgumentNullException.ThrowIfNull(o);
+        if (reference.Generation != 0 || !_reserved.Contains(reference.Number))
+            throw new ArgumentException("only objects returned by ReserveObject can be set", nameof(reference));
+        _objs[reference.Number] = o;
+    }
 
     public sealed record Overlay(byte[] Content, IReadOnlyDictionary<string, IReadOnlyDictionary<string, PdfObject>> Resources);
 
@@ -429,6 +512,29 @@ public sealed partial class PdfEditor
         return gone;
     }
 
+    /// <summary>Replaces annotations of a page for which <paramref name="rewrite"/> returns a new dictionary (null keeps the original), e.g. to retarget links after merging. Returns how many were replaced.</summary>
+    public int RewriteAnnotations(int index, Func<PdfDictionary, PdfDictionary?> rewrite)
+    {
+        Require(PdfPermissions.Annotate);
+        Check(index);
+        var page = (PdfDictionary)_objs[_pages[index]];
+        if (Res(page.Get("Annots")) is not PdfArray arr) return 0;
+        var changed = 0;
+        var items = new List<PdfObject>(arr.Items);
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (Res(items[i]) is not PdfDictionary d || rewrite(d) is not { } nd) continue;
+            if (items[i] is PdfRef r) _objs[r.Number] = nd; else items[i] = nd;
+            changed++;
+        }
+        if (changed > 0)
+        {
+            if (page.Get("Annots") is PdfRef ar) _objs[ar.Number] = new PdfArray(items);
+            else _objs[_pages[index]] = new PdfDictionary(new Dictionary<string, PdfObject>(page.Entries) { ["Annots"] = new PdfArray(items) });
+        }
+        return changed;
+    }
+
     /// <summary>Drops AcroForm fields whose widgets were all removed (see <see cref="RemoveAnnotations"/>) so field values cannot outlive a redacted widget. Returns the number of field entries removed.</summary>
     public int PruneRemovedFormFields()
     {
@@ -608,13 +714,13 @@ public sealed partial class PdfEditor
         {
             if (deleted.Contains(n)) continue;
             var orig = f.Xref.TryGetValue(n, out var xe) && xe.InUse ? f.GetObject(n) : null;
-            if (!ReferenceEquals(orig, o)) changed[n] = o;
+            if (!ReferenceEquals(orig, o) && !PdfObjectEquality.DeepEquals(orig, o)) changed[n] = o;
         }
         var data = f.Data;
         var sx = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length)).LastIndexOf("startxref", StringComparison.Ordinal);
         var tailText = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length))[(sx + 9)..].Trim();
         var prev = long.Parse(new string(tailText.TakeWhile(char.IsDigit).ToArray()));
         var isStream = !(prev < data.Length && System.Text.Encoding.Latin1.GetString(data, (int)prev, Math.Min(4, data.Length - (int)prev)) == "xref");
-        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream);
+        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream, f.Decryptor, f.Trailer.Get("Encrypt"));
     }
 }

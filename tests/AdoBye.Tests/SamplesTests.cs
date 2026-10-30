@@ -1,11 +1,10 @@
 using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using PortableDocument.Document;
-using PortableDocument.Render;
 using Xunit;
 
 namespace AdoBye.Tests;
 
-/// <summary>Every committed sample under /samples must open and render page 1 cleanly.</summary>
+/// <summary>Every committed sample under /samples must open and render cleanly (the encrypted ones with their documented passwords).</summary>
 public class SamplesTests
 {
     static readonly Dictionary<string, string> Passwords = new()
@@ -14,7 +13,7 @@ public class SamplesTests
         ["18-"] = "owner123",
     };
 
-    static string? SamplesDir()
+    internal static string? SamplesDir()
     {
         for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
         {
@@ -22,6 +21,12 @@ public class SamplesTests
             if (Directory.Exists(s) && Directory.GetFiles(s, "01-*.pdf").Length > 0) return s;
         }
         return null;
+    }
+
+    internal static PdfDocument Open(string dir, string file)
+    {
+        var password = Passwords.FirstOrDefault(kv => file.StartsWith(kv.Key, StringComparison.Ordinal)).Value ?? "";
+        return PdfDocument.Open(Path.Combine(dir, file), password);
     }
 
     public static IEnumerable<object[]> Samples() =>
@@ -35,12 +40,20 @@ public class SamplesTests
     [MemberData(nameof(Samples))]
     public void RendersFirstPage(string file)
     {
-        var path = Path.Combine(SamplesDir()!, file);
-        var password = Passwords.FirstOrDefault(kv => file.StartsWith(kv.Key, StringComparison.Ordinal)).Value ?? "";
-        var doc = PdfDocument.Open(path, password);
+        var doc = Open(SamplesDir()!, file);
         Assert.True(doc.Pages.Count >= 1);
         var r = DocumentRenderer.RenderPage(doc.Pages[0], 48);
         Assert.True(r.Width > 0 && r.Height > 0);
         Assert.Empty(r.Warnings);
+    }
+
+    [Fact]
+    public void EncryptedSamplesNeedTheDocumentedPasswords()
+    {
+        var dir = SamplesDir()!;
+        var user = Directory.GetFiles(dir, "17-*.pdf").Single();
+        Assert.ThrowsAny<Exception>(() => PdfDocument.Open(user, ""));
+        Assert.True(PdfDocument.Open(user, "user123").Pages.Count > 0);
+        Assert.True(PdfDocument.Open(Directory.GetFiles(dir, "18-*.pdf").Single(), "").Pages.Count > 0);
     }
 }

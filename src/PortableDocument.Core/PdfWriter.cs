@@ -15,6 +15,14 @@ public sealed class PdfWriteOptions
     public PdfEncryption? Encryption { get; init; }
     /// <summary>When set, receives the mapping from input object numbers to the numbers used in the written file.</summary>
     public Dictionary<int, int>? ObjectMapOut { get; init; }
+    /// <summary>The 16-byte file identifier to write (default: random). Set it for reproducible output; the array is copied.</summary>
+    public byte[]? FileId
+    {
+        get => _fileId?.ToArray();
+        init => _fileId = value is null ? null : value.Length == 16 ? value.ToArray() : throw new ArgumentException("FileId must be exactly 16 bytes", nameof(value));
+    }
+
+    byte[]? _fileId;
 }
 
 /// <summary>Serializes an object graph to a fresh PDF (classic xref or xref/object streams, optionally compressed and encrypted), or appends an incremental update. Unreachable objects are dropped and numbers are reassigned on full writes.</summary>
@@ -25,6 +33,7 @@ public static class PdfWriter
         public readonly Dictionary<int, int>? Map = map;
         public readonly PdfEncryptor? Enc = enc;
         public readonly bool Compress = compress;
+        public PdfDecryptor? Dec;
         public int Num;
     }
 
@@ -56,7 +65,7 @@ public static class PdfWriter
         if (options.ObjectMapOut is { } mapOut) foreach (var (k, v) in map) mapOut[k] = v;
 
         if (options.ObjectStreams && string.Compare(version, "1.5", StringComparison.Ordinal) < 0) version = "1.5";
-        id ??= RandomNumberGenerator.GetBytes(16);
+        id ??= options.FileId ?? RandomNumberGenerator.GetBytes(16);
         var enc = options.Encryption is null ? null : new PdfEncryptor(options.Encryption, id);
         var ms = new MemoryStream();
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
@@ -162,23 +171,31 @@ public static class PdfWriter
     /// Appends an incremental update (7.5.6) to <paramref name="original"/>: only <paramref name="changed"/> objects are written, under their
     /// existing numbers, followed by a new cross-reference section chained with /Prev. The original bytes are preserved verbatim.
     /// </summary>
-    public static byte[] WriteIncremental(byte[] original, long prevStartXref, IReadOnlyDictionary<int, PdfObject> changed, int size, int root, int? info, PdfObject? id, bool xrefStream)
+    public static byte[] WriteIncremental(byte[] original, long prevStartXref, IReadOnlyDictionary<int, PdfObject> changed, int size, int root, int? info, PdfObject? id, bool xrefStream, PdfDecryptor? decryptor = null, PdfObject? encrypt = null)
     {
         var ms = new MemoryStream();
         ms.Write(original);
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
         if (original.Length > 0 && original[^1] != (byte)'\n') W("\n");
-        var ctx = new Ctx(null, null, false);
+        var ctx = new Ctx(null, null, false) { Dec = decryptor };
         var offs = new SortedDictionary<int, long>();
         foreach (var (num, obj) in changed.OrderBy(k => k.Key))
         {
             offs[num] = ms.Position;
+            ctx.Num = num;
             W($"{num} 0 obj\n");
             WriteObject(ms, obj, ctx);
             W("\nendobj\n");
         }
+        ctx = new Ctx(null, null, false);
         var tail = new StringBuilder($" /Root {root} 0 R");
         if (info is { } inf) tail.Append($" /Info {inf} 0 R");
+        if (encrypt is not null)
+        {
+            var tmp = new MemoryStream();
+            WriteObject(tmp, encrypt, ctx);
+            tail.Append(" /Encrypt ").Append(Encoding.Latin1.GetString(tmp.ToArray()));
+        }
         if (id is PdfArray { Count: >= 1 } ia)
         {
             var tmp = new MemoryStream();
@@ -233,7 +250,7 @@ public static class PdfWriter
             case PdfBoolean b: W(b.Value ? "true" : "false"); break;
             case PdfInteger i: W(i.Value.ToString(CultureInfo.InvariantCulture)); break;
             case PdfReal r: W(Real(r.Value)); break;
-            case PdfString s: W("<" + Convert.ToHexString(ctx.Enc is null ? s.Bytes : ctx.Enc.Encrypt(s.Bytes, ctx.Num)) + ">"); break;
+            case PdfString s: W("<" + Convert.ToHexString(ctx.Dec is not null ? ctx.Dec.SealString(s.Bytes, ctx.Num) : ctx.Enc is null ? s.Bytes : ctx.Enc.Encrypt(s.Bytes, ctx.Num)) + ">"); break;
             case PdfName n: W(Name(n.Value)); break;
             case PdfRef r: W(ctx.Map is null ? $"{r.Number} 0 R" : ctx.Map.TryGetValue(r.Number, out var nn) ? $"{nn} 0 R" : "null"); break;
             case PdfArray a:
@@ -247,6 +264,7 @@ public static class PdfWriter
                     var addFlate = ctx.Compress && !st.Dict.Entries.ContainsKey("Filter") && data.Length >= 32;
                     if (addFlate) data = Deflate(data);
                     if (ctx.Enc is not null && !(type == "Metadata" && !ctx.Enc.EncryptMetadata)) data = ctx.Enc.Encrypt(data, ctx.Num);
+                    if (ctx.Dec is not null) data = ctx.Dec.SealStream(st, ctx.Num);
                     W("<<");
                     foreach (var (k, v) in st.Dict.Entries)
                     {
@@ -261,7 +279,13 @@ public static class PdfWriter
                 }
             case PdfDictionary d:
                 W("<<");
-                foreach (var (k, v) in d.Entries) { W(Name(k) + " "); WriteObject(ms, v, ctx); }
+                foreach (var (k, v) in d.Entries)
+                {
+                    W(Name(k) + " ");
+                    // A signature's /Contents is never encrypted (7.6.2); the hash covers its raw bytes.
+                    if (ctx.Dec is not null && k == "Contents" && v is PdfString cs && d.Entries.ContainsKey("ByteRange")) W("<" + Convert.ToHexString(cs.Bytes) + ">");
+                    else WriteObject(ms, v, ctx);
+                }
                 W(">>"); break;
             default: W("null"); break;
         }

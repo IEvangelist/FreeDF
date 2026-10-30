@@ -1,6 +1,6 @@
 # Sample PDFs
 
-Twenty-six example documents that exercise as much of ISO 32000-2 (PDF 2.0) as possible. Every file is generated from raw PDF operators by a repeatable generator (`_gen/`), so the examples are valid, small (about 2 MB in total) and free of stock images. Open `01-spec-showcase.pdf` first: its tiles link to the other files.
+Twenty-six committed example documents (plus a generated 27th) that exercise as much of ISO 32000-2 (PDF 2.0) as possible. Every file is generated from raw PDF operators by this repo's own C# tooling (`tools/AdoBye.Samples`), so the examples are valid, small (about 2.4 MB in total for 01-26) and free of stock images. Open `01-spec-showcase.pdf` first: its tiles link to the other files, or generate `27-full-collection.pdf` for all of them in one file.
 
 Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro (code), all embedded as OpenType/CFF subsets; an indigo / teal / amber / rose palette on a 54 pt margin grid.
 
@@ -34,6 +34,7 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 | `24-poster.pdf` | A3 poster | Large display type, layered shadings, translucent rings, blend modes (`Screen`), outlined text |
 | `25-dashboard-charts.pdf` | KPI dashboard (A4 landscape) | Bar, smooth line/area (Catmull-Rom Béziers + clipped gradient), donut (arc paths) and sparklines — all path operators |
 | `26-repacked-object-streams.pdf` | Report rewritten by this repo's `PdfEditor`/`PdfWriter` | Compressed object streams and cross-reference streams (PDF 1.5+ file structure) |
+| `27-full-collection.pdf` | *Generated on demand, not committed:* all of the above in one file (50 pages) | Page import/merge, rebuilt outline and page labels, retargeted links, form + layers + attachments + named destinations + structure tree carried over (see below) |
 
 ## Passwords
 
@@ -42,34 +43,47 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 | `17-encrypted-user-password.pdf` | `user123` | `owner-user123` |
 | `18-encrypted-owner-restricted.pdf` | *(none — opens freely)* | `owner123` |
 
+## The full collection
+
+`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26, and `.gitignore` excludes it); `tools/Validate-Samples.ps1` or `AdoBye.Samples generate samples 27-` creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
+
+* **Navigation:** one collapsed bookmark per sample (`NN  Title`) that lands on the sample's first page and nests that sample's own bookmarks (`12` and `20`/`26` have them); page labels read `NN · label` (sample `12` keeps its roman / decimal / `A-` labels under the prefix); `PageMode UseOutlines`.
+* **Links:** the `GoToR` tiles of `01` are rewritten to plain `GoTo` destinations so they jump inside the merged file.
+* **Structures kept:** the AcroForm of `11`, the layers of `15`, the attachments and associated files of `14`, the named destinations of `12` and the structure tree of `19` are carried over (each belongs to exactly one source; the generator fails if two sources define the same one).
+* **Not kept:** per-sample viewer preferences, outline colours/styles, and the document-level tagging of the other samples (only `19` is tagged, so the merged file is only partly tagged).
+* **Encrypted samples (deliberate choice):** `17` and `18` are opened with the passwords listed above and their pages are merged in the clear, so the full file is **not encrypted** and carries neither the passwords nor the `18` permission restrictions. They are public sample fixtures with published passwords; keep using `17` and `18` themselves to test decryption.
+
 ## Regenerating
 
-```powershell
-pip install reportlab pikepdf pillow numpy fonttools     # only pikepdf, pillow and numpy are needed by the current generators
-samples\_gen\run.ps1            # rebuild every sample, repack 26 with PdfEditor, validate with our renderer
-samples\_gen\run.ps1 -Only 20   # rebuild a subset (file-name fragment)
-python samples\_gen\check.py samples\*.pdf   # structural check with pikepdf
-```
-
-Layout: `_gen/pdfkit.py` is a small raw-PDF builder (objects, content streams, CFF/TrueType subsetting, shadings, annotations, tagging); `_gen/theme.py` holds the palette and page furniture; one `gen_NN_*.py` per sample; `_gen/fonts/` holds the OFL/Bitstream fonts (see `LICENSES.txt`). Encryption is applied last with pikepdf.
-
-`tools/AdoBye.Samples` (C#, not in the solution) validates every sample with this repo's parser/renderer and can repack files:
+Everything is authored in C# with this repo's own library: the generators in `tools/AdoBye.Samples/Gen` use a small raw-object kit (`Kit/`) whose object bodies are parsed by `PdfLexer` and serialized (and AES-256 encrypted) by `PdfWriter`, so each sample can use any feature without a high-level library getting in the way. Output is reproducible: `SamplesTests`/`GeneratedSamplesTests` regenerate everything and require byte-for-byte equality with the committed files, including the encrypted ones (`PdfEncryption.RandomBytes` is fed a fixed-seed generator and `PdfWriteOptions.FileId` is fixed; constant randomness is for fixtures only and must never be used to protect real documents).
 
 ```powershell
-dotnet run --project tools/AdoBye.Samples -c Release -- validate samples --out samples/_gen/out
-dotnet run --project tools/AdoBye.Samples -c Release -- repack samples/20-report.pdf samples/26-repacked-object-streams.pdf
+dotnet build tools/AdoBye.Samples -c Release
+dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples          # all 27
+dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples 12-nav   # a subset (file-name fragment)
+dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll validate samples --out compare-out/samples
 ```
 
-`tests/AdoBye.Tests/SamplesTests.cs` opens every `samples/*.pdf` (using the passwords above) and renders page 1 without exceptions or renderer warnings.
+Layout: `Kit/Doc.cs` (document, pages, content streams, form XObjects, resources), `Kit/Fonts.cs` + `Kit/FontFile.cs` (standard 14 metrics and OpenType/TrueType reading, kerning and glyph subsetting), `Kit/Raster.cs` (procedural images, baseline JPEG encoder, sRGB profile), `Kit/Theme.cs` (palette and page furniture), one `Gen/GenNN.cs` per sample (`Gen26` repacks `20` with `PdfEditor`, `Gen27` is the merge). `_gen/fonts/` holds the OFL/Bitstream fonts (see `LICENSES.txt`; also used by the browser editor). Sample-suite authoring no longer requires Python; independent test-fixture generators elsewhere are separate from this migration.
+
+Tests: `SamplesTests` opens every committed sample (with the passwords above) and renders page 1 without warnings. `GeneratedSamplesTests` regenerates all samples into a temp folder and checks that 01-26 equal the committed files byte-for-byte, and that 27 has exactly the pages of the others, bookmarks and labels per sample, 17/18 merged with their text, retargeted and named-destination links, and the same form fields, layers, attachments, structure tree and nested bookmarks as the sources.
+
+Integrated validation on 2026-10-30 passes 38 focused sample/reproducibility
+cases and, after integration review fixes, the 1696-case full Release suite. The editor's separate local
+**File > Merge PDFs** flow also passes Chromium save/render/reopen with these
+regenerated samples. These integration runs do not repeat or extend the
+independent comparison evidence below.
 
 ## Validation
 
-* **pikepdf / qpdf**: every file opens and passes `check()` (`_gen/check.py`).
+* **pikepdf / pdfium** (independent validators, `tools/validate_samples.py check samples`): every file opens, re-saves cleanly and renders. `tools/validate_samples.py compare <old> <new>` diffs page counts, structure and pixels between two sample sets (used once to compare the C# port with the former Python output: all 26 matched in page count, boxes and structure counts; page pixels differed by at most 0.11% except `09`, whose procedural photo/plasma textures are not reproduced pixel-for-pixel).
+  Run everything with `tools/Validate-Samples.ps1` (needs `pip install pikepdf pypdfium2 numpy`).
 * **Our renderer**: all pages of all samples render with zero warnings.
+* **Size**: the regenerated files are 12-25% larger than the Python ones (2.4 MB vs 2.05 MB for 01-26). The growth is entirely in the embedded font subsets (about 2.7 KB more per font: our CFF subsetter inlines subroutines instead of re-optimising them); content streams are the same size.
 * **Edge (PDFium) comparison** (`tools/AdoBye.RenderCompare`, 2 % tolerance): page 1 of every sample passes (under 1 % differing pixels) except the two harness-related cases below.
 
 ```powershell
-dotnet run --project tools/AdoBye.RenderCompare -c Release -- samples/24-poster.pdf --out samples/_gen/cmp
+dotnet run --project tools/AdoBye.RenderCompare -c Release -- samples/24-poster.pdf --out compare-out
 ```
 
 Known differences and notes:

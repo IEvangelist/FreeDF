@@ -4,6 +4,7 @@ using PortableDocument.Document;
 using PortableDocument.Render;
 
 // Usage:
+//   AdoBye.Samples generate <out-dir> [name-fragment]   author the samples (and the merged 27-full-collection) with this repo's own writer/editor
 //   AdoBye.Samples validate <samples-dir> [--out dir]   open + render every page of every sample, fail on exceptions or renderer warnings
 //   AdoBye.Samples repack <in.pdf> <out.pdf>            rewrite a sample with PdfEditor/PdfWriter (compressed streams + object/xref streams)
 // Passwords for the encrypted samples are listed in samples/README.md.
@@ -14,6 +15,12 @@ var passwords = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     ["18-encrypted-owner-restricted"] = "owner123",
 };
 
+if (args.Length >= 2 && args[0] == "generate")
+{
+    foreach (var name in AdoBye.Samples.SampleGenerator.Generate(args[1], args.Length > 2 ? args[2] : "")) Console.WriteLine("built " + name);
+    return 0;
+}
+
 if (args.Length >= 3 && args[0] == "repack")
 {
     var ed = PdfEditor.Open(File.ReadAllBytes(args[1]));
@@ -22,7 +29,7 @@ if (args.Length >= 3 && args[0] == "repack")
     return 0;
 }
 
-if (args.Length < 2 || args[0] != "validate") { Console.Error.WriteLine("usage: validate <dir> [--out dir] | repack <in> <out>"); return 2; }
+if (args.Length < 2 || args[0] != "validate") { Console.Error.WriteLine("usage: generate <out-dir> [fragment] | validate <dir> [--out dir] | repack <in> <out>"); return 2; }
 string? outDir = null;
 for (var i = 2; i < args.Length - 1; i++) if (args[i] == "--out") outDir = args[i + 1];
 if (outDir != null) Directory.CreateDirectory(outDir);

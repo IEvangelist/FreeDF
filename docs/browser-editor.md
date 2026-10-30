@@ -308,6 +308,49 @@ coverage includes a zero-rerender assertion after the pending edit flush and
 thumbnail completion, clipboard/undo, invalid-input recovery and collapsed mobile
 thumbnail visibility. The static-site publish validates 218 local WASM artifacts.
 
+## Local merge and header layout
+
+The header order is brand, File menu, then the open document name and
+saved/unsaved status. Long names truncate with the full filename in a tooltip;
+mobile uses a status dot and collapsed controls. Local recovery keeps its
+separate durable-checkpoint status and explicit Resume/Discard prompt. The
+one-time GitHub Sponsors link is a plain external anchor with
+`noopener noreferrer`; it does not preconnect or send document data.
+The checkout frequency query is asserted, but the available tier list and actual
+one-time checkout still require manual verification on GitHub.
+
+**File > Merge PDFs** accepts multiple local PDFs (or a drop into its dialog).
+Review/reorder/remove files, select one-based page ranges and choose an insertion
+point or append. The backend imports the selected files as one atomic batch,
+registers imported AcroForm fields (renaming collisions), nests outlines under
+file bookmarks and preserves page labels. Existing page overlays stay with
+their pages; a failure leaves the document unchanged. This does not merge every
+catalog-level structure (for example, arbitrary tags/layers/attachment trees).
+Document JavaScript and signatures are not carried into the merged catalog.
+Page insertion is not an overlay undo operation; retain/download the original
+when the merge must be reversible.
+
+Enter/Space activate the focused row or Add PDFs button; reordering/removing a
+row retains focus, Tab stays inside the dialog and Escape cancels. Backend
+rejections keep the ordered files, ranges and insertion choice open with an
+inline error for correction and retry.
+
+Encrypted inputs unsupported by the browser are flagged by filename before
+merging. Passwords are never requested or persisted by this dialog. If a
+supported encrypted import occurs in the server host, recovery is disabled
+rather than caching a decrypted copy. Merge stays local in both hosts.
+
+The integrated Release build succeeds and full suite passes 1696/1696. A local
+static WASM publish into a fresh output directory validates 207 artifacts (without the optional `wasm-tools`
+optimization workload). Full Chromium smoke passes text fidelity, recovery,
+clipboard/assets and desktop/mobile header assertions; the separate `--merge`
+scenario covers keyboard controls/focus/Escape, inline backend rejection,
+direct host requests with a later invalid-range or encrypted frame (unchanged
+state, recovery history/assets and working overlay undo), order/ranges/insertion, saved page
+count/text, form registration, outlines/labels, render and reopen. A batched
+desktop/mobile screenshot check accompanies these assertions. This does not
+complete the outstanding latency/benchmark pass.
+
 ## Build and smoke coverage
 
 Use the SDK declared in root `global.json`:
@@ -319,6 +362,7 @@ dotnet build tools\AdoBye.EditorSmoke -c Release
 .\tools\AdoBye.EditorSmoke\bin\Release\net10.0\playwright.ps1 install chromium
 $site = (Resolve-Path tools\AdoBye.EditorWasm\bin\pages\wwwroot).Path
 dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- $site
+dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --merge $site
 ```
 
 The publish script checks required static assets and WASM magic bytes. Override

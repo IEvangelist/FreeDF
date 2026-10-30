@@ -46,15 +46,16 @@
   <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 017.5-2"/></symbol>
   <symbol id="i-sidel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
   <symbol id="i-sider" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9-9.2C1.8 7.6 3.700 4.500 6.800 4.500c2 0 3.500 1.100 5.200 3.100 1.700-2 3.200-3.100 5.200-3.100 3.100 0 5 3.100 3.800 6.300C19 15.600 12 20 12 20z"/></symbol>
 </defs></svg>
 <header>
   <button id="tl" class="icon toggle on" title="Toggle pages panel ([)" aria-pressed="true"><svg class="i"><use href="#i-sidel"/></svg></button>
   <div class="brand"><span class="logo">Ab</span><strong>AdoBye</strong></div>
-  <div class="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="pages"></span></div>
   <div class="group">
     <button id="fileBtn" title="File menu" aria-haspopup="menu"><svg class="i"><use href="#i-open"/></svg><span class="lbl">File</span><svg class="i"><use href="#i-down"/></svg></button>
-    <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" hidden>
+    <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" multiple hidden>
   </div>
+  <div class="doc empty" id="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="dstate" hidden></span><span id="pages"></span></div>
   <span class="sp"></span>
   <div class="group">
     <button id="rl" class="icon" title="Rotate page left"><svg class="i"><use href="#i-rotl"/></svg></button>
@@ -67,6 +68,7 @@
     <button id="pr" class="icon" title="Print (Ctrl+P)"><svg class="i"><use href="#i-print"/></svg></button>
     <button id="fb" class="icon" title="Find (Ctrl+F)"><svg class="i"><use href="#i-search"/></svg></button>
     <button id="fs" class="icon" title="Full screen (F11)"><svg class="i"><use href="#i-full"/></svg></button>
+    <a id="sponsor" class="sponsor" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg></a>
   </div>
   <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg><span class="lbl">Download</span></button>
   <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
@@ -242,7 +244,7 @@ function queueThumbnail(img, url) {
 async function refresh(retainedUndo = null) {
   await flush();
   state = await (await request('/api/state')).json();
-  $('name').textContent = state.pageCount ? state.fileName + (state.dirty ? ' •' : '') : 'No document';
+  setDocLabel(state);
   $('pages').textContent = state.pageCount ? `${state.pageCount} page${state.pageCount === 1 ? '' : 's'}` : '';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
   thumbnailObserver?.disconnect();
@@ -842,18 +844,18 @@ function props() {
 function updateBase() {
   if (state.pageCount) return build(true).catch(reportError);
 }
-async function act(fn) {
+async function act(fn, onError = reportError) {
   status(host ? 'Processing locally in WebAssembly...' : 'Processing...');
   try {
     await new Promise(resolve => setTimeout(resolve, 0));
     await flush(); await fn(); await refresh();
     status(host ? 'Ready. PDFs stay on this device. Save downloads a copy.' : 'Ready.');
-  } catch (e) { reportError(e); }
+  } catch (e) { onError(e); }
 }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 
 $('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.target.files[0]));
-$('merge').onchange = e => e.target.files[0] && act(() => upload('/api/import', e.target.files[0]));
+$('merge').onchange = e => { const files = [...e.target.files]; if (files.length) mergeDialog?.isConnected ? mergeDialog.addFiles(files) : mergePdfs(files); };
 $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/270`));
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
 $('del').onclick = () => state.pageCount && confirm('Delete this page?') && act(() => post(`/api/delete/${sel}`));
@@ -882,10 +884,16 @@ $('img').onchange = async e => {
   items.push(cur); paint(); props(); queueSave();
 };
 // ---- Navigation, zoom, find, print, full screen, file menu ----
+function setDocLabel(s) {
+  const has = !!s.pageCount, n = $('name'), d = $('dstate');
+  n.textContent = has ? s.fileName : 'No document'; n.title = has ? s.fileName : '';
+  d.hidden = !has; d.textContent = s.dirty ? 'Unsaved' : 'Saved'; d.dataset.dirty = !!s.dirty;
+  $('doc').classList.toggle('empty', !has);
+}
 async function refreshDirty() {
   const s = await (await request('/api/state')).json();
   Object.assign(state, { version: s.version, pageCount: s.pageCount, pages: s.pages, dirty: s.dirty, canSave: s.canSave, fileName: s.fileName });
-  $('name').textContent = s.pageCount ? s.fileName + (s.dirty ? ' •' : '') : 'No document';
+  setDocLabel(s);
 }
 function navUpdate() {
   $('pn').value = state.pageCount ? sel + 1 : ''; $('pt').textContent = '/ ' + (state.pageCount || 0);
@@ -976,12 +984,22 @@ function modal(title, body, okLabel, onOk) {
   document.querySelector('.mdl')?.remove();
   const o = document.createElement('div'); o.className = 'mdl';
   o.innerHTML = `<div class="dlg" role="dialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><div class="dbody">${body}</div><div class="dfoot"><button class="dc">Cancel</button><button class="primary dok">${esc(okLabel)}</button></div></div>`;
-  const close = () => o.remove();
+  const opener = document.activeElement;
+  const close = () => { o.remove(); if (opener?.isConnected) opener.focus(); };
   o.querySelector('.dc').onclick = close; o.onpointerdown = e => { if (e.target === o) close(); };
-  const ok = async () => { try { if (await onOk(o) !== false) close(); } catch (e) { status(e.message); } };
+  const ok = async () => { try { if (await onOk(o) !== false) close(); } catch (e) { const error = o.querySelector('[data-error]'); if (error) error.textContent = e.message; status(e.message); } };
   o.querySelector('.dok').onclick = ok;
-  o.onkeydown = e => { if (e.key === 'Escape') close(); else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); ok(); } e.stopPropagation(); };
-  document.body.appendChild(o); (o.querySelector('input,textarea,select'))?.focus();
+  o.onkeydown = e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Enter' && e.target.matches('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit])')) { e.preventDefault(); ok(); }
+    else if (e.key === 'Tab') {
+      const controls = [...o.querySelectorAll('button,input,textarea,select,a[href]')].filter(el => !el.disabled && el.getClientRects().length);
+      const next = controls.indexOf(document.activeElement) + (e.shiftKey ? -1 : 1);
+      if (next < 0 || next >= controls.length) { e.preventDefault(); controls[(next + controls.length) % controls.length]?.focus(); }
+    }
+    e.stopPropagation();
+  };
+  document.body.appendChild(o); (o.querySelector('input,textarea,select') || o.querySelector('button'))?.focus();
   return o;
 }
 const PAGE_SIZES = { A4: [595.276, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.276], Letter: [612, 792], Legal: [612, 1008], Tabloid: [792, 1224] };
@@ -995,6 +1013,74 @@ function newDoc() {
   });
 }
 function insertBlank(at) { return act(() => post(`/api/blank/${at}`)).then(() => goPage(at)); }
+let mergeDialog = null;
+function mergePdfs(files = []) {
+  if (!state.pageCount) return status('Open a PDF first, then choose File > Merge PDFs.');
+  const list = [], n = state.pageCount;
+  const o = modal('Merge PDFs', `<div id="mg"></div><button id="mga" type="button">Add PDFs…</button>
+    <p class="merr" data-error role="alert"></p>
+    <label>Insert at<select id="mat"><option value="${n}">End of document</option><option value="0">Beginning</option><option value="${sel + 1}">After current page (${sel + 1})</option><option value="p">Before page number…</option></select></label>
+    <label id="mpl" hidden>Before page<input id="mpn" type="number" min="1" max="${n + 1}" value="${n + 1}"></label>
+    <p class="dnote">Files merge in the order listed, as one step. Pages are copied on this device; nothing is uploaded and passwords are never stored. Form fields, bookmarks, page labels and links between merged pages are kept. Not carried over: document JavaScript, tagged structure, layers, attachments, signatures, and links to pages you leave out.</p>`, 'Merge', async () => {
+    o.querySelector('[data-error]').textContent = '';
+    if (!list.length) throw new Error('Add at least one PDF.');
+    if (list.some(e => e.error)) throw new Error('Remove the files that cannot be merged first.');
+    for (const e of list) {
+      const parts = e.range.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.some(s => !/^\d+(\s*-\s*\d*)?$/.test(s))) throw new Error(`${e.file.name}: page ranges use numbers, commas and dashes, such as 1-3, 5.`);
+      if (parts.length && !parts.some(s => { const [a, b] = s.split('-').map(x => x.trim()); const lo = +a, hi = b === undefined ? lo : b === '' ? e.pages : +b; return Math.max(1, Math.min(lo, hi)) <= Math.min(e.pages, Math.max(lo, hi)); }))
+        throw new Error(`${e.file.name}: no pages in range. It has ${e.pages} page${e.pages === 1 ? '' : 's'}.`);
+    }
+    const at = o.querySelector('#mat').value === 'p' ? Math.min(n, Math.max(0, (+o.querySelector('#mpn').value || n + 1) - 1)) : +o.querySelector('#mat').value;
+    let result = null;
+    await act(async () => {
+      status(`Merging ${list.length} file${list.length === 1 ? '' : 's'}…`);
+      const body = new FormData(); body.append('f', await packFiles(list.map(e => e.file)));
+      const query = `at=${at}&ranges=${encodeURIComponent(list.map(e => e.range).join('|'))}&names=${encodeURIComponent(JSON.stringify(list.map(e => e.file.name)))}`;
+      result = await (await request(`/api/import-batch?${query}`, { method: 'POST', body })).json();
+    }, error => { o.querySelector('[data-error]').textContent = error.message; reportError(error); });
+    if (!result) return false;
+    if (result) { await goPage(result.first); status(`Merged ${result.count} page${result.count === 1 ? '' : 's'} from ${result.files} file${result.files === 1 ? '' : 's'}. Ready.`); }
+  });
+  const render = () => {
+    o.querySelector('#mg').innerHTML = list.map((e, i) => `<div class="mrow" data-i="${i}"><span class="mn" title="${esc(e.file.name)}">${esc(e.file.name)}</span>
+      <span class="mb"><button class="mini" data-m="up" title="Move up" ${i ? '' : 'disabled'}>${ic('up')}</button><button class="mini" data-m="down" title="Move down" ${i < list.length - 1 ? '' : 'disabled'}>${ic('down')}</button><button class="mini danger" data-m="rm" title="Remove">${ic('close')}</button></span>
+      ${e.error ? `<span class="merr" role="alert">${esc(e.error)}</span>` : `<input class="mr" aria-label="Pages to merge from ${esc(e.file.name)}" placeholder="All ${e.pages} page${e.pages === 1 ? '' : 's'}, or e.g. 1-3, 5" value="${esc(e.range)}">`}</div>`).join('');
+    o.querySelector('.dok').disabled = !list.length;
+  };
+  o.querySelector('#mg').onclick = ev => {
+    const b = ev.target.closest('[data-m]'); if (!b) return;
+    const i = +b.closest('.mrow').dataset.i, j = b.dataset.m === 'up' ? i - 1 : i + 1;
+    if (b.dataset.m === 'rm') list.splice(i, 1); else [list[i], list[j]] = [list[j], list[i]];
+    const row = b.dataset.m === 'rm' ? Math.min(i, list.length - 1) : j;
+    render();
+    const buttons = row >= 0 ? [...o.querySelectorAll(`.mrow[data-i="${row}"] [data-m]`)] : [];
+    (buttons.find(el => el.dataset.m === b.dataset.m && !el.disabled) || buttons.find(el => !el.disabled) || o.querySelector('#mga')).focus();
+  };
+  o.querySelector('#mg').oninput = ev => { if (ev.target.matches('.mr')) list[+ev.target.closest('.mrow').dataset.i].range = ev.target.value; };
+  o.querySelector('#mat').onchange = ev => { o.querySelector('#mpl').hidden = ev.target.value !== 'p'; };
+  o.querySelector('#mga').onclick = () => pickFile('merge');
+  o.addFiles = async added => {
+    for (const file of added) {
+      const e = { file, range: '' };
+      try { const info = await (await request('/api/inspect', { method: 'POST', body: formOf(file) })).json(); e.pages = info.pageCount; e.encrypted = info.encrypted; }
+      catch (err) { e.error = err.message; }
+      if (!o.isConnected) return;
+      list.push(e); render();
+    }
+  };
+  mergeDialog = o; render(); o.addFiles(files);
+}
+const formOf = f => { const fd = new FormData(); fd.append('f', f); return fd; };
+// One request carries every file (uint32 count, then uint32 length + bytes per file) so the merge is a single all-or-nothing step.
+async function packFiles(files) {
+  const buffers = await Promise.all(files.map(f => f.arrayBuffer()));
+  const out = new Uint8Array(4 + buffers.reduce((s, b) => s + 4 + b.byteLength, 0)), view = new DataView(out.buffer);
+  view.setUint32(0, buffers.length, true);
+  let p = 4;
+  for (const b of buffers) { view.setUint32(p, b.byteLength, true); out.set(new Uint8Array(b), p + 4); p += 4 + b.byteLength; }
+  return new File([out], 'merge.bin');
+}
 function docProps() {
   request('/api/info').then(r => r.json()).then(d => {
     const f = (k, l) => `<label>${l}<input data-i="${k}" value="${esc(d[k] ?? '')}"></label>`;
@@ -1058,6 +1144,7 @@ function openFileMenu() {
     { label: 'Save', key: mod + 'S', disabled: !has, run: saveDoc },
     { label: 'Save as…', key: mod + 'Shift+S', disabled: !has, run: saveAs },
     '-',
+    { label: 'Merge PDFs…', disabled: !has, run: () => pickFile('merge') },
     { label: 'Insert', disabled: !has, sub: [
       { label: 'Blank page before current', run: () => insertBlank(sel) }, { label: 'Blank page after current', run: () => insertBlank(sel + 1) },
       { label: 'Duplicate current page', run: () => act(() => post(`/api/duplicate/${sel}`)).then(() => goPage(sel + 1)) }, '-',
@@ -1108,7 +1195,14 @@ new ResizeObserver(scheduleLayoutBuild).observe($('view'));
 addEventListener('resize', scheduleLayoutBuild);
 addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); document.body.id = 'drop'; } });
 addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''; });
-addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); document.body.id = ''; act(() => upload(state.pageCount ? '/api/import' : '/api/open', e.dataTransfer.files[0])); } });
+addEventListener('drop', e => {
+  if (!e.dataTransfer.files.length) return;
+  e.preventDefault(); document.body.id = '';
+  const files = [...e.dataTransfer.files];
+  if (mergeDialog?.isConnected) mergeDialog.addFiles(files);
+  else if (state.pageCount) mergePdfs(files);
+  else act(() => upload('/api/open', files[0])).then(() => files.length > 1 && state.pageCount && mergePdfs(files.slice(1)));
+});
 function setPanel(side, open, user) {
   const m = document.querySelector('main'), b = $(side === 'l' ? 'tl' : 'tr');
   if (user && open && innerWidth <= 760) {

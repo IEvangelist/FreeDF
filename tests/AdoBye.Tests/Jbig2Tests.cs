@@ -33,6 +33,31 @@ public class Jbig2Tests
     }
 
     [Fact]
+    public void HuffmanRefinementAggregateStreamsSurviveTruncationAndCorruption()
+    {
+        foreach (var name in new[] { "huffman-refagg-single", "huffman-refagg-aggregate" })
+        {
+            var pdf = File.ReadAllBytes(Path.Combine(Dir, name + ".pdf"));
+            var text = System.Text.Encoding.Latin1.GetString(pdf);
+            var start = text.IndexOf("stream\n", text.IndexOf("/JBIG2Decode", StringComparison.Ordinal), StringComparison.Ordinal) + 7;
+            var end = text.LastIndexOf("\nendstream", StringComparison.Ordinal);
+            var stream = pdf[start..end];
+            Assert.NotNull(Jbig2Decoder.Decode(stream, null, 64, 20, out var warning));
+            Assert.Null(warning);
+
+            for (var len = 0; len < stream.Length; len++)
+                Jbig2Decoder.Decode(stream[..len], null, 64, 20, out _);
+            var rng = new Random(7);
+            for (var i = 0; i < 400; i++)
+            {
+                var mutated = (byte[])stream.Clone();
+                mutated[rng.Next(mutated.Length)] ^= (byte)(1 << rng.Next(8));
+                Jbig2Decoder.Decode(mutated, null, 64, 20, out _);
+            }
+        }
+    }
+
+    [Fact]
     public void DecodesMmrHalftonePatternAndGridPlanes()
     {
         const string eofb = "000000000001000000000001";

@@ -21,7 +21,8 @@ if (args.Length == 4 && args[0] == "--page-image")
 
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery] <published-wwwroot>");
+var mergeOnly = args.Length == 2 && args[0] == "--merge";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -73,12 +74,20 @@ try
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
         return;
     }
+    if (mergeOnly)
+    {
+        await EditorMerge.Run(page);
+        Check(network.IsEmpty && EditorMerge.ExpectedErrors(errors, ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + System.Text.Json.JsonSerializer.Serialize(errors) + "\nNetwork: " + string.Join("\n", network));
+        Console.WriteLine("PASS: keyboard merge controls/focus/Escape, inline server rejection with retained choices, direct later-frame rejection preserving state/history/assets and undo, multi-file order/range/insertion, render/save/reopen.");
+        return;
+    }
     if (recoveryOnly)
     {
         await EditorRecovery.Run(page);
-        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors));
+        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
     }
+    await EditorHeader.Empty(page);
     await page.Locator("#fileBtn").ClickAsync();
     await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).ClickAsync();
     await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
@@ -92,6 +101,7 @@ try
     await text.WaitForAsync();
     await text.FillAsync("Browser local round trip");
     await text.PressAsync("Escape");
+    await EditorHeader.State(page, true);
     await page.Locator("#prev").ClickAsync();
     await page.WaitForFunctionAsync("document.getElementById('prev').classList.contains('on') && document.getElementById('base').dataset.url.includes('bare=false') && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url && document.getElementById('base').naturalWidth > 0");
     Check(await page.EvaluateAsync<bool>("document.getElementById('base').src.startsWith('data:image/png;base64,')"), "Local rendered preview");
@@ -110,6 +120,7 @@ try
     await page.Locator("#sn").FillAsync("local-round-trip.pdf");
     var download = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
     var downloaded = await download.PathAsync() ?? throw new Exception("No downloaded PDF.");
+    await EditorHeader.State(page, false);
     Check(download.SuggestedFilename == "local-round-trip.pdf", "Download filename");
     var pdf = PdfDocument.Open(downloaded);
     var extracted = string.Join("", Pdf.ExtractText(pdf.Pages[0]).Select(s => s.Text));
@@ -179,9 +190,11 @@ try
         """);
     var savedAgain = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
     if (await savedAgain.FailureAsync() is { } downloadFailure) throw new Exception(downloadFailure);
-    await page.WaitForFunctionAsync("!document.querySelector('.mdl') && !document.getElementById('name').textContent.includes('•')");
+    await page.WaitForFunctionAsync("!document.querySelector('.mdl')");
+    await EditorHeader.State(page, false);
     Check(await page.EvaluateAsync<int>("window.saveRenders.length") == 0, "Saving does not rerender unchanged pages or thumbnails: " + await page.EvaluateAsync<string>("JSON.stringify(window.saveRenders)"));
     Check(errors.IsEmpty, "No browser errors during editing: " + string.Join("\n", errors));
+    await EditorHeader.Open(page, false, []);
     var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
     if (artifacts is not null)
     {
@@ -216,6 +229,7 @@ try
     await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "mobile.pdf", MimeType = "application/pdf", Buffer = await File.ReadAllBytesAsync(downloaded) });
     await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'mobile.pdf'");
     Check(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth"), "Mobile layout");
+    await EditorHeader.Open(page, true, await File.ReadAllBytesAsync(downloaded));
     Check(await page.EvaluateAsync<bool>("[...document.querySelectorAll('main.hide-l .thumb img')].every(img => getComputedStyle(img).visibility === 'hidden')"), "Collapsed mobile thumbnails stay hidden");
     await page.Locator("#fileBtn").ClickAsync();
     Check(await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).IsVisibleAsync(), "Mobile file controls");
@@ -232,4 +246,4 @@ static void Check(bool success, string message)
     if (!success) throw new Exception("FAIL: " + message);
 }
 static bool ExpectedRecoveryError(string error) =>
-    error.Contains("simulated recovery quota failure") || error.Contains("Encrypted PDFs require the server editor");
+    error.Contains("simulated recovery quota failure") || error.Contains("Encrypted PDFs require the server editor") || error.Contains("password-protected or uses encryption");

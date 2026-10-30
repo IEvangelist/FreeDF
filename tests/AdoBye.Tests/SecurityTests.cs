@@ -206,6 +206,6 @@ public class SecurityTests
         var enc = PdfEditor.Open(Base()).Save(options: new PdfWriteOptions { Encryption = new PdfEncryption { UserPassword = "u" } });
         using var cert = Cert("S");
         var signed = PdfEditor.Open(enc, "u").Sign(new PdfSignOptions { Certificate = cert });
-        Assert.True(Assert.Single(PdfEditor.VerifySignatures(signed)).SignatureValid);
+        Assert.True(Assert.Single(PdfEditor.VerifySignatures(signed, "u")).SignatureValid);
     }
 }
