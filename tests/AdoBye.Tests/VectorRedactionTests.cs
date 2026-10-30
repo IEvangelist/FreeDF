@@ -38,7 +38,7 @@ public class VectorRedactionTests
     }
 
     [Fact]
-    public void Removes_fully_covered_rectangle_and_unsupported_stroke_whole()
+    public void Removes_fully_covered_rectangle_and_clips_the_stroke_outline()
     {
         const string source = "1 0 0 rg 10 10 20 20 re f 1 0 0 RG 4 w 20 20 m 100 20 l S 0 1 0 rg 20 20 m 40 20 80 20 100 20 c 100 60 l 20 60 l h f";
         var editor = PdfEditor.Open(TestPdf.Build(source));
@@ -49,8 +49,10 @@ public class VectorRedactionTests
         Assert.DoesNotContain("10 10 20 20 re f", content);
         Assert.DoesNotContain("20 20 m 100 20 l S", content);
         Assert.DoesNotContain("20 20 m 40 20 80 20 100 20 c", content);
-        Assert.DoesNotContain(DocumentRenderer.Analyze(page).Objects,
-            o => o.Fill == new RgbColor(1, 0, 0) || o.Stroke == new RgbColor(1, 0, 0));
+        var red = DocumentRenderer.Analyze(page).Objects.Where(o => o.Fill == new RgbColor(1, 0, 0)).ToArray();
+        Assert.NotEmpty(red);
+        Assert.All(red, o => Assert.True(o.X0 >= 70, $"red survivor {o.X0}..{o.X1}"));
+        Assert.DoesNotContain(DocumentRenderer.Analyze(page).Objects, o => o.Stroke == new RgbColor(1, 0, 0) && o.HasStroke);
     }
 
     [Fact]
@@ -92,18 +94,32 @@ public class VectorRedactionTests
     [Fact]
     public void Unsupported_clip_path_fails_closed_without_retaining_its_geometry()
     {
-        const string source = "q 10 10 m 110 10 l 110 110 l 10 110 l h W n 0 1 0 rg 20 20 80 40 re f Q q 20 20 m 100 20 l W S Q 0 0 1 rg 120 20 20 20 re f";
+        const string source = "q 20 20 m 100 20 l W S Q 0 0 1 rg 120 20 20 20 re f 0 1 0 rg 20 20 80 40 re f";
         var editor = PdfEditor.Open(TestPdf.Build(source));
         Redactor.Apply(editor, 0, [new(50, 130, 20, 60)]);
 
         var page = PdfDocument.Load(editor.Save()).Pages[0];
         var content = Encoding.Latin1.GetString(page.GetContents());
-        Assert.DoesNotContain("10 10 m 110 10 l", content);
         Assert.DoesNotContain("20 20 m 100 20 l W S", content);
-        Assert.Equal(2, content.Split("0 0 m 0 0 l W n").Length - 1);
+        Assert.Contains("0 0 m 0 0 l W n", content);
         var rendered = DocumentRenderer.RenderPage(page, 72);
-        Assert.Equal((255, 255, 255), Pixel(rendered, 30, 150));
         Assert.Equal((0, 0, 255), Pixel(rendered, 130, 170));
+    }
+
+    [Fact]
+    public void Clips_a_polygon_clip_path_and_the_content_it_clips()
+    {
+        const string source = "q 10 10 m 110 10 l 110 110 l 10 110 l h W n 0 1 0 rg 0 0 200 200 re f Q";
+        var editor = PdfEditor.Open(TestPdf.Build(source));
+        Redactor.Apply(editor, 0, [new(50, 130, 20, 60)]);
+
+        var page = PdfDocument.Load(editor.Save()).Pages[0];
+        var rendered = DocumentRenderer.RenderPage(page, 72);
+        Assert.Equal((0, 255, 0), Pixel(rendered, 30, 150));
+        Assert.Equal((0, 0, 0), Pixel(rendered, 60, 150));
+        Assert.Equal((0, 255, 0), Pixel(rendered, 80, 150));
+        Assert.Equal((255, 255, 255), Pixel(rendered, 5, 150));
+        Assert.Equal((255, 255, 255), Pixel(rendered, 115, 150));
     }
 
     [Fact]

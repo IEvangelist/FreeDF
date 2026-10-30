@@ -14,8 +14,9 @@ namespace PortableDocument.Render;
 /// <list type="bullet">
 /// <item>Text: only the glyphs whose boxes touch a rectangle are dropped (the operator becomes a <c>TJ</c> that keeps the surviving glyphs in place).</item>
 /// <item>Images: a partly covered raster image is re-encoded with the covered pixels blanked; a fully covered one is removed.</item>
-/// <item>Form XObjects: text and images inside forms are redacted in the form's own stream (a form shared by several pages or invocations is redacted everywhere, which over-removes but never leaks).</item>
-/// <item>Single positive-size <c>re</c> paths in page content (optionally followed by <c>W</c>/<c>W*</c> and then <c>f</c>/<c>F</c>/<c>f*</c> or <c>n</c>) are clipped when their CTM is axis-aligned; other vector paints are removed whole, and unsupported clip-only paths become empty clips.</item>
+/// <item>Form XObjects: text, paths and images inside forms are redacted per invocation. Every invocation that needed an edit is re-pointed at a copy-on-write variant of the form (nested forms are re-pointed through their parents), so other invocations and other pages keep the original form.</item>
+/// <item>Painted paths and clips in page and form content are rewritten with exact polygon subtraction (see <c>PathRedaction</c>): any CTM, curves flattened with a 0.05 unit error bound, even-odd and non-zero fills, and strokes converted to filled outlines first. Anything not understood is removed whole (clip paths become empty clips).</item>
+/// <item>Inline images, image XObjects and stencil masks are re-encoded with every pixel whose footprint touches a rectangle blanked; fully covered ones are removed. Optional-content-hidden content is redacted like visible content.</item>
 /// <item>With a <see cref="PdfEditor"/>: annotations under a rectangle are removed (with their AcroForm field entries), matching redacted phrases in outline titles are replaced, and XMP/Info/thumbnail metadata is scrubbed.</item>
 /// </list>
 /// </summary>
@@ -24,8 +25,19 @@ public static class Redactor
     /// <summary>Rectangle in page box space (origin top-left of the CropBox, y down), as used by text spans and objects.</summary>
     public readonly record struct BoxRect(double X, double Y, double W, double H);
 
-    sealed record NewImage(string Name, byte[] Data, int W, int H, byte[]? Alpha, int Form);
-    sealed record Plan(byte[] Page, Dictionary<int, byte[]> Forms, List<NewImage> Images, List<string> HitText);
+    sealed record NewImage(string Name, byte[] Data, int W, int H, byte[]? Alpha, bool Mask = false);
+
+    sealed class Variant(string name, int source, byte[] data)
+    {
+        public string Name { get; } = name;
+        public int Source { get; } = source;
+        public byte[] Data { get; } = data;
+        public List<NewImage> Images { get; } = [];
+        public List<Variant> Children { get; } = [];
+        public HashSet<int> Drop { get; } = [];
+    }
+
+    sealed record Plan(byte[] Page, List<NewImage> PageImages, List<Variant> PageChildren, List<string> HitText, HashSet<int> PageDrop);
 
     /// <summary>Returns the redacted page content for <paramref name="page"/> (form XObjects and images are removed whole in this overload); set it with <see cref="PdfEditor.SetContentOverride"/>.</summary>
     public static byte[] Redact(PdfPage page, IReadOnlyList<BoxRect> rects)
@@ -51,14 +63,15 @@ public static class Redactor
         var plan = Build(page, rects, editorMode: true);
         editor.RequireFullRewrite();
 
-        var formNames = new Dictionary<int, Dictionary<string, PdfObject>>();
-        foreach (var im in plan.Images)
+        PdfRef AddImage(NewImage im)
         {
             var dict = new Dictionary<string, PdfObject>
             {
                 ["Type"] = new PdfName("XObject"), ["Subtype"] = new PdfName("Image"), ["Width"] = new PdfInteger(im.W), ["Height"] = new PdfInteger(im.H),
-                ["ColorSpace"] = new PdfName("DeviceRGB"), ["BitsPerComponent"] = new PdfInteger(8), ["Filter"] = new PdfName("FlateDecode"),
+                ["Filter"] = new PdfName("FlateDecode"),
             };
+            if (im.Mask) { dict["ImageMask"] = new PdfBoolean(true); dict["BitsPerComponent"] = new PdfInteger(1); }
+            else { dict["ColorSpace"] = new PdfName("DeviceRGB"); dict["BitsPerComponent"] = new PdfInteger(8); }
             if (im.Alpha is not null)
             {
                 var ad = Deflate(im.Alpha);
@@ -70,23 +83,28 @@ public static class Redactor
             }
             var z = Deflate(im.Data);
             dict["Length"] = new PdfInteger(z.Length);
-            var r = editor.AddObject(new PdfStream(new PdfDictionary(dict), z));
-            if (im.Form == 0) editor.AddPageXObject(pageIndex, im.Name, r);
-            else
-            {
-                var en = back.GetValueOrDefault(im.Form);
-                if (en == 0) continue;
-                if (!formNames.TryGetValue(en, out var fd)) formNames[en] = fd = [];
-                fd[im.Name] = r;
-            }
+            return editor.AddObject(new PdfStream(new PdfDictionary(dict), z));
         }
 
-        editor.SetContentOverride(pageIndex, Tail(plan.Page, page, rects));
-        foreach (var (num, data) in plan.Forms)
+        // A form XObject is never edited in place: each invocation that needed redaction gets its own copy, so other
+        // invocations and other pages keep the original form untouched.
+        PdfRef AddVariant(Variant v)
         {
-            var en = back.GetValueOrDefault(num);
-            if (en != 0) editor.SetStreamOverride(en, data, formNames.GetValueOrDefault(en));
+            var source = back.GetValueOrDefault(v.Source);
+            if (source == 0) throw new InvalidOperationException("Cannot map a form XObject back to the editor; redaction aborted.");
+            var names = new Dictionary<string, PdfObject>();
+            foreach (var im in v.Images) names[im.Name] = AddImage(im);
+            foreach (var child in v.Children) names[child.Name] = AddVariant(child);
+            return editor.AddStreamCopy(source, v.Data, names, MapDrop(v.Drop));
         }
+
+        HashSet<int> MapDrop(IEnumerable<int> docNumbers) => docNumbers.Select(n => back.GetValueOrDefault(n)).Where(n => n != 0).ToHashSet();
+
+        editor.DropPageXObjects(pageIndex, MapDrop(plan.PageDrop));
+
+        foreach (var im in plan.PageImages) editor.AddPageXObject(pageIndex, im.Name, AddImage(im));
+        foreach (var child in plan.PageChildren) editor.AddPageXObject(pageIndex, child.Name, AddVariant(child));
+        editor.SetContentOverride(pageIndex, Tail(plan.Page, page, rects));
 
         var box = page.CropBox;
         editor.RemoveAnnotations(pageIndex, a =>
@@ -179,7 +197,7 @@ public static class Redactor
     static Plan Build(PdfPage page, IReadOnlyList<BoxRect> rects, bool editorMode)
     {
         var file = page.Document.File;
-        var (spans, objects) = PortableDocument.Analyze(page);
+        var (spans, objects) = PortableDocument.Analyze(page, collectHidden: true);
 
         bool Hit(double x0, double y0, double x1, double y1)
         {
@@ -191,14 +209,29 @@ public static class Redactor
         }
         bool Covered(double x0, double y0, double x1, double y1) =>
             rects.Any(r => x0 >= r.X - 0.5 && x1 <= r.X + r.W + 0.5 && y0 >= r.Y - 0.5 && y1 <= r.Y + r.H + 0.5);
+        // Miter joins and square caps reach beyond the half line width the analyzer pads with.
+        bool HitObject(ContentInterpreter.PageObject o)
+        {
+            var pad = 0d;
+            if (o.HasStroke && o.Style is { } st)
+            {
+                var factor = Math.Max(st.Join == LineJoin.Miter ? Math.Max(st.MiterLimit, 1) : 1, st.Cap == LineCap.Square ? Math.Sqrt(2) : 1);
+                pad = Math.Max(st.Width * Math.Sqrt(Math.Abs(o.Ctm.Det)) / 2 * (factor - 1), 1);
+            }
+            return Hit(o.X0 - pad, o.Y0 - pad, o.X1 + pad, o.Y1 + pad);
+        }
 
-        var streams = spans.Select(s => s.Form).Concat(objects.Select(o => o.Form)).Append(0).Distinct().ToList();
-        var forms = new Dictionary<int, byte[]>();
-        var images = new List<NewImage>(); var hitText = new List<string>();
+        // One context per invocation of a form (inv 0 is the page); children have larger invocation numbers than their parents.
+        var contexts = spans.Select(s => (Form: s.Form, Inv: s.Inv)).Concat(objects.Select(o => (Form: o.Form, Inv: o.Inv))).Append((Form: 0, Inv: 0)).Distinct()
+            .OrderByDescending(c => c.Inv).ToList();
+        var variants = new Dictionary<(int Form, int Inv), Variant>();
+        var hitText = new List<string>();
         var pageContent = page.GetContents();
-        var imgCounter = 0; var prefix = Guid.NewGuid().ToString("N")[..8];
+        var pageImages = new List<NewImage>(); var pageChildren = new List<Variant>();
+        var pageDrop = new HashSet<int>(); var keptRefs = new HashSet<int>();
+        var imgCounter = 0; var variantCounter = 0; var prefix = Guid.NewGuid().ToString("N")[..8];
 
-        foreach (var form in streams)
+        foreach (var (form, inv) in contexts)
         {
             if (form != 0 && !editorMode) continue;
             PdfStream? fs = null;
@@ -209,10 +242,12 @@ public static class Redactor
                 fs = s;
                 res = file.Resolve(s.Dict.Get("Resources")) as PdfDictionary ?? page.Resources;
             }
+            var canName = form == 0 || file.Resolve(fs!.Dict.Get("Resources")) is PdfDictionary;
             var content = form == 0 ? pageContent : file.DecodeStream(fs!);
+            var images = new List<NewImage>(); var children = new List<Variant>();
 
             var removals = new Dictionary<int, string>();
-            foreach (var sp in spans.Where(x => x.Form == form))
+            foreach (var sp in spans.Where(x => x.Form == form && x.Inv == inv))
             {
                 if (removals.ContainsKey(sp.Index)) continue;
                 if (sp.Pieces is null)
@@ -255,27 +290,46 @@ public static class Redactor
 
             var edits = new List<ContentRewriter.ObjectEdit>();
             var seen = new HashSet<(int, int)>();
-            foreach (var o in objects.Where(x => x.Form == form))
+            foreach (var o in objects.Where(x => x.Form == form && x.Inv == inv))
             {
-                if (!seen.Add((o.Start, o.End)) || !Hit(o.X0, o.Y0, o.X1, o.Y1)) continue;
-                if (o.Kind == "form" && o.Ref > 0 && editorMode) continue;
+                if (!seen.Add((o.Start, o.End))) continue;
+                if (o.Kind == "form" && o.Ref > 0 && editorMode && o.ChildInv != 0)
+                {
+                    // The invocation was analysed: re-point the Do at its redacted copy, or leave it when nothing inside was touched.
+                    if (!variants.TryGetValue((o.Ref, o.ChildInv), out var child)) continue;
+                    if (canName)
+                    {
+                        children.Add(child);
+                        edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, false, null, null, null, null, "/" + child.Name + " Do"));
+                    }
+                    else edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, true, null, null, null));
+                    continue;
+                }
+                if (!HitObject(o)) continue;
                 if (o.Kind is "path" or "clip-path" or "clipped-path")
                 {
                     if (TryClipRectangleFill(content, o, rects, out var clipped))
                         edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, false, null, null, null, Replacement: clipped));
+                    else if (PathRedaction.TryRewrite(content, o, rects, out var rewritten))
+                    {
+                        if (rewritten is not null) edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, false, null, null, null, Replacement: rewritten));
+                    }
                     else if (o.Kind is "clip-path" or "clipped-path")
                         edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, false, null, null, null, Replacement: "0 0 m 0 0 l W n"));
                     else
                         edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, true, null, null, null));
                     continue;
                 }
-                if (o.Kind == "image" && editorMode && o.Stream is { } img && o.Ref > 0 && !Covered(o.X0, o.Y0, o.X1, o.Y1)
-                    && (form == 0 || file.Resolve(fs!.Dict.Get("Resources")) is PdfDictionary)
-                    && ImageDecoder.Decode(file, img, res, out var isMask, out _) is { } data && !isMask)
+                if (o.Kind == "image" && editorMode && o.Stream is { } img && !Covered(o.X0, o.Y0, o.X1, o.Y1) && canName
+                    && ImageDecoder.Decode(file, img, res, out var isMask, out _) is { } data)
                 {
-                    var (rgb, alpha) = Blank(data, o.Ctm, rects);
                     var name = $"RdIm{prefix}{imgCounter++}";
-                    images.Add(new NewImage(name, rgb, data.Width, data.Height, alpha, form));
+                    if (isMask) images.Add(new NewImage(name, BlankMask(data, o.Ctm, rects), data.Width, data.Height, null, true));
+                    else
+                    {
+                        var (rgb, alpha) = Blank(data, o.Ctm, rects);
+                        images.Add(new NewImage(name, rgb, data.Width, data.Height, alpha));
+                    }
                     edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, false, null, null, null, null, "/" + name + " Do"));
                     continue;
                 }
@@ -283,9 +337,24 @@ public static class Redactor
             }
             content = ContentRewriter.EditObjects(content, edits);
             content = ContentRewriter.ReplaceText(content, removals);
-            if (form == 0) pageContent = content; else forms[form] = content;
+            // Resource entries of XObjects that this context replaced or removed are dropped (below) unless an unedited use remains anywhere.
+            var editedStarts = edits.Select(e => e.Start).ToHashSet();
+            var droppable = new HashSet<int>();
+            foreach (var o in objects.Where(x => x.Form == form && x.Inv == inv && x.Ref > 0))
+                if (editedStarts.Contains(o.Start) && o.Kind is "image" or "form") droppable.Add(o.Ref); else keptRefs.Add(o.Ref);
+            if (form == 0) { pageContent = content; pageImages = images; pageChildren = children; pageDrop = droppable; }
+            else if (edits.Count > 0 || removals.Count > 0)
+            {
+                var variant = new Variant($"RdFm{prefix}{variantCounter++}", form, content);
+                variant.Images.AddRange(images);
+                variant.Children.AddRange(children);
+                variant.Drop.UnionWith(droppable);
+                variants[(form, inv)] = variant;
+            }
         }
-        return new Plan(pageContent, forms, images, hitText);
+        pageDrop.ExceptWith(keptRefs);
+        foreach (var v in variants.Values) v.Drop.ExceptWith(keptRefs);
+        return new Plan(pageContent, pageImages, pageChildren, hitText, pageDrop);
     }
 
     static bool TryClipRectangleFill(byte[] content, ContentInterpreter.PageObject obj, IReadOnlyList<BoxRect> rects, out string replacement)
@@ -398,24 +467,51 @@ public static class Redactor
         return true;
     }
 
-    // Blanks pixels whose centre maps (through the image CTM) into a redaction rectangle; the alpha plane is null when everything is opaque.
+    // A pixel is blanked when any part of its footprint (the pixel's device-space bounding box, which over-covers for rotated or skewed CTMs) touches a rectangle.
+    static bool[] CoveredPixels(int w, int h, Matrix ctm, IReadOnlyList<BoxRect> rects)
+    {
+        var covered = new bool[w * h];
+        double hx = (Math.Abs(ctm.A) / w + Math.Abs(ctm.C) / h) / 2, hy = (Math.Abs(ctm.B) / w + Math.Abs(ctm.D) / h) / 2;
+        for (var y = 0; y < h; y++)
+            for (var x = 0; x < w; x++)
+            {
+                var (dx, dy) = ctm.Apply((x + 0.5) / w, 1 - (y + 0.5) / h);
+                foreach (var r in rects)
+                    if (dx + hx > r.X && dx - hx < r.X + r.W && dy + hy > r.Y && dy - hy < r.Y + r.H) { covered[y * w + x] = true; break; }
+            }
+        return covered;
+    }
+
+    // Blanks covered pixels to opaque black; the alpha plane is null when everything is opaque.
     static (byte[] Rgb, byte[]? Alpha) Blank(ImageData d, Matrix ctm, IReadOnlyList<BoxRect> rects)
     {
         var rgb = new byte[d.Width * d.Height * 3];
         var alpha = new byte[d.Width * d.Height];
+        var covered = CoveredPixels(d.Width, d.Height, ctm, rects);
         var translucent = false;
+        for (var i = 0; i < covered.Length; i++)
+        {
+            if (covered[i]) { alpha[i] = 255; continue; }
+            rgb[i * 3] = d.Rgba[i * 4]; rgb[i * 3 + 1] = d.Rgba[i * 4 + 1]; rgb[i * 3 + 2] = d.Rgba[i * 4 + 2];
+            alpha[i] = d.Rgba[i * 4 + 3];
+            if (alpha[i] != 255) translucent = true;
+        }
+        return (rgb, translucent ? alpha : null);
+    }
+
+    // Re-encodes a stencil mask as a 1-bit /ImageMask (sample 0 paints) with covered pixels left unpainted.
+    static byte[] BlankMask(ImageData d, Matrix ctm, IReadOnlyList<BoxRect> rects)
+    {
+        var covered = CoveredPixels(d.Width, d.Height, ctm, rects);
+        var rowBytes = (d.Width + 7) / 8;
+        var bits = new byte[rowBytes * d.Height];
         for (var y = 0; y < d.Height; y++)
             for (var x = 0; x < d.Width; x++)
             {
                 var i = y * d.Width + x;
-                var (dx, dy) = ctm.Apply((x + 0.5) / d.Width, 1 - (y + 0.5) / d.Height);
-                var inside = false;
-                foreach (var r in rects) if (dx >= r.X && dx <= r.X + r.W && dy >= r.Y && dy <= r.Y + r.H) { inside = true; break; }
-                if (inside) { alpha[i] = 255; continue; }
-                rgb[i * 3] = d.Rgba[i * 4]; rgb[i * 3 + 1] = d.Rgba[i * 4 + 1]; rgb[i * 3 + 2] = d.Rgba[i * 4 + 2];
-                alpha[i] = d.Rgba[i * 4 + 3];
-                if (alpha[i] != 255) translucent = true;
+                var paint = !covered[i] && d.Rgba[i * 4 + 3] != 0;
+                if (!paint) bits[y * rowBytes + x / 8] |= (byte)(0x80 >> (x % 8));
             }
-        return (rgb, translucent ? alpha : null);
+        return bits;
     }
 }

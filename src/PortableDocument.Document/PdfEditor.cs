@@ -482,6 +482,32 @@ public sealed partial class PdfEditor
 
     public void ClearStreamOverrides() => _streamOverrides.Clear();
 
+    /// <summary>
+    /// Adds a copy of stream <paramref name="sourceObjectNumber"/> (its dictionary, e.g. a form XObject's BBox/Matrix/Resources) carrying the decoded
+    /// <paramref name="data"/>, with <paramref name="xobjects"/> merged into its /Resources /XObject. The source object is left untouched.
+    /// </summary>
+    public PdfRef AddStreamCopy(int sourceObjectNumber, byte[] data, IReadOnlyDictionary<string, PdfObject>? xobjects = null, IReadOnlySet<int>? dropXObjects = null)
+    {
+        if (!_objs.TryGetValue(sourceObjectNumber, out var o) || o is not PdfStream st) throw new ArgumentException("Not a stream object.", nameof(sourceObjectNumber));
+        var e = new Dictionary<string, PdfObject>(st.Dict.Entries);
+        e.Remove("Filter"); e.Remove("DecodeParms"); e.Remove("DL"); e["Length"] = new PdfInteger(data.Length);
+        var sd = new PdfDictionary(e);
+        if (xobjects is { Count: > 0 } || dropXObjects is { Count: > 0 }) sd = WithXObjects(sd, xobjects ?? new Dictionary<string, PdfObject>(), _objs, dropXObjects);
+        return AddObject(new PdfStream(sd, data));
+    }
+
+    readonly Dictionary<int, HashSet<int>> _pageXObjectDrops = [];
+
+    /// <summary>At save time removes every /Resources /XObject entry of the page that references one of <paramref name="objectNumbers"/> (so a replaced XObject is no longer reachable).</summary>
+    public void DropPageXObjects(int index, IEnumerable<int> objectNumbers)
+    {
+        Check(index);
+        var page = _pages[index];
+        if (!_pageXObjects.ContainsKey(page)) _pageXObjects[page] = [];
+        if (!_pageXObjectDrops.TryGetValue(page, out var d)) _pageXObjectDrops[page] = d = [];
+        foreach (var n in objectNumbers) d.Add(n);
+    }
+
     /// <summary>Adds an XObject resource to a page at save time (names must not collide with the page's own).</summary>
     public void AddPageXObject(int index, string name, PdfObject value)
     {
@@ -490,7 +516,7 @@ public sealed partial class PdfEditor
         d[name] = value;
     }
 
-    public void ClearPageXObjects() => _pageXObjects.Clear();
+    public void ClearPageXObjects() { _pageXObjects.Clear(); _pageXObjectDrops.Clear(); }
 
     /// <summary>Removes annotations (and popups of removed parents) of a page for which <paramref name="remove"/> returns true. Returns how many were removed.</summary>
     public int RemoveAnnotations(int index, Func<PdfDictionary, bool> remove)
@@ -654,7 +680,7 @@ public sealed partial class PdfEditor
         foreach (var (n, xo) in _pageXObjects)
         {
             if (!objs.TryGetValue(n, out var po) || po is not PdfDictionary pd) continue;
-            objs[n] = WithXObjects(pd, xo, objs);
+            objs[n] = WithXObjects(pd, xo, objs, _pageXObjectDrops.GetValueOrDefault(n));
         }
         if (applyContentEdits)
             foreach (var (n, (data, xo)) in _streamOverrides)
@@ -680,11 +706,13 @@ public sealed partial class PdfEditor
         return objs;
     }
 
-    PdfDictionary WithXObjects(PdfDictionary owner, IReadOnlyDictionary<string, PdfObject> xo, Dictionary<int, PdfObject> objs)
+    PdfDictionary WithXObjects(PdfDictionary owner, IReadOnlyDictionary<string, PdfObject> xo, Dictionary<int, PdfObject> objs, IReadOnlySet<int>? drop = null)
     {
         PdfObject? R(PdfObject? o) => o is PdfRef r && objs.TryGetValue(r.Number, out var v) ? v : o;
         var res = R(owner.Get("Resources")) is PdfDictionary rd ? new Dictionary<string, PdfObject>(rd.Entries) : [];
         var merged = res.TryGetValue("XObject", out var c) && R(c) is PdfDictionary cd ? new Dictionary<string, PdfObject>(cd.Entries) : [];
+        if (drop is { Count: > 0 })
+            foreach (var k in merged.Where(kv => kv.Value is PdfRef r && drop.Contains(r.Number)).Select(kv => kv.Key).ToList()) merged.Remove(k);
         foreach (var (k, v) in xo) merged[k] = v;
         res["XObject"] = new PdfDictionary(merged);
         return new PdfDictionary(new Dictionary<string, PdfObject>(owner.Entries) { ["Resources"] = new PdfDictionary(res) });
