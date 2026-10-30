@@ -78,7 +78,7 @@ jobs:
           "${{ github.workspace }}/samples/09-images.pdf"
           "${{ github.workspace }}/samples/20-report.pdf"
       - name: Diagnose previous-live control on the same hosted runner
-        if: always() && steps.profile.outcome == 'success'
+        if: always()
         env:
           EDITOR_PROFILE_REPORT_ONLY: '1'
           EDITOR_PROFILE_BASELINE_CONTROL: '1'

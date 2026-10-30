@@ -214,6 +214,7 @@ static class EditorPerformance
                         await page.EvaluateAsync("(x)=>profileInteractions.push(x)", new { phase = "undo", ms = visualMs });
                         await Saved(page);
                     });
+                    await Settled(page);
                     var span = page.Locator("#layer .span").First;
                     if (await span.CountAsync() > 0)
                     {
