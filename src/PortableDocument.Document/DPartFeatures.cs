@@ -86,6 +86,7 @@ public static class DPartFeatures
     /// Optional /Type may be absent; present wrong names or types produce InvalidType.
     /// No files are opened, payloads decoded, links repaired, actions executed, or navigation performed.
     /// Page order, non-overlap, coverage, and /Start-/End-/DParts constraints are not validated.
+    /// Use ValidateDParts for a separate, bounded tree-link and page-range conformance report.
     /// </summary>
     public static PdfDPartRoot? GetDPartRoot(this PdfDocument doc)
     {
