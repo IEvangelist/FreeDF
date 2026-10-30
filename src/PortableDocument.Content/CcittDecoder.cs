@@ -88,7 +88,13 @@ public static class CcittDecoder
             output.Add(Render(cur, columns, stride, blackIs1));
             if ((long)output.Count * stride > 1L << 29) throw new PdfParseException("CCITT output exceeds the size limit");
             (refLine, cur) = (cur.ToList(), refLine);
-            if (!ok) break;
+            if (!ok)
+            {
+                // Damaged row: T.4 resynchronises on the next EOL; without one the rest of the data is unusable.
+                if (k < 0) break;
+                while (!br.Eof && br.Peek(12) != 1) br.Skip(1);
+                if (br.Eof) break;
+            }
         }
         if (k < 0 && br.Peek(24) == 0x001001) br.Skip(24);
         br.Align();
