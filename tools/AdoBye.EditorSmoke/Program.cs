@@ -7,6 +7,12 @@ using Microsoft.Playwright;
 using PortableDocument.Document;
 using Pdf = PortableDocument.Render.PortableDocument;
 
+if (args is ["--raster-profile", var rasterSite, var rasterOutput, var rasterPdf])
+{
+    await EditorRasterProfile.Run(rasterSite, rasterOutput, rasterPdf);
+    return;
+}
+
 if (args is ["--profile-summary", var profile])
 {
     var misses = await EditorPerformanceReport.Write(profile);
@@ -65,20 +71,61 @@ try
     page.SetDefaultTimeout(60000);
     var errors = new ConcurrentQueue<string>();
     var network = new ConcurrentQueue<string>();
+    var bootConsole = new ConcurrentQueue<string>();
+    var bootFailures = new ConcurrentDictionary<string, string>();
+    var bootSuccesses = new ConcurrentDictionary<string, bool>();
+    var booting = true;
+    string ResourceKey(string url) => new Uri(url).GetLeftPart(UriPartial.Path);
+    bool Framework(string url) => url.StartsWith(address + "/csharp-pdf/_framework/", StringComparison.Ordinal);
     page.PageError += (_, error) => errors.Enqueue(error);
-    page.Console += (_, message) => { if (message.Type == "error") { errors.Enqueue(message.Text); Console.Error.WriteLine(message.Text); } };
+    page.Console += (_, message) =>
+    {
+        if (message.Type != "error") return;
+        if (booting && message.Text.StartsWith("Failed to load resource:", StringComparison.Ordinal)) bootConsole.Enqueue(message.Text);
+        else errors.Enqueue(message.Text);
+        Console.Error.WriteLine(message.Text);
+    };
     page.Request += (_, request) =>
     {
         if (!request.Url.StartsWith(address + "/csharp-pdf/", StringComparison.Ordinal) || request.Method != "GET" || new Uri(request.Url).AbsolutePath.Contains("/api/"))
             network.Enqueue(request.Method + " " + request.Url);
     };
-    page.Response += (_, response) => { if (response.Status >= 400) errors.Enqueue($"{response.Status} {response.Url}"); };
+    context.Response += (_, response) =>
+    {
+        if (booting && Framework(response.Url))
+        {
+            if (response.Status >= 500) { bootFailures[ResourceKey(response.Url)] = $"HTTP {response.Status}"; return; }
+            if (response.Ok) bootSuccesses[ResourceKey(response.Url)] = true;
+        }
+        if (response.Status >= 400) errors.Enqueue($"{response.Status} {response.Url}");
+    };
+    context.RequestFailed += (_, request) =>
+    {
+        if (booting && Framework(request.Url)) bootFailures[ResourceKey(request.Url)] = request.Failure ?? "Network failure";
+        else errors.Enqueue($"Request failed: {request.Url}: {request.Failure}");
+    };
+    var injectBootRetry = Environment.GetEnvironmentVariable("EDITOR_SMOKE_TRANSIENT_BOOT") == "1";
+    var injectedBootFailure = false;
+    if (injectBootRetry)
+        await context.RouteAsync("**/_framework/*.wasm", async route =>
+        {
+            if (injectedBootFailure) { await route.ContinueAsync(); return; }
+            injectedBootFailure = true;
+            await route.FulfillAsync(new() { Status = 503, ContentType = "text/plain", Body = "Injected transient delivery failure" });
+        });
     await page.GotoAsync(address + "/csharp-pdf/");
     try { await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')"); }
     catch (TimeoutException)
     {
-        throw new Exception("Startup: " + await page.Locator("#status").TextContentAsync() + "\n" + string.Join("\n", errors) + "\n" + string.Join("\n", network));
+        throw new Exception("Startup: " + await page.Locator("#status").TextContentAsync() + "\n" + string.Join("\n", errors.Concat(bootConsole)) + "\n" + string.Join("\n", network));
     }
+    booting = false;
+    var bootRetries = await page.EvaluateAsync<int>("pdfHost.bootRetries");
+    var recovered = bootRetries > 0 && !bootFailures.IsEmpty && bootFailures.Keys.All(bootSuccesses.ContainsKey);
+    Check(bootFailures.IsEmpty || recovered, "Every transient framework delivery failure recovered.");
+    Check(!injectBootRetry || injectedBootFailure && recovered, "Injected transient delivery failure is recorded and recovered.");
+    foreach (var error in bootConsole) if (!recovered) errors.Enqueue(error);
+    Console.WriteLine($"PDF boot retries: {bootRetries}; recovered resource failures: {bootFailures.Count}.");
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
     Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");

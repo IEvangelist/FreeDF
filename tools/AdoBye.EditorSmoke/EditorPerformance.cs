@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -87,6 +88,12 @@ static class EditorPerformance
             for (var repeat = 0; repeat < 3; repeat++)
             {
                 await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 }, DeviceScaleFactor = 1 });
+                var startupRequests = new ConcurrentQueue<string>();
+                context.Request += (_, request) =>
+                {
+                    if (request.Url.StartsWith("http:", StringComparison.Ordinal) || request.Url.StartsWith("https:", StringComparison.Ordinal))
+                        startupRequests.Enqueue(new Uri(request.Url).AbsolutePath);
+                };
                 await context.AddInitScriptAsync(Observe);
                 var page = await context.NewPageAsync();
                 page.SetDefaultTimeout(180000);
@@ -98,7 +105,8 @@ static class EditorPerformance
                 await page.GotoAsync(source);
                 await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
                 await Frames(page);
-                records.Add(new { repeat, document = "", phase = "cold-start", result = await page.EvaluateAsync<JsonElement>("({ms:performance.now(), longTasks:profileLongTasks, resources:performance.getEntriesByType('resource').map(e=>({name:e.name, bytes:e.transferSize, ms:e.duration}))})") });
+                records.Add(new { repeat, document = "", phase = "cold-start", requestedAssets = startupRequests.Distinct().Order().ToArray(),
+                    result = await page.EvaluateAsync<JsonElement>("({ms:performance.now(), longTasks:profileLongTasks, resources:performance.getEntriesByType('resource').map(e=>({name:e.name, bytes:e.transferSize, ms:e.duration}))})") });
                 await page.EvaluateAsync(Instrument);
                 foreach (var document in documents)
                 {
@@ -117,7 +125,12 @@ static class EditorPerformance
                     await page.SetViewportSizeAsync(1440, 1000);
                     await Frames(page);
                     var baseImage = await page.Locator("#base").GetAttributeAsync("src");
-                    records.Add(new { repeat, document = name, phase = "first-page-image", hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Convert.FromBase64String(baseImage!.Split(',')[1]))) });
+                    var png = Convert.FromBase64String(baseImage!.Split(',')[1]);
+                    var pixels = PortableDocument.Render.PngWriter.Decode(png);
+                    records.Add(new { repeat, document = name, phase = "first-page-image",
+                        hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(png)),
+                        pixelHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pixels.Rgba)),
+                        width = pixels.W, height = pixels.H });
                     var stressDpi = name.StartsWith("adobye-editor-perf-", StringComparison.Ordinal) ? 240 : 137;
                     await Measure("fresh-render-input", async () =>
                     {
@@ -142,6 +155,7 @@ static class EditorPerformance
                         await page.WaitForFunctionAsync("() => { const img = document.getElementById('base'); return img.dataset.loadedUrl === img.dataset.targetUrl; }");
                     });
                     await page.Locator("#fp").ClickAsync();
+                    await Settled(page);
                     await Frames(page);
                     if (await page.Locator(".thumb").CountAsync() > 1)
                     {
@@ -166,10 +180,13 @@ static class EditorPerformance
                         var visualMs = await page.EvaluateAsync<double>("start => performance.now() - start", started);
                         await page.EvaluateAsync("(x)=>profileInteractions.push(x)", new { phase = "add-overlay", ms = visualMs });
                         await Saved(page);
+                        await Settled(page);
                     });
                     await Measure("selection-drag", async () =>
                     {
-                        var box = (await page.Locator("#layer .it").Last.BoundingBoxAsync())!;
+                        await page.Locator("#layer .it").Last.WaitForAsync(new() { State = WaitForSelectorState.Visible });
+                        var box = await page.Locator("#layer .it").Last.BoundingBoxAsync()
+                            ?? throw new Exception("The created overlay has no visible bounds.");
                         await page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
                         var started = await page.EvaluateAsync<double>("performance.now()");
                         await page.Mouse.DownAsync();

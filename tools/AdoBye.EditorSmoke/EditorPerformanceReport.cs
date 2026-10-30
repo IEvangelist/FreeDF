@@ -85,6 +85,8 @@ static class EditorPerformanceReport
         ("edit-text", "text-edit-commit-ms") => (250, 500),
         ("zoom" or "undo", "zoom-ms" or "undo-ms") => (100, 200),
         ("cached-zoom", "total-ms") => (100, 200),
+        ("fresh-render-input", "total-ms") => (1000, 1500),
+        ("fresh-render-input", "allocatedBytes") => (200_000_000, 200_000_000),
         _ => (null, null),
     };
 }
