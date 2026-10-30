@@ -314,7 +314,10 @@ public sealed class PdfFont
             baseEnc = _f.Resolve(ed.Get("BaseEncoding")).AsName();
             diffs = _f.Resolve(ed.Get("Differences")) as PdfArray;
         }
-        baseEnc ??= (_symbolic || _t1 is not null) && FontFile is not null ? null : "StandardEncoding";
+        baseEnc ??= (_symbolic || _t1 is not null || _cff is { IsCid: false }) && FontFile is not null ? null : "StandardEncoding";
+        if (baseEnc is null && _cff is { IsCid: false } cff)
+            for (var code = 0; code < 256; code++)
+                _names[code] = cff.GlyphNameByCode(code);
         var cp = baseEnc switch { "WinAnsiEncoding" => 1252, "MacRomanEncoding" => 10000, "StandardEncoding" => 1252, _ => 0 };
         if (cp != 0)
         {
@@ -393,6 +396,7 @@ public sealed class PdfFont
             return "";
         }
         if (code < 256 && (_names[code] ?? _t1?.EncodingName(code)) is { } n && UnicodeForName(n) is { } u) return u;
+        if (_cff is not null) return "";
         return code is >= 32 and < 127 ? ((char)code).ToString() : "";
     }
 
@@ -552,8 +556,9 @@ public sealed class PdfFont
                 }
                 if (_cffUni.TryGetValue(u, out var ug)) return ug;
             }
+            return 0;
         }
-        return cff.GlyphByCode(code);
+        return 0;
     }
 
     int GlyphIdFor(int code)
