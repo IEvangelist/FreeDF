@@ -135,7 +135,11 @@ public sealed partial class PdfEditor
     /// The editor remembers which source objects it has copied (without holding on to <paramref name="src"/>), so catalog-level structures
     /// such as form fields or layers can be brought over afterwards with <see cref="ImportValue"/> without duplicating objects.
     /// </summary>
-    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null, PdfImportOptions? options = null)
+    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null) =>
+        ImportPages(src, indices, insertAt, null);
+
+    /// <summary>Copies pages with optional form, outline and page-label merging.</summary>
+    public void ImportPages(PdfDocument src, IEnumerable<int>? indices, int? insertAt, PdfImportOptions? options)
     {
         Require(PdfPermissions.Assemble);
         var f = src.File;

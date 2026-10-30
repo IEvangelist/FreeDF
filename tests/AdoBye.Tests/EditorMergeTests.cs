@@ -175,6 +175,15 @@ public class EditorMergeTests
     }
 
     [Fact]
+    public void OriginalThreeArgumentImportSignatureRemainsAvailable()
+    {
+        Assert.NotNull(typeof(PdfEditor).GetMethod(nameof(PdfEditor.ImportPages),
+            [typeof(PdfDocument), typeof(IEnumerable<int>), typeof(int?)]));
+        Assert.NotNull(typeof(PdfEditor).GetMethod(nameof(PdfEditor.ImportPages),
+            [typeof(PdfDocument), typeof(IEnumerable<int>), typeof(int?), typeof(PdfImportOptions)]));
+    }
+
+    [Fact]
     public void FailedBatchRestoresThePreviousSourceImportMap()
     {
         var source = Doc("20-");
