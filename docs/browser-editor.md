@@ -56,7 +56,7 @@ required on Pages. `.nojekyll` preserves the `_framework` folder.
 | New document, paper sizes/orientation; open picker; PDF drop | Local; dropping onto an open document imports its pages, as in EditorWeb |
 | Rendered pages/thumbnails; navigation; fit width/page; zoom | C# software renderer in WASM; no PDF.js or remote rendering |
 | Select/move/resize/delete/recolour existing editable graphics | Same content-rewriter operations, including object transforms and reset |
-| Click existing editable text; add text; typography/colour/alignment/spacing | Same overlays and original embedded-font reuse |
+| Select existing editable text; add text; typography/colour/alignment/spacing | Selection/focus/cancel does not replace PDF content. Actual text changes reuse supported original embedded glyphs and text transforms; the PDF renderer paints edited originals rather than approximate browser fonts |
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
 | Redaction | Same content-removing redactor, not a painted-cover substitute |
@@ -86,6 +86,29 @@ saving/reopening or resetting pending Form-child edits; the HTTP adapter retains
 Bundled font resources reuse `samples/_gen/fonts/Vera.ttf` and `VeraBd.ttf`.
 Their redistribution notice is shipped as `bitstream-vera-license.txt`. They
 are PDF rendering substitutes, not a change to the editor's visual design.
+
+## Original text selection and editing
+
+Selecting original text opens its content and original font/effective size in
+Properties without creating an overlay, changing dirty state, or rewriting text
+operators. Focusing, unchanged input, Escape, deselection and a save/reopen retain
+the original font, text matrix, glyph positioning and rendered pixels. Plain
+selection of an existing overlay or graphic also does not enqueue a no-op edit.
+
+The first actual content change creates a replacement. Supported original
+embedded glyphs retain their font resource; horizontal scale, shear, baseline,
+character spacing and word spacing are carried through the original rendering
+matrix. Edited original text is painted in the base PDF raster; its HTML element
+is a transparent selection/drag target, not a substitute-font visual preview.
+The Properties notice explicitly explains fallback for unavailable glyphs.
+Changing font family/style deliberately selects the chosen replacement font.
+Existing vertical/rotated-text eligibility limits remain. Changed text is
+re-encoded: original per-pair TJ kerning is not a general shaping engine.
+
+`AdoBye.EditorSmoke --text-selection <published-wwwroot>` uses the embedded-font
+typography sample and a sheared/scaled variant. It checks untouched state,
+unchanged input/cancel, exact save/reopen PNGs and every text run's geometry,
+then verifies supported actual edits retain embedded font, baseline and matrix.
 
 ## Measured editor performance
 

@@ -10,6 +10,42 @@ public class EditorSessionTests
         => session.Handle(method, path, query.ToDictionary(x => x.Item1, x => x.Item2),
             body is null ? null : JsonSerializer.SerializeToUtf8Bytes(body, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
 
+    [Theory]
+    [InlineData("1 0 0 1 0 0", "100", "0", "0")]
+    [InlineData("1.2 0 0.18 0.85 12 20", "73", "0.4", "1.5")]
+    public void OriginalTextReplacementRetainsTransformSpacingAndPdfPreview(string matrix, string scale, string characterSpace, string wordSpace)
+    {
+        var source = AdoBye.Tests.TestPdf.Build($"q {matrix} cm BT /F1 18 Tf {scale} Tz {characterSpace} Tc {wordSpace} Tw 30 90 Td (Original text) Tj ET Q",
+            "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
+        var session = new EditorSession(new FontCatalog());
+        session.Handle("POST", "/api/open", new Dictionary<string, string>(), source, "transformed.pdf");
+        var before = Pdf.ExtractText(PdfDocument.Load(source).Pages[0]).Single();
+        using var response = JsonDocument.Parse(Call(session, "GET", "/api/page/0/text").Data);
+        var text = response.RootElement.EnumerateArray().Single();
+        var item = new Item("original", "text", text.GetProperty("x").GetDouble(), text.GetProperty("y").GetDouble() - .95 * before.Size,
+            before.Width, 0, before.Text, "Helvetica", before.Size, false, false, "#000000", "", "", 0, 1, null, 0, 0,
+            before.Index, Spacing: text.GetProperty("spacing").GetDouble(), OStyle: "Helvetica|false|false");
+        Call(session, "PUT", "/api/page/0/items", new[] { item });
+        var replacement = PdfDocument.Load(Call(session, "GET", "/api/export/pdf").Data);
+        var after = Pdf.ExtractText(replacement.Pages[0]).Single(s => !string.IsNullOrWhiteSpace(s.Text));
+        Assert.Equal(before.FontName, after.FontName);
+        Assert.Equal(before.Text, after.Text);
+        Assert.InRange(Math.Abs(before.X - after.X), 0, .02);
+        Assert.InRange(Math.Abs(before.Y - after.Y), 0, .02);
+        Assert.True(Math.Abs(before.Width - after.Width) < .04,
+            $"Width {before.Width} -> {after.Width}; matrices {before.RenderingMatrix} -> {after.RenderingMatrix}; spacing {before.CharacterSpacing}/{before.WordSpacing} -> {after.CharacterSpacing}/{after.WordSpacing}");
+        Assert.InRange(Math.Abs(before.Size - after.Size), 0, .02);
+        Assert.InRange(Math.Abs(before.RenderingMatrix.C - after.RenderingMatrix.C), 0, .02);
+        Assert.Equal(Pdf.RenderPage(replacement.Pages[0], 72).ToPng(),
+            Call(session, "GET", "/api/page/0.png", query: [("dpi", "72"), ("bare", "true")]).Data);
+        var inserted = item with { Id = "inserted", Orig = null, Text = "Inserted", Y = 140 };
+        Call(session, "PUT", "/api/page/0/items", new[] { item, inserted });
+        Assert.Equal(Pdf.RenderPage(replacement.Pages[0], 72).ToPng(),
+            Call(session, "GET", "/api/page/0.png", query: [("dpi", "72"), ("bare", "true")]).Data);
+        Assert.NotEqual(Call(session, "GET", "/api/page/0.png", query: [("dpi", "72"), ("bare", "true")]).Data,
+            Call(session, "GET", "/api/page/0.png", query: [("dpi", "72")]).Data);
+    }
+
     [Fact]
     public void RepeatedPageRendersReuseExactPngBytesUntilContentChanges()
     {

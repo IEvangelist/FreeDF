@@ -111,9 +111,9 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         objEdits.TryGetValue(editor.PageId(page), out var edits) &&
         edits.Keys.Any(index => PageText(page).Objects[index].Kind == "form"));
 
-    void Prepare()
+    void Prepare(bool originalTextOnly = false)
     {
-        if (prepared) return;
+        if (prepared && !originalTextOnly) return;
         overlayBuilder ??= new(editor, assets, catalog);
         editor.ClearStreamOverrides(); editor.ClearPageXObjects();
         var formStreamContents = new Dictionary<int, byte[]>();
@@ -140,7 +140,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         for (var i = 0; i < editor.PageCount; i++)
         {
             items.TryGetValue(editor.PageId(i), out var allItems);
-            var list = allItems?.Where(x => x.Type != "redact").ToList();
+            var list = allItems?.Where(x => x.Type != "redact" && (!originalTextOnly || x.Orig is not null)).ToList();
             var redacts = allItems?.Where(x => x.Type == "redact").Select(x => new Redactor.BoxRect(x.X, x.Y, x.W, x.H)).ToList() ?? [];
             var origs = list?.Where(x => x.Orig is not null).Select(x => x.Orig!.Value).ToHashSet() ?? [];
             objEdits.TryGetValue(editor.PageId(i), out var oe);
@@ -177,14 +177,17 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 {
                     if (it.Orig is not { } key) return null;
                     var span = PageText(page).Spans.FirstOrDefault(s => SpanKey(s) == key);
-                    if (span?.Font is null || span.FontRef == 0 || !pristineBack.TryGetValue(span.FontRef, out var fnum)) return null;
-                    return new OverlayBuilder.OrigFont(span.Font, new PdfRef(fnum, 0));
+                    if (span?.Font is null) return null;
+                    var fontRef = span.FontRef != 0 && pristineBack.TryGetValue(span.FontRef, out var fnum) ? new PdfRef(fnum, 0) : null;
+                    var m = span.RenderingMatrix;
+                    var transform = span.Size > 0 ? new Matrix(m.A / span.Size, -m.B / span.Size, m.C / span.Size, -m.D / span.Size, 0, 0) : Matrix.Identity;
+                    return new OverlayBuilder.OrigFont(span.Font, fontRef, transform, span.WordSpacing);
                 });
                 editor.SetOverlay(i, content, res);
             }
             else editor.SetOverlay(i, []);
         }
-        prepared = true;
+        prepared = !originalTextOnly;
     }
 
     PdfDocument Snap()
@@ -192,7 +195,15 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         if (snapshot is null) { Prepare(); snapshotBytes = editor.Save(); snapshot = PdfDocument.Load(snapshotBytes); }
         return snapshot;
     }
-    PdfDocument BaseSnap() { Prepare(); return baseSnapshot ??= PdfDocument.Load(editor.Save(false)); }
+    PdfDocument BaseSnap()
+    {
+        if (baseSnapshot is null)
+        {
+            Prepare(originalTextOnly: true);
+            baseSnapshot = PdfDocument.Load(editor.Save());
+        }
+        return baseSnapshot;
+    }
     void Changed()
     {
         version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); sharedFormReferences = null; prepared = false;
@@ -299,7 +310,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     break;
                 case "text" when method == "GET":
                     return AsJson(EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
-                        .Select(s => new { index = SpanKey(s), text = s.Text, x = s.X, y = s.Y, width = s.Width, size = s.Size, font = s.FontName, color = Hex(s.Color) }));
+                        .Select(s => new { index = SpanKey(s), text = s.Text, x = s.X, y = s.Y, width = s.Width, size = s.Size, font = s.FontName, color = Hex(s.Color), spacing = s.CharacterSpacing }));
                 case "objects":
                     objEdits.TryGetValue(id, out var oe);
                     if (method == "GET")

@@ -13,8 +13,9 @@ if (args.Length >= 4 && args[0] == "--profile")
     return;
 }
 
-if (args.Length != 1) throw new ArgumentException("Usage: AdoBye.EditorSmoke <published-wwwroot>");
-var root = Path.GetFullPath(args[0]);
+var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
+if (args.Length != 1 && !textSelectionOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection] <published-wwwroot>");
+var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -58,6 +59,12 @@ try
     }
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
+    if (textSelectionOnly)
+    {
+        await EditorTextSelection.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
+        return;
+    }
     await page.Locator("#fileBtn").ClickAsync();
     await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).ClickAsync();
     await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
@@ -174,6 +181,7 @@ try
     Check((await page.Locator("#status").TextContentAsync())!.Contains("PDF"), "Visible invalid PDF error");
     // The intentionally invalid PDF is logged by both the C# boundary and UI error reporter.
     errors.Clear();
+    await EditorTextSelection.Run(page);
     await page.SetViewportSizeAsync(390, 844);
     await page.ReloadAsync();
     await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");

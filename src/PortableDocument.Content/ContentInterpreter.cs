@@ -830,6 +830,10 @@ public sealed class ContentInterpreter
         string FontName, RgbColor Color, double Advance, bool Vertical, int Mcid = -1,
         int Form = 0, int FontRef = 0, PdfFont? Font = null, IReadOnlyList<TextPiece>? Pieces = null)
     {
+        /// <summary>One-em glyph space to the same device space as X/Y, including text scale, rise and CTM.</summary>
+        public Matrix RenderingMatrix { get; init; }
+        public double CharacterSpacing { get; init; }
+        public double WordSpacing { get; init; }
         /// <summary>The page sequence surrounding an untagged form invocation; not an MCID in this span's form.</summary>
         public int EnclosingPageMcid { get; init; } = -1;
         /// <summary>Whether this text is inside an explicit /Artifact marked-content sequence.</summary>
@@ -902,7 +906,12 @@ public sealed class ContentInterpreter
         TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
             Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
-            _curForm, _gs.FontRef, font, pieces) { EnclosingPageMcid = _pageMcid, IsArtifact = _hiddenStack.Contains("A") });
+            _curForm, _gs.FontRef, font, pieces)
+        {
+            EnclosingPageMcid = _pageMcid, IsArtifact = _hiddenStack.Contains("A"), RenderingMatrix = trm,
+            CharacterSpacing = _gs.FontSize == 0 ? 0 : _gs.CharSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize,
+            WordSpacing = _gs.FontSize == 0 ? 0 : _gs.WordSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize
+        });
     }
 
     void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null, System.Text.StringBuilder? text = null)
