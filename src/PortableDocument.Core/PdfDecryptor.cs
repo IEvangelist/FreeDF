@@ -241,6 +241,30 @@ public sealed class PdfDecryptor
         }
     }
 
+    /// <summary>Encrypts a string value of object <paramref name="num"/> (generation 0) with this document's key and string method, for appending to an encrypted file.</summary>
+    public byte[] SealString(byte[] data, int num) => Seal(data, num, 0, _str);
+
+    /// <summary>Encrypts a stream's data with the stream method; streams that decryption leaves alone (XRef, clear Metadata, /Crypt filter) are returned unchanged.</summary>
+    public byte[] SealStream(PdfStream st, int num)
+    {
+        var type = st.Dict.Get("Type").AsName();
+        if (type == "XRef" || (type == "Metadata" && !EncryptMetadata)) return st.RawData;
+        var f = st.Dict.Get("Filter");
+        var first = f is PdfArray { Items.Count: > 0 } fa ? fa.Items[0].AsName() : f.AsName();
+        return first == "Crypt" ? st.RawData : Seal(st.RawData, num, 0, _stm);
+    }
+
+    byte[] Seal(byte[] data, int num, int gen, Method m)
+    {
+        if (m == Method.None) return data;
+        var key = ObjKey(num, gen, m);
+        if (m == Method.Rc4) return Rc4(key, data);
+        using var aes = Aes.Create();
+        aes.Key = key;
+        var iv = RandomNumberGenerator.GetBytes(16);
+        return [.. iv, .. aes.EncryptCbc(data, iv, PaddingMode.PKCS7)];
+    }
+
     public PdfObject Decrypt(PdfObject o, int num, int gen) => o switch
     {
         PdfString s => s with { Bytes = Run(s.Bytes, num, gen, _str) },
@@ -250,8 +274,9 @@ public sealed class PdfDecryptor
         _ => o,
     };
 
+    // A signature's /Contents is never encrypted (§7.6.2), so it must not be decrypted either.
     PdfDictionary DictCopy(PdfDictionary d, int num, int gen)
-        => new(d.Entries.ToDictionary(kv => kv.Key, kv => Decrypt(kv.Value, num, gen)));
+        => new(d.Entries.ToDictionary(kv => kv.Key, kv => kv.Key == "Contents" && kv.Value is PdfString && d.Entries.ContainsKey("ByteRange") ? kv.Value : Decrypt(kv.Value, num, gen)));
 
     PdfStream DecryptStream(PdfStream st, int num, int gen)
     {

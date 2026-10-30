@@ -43,7 +43,10 @@ public sealed partial class PdfEditor
         }
         var rootRef = f.Trailer.Get("Root") as PdfRef ?? throw new PdfParseException("no catalog reference");
         _catalog = rootRef.Number;
-        _pagesRoot = _next++;
+        // Reuse the source's page-tree root when it is a plain flat /Pages node so an unchanged page list serializes identically (no spurious update).
+        _pagesRoot = f.Catalog.Get("Pages") is PdfRef pr && f.Resolve(pr) is PdfDictionary pd && pd.Entries.Keys.All(k => k is "Type" or "Kids" or "Count")
+            && f.Resolve(pd.Get("Kids")) is PdfArray ka && ka.Items.All(k => k is PdfRef kr && f.Resolve(kr) is PdfDictionary kd && f.Resolve(kd.Get("Kids")) is null)
+            ? pr.Number : _next++;
         _objs[_pagesRoot] = new PdfDictionary();
         if (f.Trailer.Get("Info") is PdfRef ir) _info = ir.Number;
 
@@ -608,13 +611,13 @@ public sealed partial class PdfEditor
         {
             if (deleted.Contains(n)) continue;
             var orig = f.Xref.TryGetValue(n, out var xe) && xe.InUse ? f.GetObject(n) : null;
-            if (!ReferenceEquals(orig, o)) changed[n] = o;
+            if (!ReferenceEquals(orig, o) && !PdfObjectEquality.DeepEquals(orig, o)) changed[n] = o;
         }
         var data = f.Data;
         var sx = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length)).LastIndexOf("startxref", StringComparison.Ordinal);
         var tailText = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length))[(sx + 9)..].Trim();
         var prev = long.Parse(new string(tailText.TakeWhile(char.IsDigit).ToArray()));
         var isStream = !(prev < data.Length && System.Text.Encoding.Latin1.GetString(data, (int)prev, Math.Min(4, data.Length - (int)prev)) == "xref");
-        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream);
+        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream, f.Decryptor, f.Trailer.Get("Encrypt"));
     }
 }
