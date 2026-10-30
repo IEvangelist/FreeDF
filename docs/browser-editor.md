@@ -86,8 +86,8 @@ assets, not missing filenames or integrity mismatches. The same URLs returned
 HTTP 200 on direct checks; default Chromium later succeeded too. This supports
 transient delivery failure, but does **not** establish HTTP/2 stream exhaustion.
 The SDK already limits downloads to 16 concurrent requests; its former retries
-used the same cache policy with only a short final delay. Asset bundling, trimming,
-and concurrency are unchanged rather than speculatively changing the PDF runtime.
+used the same cache policy with only a short final delay. Asset bundling and concurrency are unchanged. The later measured AOT publish
+trims framework assemblies with application reflection roots preserved.
 
 `AdoBye.EditorSmoke --boot <published-wwwroot> <evidence-directory>` measures
 three fresh-context cold starts and injects transient HTTP 503/network/module
@@ -139,11 +139,12 @@ one framework HTTP 503 and verify its recovered-error accounting explicitly.
 The existing PDF engine's format/coverage limitations still apply (see
 `spec-matrix.md`). Complex or large documents and high-DPI multi-page exports
 can take substantial worker time or exhaust browser memory. This host deliberately uses
-single-threaded WASM in a dedicated module worker for Pages compatibility, and disables trimming to preserve
-the shared editor's reflection-based JSON payloads. Initial download is larger
-than a trimmed/AOT-specialized app; no `wasm-tools` workload is required for the
-default publish. The explicit `-Aot` experiment trims the framework with application
-reflection roots preserved; it does not change the default Pages workflow.
+single-threaded WASM in a dedicated module worker for Pages compatibility.
+The local publish script defaults to untrimmed/non-AOT and needs no `wasm-tools`;
+`-Aot` and the Pages workflow trim the framework while preserving application
+reflection roots for shared editor JSON payloads. The Pages workflow selects
+AOT by default after the measured comparison; no threads or reduced final
+render quality are introduced.
 
 The shared session preserves unique indirect Form-child editing. Shared,
 repeated, hidden, nested or ambiguous children remain withheld. Graphic-group
@@ -248,6 +249,21 @@ gzip-equivalent payload sizes and six remaining original budget misses. Browser
 PNG encoding uses bounded row batches rather than another whole-page copy.
 Fresh-render gates additionally require p50/p95 below 1000/1500 ms and managed
 allocation below 200 MB; allocation is not peak browser working set.
+
+Hosted CI uses `--profile-ci <raw.json> docs\performance\editor-ci-known-misses.v1.json`.
+Its versioned policy retains the six open goals and measured AOT values, prints
+`KNOWN MISSES (open work)` plus the full strict-goal miss table in the job summary,
+and uploads both. Timing regression ceilings are 2.5x recorded p50/p95 with a
+50-ms floor for near-zero timings; deterministic allocation, cache/raster-count,
+fixed-41-dpi pixel hashes and no-blank checks are not relaxed. New **CI-relative**
+budget failures block the job. New strict-goal misses below those relative
+ceilings remain visible as `NEW GOAL MISS`, not claims of goal attainment.
+A known group that passes its original goal must be removed from the policy.
+`tools\Test-EditorProfileCi.ps1` verifies seven synthetic rejection cases.
+
+For authoritative strict goals, unset `EDITOR_PROFILE_REPORT_ONLY` and run the
+ordinary `--profile` (or `--profile-summary` on saved data); six original goals
+remain failing. Hosted CI's noise tolerance does not change those goals.
 
 ### Input responsiveness during fresh PDF work
 
@@ -475,6 +491,15 @@ all five application assemblies for reflection-based editor payloads, retains
 globalization and enables SIMD without enabling threads. Run the same full,
 boot, merge, page-image and profile checks against both outputs before changing
 production publishing.
+
+The production workflow installs the pinned SDK's workload, caches NuGet
+dependencies and uses isolated intermediate/publish directories. Its manual
+dispatch defaults to `aot=true`, `deploy=false`: validate and download the
+artifact first. Explicit `aot=false` selects a non-AOT fallback but does not bypass
+performance gates. Native compilation added about five minutes locally; the
+hosted-runner duration is not yet measured. Full, merge, boot, page-image,
+trim-safe JSON round trips and the profile CI gates all target the AOT output.
+`--json-safety <site>` runs just the JSON round trips for focused validation.
 
 The Chromium runner hosts **only static files** under `/csharp-pdf/`, with no
 editor API and no custom response headers. It exercises the real UI for
