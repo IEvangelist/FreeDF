@@ -78,7 +78,11 @@ public class EditorSessionTests
         Call(session, "PUT", "/api/page/0/items", new[] { rectangle });
 
         Assert.Same(bare, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40"), ("bare", "true")]).Data);
-        Assert.NotSame(full, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data);
+        var overlay = Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data;
+        Assert.NotSame(full, overlay);
+        var saved = PdfDocument.Load(Call(session, "GET", "/api/export/pdf").Data);
+        Assert.Equal(Pdf.RenderPage(saved.Pages[0], 40).ToPng(), overlay);
+        Assert.Same(bare, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40"), ("bare", "true")]).Data);
     }
 
     [Fact]

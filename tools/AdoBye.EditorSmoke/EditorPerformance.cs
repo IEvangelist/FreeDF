@@ -16,11 +16,18 @@ static class EditorPerformance
         window.profileWorkerStages = [];
         window.profileRenderStages = [];
         window.profileInteractions = [];
+        window.profilePresentation = [];
         const heartbeatUrl = URL.createObjectURL(new Blob(['setInterval(()=>postMessage(performance.timeOrigin+performance.now()),16)'], {type:'text/javascript'}));
         const heartbeat = new Worker(heartbeatUrl);
         URL.revokeObjectURL(heartbeatUrl);
         heartbeat.onmessage = e => profileHeartbeatDelays.push(performance.timeOrigin + performance.now() - e.data);
         addEventListener('pointermove', e => profileInputDelays.push(performance.now()-e.timeStamp));
+        for (const type of ['pointerdown', 'pointermove', 'keydown', 'input']) {
+          addEventListener(type, event => {
+            const start = event.timeStamp;
+            requestAnimationFrame(() => profilePresentation.push({type, ms:performance.now()-start}));
+          });
+        }
         new PerformanceObserver(list => {
           for (const e of list.getEntries()) window.profileLongTasks.push({start: e.startTime, ms: e.duration});
         }).observe({type:'longtask', buffered:true});
@@ -55,6 +62,7 @@ static class EditorPerformance
         WebApplication? app = null;
         PhysicalFileProvider? files = null;
         var records = new List<object>();
+        var latencyMisses = new List<string>();
         try
         {
             largeFixture = CreateLargeFixture(documents);
@@ -140,10 +148,10 @@ static class EditorPerformance
                         await Measure("next-page", async () =>
                         {
                             await page.Locator("#np").ClickAsync();
-                            await page.WaitForFunctionAsync("document.getElementById('pn').value === '2' && document.getElementById('base').naturalWidth > 0 && document.getElementById('base').dataset.loadedUrl.includes('/api/page/1.png')");
+                            await EditablePage(page, 1);
                         });
                         await page.Locator("#pp").ClickAsync();
-                        await page.WaitForFunctionAsync("document.getElementById('pn').value === '1' && document.getElementById('base').naturalWidth > 0");
+                        await EditablePage(page, 0);
                     }
                     await Measure("add-overlay", async () =>
                     {
@@ -207,23 +215,70 @@ static class EditorPerformance
                     });
                     if (await page.Locator("#recovery").CountAsync() > 0)
                         await Measure("local-recovery", () => page.WaitForFunctionAsync("document.getElementById('recovery').textContent === 'Recovery saved'"));
+                    await Settled(page);
+                    await page.Locator("#zi").ClickAsync(); await Settled(page);
+                    await page.Locator("#zo").ClickAsync(); await Settled(page);
+                    await Measure("cached-zoom", async () =>
+                    {
+                        await page.Locator("#zi").ClickAsync();
+                        await Settled(page);
+                    });
+                    if (await page.Locator(".thumb").CountAsync() > 1)
+                    {
+                        await page.Locator("#np").ClickAsync(); await EditablePage(page, 1); await Settled(page);
+                        await page.Locator("#pp").ClickAsync(); await EditablePage(page, 0); await Settled(page);
+                        await Measure("cached-next-page", async () =>
+                        {
+                            await page.Locator("#np").ClickAsync();
+                            await EditablePage(page, 1);
+                            await Settled(page);
+                        });
+                    }
+                    var bareHash = await EditorTextSelection.BasePixelHash(page);
+                    await Measure("overlay-cache", async () =>
+                    {
+                        await page.Locator("[data-tool=rect]").ClickAsync();
+                        var box = (await page.Locator("#layer").BoundingBoxAsync())!;
+                        await page.Mouse.MoveAsync(box.X + 20, box.Y + 20);
+                        await page.Mouse.DownAsync(); await page.Mouse.MoveAsync(box.X + 50, box.Y + 50); await page.Mouse.UpAsync();
+                        await Saved(page); await Settled(page);
+                        if (await EditorTextSelection.BasePixelHash(page) != bareHash)
+                            throw new Exception($"{name}: overlay-only edit changed the bare page pixels.");
+                    });
+                    if (await page.Locator(".thumb").CountAsync() > 1)
+                    {
+                        await page.Locator("#pp").ClickAsync();
+                        await EditablePage(page, 0);
+                        await Settled(page);
+                    }
+                    await page.Locator("#fp").ClickAsync();
+                    await Settled(page);
                     async Task Measure(string phase, Func<Task> action)
                     {
-                        await page.EvaluateAsync("() => { profileCommands=[]; profileLongTasks=[]; profileHeartbeatDelays=[]; profileInputDelays=[]; profileWorkerStages=[]; profileRenderStages=[]; profileInteractions=[]; window.profileStart=performance.now(); }");
+                        await page.EvaluateAsync("() => { profileCommands=[]; profileLongTasks=[]; profileHeartbeatDelays=[]; profileInputDelays=[]; profileWorkerStages=[]; profileRenderStages=[]; profileInteractions=[]; profilePresentation=[]; window.profileStart=performance.now(); }");
                         var before = await cdp.SendAsync("Performance.getMetrics");
                         await action();
                         await Frames(page);
-                        var result = await page.EvaluateAsync<JsonElement>("({ms:performance.now()-profileStart, commands:profileCommands, longTasks:profileLongTasks, heartbeatDelays:profileHeartbeatDelays, inputDelays:profileInputDelays, workerStages:profileWorkerStages, renderStages:profileRenderStages, interactions:profileInteractions})");
+                        var result = await page.EvaluateAsync<JsonElement>("({ms:performance.now()-profileStart, commands:profileCommands, longTasks:profileLongTasks, heartbeatDelays:profileHeartbeatDelays, inputDelays:profileInputDelays, workerStages:profileWorkerStages, renderStages:profileRenderStages, interactions:profileInteractions, presentation:profilePresentation})");
                         var after = await cdp.SendAsync("Performance.getMetrics");
                         records.Add(new { repeat, document = name, phase, result, inputAckMs = phase == "fresh-render-input" ? inputAckMs : null, before, after });
                         Console.WriteLine($"{repeat} {name} {phase}: {result.GetProperty("ms").GetDouble():F0} ms, {result.GetProperty("commands").GetArrayLength()} commands");
                         await File.WriteAllTextAsync(output, JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true }));
+                        if (phase == "overlay-cache" && result.GetProperty("workerStages").EnumerateArray().Any(stage =>
+                              stage.GetProperty("url").GetString()!.Contains("bare=true", StringComparison.Ordinal) &&
+                              stage.TryGetProperty("engine", out var engine) && engine.ValueKind == JsonValueKind.Object &&
+                              !engine.GetProperty("cacheHit").GetBoolean()))
+                            throw new Exception($"{name}: overlay-only edit rerasterized a bare page.");
                         if (phase is "fresh-render-input" or "local-recovery" && await page.EvaluateAsync<bool>("pdfHost.execution === 'worker'") &&
                             ((phase == "fresh-render-input" && inputAckMs >= 200) || result.GetProperty("heartbeatDelays").EnumerateArray().Any(delay => delay.GetDouble() >= 200)))
-                            throw new Exception($"{name}: worker render exceeded the 200 ms input/heartbeat latency goal.");
+                            latencyMisses.Add($"{name}: {phase} exceeded the 200 ms input/heartbeat latency goal.");
                     }
                 }
             }
+            latencyMisses.AddRange(await EditorPerformanceReport.Write(output));
+            await File.WriteAllTextAsync(output + ".misses.json", JsonSerializer.Serialize(latencyMisses, new JsonSerializerOptions { WriteIndented = true }));
+            if (latencyMisses.Count > 0 && Environment.GetEnvironmentVariable("EDITOR_PROFILE_REPORT_ONLY") != "1")
+                throw new Exception(string.Join(Environment.NewLine, latencyMisses));
         }
         finally
         {
@@ -247,6 +302,9 @@ static class EditorPerformance
     }
 
     static Task Frames(IPage page) => page.EvaluateAsync("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    static Task EditablePage(IPage page, int index) => page.WaitForFunctionAsync(
+        "index => document.getElementById('view').inert === false && document.getElementById('pn').value === String(index+1) && document.getElementById('base')?.naturalWidth > 0 && document.getElementById('base').dataset.loadedUrl.includes(`/api/page/${index}.png`)", index);
+    static Task Settled(IPage page) => page.WaitForFunctionAsync("document.getElementById('view').inert === false && document.getElementById('base')?.naturalWidth > 0 && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl");
 
     static async Task SidebarProbe(IPage page, int repeat, string document, string viewport, int width, string output, List<object> records)
     {

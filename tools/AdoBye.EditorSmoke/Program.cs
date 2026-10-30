@@ -7,6 +7,14 @@ using Microsoft.Playwright;
 using PortableDocument.Document;
 using Pdf = PortableDocument.Render.PortableDocument;
 
+if (args is ["--profile-summary", var profile])
+{
+    var misses = await EditorPerformanceReport.Write(profile);
+    if (misses.Count > 0 && Environment.GetEnvironmentVariable("EDITOR_PROFILE_REPORT_ONLY") != "1")
+        throw new Exception(string.Join(Environment.NewLine, misses));
+    return;
+}
+
 if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline")
 {
     await EditorBoot.Run(args[1], args[2], args[0] == "--boot-baseline");

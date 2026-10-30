@@ -50,12 +50,26 @@ static class EditorHeader
     static async Task Order(IPage page, string where)
     {
         Check(await page.EvaluateAsync<bool>("""
+            () => {
+              const lum = c => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+              const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+              const url = 'https://github.com/sponsors/IEvangelist?frequency=one-time', mobile = innerWidth <= 600;
+              const plain = a => a.tagName === 'A' && a.href === url && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer' && a.getAttribute('aria-label') === 'Sponsor (one-time) on GitHub';
+              const h = document.getElementById('sponsor'), b = document.getElementById('sponsorBadge'), f = document.querySelector('footer'), fr = f.getBoundingClientRect(), br = b.getBoundingClientRect();
+              const bg = el => getComputedStyle(el).backgroundColor;
+              const okBadge = mobile ? getComputedStyle(b).display === 'none'
+                : plain(b) && br.right <= fr.right && fr.right - br.right <= 16 && br.top >= fr.top && br.bottom <= fr.bottom && br.height >= 20
+                  && ['status', 'recovery', 'keys'].every(id => { const e = document.getElementById(id); return e.hidden || getComputedStyle(e).display === 'none' || e.getBoundingClientRect().right <= br.left + 1; })
+                  && ratio(getComputedStyle(b).color, 'rgb(21, 23, 28)') >= 4.5;
+              return plain(h) && ratio(getComputedStyle(h).color, bg(document.querySelector('header'))) >= 3 && okBadge
+                && !document.querySelector('link[rel=preconnect],link[rel=prefetch],link[rel=dns-prefetch]'); }
+            """), where + ": header heart and footer Sponsor badge are plain one-time anchors with AA contrast; badge is right-aligned in the status bar without overlapping status/recovery/hints and hidden on narrow screens");
+        Check(await page.EvaluateAsync<bool>("""
             () => { const a = document.getElementById('sponsor'), r = a.getBoundingClientRect(), mobile = innerWidth <= 720;
-              return a.tagName === 'A' && a.href === 'https://github.com/sponsors/IEvangelist?frequency=one-time' && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer'
-                && a.getAttribute('aria-label') === 'Sponsor (one-time) on GitHub' && a.title === a.getAttribute('aria-label')
-                && r.width >= (mobile ? 44 : 30) && r.height >= (mobile ? 44 : 30) && !document.querySelector('link[rel=preconnect],link[rel=prefetch],link[rel=dns-prefetch]')
+              return a.title === a.getAttribute('aria-label')
+                && r.width >= (mobile ? 44 : 30) && r.height >= (mobile ? 44 : 30)
                 && before(document.getElementById('fs'), a) && before(a, document.getElementById('dl')); function before(x, y) { return !!(x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING); } }
-            """), where + ": one-time Sponsor link is a plain anchor (href, new tab, noopener noreferrer, label, hit target, no preconnect) beside the right-hand actions");
+            """), where + ": header Sponsor heart keeps its tooltip, hit target and position beside the right-hand actions");
         Check(await page.EvaluateAsync<bool>("""
             () => { const q = id => document.getElementById(id), brand = document.querySelector('header .brand'), file = q('fileBtn'), doc = q('doc'),
                 before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
