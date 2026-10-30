@@ -1,9 +1,3 @@
-function base64(bytes) {
-  let text = '';
-  for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768));
-  return btoa(text);
-}
-
 export async function start() {
   const worker = new Worker(new URL('worker.js', import.meta.url), { type: 'module', name: 'PDF engine' });
   let nextId = 0, failed = null, sequence = Promise.resolve();
@@ -50,12 +44,12 @@ export async function start() {
     }
   };
   await ready;
-  const command = (url, method = 'GET', body = null, fileName = null) => {
+  const command = (url, method = 'GET', body = null, fileName = null, image = false) => {
     if (failed) return Promise.reject(failed);
-    const u = new URL(url, location.href), id = ++nextId;
+    const id = ++nextId;
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject, url, started: performance.now() });
-      try { worker.postMessage({ id, command: JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName }) }); }
+      try { worker.postMessage({ id, url, method, body, fileName, image }); }
       catch (error) { pending.delete(id); reject(error); }
     });
   };
@@ -72,12 +66,12 @@ export async function start() {
         if (options.body instanceof FormData) {
           const file = [...options.body.values()].find(value => value instanceof File);
           if (!file) throw new Error('Choose a file.');
-          body = base64(new Uint8Array(await file.arrayBuffer())); fileName = file.name;
+          body = file; fileName = file.name;
         } else if (options.body != null) {
-          body = base64(new TextEncoder().encode(options.body));
+          body = options.body;
         }
         const reply = await command(url, options.method, body, fileName);
-        return new Response(Uint8Array.from(atob(reply.data), c => c.charCodeAt(0)), {
+        return new Response(reply.bytes, {
           headers: { 'Content-Type': reply.contentType, ...(reply.fileName ? { 'X-File-Name': reply.fileName } : {}) },
         });
       });
@@ -90,7 +84,7 @@ export async function start() {
         return Promise.resolve(cached.data);
       }
       return enqueue(async () => {
-        const reply = await command(url);
+        const reply = await command(url, 'GET', null, null, true);
         const started = performance.now();
         const data = `data:${reply.contentType};base64,${reply.data}`;
         if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });

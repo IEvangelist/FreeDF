@@ -87,43 +87,60 @@ public static class ImageDecoder
         var maxv = (1 << Math.Min(bpc, 16)) - 1.0;
         var comps = new double[nc];
         long[]? colorKey = R(d.Get("Mask")) is PdfArray ck ? ck.Items.Select(x => (long)(R(x).AsNumber() ?? 0)).ToArray() : null;
-        var cache = new Dictionary<long, RgbColor>();
-        var raw = new int[nc];
-        for (var y = 0; y < h; y++)
+        var direct = bpc == 8 && colorKey is null && (cs == PdfColorSpace.Rgb || cs == PdfColorSpace.Gray)
+            && decode.Length == nc * 2 && Enumerable.Range(0, nc).All(k => decode[2 * k] == 0 && decode[2 * k + 1] == 1);
+        if (direct)
         {
-            var rowOff = y * rowBytes;
-            for (var x = 0; x < w; x++)
+            for (var i = 0; i < w * h; i++)
             {
-                long key = 0;
-                for (var k = 0; k < nc; k++)
+                var source = i * nc;
+                var p = i * 4;
+                rgba[p] = source < data.Length ? data[source] : (byte)0;
+                rgba[p + 1] = cs == PdfColorSpace.Gray ? rgba[p] : source + 1 < data.Length ? data[source + 1] : (byte)0;
+                rgba[p + 2] = cs == PdfColorSpace.Gray ? rgba[p] : source + 2 < data.Length ? data[source + 2] : (byte)0;
+                rgba[p + 3] = 255;
+            }
+        }
+        else
+        {
+            var cache = new Dictionary<long, RgbColor>();
+            var raw = new int[nc];
+            for (var y = 0; y < h; y++)
+            {
+                var rowOff = y * rowBytes;
+                for (var x = 0; x < w; x++)
                 {
-                    var idx = x * nc + k;
-                    int v;
-                    if (bpc == 8) { var o = rowOff + idx; v = o < data.Length ? data[o] : 0; }
-                    else if (bpc == 16) { var o = rowOff + idx * 2; v = o + 1 < data.Length ? data[o] << 8 | data[o + 1] : 0; }
-                    else
+                    long key = 0;
+                    for (var k = 0; k < nc; k++)
                     {
-                        var bit = idx * bpc; var o = rowOff + bit / 8;
-                        v = o < data.Length ? data[o] >> (8 - bpc - bit % 8) & ((1 << bpc) - 1) : 0;
+                        var idx = x * nc + k;
+                        int v;
+                        if (bpc == 8) { var o = rowOff + idx; v = o < data.Length ? data[o] : 0; }
+                        else if (bpc == 16) { var o = rowOff + idx * 2; v = o + 1 < data.Length ? data[o] << 8 | data[o + 1] : 0; }
+                        else
+                        {
+                            var bit = idx * bpc; var o = rowOff + bit / 8;
+                            v = o < data.Length ? data[o] >> (8 - bpc - bit % 8) & ((1 << bpc) - 1) : 0;
+                        }
+                        raw[k] = v; key = key * 65599 + v;
                     }
-                    raw[k] = v; key = key * 65599 + v;
+                    if (!cache.TryGetValue(key, out var col))
+                    {
+                        for (var k = 0; k < nc; k++) comps[k] = decode[2 * k] + raw[k] / maxv * (decode[2 * k + 1] - decode[2 * k]);
+                        col = cs.ToRgb(comps, imageIntent, blackPointCompensation);
+                        if (cache.Count < 100000) cache[key] = col;
+                    }
+                    var p = (y * w + x) * 4;
+                    rgba[p] = (byte)Math.Round(col.R * 255); rgba[p + 1] = (byte)Math.Round(col.G * 255); rgba[p + 2] = (byte)Math.Round(col.B * 255);
+                    var alpha = 255;
+                    if (colorKey is { Length: >= 2 } && colorKey.Length >= nc * 2)
+                    {
+                        var masked = true;
+                        for (var k = 0; k < nc; k++) if (raw[k] < colorKey[2 * k] || raw[k] > colorKey[2 * k + 1]) { masked = false; break; }
+                        if (masked) alpha = 0;
+                    }
+                    rgba[p + 3] = (byte)alpha;
                 }
-                if (!cache.TryGetValue(key, out var col))
-                {
-                    for (var k = 0; k < nc; k++) comps[k] = decode[2 * k] + raw[k] / maxv * (decode[2 * k + 1] - decode[2 * k]);
-                    col = cs.ToRgb(comps, imageIntent, blackPointCompensation);
-                    if (cache.Count < 100000) cache[key] = col;
-                }
-                var p = (y * w + x) * 4;
-                rgba[p] = (byte)Math.Round(col.R * 255); rgba[p + 1] = (byte)Math.Round(col.G * 255); rgba[p + 2] = (byte)Math.Round(col.B * 255);
-                var alpha = 255;
-                if (colorKey is { Length: >= 2 } && colorKey.Length >= nc * 2)
-                {
-                    var masked = true;
-                    for (var k = 0; k < nc; k++) if (raw[k] < colorKey[2 * k] || raw[k] > colorKey[2 * k + 1]) { masked = false; break; }
-                    if (masked) alpha = 0;
-                }
-                rgba[p + 3] = (byte)alpha;
             }
         }
 
