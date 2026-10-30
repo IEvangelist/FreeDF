@@ -148,6 +148,96 @@ public class AnnotationStructureValidationTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
+    public void ParentTreeValueMustBeIndirectEvenWhenItsResolvedIdentityMatches(int part)
+    {
+        foreach (var nested in new[] { false, true })
+        {
+            var doc = nested
+                ? Load(part, (10, "<< /Kids [13 0 R] >>"), (13, "<< /Limits [1 1] /Nums [1 8 0 R] >>"))
+                : Load(part);
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+            Assert.NotNull(doc.Structure!.ElementFor(element));
+            var leaf = Assert.IsType<PdfDictionary>(doc.File.GetObject(nested ? 13 : 10));
+            var nums = Assert.IsType<PdfArray>(leaf.Get("Nums"));
+            var reference = Assert.IsType<PdfRef>(nums[1]);
+            Assert.True(Validate(doc, part).IsCompliant);
+
+            nums.Items[1] = element;
+            Assert.Same(element, doc.Structure.ParentTreeLookup(1));
+            var finding = OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+            Assert.Equal("ISO 32000-2 14.7.5.4", finding.Clause);
+            Assert.Same(element, nums[1]);
+
+            nums.Items[1] = reference;
+            Assert.True(Validate(doc, part).IsCompliant);
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void MalformedRawParentTreeValuesDoNotSatisfyTheCheck(int part)
+    {
+        foreach (var value in new[] { "/Annot", "(8 0 R)", "8", "8.0", "true", "null", "[8 0 R]", "<< >>", "99 0 R" })
+        {
+            var doc = Load(part, (10, $"<< /Nums [1 {value}] >>"));
+            var nums = Assert.IsType<PdfArray>(Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Get("Nums"));
+            var raw = nums[1];
+            OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+            Assert.Same(raw, nums[1]);
+        }
+
+        foreach (var target in new[] { "[8 0 R]", "null", "true", "<< /Type /StructElem /S /Annot >>", "13 0 R" })
+        {
+            var doc = Load(part, (10, "<< /Nums [1 13 0 R] >>"), (13, target));
+            OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void RawParentTreeLookupPreservesDepthLimitAndFirstMatch(int part)
+    {
+        foreach (var depth in new[] { 31, 32 })
+        {
+            var doc = Load(part);
+            PdfDictionary node = Assert.IsType<PdfDictionary>(doc.File.GetObject(10));
+            for (var i = 0; i < depth; i++)
+                node = new PdfDictionary(new() { ["Kids"] = new PdfArray([node]) });
+            doc.Structure!.Root.Entries["ParentTree"] = node;
+            if (depth == 31) Assert.True(Validate(doc, part).IsCompliant);
+            else OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+        }
+
+        var duplicate = Load(part, (10, "<< /Nums [1 8 0 R 1 8 0 R] >>"));
+        var nums = Assert.IsType<PdfArray>(Assert.IsType<PdfDictionary>(duplicate.File.GetObject(10)).Get("Nums"));
+        nums.Items[1] = Assert.IsType<PdfDictionary>(duplicate.File.GetObject(8));
+        Assert.NotNull(duplicate.Structure!.ElementFor(Assert.IsType<PdfDictionary>(duplicate.Structure.ParentTreeLookup(1))));
+        OnlyAnnotationFinding(Validate(duplicate, part), "PDFUA-ANNOT-PARENTTREE");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void RawParentTreeLookupPreservesLimitsAndIndirectContainers(int part)
+    {
+        var limited = Load(part,
+            (10, "<< /Kids [12 0 R 13 0 R] >>"),
+            (12, "<< /Limits [2 2] /Nums [1 null] >>"),
+            (13, "<< /Limits [1 1] /Nums [1 8 0 R] >>"));
+        Assert.True(Validate(limited, part).IsCompliant);
+
+        var indirectNums = Load(part, (10, "<< /Nums 13 0 R >>"), (13, "[1 8 0 R]"));
+        Assert.True(Validate(indirectNums, part).IsCompliant);
+
+        var danglingKey = Load(part, (10, "<< /Nums [1] >>"));
+        OnlyAnnotationFinding(Validate(danglingKey, part), "PDFUA-ANNOT-PARENTTREE");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
     public void ParentElementMustHaveAMatchingDirectObjr(int part)
     {
         foreach (var kids in new[] { "", "/K []", "/K 0", "/K 13 0 R" })
@@ -251,6 +341,24 @@ public class AnnotationStructureValidationTests
         var doc = Load(part,
             (8, Element.Replace("/S /Annot", "/S /Link /Alt (Description)")),
             (9, "<< /Type /Annot /Subtype /Link /StructParent 1.5 >>"));
+        var report = Validate(doc, part);
+        OnlyAnnotationFinding(report, "PDFUA-ANNOT-PARENTTREE");
+        Assert.True(report.Has("PDFUA-LINK-DESCRIPTION"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void DirectParentTreeValueCannotSupplyLinkAlt(int part)
+    {
+        var doc = Load(part,
+            (8, Element.Replace("/S /Annot", "/S /Link /Alt (Description)")),
+            (9, "<< /Type /Annot /Subtype /Link /StructParent 1 >>"));
+        var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        Assert.NotNull(doc.Structure!.ElementFor(element));
+        var nums = Assert.IsType<PdfArray>(Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Get("Nums"));
+        nums.Items[1] = element;
+
         var report = Validate(doc, part);
         OnlyAnnotationFinding(report, "PDFUA-ANNOT-PARENTTREE");
         Assert.True(report.Has("PDFUA-LINK-DESCRIPTION"));

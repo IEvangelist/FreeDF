@@ -308,7 +308,8 @@ internal static partial class PdfUAChecks
                 if (key is null)
                     c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
                 else if (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
-                    || tree.ParentTreeLookup((int)number.Value) is not PdfDictionary dict
+                    || AnnotationParentTreeValue(f, tree, (int)number.Value) is not PdfRef reference
+                    || f.Resolve(reference) is not PdfDictionary dict
                     || (parent = tree.ElementFor(dict)) is null)
                     c.Add("PDFUA-ANNOT-PARENTTREE", ValidationSeverity.Error, $"/{sub} annotation /StructParent must be a non-negative integer key mapping to a parsed structure element in /ParentTree", "ISO 32000-2 14.7.5.4", i);
                 else
@@ -322,6 +323,40 @@ internal static partial class PdfUAChecks
                     c.Add("PDFUA-LINK-DESCRIPTION", ValidationSeverity.Error, "Link annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.5", "8.9"), i);
             }
         }
+    }
+
+    static PdfObject? AnnotationParentTreeValue(PdfFile f, StructureTree tree, int key)
+    {
+        if (f.Resolve(tree.Root.Get("ParentTree")) is not PdfDictionary root) return null;
+        // Match ParentTreeLookup's traversal bounds, but retain the raw value required by Table 354.
+        var pending = new Stack<(PdfDictionary Node, int Depth)>();
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        pending.Push((root, 0));
+        var visited = 0;
+        while (pending.TryPop(out var entry) && visited++ < StructureTree.MaxNodes)
+        {
+            var (node, depth) = entry;
+            if (depth >= 32 || !seen.Add(node)) continue;
+            if (f.Resolve(node.Get("Nums")) is PdfArray nums)
+            {
+                for (var i = 0; i + 1 < nums.Count; i += 2)
+                    if (f.Resolve(nums[i]) is PdfInteger { Value: >= 0 and <= int.MaxValue } number
+                        && number.Value == key) return nums[i + 1];
+                continue;
+            }
+            if (f.Resolve(node.Get("Kids")) is not PdfArray kids) continue;
+            for (var i = kids.Count - 1; i >= 0; i--)
+            {
+                if (f.Resolve(kids[i]) is not PdfDictionary kd) continue;
+                if (f.Resolve(kd.Get("Limits")) is PdfArray { Count: >= 2 } lim
+                    && f.Resolve(lim[0]).AsNumber() is { } lo && f.Resolve(lim[1]).AsNumber() is { } hi)
+                {
+                    if (key < lo || key > hi) continue;
+                }
+                if (pending.Count < StructureTree.MaxNodes) pending.Push((kd, depth + 1));
+            }
+        }
+        return null;
     }
 
     static HashSet<PdfDictionary> AnnotationObjectReferences(PdfFile f, StructElement element)
