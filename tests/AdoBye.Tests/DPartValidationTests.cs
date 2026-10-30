@@ -63,6 +63,244 @@ public class DPartValidationTests
         Assert.Empty(report.Issues);
     }
 
+    static PdfDocument LoadLevels(string entries) =>
+        Load(node: "/Parent 4 0 R /DParts [[6 0 R 7 0 R]]",
+            pages: ["/DPart 8 0 R"],
+            root: $"/DPartRootNode 5 0 R {entries}", objects:
+            "6 0 obj\n<< /Parent 5 0 R /DParts [[8 0 R]] >>\nendobj\n" +
+            "7 0 obj\n<< /Parent 5 0 R >>\nendobj\n" +
+            "8 0 obj\n<< /Parent 6 0 R /Start 10000 0 R >>\nendobj\n");
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void RecordLevel_identifies_an_existing_zero_based_level(int level)
+    {
+        var report = Report(LoadLevels($"/RecordLevel {level}"));
+        Assert.True(report.IsConformant);
+        Assert.Equal((long)level, report.Root.RecordLevel!.Value);
+    }
+
+    [Fact]
+    public void Single_node_hierarchy_has_only_level_zero()
+    {
+        Assert.True(Report(Load(root: "/DPartRootNode 5 0 R /RecordLevel 0 /NodeNameList [/Root]")).IsConformant);
+        HasIssue(Load(root: "/DPartRootNode 5 0 R /RecordLevel 1"), PdfDPartIssueCode.RecordLevelOutOfRange);
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("3")]
+    [InlineData("9223372036854775807")]
+    [InlineData("-9223372036854775807")]
+    public void RecordLevel_must_be_less_than_actual_hierarchy_depth(string level)
+    {
+        var report = HasIssue(LoadLevels($"/RecordLevel {level}"), PdfDPartIssueCode.RecordLevelOutOfRange);
+        Assert.True(report.IsComplete);
+        Assert.Same(report.Root.Dictionary!.Get("RecordLevel"), Assert.Single(report.Issues).RawValue);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("1.0")]
+    [InlineData("/One")]
+    [InlineData("(1)")]
+    [InlineData("[1]")]
+    [InlineData("<< >>")]
+    [InlineData("999 0 R")]
+    public void RecordLevel_requires_an_integer_and_retains_malformed_raw_value(string value)
+    {
+        var report = HasIssue(LoadLevels($"/RecordLevel {value}"), PdfDPartIssueCode.InvalidRecordLevel);
+        Assert.True(report.IsComplete);
+        Assert.Same(report.Root.Dictionary!.Get("RecordLevel"), Assert.Single(report.Issues).RawValue);
+        Assert.Null(report.Root.RecordLevel);
+    }
+
+    [Theory]
+    [InlineData("/Root /Component /Leaf")]
+    [InlineData("/ns:root /_child-1.0 /A#CC#81")]
+    [InlineData("/#CE#94elta /#E5#AD#90 /#D0#98#D0#BC#D1#8F")]
+    public void NodeNameList_accepts_XML_names_including_colons_and_Unicode(string names)
+    {
+        var report = Report(LoadLevels($"/NodeNameList [{names}]"));
+        Assert.True(report.IsConformant);
+        Assert.Equal(3, report.Root.NodeNameList!.Count);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/Root")]
+    [InlineData("/Root /Component")]
+    [InlineData("/Root /Component /Leaf /Extra")]
+    public void NodeNameList_count_matches_maximum_depth_not_node_or_leaf_count(string names)
+    {
+        var report = HasIssue(LoadLevels($"/NodeNameList [{names}]"), PdfDPartIssueCode.NodeNameCountMismatch);
+        Assert.True(report.IsComplete);
+        Assert.Same(report.Root.Dictionary!.Get("NodeNameList"), Assert.Single(report.Issues).RawValue);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("3")]
+    [InlineData("/Root")]
+    [InlineData("(Root)")]
+    [InlineData("<< >>")]
+    [InlineData("999 0 R")]
+    public void NodeNameList_requires_an_array_and_retains_malformed_raw_value(string value)
+    {
+        var report = HasIssue(LoadLevels($"/NodeNameList {value}"), PdfDPartIssueCode.InvalidNodeNameList);
+        Assert.True(report.IsComplete);
+        Assert.Same(report.Root.Dictionary!.Get("NodeNameList"), Assert.Single(report.Issues).RawValue);
+        Assert.Null(report.Root.NodeNameList);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("1")]
+    [InlineData("1.0")]
+    [InlineData("(Root)")]
+    [InlineData("[]")]
+    [InlineData("<< >>")]
+    [InlineData("999 0 R")]
+    public void NodeNameList_entries_require_PDF_names(string value)
+    {
+        var report = HasIssue(LoadLevels($"/NodeNameList [/Root {value} /Leaf]"),
+            PdfDPartIssueCode.InvalidNodeNameType);
+        Assert.Same(report.Root.NodeNameList![1], Assert.Single(report.Issues).RawValue);
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/1Root")]
+    [InlineData("/-Root")]
+    [InlineData("/Root#20Name")]
+    [InlineData("/Root#2FName")]
+    [InlineData("/Root#00Name")]
+    [InlineData("/Root#3CName")]
+    public void NodeNameList_rejects_empty_or_invalid_XML_names(string value)
+    {
+        var report = HasIssue(LoadLevels($"/NodeNameList [{value} /Component /Leaf]"),
+            PdfDPartIssueCode.InvalidNodeName);
+        Assert.True(report.IsComplete);
+        Assert.Same(report.Root.NodeNameList![0], Assert.Single(report.Issues).RawValue);
+    }
+
+    [Fact]
+    public void Root_level_metadata_accepts_indirect_values_and_name_items()
+    {
+        var report = Report(Load(root: "/DPartRootNode 5 0 R /RecordLevel 80 7 R /NodeNameList 81 0 R",
+            objects: "80 7 obj\n0\nendobj\n81 0 obj\n[82 0 R]\nendobj\n82 0 obj\n/Root\nendobj\n"));
+        Assert.True(report.IsConformant);
+        Assert.IsType<PdfRef>(report.Root.Dictionary!.Get("RecordLevel"));
+        Assert.IsType<PdfRef>(report.Root.NodeNameList![0]);
+    }
+
+    [Theory]
+    [InlineData("/RecordLevel 80 1 R", PdfDPartIssueCode.InvalidRecordLevel)]
+    [InlineData("/NodeNameList 81 1 R", PdfDPartIssueCode.InvalidNodeNameList)]
+    [InlineData("/NodeNameList [82 1 R]", PdfDPartIssueCode.InvalidNodeNameType)]
+    [InlineData("/RecordLevel 83 0 R", PdfDPartIssueCode.InvalidRecordLevel)]
+    public void Root_level_metadata_resolution_honors_generations_and_hop_boundaries(
+        string entries, PdfDPartIssueCode code) =>
+        HasIssue(Load(root: $"/DPartRootNode 5 0 R {entries}",
+            objects: "80 0 obj\n0\nendobj\n81 0 obj\n[/Root]\nendobj\n" +
+            "82 0 obj\n/Root\nendobj\n83 0 obj\n83 0 R\nendobj\n"), code);
+
+    [Theory]
+    [InlineData("/DParts null")]
+    [InlineData("/DParts [[999 0 R]]")]
+    [InlineData("/DParts [[5 0 R]]")]
+    public void Partial_hierarchies_leave_level_comparisons_indeterminate(string children)
+    {
+        var report = HasIssue(Load(node: $"/Parent 4 0 R {children}",
+            root: "/DPartRootNode 5 0 R /RecordLevel 500 /NodeNameList [/Root]"),
+            PdfDPartIssueCode.HierarchyBoundary);
+        Assert.False(report.IsComplete);
+        Assert.DoesNotContain(report.Issues, i => i.Code == PdfDPartIssueCode.RecordLevelOutOfRange ||
+            i.Code == PdfDPartIssueCode.NodeNameCountMismatch);
+    }
+
+    [Fact]
+    public void Incomplete_hierarchy_still_checks_optional_field_types_and_XML_names()
+    {
+        var report = HasIssue(Load(node: "/Parent 4 0 R /DParts null",
+            root: "/DPartRootNode 5 0 R /RecordLevel (bad) /NodeNameList [/1Root 42]"),
+            PdfDPartIssueCode.HierarchyBoundary);
+        Assert.Contains(report.Issues, i => i.Code == PdfDPartIssueCode.InvalidRecordLevel);
+        Assert.Contains(report.Issues, i => i.Code == PdfDPartIssueCode.InvalidNodeName);
+        Assert.Contains(report.Issues, i => i.Code == PdfDPartIssueCode.InvalidNodeNameType);
+        Assert.DoesNotContain(report.Issues, i => i.Code == PdfDPartIssueCode.NodeNameCountMismatch);
+    }
+
+    [Fact]
+    public void Page_boundary_does_not_hide_definite_root_level_errors()
+    {
+        var doc = Load(root: "/DPartRootNode 5 0 R /RecordLevel 1 /NodeNameList []");
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(2)).Entries["Kids"] = PdfNull.Instance;
+        var report = HasIssue(doc, PdfDPartIssueCode.PageTreeBoundary);
+        Assert.Contains(report.Issues, i => i.Code == PdfDPartIssueCode.RecordLevelOutOfRange);
+        Assert.Contains(report.Issues, i => i.Code == PdfDPartIssueCode.NodeNameCountMismatch);
+    }
+
+    [Fact]
+    public void NodeNameList_item_inspection_is_bounded_and_retains_the_unvisited_tail()
+    {
+        var doc = Load();
+        var names = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfInteger(42),
+            PdfDPartRoot.MaxNodeVisits + 1).ToList());
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(4)).Entries["NodeNameList"] = names;
+        var report = HasIssue(doc, PdfDPartIssueCode.NodeNameListBoundary);
+        Assert.False(report.IsComplete);
+        Assert.Equal(PdfDPartRoot.MaxNodeVisits,
+            report.Issues.Count(i => i.Code == PdfDPartIssueCode.InvalidNodeNameType));
+        var boundary = Assert.Single(report.Issues.Where(i => i.Code == PdfDPartIssueCode.NodeNameListBoundary));
+        Assert.Equal(PdfDPartBoundary.NodeLimit, boundary.Boundary);
+        Assert.Same(names, boundary.RawValue);
+        Assert.Equal(PdfDPartRoot.MaxNodeVisits + 1, names.Count);
+    }
+
+    [Fact]
+    public void Last_expandable_hierarchy_level_is_valid_for_both_optional_fields()
+    {
+        var objects = new StringBuilder();
+        for (var depth = 1; depth < PdfDPartRoot.MaxDepth; depth++)
+        {
+            var number = 5 + depth;
+            var entries = depth == PdfDPartRoot.MaxDepth - 1
+                ? "/Start 10000 0 R" : $"/DParts [[{number + 1} 0 R]]";
+            objects.Append($"{number} 0 obj\n<< /Parent {number - 1} 0 R {entries} >>\nendobj\n");
+        }
+        var names = string.Join(" ", Enumerable.Repeat("/Level", PdfDPartRoot.MaxDepth));
+        var report = Report(Load(node: "/Parent 4 0 R /DParts [[6 0 R]]",
+            pages: [$"/DPart {5 + PdfDPartRoot.MaxDepth - 1} 0 R"],
+            root: $"/DPartRootNode 5 0 R /RecordLevel {PdfDPartRoot.MaxDepth - 1} /NodeNameList [{names}]",
+            objects: objects.ToString()));
+        Assert.True(report.IsComplete);
+        Assert.True(report.IsConformant);
+    }
+
+    [Fact]
+    public void Root_level_validation_preserves_inert_views_and_all_raw_entries()
+    {
+        var doc = Load(root: "/DPartRootNode 5 0 R /RecordLevel (bad) /NodeNameList [/1Root 42] /Vendor (kept)");
+        var dictionary = Assert.IsType<PdfDictionary>(doc.File.GetObject(4));
+        var before = dictionary.Entries.ToArray();
+        var inert = Assert.IsType<PdfDPartRoot>(doc.GetDPartRoot());
+        var report = Report(doc);
+        Assert.False(report.IsConformant);
+        Assert.Equal(before, dictionary.Entries.ToArray());
+        Assert.Same(inert.Dictionary, report.Root.Dictionary);
+        Assert.Same(inert.NodeNameList, report.Root.NodeNameList);
+        Assert.Null(inert.RecordLevel);
+        Assert.Equal(PdfDPartBoundary.None, inert.Boundary);
+        Assert.Equal(PdfDPartBoundary.None, inert.RootNode!.Boundary);
+        Assert.IsType<PdfString>(report.Root.Dictionary!.Get("RecordLevel"));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("/Parent null")]
@@ -299,11 +537,14 @@ public class DPartValidationTests
             entries = $"/DParts [[{string.Join(" ", Enumerable.Repeat("6 0 R", PdfDPartRoot.MaxNodeVisits))}]]";
         else
             entries = $"/DParts [{string.Join(" ", Enumerable.Repeat("[]", PdfDPartRoot.MaxGroupVisits + 1))}]";
-        var report = Report(Load(node: $"/Parent 4 0 R {entries}", objects: objects.ToString()));
+        var report = Report(Load(node: $"/Parent 4 0 R {entries}", objects: objects.ToString(),
+            root: "/DPartRootNode 5 0 R /RecordLevel 500 /NodeNameList [/Root]"));
         Assert.False(report.IsComplete);
         Assert.False(report.IsConformant);
         Assert.Contains(report.Issues, i => i.Boundary == boundary);
         Assert.DoesNotContain(report.Issues, i => i.Code == PdfDPartIssueCode.UncoveredPage);
+        Assert.DoesNotContain(report.Issues, i => i.Code == PdfDPartIssueCode.RecordLevelOutOfRange ||
+            i.Code == PdfDPartIssueCode.NodeNameCountMismatch);
     }
 
     [Theory]

@@ -1,8 +1,9 @@
+using System.Xml;
 using PortableDocument.Core;
 
 namespace PortableDocument.Document;
 
-/// <summary>Diagnostics for the bounded tree-link and page-range subset of ISO 32000-2, 14.12.</summary>
+/// <summary>Diagnostics for the bounded hierarchy, root-level metadata, and page-range subset of ISO 32000-2, 14.12.</summary>
 public enum PdfDPartIssueCode
 {
     HierarchyBoundary,
@@ -20,12 +21,20 @@ public enum PdfDPartIssueCode
     OverlappingRanges,
     UncoveredPage,
     InvalidPageAssociation,
+    InvalidRecordLevel,
+    RecordLevelOutOfRange,
+    InvalidNodeNameList,
+    NodeNameCountMismatch,
+    InvalidNodeNameType,
+    InvalidNodeName,
+    NodeNameListBoundary,
 }
 
 /// <summary>
 /// Node identifies the original DPart occurrence, when applicable. PageIndex is zero-based.
-/// Boundary preserves the parser's reason for incomplete hierarchy or page-tree inspection.
-/// RawValue retains the boundary value, or the containing array when its tail was not visited.
+/// Boundary preserves the reason for incomplete hierarchy, page-tree, or name-list inspection.
+/// RawValue retains the boundary or invalid root metadata value, or the containing array when
+/// its tail was not visited. Invalid name items retain their original array entry.
 /// </summary>
 public sealed record PdfDPartIssue(
     PdfDPartIssueCode Code,
@@ -35,12 +44,15 @@ public sealed record PdfDPartIssue(
     PdfObject? RawValue = null);
 
 /// <summary>
-/// A report for tree links, child arrays, page ranges, coverage, order, and page /DPart links only.
-/// IsConformant does not assert overall DPart or PDF conformance: RecordLevel, NodeNameList,
-/// DPM, Metadata, and AF semantics are outside this slice. IsComplete is false when a boundary
+/// A report for tree links, child arrays, RecordLevel, NodeNameList, page ranges, coverage,
+/// order, and page /DPart links only. IsConformant does not assert overall DPart or PDF
+/// conformance: DPM, Metadata, and AF semantics are outside this slice. IsComplete is false when a boundary
 /// prevents inspection. Raw dictionaries and references remain available through Root.
 /// For incomplete reports, range diagnostics describe only the inspected page-tree subset.
 /// Coverage and page back-links are checked only after complete traversals.
+/// RootNode is level zero; depth is the maximum number of DPart nodes on a root-to-leaf path.
+/// RecordLevel must identify an existing level. NodeNameList must name exactly those levels,
+/// using XML Names (not the narrower NCNames). Depth comparisons require a complete hierarchy.
 /// </summary>
 public sealed record PdfDPartValidationReport(
     PdfDPartRoot Root,
@@ -59,6 +71,8 @@ public static class DPartValidation
     /// MaxNodeVisits from PdfDPartRoot (including internal, malformed, and repeated page slots).
     /// Reference checks honor xref generations and the parser's 32-hop resolution limit.
     /// Work and report size are linear in these budgets, not the sum of overlapping range lengths.
+    /// NodeNameList item inspection has an independent MaxNodeVisits budget; unvisited tails
+    /// produce a NodeNameListBoundary diagnostic. XML name checking is linear in name length.
     /// Does not navigate, repair links, decode payloads, or mutate PDF dictionaries.
     /// </summary>
     public static PdfDPartValidationReport? ValidateDParts(this PdfDocument doc)
@@ -79,12 +93,15 @@ public static class DPartValidation
         int _pageVisits;
         int _previousEnd = -1;
         bool _complete = true;
+        bool _hierarchyComplete = true;
+        int _levelCount;
 
         void Boundary(PdfDPartIssueCode code, PdfDPartBoundary boundary,
             PdfDPartNode? node = null, PdfObject? raw = null)
         {
             if (boundary == PdfDPartBoundary.None) return;
             _complete = false;
+            if (code == PdfDPartIssueCode.HierarchyBoundary) _hierarchyComplete = false;
             _issues.Add(new(code, node, Boundary: boundary, RawValue: raw));
         }
 
@@ -101,10 +118,56 @@ public static class DPartValidation
                 ReadPages(file.Catalog.Get("Pages"), 0);
                 _coverage = new int[_pages.Count + 1];
                 _ownerChanges = new int[_pages.Count + 1];
-                ReadNode(node, root.Dictionary!);
+                ReadNode(node, root.Dictionary!, 0);
                 if (_complete) CheckPages();
             }
+            CheckRootLevels();
             return new(root, _issues.AsReadOnly(), _complete);
+        }
+
+        void CheckRootLevels()
+        {
+            if (root.Dictionary is not { } dictionary) return;
+            if (dictionary.Get("RecordLevel") is { } rawLevel)
+            {
+                if (Resolve(rawLevel) is not PdfInteger level)
+                    _issues.Add(new(PdfDPartIssueCode.InvalidRecordLevel, RawValue: rawLevel));
+                // A zero-based level must exist in the actual hierarchy, not just be nonnegative.
+                else if (level.Value < 0 || (_hierarchyComplete && level.Value >= _levelCount))
+                    _issues.Add(new(PdfDPartIssueCode.RecordLevelOutOfRange, RawValue: rawLevel));
+            }
+            if (dictionary.Get("NodeNameList") is not { } rawNames) return;
+            if (Resolve(rawNames) is not PdfArray names)
+            {
+                _issues.Add(new(PdfDPartIssueCode.InvalidNodeNameList, RawValue: rawNames));
+                return;
+            }
+            if (_hierarchyComplete && names.Count != _levelCount)
+                _issues.Add(new(PdfDPartIssueCode.NodeNameCountMismatch, RawValue: rawNames));
+            for (var i = 0; i < Math.Min(names.Count, PdfDPartRoot.MaxNodeVisits); i++)
+            {
+                var rawName = names[i];
+                if (Resolve(rawName) is not PdfName name)
+                {
+                    _issues.Add(new(PdfDPartIssueCode.InvalidNodeNameType, RawValue: rawName));
+                    continue;
+                }
+                if (name.Value.Length == 0)
+                {
+                    _issues.Add(new(PdfDPartIssueCode.InvalidNodeName, RawValue: rawName));
+                    continue;
+                }
+                try
+                {
+                    XmlConvert.VerifyName(name.Value);
+                }
+                catch (XmlException)
+                {
+                    _issues.Add(new(PdfDPartIssueCode.InvalidNodeName, RawValue: rawName));
+                }
+            }
+            if (names.Count > PdfDPartRoot.MaxNodeVisits)
+                Boundary(PdfDPartIssueCode.NodeNameListBoundary, PdfDPartBoundary.NodeLimit, raw: rawNames);
         }
 
         PdfObject? Resolve(PdfObject? raw)
@@ -164,7 +227,7 @@ public static class DPartValidation
         bool PointsTo(PdfObject? raw, PdfDictionary expected) =>
             raw is PdfRef && ReferenceEquals(Resolve(raw), expected);
 
-        void ReadNode(PdfDPartNode node, PdfDictionary parent)
+        void ReadNode(PdfDPartNode node, PdfDictionary parent, int depth)
         {
             var boundary = node.Boundary;
             if (boundary == PdfDPartBoundary.None && !PointsTo(node.RawValue, node.Dictionary!))
@@ -177,6 +240,7 @@ public static class DPartValidation
                 _issues.Add(new(PdfDPartIssueCode.InvalidParent, node));
             if (boundary != PdfDPartBoundary.None) return;
 
+            _levelCount = Math.Max(_levelCount, depth + 1);
             Boundary(PdfDPartIssueCode.HierarchyBoundary, node.ChildrenBoundary, node, dictionary.Get("DParts"));
             var hasChildren = dictionary.Get("DParts") is not null;
             var start = dictionary.Get("Start");
@@ -205,7 +269,7 @@ public static class DPartValidation
                     }
                     if (array.Count == 0)
                         _issues.Add(new(PdfDPartIssueCode.EmptyChildGroup, node));
-                    foreach (var child in group.Nodes) ReadNode(child, dictionary);
+                    foreach (var child in group.Nodes) ReadNode(child, dictionary, depth + 1);
                 }
                 return;
             }
