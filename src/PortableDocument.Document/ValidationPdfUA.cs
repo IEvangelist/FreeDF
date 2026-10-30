@@ -309,6 +309,8 @@ internal static partial class PdfUAChecks
                     c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
                 else if (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
                     || AnnotationParentTreeValue(f, tree, (int)number.Value) is not PdfRef reference
+                    || !f.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse
+                    || reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex)
                     || f.Resolve(reference) is not PdfDictionary dict
                     || (parent = tree.ElementFor(dict)) is null)
                     c.Add("PDFUA-ANNOT-PARENTTREE", ValidationSeverity.Error, $"/{sub} annotation /StructParent must be a non-negative integer key mapping to a parsed structure element in /ParentTree", "ISO 32000-2 14.7.5.4", i);

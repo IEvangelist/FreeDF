@@ -174,6 +174,40 @@ public class AnnotationStructureValidationTests
     }
 
     [Theory]
+    [InlineData(1, false, 0)]
+    [InlineData(2, false, 0)]
+    [InlineData(1, false, 7)]
+    [InlineData(2, false, 7)]
+    [InlineData(1, true, 7)]
+    [InlineData(2, true, 7)]
+    public void ParentTreeReferenceMustMatchTheCurrentXrefGeneration(int part, bool compressed, int genOrIndex)
+    {
+        var doc = Load(part);
+        var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        Assert.NotNull(doc.Structure!.ElementFor(element));
+        var nums = Assert.IsType<PdfArray>(Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Get("Nums"));
+        // Keep the parsed target cached to isolate reference validation from object loading.
+        var entry = doc.File.Xref[8] with { Compressed = compressed, GenOrIndex = genOrIndex };
+        doc.File.Xref[8] = entry;
+        var generation = compressed ? 0 : genOrIndex;
+        nums.Items[1] = new PdfRef(8, generation);
+        Assert.True(Validate(doc, part).IsCompliant);
+
+        var wrongReference = new PdfRef(8, compressed ? genOrIndex : generation == 0 ? 1 : 0);
+        nums.Items[1] = wrongReference;
+        Assert.Same(element, doc.File.Resolve(wrongReference));
+        OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+        Assert.Same(wrongReference, nums[1]);
+
+        nums.Items[1] = new PdfRef(8, generation);
+        Assert.True(Validate(doc, part).IsCompliant);
+        doc.File.Xref[8] = entry with { InUse = false };
+        OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+        doc.File.Xref.Remove(8);
+        OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+    }
+
+    [Theory]
     [InlineData(1)]
     [InlineData(2)]
     public void MalformedRawParentTreeValuesDoNotSatisfyTheCheck(int part)
