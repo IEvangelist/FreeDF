@@ -137,17 +137,26 @@ public class IccTests
     }
 
     [Fact]
-    public void Bpc_LutEstimationIsUnsupported_AndIntentGridsDoNotLeakChoice()
+    public void Bpc_LutEstimation_UsesDarkestColorantOrV4ReferenceBlack_AndIntentGridsDoNotLeakChoice()
     {
         var profile = IccProfile.TryParse(IntentProfile())!;
         double[] input = [0.25, 0.5, 0.75];
+        Assert.False(profile.SupportsBlackPointCompensation(RenderingIntent.AbsoluteColorimetric));
+        // Constant-Lab tables: relative black (L* 50) equals the payload, so BPC maps everything to sRGB black;
+        // v4 perceptual/saturation use the Table 16 reference black, a no-op for perceptual (already mapped) and a map for saturation.
+        Assert.True(profile.SupportsBlackPointCompensation(RenderingIntent.RelativeColorimetric));
+        Assert.Equal((0, 0, 0), Round(profile.ToSrgb(input, RenderingIntent.RelativeColorimetric, BlackPointCompensation.On)));
+        Assert.Equal(Round(profile.ToSrgb(input, RenderingIntent.Perceptual)),
+            Round(profile.ToSrgb(input, RenderingIntent.Perceptual, BlackPointCompensation.On)));
+        Assert.True(profile.SupportsBlackPointCompensation(RenderingIntent.Saturation));
         foreach (var intent in Enum.GetValues<RenderingIntent>())
         {
-            Assert.False(profile.SupportsBlackPointCompensation(intent));
-            var baseline = profile.ToSrgb(input, intent);
+            var off = Round(profile.ToSrgb(input, intent));
+            var on = Round(profile.ToSrgb(input, intent, BlackPointCompensation.On));
             for (var i = 0; i < 4200; i++) profile.ToSrgb(input, intent, BlackPointCompensation.On);
-            Assert.Equal(Round(baseline), Round(profile.ToSrgb(input, intent, BlackPointCompensation.On)));
-            Assert.Equal(Round(baseline), Round(profile.ToSrgb(input, intent, BlackPointCompensation.Off)));
+            Assert.Equal(on, Round(profile.ToSrgb(input, intent, BlackPointCompensation.On)));
+            Assert.Equal(off, Round(profile.ToSrgb(input, intent, BlackPointCompensation.Off)));
+            Assert.Equal(off, Round(profile.ToSrgb(input, intent)));
         }
     }
 
@@ -535,14 +544,14 @@ public class IccTests
         return profile;
     }
 
-    static void AssertIntentColor(int red, RenderingIntent intent) => Assert.InRange(red, intent switch
+    static void AssertIntentColor(int red, RenderingIntent intent, bool referenceBlack = true) => Assert.InRange(red, intent switch
     {
-        RenderingIntent.Perceptual => 47,
+        RenderingIntent.Perceptual => referenceBlack ? 44 : 47,
         RenderingIntent.Saturation => 197,
         _ => 118
     }, intent switch
     {
-        RenderingIntent.Perceptual => 49,
+        RenderingIntent.Perceptual => referenceBlack ? 46 : 49,
         RenderingIntent.Saturation => 199,
         _ => 120
     });
@@ -556,7 +565,8 @@ public class IccTests
     {
         var profile = IccProfile.TryParse(IntentProfile())!;
         Assert.False(profile.IsSrgb);
-        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, intent);
+        // v4 perceptual A2B0: ICC.1:2022 Table 16 reference black maps to sRGB black (Little CMS gives 45; 48 before the map).
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, intent, referenceBlack: true);
         Assert.Equal(Round(profile.ToSrgb([0.3, 0.4, 0.5], RenderingIntent.RelativeColorimetric)),
             Round(profile.ToSrgb([0.3, 0.4, 0.5])));
     }
@@ -568,14 +578,14 @@ public class IccTests
     public void MissingIntentTable_FallsBackToA2B0(RenderingIntent intent)
     {
         var profile = IccProfile.TryParse(IntentProfile(relative: false, saturation: false))!;
-        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, RenderingIntent.Perceptual);
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, RenderingIntent.Perceptual, referenceBlack: false);
     }
 
     [Fact]
     public void MissingSaturationTable_DoesNotFallBackToRelative()
     {
         var profile = IccProfile.TryParse(IntentProfile(saturation: false))!;
-        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], RenderingIntent.Saturation)).R, RenderingIntent.Perceptual);
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], RenderingIntent.Saturation)).R, RenderingIntent.Perceptual, referenceBlack: false);
     }
 
     [Fact]
