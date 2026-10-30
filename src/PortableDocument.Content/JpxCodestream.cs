@@ -105,6 +105,8 @@ internal sealed class JpxCodestream
         public MemoryStream Data = new();
         public readonly List<TilePartData> Parts = [];
         public bool HeaderDone;
+        public bool HasPpt;
+        public int PartCount;
         public int Prog = -1, Layers, Mct;
         public bool Sop, Eph;
         public JpxCodParams? Cod;
@@ -257,6 +259,15 @@ internal sealed class JpxCodestream
             }
             if (isot >= _ntx * _nty) { p = tpEnd; continue; }
             if (!tiles.TryGetValue(isot, out var ts)) tiles[isot] = ts = new TileState();
+            var partIndex = _d[sot + 10];
+            var partCount = _d[sot + 11];
+            if (partIndex != ts.Parts.Count || partCount != 0 && partIndex >= partCount
+                || partCount != 0 && ts.PartCount != 0 && partCount != ts.PartCount)
+            {
+                Warning = "JPX: inconsistent tile-part order or count";
+                return false;
+            }
+            if (partCount != 0) ts.PartCount = partCount;
             var pptMarkers = new SortedDictionary<int, byte[]>();
             var sodSeen = false;
             var tilePartPocSeen = false;
@@ -299,12 +310,14 @@ internal sealed class JpxCodestream
             if (!sodSeen) { Warning = "JPX: missing SOD marker"; return false; }
             if (!HasContiguousIndices(pptMarkers, out var missingPptIndex)) { Warning = $"JPX: missing PPT marker index {missingPptIndex}"; return false; }
             var packetHeaders = ppmPartHeaders ?? JoinPackedSegments(pptMarkers);
+            ts.HasPpt |= pptMarkers.Count > 0;
             ts.Parts.Add(new TilePartData(p, tpEnd - p, ppmData is not null || pptMarkers.Count > 0 ? packetHeaders : null));
             p = tpEnd;
         }
         if (ppmData is not null && ppmPos != ppmData.Data.Length) { Warning = "JPX: unused PPM packet-header data"; return false; }
         foreach (var ts in tiles.Values)
         {
+            if (ts.PartCount != 0 && ts.Parts.Count != ts.PartCount) { Warning = "JPX: missing tile-parts"; return false; }
             if (ts.Parts.Exists(part => part.PacketHeaders is not null)) continue;
             foreach (var part in ts.Parts) ts.Data.Write(_d, part.Start, part.Length);
             ts.Parts.Clear();
@@ -530,7 +543,45 @@ internal sealed class JpxCodestream
         var end = (int)ts.Data.Length;
         var pos = 0;
         var pend = new List<Pending>();
-        if (ts.Parts.Exists(part => part.PacketHeaders is not null))
+        if (ts.HasPpt)
+        {
+            // T.800 A.7.5 allows headers before their bodies, but never in a later tile-part.
+            var packetIndex = 0;
+            var queued = new Queue<Pending[]>();
+            foreach (var part in ts.Parts)
+            {
+                if (part.PacketHeaders is { } packed)
+                {
+                    var headerPos = 0;
+                    var segmentIndex = 0;
+                    while (headerPos < packed.Data.Length && packetIndex < order.Count)
+                    {
+                        var pk = order[packetIndex++];
+                        var tc = comps[pk.C];
+                        var res = tc.Res[pk.R];
+                        ReadPacketHeader(packed.Data, ref headerPos, packed.Data.Length, res, res.Prec[pk.P], pk.L, tc.Cod.Style, pend, true);
+                        if (segmentIndex < packed.SegmentEnds.Length && headerPos > packed.SegmentEnds[segmentIndex])
+                            throw new PackedHeaderException("packet header crosses a packed marker segment boundary");
+                        if (segmentIndex < packed.SegmentEnds.Length && headerPos == packed.SegmentEnds[segmentIndex]) segmentIndex++;
+                        queued.Enqueue([.. pend]);
+                    }
+                    if (headerPos != packed.Data.Length) throw new PackedHeaderException("has more packet headers than the tile packet order");
+                }
+                var partPos = part.Start;
+                var partEnd = part.Start + part.Length;
+                while (queued.TryPeek(out var packet))
+                {
+                    if (partPos == partEnd && packet.Any(contribution => contribution.Len != 0)) break;
+                    if (partPos + 6 <= partEnd && _d[partPos] == 0xFF && _d[partPos + 1] == 0x91) partPos += 6;
+                    ReadPacketBody(_d, ref partPos, partEnd, packet, true);
+                    queued.Dequeue();
+                }
+                if (partPos != partEnd) throw new PackedHeaderException("packet data precedes its PPT header");
+            }
+            if (queued.Count != 0) throw new PackedHeaderException("contains truncated packet data");
+            if (packetIndex != order.Count) throw new PackedHeaderException("has missing packet headers");
+        }
+        else if (ts.Parts.Exists(part => part.PacketHeaders is not null))
         {
             var packetIndex = 0;
             foreach (var part in ts.Parts)
@@ -878,6 +929,14 @@ internal sealed class JpxCodestream
         var packetHeaderData = packedHeaders ?? d;
         var packetHeaderPos = packedHeaders is null ? pos : headerPos;
         var packetHeaderEnd = packedHeaders?.Length ?? end;
+        ReadPacketHeader(packetHeaderData, ref packetHeaderPos, packetHeaderEnd, res, prec, layer, style, pend, packedHeaders is not null);
+        if (packedHeaders is null) pos = packetHeaderPos;
+        else headerPos = packetHeaderPos;
+        ReadPacketBody(d, ref pos, end, pend, packedHeaders is not null);
+    }
+
+    static void ReadPacketHeader(byte[] packetHeaderData, ref int packetHeaderPos, int packetHeaderEnd, TRes res, TPrec prec, int layer, int style, List<Pending> pend, bool packed)
+    {
         var br = new JpxBits(packetHeaderData, packetHeaderPos, packetHeaderEnd);
         pend.Clear();
         if (br.Bit() != 0)
@@ -931,23 +990,18 @@ internal sealed class JpxCodestream
         }
         if (br.Overrun)
         {
-            if (packedHeaders is not null) throw new PackedHeaderException("contains a truncated packet header");
+            if (packed) throw new PackedHeaderException("contains a truncated packet header");
             throw new IndexOutOfRangeException();
         }
-        var alignedPos = br.Align();
-        if (packedHeaders is null)
-        {
-            pos = alignedPos;
-            if (pos + 2 <= end && d[pos] == 0xFF && d[pos + 1] == 0x92) pos += 2;
-        }
-        else
-        {
-            headerPos = alignedPos;
-            if (headerPos + 2 <= packetHeaderEnd && packetHeaderData[headerPos] == 0xFF && packetHeaderData[headerPos + 1] == 0x92) headerPos += 2;
-        }
+        packetHeaderPos = br.Align();
+        if (packetHeaderPos + 2 <= packetHeaderEnd && packetHeaderData[packetHeaderPos] == 0xFF && packetHeaderData[packetHeaderPos + 1] == 0x92) packetHeaderPos += 2;
+    }
+
+    static void ReadPacketBody(byte[] d, ref int pos, int end, IEnumerable<Pending> pend, bool packed)
+    {
         foreach (var pd in pend)
         {
-            if (packedHeaders is not null && pd.Len > end - pos) throw new PackedHeaderException("contains truncated packet data");
+            if (packed && pd.Len > end - pos) throw new PackedHeaderException("contains truncated packet data");
             var n = Math.Min(pd.Len, end - pos);
             if (n < 0) throw new IndexOutOfRangeException();
             pd.Cb.Append(d.AsSpan(pos, n));

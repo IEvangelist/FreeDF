@@ -120,6 +120,9 @@ const host = window.pdfHost;
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
+  if (options?.method === 'POST' && ['/api/new', '/api/open'].includes(url.split('?')[0])) {
+    clip = null; pendingUploads.clear();
+  }
   return response;
 };
 const imageUrl = url => host ? host.image(url) : new URL(url, location.href).href;
@@ -529,6 +532,7 @@ function objProps() {
 let itemSave = Promise.resolve();
 function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
 async function flush() {
+  try { await itemSave; } catch (e) { if (!saveT) throw e; }
   let pending;
   do { pending = objectSave; await pending; } while (pending !== objectSave);
   if (objectSaveErrors.size) throw new Error('Object edits have not been saved. Retry the failed edits before saving.');
@@ -538,12 +542,13 @@ async function flush() {
   const body = JSON.stringify({
     items: items.map(x => ({ ...x })),
     historyAssets: [...new Set(undo.flatMap(snapshot => JSON.parse(snapshot).items.map(item => item.asset).filter(Boolean)))],
+    clipboardAssets: clip?.asset ? [clip.asset] : [],
   });
   const uploads = [...pendingUploads];
   try {
     const send = async () => {
       const update = JSON.parse(body);
-      const referenced = new Set([...update.items.map(item => item.asset), ...update.historyAssets].filter(Boolean));
+      const referenced = new Set([...update.items.map(item => item.asset), ...update.historyAssets, ...update.clipboardAssets].filter(Boolean));
       for (const [id, file] of uploads) {
         if (!referenced.has(id)) continue;
         const upload = new FormData(); upload.append('f', file);
@@ -966,7 +971,13 @@ function paste(at) {
     shift(c, dx, dy); items.push(c); cur = c; curObj = null; clip = { ...c };
   });
 }
-const copyItem = it => { clip = JSON.parse(JSON.stringify(it)); };
+const copyItem = it => {
+  clip = JSON.parse(JSON.stringify(it));
+  const body = JSON.stringify(clip.asset ? [clip.asset] : []);
+  const send = () => post('/api/asset-clipboard', body);
+  itemSave = itemSave.then(send, send);
+  itemSave.catch(e => { saveT = -1; reportError(e); });
+};
 const mkItem = (type, x, y) => ({ id: crypto.randomUUID(), type, x, y, w: type === 'text' ? 0 : 120, h: type === 'text' ? 0 : 80, text: type === 'text' ? 'Text' : '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000', fill: type === 'rect' || type === 'ellipse' ? '#4c8dff' : '', stroke: '', strokeWidth: 0, opacity: 1, asset: '', x2: 0, y2: 0 });
 function redactItem(it) {
   const b = bboxOf(it);

@@ -8,16 +8,19 @@ external font request, PDF upload, service worker, or browser persistence of PDF
 contents. Closing/reloading the tab discards its document; save a copy first.
 The host still makes ordinary GET requests for its static app/runtime assets.
 Replacing item lists or removing/importing pages prunes uploaded image bytes
-that no live page item or retained UI undo snapshot references; shared asset IDs
+that no live page item, retained UI undo snapshot, or editor clipboard references; shared asset IDs
 remain available while any live item references them. Item/history updates are
 atomic and ordered. Unclaimed uploads expire after ten minutes (swept on the next
 editor command), or can be explicitly cancelled with `POST /api/asset-cancel?id=...`.
-Neither expiry nor cancellation removes live-item or undo-history references.
+Successful same-ID upload retries renew the unclaimed lease. Neither expiry nor
+cancellation removes live-item, undo-history, or clipboard references.
 The UI keeps pending upload files until an item save succeeds, allowing failed
 saves to retry with the same asset ID even after expiry; abandoned pending files
 are cancelled when their references are released.
 Clearing navigation history releases its references; removed pages' item lists
-are discarded.
+are discarded. Copy/paste retains image bytes across navigation and source-page
+removal; replacing the clipboard releases its previous reference. Successfully
+opening or creating a document clears the clipboard and pending upload files.
 
 ## Publishing
 

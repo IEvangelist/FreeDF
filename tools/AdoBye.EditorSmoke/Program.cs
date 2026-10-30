@@ -124,6 +124,18 @@ try
     await page.Keyboard.PressAsync("Control+z");
     await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
     await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#layer .it").Filter(new() { Has = page.Locator("img") }).ClickAsync();
+    await page.Keyboard.PressAsync("Control+c");
+    await page.Keyboard.PressAsync("Delete");
+    await page.WaitForFunctionAsync("async () => !(await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#fileBtn").ClickAsync();
+    await page.GetByRole(AriaRole.Menuitem, new() { Name = "Insert", Exact = false }).HoverAsync();
+    await page.GetByRole(AriaRole.Menuitem, new() { Name = "Blank page after current", Exact = true }).ClickAsync();
+    await page.WaitForFunctionAsync("document.getElementById('pn').value === '2'");
+    await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 10, Y = 10 } });
+    await page.Keyboard.PressAsync("Control+v");
+    await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
+    await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/1/items')).json()).some(item => item.type === 'image')");
     Check(errors.IsEmpty, "No browser errors during editing: " + string.Join("\n", errors));
     var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
     if (artifacts is not null)
@@ -150,7 +162,7 @@ try
     if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-mobile.png") });
     Check(network.IsEmpty, "No uploads, API requests, external requests or root-relative assets: " + string.Join(", ", network));
     Check(errors.IsEmpty, "No browser errors: " + string.Join(", ", errors));
-    Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo, error recovery, mobile layout, and no outbound PDF traffic.");
+    Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo and clipboard paste after navigation/history release, error recovery, mobile layout, and no outbound PDF traffic.");
 }
 finally { await app.StopAsync(); files.Dispose(); }
 

@@ -22,7 +22,7 @@ public class JpxTests
 
     [Theory]
     [MemberData(nameof(Fixtures))]
-    public void DecodesAgainstOpenJpegReference(string name)
+    public void DecodesAgainstReferenceSamples(string name)
     {
         var meta = File.ReadAllText(Path.Combine(Dir, name + ".meta")).Split(' ');
         string mode = meta[0];
@@ -429,6 +429,124 @@ public class JpxTests
     }
 
     readonly record struct TilePart(int Tile, int Index, int Count, int Start, int Sod, int End);
+
+    [Theory]
+    [InlineData("ppt-early-headers-multitile-multipart-lossless", false)]
+    [InlineData("ppt-header-only-first-multitile-multipart-lossless", true)]
+    public void EarlierPptHeadersRemainAvailableForLaterBodiesAndInterleavedTiles(string name, bool headerOnlyFirst)
+    {
+        var data = Codestream(name);
+        var parts = ReadTileParts(data);
+        Assert.Equal(4, parts.Count);
+        foreach (var tile in parts.GroupBy(part => part.Tile))
+        {
+            var first = tile.First();
+            var second = tile.Last();
+            Assert.Equal(0xFF61, ReadU16(data, first.Start + 12));
+            Assert.Equal(second.Start + 12, second.Sod);
+            Assert.Equal(headerOnlyFirst, first.End == first.Sod + 2);
+            Assert.True(second.End > second.Sod + 2);
+        }
+        foreach (var order in new[] { new[] { 0, 1, 2, 3 }, new[] { 0, 2, 1, 3 } })
+        {
+            var reordered = data[..parts[0].Start].Concat(order.SelectMany(i => data[parts[i].Start..parts[i].End])).Concat(data[parts[^1].End..]).ToArray();
+            var image = JpxDecoder.Decode(reordered, 3, false, false, out var warning);
+            Assert.NotNull(image);
+            Assert.Null(warning);
+            Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), image.Samples);
+        }
+    }
+
+    [Fact]
+    public void EarlierPptMarkerSegmentsStillRequireCompleteHeaders()
+    {
+        const string name = "ppt-early-headers-multitile-multipart-lossless";
+        for (var split = 1; split < 9; split++)
+        {
+            var data = SplitPackedMarkers(name, 0xFF61, split);
+            var image = JpxDecoder.Decode(data, 3, false, false, out var warning);
+            if (split % 3 == 0)
+            {
+                Assert.NotNull(image);
+                Assert.Null(warning);
+                Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), image.Samples);
+            }
+            else
+            {
+                Assert.Null(image);
+                Assert.Contains("packet header crosses", warning);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PptHeadersCannotBeLaterThanTheirCorrespondingBodies(bool headerOnlyFirst)
+    {
+        var data = Codestream(headerOnlyFirst ? "ppt-header-only-first-multitile-multipart-lossless" : "ppt-early-headers-multitile-multipart-lossless");
+        var parts = ReadTileParts(data);
+        var headers = data[(parts[0].Start + 12)..parts[0].Sod];
+        var first = data[parts[0].Start..(parts[0].Start + 12)].Concat(data[parts[0].Sod..parts[0].End]).ToArray();
+        var second = data[parts[1].Start..(parts[1].Start + 12)].Concat(headers).Concat(data[(parts[1].Start + 12)..parts[1].End]).ToArray();
+        WriteU32(first, 6, (uint)first.Length);
+        WriteU32(second, 6, (uint)second.Length);
+        var changed = data[..parts[0].Start].Concat(first).Concat(second).Concat(data[parts[1].End..]).ToArray();
+        var image = JpxDecoder.Decode(changed, 3, false, false, out var warning);
+        if (headerOnlyFirst)
+        {
+            // Moving headers into the body-bearing part is legal when the earlier part has no data.
+            Assert.NotNull(image);
+            Assert.Null(warning);
+        }
+        else
+        {
+            Assert.Null(image);
+            Assert.Contains("packet data precedes its PPT header", warning);
+        }
+    }
+
+    [Theory]
+    [InlineData(0, 2)]
+    [InlineData(1, 3)]
+    [InlineData(2, 2)]
+    public void RejectsInconsistentTilePartOrderOrCounts(int index, int count)
+    {
+        var data = Codestream("ppt-early-headers-multitile-multipart-lossless");
+        var second = ReadTileParts(data)[1];
+        data[second.Start + 10] = (byte)index;
+        data[second.Start + 11] = (byte)count;
+        Assert.Null(JpxDecoder.Decode(data, 3, false, false, out var warning));
+        Assert.Contains("tile-part order or count", warning);
+    }
+
+    [Fact]
+    public void EarlierHeadersDoNotPermitPacketBodiesToCrossTilePartBoundaries()
+    {
+        var data = Codestream("ppt-early-headers-multitile-multipart-lossless");
+        var parts = ReadTileParts(data);
+        var first = data[parts[0].Start..(parts[0].End - 1)];
+        var second = data[parts[1].Start..(parts[1].Sod + 2)]
+            .Concat(data[(parts[0].End - 1)..parts[0].End])
+            .Concat(data[(parts[1].Sod + 2)..parts[1].End]).ToArray();
+        WriteU32(first, 6, (uint)first.Length);
+        WriteU32(second, 6, (uint)second.Length);
+        var changed = data[..parts[0].Start].Concat(first).Concat(second).Concat(data[parts[1].End..]).ToArray();
+        Assert.Null(JpxDecoder.Decode(changed, 3, false, false, out var warning));
+        Assert.Contains("truncated packet data", warning);
+    }
+
+    [Fact]
+    public void QueuedHeadersWithNoRemainingBodyAreRejected()
+    {
+        var data = Codestream("ppt-header-only-first-multitile-multipart-lossless");
+        var parts = ReadTileParts(data);
+        var last = parts[^1];
+        var changed = data[..(last.Sod + 2)].Concat(data[last.End..]).ToArray();
+        WriteU32(changed, last.Start + 6, (uint)(last.Sod + 2 - last.Start));
+        Assert.Null(JpxDecoder.Decode(changed, 3, false, false, out var warning));
+        Assert.Contains("truncated packet data", warning);
+    }
 
     static List<TilePart> ReadTileParts(byte[] data)
     {

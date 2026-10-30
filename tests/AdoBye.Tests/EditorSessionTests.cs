@@ -170,6 +170,64 @@ public class EditorSessionTests
     }
 
     [Fact]
+    public void SuccessfulUnclaimedRetryRenewsLeaseAcrossOriginalDeadline()
+    {
+        var clock = new Clock();
+        var session = new EditorSession(new FontCatalog(), timeProvider: clock);
+        Call(session, "POST", "/api/new");
+        var asset = Upload(session);
+        clock.Now += TimeSpan.FromMinutes(9);
+        var png = PngWriter.Encode(1, 1, [255, 0, 0, 255]);
+        session.Handle("POST", "/api/asset", new Dictionary<string, string> { ["id"] = asset }, png);
+        clock.Now += TimeSpan.FromMinutes(2);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([Image("retry", asset)], []));
+        clock.Now += TimeSpan.FromHours(1);
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], []));
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClipboardSurvivesHistoryReleaseAndSourceRemovalUntilReplaced(bool removePage)
+    {
+        var clock = new Clock();
+        var session = new EditorSession(new FontCatalog(), timeProvider: clock);
+        Call(session, "POST", "/api/new");
+        Call(session, "POST", "/api/blank/1");
+        var asset = Upload(session);
+        var image = Image("copy", asset);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([image], [], [asset]));
+        if (removePage) Call(session, "POST", "/api/delete/0");
+        else Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], [asset]));
+        Call(session, "POST", "/api/asset-history");
+        Call(session, "POST", "/api/asset-cancel", query: [("id", asset)]);
+        clock.Now += TimeSpan.FromHours(1);
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([image], []));
+        Call(session, "POST", "/api/asset-clipboard", Array.Empty<string>());
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], []));
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
+    }
+
+    [Fact]
+    public void ReplacingClipboardOrDocumentReleasesClipboardOnlyAssets()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var first = Upload(session);
+        Call(session, "POST", "/api/asset-clipboard", new[] { first });
+        var second = Upload(session);
+        Call(session, "POST", "/api/asset-clipboard", new[] { second });
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + first));
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + second).Data);
+        Call(session, "POST", "/api/new");
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + second));
+    }
+
+    [Fact]
     public void ExpiryAndCancelPreserveLiveAndUndoReferences()
     {
         var clock = new Clock();

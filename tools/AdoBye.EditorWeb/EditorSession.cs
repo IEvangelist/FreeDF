@@ -26,6 +26,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     readonly Dictionary<string, DateTimeOffset> unclaimedAssets = [];
     readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     readonly Dictionary<int, HashSet<string>> historyAssets = [];
+    HashSet<string> clipboardAssets = [];
     OverlayBuilder? overlayBuilder;
     readonly Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)> texts = [];
     readonly Dictionary<int, Dictionary<int, ObjEdit>> objEdits = [];
@@ -50,7 +51,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     void Reset(PdfEditor e)
     {
         editor = e;
-        items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear(); unclaimedAssets.Clear(); historyAssets.Clear();
+        items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear(); unclaimedAssets.Clear(); historyAssets.Clear(); clipboardAssets.Clear();
         overlayBuilder = new(editor, assets, catalog);
         Changed(); savePath = null; savedVersion = version;
     }
@@ -196,6 +197,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         foreach (var id in historyAssets.Keys.Where(id => !livePages.Contains(id)).ToArray()) historyAssets.Remove(id);
         var referenced = items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>().ToHashSet();
         referenced.UnionWith(historyAssets.Values.SelectMany(ids => ids));
+        referenced.UnionWith(clipboardAssets);
         foreach (var id in unclaimedAssets.Keys.Where(id => referenced.Contains(id) || clock.GetUtcNow() - unclaimedAssets[id] >= TimeSpan.FromMinutes(10)).ToArray())
             unclaimedAssets.Remove(id);
         foreach (var id in assets.Keys.Where(id => !referenced.Contains(id) && !unclaimedAssets.ContainsKey(id)).ToArray()) assets.Remove(id);
@@ -262,6 +264,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                             var update = Read<ItemUpdate>() ?? throw new ArgumentException("Missing item update.");
                             items[id] = update.Items;
                             historyAssets[id] = update.HistoryAssets.ToHashSet();
+                            if (update.ClipboardAssets is { } clipboard) clipboardAssets = clipboard.ToHashSet();
                         }
                         PruneAssets(); Changed(); return Ok;
                     }
@@ -339,9 +342,12 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     else
                     {
                         assets[key] = new(bytes, mime);
-                        unclaimedAssets[key] = clock.GetUtcNow();
                     }
+                    unclaimedAssets[key] = clock.GetUtcNow();
                     return AsJson(new { id = key, w, h });
+                case "asset-clipboard":
+                    clipboardAssets = (Read<List<string>>() ?? throw new ArgumentException("Missing clipboard asset references.")).ToHashSet();
+                    PruneAssets(); return Ok;
                 case "asset-cancel":
                     if (Q("id") is not { } cancelled) throw new ArgumentException("Missing asset ID.");
                     unclaimedAssets.Remove(cancelled); PruneAssets(); return Ok;
@@ -505,4 +511,4 @@ public sealed record ObjEdit(bool Delete = false, double Sx = 1, double Sy = 1, 
 
 public sealed class EditorConflictException(string message) : InvalidOperationException(message);
 
-public sealed record ItemUpdate(List<Item> Items, List<string> HistoryAssets);
+public sealed record ItemUpdate(List<Item> Items, List<string> HistoryAssets, List<string>? ClipboardAssets = null);

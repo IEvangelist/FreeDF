@@ -5,8 +5,8 @@ decoded by OpenJPEG through Pillow, 8-bit interleaved) and name.meta ("MODE widt
 
 Packed-header cases follow T.800 (11/2015) A.7.4/A.7.5 (and A.6.6 for POC), including complete
 packet-header boundaries between marker segments, and require exact OpenJPEG/source equality.
-Multi-tile PPM is also decoded by OpenJPEG; multi-tile-part PPT expected samples come from the
-OpenJPEG-decoded source because OpenJPEG 2.5.4 does not decode PPT headers across tile-parts.
+Multi-tile PPM and earlier-PPT fixtures are also decoded by OpenJPEG. The same-part multipart
+PPT fixture uses source-derived samples because OpenJPEG 2.5.4 rejects that header distribution.
 """
 import io
 import os
@@ -223,10 +223,12 @@ def pack_packet_headers(data, marker):
     return bytes(result)
 
 
-def pack_multi_tile_part_headers(data, marker):
+def pack_multi_tile_part_headers(data, marker, early_headers=False, header_only_first=False):
     """Splits each two-tile codestream into two tile-parts and packs their headers."""
     if marker not in ("PPM", "PPT") or not data.startswith(b"\xff\x4f"):
         raise ValueError("multi-tile packed-header fixture requires a raw PPM or PPT codestream")
+    if early_headers and marker != "PPT":
+        raise ValueError("PPM Nppm records belong to their corresponding tile-parts")
 
     pos = 2
     while pos < len(data):
@@ -294,7 +296,14 @@ def pack_multi_tile_part_headers(data, marker):
                 body += packet_body
             packed_markers = b""
             if marker == "PPT":
-                packed_markers = _packed_segments(0xFF61, headers, header_ends)
+                if early_headers:
+                    if part_index == 0:
+                        all_headers = b"".join(h for h, _ in packets)
+                        packed_markers = _packed_segments(0xFF61, all_headers, [len(packets[0][0]), len(all_headers)])
+                    if header_only_first:
+                        body = b"" if part_index == 0 else b"".join(b for _, b in packets)
+                else:
+                    packed_markers = _packed_segments(0xFF61, headers, header_ends)
             else:
                 ppm_records.append(len(headers).to_bytes(4, "big") + headers)
 
@@ -691,7 +700,7 @@ def emit_poc_packed(marker):
     print("wrote", name, "RGB", im.width, im.height, len(data), "bytes")
 
 
-def emit_multi_tile_packed(marker):
+def emit_multi_tile_packed(marker, early_headers=False, header_only_first=False):
     # T.800 (11/2015) A.7.4/A.7.5: four tile-parts carry separate packet-header records.
     yy, xx = np.mgrid[0:8, 0:16]
     samples = np.stack((xx * 8 + yy, 40 + xx + 2 * yy, 120 + 2 * xx + yy), axis=-1).astype(np.uint8)
@@ -705,13 +714,14 @@ def emit_multi_tile_packed(marker):
     arr = np.asarray(source)
     if source.mode != "RGB" or not np.array_equal(arr, samples):
         raise ValueError("OpenJPEG sample mismatch for multi-tile packed-header source")
-    data = pack_multi_tile_part_headers(original, marker)
-    if marker == "PPM":
+    data = pack_multi_tile_part_headers(original, marker, early_headers, header_only_first)
+    if marker == "PPM" or early_headers:
         ref = Image.open(io.BytesIO(data))
         ref.load()
         if ref.mode != "RGB" or not np.array_equal(np.asarray(ref), arr):
-            raise ValueError("OpenJPEG sample mismatch for multi-tile PPM fixture")
-    name = f"{marker.lower()}-multitile-multipart-lossless"
+            raise ValueError("OpenJPEG sample mismatch for multi-tile packed-header fixture")
+    prefix = "header-only-first-" if header_only_first else "early-headers-" if early_headers else ""
+    name = f"{marker.lower()}-{prefix}multitile-multipart-lossless"
     make_pdf(os.path.join(OUT, name + ".pdf"), im.width, im.height, data,
              {"ColorSpace": Name.DeviceRGB})
     open(os.path.join(OUT, name + ".bin"), "wb").write(np.ascontiguousarray(arr).tobytes())
@@ -768,6 +778,8 @@ def main():
     for marker in ("PPM", "PPT"):
         emit_poc_packed(marker)
         emit_multi_tile_packed(marker)
+    emit_multi_tile_packed("PPT", early_headers=True)
+    emit_multi_tile_packed("PPT", early_headers=True, header_only_first=True)
 
 
 if __name__ == "__main__":
