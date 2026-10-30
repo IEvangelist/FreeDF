@@ -12,7 +12,7 @@ $cases = @{
     'pixels' = 'Decoded pixel gate'
     'allocation' = 'Deterministic gate'
     'raster' = 'Deterministic gate'
-    'resolved' = 'Remove resolved known miss'
+    'resolved' = ''
     'missing' = 'Missing reference group'
 }
 foreach ($name in $cases.Keys) {
@@ -44,6 +44,11 @@ foreach ($name in $cases.Keys) {
     $path = Join-Path $Output "$name.json"
     $records | ConvertTo-Json -Depth 100 | Set-Content $path
     & dotnet $runner --profile-ci $path $Policy *> "$path.log"
+    if ($name -eq 'resolved') {
+        if ($LASTEXITCODE -ne 0) { throw 'An improved known goal unexpectedly failed' }
+        Write-Host 'PASS: improved known goal accepted without changing regression ceilings'
+        continue
+    }
     if ($LASTEXITCODE -eq 0) { throw "$name unexpectedly passed" }
     $result = Get-Content "$path.ci.json" -Raw | ConvertFrom-Json
     if (!(($result.failures -join "`n").Contains($cases[$name]))) { throw "$name failed for the wrong reason" }

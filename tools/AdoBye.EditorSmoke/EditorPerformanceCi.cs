@@ -45,7 +45,6 @@ static class EditorPerformanceCi
             if (row is null) { failures.Add($"Missing known-miss group: {miss.Document} {miss.Phase} {miss.Metric}."); continue; }
             if (row.P50Budget != miss.P50Budget || row.P95Budget != miss.P95Budget)
                 failures.Add($"Original goal changed for known miss: {miss.Document} {miss.Phase} {miss.Metric}.");
-            if (row.Passed) failures.Add($"Remove resolved known miss from policy: {miss.Document} {miss.Phase} {miss.Metric}.");
             if (!reference.TryGetValue((miss.Document, miss.Phase, miss.Metric), out var recorded) ||
                 Math.Abs(recorded.P50 - miss.P50) > .001 || Math.Abs(recorded.P95 - miss.P95) > .001)
                 failures.Add($"Known-miss values disagree with the versioned reference: {miss.Document} {miss.Phase} {miss.Metric}.");
@@ -81,11 +80,11 @@ static class EditorPerformanceCi
 
         var summary = new StringBuilder("# Editor performance CI\n\n");
         summary.AppendLine($"Policy v{policy.Version}: relative timing ceilings {policy.TimingFactor:F1}x reference, minimum {policy.MinimumTimingMs:F0} ms. Original goals are unchanged.");
-        summary.AppendLine("\n## KNOWN MISSES (open work)\n\n| Document / phase / metric | Current p50 / p95 | Original goal | Recorded AOT p50 / p95 |\n|---|---:|---:|---:|");
+        summary.AppendLine("\n## KNOWN MISSES (baseline open work)\n\n| Document / phase / metric | Current p50 / p95 | Original goal | Recorded AOT p50 / p95 | This runner |\n|---|---:|---:|---:|---|");
         foreach (var miss in policy.KnownMisses)
         {
             var row = rows.SingleOrDefault(r => (r.Document, r.Phase, r.Metric) == (miss.Document, miss.Phase, miss.Metric));
-            summary.AppendLine($"| {miss.Document} / {miss.Phase} / {miss.Metric} | {row?.P50:F1} / {row?.P95:F1} | {miss.P50Budget} / {miss.P95Budget} | {miss.P50:F1} / {miss.P95:F1} |");
+            summary.AppendLine($"| {miss.Document} / {miss.Phase} / {miss.Metric} | {row?.P50:F1} / {row?.P95:F1} | {miss.P50Budget} / {miss.P95Budget} | {miss.P50:F1} / {miss.P95:F1} | {(row is null ? "MISSING" : row.Passed ? "MET" : "MISSED")} |");
         }
         summary.AppendLine("\n## Full strict-goal miss table\n\n| Classification | Document / phase / metric | p50 / p95 | Original goal |\n|---|---|---:|---:|");
         foreach (var row in rows.Where(r => !r.Passed))
