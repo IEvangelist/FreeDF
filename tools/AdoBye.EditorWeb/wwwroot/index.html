@@ -148,7 +148,7 @@ document.querySelectorAll('button[title]').forEach(b => {
 document.querySelector('label[for="img"], label:has(#img)').onkeydown = e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('img').click(); }
 };
-let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1, buildEpoch = 0, shownPage = -1, baseRenderTimer = 0, layoutBuildTimer = 0, pageImageRetryEpoch = -1;
+let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1, buildEpoch = 0, shownPage = -1, baseRenderTimer = 0, neighborPrefetchTimer = 0, layoutBuildTimer = 0, pageImageRetryEpoch = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
 const pendingUploads = new Map();
 let locked = localStorage.getItem('lock-geom') === '1';
@@ -279,6 +279,18 @@ async function refresh(retainedUndo = null) {
 }
 
 let selectionEpoch = 0;
+function scheduleNeighborPrefetch() {
+  clearTimeout(neighborPrefetchTimer);
+  neighborPrefetchTimer = 0;
+  const page = sel + 1, version = state.version;
+  if (!host || page >= state.pageCount) return;
+  const url = `/api/page/${page}.png?dpi=40&v=${version}&bare=${!preview}`;
+  neighborPrefetchTimer = setTimeout(() => {
+    neighborPrefetchTimer = 0;
+    if (state.version !== version || sel + 1 !== page) return;
+    host.image(url).catch(error => console.warn(`Neighbor page ${page + 1} preview prefetch failed.`, error));
+  }, 250);
+}
 async function select(retainedUndo = null) {
   const epoch = ++selectionEpoch, page = sel;
   const v = $('view');
@@ -302,6 +314,7 @@ async function select(retainedUndo = null) {
     pruneAssetImages();
     await build();
     recovery?.uiChanged();
+    scheduleNeighborPrefetch();
   } finally { if (epoch === selectionEpoch) v.inert = false; }
 }
 

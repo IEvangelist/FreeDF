@@ -22,6 +22,10 @@ public sealed record PdfRenderOptions
     /// <summary>Usage event to apply when rendering optional content.</summary>
     public ContentInterpreter.OptionalContentEvent OptionalContentDisplayEvent { get; init; } =
         ContentInterpreter.OptionalContentEvent.View;
+    /// <summary>
+    /// Simulates ExtGState overprint (/OP, /op, /OPM) with an RGB approximation (see <see cref="ContentInterpreter.OverprintSimulation"/>); off by default.
+    /// </summary>
+    public bool OverprintSimulation { get; init; }
 }
 
 public static class PortableDocument
@@ -98,6 +102,7 @@ public static class PortableDocument
         interp.OptionalContentDisplayEvent = options.OptionalContentDisplayEvent;
         interp.OptionalContentZoom = scale;
         interp.OptionalContentContext = options.OptionalContentContext;
+        interp.OverprintSimulation = options.OverprintSimulation;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }

@@ -7,6 +7,10 @@ public sealed class JpxImage
     public byte[] Samples = [];
     public byte[]? Alpha;
     public bool PremultipliedAlpha;
+    /// <summary>Big-endian 16-bit interleaved colour samples, scaled to the full 0..65535 range; only set for components deeper than 8 bits when the caller allows it.</summary>
+    public byte[]? Samples16;
+    /// <summary>Embedded ICC profile from a JP2 'colr' box (method 2), if present.</summary>
+    public byte[]? IccProfile;
 }
 
 /// <summary>JPEG 2000 (JPXDecode): JP2 box parsing, colour/palette/channel handling and 8-bit conversion.</summary>
@@ -17,6 +21,7 @@ public static class JpxDecoder
         public int EnumCs = -1, IccColors;
         public int[][]? Palette; // [column][entry]
         public int[]? PaletteDepth;
+        public byte[]? Icc;
         public List<(int Comp, int Type, int Col)>? CMap;
         public List<(int Cn, int Typ, int Asoc)>? CDef;
     }
@@ -27,10 +32,11 @@ public static class JpxDecoder
     /// <param name="pdfComps">Colour component count implied by the PDF /ColorSpace (0 if absent).</param>
     /// <param name="skipPalette">Do not expand a JP2 palette (PDF Indexed colour space supplies its own).</param>
     /// <param name="assumeAlpha">SMaskInData is non-zero: treat the first extra channel as opacity when no cdef box exists.</param>
-    public static JpxImage? Decode(byte[] data, int pdfComps, bool skipPalette, bool assumeAlpha, out string? warning)
+    /// <param name="allowWide">Also produce <see cref="JpxImage.Samples16"/> when a colour channel is deeper than 8 bits.</param>
+    public static JpxImage? Decode(byte[] data, int pdfComps, bool skipPalette, bool assumeAlpha, out string? warning, bool allowWide = false)
     {
         warning = null;
-        try { return DecodeCore(data, pdfComps, skipPalette, assumeAlpha, out warning); }
+        try { return DecodeCore(data, pdfComps, skipPalette, assumeAlpha, allowWide, out warning); }
         catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or         InvalidDataException or OverflowException or OutOfMemoryException or AggregateException)
         {
             warning = "JPX could not be decoded: " + e.Message;
@@ -38,7 +44,7 @@ public static class JpxDecoder
         }
     }
 
-    static JpxImage? DecodeCore(byte[] d, int pdfComps, bool skipPalette, bool assumeAlpha, out string? warning)
+    static JpxImage? DecodeCore(byte[] d, int pdfComps, bool skipPalette, bool assumeAlpha, bool allowWide, out string? warning)
     {
         warning = null;
         var info = new Jp2Info();
@@ -94,8 +100,17 @@ public static class JpxDecoder
 
         var nc = color.Count;
         var samples = new byte[(long)w * h * nc];
-        for (var k = 0; k < nc; k++) FillChannel(cs, info, channels[color[k]], w, h, samples, k, nc);
-        if (info.EnumCs is 18 or 24 && nc == 3) SyccToRgb(samples);
+        var wide = false;
+        if (allowWide)
+            foreach (var k in color)
+            {
+                var (cc, col) = channels[k];
+                var dp = col >= 0 && info.PaletteDepth is not null ? info.PaletteDepth[col] : cs.Depth[cc];
+                if (dp > 8) wide = true;
+            }
+        var samples16 = wide ? new byte[(long)w * h * nc * 2] : null;
+        for (var k = 0; k < nc; k++) FillChannel(cs, info, channels[color[k]], w, h, samples, k, nc, samples16);
+        if (info.EnumCs is 18 or 24 && nc == 3) { SyccToRgb(samples); if (samples16 is not null) SyccToRgb16(samples16); }
 
         byte[]? alpha = null;
         if (alphaCh >= 0 && alphaCh < channels.Count)
@@ -103,52 +118,89 @@ public static class JpxDecoder
             alpha = new byte[w * h];
             FillChannel(cs, info, channels[alphaCh], w, h, alpha, 0, 1);
         }
-        return new JpxImage { Width = w, Height = h, Components = nc, Samples = samples, Alpha = alpha, PremultipliedAlpha = premult };
+        return new JpxImage { Width = w, Height = h, Components = nc, Samples = samples, Samples16 = samples16, Alpha = alpha, PremultipliedAlpha = premult, IccProfile = info.Icc };
     }
 
-    static void FillChannel(JpxCodestream cs, Jp2Info info, (int Comp, int Col) ch, int w, int h, byte[] dst, int offset, int stride)
+    static void FillChannel(JpxCodestream cs, Jp2Info info, (int Comp, int Col) ch, int w, int h, byte[] dst, int offset, int stride, byte[]? dst16 = null)
     {
         var c = ch.Comp;
         var plane = cs.Planes[c];
-        int depth = Math.Min(cs.Depth[c], 16), cw = cs.CW[c], chh = cs.CH[c];
-        int[]? pal = null; int palMax = 0;
-        byte[]? lut = null;
-        if (ch.Col >= 0 && info.Palette is not null)
+        int rawDepth = cs.Depth[c], depth = Math.Min(rawDepth, 16), shift = rawDepth - depth, cw = cs.CW[c], chh = cs.CH[c];
+        var pal = ch.Col >= 0 && info.Palette is not null ? info.Palette[ch.Col] : null;
+        var lutDepth = pal is not null ? Math.Min(info.PaletteDepth![ch.Col], 16) : depth;
+        var lutLen = pal?.Length ?? 1 << depth;
+        var lut = new byte[lutLen];
+        var lut16 = dst16 is null ? null : new ushort[lutLen];
+        for (var i = 0; i < lutLen; i++)
         {
-            pal = info.Palette[ch.Col]; var palDepth = info.PaletteDepth![ch.Col]; palMax = pal.Length - 1;
-            lut = new byte[pal.Length];
-            for (var i = 0; i < pal.Length; i++) lut[i] = Scale(pal[i], palDepth);
+            var v = pal is not null ? pal[i] : i;
+            lut[i] = (byte)Scale(v, lutDepth, 255);
+            if (lut16 is not null) lut16[i] = (ushort)Scale(v, lutDepth, 65535);
         }
-        else if (depth <= 8)
-        {
-            lut = new byte[1 << depth];
-            for (var i = 0; i < lut.Length; i++) lut[i] = Scale(i, depth);
-        }
+        var last = lutLen - 1;
         var xr = cs.Xr[c]; var yr = cs.Yr[c];
         var cx0 = (cs.XOsiz + xr - 1) / xr; var cy0 = (cs.YOsiz + yr - 1) / yr;
         var sub = xr != 1 || yr != 1;
+        // Subsampled components sit at multiples of XRsiz/YRsiz on the reference grid (T.800 B.2), so the
+        // reference-grid samples between them are bilinearly interpolated; palette indices stay nearest.
+        var smooth = sub && pal is null;
+        int[]? xi = null, xf = null;
+        if (sub)
+        {
+            xi = new int[w]; xf = new int[w];
+            for (var x = 0; x < w; x++)
+            {
+                var gx = cs.XOsiz + x;
+                var i0 = gx / xr - cx0; var f = gx % xr;
+                if (i0 < 0) { i0 = 0; f = 0; }
+                if (i0 >= cw - 1) { i0 = cw - 1; f = 0; }
+                xi[x] = i0; xf[x] = smooth ? f : 0;
+            }
+        }
         for (var y = 0; y < h; y++)
         {
-            var sy = sub ? Math.Clamp((cs.YOsiz + y) / yr - cy0, 0, chh - 1) : Math.Min(y, chh - 1);
+            int sy, fy = 0;
+            if (sub)
+            {
+                var gy = cs.YOsiz + y;
+                sy = gy / yr - cy0; fy = gy % yr;
+                if (sy < 0) { sy = 0; fy = 0; }
+                if (sy >= chh - 1) { sy = chh - 1; fy = 0; }
+                if (!smooth) fy = 0;
+            }
+            else sy = Math.Min(y, chh - 1);
             var row = sy * cw;
             var o = y * w * stride + offset;
             for (var x = 0; x < w; x++, o += stride)
             {
-                var sx = sub ? Math.Clamp((cs.XOsiz + x) / xr - cx0, 0, cw - 1) : Math.Min(x, cw - 1);
-                int v = plane[row + sx];
-                if (lut is not null)
+                int v;
+                if (!sub) v = plane[row + Math.Min(x, cw - 1)];
+                else
                 {
-                    if (pal is not null) v = Math.Min(v, palMax);
-                    dst[o] = lut[Math.Min(v, lut.Length - 1)];
+                    var sx = xi![x]; var fx = xf![x];
+                    if (fx == 0 && fy == 0) v = plane[row + sx];
+                    else
+                    {
+                        long a = plane[row + sx], b = plane[row + (fx == 0 ? sx : sx + 1)];
+                        long cc = fy == 0 ? a : plane[row + cw + sx], dd = fy == 0 ? b : plane[row + cw + (fx == 0 ? sx : sx + 1)];
+                        long wy = yr - fy, wx = xr - fx;
+                        v = (int)(((a * wx + b * fx) * wy + (cc * wx + dd * fx) * fy + (long)xr * yr / 2) / ((long)xr * yr));
+                    }
                 }
-                else dst[o] = (byte)(v >> (depth - 8));
+                if (shift > 0) v >>= shift;
+                if ((uint)v > (uint)last) v = v < 0 ? 0 : last;
+                dst[o] = lut[v];
+                if (lut16 is not null) { var q = o * 2; var s16 = lut16[v]; dst16![q] = (byte)(s16 >> 8); dst16[q + 1] = (byte)s16; }
             }
         }
     }
 
-    static byte Scale(int v, int depth) =>
-        depth == 8 ? (byte)v : depth > 8 ? (byte)(v >> (depth - 8)) : (byte)((v * 255 + ((1 << depth) - 1) / 2) / ((1 << depth) - 1));
-
+    /// <summary>Scales a <paramref name="depth"/>-bit sample to 0..<paramref name="max"/> with round-half-up.</summary>
+    static int Scale(int v, int depth, int max)
+    {
+        var m = (1L << depth) - 1;
+        return (int)(((long)v * max + m / 2) / m);
+    }
     static void SyccToRgb(byte[] s)
     {
         for (var i = 0; i + 2 < s.Length; i += 3)
@@ -161,6 +213,23 @@ public static class JpxDecoder
     }
 
     static byte Clamp(float v) => v <= 0 ? (byte)0 : v >= 255 ? (byte)255 : (byte)(v + 0.5f);
+
+    static void SyccToRgb16(byte[] s)
+    {
+        for (var i = 0; i + 5 < s.Length; i += 6)
+        {
+            float y = s[i] << 8 | s[i + 1], cb = (s[i + 2] << 8 | s[i + 3]) - 32768f, cr = (s[i + 4] << 8 | s[i + 5]) - 32768f;
+            Put16(s, i, y + 1.402f * cr);
+            Put16(s, i + 2, y - 0.344136f * cb - 0.714136f * cr);
+            Put16(s, i + 4, y + 1.772f * cb);
+        }
+    }
+
+    static void Put16(byte[] s, int i, float v)
+    {
+        var q = v <= 0 ? 0 : v >= 65535 ? 65535 : (int)(v + 0.5f);
+        s[i] = (byte)(q >> 8); s[i + 1] = (byte)q;
+    }
 
     static void ParseBoxes(byte[] d, int p, int end, Jp2Info info, ref int csStart, ref int csEnd, int depth)
     {
@@ -183,6 +252,7 @@ public static class JpxDecoder
                         {
                             var sig = U32(d, body + 3 + 16);
                             info.IccColors = sig switch { 0x47524159 => 1, 0x52474220 => 3, 0x434D594B => 4, _ => 0 };
+                            if (info.IccColors > 0) info.Icc = d.AsSpan(body + 3, bend - body - 3).ToArray();
                         }
                     }
                     break;

@@ -157,18 +157,18 @@ public class TransparencyTests
     }
 
     [Theory]
-    [InlineData("/DeviceCMYK")]
-    [InlineData("[/CalGray << /WhitePoint [0.9505 1 1.089] >>]")]
-    [InlineData("[/CalRGB << /WhitePoint [0.9505 1 1.089] >>]")]
-    [InlineData("[/ICCBased 5 0 R]")]
     [InlineData("[/Lab << /WhitePoint [0.9505 1 1.089] >>]")]
     [InlineData("[/Indexed /DeviceRGB 0 <FF0000>]")]
     [InlineData("[/Separation /Spot /DeviceRGB << >>]")]
     [InlineData("[/DeviceN [/Spot] /DeviceRGB << >>]")]
+    [InlineData("[/CalGray << /Gamma 2 >>]")]
+    [InlineData("[/CalRGB << /WhitePoint [0.9505 1 1.089] /Matrix [1 1 1 1 1 1 1 1 1] >>]")]
+    [InlineData("[/ICCBased 5 0 R]")]
     [InlineData("/Pattern")]
     [InlineData("/Missing")]
     public void PageGroup_UnsupportedCSFailsInsteadOfFallingBack(string space)
     {
+        // 11.4.7 limits /CS to Device*, CalGray, CalRGB and ICCBased; singular/invalid definitions cannot be inverted.
         var page = GroupPage(RedPage, "/CS " + space, objects: Stream(5, "/N 3", "invalid ICC profile"));
         var e = Assert.Throws<NotSupportedException>(() => DocumentRenderer.RenderPage(page, 72));
         Assert.Contains("Page transparency group colour space", e.Message);
@@ -388,6 +388,303 @@ public class TransparencyTests
         Near(Px(def, 150, 100), (255, 255, 255));
         Near(Px(Render(fill, Mask("", "/BC [0.5]"), MaskForm(half)), 150, 100), (255, 128, 128));
         Near(Px(Render(fill, Mask("", "/TR " + Inv), MaskForm(half)), 150, 100), (255, 0, 0));
+    }
+
+    // ---- page-group blending in CMYK / CalRGB / CalGray / ICCBased (ISO 32000-2 11.3.5, 11.4.7, 11.7.5.3) ----
+
+    static double Dec(double v) => v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
+    static double Enc(double v) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.Pow(v, 1 / 2.4) - 0.055;
+    static (int, int, int) To255(params double[] c) => ((int)Math.Round(c[0] * 255), (int)Math.Round(c[1] * 255), (int)Math.Round(c[2] * 255));
+
+    static readonly string[] SeparableModes = ["Multiply", "Screen", "Overlay", "Darken", "Lighten", "ColorDodge", "ColorBurn", "HardLight", "SoftLight", "Difference", "Exclusion"];
+    static readonly string[] AllModes = [.. SeparableModes, "Hue", "Saturation", "Color", "Luminosity"];
+    public static TheoryData<string> BlendModeNames() { var d = new TheoryData<string>(); foreach (var m in AllModes) d.Add(m); return d; }
+
+    // R = 1 - min(1, C + K) (10.3.5) inverted with maximal black generation, then blend functions on the additive complements.
+    static (int, int, int) CmykReference(string mode, double[] cb, double[] cs)
+    {
+        static double[] ToCmyk(double[] rgb) { var m = rgb.Max(); return [m - rgb[0], m - rgb[1], m - rgb[2], 1 - m]; }
+        static double[] Add(double[] c) => [1 - c[0], 1 - c[1], 1 - c[2], 1 - c[3]];
+        double[] ab = Add(ToCmyk(cb)), asrc = Add(ToCmyk(cs)), o = new double[4];
+        if (Array.IndexOf(SeparableModes, mode) >= 0) for (var i = 0; i < 4; i++) o[i] = SepRef(mode, ab[i], asrc[i]);
+        else
+        {
+            double[] b3 = ab[..3], s3 = asrc[..3];
+            var rgb = mode switch
+            {
+                "Hue" => SetLum(SetSat(s3, Sat(b3)), Lum(b3)),
+                "Saturation" => SetLum(SetSat(b3, Sat(s3)), Lum(b3)),
+                "Color" => SetLum(s3, Lum(b3)),
+                _ => SetLum(b3, Lum(s3)),
+            };
+            o = [rgb[0], rgb[1], rgb[2], mode == "Luminosity" ? asrc[3] : ab[3]];
+        }
+        var k = 1 - o[3];
+        return To255(1 - Math.Min(1, 1 - o[0] + k), 1 - Math.Min(1, 1 - o[1] + k), 1 - Math.Min(1, 1 - o[2] + k));
+    }
+
+    const string BlendBackdrop = "0.8 0.6 0.4 rg 0 0 200 200 re f /B gs 0.5 0.7 0.9 rg 0 0 200 200 re f";
+
+    static string BlendRes(string mode) => $"/ExtGState << /B << /BM /{mode} >> >>";
+
+    [Theory]
+    [MemberData(nameof(BlendModeNames))]
+    public void PageGroup_CmykBlendsInCmykComplementSpace(string mode)
+    {
+        var p = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS /DeviceCMYK", BlendRes(mode)), 72);
+        Near(Px(p, 100, 100), CmykReference(mode, [0.8, 0.6, 0.4], [0.5, 0.7, 0.9]), 2);
+        Assert.Empty(p.Warnings);
+    }
+
+    [Fact]
+    public void PageGroup_CmykDiffersFromRgbAndNormalIsUnchanged()
+    {
+        var cmyk = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS /DeviceCMYK", BlendRes("Multiply")), 72);
+        var rgb = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS /DeviceRGB", BlendRes("Multiply")), 72);
+        Near(Px(rgb, 100, 100), (102, 107, 92), 1); // component-wise product in RGB
+        Near(Px(cmyk, 100, 100), (82, 92, 82), 1);  // K participates in CMYK: 1 - min(1, C + K) with complements multiplied
+        var normal = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop.Replace("/B gs", ""), "/CS /DeviceCMYK"), 72);
+        Near(Px(normal, 100, 100), (128, 179, 230), 1);
+    }
+
+    [Theory]
+    [InlineData("Multiply")]
+    [InlineData("Screen")]
+    [InlineData("Difference")]
+    [InlineData("SoftLight")]
+    public void PageGroup_CalRgbBlendsInCalibratedGammaSpace(string mode)
+    {
+        // sRGB primaries/white with gamma 1.8: blend functions act on lin^(1/1.8) (8.6.5.3), then results return through lin = c^1.8.
+        const string cs = "[/CalRGB << /WhitePoint [0.9505 1 1.089] /Gamma [1.8 1.8 1.8] /Matrix [0.4124 0.2126 0.0193 0.3576 0.7152 0.1192 0.1805 0.0722 0.9505] >>]";
+        double[] cb = [0.8, 0.6, 0.4], cs2 = [0.5, 0.7, 0.9];
+        var e = Enumerable.Range(0, 3).Select(i => Enc(Math.Pow(SepRef(mode, Math.Pow(Dec(cb[i]), 1 / 1.8), Math.Pow(Dec(cs2[i]), 1 / 1.8)), 1.8))).ToArray();
+        var p = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS " + cs, BlendRes(mode)), 72);
+        Near(Px(p, 100, 100), To255(e), 3);
+        // Linear-light multiply is independent of the gamma, unlike an sRGB-encoded product.
+        if (mode == "Multiply") Near(Px(p, 100, 100), To255(Enc(Dec(0.8) * Dec(0.5)), Enc(Dec(0.6) * Dec(0.7)), Enc(Dec(0.4) * Dec(0.9))), 3);
+    }
+
+    [Fact]
+    public void PageGroup_CalRgbNormalCompositingKeepsSourceColours()
+    {
+        const string cs = "[/CalRGB << /WhitePoint [0.9505 1 1.089] /Gamma [2.2 2.2 2.2] >>]";
+        Near(Px(DocumentRenderer.RenderPage(GroupPage("0.8 0.6 0.4 rg 0 0 200 200 re f", "/CS " + cs), 72), 100, 100), (204, 153, 102), 1);
+    }
+
+    [Fact]
+    public void PageGroup_CalGrayProjectsToCieLuminanceAndBlendsInItsGamma()
+    {
+        const string cs = "[/CalGray << /WhitePoint [0.9505 1 1.089] /Gamma 2.2 >>]";
+        var red = DocumentRenderer.RenderPage(GroupPage("1 0 0 rg 0 0 200 200 re f", "/CS " + cs), 72);
+        var y = Enc(0.2126); // CIE luminance of sRGB red
+        Near(Px(red, 100, 100), To255(y, y, y), 1);
+        var mul = DocumentRenderer.RenderPage(GroupPage("1 0 0 rg 0 0 200 200 re f /B gs 0 0 1 rg 0 0 200 200 re f", "/CS " + cs, BlendRes("Multiply")), 72);
+        var m = Enc(0.2126 * 0.0722);
+        Near(Px(mul, 100, 100), To255(m, m, m), 1);
+    }
+
+    [Fact]
+    public void PageGroup_IccBasedUsesComponentCountModelAndStillValidatesProfile()
+    {
+        var rgbProfile = Encoding.Latin1.GetString(IccMatrixRgb());
+        var cmykProfile = Encoding.Latin1.GetString(IccCmyk());
+        var p3 = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS [/ICCBased 5 0 R]", BlendRes("Multiply"), Stream(5, "/N 3", rgbProfile)), 72);
+        Near(Px(p3, 100, 100), (102, 107, 92), 1);
+        var p4 = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS [/ICCBased 5 0 R]", BlendRes("Multiply"), Stream(5, "/N 4", cmykProfile)), 72);
+        Near(Px(p4, 100, 100), CmykReference("Multiply", [0.8, 0.6, 0.4], [0.5, 0.7, 0.9]), 1);
+        // A profile whose component count disagrees with /N is not a valid blending space.
+        Assert.Throws<NotSupportedException>(() => DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS [/ICCBased 5 0 R]", BlendRes("Multiply"), Stream(5, "/N 3", cmykProfile)), 72));
+        // DefaultCMYK remaps /DeviceCMYK to the profile's blending model.
+        var def = DocumentRenderer.RenderPage(GroupPage(BlendBackdrop, "/CS /DeviceCMYK", BlendRes("Multiply") + " /ColorSpace << /DefaultCMYK [/ICCBased 5 0 R] >>", Stream(5, "/N 4", cmykProfile)), 72);
+        Near(Px(def, 100, 100), CmykReference("Multiply", [0.8, 0.6, 0.4], [0.5, 0.7, 0.9]), 1);
+    }
+
+    [Fact]
+    public void PageGroup_CmykKnockoutAndGroupAlphaStillApply()
+    {
+        var page = GroupPage("/A gs 1 0 0 rg 0 0 120 200 re f 0 0 1 rg 80 0 120 200 re f", "/CS /DeviceCMYK /K true", "/ExtGState << /A << /ca 0.5 >> >>");
+        Near(Px(DocumentRenderer.RenderPage(page, 72), 100, 100), (127, 127, 255), 1);
+    }
+
+    // minimal synthetic ICC profiles (valid headers/tags; used only to select the group blending model)
+    static void U32(List<byte> b, uint v) { b.Add((byte)(v >> 24)); b.Add((byte)(v >> 16)); b.Add((byte)(v >> 8)); b.Add((byte)v); }
+    static void U16(List<byte> b, int v) { b.Add((byte)(v >> 8)); b.Add((byte)v); }
+    static uint Sig(string s) => (uint)(s[0] << 24 | s[1] << 16 | s[2] << 8 | s[3]);
+    static byte[] IccXyz(double x, double y, double z) { var b = new List<byte>(); U32(b, Sig("XYZ ")); U32(b, 0); foreach (var v in new[] { x, y, z }) U32(b, (uint)(int)Math.Round(v * 65536)); return [.. b]; }
+    static byte[] IccGamma(double g) { var b = new List<byte>(); U32(b, Sig("curv")); U32(b, 0); U32(b, 1); U16(b, (int)Math.Round(g * 256)); return [.. b]; }
+
+    static byte[] BuildIcc(string space, string pcs, params (string Tag, byte[] Data)[] tags)
+    {
+        var body = new List<byte>(); var table = new List<byte>();
+        U32(table, (uint)tags.Length);
+        var off = 128 + 4 + tags.Length * 12;
+        foreach (var (t, d) in tags)
+        {
+            while ((off + body.Count) % 4 != 0) body.Add(0);
+            U32(table, Sig(t)); U32(table, (uint)(off + body.Count)); U32(table, (uint)d.Length);
+            body.AddRange(d);
+        }
+        var h = new byte[128];
+        Encoding.ASCII.GetBytes("mntr").CopyTo(h, 12); Encoding.ASCII.GetBytes(space).CopyTo(h, 16); Encoding.ASCII.GetBytes(pcs).CopyTo(h, 20);
+        Encoding.ASCII.GetBytes("acsp").CopyTo(h, 36); h[8] = 2; h[9] = 0x40;
+        var all = h.Concat(table).Concat(body).ToArray();
+        all[0] = (byte)(all.Length >> 24); all[1] = (byte)(all.Length >> 16); all[2] = (byte)(all.Length >> 8); all[3] = (byte)all.Length;
+        return all;
+    }
+
+    static byte[] IccMatrixRgb() => BuildIcc("RGB ", "XYZ ",
+        ("rXYZ", IccXyz(0.4360747, 0.2225045, 0.0139322)), ("gXYZ", IccXyz(0.3850649, 0.7168786, 0.0971045)), ("bXYZ", IccXyz(0.1430804, 0.0606169, 0.7141733)),
+        ("rTRC", IccGamma(2.2)), ("gTRC", IccGamma(2.2)), ("bTRC", IccGamma(2.2)), ("wtpt", IccXyz(0.9642, 1.0, 0.8249)));
+
+    static byte[] IccCmyk()
+    {
+        var b = new List<byte>();
+        U32(b, Sig("mft2")); U32(b, 0);
+        b.Add(4); b.Add(3); b.Add(2); b.Add(0);
+        foreach (var v in new double[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 }) U32(b, (uint)(int)Math.Round(v * 65536));
+        U16(b, 2); U16(b, 2);
+        for (var i = 0; i < 4; i++) { U16(b, 0); U16(b, 65535); }
+        for (var n = 0; n < 16; n++) { var k = n & 1; U16(b, k == 1 ? 0 : 0xFF00); U16(b, 0x8000); U16(b, 0x8000); }
+        for (var i = 0; i < 3; i++) { U16(b, 0); U16(b, 65535); }
+        return BuildIcc("CMYK", "Lab ", ("A2B0", [.. b]));
+    }
+
+    // ---- per-object knockout (11.7.4.4 fill+stroke, 11.7.4.5 /TK) and /AIS (11.6.4.4) ----
+
+    const string BoxPath = "1 0 0 rg 0 0 1 RG 40 w 60 60 80 80 re ";
+    const string HalfAlpha = "/ExtGState << /A << /ca 0.5 /CA 0.5 >> >>";
+
+    [Fact]
+    public void FillAndStroke_OfOneOperatorKnockOutEachOther()
+    {
+        var b = Render("/A gs " + BoxPath + "B", HalfAlpha);
+        Near(Px(b, 70, 100), (127, 127, 255), 2);  // stroke over the backdrop only; the fill is knocked out
+        Near(Px(b, 50, 100), (127, 127, 255), 2);  // outer half of the stroke
+        Near(Px(b, 100, 100), (255, 127, 127), 2); // fill only
+        var separate = Render("/A gs " + BoxPath + "f 60 60 80 80 re S", HalfAlpha);
+        Near(Px(separate, 70, 100), (127, 63, 191), 2); // separate operators composite the stroke over the fill
+    }
+
+    [Fact]
+    public void FillAndStroke_OpaqueNormalIsUnchanged()
+    {
+        var b = Render(BoxPath + "B", "");
+        Near(Px(b, 70, 100), (0, 0, 255), 0);
+        Near(Px(b, 100, 100), (255, 0, 0), 0);
+    }
+
+    [Fact]
+    public void FillAndStroke_KnockoutAppliesToBlendModes()
+    {
+        // Multiply stroke over the fill would give (0,0,0); knocked out it multiplies only the white backdrop.
+        var b = Render("/M gs " + BoxPath + "B", "/ExtGState << /M << /BM /Multiply >> >>");
+        Near(Px(b, 70, 100), (0, 0, 255), 1);
+    }
+
+    [Fact]
+    public void FillAndStroke_SoftMaskIsAppliedOnceToTheKnockedOutObject()
+    {
+        const string mask = "/ExtGState << /G1 << /SMask << /Type /Mask /S /Luminosity /G 5 0 R >> >> >>";
+        var form = Stream(5, "/Type /XObject /Subtype /Form /BBox [0 0 200 200] /Group << /S /Transparency /CS /DeviceGray >>", "0.5 g 0 0 200 200 re f");
+        var b = Render("/G1 gs " + BoxPath + "B", mask, form);
+        Near(Px(b, 70, 100), (128, 128, 255), 2);
+    }
+
+    [Fact]
+    public void FillAndStroke_PatternFillKnockoutStillRenders()
+    {
+        var b = Render("/A gs /Pattern cs /P scn 0 0 1 RG 40 w 60 60 80 80 re B",
+            HalfAlpha + " /Pattern << /P << /PatternType 2 /Shading << /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 200 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [1 0 0] /N 1 >> >> >> >>");
+        Near(Px(b, 70, 100), (127, 127, 255), 2);
+    }
+
+    const string TextRes = "/Font << /F << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> ";
+
+    static int Darkest(RenderedPage p)
+    {
+        var min = 255;
+        for (var i = 0; i < p.Width * p.Height; i++) min = Math.Min(min, p.Rgba[i * 4 + 1]);
+        return min;
+    }
+
+    [Theory]
+    [InlineData("/TK true", 128)]
+    [InlineData("", 128)]   // /TK defaults to true
+    [InlineData("/TK false", 64)]
+    public void TextKnockout_OverlappingGlyphsOfOneTextObject(string tk, int expectedDarkest)
+    {
+        // Two identical glyphs at the same position with 50% black: knocked out they stay 50%, composited separately they reach 75%.
+        var p = Render("/A gs 0 g BT /F 100 Tf 50 50 Td (I) Tj 0 0 Td (I) Tj ET", TextRes + $"/ExtGState << /A << /ca 0.5 {tk} >> >>");
+        Assert.InRange(Darkest(p), expectedDarkest - 2, expectedDarkest + 2);
+    }
+
+    [Fact]
+    public void TextKnockout_DoesNotSpanSeparateTextObjects()
+    {
+        var p = Render("/A gs 0 g BT /F 100 Tf 50 50 Td (I) Tj ET BT /F 100 Tf 50 50 Td (I) Tj ET", TextRes + "/ExtGState << /A << /ca 0.5 /TK true >> >>");
+        Assert.InRange(Darkest(p), 62, 66);
+    }
+
+    [Fact]
+    public void TextKnockout_ClosesAtEndOfStreamWithoutET()
+    {
+        var p = Render("/A gs 0 g BT /F 100 Tf 50 50 Td (I) Tj 0 0 Td (I) Tj", TextRes + "/ExtGState << /A << /ca 0.5 >> >>");
+        Assert.InRange(Darkest(p), 126, 130);
+    }
+
+    [Theory]
+    [InlineData("/AIS false", 127, 127, 255)]
+    [InlineData("/AIS true", 128, 64, 191)]
+    public void AlphaIsShape_ChangesKnockoutCompositing(string ais, int r, int g, int b)
+    {
+        // Isolated knockout page group, 50% alpha. Opacity: the blue replaces red where they overlap (blue at 50% over white).
+        // Shape: red (shape .5, backdrop a=.5) then blue shape .5 => colour (1/3,0,2/3), alpha .75 over white => (.5,.25,.75) (11.4.8).
+        var page = GroupPage("/A gs 1 0 0 rg 0 0 120 200 re f 0 0 1 rg 80 0 120 200 re f", "/K true", $"/ExtGState << /A << /ca 0.5 {ais} >> >>");
+        Near(Px(DocumentRenderer.RenderPage(page, 72), 100, 100), (r, g, b), 2);
+    }
+
+    [Fact]
+    public void AlphaIsShape_IsPartOfGraphicsStateAndRestoredByQ()
+    {
+        var page = GroupPage("q /A gs Q /B gs 1 0 0 rg 0 0 120 200 re f 0 0 1 rg 80 0 120 200 re f", "/K true",
+            "/ExtGState << /A << /AIS true >> /B << /ca 0.5 >> >>");
+        Near(Px(DocumentRenderer.RenderPage(page, 72), 100, 100), (127, 127, 255), 2);
+    }
+
+    [Fact]
+    public void AlphaIsShape_DoesNotLeakIntoNestedGroups()
+    {
+        // 11.6.6: the form group starts with AIS false even though the caller set it, so the knockout result is the opacity one.
+        const string c = "/A gs 1 0 0 rg 0 0 120 200 re f 0 0 1 rg 80 0 120 200 re f";
+        var p = Render("/Q gs /F Do", "/XObject << /F 5 0 R >> /ExtGState << /Q << /AIS true >> >>", GroupForm("/K true", c));
+        Near(Px(p, 100, 100), (127, 127, 255), 2);
+    }
+
+    // ---- soft-mask edge cases (11.6.5.2) ----
+
+    static string AlphaMask(string extra) => "/ExtGState << /G1 << /SMask << /Type /Mask /S /Alpha /G 5 0 R " + extra + " >> >> >>";
+
+    static string AlphaForm() => Stream(5, "/Type /XObject /Subtype /Form /BBox [0 0 100 200] /Group << /S /Transparency /CS /DeviceRGB >> /Resources << /ExtGState << /H << /ca 0.5 >> >> >>", "/H gs 0 g 0 0 100 200 re f");
+
+    [Fact]
+    public void SoftMask_AlphaUsesGroupAlphaAndIgnoresBackdropColour()
+    {
+        const string fill = "/G1 gs 1 0 0 rg 0 0 200 200 re f";
+        var plain = Render(fill, AlphaMask(""), AlphaForm());
+        Near(Px(plain, 50, 100), (255, 127, 127), 2);
+        Near(Px(plain, 150, 100), (255, 255, 255), 0);
+        var withBc = Render(fill, AlphaMask("/BC [1 1 1]"), AlphaForm());
+        Near(Px(withBc, 50, 100), (255, 127, 127), 2);
+        Near(Px(withBc, 150, 100), (255, 255, 255), 0);
+    }
+
+    [Fact]
+    public void SoftMask_TransferFunctionAppliesToAlphaMasksAndOutsideTheGroup()
+    {
+        const string fill = "/G1 gs 1 0 0 rg 0 0 200 200 re f";
+        var inv = Render(fill, AlphaMask("/TR " + Inv), AlphaForm());
+        Near(Px(inv, 50, 100), (255, 127, 127), 2); // 1 - .5
+        Near(Px(inv, 150, 100), (255, 0, 0), 0);    // 1 - 0 outside the group's BBox
     }
 
     // ---- mesh shadings 4-7 ----

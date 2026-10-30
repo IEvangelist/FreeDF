@@ -244,28 +244,62 @@ the browser workload. Sidebar continuity and raster-count assertions remain
 hard failures even in diagnostic mode.
 
 The [user-local AOT comparison](performance/2026-10-30-aot.md) records substantially
-lower uncached raster/open latency, exact decoded pixel hashes, worker-inclusive
-gzip-equivalent payload sizes and six remaining original budget misses. Browser
-PNG encoding uses bounded row batches rather than another whole-page copy.
+lower uncached raster/open latency, exact decoded pixel hashes and worker-inclusive
+gzip-equivalent payload sizes. The latest three-repeat AOT profile has two
+remaining strict-goal misses; binary uploads and neighbor-page preview reuse
+cleared the large-open and three next-page-navigation misses. Browser PNG encoding
+uses bounded row batches rather than another whole-page copy.
 Fresh-render gates additionally require p50/p95 below 1000/1500 ms and managed
 allocation below 200 MB; allocation is not peak browser working set.
 
 Hosted CI uses `--profile-ci <raw.json> docs\performance\editor-ci-known-misses.v1.json`.
-Its versioned policy retains the six open goals and measured AOT values, prints
+Its versioned policy retains the two established known misses and prints
 `KNOWN MISSES (baseline open work)` plus the full strict-goal miss table in the job summary,
-and uploads both. Timing regression ceilings are 2.5x recorded p50/p95 with a
+and uploads both. The historical AOT reference CSV is preserved; fixed goals
+removed from the allowlist will be classified as `NEW GOAL MISS` if they regress.
+Timing regression ceilings are 2.5x recorded p50/p95 with a
 50-ms floor for near-zero timings; deterministic allocation, cache/raster-count,
 fixed-41-dpi pixel hashes and no-blank checks are not relaxed. New **CI-relative**
 budget failures block the job. New strict-goal misses below those relative
 ceilings remain visible as `NEW GOAL MISS`, not claims of goal attainment.
 A runner that meets a known original goal is marked `MET`, not rejected for
 being faster than the reference machine. The versioned baseline remains intact.
-`tools\Test-EditorProfileCi.ps1` verifies six synthetic rejection cases and
-acceptance of an improved known goal; no regression ceiling is changed.
+`tools\Test-EditorProfileCi.ps1` verifies eight synthetic policy cases, including
+rejection of regressions, acceptance of an improved goal and visibility when a
+fixed goal regresses; no timing ceiling is changed.
 
 For authoritative strict goals, unset `EDITOR_PROFILE_REPORT_ONLY` and run the
-ordinary `--profile` (or `--profile-summary` on saved data); six original goals
-remain failing. Hosted CI's noise tolerance does not change those goals.
+ordinary `--profile` (or `--profile-summary` on saved data). In the latest
+three-repeat local AOT profile before the render-feature integration, startup's
+maximum long task and showcase open remained over budget; the other four
+original misses met their goals. The post-integration profile currently reports
+three strict-goal misses: startup maximum long task 73/78 ms against 50/50,
+showcase open 330/332.6 ms against 250/500, and cached typography next-page
+presentation 100.1/100.9 ms against 100/200. The latter is a new strict-goal
+miss, not added to the allowlist; ordinary next-page selection remains
+98.8/99.7 ms for typography, 97.1/97.4 ms for the report and 97.2/98.2 ms for
+the generated large document. The relative CI gate is separate and does not
+relabel these strict misses as passing their original goals.
+
+### Navigation preview
+
+After a page selection finishes, the editor schedules a 40-dpi render of the
+next page after 250 ms, provided the document version and selection still match.
+It uses the existing bounded page-image cache; the normal exact-resolution
+render remains unchanged and still replaces the preview. The full AOT profile
+asserts that the preview is cached before navigation, then measures the actual
+page-selection path. Across typography, report and the generated 12-page file,
+next-page navigation improved from 115.5/116.6, 116.2/116.8 and 115.5/116.4 ms
+(p50/p95) to 98.0/98.2, 97.8/98.8 and 98.3/98.3 ms. These are local,
+three-sample results; first-open showcase and startup remain open work.
+
+### Binary file uploads
+
+PDF/image `Blob` request bodies travel from the UI worker as a `Uint8Array` via
+the `RequestBinary` JS export instead of base64-expanded JSON. The runtime still
+copies the bytes into one managed array; this is not zero-copy. Ordinary JSON
+commands and response payloads retain their existing transport. The trimmed
+JSON smoke verifies the actual worker route and exact uploaded byte count.
 
 ### Input responsiveness during fresh PDF work
 
@@ -449,7 +483,8 @@ merging. Passwords are never requested or persisted by this dialog. If a
 supported encrypted import occurs in the server host, recovery is disabled
 rather than caching a decrypted copy. Merge stays local in both hosts.
 
-The integrated Release build succeeds and full suite passes 1696/1696. A local
+At the earlier seven-branch checkpoint, the Release build succeeded and the
+full suite passed 1696/1696. A local
 static WASM publish into a fresh output directory validates 207 artifacts (without the optional `wasm-tools`
 optimization workload). Full Chromium smoke passes text fidelity, recovery,
 clipboard/assets and desktop/mobile header assertions; the separate `--merge`

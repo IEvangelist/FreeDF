@@ -64,8 +64,8 @@ public class Jpeg12BitTests
 
     [Theory]
     [InlineData(0xC0, 12)]
-    [InlineData(0xC9, 12)]
-    [InlineData(0xCA, 12)]
+    [InlineData(0xC9, 16)]
+    [InlineData(0xCA, 9)]
     [InlineData(0xCB, 12)]
     [InlineData(0xC5, 12)]
     [InlineData(0xC6, 12)]

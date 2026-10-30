@@ -17,7 +17,62 @@ internal sealed class XmpData
     public const string PdfUAId = "http://www.aiim.org/pdfua/ns/id/";
     public const string Dc = "http://purl.org/dc/elements/1.1/";
 
+    public const string Rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+    public const string PdfAExtension = "http://www.aiim.org/pdfa/ns/extension/";
+    public const string PdfASchema = "http://www.aiim.org/pdfa/ns/schema#";
+    public const string PdfAProperty = "http://www.aiim.org/pdfa/ns/property#";
+
+    /// <summary>Items of array/lang-alt properties (rdf:li) keyed by property; <c>Lang</c> is xml:lang when present.</summary>
+    public Dictionary<(string Ns, string Local), List<(string? Lang, string Value)>> Items { get; } = [];
+    /// <summary>Top-level properties (attributes and child elements of rdf:Description) in document order.</summary>
+    public List<(string Ns, string Local)> Properties { get; } = [];
+    /// <summary>Namespaces and (namespace, name) pairs declared through a pdfaExtension:schemas block.</summary>
+    public HashSet<string> DeclaredNamespaces { get; } = new(StringComparer.Ordinal);
+    public HashSet<(string Ns, string Name)> DeclaredProperties { get; } = [];
+    public List<string> ExtensionProblems { get; } = [];
+    /// <summary>The text of the leading xpacket processing instruction, when present.</summary>
+    public string? PacketHeader { get; private set; }
+
     public string? Get(string ns, string local) => Values.GetValueOrDefault((ns, local));
+
+    /// <summary>The x-default item (else the first) of a property, or its plain value when it is not an array.</summary>
+    public string? GetDefaultItem(string ns, string local) =>
+        Items.TryGetValue((ns, local), out var l) && l.Count > 0 ? (l.Any(i => i.Lang == "x-default") ? l.First(i => i.Lang == "x-default").Value : l[0].Value) : Get(ns, local);
+
+    static void CollectExtras(XDocument doc, XmpData result)
+    {
+        var rdf = XNamespace.Get(Rdf);
+        var ext = XNamespace.Get(PdfAExtension);
+        var schema = XNamespace.Get(PdfASchema);
+        var prop = XNamespace.Get(PdfAProperty);
+        foreach (var desc in doc.Descendants(rdf + "RDF").Take(100).SelectMany(r => r.Elements(rdf + "Description")).Take(1000))
+        {
+            foreach (var a in desc.Attributes())
+                if (!a.IsNamespaceDeclaration && a.Name.NamespaceName.Length > 0 && a.Name.NamespaceName != Rdf && a.Name.NamespaceName != XNamespace.Xml.NamespaceName)
+                    result.Properties.Add((a.Name.NamespaceName, a.Name.LocalName));
+            foreach (var el in desc.Elements())
+            {
+                var key = (el.Name.NamespaceName, el.Name.LocalName);
+                if (key.NamespaceName.Length == 0) continue;
+                result.Properties.Add(key);
+                var items = new List<(string?, string)>();
+                foreach (var li in el.Elements().SelectMany(c => c.Elements(rdf + "li")).Take(10_000))
+                    items.Add(((string?)li.Attribute(XNamespace.Xml + "lang"), li.Value.Trim()));
+                if (items.Count > 0) result.Items.TryAdd(key, [.. items]);
+            }
+        }
+        foreach (var s in doc.Descendants(schema + "namespaceURI").Take(10_000))
+            result.DeclaredNamespaces.Add(s.Value.Trim());
+        foreach (var sch in doc.Descendants(ext + "schemas").SelectMany(s => s.Elements().SelectMany(b => b.Elements(rdf + "li"))).Take(10_000))
+        {
+            var ns = sch.Element(schema + "namespaceURI")?.Value.Trim() ?? (string?)sch.Attribute(schema + "namespaceURI");
+            if (ns is null) { result.ExtensionProblems.Add("schema entry has no pdfaSchema:namespaceURI"); continue; }
+            foreach (var req in new[] { "schema", "prefix", "property" })
+                if (sch.Element(schema + req) is null && sch.Attribute(schema + req) is null) result.ExtensionProblems.Add($"schema '{ns}' has no pdfaSchema:{req}");
+            foreach (var n in sch.Descendants(prop + "name").Take(10_000)) result.DeclaredProperties.Add((ns, n.Value.Trim()));
+            foreach (var a in sch.Descendants().Attributes(prop + "name").Take(10_000)) result.DeclaredProperties.Add((ns, a.Value.Trim()));
+        }
+    }
 
     public static XmpData Parse(byte[]? bytes)
     {
@@ -29,6 +84,8 @@ internal sealed class XmpData
             using var reader = XmlReader.Create(new MemoryStream(bytes), settings);
             var doc = XDocument.Load(reader);
             var result = new XmpData { Present = true, WellFormed = true };
+            result.PacketHeader = doc.Nodes().OfType<XProcessingInstruction>().FirstOrDefault(p => p.Target == "xpacket" && p.Data.TrimStart().StartsWith("begin", StringComparison.Ordinal))?.Data;
+            CollectExtras(doc, result);
             var count = 0;
             foreach (var el in doc.Descendants())
             {
@@ -92,6 +149,7 @@ internal sealed class ValidationContext
     public List<FontUse> Fonts { get; } = [];
     public List<(PdfDictionary Gs, int Page)> ExtGStates { get; } = [];
     public List<(PdfStream Image, int Page)> Images { get; } = [];
+    public List<PdfStream> IccBased { get; } = [];
     public bool UsesDeviceColor { get; private set; }
     bool _walked;
     readonly HashSet<PdfObject> _seen = new(ReferenceEqualityComparer.Instance);
@@ -132,7 +190,11 @@ internal sealed class ValidationContext
     void NoteColorSpace(PdfObject? cs)
     {
         var o = F.Resolve(cs);
-        if (o is PdfArray { Count: > 0 } a) o = F.Resolve(a[0]);
+        if (o is PdfArray { Count: > 0 } a)
+        {
+            if (a.Count > 1 && F.Resolve(a[0]).AsName() == "ICCBased" && F.Resolve(a[1]) is PdfStream icc && _seen.Add(icc)) IccBased.Add(icc);
+            o = F.Resolve(a[0]);
+        }
         if (o.AsName() is "DeviceRGB" or "DeviceGray" or "DeviceCMYK" or "RGB" or "G" or "CMYK") UsesDeviceColor = true;
     }
 

@@ -114,6 +114,13 @@ public sealed record StrokeStyle(double Width, LineCap Cap, LineJoin Join, doubl
 
 public sealed record ImageData(int Width, int Height, byte[] Rgba, bool IsMask = false);
 
+/// <summary>
+/// Approximate overprint (ISO 32000-2 8.6.7 / 11.7.4.3 CompatibleOverprint) for a painting operation on an additive RGB surface.
+/// <see cref="Spot"/> paints a non-process colorant: process colorants are left alone, so ink accumulation is approximated by Multiply.
+/// Otherwise <see cref="Mask"/> selects the painted DeviceCMYK colorants (bit 0 C, 1 M, 2 Y, 3 K) taking the values <see cref="C"/>..<see cref="K"/>; the rest keep the backdrop.
+/// </summary>
+public sealed record OverprintPaint(byte Mask, float C, float M, float Y, float K, bool Spot = false);
+
 /// <summary>Pluggable drawing surface. Paths are in user space with the CTM supplied so strokes follow spec geometry.</summary>
 public interface IRenderBackend
 {
@@ -122,6 +129,10 @@ public interface IRenderBackend
     void Clip(PathData path, Matrix ctm, bool evenOdd);
     void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode);
     void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode);
+    /// <summary>As <see cref="Fill(PathData, Matrix, bool, RgbColor, double, string)"/> with overprint simulation; backends that do not simulate overprint paint normally.</summary>
+    void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode, OverprintPaint overprint) => Fill(path, ctm, evenOdd, color, alpha, blendMode);
+    /// <summary>As <see cref="Stroke(PathData, Matrix, StrokeStyle, RgbColor, double, string)"/> with overprint simulation; backends that do not simulate overprint paint normally.</summary>
+    void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode, OverprintPaint overprint) => Stroke(path, ctm, style, color, alpha, blendMode);
     /// <summary>Draws an image into the unit square transformed by ctm.</summary>
     void DrawImage(ImageData image, Matrix ctm, double alpha, RgbColor maskColor, string blendMode);
     /// <summary>Fills the current clip with a per-pixel shader (device -> color) used for shadings.</summary>
@@ -140,4 +151,6 @@ public interface IRenderBackend
         BeginGroup(isolated, knockout, alpha, blendMode);
     }
     void EndGroup() { }
+    /// <summary>ExtGState /AIS (11.6.4.4): constant alpha is shape rather than opacity. Backends that ignore it treat alpha as opacity.</summary>
+    void SetAlphaIsShape(bool alphaIsShape) { }
 }

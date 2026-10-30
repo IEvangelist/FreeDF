@@ -19,21 +19,58 @@ public static partial class BrowserEditor
         try
         {
             c = JsonSerializer.Deserialize<Command>(command, Json) ?? throw new ArgumentException("Missing editor command.");
-            var reply = Session.Handle(c.Method, c.Path, c.Query, c.Body is null ? null : Convert.FromBase64String(c.Body), c.FileName);
-            return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName, performance = Session.LastRenderMetrics }, Json);
+            return Execute(c, c.Body is null ? null : Convert.FromBase64String(c.Body));
         }
-
         catch (Exception e)
         {
-            if (e is System.Security.Cryptography.CryptographicException or PlatformNotSupportedException && c?.Method == "POST" && c.Path is "/api/open" or "/api/import" or "/api/inspect")
-            {
-                var message = "Encrypted PDFs require the server editor. This browser cannot open this protection; no decrypted recovery copy was stored. " + e.Message;
-                Console.Error.WriteLine(message);
-                return JsonSerializer.Serialize(new { error = message }, Json);
-            }
-            Console.Error.WriteLine(e is NotSupportedException ? e.Message : e);
-            return JsonSerializer.Serialize(new { error = e.Message }, Json);
+            return Error(c, e);
         }
+    }
+
+    [JSExport]
+    public static string RequestBinary(
+        string method,
+        string path,
+        string query,
+        JSObject body,
+        string? fileName)
+    {
+        Command? c = null;
+        using var requestBody = body;
+        try
+        {
+            c = new(method, path, JsonSerializer.Deserialize<Dictionary<string, string>>(query, Json) ?? [], null, fileName);
+            return Execute(c, requestBody.GetPropertyAsByteArray("bytes") ?? throw new ArgumentException("Missing binary request body."));
+        }
+        catch (Exception e)
+        {
+            return Error(c, e);
+        }
+    }
+
+    static string Execute(Command c, byte[]? body)
+    {
+        try
+        {
+            var reply = Session.Handle(c.Method, c.Path, c.Query, body, c.FileName);
+            return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName, performance = Session.LastRenderMetrics }, Json);
+        }
+        catch (Exception e)
+        {
+            return Error(c, e);
+        }
+    }
+
+    static string Error(Command? c, Exception e)
+    {
+        if (e is System.Security.Cryptography.CryptographicException or PlatformNotSupportedException && c?.Method == "POST" && c.Path is "/api/open" or "/api/import" or "/api/inspect")
+        {
+            var message = "Encrypted PDFs require the server editor. This browser cannot open this protection; no decrypted recovery copy was stored. " + e.Message;
+            Console.Error.WriteLine(message);
+            return JsonSerializer.Serialize(new { error = message }, Json);
+        }
+        Console.Error.WriteLine(e is NotSupportedException ? e.Message : e);
+        return JsonSerializer.Serialize(new { error = e.Message }, Json);
     }
 }
 

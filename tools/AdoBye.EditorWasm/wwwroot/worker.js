@@ -68,22 +68,36 @@ try {
     try {
       const requestStart = performance.now();
       const u = new URL(url, self.location.href);
-      if (body instanceof Blob) { fileName = body.name ?? fileName; body = base64(new Uint8Array(await body.arrayBuffer())); }
-      else if (body != null) body = base64(new TextEncoder().encode(body));
-      const command = JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName });
-      const uploadEncodeMs = performance.now() - requestStart;
-      const dotnetStart = performance.now();
-      const reply = JSON.parse(exports.BrowserEditor.Request(command));
-      const dotnetMs = performance.now() - dotnetStart;
+      let uploadEncodeMs = 0, uploadPrepareMs = 0, uploadBytes = 0, binaryUpload = false, reply, dotnetMs;
+      if (body instanceof Blob) {
+        fileName = body.name ?? fileName;
+        const bytes = new Uint8Array(await body.arrayBuffer());
+        uploadBytes = bytes.byteLength;
+        const query = JSON.stringify(Object.fromEntries(u.searchParams));
+        uploadPrepareMs = performance.now() - requestStart;
+        binaryUpload = true;
+        const dotnetStart = performance.now();
+        reply = JSON.parse(exports.BrowserEditor.RequestBinary(method, u.pathname, query, { bytes }, fileName));
+        dotnetMs = performance.now() - dotnetStart;
+      } else {
+        if (body != null) body = base64(new TextEncoder().encode(body));
+        const command = JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName });
+        uploadEncodeMs = performance.now() - requestStart;
+        const dotnetStart = performance.now();
+        reply = JSON.parse(exports.BrowserEditor.Request(command));
+        dotnetMs = performance.now() - dotnetStart;
+      }
+      const timings = { dotnetMs, uploadEncodeMs, uploadPrepareMs, uploadBytes, binaryUpload, workerMs: performance.now() - start };
       if (reply.error || image) {
-        self.postMessage({ id, reply, timings: { dotnetMs, uploadEncodeMs, workerMs: performance.now() - start } });
+        self.postMessage({ id, reply, timings });
       } else {
         const decodeStart = performance.now();
         const binary = atob(reply.data), bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         delete reply.data;
         reply.bytes = bytes;
-        self.postMessage({ id, reply, timings: { dotnetMs, uploadEncodeMs, responseDecodeMs: performance.now() - decodeStart, workerMs: performance.now() - start } }, [bytes.buffer]);
+        timings.responseDecodeMs = performance.now() - decodeStart;
+        self.postMessage({ id, reply, timings }, [bytes.buffer]);
       }
     } catch (error) {
       self.postMessage({ id, error: error.message, timings: { workerMs: performance.now() - start } });

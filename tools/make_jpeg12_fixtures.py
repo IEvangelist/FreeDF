@@ -168,6 +168,38 @@ def encode(w, h, ids, sampling, blocks, quant, progressive, restart, separate, a
     return data + b"\xff\xd9"
 
 
+def encode_arith(w, h, ids, sampling, blocks, quant, progressive, restart):
+    """SOF9/SOF10 12-bit stream: coefficients are entropy coded with the T.81 Annex D/F/G QM-coder port in
+    make_jpeg_ext_fixtures.py (the probability table is read from JpegArith.cs, so a table typo would also
+    be caught by the independent libjpeg-turbo decode in check_reference)."""
+    import make_jpeg_ext_fixtures as ext
+    hm = max(s[0] for s in sampling)
+    vm = max(s[1] for s in sampling)
+    mx, my = (w + hm * 8 - 1) // (hm * 8), (h + vm * 8 - 1) // (vm * 8)
+    comps = []
+    for i, (hs, vs) in enumerate(sampling):
+        bw, bh = mx * hs, my * vs
+        comps.append(dict(id=ids[i], H=hs, V=vs, tq=0, td=0,
+                          blocks=[[blocks[i][y * bw + x] for x in range(bw)] for y in range(bh)],
+                          rbw=((w * hs + hm - 1) // hm + 7) // 8, rbh=((h * vs + vm - 1) // vm + 7) // 8))
+    wide = max(quant) > 255
+    data = b"\xff\xd8" + segment(0xDB, bytes([16 if wide else 0]) +
+                                 b"".join(quant[k].to_bytes(2 if wide else 1, "big") for k in ZIG))
+    frame = bytes([12]) + h.to_bytes(2, "big") + w.to_bytes(2, "big") + bytes([len(ids)])
+    for cid, (hs, vs) in zip(ids, sampling):
+        frame += bytes([cid, hs * 16 + vs, 0])
+    data += segment(0xCA if progressive else 0xC9, frame)
+    if restart:
+        data += segment(0xDD, restart.to_bytes(2, "big"))
+    cond = dict(dcl=[0] * 4, dcu=[1] * 4, ack=[5] * 4)
+    for sc in ext.prog_scans(len(ids)) if progressive else ext.seq_scans(len(ids)):
+        sc = dict(sc, prog=progressive)
+        header = bytes([len(sc["ids"])]) + b"".join(bytes([ids[ci], 0]) for ci in sc["ids"])
+        data += segment(0xDA, header + bytes([sc["ss"], sc["se"], sc["ah"] * 16 + sc["al"]]))
+        data += ext.encode_scan(comps, sc, hm, vm, mx, my, restart, cond)
+    return data + b"\xff\xd9"
+
+
 def clamp(v):
     return max(0, min(4095, v))
 
@@ -216,8 +248,15 @@ def fixtures():
         ("ycc-420-progressive", 17, 9, [1, 2, 3], [(2, 2), (1, 1), (1, 1)], True, 1, False, None, False),
         ("cmyk", 9, 9, [67, 77, 89, 75], [(1, 1)] * 4, False, 1, False, 0, False),
         ("ycck-progressive", 9, 9, [1, 2, 3, 4], [(1, 1)] * 4, True, 1, True, 2, False),
+        ("arith-gray-extremes", 33, 9, [1], [(1, 1)], False, 0, False, None, False, True),
+        ("arith-gray-restart", 33, 9, [1], [(1, 1)], False, 2, False, None, False, True),
+        ("arith-gray-progressive", 33, 9, [1], [(1, 1)], True, 2, False, None, False, True),
+        ("arith-gray-wide-quant", 13, 9, [1], [(1, 1)], False, 0, False, None, True, True),
+        ("arith-rgb-interleaved", 17, 9, [82, 71, 66], [(1, 1)] * 3, False, 2, False, None, False, True),
+        ("arith-ycc-420", 17, 9, [1, 2, 3], [(2, 2), (1, 1), (1, 1)], False, 1, False, None, False, True),
+        ("arith-ycc-420-progressive", 17, 9, [1, 2, 3], [(2, 2), (1, 1), (1, 1)], True, 1, False, None, False, True),
     ]
-    for name, w, h, ids, sampling, prog, restart, separate, adobe, wide in cases:
+    for name, w, h, ids, sampling, prog, restart, separate, adobe, wide, *arith in cases:
         hm, vm = max(s[0] for s in sampling), max(s[1] for s in sampling)
         mx, my = (w + hm * 8 - 1) // (hm * 8), (h + vm * 8 - 1) // (vm * 8)
         quant = [1] * 64
@@ -237,7 +276,8 @@ def fixtures():
                     block[1], block[8], block[16], block[63] = (3, -3, 1, 0) if wide else (513, -257, 1, -3)
                 component.append(block)
             blocks.append(component)
-        jpeg = encode(w, h, ids, sampling, blocks, quant, prog, restart, separate, adobe)
+        jpeg = (encode_arith(w, h, ids, sampling, blocks, quant, prog, restart) if arith
+                else encode(w, h, ids, sampling, blocks, quant, prog, restart, separate, adobe))
         yield dict(name=name, width=w, height=h, components=len(ids),
                    jpeg=base64.b64encode(jpeg).decode("ascii"),
                    samples=reference(w, h, ids, sampling, blocks, quant, adobe))
