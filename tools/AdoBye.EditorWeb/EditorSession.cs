@@ -38,6 +38,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     int renderCacheBytes;
     OverlayBuilder? overlayBuilder;
     readonly Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)> texts = [];
+    readonly Dictionary<int, Reply> selectionReplies = [];
     readonly Dictionary<int, Dictionary<int, ObjEdit>> objEdits = [];
     readonly Dictionary<(int Form, int Start, int End), ObjEdit> formObjEdits = [];
     HashSet<int>? sharedFormReferences;
@@ -107,6 +108,30 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     static double[]? Rgb(string? hex) => hex is { Length: 7 } && hex[0] == '#'
         ? [Convert.ToInt32(hex[1..3], 16) / 255.0, Convert.ToInt32(hex[3..5], 16) / 255.0, Convert.ToInt32(hex[5..7], 16) / 255.0] : null;
     static string Hex(RgbColor c) => $"#{(int)Math.Round(c.R * 255):x2}{(int)Math.Round(c.G * 255):x2}{(int)Math.Round(c.B * 255):x2}";
+
+    sealed record TextDetails(long Index, string Text, double X, double Y, double Width, double Size, string Font, string Color, double Spacing);
+    sealed record ObjectDetails(int Index, string Kind, bool InForm, double X0, double Y0, double X1, double Y1,
+        bool HasFill, bool HasStroke, double LineWidth, string? Fill, string? Stroke, bool FormContentsShared, ObjEdit? Edit);
+
+    IEnumerable<TextDetails> TextDetailsFor(int i) =>
+        EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
+            .Select(s => new TextDetails(SpanKey(s), s.Text, s.X, s.Y, s.Width, s.Size, s.FontName, Hex(s.Color), s.CharacterSpacing));
+
+    IEnumerable<ObjectDetails> ObjectDetailsFor(int i)
+    {
+        objEdits.TryGetValue(editor.PageId(i), out var edits);
+        var objects = PageText(i).Objects;
+        var ambiguous = objects.Any(o => o.Form != 0) ? AmbiguousFormObjects(i) : [];
+        foreach (var o in objects.Where(o => FormObjectEditPolicy.IsEditable(o, ambiguous) && (o.Form == 0 || pristineBack.ContainsKey(o.Form))))
+        {
+            ObjEdit? edit = null;
+            if (o.Form == 0) edits?.TryGetValue(o.Index, out edit);
+            else if (pristineBack.TryGetValue(o.Form, out var form)) formObjEdits.TryGetValue((form, o.Start, o.End), out edit);
+            yield return new(o.Index, o.Kind, o.Form != 0, o.X0, o.Y0, o.X1, o.Y1, o.HasFill, o.HasStroke, o.LineWidth,
+                o.HasFill ? Hex(o.Fill) : null, o.HasStroke ? Hex(o.Stroke) : null,
+                o.Kind == "form" && (SharedFormReferences().Contains(o.Ref) || ambiguous.Any(range => range.Form == o.Ref)), edit);
+        }
+    }
 
     HashSet<FormObjectRange> AmbiguousFormObjects(int i) =>
         FormObjectEditPolicy.FindAmbiguous(PageText(i).Objects, SharedFormReferences());
@@ -228,6 +253,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     }
     void Changed(bool baseChanged = true, int? changedPage = null)
     {
+        selectionReplies.Clear();
         version++; snapshot = null; snapshotBytes = null; prepared = false; findCache = null; findVersion = -1;
         if (baseChanged)
         {
@@ -476,28 +502,14 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     }
                     break;
                 case "text" when method == "GET":
-                    return AsJson(EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
-                        .Select(s => new { index = SpanKey(s), text = s.Text, x = s.X, y = s.Y, width = s.Width, size = s.Size, font = s.FontName, color = Hex(s.Color), spacing = s.CharacterSpacing }));
+                    return AsJson(TextDetailsFor(i));
+                case "selection" when method == "GET":
+                    if (!selectionReplies.TryGetValue(id, out var selection))
+                        selectionReplies[id] = selection = AsJson(new { spans = TextDetailsFor(i), objects = ObjectDetailsFor(i) });
+                    return selection;
                 case "objects":
-                    objEdits.TryGetValue(id, out var oe);
                     if (method == "GET")
-                    {
-                        var ambiguous = AmbiguousFormObjects(i);
-                        return AsJson(PageText(i).Objects.Where(o => FormObjectEditPolicy.IsEditable(o, ambiguous) && (o.Form == 0 || pristineBack.ContainsKey(o.Form))).Select(o =>
-                        {
-                            ObjEdit? edit = null;
-                            if (o.Form == 0) oe?.TryGetValue(o.Index, out edit);
-                            else if (pristineBack.TryGetValue(o.Form, out var formNum)) formObjEdits.TryGetValue((formNum, o.Start, o.End), out edit);
-                            return new
-                            {
-                                index = o.Index, kind = o.Kind, inForm = o.Form != 0, x0 = o.X0, y0 = o.Y0, x1 = o.X1, y1 = o.Y1,
-                                hasFill = o.HasFill, hasStroke = o.HasStroke, lineWidth = o.LineWidth,
-                                fill = o.HasFill ? Hex(o.Fill) : null, stroke = o.HasStroke ? Hex(o.Stroke) : null,
-                                formContentsShared = o.Kind == "form" && (SharedFormReferences().Contains(o.Ref) || ambiguous.Any(range => range.Form == o.Ref)),
-                                edit,
-                            };
-                        }));
-                    }
+                        return AsJson(ObjectDetailsFor(i));
                     if (method == "PUT")
                     {
                         var n = int.Parse(p[4], CultureInfo.InvariantCulture);

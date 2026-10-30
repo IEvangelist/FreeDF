@@ -47,6 +47,32 @@ public class EditorSessionTests
     }
 
     [Fact]
+    public void SelectionReplyMatchesLegacyEndpointsAndInvalidatesAfterEditsAndReplacement()
+    {
+        var source = AdoBye.Tests.TestPdf.Build("0 0 1 rg 20 30 80 50 re f BT /F1 18 Tf 30 90 Td (Original) Tj ET",
+            "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
+        var session = new EditorSession(new FontCatalog());
+        session.Handle("POST", "/api/open", new Dictionary<string, string>(), source, "selection.pdf");
+        var first = Call(session, "GET", "/api/page/0/selection");
+        Assert.Same(first, Call(session, "GET", "/api/page/0/selection"));
+        using var selection = JsonDocument.Parse(first.Data);
+        Assert.Equal(Encoding.UTF8.GetString(Call(session, "GET", "/api/page/0/text").Data),
+            selection.RootElement.GetProperty("spans").GetRawText());
+        Assert.Equal(Encoding.UTF8.GetString(Call(session, "GET", "/api/page/0/objects").Data),
+            selection.RootElement.GetProperty("objects").GetRawText());
+        var index = selection.RootElement.GetProperty("objects")[0].GetProperty("index").GetInt32();
+        Call(session, "PUT", $"/api/page/0/objects/{index}", new { sx = 1, sy = 1, tx = 10, ty = 0, delete = false });
+        var edited = Call(session, "GET", "/api/page/0/selection");
+        Assert.NotSame(first, edited);
+        using var changed = JsonDocument.Parse(edited.Data);
+        Assert.Equal(10, changed.RootElement.GetProperty("objects")[0].GetProperty("edit").GetProperty("tx").GetDouble());
+        Call(session, "POST", "/api/new");
+        using var empty = JsonDocument.Parse(Call(session, "GET", "/api/page/0/selection").Data);
+        Assert.Empty(empty.RootElement.GetProperty("spans").EnumerateArray());
+        Assert.Empty(empty.RootElement.GetProperty("objects").EnumerateArray());
+    }
+
+    [Fact]
     public void RepeatedPageRendersReuseExactPngBytesUntilContentChanges()
     {
         var session = new EditorSession(new FontCatalog());
