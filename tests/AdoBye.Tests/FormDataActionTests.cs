@@ -120,8 +120,9 @@ public class FormDataActionTests
     {
         var bytes = Source("/S /ResetForm /Fields [9 0 R] /Next [5 0 R 4 0 R]",
             "5 0 obj\n<< /S /ImportData /F <68747470733a2f2fff00> /Next 4 0 R >>\nendobj\n");
+        bytes = PdfEditor.Open(bytes).Save();
         var editor = PdfEditor.Open(bytes);
-        var saved = editor.Save(incremental);
+        var saved = incremental ? editor.SaveIncremental() : editor.Save();
         foreach (var source in new[] { bytes, saved })
         {
             var doc = PdfDocument.Load(source);

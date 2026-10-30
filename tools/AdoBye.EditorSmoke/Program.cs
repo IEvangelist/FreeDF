@@ -7,6 +7,12 @@ using Microsoft.Playwright;
 using PortableDocument.Document;
 using Pdf = PortableDocument.Render.PortableDocument;
 
+if (args.Length >= 4 && args[0] == "--profile")
+{
+    await EditorPerformance.Run(args[1], args[2], args[3..]);
+    return;
+}
+
 if (args.Length != 1) throw new ArgumentException("Usage: AdoBye.EditorSmoke <published-wwwroot>");
 var root = Path.GetFullPath(args[0]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
@@ -136,6 +142,23 @@ try
     await page.Keyboard.PressAsync("Control+v");
     await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
     await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/1/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#dl").ClickAsync();
+    await page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).WaitForAsync();
+    await page.WaitForFunctionAsync("[...document.querySelectorAll('.thumb img')].every(img => img.naturalWidth > 0 && img.dataset.loadedUrl === img.dataset.url)");
+    await page.EvaluateAsync("""
+        () => {
+          window.saveRenders = [];
+          const image = window.pdfHost.image.bind(window.pdfHost);
+          window.pdfHost.image = url => {
+            if (/\/api\/page\/.*\.png/.test(url)) window.saveRenders.push({url, stack:new Error().stack});
+            return image(url);
+          };
+        }
+        """);
+    var savedAgain = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
+    if (await savedAgain.FailureAsync() is { } downloadFailure) throw new Exception(downloadFailure);
+    await page.WaitForFunctionAsync("!document.querySelector('.mdl') && !document.getElementById('name').textContent.includes('•')");
+    Check(await page.EvaluateAsync<int>("window.saveRenders.length") == 0, "Saving does not rerender unchanged pages or thumbnails: " + await page.EvaluateAsync<string>("JSON.stringify(window.saveRenders)"));
     Check(errors.IsEmpty, "No browser errors during editing: " + string.Join("\n", errors));
     var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
     if (artifacts is not null)
@@ -144,9 +167,10 @@ try
         await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-desktop.png") });
     }
     // Invalid local input reports an error without replacing the open document.
+    var beforeInvalid = await page.Locator("#name").TextContentAsync();
     await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "invalid.pdf", MimeType = "application/pdf", Buffer = [1, 2, 3] });
     await page.WaitForFunctionAsync("!document.getElementById('status').textContent.startsWith('Processing')");
-    Check(await page.Locator("#name").TextContentAsync() == "reopened.pdf •", "Failed open preserves edits");
+    Check(await page.Locator("#name").TextContentAsync() == beforeInvalid, "Failed open preserves edits");
     Check((await page.Locator("#status").TextContentAsync())!.Contains("PDF"), "Visible invalid PDF error");
     // The intentionally invalid PDF is logged by both the C# boundary and UI error reporter.
     errors.Clear();
@@ -156,6 +180,7 @@ try
     await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "mobile.pdf", MimeType = "application/pdf", Buffer = await File.ReadAllBytesAsync(downloaded) });
     await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'mobile.pdf'");
     Check(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth"), "Mobile layout");
+    Check(await page.EvaluateAsync<bool>("[...document.querySelectorAll('main.hide-l .thumb img')].every(img => getComputedStyle(img).visibility === 'hidden')"), "Collapsed mobile thumbnails stay hidden");
     await page.Locator("#fileBtn").ClickAsync();
     Check(await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).IsVisibleAsync(), "Mobile file controls");
     await page.Keyboard.PressAsync("Escape");

@@ -121,11 +121,21 @@ const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
   if (options?.method === 'POST' && ['/api/new', '/api/open'].includes(url.split('?')[0])) {
-    clip = null; pendingUploads.clear();
+    clip = null; pendingUploads.clear(); assetImages.clear();
   }
   return response;
 };
-const imageUrl = url => host ? host.image(url) : new URL(url, location.href).href;
+const assetImages = new Map();
+const imageUrl = url => {
+  if (!host) return new URL(url, location.href).href;
+  if (!url.startsWith('/api/asset/')) return host.image(url);
+  if (!assetImages.has(url)) assetImages.set(url, host.image(url));
+  return assetImages.get(url);
+};
+function pruneAssetImages() {
+  const ids = new Set([...items.map(it => it.asset), ...undo.flatMap(s => JSON.parse(s).items.map(it => it.asset)), clip?.asset].filter(Boolean));
+  for (const url of assetImages.keys()) if (!ids.has(url.slice('/api/asset/'.length))) assetImages.delete(url);
+}
 const reportError = e => { console.error(e); status(e.message); };
 addEventListener('unhandledrejection', e => { e.preventDefault(); reportError(e.reason); });
 addEventListener('error', e => { if (e.error) reportError(e.error); });
@@ -171,17 +181,30 @@ function convertSpan(s) {
   items.push(it); cur = it; curObj = null; paint(); props(); queueSave();
 }
 
+let thumbnailObserver;
+function queueThumbnail(img, url) {
+  img.dataset.url = url;
+  setTimeout(() => {
+    if (!img.isConnected || img.dataset.url !== url) return;
+    try {
+      img.onload = () => { img.style.opacity = '1'; img.dataset.loadedUrl = url; };
+      img.src = imageUrl(url);
+    } catch (e) { reportError(e); }
+  }, 0);
+}
 async function refresh() {
   await flush();
   state = await (await request('/api/state')).json();
   $('name').textContent = state.pageCount ? state.fileName + (state.dirty ? ' •' : '') : 'No document';
   $('pages').textContent = state.pageCount ? `${state.pageCount} page${state.pageCount === 1 ? '' : 's'}` : '';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
+  thumbnailObserver?.disconnect();
   const t = $('thumbs'); t.innerHTML = '';
   state.pages.forEach((p, i) => {
     const d = document.createElement('div');
     d.className = 'thumb' + (i === sel ? ' sel' : ''); d.draggable = true;
-    d.innerHTML = `<div class="paper"><img alt="Page ${i + 1}" src="${imageUrl(`/api/page/${i}.png?dpi=40&v=${state.version}`)}"></div><span class="num">${i + 1}</span>
+    const swapped = p.rotation === 90 || p.rotation === 270;
+    d.innerHTML = `<div class="paper"><img alt="Page ${i + 1}" width="${swapped ? p.height : p.width}" height="${swapped ? p.width : p.height}" style="height:auto;opacity:0" data-url="/api/page/${i}.png?dpi=40&v=${state.version}"></div><span class="num">${i + 1}</span>
       <div class="acts"><button class="mini" data-a="l" title="Rotate left">${ic('rotl')}</button><button class="mini" data-a="r" title="Rotate right">${ic('rotr')}</button><button class="mini danger" data-a="x" title="Delete page">${ic('trash')}</button></div>`;
     d.onclick = e => {
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -197,6 +220,13 @@ async function refresh() {
     t.appendChild(d);
   });
   await select();
+  thumbnailObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) if (entry.isIntersecting) {
+      thumbnailObserver.unobserve(entry.target);
+      queueThumbnail(entry.target, entry.target.dataset.url);
+    }
+  }, { root: t });
+  t.querySelectorAll('img').forEach(img => thumbnailObserver.observe(img));
 }
 
 async function select() {
@@ -212,6 +242,7 @@ async function select() {
   fields = await (await request('/api/fields')).json();
   origKey = okey();
   cur = null; curObj = null; undo = [];
+  pruneAssetImages();
   build();
 }
 
@@ -561,13 +592,14 @@ async function flush() {
         await post(`/api/asset-cancel?id=${encodeURIComponent(id)}`);
         pendingUploads.delete(id);
       }
+      pruneAssetImages();
     };
     itemSave = itemSave.then(send, send);
     await itemSave;
   } catch (e) { saveT = -1; throw e; }
   if (okey() !== origKey) { origKey = okey(); updateBase(); }
   const th = document.querySelectorAll('.thumb img')[i];
-  if (th) th.src = imageUrl(`/api/page/${i}.png?dpi=40&t=${Date.now()}`);
+  if (th) queueThumbnail(th, `/api/page/${i}.png?dpi=40&t=${Date.now()}`);
   refreshDirty();
 }
 
@@ -805,13 +837,13 @@ const dlUrl = async u => {
 async function saveDoc() {
   if (!state.pageCount) return; await flush();
   const r = await (await request('/api/save', { method: 'POST' })).json();
-  if (r.saved) { await refresh(); status('Saved to ' + r.path); } else saveAs();
+  if (r.saved) { await refreshDirty(); status('Saved to ' + r.path); } else saveAs();
 }
 function saveAs() {
   if (!state.pageCount) return;
   flush().then(() => modal('Save as', `<label>File name<input id="sn" value="${esc(state.fileName.replace(/^edited-/, ''))}"></label><p class="dnote">The PDF is downloaded to your browser's download folder.</p>`, 'Save', async o => {
     let n = o.querySelector('#sn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
-    await dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refresh();
+    await dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refreshDirty();
   }));
 }
 function exportPdf() {
@@ -974,7 +1006,7 @@ function paste(at) {
 const copyItem = it => {
   clip = JSON.parse(JSON.stringify(it));
   const body = JSON.stringify(clip.asset ? [clip.asset] : []);
-  const send = () => post('/api/asset-clipboard', body);
+  const send = async () => { await post('/api/asset-clipboard', body); pruneAssetImages(); };
   itemSave = itemSave.then(send, send);
   itemSave.catch(e => { saveT = -1; reportError(e); });
 };

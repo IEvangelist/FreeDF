@@ -11,6 +11,25 @@ public class EditorSessionTests
             body is null ? null : JsonSerializer.SerializeToUtf8Bytes(body, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
 
     [Fact]
+    public void RepeatedPageRendersReuseExactPngBytesUntilContentChanges()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var first = Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data;
+        var cached = Call(session, "GET", "/api/page/0.png", query: [("dpi", "40"), ("t", "ignored-cache-buster")]).Data;
+        Assert.Same(first, cached);
+        Assert.NotSame(first, Call(session, "GET", "/api/page/0.png", query: [("dpi", "72")]).Data);
+        Assert.NotSame(first, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40"), ("bare", "true")]).Data);
+        var asset = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([Image("new", asset)], []));
+        var edited = Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data;
+        Assert.NotEqual(first, edited);
+        Assert.Same(edited, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data);
+        Call(session, "POST", "/api/new");
+        Assert.Equal(first, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data);
+    }
+
+    [Fact]
     public void LocalEditSaveRoundTripAndPageOperations()
     {
         var session = new EditorSession(new FontCatalog());

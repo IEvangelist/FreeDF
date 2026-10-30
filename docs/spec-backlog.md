@@ -88,6 +88,16 @@ The subsequent asset review fixes renew successful same-ID upload leases and ret
 
 ## Delivery order
 
+The measured browser-editor performance slice removes graphics painting during
+metadata analysis, bounds exact PNG reuse to 8 MiB per session, schedules only
+visible thumbnails after page preparation, and avoids full refreshes on save.
+Three-run local median save latency falls 62-78% across text/vector/image/report
+samples; image-heavy open/undo/text-edit latency falls 26-30%, with exact
+first-page PNG equality. See `browser-editor.md` for commands, full before/after
+tables, CPU/blocking/heap caveats and remaining synchronous-raster bottlenecks.
+Focused coverage passes 142/142 and full Release 1549/1549. This does not change
+any conformance row or claim that all editor latency is resolved.
+
 1. Finish safe object-model exposure for clauses 7.10–7.11 and 13, preserving opaque dictionaries/streams and proving there is no execution path.
 2. Close decoder and document-model gaps with focused reference fixtures and fuzz/robustness coverage.
 3. Address rendering gaps with independent output comparisons, especially color, shading, transparency, and optional content.

@@ -71,7 +71,7 @@ public static class PortableDocument
     {
         var box = page.CropBox;
         using var raster = new SoftwareRasterizer(1, 1);
-        var interp = new ContentInterpreter(page.Document.File, raster) { TextSpans = [], Objects = [], DrawAnnotations = false };
+        var interp = new ContentInterpreter(page.Document.File, raster) { TextSpans = [], Objects = [], DrawAnnotations = false, DrawGraphics = false };
         interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
         return (interp.TextSpans, interp.Objects);
     }

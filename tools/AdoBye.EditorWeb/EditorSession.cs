@@ -27,6 +27,10 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     readonly Dictionary<int, HashSet<string>> historyAssets = [];
     HashSet<string> clipboardAssets = [];
+    const int RenderCacheLimit = 8 * 1024 * 1024;
+    readonly Dictionary<(int Page, int Dpi, bool Bare), byte[]> renderedPages = [];
+    readonly Queue<(int Page, int Dpi, bool Bare)> renderOrder = [];
+    int renderCacheBytes;
     OverlayBuilder? overlayBuilder;
     readonly Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)> texts = [];
     readonly Dictionary<int, Dictionary<int, ObjEdit>> objEdits = [];
@@ -189,7 +193,31 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         return snapshot;
     }
     PdfDocument BaseSnap() { Prepare(); return baseSnapshot ??= PdfDocument.Load(editor.Save(false)); }
-    void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); sharedFormReferences = null; prepared = false; }
+    void Changed()
+    {
+        version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); sharedFormReferences = null; prepared = false;
+        renderedPages.Clear(); renderOrder.Clear(); renderCacheBytes = 0;
+    }
+
+    byte[] PagePng(int index, int dpi, bool bare)
+    {
+        var key = (editor.PageId(index), dpi, bare);
+        if (renderedPages.TryGetValue(key, out var cached)) return cached;
+        var png = Render((bare ? BaseSnap() : Snap()).Pages[index], dpi);
+        if (png.Length <= RenderCacheLimit)
+        {
+            while (renderCacheBytes + png.Length > RenderCacheLimit)
+            {
+                var oldest = renderOrder.Dequeue();
+                renderCacheBytes -= renderedPages[oldest].Length;
+                renderedPages.Remove(oldest);
+            }
+            renderedPages[key] = png;
+            renderOrder.Enqueue(key);
+            renderCacheBytes += png.Length;
+        }
+        return png;
+    }
     void PruneAssets()
     {
         var livePages = Enumerable.Range(0, editor.PageCount).Select(editor.PageId).ToHashSet();
@@ -245,7 +273,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         {
             var i = int.Parse(p[2].Replace(".png", ""), CultureInfo.InvariantCulture);
             if (p[2].EndsWith(".png", StringComparison.Ordinal) && method == "GET")
-                return new(Render((Q("bare") == "true" ? BaseSnap() : Snap()).Pages[i], Math.Clamp(Int("dpi", 48), 16, 300)), "image/png");
+                return new(PagePng(i, Math.Clamp(Int("dpi", 48), 16, 300), Q("bare") == "true"), "image/png");
             var id = editor.PageId(i);
             switch (p.ElementAtOrDefault(3))
             {
