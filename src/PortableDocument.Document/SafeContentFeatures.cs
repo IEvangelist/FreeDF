@@ -33,7 +33,35 @@ public sealed record PdfAction(
     public PdfSubmitFormAction? SubmitFormDetails { get; init; }
     public PdfResetFormAction? ResetFormDetails { get; init; }
     public PdfImportDataAction? ImportDataDetails { get; init; }
+    public PdfLaunchAction? LaunchDetails { get; init; }
+    public PdfThreadAction? ThreadDetails { get; init; }
+    public PdfSoundAction? SoundDetails { get; init; }
+    public PdfMovieAction? MovieDetails { get; init; }
+    public PdfHideAction? HideDetails { get; init; }
+    public PdfSetOcgStateAction? SetOcgStateDetails { get; init; }
+    public PdfTransAction? TransDetails { get; init; }
+    public PdfGoTo3DViewAction? GoTo3DViewDetails { get; init; }
+    public PdfRichMediaExecuteAction? RichMediaExecuteDetails { get; init; }
+    public PdfJavaScriptAction? JavaScriptDetails { get; init; }
+    /// <summary>Number of /Next hops from the triggering action (0 = the action itself is the trigger target).</summary>
+    public int ChainDepth { get; init; }
+    /// <summary>The additional-actions event key (e.g. "E", "WC", "K") when this action came from an /AA dictionary or /PA; otherwise null.</summary>
+    public string? EventKey => EventKeyOf(Trigger);
+    /// <summary>Trigger-event classification (ISO 32000-2 12.6.3). Null for non-/AA triggers or unrecognised keys.</summary>
+    public PdfTriggerEvent? Event => PdfTriggerEvents.Classify(Scope, EventKey);
+
+    static string? EventKeyOf(string trigger)
+    {
+        if (trigger == "PA" || trigger.StartsWith("PA/", StringComparison.Ordinal) || trigger.StartsWith("PA[", StringComparison.Ordinal)) return "PA";
+        if (!trigger.StartsWith("AA/", StringComparison.Ordinal)) return null;
+        var rest = trigger[3..];
+        var end = rest.IndexOfAny(['/', '[']);
+        return end < 0 ? rest : rest[..end];
+    }
 }
+
+/// <summary>Result of the bounded action walk. <see cref="Truncated"/> is true if the work budget or depth limit stopped it early.</summary>
+public sealed record PdfActionReport(IReadOnlyList<PdfAction> Actions, bool Truncated);
 
 /// <summary>
 /// Inert /ResetForm metadata (ISO 32000-2:2020, 12.7.6.3, Tables 241 and 242).
@@ -203,7 +231,7 @@ public sealed record PdfEmbeddedGoToTarget(
 
 public sealed record PdfXfaPacket(string? Name, PdfStream Stream);
 
-public static class SafeContentFeatures
+public static partial class SafeContentFeatures
 {
     const int MaxDepth = 64;
 
@@ -211,10 +239,30 @@ public static class SafeContentFeatures
     /// Returns action dictionaries for inspection, with inert typed metadata for local, remote, embedded, and DPart go-to, URI, named, and submit-form actions.
     /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
     /// </summary>
-    public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
+    public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc) => GetActionReport(doc).Actions;
+
+    /// <summary>
+    /// Same traversal as <see cref="GetActions"/>, additionally reporting whether the bounded walk
+    /// (total work budget, depth limit, cycle cut) stopped early. Nothing is ever executed.
+    /// </summary>
+    public static PdfActionReport GetActionReport(this PdfDocument doc)
+    {
+        var actions = new ActionSink();
+        CollectActions(doc, actions);
+        return new PdfActionReport(actions, actions.Truncated);
+    }
+
+    internal sealed class ActionSink : List<PdfAction>
+    {
+        public const int MaxWork = 10_000;
+        public int Work;
+        public bool Truncated;
+        public readonly HashSet<PdfArray> ActiveArrays = new(ReferenceEqualityComparer.Instance);
+    }
+
+    static void CollectActions(PdfDocument doc, ActionSink actions)
     {
         var f = doc.File;
-        var actions = new List<PdfAction>();
         if (f.Resolve(f.Catalog.Get("OpenAction")) is PdfDictionary openAction)
             AddActionChain(f, openAction, PdfActionScope.Catalog, "OpenAction", null, null, null, null, 0, [], actions);
         AddActionDictionary(f, f.Catalog.Get("AA"), PdfActionScope.Catalog, "AA", null, null, null, null, actions);
@@ -246,9 +294,10 @@ public static class SafeContentFeatures
                 if (f.Resolve(annotations[annotationIndex]) is not PdfDictionary annotation) continue;
                 AddActionChain(f, annotation.Get("A"), PdfActionScope.Annotation, "A", null, pageIndex, annotationIndex, null, 0, [], actions);
                 AddActionDictionary(f, annotation.Get("AA"), PdfActionScope.Annotation, "AA", pageIndex, annotationIndex, null, null, actions);
+                if (f.Resolve(annotation.Get("Subtype")).AsName() == "Link")
+                    AddActionChain(f, annotation.Get("PA"), PdfActionScope.Annotation, "PA", null, pageIndex, annotationIndex, null, 0, [], actions);
             }
         }
-        return actions;
     }
 
     static void CollectOutlineActions(
@@ -362,11 +411,15 @@ public static class SafeContentFeatures
         HashSet<PdfDictionary> ancestors,
         List<PdfAction> actions)
     {
-        if (depth > MaxDepth) return;
+        var sink = (ActionSink)actions;
+        if (depth > MaxDepth) { sink.Truncated = true; return; }
+        if (++sink.Work > ActionSink.MaxWork) { sink.Truncated = true; return; }
         if (f.Resolve(value) is PdfArray array)
         {
+            if (!sink.ActiveArrays.Add(array)) return;
             for (var i = 0; i < array.Count; i++)
                 AddActionChain(f, array[i], scope, $"{trigger}[{i}]", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
+            sink.ActiveArrays.Remove(array);
             return;
         }
         if (f.Resolve(value) is not PdfDictionary action || !ancestors.Add(action)) return;
@@ -391,10 +444,29 @@ public static class SafeContentFeatures
             SubmitFormDetails = type == "SubmitForm" ? ReadSubmitFormAction(f, action) : null,
             ResetFormDetails = type == "ResetForm" ? ReadResetFormAction(f, action) : null,
             ImportDataDetails = type == "ImportData" ? ReadImportDataAction(f, action) : null,
+            LaunchDetails = type == "Launch" ? ReadLaunchAction(f, action) : null,
+            ThreadDetails = type == "Thread" ? ReadThreadAction(f, action) : null,
+            SoundDetails = type == "Sound" ? ReadSoundAction(f, action) : null,
+            MovieDetails = type == "Movie" ? ReadMovieAction(f, action) : null,
+            HideDetails = type == "Hide" ? ReadHideAction(f, action) : null,
+            SetOcgStateDetails = type == "SetOCGState" ? ReadSetOcgStateAction(f, action) : null,
+            TransDetails = type == "Trans" ? ReadTransAction(f, action) : null,
+            GoTo3DViewDetails = type == "GoTo3DView" ? ReadGoTo3DViewAction(f, action) : null,
+            RichMediaExecuteDetails = type == "RichMediaExecute" ? ReadRichMediaExecuteAction(f, action) : null,
+            JavaScriptDetails = type == "JavaScript" ? new PdfJavaScriptAction(f.Resolve(action.Get("JS")) is PdfString or PdfStream ? f.Resolve(action.Get("JS")) : null, action) : null,
+            ChainDepth = ChainDepthOf(trigger),
         });
         if (action.Get("Next") is { } next)
             AddActionChain(f, next, scope, $"{trigger}/Next", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
+        // Path-based cycle cut: shared actions may repeat across branches, so the global work budget bounds diamond-shaped fan-out.
         ancestors.Remove(action);
+    }
+
+    static int ChainDepthOf(string trigger)
+    {
+        var count = 0;
+        for (var i = trigger.IndexOf("/Next", StringComparison.Ordinal); i >= 0; i = trigger.IndexOf("/Next", i + 5, StringComparison.Ordinal)) count++;
+        return count;
     }
 
     static PdfGoToAction ReadGoToAction(PdfFile f, PdfDictionary action)
