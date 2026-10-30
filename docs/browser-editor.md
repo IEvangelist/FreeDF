@@ -252,6 +252,17 @@ uses bounded row batches rather than another whole-page copy.
 Fresh-render gates additionally require p50/p95 below 1000/1500 ms and managed
 allocation below 200 MB; allocation is not peak browser working set.
 
+The [snapshot-reuse comparison](performance/2026-10-30-aot.md#snapshot-reuse-matched-released-runtime-comparison)
+uses the released runtime as its control, not the historical base64/interpreter
+build. Sharing an unedited background with the pristine document and retaining
+the initial parsed source avoids redundant full-document rewrites. Showcase
+open improves from 330.5/332.7 to 296.9/298.9 ms; large open from 119.8/120.8
+to 105.0/106.4 ms. Original-text/graphics/redaction changes retain the prepared
+snapshot path and existing invalidation. Pixel, cache, allocation and AOT smoke
+gates remain unchanged. Current strict misses are showcase open and startup;
+the historical cached-typography miss remains documented, but the latest
+97.6/102.0 ms result passes its 100/200 ms goal and is not allowlisted.
+
 Hosted CI uses `--profile-ci <raw.json> docs\performance\editor-ci-known-misses.v1.json`.
 Its versioned policy retains the two established known misses and prints
 `KNOWN MISSES (baseline open work)` plus the full strict-goal miss table in the job summary,
