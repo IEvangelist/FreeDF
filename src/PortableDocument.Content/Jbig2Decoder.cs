@@ -4,8 +4,8 @@ namespace PortableDocument.Content;
 
 /// <summary>
 /// JBIG2 decoder (ITU-T T.88 / ISO 32000-2 §7.4.7): generic regions (MMR and arithmetic, templates 0-3, TPGD),
-/// generic refinement, symbol dictionaries, text regions (arithmetic and Huffman), pattern dictionaries, halftone regions,
-/// custom Huffman tables and /JBIG2Globals. Works on one byte per pixel internally; output is packed 1 bpp.
+/// generic refinement, symbol dictionaries (arithmetic, and Huffman including refinement/aggregation), text regions (arithmetic and Huffman), pattern dictionaries, halftone regions,
+/// custom Huffman tables and /JBIG2Globals. Not implemented: Amendment 2 12-AT extended templates and Amendment 3 colour extensions. Works on one byte per pixel internally; output is packed 1 bpp.
 /// </summary>
 public static class Jbig2Decoder
 {
@@ -78,7 +78,8 @@ public static class Jbig2Decoder
 
     sealed class TextParams
     {
-        public bool Huff, Refine, Transposed;
+        public bool Huff, Refine, Transposed, FixedSymCodes;
+        public byte[]? GrCtx;
         public int W, H, NumInstances, LogStrips, RefCorner, CombOp, DefPixel, DsOffset, RTemplate, CodeLen;
         public sbyte[] RAt = [-1, -1, -1, -1];
         public Bitmap[] Syms = [];
@@ -472,7 +473,6 @@ public static class Jbig2Decoder
         if (refAgg && rtmpl == 0) rat = ReadAt(d, ref o, 2);
         var numEx = (int)U32(d, o); var numNew = (int)U32(d, o + 4); o += 8;
         if (numNew < 0 || numNew > 10_000_000 || numEx < 0) throw new InvalidOperationException("bad symbol count");
-        if (huff && refAgg) throw new NotSupportedException("Huffman symbol dictionary with refinement/aggregation");
 
         var inSyms = new List<Bitmap>();
         var tables = new List<Jb2HuffTable>();
@@ -529,21 +529,41 @@ public static class Jbig2Decoder
                 if (symW < 0) throw new InvalidOperationException("bad symbol width");
                 symPixels += (long)symW * hcHeight;
                 if (symPixels > 50_000_000) throw new InvalidOperationException("symbol dictionary too large");
-                if (!huff)
+                if (!huff || refAgg)
                 {
                     var bm = NewBitmap(symW, hcHeight);
                     if (!refAgg) DecodeGeneric(mq!, gb, bm, tmpl, false, at, null);
                     else
                     {
-                        iaai.Decode(mq!, out var ninst);
+                        int ninst;
+                        if (huff) { if (!tAgg!.Decode(br!, out ninst)) throw new InvalidOperationException("OOB aggregate instance count"); }
+                        else iaai.Decode(mq!, out ninst);
+                        if (ninst is < 1 or > (1 << 20)) throw new InvalidOperationException("bad aggregate instance count");
                         if (ninst > 1)
                         {
                             var tp = new TextParams
                             {
-                                Refine = true, W = symW, H = hcHeight, NumInstances = ninst, RefCorner = 1, RTemplate = rtmpl, RAt = rat,
-                                CodeLen = codeLen, Syms = all, CombOp = 0,
+                                Huff = huff, Refine = true, W = symW, H = hcHeight, NumInstances = ninst, RefCorner = 1, RTemplate = rtmpl, RAt = rat,
+                                CodeLen = codeLen, Syms = all, CombOp = 0, GrCtx = gr, FixedSymCodes = huff,
                             };
-                            bm = DecodeText(tp, d, mq, ta, null);
+                            if (huff)
+                            {
+                                tp.FS = Jb2HuffTable.Standard(6); tp.DS = Jb2HuffTable.Standard(8); tp.DT = Jb2HuffTable.Standard(11);
+                                tp.RDW = tp.RDH = tp.RDX = tp.RDY = Jb2HuffTable.Standard(15); tp.RSize = Jb2HuffTable.Standard(1);
+                            }
+                            bm = DecodeText(tp, d, mq, ta, br);
+                        }
+                        else if (huff)
+                        {
+                            var id = br!.ReadBits(codeLen);
+                            var h15 = Jb2HuffTable.Standard(15);
+                            if (!h15.Decode(br, out var rdx) || !h15.Decode(br, out var rdy) || !Jb2HuffTable.Standard(1).Decode(br, out var size))
+                                throw new InvalidOperationException("OOB refinement data");
+                            br.Align();
+                            if ((uint)id >= (uint)(numIn + done) || size < 0 || br.Pos + size > end) throw new InvalidOperationException("bad refinement symbol");
+                            var ibo = all[id] ?? throw new InvalidOperationException("bad symbol id");
+                            DecodeRefinement(new MqDecoder(d, br.Pos, br.Pos + size), gr, bm, ibo, rdx, rdy, rtmpl, false, rat);
+                            br.Pos += size;
                         }
                         else
                         {
@@ -558,7 +578,7 @@ public static class Jbig2Decoder
                 else widths[done] = symW;
                 done++;
             }
-            if (huff)
+            if (huff && !refAgg)
             {
                 tBm!.Decode(br!, out var bmSize);
                 br!.Align();
@@ -671,7 +691,7 @@ public static class Jbig2Decoder
         var bm = NewBitmap(p.W, p.H);
         if (p.DefPixel != 0) Array.Fill(bm.D, (byte)1);
         var strips = 1 << p.LogStrips;
-        byte[]? huffGr = p.Huff && p.Refine ? new byte[8192] : null;
+        byte[]? huffGr = p.Huff && p.Refine ? p.GrCtx ?? new byte[8192] : null;
 
         bool Read(IntDec? ia, Jb2HuffTable? ht, out int v) => p.Huff ? ht!.Decode(br!, out v) : ia!.Decode(mq!, out v);
 
@@ -704,7 +724,11 @@ public static class Jbig2Decoder
                 }
                 var ti = stripT + curT;
                 int id;
-                if (p.Huff) { if (!p.SymCodes!.Decode(br!, out id)) throw new InvalidOperationException("OOB symbol"); }
+                if (p.Huff)
+                {
+                    if (p.FixedSymCodes) id = br!.ReadBits(p.CodeLen);
+                    else if (!p.SymCodes!.Decode(br!, out id)) throw new InvalidOperationException("OOB symbol");
+                }
                 else id = ta!.DecodeId(mq!, p.CodeLen);
                 if ((uint)id >= (uint)p.Syms.Length) throw new InvalidOperationException("bad symbol id");
                 var ib = p.Syms[id] ?? throw new InvalidOperationException("undefined symbol");
