@@ -96,12 +96,14 @@ public sealed partial class PdfEditor
     {
         if (contentsSize < 1024) throw new ArgumentOutOfRangeException(nameof(contentsSize), "ContentsSize too small");
         var h = hash ?? HashAlgorithmName.SHA256;
+        if (h.Name is not ("SHA1" or "SHA256" or "SHA384" or "SHA512"))
+            throw new ArgumentException("Unsupported document timestamp hash algorithm.", nameof(hash));
         return SignExisting(pdf, password, 0, null, new TimeStampPlan(fieldName, contentsSize, (bytes, range) =>
         {
             var content = new byte[range[1] + range[3]];
             Buffer.BlockCopy(bytes, (int)range[0], content, 0, (int)range[1]);
             Buffer.BlockCopy(bytes, (int)range[2], content, (int)range[1], (int)range[3]);
-            var digest = h.Name switch { "SHA384" => SHA384.HashData(content), "SHA512" => SHA512.HashData(content), "SHA1" => SHA1.HashData(content), _ => SHA256.HashData(content) };
+            var digest = h.Name switch { "SHA384" => SHA384.HashData(content), "SHA512" => SHA512.HashData(content), "SHA1" => SHA1.HashData(content), "SHA256" => SHA256.HashData(content), _ => throw new ArgumentException("Unsupported document timestamp hash algorithm.", nameof(hash)) };
             return provider(h, digest);
         }));
     }

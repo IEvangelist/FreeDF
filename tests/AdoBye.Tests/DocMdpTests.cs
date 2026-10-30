@@ -12,6 +12,22 @@ namespace AdoBye.Tests;
 /// <summary>Certification signatures / DocMDP (ISO 32000-2 §12.8.2.2), encrypted incremental signing, document timestamps (§12.8.5) and /DSS reading (§12.8.4.3).</summary>
 public class DocMdpTests
 {
+    [Theory]
+    [InlineData("MD5")]
+    [InlineData("SHA-256")]
+    [InlineData(null)]
+    public void TimestampRejectsUnsupportedHashBeforeCallingProvider(string? name)
+    {
+        var called = false;
+        var ex = Assert.Throws<ArgumentException>(() => PdfEditor.AddDocumentTimeStamp([], (_, _) =>
+        {
+            called = true;
+            return [];
+        }, name is null ? default(HashAlgorithmName) : new HashAlgorithmName(name)));
+        Assert.Equal("hash", ex.ParamName);
+        Assert.False(called);
+    }
+
     internal static byte[] FormPdf()
     {
         const string s = "%PDF-2.0\n" +
