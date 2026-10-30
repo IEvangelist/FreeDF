@@ -31,7 +31,29 @@ public sealed record PdfAction(
     public PdfUriAction? UriDetails { get; init; }
     public PdfNamedAction? NamedDetails { get; init; }
     public PdfSubmitFormAction? SubmitFormDetails { get; init; }
+    public PdfResetFormAction? ResetFormDetails { get; init; }
+    public PdfImportDataAction? ImportDataDetails { get; init; }
 }
+
+/// <summary>
+/// Inert /ResetForm metadata (ISO 32000-2:2020, 12.7.6.3, Tables 241 and 242).
+/// Only current-PDF references are resolved. Fields and flag bits are not interpreted,
+/// field values are never reset, and inheritance/defaults are not computed.
+/// Missing or wrong-type entries are null and remain in Dictionary.
+/// </summary>
+/// <param name="Fields">The optional field-reference/name array; elements remain unresolved, including malformed entries.</param>
+/// <param name="Flags">The optional inheritable integer, including negative/reserved-bit values; null preserves absence or a wrong type rather than applying the PDF default of zero.</param>
+/// <param name="Dictionary">The original action dictionary, including unknown entries.</param>
+public sealed record PdfResetFormAction(PdfArray? Fields, long? Flags, PdfDictionary Dictionary);
+
+/// <summary>
+/// Inert /ImportData metadata (ISO 32000-2:2020, 12.7.6.4, Table 243).
+/// Only current-PDF references are resolved. No file is opened, embedded data decoded,
+/// or form data imported. A missing or wrong-type file specification remains in Dictionary.
+/// </summary>
+/// <param name="FileSpecification">The required /F string or dictionary, preserved without interpreting target bytes.</param>
+/// <param name="Dictionary">The original action dictionary, including unknown entries.</param>
+public sealed record PdfImportDataAction(PdfObject? FileSpecification, PdfDictionary Dictionary);
 
 /// <summary>
 /// Inert /SubmitForm metadata (ISO 32000-2:2020, 12.7.6.2, Tables 239 and 240).
@@ -367,6 +389,8 @@ public static class SafeContentFeatures
             UriDetails = type == "URI" ? ReadUriAction(f, action) : null,
             NamedDetails = type == "Named" ? ReadNamedAction(f, action) : null,
             SubmitFormDetails = type == "SubmitForm" ? ReadSubmitFormAction(f, action) : null,
+            ResetFormDetails = type == "ResetForm" ? ReadResetFormAction(f, action) : null,
+            ImportDataDetails = type == "ImportData" ? ReadImportDataAction(f, action) : null,
         });
         if (action.Get("Next") is { } next)
             AddActionChain(f, next, scope, $"{trigger}/Next", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
@@ -470,6 +494,18 @@ public static class SafeContentFeatures
             f.Resolve(action.Get("Flags")) is PdfInteger flags ? flags.Value : null,
             f.Resolve(action.Get("CharSet")) as PdfString,
             action);
+    }
+
+    static PdfResetFormAction ReadResetFormAction(PdfFile f, PdfDictionary action) =>
+        new(
+            f.Resolve(action.Get("Fields")) as PdfArray,
+            f.Resolve(action.Get("Flags")) is PdfInteger flags ? flags.Value : null,
+            action);
+
+    static PdfImportDataAction ReadImportDataAction(PdfFile f, PdfDictionary action)
+    {
+        var file = f.Resolve(action.Get("F"));
+        return new(file is PdfString or PdfDictionary ? file : null, action);
     }
 
     static string? StringValue(PdfFile f, PdfObject? value) =>

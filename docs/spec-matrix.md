@@ -6,6 +6,8 @@ See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
 JPX packed-header coverage includes earlier-tile-part PPT headers queued per tile, empty first bodies, and interleaved tiles (T.800 A.7.5; packet-boundary divisions per B.10.1). Both new transformed fixtures independently match OpenJPEG 2.5.4 exactly (384 samples each). PPM remains main-header data mapped by Nppm record to tile-part codestream order. The older same-part multipart PPT fixture retains its source-derived-only evidence caveat. Order/count, marker-boundary, late-header and missing/cross-part body regressions pass in 85/85 JPX cases and 1514/1514 full Release cases; the solution build succeeds with two warnings. Status remains **15 Partial / 0 Todo**, plus two Done rows with explicit limitations, not full parity.
 
+Form-action inspection additionally exposes typed inert ResetForm `/Fields`/`/Flags` and ImportData `/F` (12.7.6.3-12.7.6.4, Tables 241-243). Raw entries and target bytes remain unchanged; field elements are not looked up, inheritance/defaults are not computed, no field is reset, and no data file is accessed or imported. Focused metadata and save-round-trip regressions pass with existing SubmitForm/document-feature tests (88/88); clause 12 remains Partial.
+
 ## Parser (`PortableDocument.Core`, `PortableDocument.Document`)
 
 | Clause | Feature | Status | Notes |
