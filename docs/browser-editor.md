@@ -308,6 +308,39 @@ coverage includes a zero-rerender assertion after the pending edit flush and
 thumbnail completion, clipboard/undo, invalid-input recovery and collapsed mobile
 thumbnail visibility. The static-site publish validates 218 local WASM artifacts.
 
+## Local merge and header layout
+
+The header order is brand, File menu, then the open document name and
+saved/unsaved status. Long names truncate with the full filename in a tooltip;
+mobile uses a status dot and collapsed controls. Local recovery keeps its
+separate durable-checkpoint status and explicit Resume/Discard prompt. The
+one-time GitHub Sponsors link is a plain external anchor with
+`noopener noreferrer`; it does not preconnect or send document data.
+
+**File > Merge PDFs** accepts multiple local PDFs (or a drop into its dialog).
+Review/reorder/remove files, select one-based page ranges and choose an insertion
+point or append. The backend imports the selected files as one atomic batch,
+registers imported AcroForm fields (renaming collisions), nests outlines under
+file bookmarks and preserves page labels. Existing page overlays stay with
+their pages; a failure leaves the document unchanged. This does not merge every
+catalog-level structure (for example, arbitrary tags/layers/attachment trees).
+Page insertion is not an overlay undo operation; retain/download the original
+when the merge must be reversible.
+
+Encrypted inputs unsupported by the browser are flagged by filename before
+merging. Passwords are never requested or persisted by this dialog. If a
+supported encrypted import occurs in the server host, recovery is disabled
+rather than caching a decrypted copy. Merge stays local in both hosts.
+
+The integrated Release build succeeds and full suite passes 1687/1687. A local
+static WASM publish validates 245 artifacts (without the optional `wasm-tools`
+optimization workload). Full Chromium smoke passes text fidelity, recovery,
+clipboard/assets and desktop/mobile header assertions; the separate `--merge`
+scenario covers encrypted-input rejection, order/ranges/insertion, saved page
+count/text, form registration, outlines/labels, render and reopen. A batched
+desktop/mobile screenshot check accompanies these assertions. This does not
+complete the outstanding latency/benchmark pass.
+
 ## Build and smoke coverage
 
 Use the SDK declared in root `global.json`:
@@ -319,6 +352,7 @@ dotnet build tools\AdoBye.EditorSmoke -c Release
 .\tools\AdoBye.EditorSmoke\bin\Release\net10.0\playwright.ps1 install chromium
 $site = (Resolve-Path tools\AdoBye.EditorWasm\bin\pages\wwwroot).Path
 dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- $site
+dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --merge $site
 ```
 
 The publish script checks required static assets and WASM magic bytes. Override

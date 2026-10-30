@@ -36,7 +36,11 @@ static class EditorHeader
         if (!mobile) return;
         const string longName = "a-very-long-quarterly-board-report-with-appendices-and-redlines-final-final-v12.pdf";
         await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = longName, MimeType = "application/pdf", Buffer = pdf });
-        await page.WaitForFunctionAsync($"document.getElementById('name').title === '{longName}'");
+        await page.WaitForFunctionAsync("""
+            name => { const img = document.getElementById('base');
+              return document.getElementById('name').title === name && !document.getElementById('view').inert
+                && img?.naturalWidth > 0 && img.dataset.loadedUrl === img.dataset.targetUrl; }
+            """, longName);
         Check(await page.EvaluateAsync<bool>("""
             () => { const n = document.getElementById('name'), d = document.getElementById('doc').getBoundingClientRect();
               return n.scrollWidth > n.clientWidth && n.clientWidth >= 60 && d.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth; }

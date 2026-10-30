@@ -64,9 +64,16 @@ dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samp
 dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll validate samples --out compare-out/samples
 ```
 
-Layout: `Kit/Doc.cs` (document, pages, content streams, form XObjects, resources), `Kit/Fonts.cs` + `Kit/FontFile.cs` (standard 14 metrics and OpenType/TrueType reading, kerning and glyph subsetting), `Kit/Raster.cs` (procedural images, baseline JPEG encoder, sRGB profile), `Kit/Theme.cs` (palette and page furniture), one `Gen/GenNN.cs` per sample (`Gen26` repacks `20` with `PdfEditor`, `Gen27` is the merge). `_gen/fonts/` holds the OFL/Bitstream fonts (see `LICENSES.txt`; also used by the browser editor). Nothing in the repo authors PDFs with Python any more.
+Layout: `Kit/Doc.cs` (document, pages, content streams, form XObjects, resources), `Kit/Fonts.cs` + `Kit/FontFile.cs` (standard 14 metrics and OpenType/TrueType reading, kerning and glyph subsetting), `Kit/Raster.cs` (procedural images, baseline JPEG encoder, sRGB profile), `Kit/Theme.cs` (palette and page furniture), one `Gen/GenNN.cs` per sample (`Gen26` repacks `20` with `PdfEditor`, `Gen27` is the merge). `_gen/fonts/` holds the OFL/Bitstream fonts (see `LICENSES.txt`; also used by the browser editor). Sample-suite authoring no longer requires Python; independent test-fixture generators elsewhere are separate from this migration.
 
 Tests: `SamplesTests` opens every committed sample (with the passwords above) and renders page 1 without warnings. `GeneratedSamplesTests` regenerates all samples into a temp folder and checks that 01-26 equal the committed files byte-for-byte, and that 27 has exactly the pages of the others, bookmarks and labels per sample, 17/18 merged with their text, retargeted and named-destination links, and the same form fields, layers, attachments, structure tree and nested bookmarks as the sources.
+
+Integrated validation on 2026-10-30 passes 38 focused sample/reproducibility
+cases and the 1687-case full Release suite. The editor's separate local
+**File > Merge PDFs** flow also passes Chromium save/render/reopen with these
+regenerated samples. These integration runs do not repeat or extend the
+independent comparison evidence below.
+
 ## Validation
 
 * **pikepdf / pdfium** (independent validators, `tools/validate_samples.py check samples`): every file opens, re-saves cleanly and renders. `tools/validate_samples.py compare <old> <new>` diffs page counts, structure and pixels between two sample sets (used once to compare the C# port with the former Python output: all 26 matched in page count, boxes and structure counts; page pixels differed by at most 0.11% except `09`, whose procedural photo/plasma textures are not reproduced pixel-for-pixel).
