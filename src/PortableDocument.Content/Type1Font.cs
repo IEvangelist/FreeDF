@@ -14,7 +14,25 @@ public sealed class Type1Font
     readonly Dictionary<string, double> _advance = [];
     readonly double[] _matrix = [0.001, 0, 0, 0.001, 0, 0];
     int _lenIV = 4;
+    double[]? _weights;
+    string[] _axisTypes = [];
+    (double Design, double Blend)[][] _designMap = [];
+    double[][] _designPositions = [];
     public bool HasBuiltInEncoding { get; private set; }
+
+    const int MaxMasters = 16, MaxAxes = 4, MaxMapPoints = 12, MaxKeywordTokens = 2048;
+
+    /// <summary>True when the font dictionary carries a valid /WeightVector (Adobe TN #5015 section 3.2: 2 to 16 masters summing to 1.0).</summary>
+    public bool IsMultipleMaster => _weights is not null;
+    public int MasterCount => _weights?.Length ?? 0;
+    /// <summary>The instance's blend weights, used by charstring OtherSubrs 14-18; empty for non-MM fonts.</summary>
+    public IReadOnlyList<double> WeightVector => _weights ?? [];
+    /// <summary>/BlendAxisTypes names (Weight, Width, OpticalSize...) for up to four axes.</summary>
+    public IReadOnlyList<string> BlendAxisTypes => _axisTypes;
+    /// <summary>/BlendDesignPositions: one blend-space location (0..1 per axis) per master.</summary>
+    public IReadOnlyList<IReadOnlyList<double>> BlendDesignPositions => _designPositions;
+    /// <summary>/BlendDesignMap: per axis, the piecewise-linear design-to-blend coordinate points.</summary>
+    public IReadOnlyList<IReadOnlyList<(double Design, double Blend)>> BlendDesignMap => _designMap;
 
     public int GlyphCount => _glyphs.Count;
     public IEnumerable<string> GlyphNames => _glyphs.Keys;
@@ -117,6 +135,7 @@ public sealed class Type1Font
 
     void ParseClear(byte[] d)
     {
+        ParseBlend(d);
         var fm = IndexOf(d, "/FontMatrix");
         if (fm >= 0)
         {
@@ -137,6 +156,12 @@ public sealed class Type1Font
             for (var i = 0; i < 256; i++) _encoding[i] = CffStandardStrings.StandardEncoding[i] is { } n && n != ".notdef" ? n : null;
             return;
         }
+        if (first == "ExpertEncoding")
+        {
+            HasBuiltInEncoding = true;
+            for (var i = 0; i < 256; i++) _encoding[i] = CffStandardStrings.Strings[CffStandardStrings.ExpertEncoding[i]] is { } n && n != ".notdef" ? n : null;
+            return;
+        }
         HasBuiltInEncoding = true;
         while (true)
         {
@@ -150,6 +175,141 @@ public sealed class Type1Font
             var ok = hash > 0 ? TryRadix(cs, hash, out code) : int.TryParse(cs, out code);
             if (ok && code is >= 0 and < 256) _encoding[code] = nm[1..];
         }
+    }
+
+    // Adobe TN #5015 section 3.3/3.5: WeightVector is in the font dictionary, the Blend* keywords in the FontInfo dictionary;
+    // both are clear text. Every array is size- and token-bounded; invalid values leave the font as a non-MM (default master) font.
+    void ParseBlend(byte[] d)
+    {
+        if (ReadKeyword(d, "/WeightVector") is { } wv && wv.Count is >= 2 and <= MaxMasters && Numbers(wv) is { } w && Math.Abs(w.Sum() - 1) <= 0.001)
+            _weights = w;
+        if (ReadKeyword(d, "/BlendAxisTypes") is { } at && at.Count is >= 1 and <= MaxAxes && at.All(o => o is string))
+            _axisTypes = [.. at.Cast<string>()];
+        if (ReadKeyword(d, "/BlendDesignPositions") is { } dp && dp.Count is >= 2 and <= MaxMasters)
+        {
+            var rows = dp.Select(o => o is List<object> r && r.Count is >= 1 and <= MaxAxes ? Numbers(r) : null).ToArray();
+            if (rows.All(r => r is not null && r.Length == rows[0]!.Length)) _designPositions = [.. rows.Select(r => r!)];
+        }
+        if (ReadKeyword(d, "/BlendDesignMap") is { } dm && dm.Count is >= 1 and <= MaxAxes)
+        {
+            List<(double, double)[]>? axes = [];
+            foreach (var axis in dm)
+            {
+                if (axis is not List<object> pts || pts.Count is < 2 or > MaxMapPoints) { axes = null; break; }
+                List<(double, double)>? map = [];
+                foreach (var pt in pts)
+                {
+                    if (pt is not List<object> pair || Numbers(pair) is not { Length: 2 } v || map.Count > 0 && v[0] <= map[^1].Item1) { map = null; break; }
+                    map.Add((v[0], v[1]));
+                }
+                if (map is null) { axes = null; break; }
+                axes.Add([.. map]);
+            }
+            if (axes is not null) _designMap = [.. axes];
+        }
+    }
+
+    static double[]? Numbers(List<object> l)
+    {
+        var r = new double[l.Count];
+        for (var i = 0; i < r.Length; i++)
+        {
+            if (l[i] is not double v || !double.IsFinite(v)) return null;
+            r[i] = v;
+        }
+        return r;
+    }
+
+    static List<object>? ReadKeyword(byte[] d, string key)
+    {
+        for (var from = 0; (from = IndexOf(d, key, from)) >= 0; from += key.Length)
+        {
+            var p = from + key.Length;
+            if (p < d.Length && !Space(d[p]) && !Delim(d[p])) continue;
+            var budget = MaxKeywordTokens;
+            if (ReadArray(d, ref p, 0, ref budget) is { } arr) return arr;
+        }
+        return null;
+    }
+
+    static List<object>? ReadArray(byte[] d, ref int p, int depth, ref int budget)
+    {
+        if (depth > 3 || Next(d, ref p) is not ("[" or "{")) return null;
+        var items = new List<object>();
+        while (budget-- > 0)
+        {
+            var t = Next(d, ref p);
+            if (t is null) return null;
+            if (t is "]" or "}") return items;
+            if (t is "[" or "{")
+            {
+                p -= 1;
+                if (ReadArray(d, ref p, depth + 1, ref budget) is not { } sub) return null;
+                items.Add(sub);
+            }
+            else if (t[0] == '/') items.Add(t[1..]);
+            else if (double.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v)) items.Add(v);
+            else return null;
+        }
+        return null;
+    }
+
+    /// <summary>Selects another instance by replacing the WeightVector (length must equal <see cref="MasterCount"/>, finite, summing to 1 within 0.001).</summary>
+    public bool TrySetWeightVector(ReadOnlySpan<double> weights)
+    {
+        if (_weights is null || weights.Length != _weights.Length) return false;
+        double sum = 0;
+        foreach (var w in weights)
+        {
+            if (!double.IsFinite(w)) return false;
+            sum += w;
+        }
+        if (Math.Abs(sum - 1) > 0.001) return false;
+        _weights = weights.ToArray();
+        _advance.Clear();
+        return true;
+    }
+
+    /// <summary>
+    /// Maps design coordinates (one per axis) through /BlendDesignMap to blend coordinates and then to a WeightVector by multilinear
+    /// interpolation over /BlendDesignPositions. TN #5015 leaves ConvertDesignVector to the font's PostScript code; this reproduces its
+    /// conventional form and only supports masters at 0/1 corners (no intermediate designs). Returns null when the data does not fit.
+    /// </summary>
+    public double[]? ConvertDesignVector(ReadOnlySpan<double> design)
+    {
+        var n = _designMap.Length;
+        if (_weights is null || n == 0 || design.Length != n || _designPositions.Length != _weights.Length) return null;
+        var blend = new double[n];
+        for (var a = 0; a < n; a++)
+        {
+            var map = _designMap[a];
+            var x = design[a];
+            if (!double.IsFinite(x)) return null;
+            if (x <= map[0].Design) blend[a] = map[0].Blend;
+            else if (x >= map[^1].Design) blend[a] = map[^1].Blend;
+            else
+            {
+                var i = 1;
+                while (map[i].Design < x) i++;
+                var (d0, b0) = map[i - 1]; var (d1, b1) = map[i];
+                blend[a] = b0 + (x - d0) / (d1 - d0) * (b1 - b0);
+            }
+        }
+        var w = new double[_weights.Length];
+        for (var m = 0; m < w.Length; m++)
+        {
+            var pos = _designPositions[m];
+            if (pos.Length != n) return null;
+            double v = 1;
+            for (var a = 0; a < n; a++)
+            {
+                if (pos[a] == 1) v *= blend[a];
+                else if (pos[a] == 0) v *= 1 - blend[a];
+                else return null;
+            }
+            w[m] = v;
+        }
+        return w;
     }
 
     static bool TryRadix(string s, int hash, out int code)
@@ -223,6 +383,24 @@ public sealed class Type1Font
         var p = new PathData();
         _advance[name] = Run(name, p, 0, 0, 0);
         return p.Ops.Count == 0 ? null : p;
+    }
+
+    // TN #5015 section 3.12: the n = points * k arguments are the first master's values followed by each value's k-1 deltas
+    // (the "a2-a1 ... ak-a1" runs); result = a1 + sum(W[i] * delta[i]) for i = 1..k-1. Results are queued so the first `pop` yields the first value.
+    // Without a valid WeightVector, or when n is not points * k, the first master's values are used.
+    void Blend(double[] st, int at, int n, int points, List<double> ps)
+    {
+        ps.Clear();
+        if (n < points) return;
+        var w = _weights;
+        var blend = w is not null && n == points * w.Length;
+        for (var i = points - 1; i >= 0; i--)
+        {
+            var v = st[at + i];
+            if (blend)
+                for (var m = 1; m < w!.Length; m++) v += w[m] * st[at + points + i * (w.Length - 1) + m - 1];
+            ps.Add(v);
+        }
     }
 
     double Run(string name, PathData? path, double ox, double oy, int depth)
@@ -322,6 +500,11 @@ public sealed class Type1Font
                                 var os = (int)st[--sp]; var n = Math.Clamp((int)st[--sp], 0, sp);
                                 if (os == 1) { flex = true; flexPts.Clear(); sp -= n; }
                                 else if (os == 2) sp -= n;
+                                else if (os is >= 14 and <= 18)
+                                {
+                                    Blend(st, sp - n, n, os == 18 ? 6 : os - 13, ps);
+                                    sp -= n;
+                                }
                                 else if (os == 0)
                                 {
                                     flex = false;
