@@ -501,7 +501,7 @@ public class IccTests
     public void ColoredTilingPattern_InheritsIntent()
     {
         var pattern = StreamObject(6,
-            "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 20 20] /XStep 20 /YStep 20",
+            "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 20 20] /XStep 20 /YStep 20 /Resources << /ColorSpace << /CS0 [/ICCBased 5 0 R] >> >>",
             "/CS0 cs 0.5 0.5 0.5 sc 0 0 20 20 re f");
         var page = RenderIcc(IntentProfile(), 3,
             "/Saturation ri /Pattern cs /P0 scn 0 0 200 200 re f",
