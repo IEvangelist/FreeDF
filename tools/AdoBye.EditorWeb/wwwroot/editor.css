@@ -54,6 +54,9 @@ main.hide-r { --rw: 0px; }
 main.hide-l #thumbs, main.hide-r #props { visibility: hidden; padding-left: 0; padding-right: 0; overflow: hidden; border-width: 0; }
 button.toggle.on { color: var(--accent-2); background: var(--accent-bg); }
 header #tl { margin-left: -4px; }
+a.sponsor { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: var(--h); height: var(--h); border-radius: var(--r); color: var(--fg-2); }
+a.sponsor:hover { background: var(--hover); color: #ff7aa8; }
+a.sponsor:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 footer #keys { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { footer #keys, footer .sp { display: none; } .brand strong { display: none; } }
