@@ -132,7 +132,7 @@ static class PathRedaction
         double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
         foreach (var (x, y) in poly) { minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minY = Math.Min(minY, y); maxY = Math.Max(maxY, y); }
         foreach (var c in cuts)
-            if (minX < c.X1 && maxX > c.X0 && minY < c.Y1 && maxY > c.Y0) return true;
+            if (minX < c.X1 + Tolerance && maxX > c.X0 - Tolerance && minY < c.Y1 + Tolerance && maxY > c.Y0 - Tolerance) return true;
         return false;
     }
 
