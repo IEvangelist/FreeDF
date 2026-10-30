@@ -281,10 +281,35 @@ miss, not added to the allowlist; ordinary next-page selection remains
 the generated large document. The relative CI gate is separate and does not
 relabel these strict misses as passing their original goals.
 
+### Save-confirmation presentation isolation
+
+Page and thumbnail replacements no longer commit while an interactive modal
+owns input. The current decoded page stays visible. Confirmation yields two
+animation frames before allowing dialog-owned asynchronous work and background
+presentation; cancellation also releases pending presentation after a paint
+opportunity. Existing epoch/URL checks still discard superseded images, and the
+normal exact-resolution target resumes rather than being dropped. This also
+allows New/Merge dialogs whose asynchronous actions await rendering to complete.
+
+The full Chromium smoke includes a focused three-repeat `--save-overlap <site>`
+regression at **4x CDP CPU slowdown**. It holds actual `09-images.pdf` edit-
+triggered page/thumbnail responses, opens Save without settling those renders,
+then releases them while the dialog owns input. It asserts no page/thumbnail
+swap before confirmation, no blank frames, exact-target resumption, retention of
+the edit in the saved PDF, and an unchanged **50 ms maximum** confirmation
+input-to-next-frame ceiling. `EDITOR_SMOKE_ARTIFACTS` captures `save-overlap.json`.
+For diagnostic CPU-throttled runs of the ordinary profile, set
+`EDITOR_PROFILE_CPU_RATE=4`; unset it for the authoritative normal-speed profile
+and its existing versioned CI policy.
+
 ### Navigation preview
 
 After a page selection finishes, the editor schedules a 40-dpi render of the
 next page after 250 ms, provided the document version and selection still match.
+Pointer or keyboard input cancels queued speculative work before it can compete
+with editing or Save; a completed navigation can schedule a fresh preview.
+The Save-overlap regression holds the timer deterministically and verifies both
+input paths cancel it, without relaxing the zero-bare-raster-miss gate.
 It uses the existing bounded page-image cache; the normal exact-resolution
 render remains unchanged and still replaces the preview. The full AOT profile
 asserts that the preview is cached before navigation, then measures the actual
