@@ -20,7 +20,9 @@ sealed class GState
     public PdfFont? Font; public double FontSize; public int FontRef;
     public int RenderMode;
     public bool SoftMaskActive;
-
+    public bool FillOverprint, StrokeOverprint;
+    public int OverprintMode;
+    public TransferFunctions? Transfer;
     public GState Clone() => (GState)MemberwiseClone();
 }
 
@@ -40,6 +42,7 @@ public sealed class ContentInterpreter
     readonly Stack<GState> _stack = new();
     readonly HashSet<PdfDictionary> _activeForms = new(ReferenceEqualityComparer.Instance);
     readonly Dictionary<PdfDictionary, bool> _optionalContentOff = new(ReferenceEqualityComparer.Instance);
+    readonly Dictionary<PdfObject, TransferFunctions?> _transferCache = new(ReferenceEqualityComparer.Instance);
     GState _gs = new();
     PathData _path = new();
     int _pendingClip; // 0 none, 1 nonzero, 2 even-odd
@@ -57,6 +60,11 @@ public sealed class ContentInterpreter
     public OptionalContentEvent OptionalContentDisplayEvent { get; set; } = OptionalContentEvent.View;
     public double OptionalContentZoom { get; set; } = 1;
     public OptionalContentContext? OptionalContentContext { get; set; }
+    /// <summary>
+    /// Simulates the ExtGState overprint parameters (/OP, /op, /OPM; ISO 32000-2 8.6.7, 11.7.4.3) on the RGB output; off by default. The standard leaves
+    /// overprint device-dependent and nonzero overprint mode does not apply on a non-CMYK device, so ordinary screen output ignores it.
+    /// </summary>
+    public bool OverprintSimulation { get; set; }
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -640,6 +648,30 @@ public sealed class ContentInterpreter
                 default: Warn("invalid ExtGState /UseBlackPtComp: expected /ON, /OFF or /Default; retaining current state"); break;
             }
         }
+        if (R(g.Get("OP")) is PdfBoolean opStroke)
+        {
+            _gs.StrokeOverprint = opStroke.Value;
+            if (g.Get("op") is null) _gs.FillOverprint = opStroke.Value;
+        }
+        if (R(g.Get("op")) is PdfBoolean opFill) _gs.FillOverprint = opFill.Value;
+        if (R(g.Get("OPM")) is { } opm)
+        {
+            if (opm.AsNumber() is { } mode && (mode == 0 || mode == 1)) _gs.OverprintMode = (int)mode;
+            else Warn("invalid ExtGState /OPM: expected 0 or 1; retaining current state");
+        }
+        // TR2 takes precedence over TR; /Default and /Identity both select the (identity) page default here.
+        var trKey = g.Get("TR2") is not null ? "TR2" : g.Get("TR") is not null ? "TR" : null;
+        if (trKey is not null)
+        {
+            var trObj = R(g.Get(trKey));
+            if (trObj is not null && _transferCache.TryGetValue(trObj, out var cached)) _gs.Transfer = cached;
+            else if (TransferFunctions.TryParse(_f, trObj, trKey == "TR2", out var parsed))
+            {
+                _gs.Transfer = parsed;
+                if (trObj is not null) _transferCache[trObj] = parsed;
+            }
+            else Warn($"invalid ExtGState /{trKey}: expected a function, an array of four functions or /Identity; retaining current state");
+        }
         foreach (var (k, v0) in g.Entries)
         {
             var v = R(v0);
@@ -740,7 +772,7 @@ public sealed class ContentInterpreter
         if (DrawGraphics && _hiddenDepth == 0 && !p.IsEmpty)
         {
             if (fill) FillPath(p, evenOdd);
-            if (stroke) _be.Stroke(p, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
+            if (stroke) StrokeBackend(p, _gs.Ctm, Style());
         }
         if (DrawGraphics && clip != 0) _be.Clip(p, _gs.Ctm, clip == 2);
     }
@@ -766,7 +798,74 @@ public sealed class ContentInterpreter
             else if (type == 1 && pat is PdfStream ps) TilingFill(p, evenOdd, ps);
             return;
         }
-        _be.Fill(p, _gs.Ctm, evenOdd, Color(false), _gs.FillAlpha, _gs.BlendMode);
+        FillBackend(p, _gs.Ctm, evenOdd);
+    }
+
+    bool IsFullyOpaque(bool stroke) => (stroke ? _gs.StrokeAlpha : _gs.FillAlpha) >= 1 && _gs.BlendMode == "Normal" && !_gs.SoftMaskActive;
+
+    /// <summary>The colour sent to the backend: the converted colour mapped through /TR or /TR2 when the object is fully opaque (10.4, 11.7.5.2).</summary>
+    RgbColor PaintColor(bool stroke)
+    {
+        var c = Color(stroke);
+        return _gs.Transfer is { } tr && IsFullyOpaque(stroke) ? tr.Apply(c) : c;
+    }
+
+    void FillBackend(PathData p, Matrix m, bool evenOdd)
+    {
+        var op = OverprintFor(false, out var skip);
+        if (skip) return;
+        if (op is null) _be.Fill(p, m, evenOdd, PaintColor(false), _gs.FillAlpha, _gs.BlendMode);
+        else _be.Fill(p, m, evenOdd, PaintColor(false), _gs.FillAlpha, _gs.BlendMode, op);
+    }
+
+    void StrokeBackend(PathData p, Matrix m, StrokeStyle style)
+    {
+        var op = OverprintFor(true, out var skip);
+        if (skip) return;
+        if (op is null) _be.Stroke(p, m, style, PaintColor(true), _gs.StrokeAlpha, _gs.BlendMode);
+        else _be.Stroke(p, m, style, PaintColor(true), _gs.StrokeAlpha, _gs.BlendMode, op);
+    }
+
+    static readonly string[] ProcessColorants = ["Cyan", "Magenta", "Yellow", "Black"];
+
+    /// <summary>
+    /// Overprint simulation for the next fill or stroke (8.6.7, Tables 148/149) when <see cref="OverprintSimulation"/> is on, the applicable
+    /// overprint parameter is true and the blend mode is Normal. <paramref name="skip"/> means the paint marks no colorant at all.
+    /// Returns null for ordinary painting.
+    /// </summary>
+    OverprintPaint? OverprintFor(bool stroke, out bool skip)
+    {
+        skip = false;
+        if (!OverprintSimulation || !(stroke ? _gs.StrokeOverprint : _gs.FillOverprint) || _gs.BlendMode != "Normal") return null;
+        var cs = stroke ? _gs.StrokeCs : _gs.FillCs;
+        if (cs is PdfColorSpace.PatternCs) return null;
+        var c = stroke ? _gs.StrokeColor : _gs.FillColor;
+        if (cs == PdfColorSpace.Cmyk)
+        {
+            if (c.Length < 4) return null;
+            byte mask = 15;
+            if (_gs.OverprintMode == 1) { mask = 0; for (var i = 0; i < 4; i++) if (c[i] != 0) mask |= (byte)(1 << i); }
+            return Process(mask, c, out skip);
+        }
+        if (cs.Colorants is not { Count: > 0 } names) return null;
+        if (names.All(n => n == "None")) { skip = true; return null; }
+        if (names.Contains("All")) return null;
+        if (names.All(n => Array.IndexOf(ProcessColorants, n) >= 0))
+        {
+            byte mask = 0;
+            var map = new int[names.Count];
+            for (var i = 0; i < names.Count; i++) { map[i] = Array.IndexOf(ProcessColorants, names[i]); mask |= (byte)(1 << map[i]); }
+            var cmyk = new double[4];
+            for (var i = 0; i < names.Count && i < c.Length; i++) cmyk[map[i]] = c[i];
+            return Process(mask, cmyk, out skip);
+        }
+        return new OverprintPaint(0, 0, 0, 0, 0, Spot: true);
+
+        static OverprintPaint? Process(byte mask, double[] v, out bool skip)
+        {
+            skip = mask == 0;
+            return mask is 0 or 15 ? null : new OverprintPaint(mask, (float)Math.Clamp(v[0], 0, 1), (float)Math.Clamp(v[1], 0, 1), (float)Math.Clamp(v[2], 0, 1), (float)Math.Clamp(v[3], 0, 1));
+        }
     }
 
     Matrix ToMatrix(PdfArray a) { var v = a.Items.Select(x => R(x).AsNumber() ?? 0).ToArray(); return new Matrix(v[0], v[1], v[2], v[3], v[4], v[5]); }
@@ -802,7 +901,7 @@ public sealed class ContentInterpreter
         var uncolored = paintType == 2;
         var content = _f.DecodeStream(pat);
         var res = R(d.Get("Resources")) as PdfDictionary ?? new PdfDictionary();
-        var color = Color(false);
+        var color = PaintColor(false);
         _be.Save();
         _be.Clip(p, _gs.Ctm, evenOdd);
         var savedGs = _gs; var savedStack = new Stack<GState>(_stack.Reverse()); var savedPath = _path;
@@ -954,7 +1053,7 @@ public sealed class ContentInterpreter
                         {
                             // Stroke width is in user space, so stroke with the text-space transform folded into the path.
                             var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(glyphToUser));
-                            _be.Stroke(up, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
+                            StrokeBackend(up, _gs.Ctm, Style());
                         }
                         if (mode >= 4) { _textClip ??= new PathData(); _textClip.Append(outline.Transform(m)); }
                     }
@@ -973,7 +1072,7 @@ public sealed class ContentInterpreter
             FillPath(userPath, false);
             return;
         }
-        _be.Fill(outline, m, false, Color(false), _gs.FillAlpha, _gs.BlendMode);
+        FillBackend(outline, m, false);
     }
 
     void DrawType3(PdfFont font, int code, Matrix trm)
@@ -1127,7 +1226,7 @@ public sealed class ContentInterpreter
             {
                 double x0 = c[0], y0 = c[1], dx = c[2] - c[0], dy = c[3] - c[1];
                 var den = dx * dx + dy * dy;
-                _be.PaintShader((px, py) =>
+                PaintShader((px, py) =>
                 {
                     var (ux, uy) = inv.Apply(px, py);
                     var s = den == 0 ? 0 : ((ux - x0) * dx + (uy - y0) * dy) / den;
@@ -1139,7 +1238,7 @@ public sealed class ContentInterpreter
             else if (type == 3 && c.Length >= 6)
             {
                 double x0 = c[0], y0 = c[1], r0 = c[2], x1 = c[3], y1 = c[4], r1 = c[5];
-                _be.PaintShader((px, py) =>
+                PaintShader((px, py) =>
                 {
                     var (ux, uy) = inv.Apply(px, py);
                     // Solve |p - (c0 + s(c1-c0))| = r0 + s(r1-r0) for the largest valid s.
@@ -1170,7 +1269,7 @@ public sealed class ContentInterpreter
             var dom = Arr("Domain") is { Length: 4 } dm ? dm : [0, 1, 0, 1];
             var mm = R(d.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
             var minv = mm.Invert();
-            _be.PaintShader((px, py) =>
+            PaintShader((px, py) =>
             {
                 var (ux, uy) = inv.Apply(px, py);
                 var (sx, sy) = minv.Apply(ux, uy);
@@ -1190,9 +1289,20 @@ public sealed class ContentInterpreter
             var shader = MeshShading.ToShader(mesh, comps => fns is null
                 ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps, intent, blackPointCompensation)
                 : EvalT(comps[0]));
-            _be.PaintShader(shader, _gs.FillAlpha, _gs.BlendMode);
+            PaintShader(shader, _gs.FillAlpha, _gs.BlendMode);
         }
         else Warn($"shading type {type} not rendered");
+    }
+
+    /// <summary>Paints a shading, mapping its colours through the current transfer function when the shading is fully opaque (11.7.5.2).</summary>
+    void PaintShader(Func<double, double, RgbColor?> shader, double alpha, string blendMode)
+    {
+        if (_gs.Transfer is { } tr && IsFullyOpaque(false))
+        {
+            var inner = shader;
+            shader = (x, y) => inner(x, y) is { } c ? tr.Apply(c) : null;
+        }
+        _be.PaintShader(shader, alpha, blendMode);
     }
 
     // ---- Images ----
@@ -1265,6 +1375,7 @@ public sealed class ContentInterpreter
         var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn, _gs.Intent, _gs.BlackPointCompensation);
         if (warn is not null) Warn(warn);
         if (img is null) return;
-        _be.DrawImage(img, _gs.Ctm, _gs.FillAlpha, isMask ? Color(false) : RgbColor.Black, _gs.BlendMode);
+        if (!isMask && _gs.Transfer is { } tr && IsFullyOpaque(false)) img = tr.Apply(img);
+        _be.DrawImage(img, _gs.Ctm, _gs.FillAlpha, isMask ? PaintColor(false) : RgbColor.Black, _gs.BlendMode);
     }
 }

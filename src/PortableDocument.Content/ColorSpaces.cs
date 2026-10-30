@@ -5,6 +5,8 @@ namespace PortableDocument.Content;
 public abstract class PdfColorSpace
 {
     public abstract int Components { get; }
+    /// <summary>Colorant names of a Separation or DeviceN space; null for every other space.</summary>
+    public virtual IReadOnlyList<string>? Colorants => null;
     public abstract RgbColor ToRgb(ReadOnlySpan<double> c);
     public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => ToRgb(c);
     public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => ToRgb(c, intent);
@@ -205,9 +207,10 @@ public abstract class PdfColorSpace
         }
     }
 
-    sealed class Tint(PdfColorSpace alt, PdfFunction fn, int n, bool allNone) : PdfColorSpace
+    sealed class Tint(PdfColorSpace alt, PdfFunction fn, int n, bool allNone, string[] names) : PdfColorSpace
     {
         public override int Components => n;
+        public override IReadOnlyList<string>? Colorants => names;
         public override double[] InitialColor => Enumerable.Repeat(1.0, n).ToArray();
 
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
@@ -298,7 +301,7 @@ public abstract class PdfColorSpace
                     var alt = Parse(f, a[2], resources, depth + 1);
                     var fn = PdfFunction.Parse(f, a[3]);
                     if (fn is null) return null;
-                    return new Tint(alt, fn, Math.Max(1, names.Length), names.Length > 0 && names.All(x => x == "None"));
+                    return new Tint(alt, fn, Math.Max(1, names.Length), names.Length > 0 && names.All(x => x == "None"), names);
                 }
             case "Pattern":
                 return new PatternCs(a.Count > 1 ? Parse(f, a[1], resources, depth + 1) : null);

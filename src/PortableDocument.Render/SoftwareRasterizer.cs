@@ -451,6 +451,40 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         if (on && cur.Count > 1) yield return (cur, false);
     }
 
+    OverprintPaint? _op;
+
+    public void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode, OverprintPaint overprint)
+    {
+        _op = overprint;
+        try { Fill(path, ctm, evenOdd, color, alpha, blendMode); }
+        finally { _op = null; }
+    }
+
+    public void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode, OverprintPaint overprint)
+    {
+        _op = overprint;
+        try { Stroke(path, ctm, style, color, alpha, blendMode); }
+        finally { _op = null; }
+    }
+
+    /// <summary>
+    /// Process-colorant overprint simulation (CompatibleOverprint, 11.7.4.3): the backdrop is decomposed to CMYK with the naive complement model,
+    /// unpainted colorants keep it, and the colour change relative to the source's own naive value is applied to the (profile-converted) source RGB.
+    /// </summary>
+    static void ProcessOverprint(OverprintPaint op, float br, float bg, float bb, float sr, float sg, float sb, out float r, out float g, out float b)
+    {
+        var k = 1f - MathF.Max(br, MathF.Max(bg, bb));
+        float c = 0, m = 0, y = 0;
+        if (k < 0.9999f) { var d = 1f - k; c = (1f - br - k) / d; m = (1f - bg - k) / d; y = (1f - bb - k) / d; }
+        var mask = op.Mask;
+        var tc = (mask & 1) != 0 ? op.C : c; var tm = (mask & 2) != 0 ? op.M : m;
+        var ty = (mask & 4) != 0 ? op.Y : y; var tk = (mask & 8) != 0 ? op.K : k;
+        var kc = 1f - op.K;
+        r = Math.Clamp(sr + (1f - tc) * (1f - tk) - (1f - op.C) * kc, 0f, 1f);
+        g = Math.Clamp(sg + (1f - tm) * (1f - tk) - (1f - op.M) * kc, 0f, 1f);
+        b = Math.Clamp(sb + (1f - ty) * (1f - tk) - (1f - op.Y) * kc, 0f, 1f);
+    }
+
     void PaintScan(bool evenOdd, RgbColor c, double alpha, string blendMode)
     {
         if (!BeginScan(evenOdd, out _, out _, out _, out _)) return;
@@ -458,6 +492,32 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         var mode = ParseBlend(blendMode);
         var clip = _clip;
         var px = _px;
+        if (_op is { } op)
+        {
+            if (op.Spot) { if (mode == Blend.Normal) mode = Blend.Multiply; }
+            else if (mode == Blend.Normal)
+            {
+                var layerAlpha = _a;
+                while (NextRow(out var y, out var xa, out var xb))
+                {
+                    var rowBase = (y - _oy) * _lw - _ox;
+                    for (var x = xa; x < xb; x++)
+                    {
+                        var a = _cov[x];
+                        if (a <= 0f) continue;
+                        if (a > 1f) a = 1f;
+                        if (clip.Cov is not null) a *= clip.At(x, y);
+                        if (a * al <= 0f) continue;
+                        var o = rowBase + x;
+                        var sr = r; var sg = g; var sb = b;
+                        if (layerAlpha is null || layerAlpha[o] > 0f)
+                            ProcessOverprint(op, px[o * 3], px[o * 3 + 1], px[o * 3 + 2], r, g, b, out sr, out sg, out sb);
+                        Put(o, sr, sg, sb, a, al, mode);
+                    }
+                }
+                return;
+            }
+        }
         while (NextRow(out var y, out var xa, out var xb))
         {
             var rowBase = (y - _oy) * _lw - _ox;
