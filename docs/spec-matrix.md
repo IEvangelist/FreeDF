@@ -52,6 +52,10 @@ JPX POC coverage additionally includes a three-layer, multi-precinct fixture tha
 
 Additional clause-9 coverage: CFF1 predefined ISOAdobe/Expert/ExpertSubset charsets and Standard/Adobe Expert built-in encodings (Adobe TN 5176 Appendices B/C, fontTools 4.63.0 tables). For embedded non-CID CFF, absent PDF Encoding/BaseEncoding uses the built-in encoding, Differences overlays it, and ToUnicode wins for extraction. MacExpertEncoding remains unsupported and distinct from Adobe ExpertEncoding; legacy Type 1 Expert/MM limitations remain. CFF, annotation/AP, DPart hierarchy and JPX boundary regressions pass in the combined 583-case focused and 1160-case full Release runs; no full font or spec parity is implied.
 
+Additional bounded clause-8.6 coverage: `/UseBlackPtComp` state is propagated, with Default treated as Off and absolute intent disabling BPC. Supported relative XYZ matrix/TRC RGB/gray v2/v4 input/display ICC profiles use a prepared white-preserving affine XYZ map; `SupportsBlackPointCompensation` exposes the strict supported subset. LUT/CMYK/Lab, general black estimation and perceptual PCS/reference-black handling remain incomplete; this does not resolve the LittleCMS perceptual discrepancy above. All ICC plus annotation/validator selectors pass 184/184 in the subsequent Release focused run; full solution validation of this addition is deferred.
+
+Additional bounded PDF/UA annotation checks verify `/StructParent` -> ParentTree -> direct `/OBJR` with indirect `/Obj` identity, preserving missing-key and Link Contents/Alt behavior. Raw ParentTree-value indirection, existing parser/10k-per-page limits and subtype exemptions remain; validators are not certification.
+
 ## Editor
 
 | Feature | Status |

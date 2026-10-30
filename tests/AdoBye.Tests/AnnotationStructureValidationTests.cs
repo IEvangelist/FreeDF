@@ -39,7 +39,7 @@ public class AnnotationStructureValidationTests
 
     static ValidationFinding OnlyAnnotationFinding(ValidationReport report, string rule)
     {
-        var finding = Assert.Single(report.Findings.Where(f => f.RuleId.StartsWith("PDFUA-ANNOT-")));
+        var finding = Assert.Single(report.Findings, f => f.RuleId.StartsWith("PDFUA-ANNOT-"));
         Assert.Equal(rule, finding.RuleId);
         Assert.Equal(ValidationSeverity.Error, finding.Severity);
         Assert.Equal(0, finding.PageIndex);
