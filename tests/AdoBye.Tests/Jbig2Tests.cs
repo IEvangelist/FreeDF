@@ -39,13 +39,14 @@ public class Jbig2Tests
         var stream = new List<byte>();
         AddSegment(stream, 1, 48, PageInfo(4, 4));
         AddSegment(stream, 2, 16, PatternDictionary());
-        AddSegment(stream, 3, 20, HalftoneRegion(), [2]);
+        AddSegment(stream, 3, 22, HalftoneRegion(), [2]);
         AddSegment(stream, 4, 49, []);
         AddSegment(stream, 5, 51, []);
 
         var data = Jbig2Decoder.Decode([.. stream], null, 4, 4, out var warning);
 
         Assert.Null(warning);
+        // Two 2x2 patterns (white, black), selected by grid rows 01 / 10.
         Assert.Equal(new byte[] { 0xCF, 0xCF, 0x3F, 0x3F }, data);
 
         byte[] PageInfo(int width, int height)
@@ -83,8 +84,8 @@ public class Jbig2Tests
             WriteInt(payload, 0);
             payload.AddRange([2, 0, 0, 0]);
             payload.AddRange(PackBits(
-                "00100110101010" +
-                "0100101" +
+                "001" + "000111" + "010" + // Horizontal: white 1, black 1.
+                "001" + "00110101" + "010" + "1" + // Horizontal: white 0, black 1; vertical 0 ends white 1.
                 eofb));
             return [.. payload];
         }
@@ -101,11 +102,11 @@ public class Jbig2Tests
         static void AddSegment(List<byte> destination, byte number, byte type, byte[] payload, byte[]? references = null)
         {
             references ??= [];
-            destination.Add(number);
+            WriteInt(destination, number);
             destination.Add(type);
             destination.Add((byte)(references.Length << 5));
             destination.AddRange(references);
-            destination.Add(0);
+            destination.Add(type is 16 or 51 ? (byte)0 : (byte)1);
             WriteInt(destination, payload.Length);
             destination.AddRange(payload);
         }
