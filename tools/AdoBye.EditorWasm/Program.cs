@@ -25,7 +25,7 @@ public static partial class BrowserEditor
 
         catch (Exception e)
         {
-            if (e is System.Security.Cryptography.CryptographicException && c?.Method == "POST" && c.Path is "/api/open" or "/api/import")
+            if (e is System.Security.Cryptography.CryptographicException or PlatformNotSupportedException && c?.Method == "POST" && c.Path is "/api/open" or "/api/import" or "/api/inspect")
             {
                 var message = "Encrypted PDFs require the server editor. This browser cannot open this protection; no decrypted recovery copy was stored. " + e.Message;
                 Console.Error.WriteLine(message);

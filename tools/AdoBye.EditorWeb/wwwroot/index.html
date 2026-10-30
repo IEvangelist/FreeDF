@@ -53,7 +53,7 @@
   <div class="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="pages"></span></div>
   <div class="group">
     <button id="fileBtn" title="File menu" aria-haspopup="menu"><svg class="i"><use href="#i-open"/></svg><span class="lbl">File</span><svg class="i"><use href="#i-down"/></svg></button>
-    <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" hidden>
+    <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" multiple hidden>
   </div>
   <span class="sp"></span>
   <div class="group">
@@ -768,7 +768,7 @@ async function act(fn) {
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 
 $('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.target.files[0]));
-$('merge').onchange = e => e.target.files[0] && act(() => upload('/api/import', e.target.files[0]));
+$('merge').onchange = e => { const files = [...e.target.files]; if (files.length) mergeDialog?.isConnected ? mergeDialog.addFiles(files) : mergePdfs(files); };
 $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/270`));
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
 $('del').onclick = () => state.pageCount && confirm('Delete this page?') && act(() => post(`/api/delete/${sel}`));
@@ -909,6 +909,61 @@ function newDoc() {
   });
 }
 function insertBlank(at) { return act(() => post(`/api/blank/${at}`)).then(() => goPage(at)); }
+let mergeDialog = null;
+function mergePdfs(files = []) {
+  if (!state.pageCount) return status('Open a PDF first, then choose File > Merge PDFs.');
+  const list = [], n = state.pageCount;
+  const o = modal('Merge PDFs', `<div id="mg"></div><button id="mga" type="button">Add PDFs…</button>
+    <label>Insert at<select id="mat"><option value="${n}">End of document</option><option value="0">Beginning</option><option value="${sel + 1}">After current page (${sel + 1})</option><option value="p">Before page number…</option></select></label>
+    <label id="mpl" hidden>Before page<input id="mpn" type="number" min="1" max="${n + 1}" value="${n + 1}"></label>
+    <p class="dnote">Files merge in the order listed. Pages are copied on this device; nothing is uploaded and passwords are never stored.</p>`, 'Merge', async () => {
+    if (!list.length) throw new Error('Add at least one PDF.');
+    if (list.some(e => e.error)) throw new Error('Remove the files that cannot be merged first.');
+    let at = o.querySelector('#mat').value === 'p' ? Math.min(n, Math.max(0, (+o.querySelector('#mpn').value || n + 1) - 1)) : +o.querySelector('#mat').value;
+    const first = at; let merged = 0;
+    let ok = false;
+    await act(async () => {
+      try {
+        for (const [i, e] of list.entries()) {
+          status(`Merging ${i + 1} of ${list.length}: ${e.file.name}…`);
+          const r = await (await request(`/api/import?at=${at}&pages=${encodeURIComponent(e.range)}`, { method: 'POST', body: formOf(e.file) })).json();
+          at += r.count; merged += r.count;
+        }
+        ok = true;
+      } catch (err) {
+        if (merged) await refresh();
+        throw new Error(`${err.message}${merged ? ` (${merged} page${merged === 1 ? '' : 's'} from earlier files were already added.)` : ''}`);
+      }
+    });
+    if (ok) { await goPage(first); status(`Merged ${merged} page${merged === 1 ? '' : 's'} from ${list.length} file${list.length === 1 ? '' : 's'}. Ready.`); }
+  });
+  const render = () => {
+    o.querySelector('#mg').innerHTML = list.map((e, i) => `<div class="mrow" data-i="${i}"><span class="mn" title="${esc(e.file.name)}">${esc(e.file.name)}</span>
+      <span class="mb"><button class="mini" data-m="up" title="Move up" ${i ? '' : 'disabled'}>${ic('up')}</button><button class="mini" data-m="down" title="Move down" ${i < list.length - 1 ? '' : 'disabled'}>${ic('down')}</button><button class="mini danger" data-m="rm" title="Remove">${ic('close')}</button></span>
+      ${e.error ? `<span class="merr" role="alert">${esc(e.error)}</span>` : `<input class="mr" aria-label="Pages to merge from ${esc(e.file.name)}" placeholder="All ${e.pages} page${e.pages === 1 ? '' : 's'}, or e.g. 1-3, 5" value="${esc(e.range)}">`}</div>`).join('');
+    o.querySelector('.dok').disabled = !list.length;
+  };
+  o.querySelector('#mg').onclick = ev => {
+    const b = ev.target.closest('[data-m]'); if (!b) return;
+    const i = +b.closest('.mrow').dataset.i, j = b.dataset.m === 'up' ? i - 1 : i + 1;
+    if (b.dataset.m === 'rm') list.splice(i, 1); else [list[i], list[j]] = [list[j], list[i]];
+    render();
+  };
+  o.querySelector('#mg').oninput = ev => { if (ev.target.matches('.mr')) list[+ev.target.closest('.mrow').dataset.i].range = ev.target.value; };
+  o.querySelector('#mat').onchange = ev => { o.querySelector('#mpl').hidden = ev.target.value !== 'p'; };
+  o.querySelector('#mga').onclick = () => pickFile('merge');
+  o.addFiles = async added => {
+    for (const file of added) {
+      const e = { file, range: '' };
+      try { Object.assign(e, await (await request('/api/inspect', { method: 'POST', body: formOf(file) })).json()); }
+      catch (err) { e.error = err.message; }
+      if (!o.isConnected) return;
+      list.push(e); render();
+    }
+  };
+  mergeDialog = o; render(); o.addFiles(files);
+}
+const formOf = f => { const fd = new FormData(); fd.append('f', f); return fd; };
 function docProps() {
   request('/api/info').then(r => r.json()).then(d => {
     const f = (k, l) => `<label>${l}<input data-i="${k}" value="${esc(d[k] ?? '')}"></label>`;
@@ -972,6 +1027,7 @@ function openFileMenu() {
     { label: 'Save', key: mod + 'S', disabled: !has, run: saveDoc },
     { label: 'Save as…', key: mod + 'Shift+S', disabled: !has, run: saveAs },
     '-',
+    { label: 'Merge PDFs…', disabled: !has, run: () => pickFile('merge') },
     { label: 'Insert', disabled: !has, sub: [
       { label: 'Blank page before current', run: () => insertBlank(sel) }, { label: 'Blank page after current', run: () => insertBlank(sel + 1) },
       { label: 'Duplicate current page', run: () => act(() => post(`/api/duplicate/${sel}`)).then(() => goPage(sel + 1)) }, '-',
@@ -1014,7 +1070,14 @@ addEventListener('keydown', e => {
 addEventListener('resize', () => state.pageCount && build());
 addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); document.body.id = 'drop'; } });
 addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''; });
-addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); document.body.id = ''; act(() => upload(state.pageCount ? '/api/import' : '/api/open', e.dataTransfer.files[0])); } });
+addEventListener('drop', e => {
+  if (!e.dataTransfer.files.length) return;
+  e.preventDefault(); document.body.id = '';
+  const files = [...e.dataTransfer.files];
+  if (mergeDialog?.isConnected) mergeDialog.addFiles(files);
+  else if (state.pageCount) mergePdfs(files);
+  else act(() => upload('/api/open', files[0])).then(() => files.length > 1 && state.pageCount && mergePdfs(files.slice(1)));
+});
 function setPanel(side, open, user) {
   const m = document.querySelector('main'), b = $(side === 'l' ? 'tl' : 'tr');
   if (user && open && innerWidth <= 760) {

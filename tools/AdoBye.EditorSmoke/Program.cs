@@ -15,7 +15,8 @@ if (args.Length >= 4 && args[0] == "--profile")
 
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery] <published-wwwroot>");
+var mergeOnly = args.Length == 2 && args[0] == "--merge";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -65,6 +66,13 @@ try
     {
         await EditorTextSelection.Run(page);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
+        return;
+    }
+    if (mergeOnly)
+    {
+        await EditorMerge.Run(page);
+        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors));
+        Console.WriteLine("PASS: multi-file Merge PDFs (flag/remove encrypted, reorder, page range, insert position), page count, render, save and reopen.");
         return;
     }
     if (recoveryOnly)
