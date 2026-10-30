@@ -500,7 +500,7 @@ public sealed class ContentInterpreter
             case "sh": if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName sn && R(res.Get("Shading")) is PdfDictionary shd) Shade(R(shd.Get(sn.Value)), res, null); break;
             case "Do": if (a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd) DoXObject(R(xd.Get(xn.Value)), res, xd.Get(xn.Value) is PdfRef xrf ? xrf.Number : 0); break;
 
-            case "BMC": _hiddenStack.Add(""); _mcidStack.Add(-1); break;
+            case "BMC": _hiddenStack.Add(a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : ""); _mcidStack.Add(-1); break;
             case "BDC":
                 {
                     var hidden = false;
@@ -517,7 +517,7 @@ public sealed class ContentInterpreter
                         PdfObject? prop = a[1] is PdfName pn && R(res.Get("Properties")) is PdfDictionary pd ? R(pd.Get(pn.Value)) : a[1];
                         hidden = prop is PdfDictionary ocd && IsHidden(ocd);
                     }
-                    _hiddenStack.Add(hidden ? "H" : "");
+                    _hiddenStack.Add(hidden ? "H" : a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : "");
                     if (hidden) _hiddenDepth++;
                     break;
                 }
@@ -832,6 +832,8 @@ public sealed class ContentInterpreter
     {
         /// <summary>The page sequence surrounding an untagged form invocation; not an MCID in this span's form.</summary>
         public int EnclosingPageMcid { get; init; } = -1;
+        /// <summary>Whether this text is inside an explicit /Artifact marked-content sequence.</summary>
+        public bool IsArtifact { get; init; }
     }
 
     /// <summary>One shown glyph: its raw string bytes, device-space box and writing-axis advance as a TJ number.</summary>
@@ -900,7 +902,7 @@ public sealed class ContentInterpreter
         TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
             Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
-            _curForm, _gs.FontRef, font, pieces) { EnclosingPageMcid = _pageMcid });
+            _curForm, _gs.FontRef, font, pieces) { EnclosingPageMcid = _pageMcid, IsArtifact = _hiddenStack.Contains("A") });
     }
 
     void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null, System.Text.StringBuilder? text = null)
