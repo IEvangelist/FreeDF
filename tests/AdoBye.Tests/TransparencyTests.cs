@@ -651,6 +651,15 @@ public class TransparencyTests
         Near(Px(DocumentRenderer.RenderPage(page, 72), 100, 100), (127, 127, 255), 2);
     }
 
+    [Fact]
+    public void AlphaIsShape_DoesNotLeakIntoNestedGroups()
+    {
+        // 11.6.6: the form group starts with AIS false even though the caller set it, so the knockout result is the opacity one.
+        const string c = "/A gs 1 0 0 rg 0 0 120 200 re f 0 0 1 rg 80 0 120 200 re f";
+        var p = Render("/Q gs /F Do", "/XObject << /F 5 0 R >> /ExtGState << /Q << /AIS true >> >>", GroupForm("/K true", c));
+        Near(Px(p, 100, 100), (127, 127, 255), 2);
+    }
+
     // ---- soft-mask edge cases (11.6.5.2) ----
 
     static string AlphaMask(string extra) => "/ExtGState << /G1 << /SMask << /Type /Mask /S /Alpha /G 5 0 R " + extra + " >> >> >>";
