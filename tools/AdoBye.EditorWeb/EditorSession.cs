@@ -257,6 +257,14 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         if (snapshot is null) { Prepare(); snapshotBytes = editor.Save(); snapshot = PdfDocument.Load(snapshotBytes); }
         return snapshot;
     }
+
+    /// <summary>Bytes of the document <see cref="PagePng"/> renders for <paramref name="bare"/>, plus the version they belong to.</summary>
+    Reply SnapshotBytes(bool bare)
+    {
+        RequirePages();
+        var doc = bare ? BaseSnap() : Snap();
+        return new(doc.File.Data, "application/pdf", "v" + version.ToString(CultureInfo.InvariantCulture));
+    }
     PdfDocument BaseSnap()
     {
         if (baseSnapshot is null)
@@ -583,6 +591,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     var pages = doc?.Pages.Select((pg, i) => new { index = i, id = editor.PageId(i), rotation = pg.Rotate, x0 = pg.CropBox.Left, top = pg.CropBox.Top, width = pg.CropBox.Width, height = pg.CropBox.Height }) ?? [];
                     return AsJson(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null, recoverySupported, pageUndo = pageUndo.Count, pageRedo = pageRedo.Count, protection = ProtectionState() });
                 case "recovery": return CaptureRecovery();
+                case "snapshot": return SnapshotBytes(Q("bare") == "true");
                 case "fonts": return AsJson(catalog.List());
                 case "fields": return AsJson(editor.PageCount == 0 ? [] : Pristine().GetFormFields().Where(f => f.FieldType is "Tx" or "Btn" or "Ch").Select(f => new { name = f.FullName, type = f.FieldType, value = f.Value ?? "" }));
                 case "asset":

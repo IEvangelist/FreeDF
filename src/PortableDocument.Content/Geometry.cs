@@ -129,6 +129,8 @@ public interface IRenderBackend
     void Clip(PathData path, Matrix ctm, bool evenOdd);
     /// <summary>Intersects the clip with the area a stroke of <paramref name="path"/> would paint, so a pattern can be painted through the stroke. Returns false (clip unchanged) when unsupported.</summary>
     bool ClipStroke(PathData path, Matrix ctm, StrokeStyle style) => false;
+    /// <summary>False when an image mapped by <paramref name="ctm"/> (the unit square) cannot touch the current clip, so decoding it can be skipped. Only partial (band) rasters answer false; whole-page backends keep decoding every image.</summary>
+    bool MayPaintImage(Matrix ctm) => true;
     void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode);
     void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode);
     /// <summary>As <see cref="Fill(PathData, Matrix, bool, RgbColor, double, string)"/> with overprint simulation; backends that do not simulate overprint paint normally.</summary>

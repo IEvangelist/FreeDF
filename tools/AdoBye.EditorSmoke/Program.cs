@@ -33,6 +33,12 @@ if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline")
     return;
 }
 
+if (args.Length >= 4 && args[0] == "--pool")
+{
+    await EditorPool.Run(args[1], args[2], args[3], args.Length > 4 ? int.Parse(args[4]) : 4);
+    return;
+}
+
 if (args.Length >= 4 && args[0] == "--profile")
 {
     await EditorPerformance.Run(args[1], args[2], args[3..]);

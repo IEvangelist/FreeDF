@@ -26,6 +26,8 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     }
 
     readonly int _w, _h;
+    readonly bool _partial; // band raster: skip work that lies wholly outside the band
+    readonly int _by; // device row of the first stored page row (band renders keep full-page device coordinates)
     float[] _px; // RGB, 3 floats per pixel
     // Current layer: the page (opaque, origin 0,0) or a transparency-group buffer covering device rect [_ox,_ox+_lw) x [_oy,_oy+_lh).
     int _ox, _oy, _lw, _lh;
@@ -56,15 +58,19 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     public const int MaxDimension = 1 << 16;
     public const long MaxPixels = 100_000_000;
 
-    public SoftwareRasterizer(int width, int height)
+    public SoftwareRasterizer(int width, int height) : this(width, height, 0) { }
+
+    /// <summary>Rasterizes only device rows [bandY, bandY + height) of a larger page; every coordinate stays in full-page device space, so output rows are bit-identical to a whole-page render.</summary>
+    public SoftwareRasterizer(int width, int height, int bandY, int pageHeight = 0)
     {
+        _partial = pageHeight > 0 && height != pageHeight;
         if (width < 1 || height < 1 || width > MaxDimension || height > MaxDimension || (long)width * height > MaxPixels)
             throw new global::PortableDocument.Core.PdfParseException($"Invalid raster size {width}x{height}");
-        _w = width; _h = height; _lw = width; _lh = height;
+        _w = width; _h = height; _by = bandY; _oy = bandY; _lw = width; _lh = height;
         _px = System.Buffers.ArrayPool<float>.Shared.Rent(width * height * 3);
         _px.AsSpan(0, width * height * 3).Fill(1f);
         _cov = new float[width + 2];
-        _clip = new ClipMask { X0 = 0, Y0 = 0, X1 = width, Y1 = height };
+        _clip = new ClipMask { X0 = 0, Y0 = bandY, X1 = width, Y1 = bandY + height };
     }
 
     /// <summary>Returns the pixel buffer to the pool; the rasterizer must not be used afterwards.</summary>
@@ -132,14 +138,14 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         float[] m;
         if (luminosity)
         {
-            using var off = new SoftwareRasterizer(_w, _h);
+            using var off = new SoftwareRasterizer(_w, _h, _by);
             off.FillBackground(backdrop); draw(off); m = off.Luminosity();
         }
         else
         {
             // Alpha = 1 - (white-backed render - black-backed render).
-            using var ob = new SoftwareRasterizer(_w, _h); ob.FillBackground(new RgbColor(0, 0, 0)); draw(ob);
-            using var ow = new SoftwareRasterizer(_w, _h); ow.FillBackground(new RgbColor(1, 1, 1)); draw(ow);
+            using var ob = new SoftwareRasterizer(_w, _h, _by); ob.FillBackground(new RgbColor(0, 0, 0)); draw(ob);
+            using var ow = new SoftwareRasterizer(_w, _h, _by); ow.FillBackground(new RgbColor(1, 1, 1)); draw(ow);
             var lb = ob.Luminosity(); m = ow.Luminosity();
             for (var i = 0; i < m.Length; i++) m[i] = Math.Clamp(1f - (m[i] - lb[i]), 0f, 1f);
         }
@@ -157,7 +163,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         var cov = new float[bw * bh];
         for (var y = 0; y < bh; y++)
             for (var x = 0; x < bw; x++)
-                cov[y * bw + x] = b.At(b.X0 + x, b.Y0 + y) * m[(b.Y0 + y) * _w + b.X0 + x];
+                cov[y * bw + x] = b.At(b.X0 + x, b.Y0 + y) * m[(b.Y0 + y - _by) * _w + b.X0 + x];
         _preMask = b;
         _clip = new ClipMask { X0 = b.X0, Y0 = b.Y0, X1 = b.X1, Y1 = b.Y1, Cov = cov, Stride = bw, CovX0 = b.X0, CovY0 = b.Y0 };
     }
@@ -249,7 +255,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         bx0 = Math.Max(_clip.X0, (int)Math.Floor(Math.Max(_minX, -1)));
         bx1 = Math.Min(_clip.X1, (int)Math.Ceiling(Math.Min(_maxX, _w + 1)) + 1);
         by0 = Math.Max(_clip.Y0, (int)Math.Floor(Math.Max(_minY, -1)));
-        by1 = Math.Min(_clip.Y1, (int)Math.Ceiling(Math.Min(_maxY, _h + 1)) + 1);
+        by1 = Math.Min(_clip.Y1, (int)Math.Ceiling(Math.Min(_maxY, _by + _h + 1)) + 1);
         if (bx0 >= bx1 || by0 >= by1) return false;
         _edges.AsSpan(0, _en).Sort(ByY0);
         _next = 0; _an = 0; _eo = evenOdd; _y = by0; _by1 = by1; _bx0 = bx0; _bx1 = bx1;
@@ -403,16 +409,46 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     // ---------------------------------------------------------------- painting
 
+    /// <summary>True when the path's control-point hull, grown by <paramref name="pad"/> device pixels, lies entirely outside the clip box, so painting it cannot change any pixel (band renders skip off-band geometry cheaply).</summary>
+    bool Misses(PathData path, in Matrix m, double pad)
+    {
+        var pts = CollectionsMarshal.AsSpan(path.Pts);
+        if (pts.Length < 2) return false;
+        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+        for (var i = 0; i + 1 < pts.Length; i += 2)
+        {
+            var x = m.A * pts[i] + m.C * pts[i + 1] + m.E; var y = m.B * pts[i] + m.D * pts[i + 1] + m.F;
+            if (double.IsNaN(x + y) || double.IsInfinity(x + y)) return false;
+            if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+        var c = _clip;
+        return maxY + pad < c.Y0 || minY - pad > c.Y1 || maxX + pad < c.X0 || minX - pad > c.X1;
+    }
+
+    public bool MayPaintImage(Matrix ctm)
+    {
+        if (!_partial) return true;
+        double minY = double.MaxValue, maxY = double.MinValue, minX = double.MaxValue, maxX = double.MinValue;
+        foreach (var (px, py) in new[] { (0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0) })
+        {
+            var (x, y) = ctm.Apply(px, py);
+            if (double.IsNaN(x + y) || double.IsInfinity(x + y)) return true;
+            minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
+        }
+        var c = _clip;
+        return !(maxY + 2 < c.Y0 || minY - 2 > c.Y1 || maxX + 2 < c.X0 || minX - 2 > c.X1);
+    }
+
     public void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode)
     {
-        if (_clip.Empty) return;
+        if (_clip.Empty || Misses(path, ctm, 2)) return;
         BeginEdges(); AddPath(path, ctm, 0.1);
         PaintScan(evenOdd, color, alpha, blendMode);
     }
 
     public void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode)
     {
-        if (_clip.Empty) return;
+        if (_clip.Empty || Misses(path, ctm, Math.Max(style.Width * Math.Sqrt(Math.Abs(ctm.Det)), 1) * Math.Max(style.MiterLimit, 2) + 2)) return;
         AddStroke(path, ctm, style);
         PaintScan(false, color, alpha, blendMode);
     }

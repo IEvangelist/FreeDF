@@ -67,6 +67,8 @@ public sealed class ContentInterpreter
     /// overprint device-dependent and nonzero overprint mode does not apply on a non-CMYK device, so ordinary screen output ignores it.
     /// </summary>
     public bool OverprintSimulation { get; set; }
+    /// <summary>Optional decoded-image cache shared by several renders of one document (band renders re-draw the same images).</summary>
+    public ImageDecodeCache? ImageCache { get; set; }
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -1560,7 +1562,7 @@ public sealed class ContentInterpreter
         if (d.TryGetValue("Filter", out var fv)) d["Filter"] = ExpandNames(fv);
         var stream = new PdfStream(new PdfDictionary(d), raw);
         if (CaptureInlineImages) _lastInline = stream;
-        try { DrawImage(stream, res); } catch (Exception e) when (e is NotSupportedException or IndexOutOfRangeException or ArgumentException) { Warn("inline image: " + e.Message); }
+        try { DrawImage(stream, res, cacheable: false); } catch (Exception e) when (e is NotSupportedException or IndexOutOfRangeException or ArgumentException) { Warn("inline image: " + e.Message); }
     }
 
     static PdfObject ExpandNames(PdfObject o) => o is PdfArray a ? new PdfArray(a.Items.Select(x => x is PdfName n ? new PdfName(ExpandFilter(n.Value)) : x).ToList()) : o is PdfName nn ? new PdfName(ExpandFilter(nn.Value)) : o;
@@ -1585,10 +1587,17 @@ public sealed class ContentInterpreter
         return d.Length;
     }
 
-    void DrawImage(PdfStream xs, PdfDictionary res)
+    void DrawImage(PdfStream xs, PdfDictionary res, bool cacheable = true)
     {
-        if (!DrawGraphics) return;
-        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn, _gs.Intent, _gs.BlackPointCompensation);
+        if (!DrawGraphics || !_be.MayPaintImage(_gs.Ctm)) return;
+        ImageData? img; bool isMask; string? warn;
+        var cacheKey = new ImageDecodeCache.Key(xs, res, _gs.Intent, _gs.BlackPointCompensation);
+        if (cacheable && ImageCache is not null && ImageCache.TryGet(cacheKey, out img, out isMask, out warn)) { }
+        else
+        {
+            img = ImageDecoder.Decode(_f, xs, res, out isMask, out warn, _gs.Intent, _gs.BlackPointCompensation);
+            if (cacheable) ImageCache?.Add(cacheKey, img, isMask, warn);
+        }
         if (warn is not null) Warn(warn);
         if (img is null) return;
         if (!isMask && _gs.Transfer is { } tr && IsFullyOpaque(false)) img = tr.Apply(img);

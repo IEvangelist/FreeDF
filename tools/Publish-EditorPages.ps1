@@ -18,7 +18,7 @@ $index = Join-Path $site 'index.html'
 $html = [IO.File]::ReadAllText($index).Replace('<head>', "<head>`n<base href=`"$BasePath`">`n<meta name=`"editor-host`" content=`"wasm`">")
 [IO.File]::WriteAllText($index, $html)
 [IO.File]::WriteAllText((Join-Path $site '.nojekyll'), '')
-foreach ($asset in @('editor.css', 'editor.js', 'host.js', 'worker.js', 'recovery.js', 'samples.js', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
+foreach ($asset in @('editor.css', 'editor.js', 'host.js', 'worker.js', 'pool.js', 'scheduler.js', 'replica-worker.js', 'recovery.js', 'samples.js', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
     if (!(Test-Path (Join-Path $site $asset))) { throw "Missing site asset: $asset" }
 }
 # Lazily fetched sample PDFs (never part of the startup payload): 01-26 are committed, 27 is generated deterministically in a scratch folder.
