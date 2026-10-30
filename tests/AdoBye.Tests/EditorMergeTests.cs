@@ -174,6 +174,22 @@ public class EditorMergeTests
         Assert.Equal(count, Reload(editor).Pages.Count);
     }
 
+    [Fact]
+    public void FailedBatchRestoresThePreviousSourceImportMap()
+    {
+        var source = Doc("20-");
+        var editor = PdfEditor.Create();
+        editor.ImportPages(source);
+        var outlines = source.File.Catalog.Get("Outlines");
+        var before = Assert.IsType<PortableDocument.Core.PdfRef>(editor.ImportValue(source, outlines));
+        Assert.ThrowsAny<Exception>(() => editor.ImportBatch(
+            [(source, [0], PdfImportOptions.Merge()), (Doc("22-"), [999], PdfImportOptions.Merge())], 0));
+        var after = Assert.IsType<PortableDocument.Core.PdfRef>(editor.ImportValue(source, outlines));
+        Assert.Equal(before.Number, after.Number);
+        editor.SetCatalogEntry("Outlines", after);
+        Assert.NotEmpty(Reload(editor).GetOutlines());
+    }
+
     static byte[] Frames(params byte[][] files)
     {
         var ms = new MemoryStream();

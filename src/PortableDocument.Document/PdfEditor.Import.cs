@@ -23,6 +23,8 @@ public sealed partial class PdfEditor
         var objs = _objs.ToDictionary(kv => kv.Key, kv => kv.Value);
         var pages = _pages.ToList();
         var next = _next;
+        var importMaps = files.Select(f => f.Source).Distinct()
+            .ToDictionary(source => source, source => _importMaps.TryGetValue(source, out var map) ? map : null);
         try
         {
             var at = insertAt;
@@ -33,6 +35,11 @@ public sealed partial class PdfEditor
             _objs.Clear();
             foreach (var (k, v) in objs) _objs[k] = v;
             _pages.Clear(); _pages.AddRange(pages); _next = next;
+            foreach (var (source, map) in importMaps)
+            {
+                _importMaps.Remove(source);
+                if (map is not null) _importMaps.Add(source, map);
+            }
             throw;
         }
     }
