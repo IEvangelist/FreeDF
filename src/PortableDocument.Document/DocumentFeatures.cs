@@ -191,6 +191,21 @@ public sealed record Pdf3DAnnotation(
     PdfDictionary Dictionary)
 {
     public Pdf3DView? DefaultViewDetails { get; init; }
+
+    /// <summary>Typed 3D stream (or 3D reference target) from /3DD (ISO 32000-1:2008 Tables 298, 300, 303); null when /3DD is not a stream.</summary>
+    public Pdf3DStream? StreamDetails { get; init; }
+
+    /// <summary>Typed /3DA activation dictionary (Table 299) with spec defaults; the annotation is never activated.</summary>
+    public Pdf3DActivation? ActivationDetails { get; init; }
+
+    /// <summary>/3DI flag; true by default (Table 298).</summary>
+    public bool Interactive { get; init; } = true;
+
+    /// <summary>The raw /3DB view box array, if present.</summary>
+    public PdfArray? ViewBox { get; init; }
+
+    /// <summary>The /3DV selector (view dictionary, VA index, IN string, or F/L/D name) resolved against the stream's views; null if it cannot be resolved.</summary>
+    public Pdf3DView? ResolvedDefaultView { get; init; }
 }
 
 public sealed record Pdf3DView(
@@ -209,7 +224,16 @@ public sealed record Pdf3DView(
     PdfArray? CrossSections,
     PdfArray? Nodes,
     bool? ResetNodes,
-    PdfDictionary Dictionary);
+    PdfDictionary Dictionary)
+{
+    public Pdf3DProjection? ProjectionDetails { get; init; }
+    public Pdf3DBackground? BackgroundDetails { get; init; }
+    public Pdf3DRenderMode? RenderModeDetails { get; init; }
+    public Pdf3DLightingScheme? LightingSchemeDetails { get; init; }
+    public IReadOnlyList<Pdf3DMeasure> MeasureDetails { get; init; } = [];
+    public IReadOnlyList<Pdf3DCrossSection> CrossSectionDetails { get; init; } = [];
+    public IReadOnlyList<Pdf3DNode> NodeDetails { get; init; } = [];
+}
 
 public static class DocumentFeatures
 {
@@ -829,6 +853,7 @@ public static class DocumentFeatures
                     || f.Resolve(annotation.Get("Subtype")).AsName() != "3D")
                     continue;
                 var defaultView = f.Resolve(annotation.Get("3DV"));
+                var stream = ThreeDFeatures.ReadStream(f, annotation.Get("3DD"));
                 annotations3D.Add(new Pdf3DAnnotation(
                     pageIndex,
                     annotationIndex,
@@ -838,13 +863,20 @@ public static class DocumentFeatures
                     annotation)
                 {
                     DefaultViewDetails = Read3DView(f, defaultView),
+                    StreamDetails = stream,
+                    ActivationDetails = ThreeDFeatures.ReadActivation(f, annotation.Get("3DA")),
+                    Interactive = f.Resolve(annotation.Get("3DI")) is not PdfBoolean { Value: false },
+                    ViewBox = f.Resolve(annotation.Get("3DB")) as PdfArray,
+                    ResolvedDefaultView = defaultView is null
+                        ? ThreeDFeatures.SelectView(f, stream?.DefaultView ?? new PdfInteger(0), stream)
+                        : ThreeDFeatures.SelectView(f, defaultView, stream),
                 });
             }
         }
         return annotations3D;
     }
 
-    static Pdf3DView? Read3DView(PdfFile f, PdfObject? value)
+    internal static Pdf3DView? Read3DView(PdfFile f, PdfObject? value)
     {
         if (f.Resolve(value) is not PdfDictionary view) return null;
         var externalName = PdfStringValue(f, view.Get("XN"));
@@ -864,7 +896,16 @@ public static class DocumentFeatures
             f.Resolve(view.Get("SA")) as PdfArray,
             f.Resolve(view.Get("NA")) as PdfArray,
             f.Resolve(view.Get("NR")) is PdfBoolean resetNodes ? resetNodes.Value : null,
-            view);
+            view)
+        {
+            ProjectionDetails = ThreeDFeatures.ReadProjection(f, view.Get("P")),
+            BackgroundDetails = ThreeDFeatures.ReadBackground(f, view.Get("BG")),
+            RenderModeDetails = ThreeDFeatures.ReadRenderMode(f, view.Get("RM")),
+            LightingSchemeDetails = ThreeDFeatures.ReadLightingScheme(f, view.Get("LS")),
+            MeasureDetails = ThreeDFeatures.ReadMeasures(f, view.Get("MA")),
+            CrossSectionDetails = ThreeDFeatures.ReadCrossSections(f, view.Get("SA")),
+            NodeDetails = ThreeDFeatures.ReadNodes(f, view.Get("NA")),
+        };
     }
 
     static void CollectRichMediaAssets(
