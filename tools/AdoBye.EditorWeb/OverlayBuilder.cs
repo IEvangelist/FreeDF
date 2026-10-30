@@ -41,7 +41,7 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
     }
 
     /// <summary>The embedded program of an existing page font, reused when editing text that was drawn with it.</summary>
-    public sealed record OrigFont(PdfFont Font, PdfRef Ref);
+    public sealed record OrigFont(PdfFont Font, PdfRef? Ref, Matrix? Transform = null, double WordSpacing = 0);
 
     sealed record Seg(string Text, Embedded? Emb, OrigFont? Orig);
 
@@ -204,7 +204,7 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
             foreach (var rn in line.EnumerateRunes())
             {
                 Embedded? e = null; OrigFont? o = null;
-                if (orig is not null && orig.Font.TryEncode(rn.Value, out _, out _)) o = orig;
+                if (orig?.Ref is not null && orig.Font.TryEncode(rn.Value, out _, out _)) o = orig;
                 else if (primary is not null)
                 {
                     if (primary.Font.LookupAny(rn.Value) > 0 || char.IsControl((char)Math.Min(rn.Value, 0xFFFF))) e = primary;
@@ -240,7 +240,8 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                     var face = FontCatalog.Standard.Contains(it.Font ?? "Helvetica") ? null : catalog.Resolve(it.Font, it.Bold, it.Italic);
                     var ef = face is null ? null : GetEmb(face);
                     // The page's own font is reused only while the user has not changed the family or style.
-                    var orig = it.Orig is not null && it.OStyle is not null && it.OStyle == $"{it.Font}|{it.Bold.ToString().ToLowerInvariant()}|{it.Italic.ToString().ToLowerInvariant()}" ? original?.Invoke(it) : null;
+                    var sourceText = it.Orig is not null ? original?.Invoke(it) : null;
+                    var orig = it.OStyle is not null && it.OStyle == $"{it.Font}|{it.Bold.ToString().ToLowerInvariant()}|{it.Italic.ToString().ToLowerInvariant()}" ? sourceText : null;
                     var segLines = lines.Select(l => Segment(it, l, orig, ef)).ToList();
                     var widths = segLines.Select((segs, li) => segs.Sum(s => MeasureSeg(it, s, size)) + tc * lines[li].EnumerateRunes().Count()).ToArray();
                     var boxW = it.W > 0 ? it.W : widths.Max();
@@ -262,11 +263,13 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                     }
                     sb.Append($"{N(r)} {N(g2)} {N(b)} rg\n");
                     if (synthBold) sb.Append($"{N(r)} {N(g2)} {N(b)} RG\n{N(size * 0.03)} w\n2 Tr\n");
-                    sb.Append($"BT\n{N(tc)} Tc\n");
+                    sb.Append($"BT\n{N(tc)} Tc\n{N(sourceText?.WordSpacing ?? 0)} Tw\n");
                     for (var li = 0; li < lines.Length; li++)
                     {
-                        var x = Px(it.X) + Left(li); var y = Py(it.Y) - size * 0.95 - li * lead;
-                        sb.Append($"1 0 {N(skew)} 1 {N(x)} {N(y)} Tm\n");
+                        var matrix = sourceText?.Transform ?? new Matrix(1, 0, skew, 1, 0, 0);
+                        var x = Px(it.X) + matrix.A * Left(li) - matrix.C * li * lead;
+                        var y = Py(it.Y) - size * 0.95 + matrix.B * Left(li) - matrix.D * li * lead;
+                        sb.Append($"{N(matrix.A)} {N(matrix.B)} {N(matrix.C)} {N(matrix.D)} {N(x)} {N(y)} Tm\n");
                         foreach (var seg in segLines[li])
                         {
                             string key, shown;
@@ -277,10 +280,10 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                                 foreach (var rn in seg.Text.EnumerateRunes()) hex.Append(se.Code(se.Font.LookupAny(rn.Value)).ToString("X4"));
                                 shown = hex + ">";
                             }
-                            else if (seg.Orig is { } so)
+                            else if (seg.Orig is { Ref: { } fontRef } so)
                             {
-                                key = "EdO" + so.Ref.Number;
-                                fonts[key] = so.Ref;
+                                key = "EdO" + fontRef.Number;
+                                fonts[key] = fontRef;
                                 var hex = new StringBuilder("<");
                                 foreach (var rn in seg.Text.EnumerateRunes()) if (so.Font.TryEncode(rn.Value, out var bytes, out _)) hex.Append(Convert.ToHexString(bytes));
                                 shown = hex + ">";

@@ -7,8 +7,16 @@ using Microsoft.Playwright;
 using PortableDocument.Document;
 using Pdf = PortableDocument.Render.PortableDocument;
 
-if (args.Length != 1) throw new ArgumentException("Usage: AdoBye.EditorSmoke <published-wwwroot>");
-var root = Path.GetFullPath(args[0]);
+if (args.Length >= 4 && args[0] == "--profile")
+{
+    await EditorPerformance.Run(args[1], args[2], args[3..]);
+    return;
+}
+
+var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
+var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery] <published-wwwroot>");
+var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -52,6 +60,19 @@ try
     }
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
+    Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
+    if (textSelectionOnly)
+    {
+        await EditorTextSelection.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
+        return;
+    }
+    if (recoveryOnly)
+    {
+        await EditorRecovery.Run(page);
+        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors));
+        return;
+    }
     await page.Locator("#fileBtn").ClickAsync();
     await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).ClickAsync();
     await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
@@ -66,7 +87,7 @@ try
     await text.FillAsync("Browser local round trip");
     await text.PressAsync("Escape");
     await page.Locator("#prev").ClickAsync();
-    await page.WaitForFunctionAsync("document.getElementById('base').naturalWidth > 0");
+    await page.WaitForFunctionAsync("document.getElementById('prev').classList.contains('on') && document.getElementById('base').dataset.url.includes('bare=false') && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url && document.getElementById('base').naturalWidth > 0");
     Check(await page.EvaluateAsync<bool>("document.getElementById('base').src.startsWith('data:image/png;base64,')"), "Local rendered preview");
     Check(await page.EvaluateAsync<bool>("""
         () => {
@@ -108,6 +129,51 @@ try
           if (!image.w || !image.h) throw new Error('Image did not decode');
         }
         """);
+    // Deletion saves an empty live list, but undo must still be able to fetch the image bytes.
+    if (await page.Locator("#prev").EvaluateAsync<bool>("el => el.classList.contains('on')"))
+        await page.Locator("#prev").ClickAsync();
+    await page.Locator("#img").SetInputFilesAsync(new FilePayload
+    {
+        Name = "undo.png", MimeType = "image/png",
+        Buffer = PortableDocument.Render.PngWriter.Encode(1, 1, [255, 0, 0, 255]),
+    });
+    await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
+    await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#layer .it").Filter(new() { Has = page.Locator("img") }).ClickAsync();
+    await page.Keyboard.PressAsync("Delete");
+    await page.WaitForFunctionAsync("async () => !(await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Keyboard.PressAsync("Control+z");
+    await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
+    await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#layer .it").Filter(new() { Has = page.Locator("img") }).ClickAsync();
+    await page.Keyboard.PressAsync("Control+c");
+    await page.Keyboard.PressAsync("Delete");
+    await page.WaitForFunctionAsync("async () => !(await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#fileBtn").ClickAsync();
+    await page.GetByRole(AriaRole.Menuitem, new() { Name = "Insert", Exact = false }).HoverAsync();
+    await page.GetByRole(AriaRole.Menuitem, new() { Name = "Blank page after current", Exact = true }).ClickAsync();
+    await page.WaitForFunctionAsync("document.getElementById('pn').value === '2'");
+    await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 10, Y = 10 } });
+    await page.Keyboard.PressAsync("Control+v");
+    await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
+    await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/1/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#dl").ClickAsync();
+    await page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).WaitForAsync();
+    await page.WaitForFunctionAsync("[...document.querySelectorAll('.thumb img')].every(img => img.naturalWidth > 0 && img.dataset.loadedUrl === img.dataset.url)");
+    await page.EvaluateAsync("""
+        () => {
+          window.saveRenders = [];
+          const image = window.pdfHost.image.bind(window.pdfHost);
+          window.pdfHost.image = url => {
+            if (/\/api\/page\/.*\.png/.test(url)) window.saveRenders.push({url, stack:new Error().stack});
+            return image(url);
+          };
+        }
+        """);
+    var savedAgain = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
+    if (await savedAgain.FailureAsync() is { } downloadFailure) throw new Exception(downloadFailure);
+    await page.WaitForFunctionAsync("!document.querySelector('.mdl') && !document.getElementById('name').textContent.includes('•')");
+    Check(await page.EvaluateAsync<int>("window.saveRenders.length") == 0, "Saving does not rerender unchanged pages or thumbnails: " + await page.EvaluateAsync<string>("JSON.stringify(window.saveRenders)"));
     Check(errors.IsEmpty, "No browser errors during editing: " + string.Join("\n", errors));
     var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
     if (artifacts is not null)
@@ -116,11 +182,26 @@ try
         await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-desktop.png") });
     }
     // Invalid local input reports an error without replacing the open document.
+    var beforeInvalid = await page.Locator("#name").TextContentAsync();
     await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "invalid.pdf", MimeType = "application/pdf", Buffer = [1, 2, 3] });
     await page.WaitForFunctionAsync("!document.getElementById('status').textContent.startsWith('Processing')");
-    Check(await page.Locator("#name").TextContentAsync() == "reopened.pdf •", "Failed open preserves edits");
+    Check(await page.Locator("#name").TextContentAsync() == beforeInvalid, "Failed open preserves edits");
     Check((await page.Locator("#status").TextContentAsync())!.Contains("PDF"), "Visible invalid PDF error");
     // The intentionally invalid PDF is logged by both the C# boundary and UI error reporter.
+    errors.Clear();
+    await EditorTextSelection.Run(page);
+    await page.EvaluateAsync("() => { window.renderProbe = pdfHost.image('/api/page/0.png?dpi=149'); }");
+    await page.Locator("#zi").ClickAsync();
+    await page.Locator("#zi").ClickAsync();
+    await page.Locator("#zo").ClickAsync();
+    await page.Locator(".thumb").Nth(1).ClickAsync();
+    await page.Locator(".thumb").First.ClickAsync();
+    await page.EvaluateAsync("async () => { await window.renderProbe; }");
+    await page.WaitForFunctionAsync("!document.getElementById('view').inert && document.getElementById('pn').value === '1' && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url");
+    Check(await page.EvaluateAsync<bool>("async () => { const img = document.getElementById('base'); return img.src === await pdfHost.image(img.dataset.url); }"),
+        "Queued obsolete zoom/navigation renders cannot replace the final selected page");
+    await EditorRecovery.Run(page);
+    Check(errors.All(ExpectedRecoveryError), "No unexpected browser errors during recovery: " + string.Join("\n", errors));
     errors.Clear();
     await page.SetViewportSizeAsync(390, 844);
     await page.ReloadAsync();
@@ -128,13 +209,14 @@ try
     await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "mobile.pdf", MimeType = "application/pdf", Buffer = await File.ReadAllBytesAsync(downloaded) });
     await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'mobile.pdf'");
     Check(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth"), "Mobile layout");
+    Check(await page.EvaluateAsync<bool>("[...document.querySelectorAll('main.hide-l .thumb img')].every(img => getComputedStyle(img).visibility === 'hidden')"), "Collapsed mobile thumbnails stay hidden");
     await page.Locator("#fileBtn").ClickAsync();
     Check(await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).IsVisibleAsync(), "Mobile file controls");
     await page.Keyboard.PressAsync("Escape");
     if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-mobile.png") });
     Check(network.IsEmpty, "No uploads, API requests, external requests or root-relative assets: " + string.Join(", ", network));
     Check(errors.IsEmpty, "No browser errors: " + string.Join(", ", errors));
-    Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode, error recovery, mobile layout, and no outbound PDF traffic.");
+    Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo and clipboard paste after navigation/history release, error recovery, mobile layout, and no outbound PDF traffic.");
 }
 finally { await app.StopAsync(); files.Dispose(); }
 
@@ -142,3 +224,5 @@ static void Check(bool success, string message)
 {
     if (!success) throw new Exception("FAIL: " + message);
 }
+static bool ExpectedRecoveryError(string error) =>
+    error.Contains("simulated recovery quota failure") || error.Contains("Encrypted PDFs require the server editor");

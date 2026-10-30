@@ -8,6 +8,8 @@ sealed class GState
     public Matrix Ctm = Matrix.Identity;
     public PdfColorSpace FillCs = PdfColorSpace.Gray, StrokeCs = PdfColorSpace.Gray;
     public double[] FillColor = [0], StrokeColor = [0];
+    public RenderingIntent Intent = RenderingIntent.RelativeColorimetric;
+    public BlackPointCompensation BlackPointCompensation = BlackPointCompensation.Default;
     public PdfObject? FillPattern, StrokePattern;
     public double LineWidth = 1, MiterLimit = 10, DashPhase;
     public LineCap Cap; public LineJoin Join;
@@ -37,6 +39,7 @@ public sealed class ContentInterpreter
     readonly Dictionary<PdfDictionary, PdfFont> _fonts = new(ReferenceEqualityComparer.Instance);
     readonly Stack<GState> _stack = new();
     readonly HashSet<PdfDictionary> _activeForms = new(ReferenceEqualityComparer.Instance);
+    readonly Dictionary<PdfDictionary, bool> _optionalContentOff = new(ReferenceEqualityComparer.Instance);
     GState _gs = new();
     PathData _path = new();
     int _pendingClip; // 0 none, 1 nonzero, 2 even-odd
@@ -53,6 +56,7 @@ public sealed class ContentInterpreter
     public OptionalContentState? OptionalContentState { get; set; }
     public OptionalContentEvent OptionalContentDisplayEvent { get; set; } = OptionalContentEvent.View;
     public double OptionalContentZoom { get; set; } = 1;
+    public OptionalContentContext? OptionalContentContext { get; set; }
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -60,12 +64,17 @@ public sealed class ContentInterpreter
     }
 
     public bool DrawAnnotations { get; set; } = true;
+    /// <summary>Allow annotation appearances without /AP /N to use generated fallback appearances.</summary>
+    public bool SynthesizeAnnotationAppearances { get; set; } = true;
+    /// <summary>Associate captured text spans with the selected annotation appearance stream.</summary>
+    public bool CaptureAnnotationAppearanceText { get; set; }
 
     public void Render(PdfPage page, Matrix baseMatrix) => Render(page, baseMatrix, asPageElement: false);
 
     /// <summary>Renders a page. When placed as an element of another page, /I controls isolation and a non-isolated page inherits its backdrop's colour space (11.4.7, 11.6.6).</summary>
     public void Render(PdfPage page, Matrix baseMatrix, bool asPageElement)
     {
+        _optionalContentOff.Clear();
         if (OptionalContentState is { } state)
         {
             if (!ReferenceEquals(state.File, _f))
@@ -104,6 +113,8 @@ public sealed class ContentInterpreter
             finally { if (DrawGraphics) _be.EndGroup(); }
         }
         finally { _be.Restore(); }
+        if (OptionalContentState is { } evaluatedState)
+            foreach (var warning in evaluatedState.Warnings) Warn(warning);
     }
 
     PdfColorSpace? PageGroupColorSpace(PdfObject? obj, PdfDictionary resources, int depth = 0, bool useDefaults = true)
@@ -156,9 +167,14 @@ public sealed class ContentInterpreter
             if ((flags & (2 | 32)) != 0 || R(a.Get("Subtype")).AsName() == "Popup") continue;
             if (R(a.Get("Rect")) is not PdfArray ra || ra.Count < 4) continue;
             var ap = R(a.Get("AP")) as PdfDictionary;
-            var n = R(ap?.Get("N"));
-            if (n is PdfDictionary states) n = R(R(a.Get("AS")).AsName() is { } s ? states.Get(s) : null);
-            if (n is not PdfStream xs && (xs = SynthAppearance(a, ra)!) is null) continue;
+            var appearance = ap?.Get("N");
+            var n = R(appearance);
+            if (n is PdfDictionary states)
+            {
+                appearance = R(a.Get("AS")).AsName() is { } s ? states.Get(s) : null;
+                n = R(appearance);
+            }
+            if (n is not PdfStream xs && (!SynthesizeAnnotationAppearances || (xs = SynthAppearance(a, ra)!) is null)) continue;
             var r = ra.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
             double rx0 = Math.Min(r[0], r[2]), ry0 = Math.Min(r[1], r[3]), rw = Math.Abs(r[2] - r[0]), rh = Math.Abs(r[3] - r[1]);
             var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, rw, rh];
@@ -170,7 +186,8 @@ public sealed class ContentInterpreter
             var amap = new Matrix(sx, 0, 0, sy, rx0 - x0 * sx, ry0 - y0 * sy);
             _gs = new GState { Ctm = amap.Then(baseMatrix) };
             _path = new PathData();
-            DoForm(xs, page.Resources);
+            DoForm(xs, page.Resources, appearance is PdfRef { Number: > 0 } appearanceRef ? appearanceRef.Number : 0,
+                annotationAppearance: CaptureAnnotationAppearanceText);
         }
     }
 
@@ -344,11 +361,11 @@ public sealed class ContentInterpreter
         while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
     }
 
-    /// <summary>A painted graphics object (path, image or form XObject) located by byte range in its owning stream: the page content (<paramref name="Form"/> 0) or a form XObject (its object number).</summary>
+    /// <summary>A painted graphics object or clipping path located by byte range in its owning stream: the page content (<paramref name="Form"/> 0) or a form XObject (its object number).</summary>
     public sealed record PageObject(int Index, string Kind, int Start, int End, Matrix Ctm, double X0, double Y0, double X1, double Y1,
         bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth, int Form = 0, PdfStream? Stream = null, int Ref = 0);
 
-    /// <summary>When set, painted objects in the page content (not in forms) are recorded here.</summary>
+    /// <summary>When set, page-content paint objects and clipping paths are recorded here.</summary>
     public List<PageObject>? Objects { get; set; }
 
     static int SkipWhite(byte[] d, int p) { while (p < d.Length && PdfLexer.IsWhite(d[p])) p++; return p; }
@@ -373,14 +390,16 @@ public sealed class ContentInterpreter
                 if (pathStart < 0) pathStart = SkipWhite(content, stmtStart);
                 break;
             case "S": case "s": case "f": case "F": case "f*": case "B": case "B*": case "b": case "b*": case "n":
-                if (op != "n" && pathStart >= 0 && _pendingClip == 0 && _hiddenDepth == 0 && !_path.IsEmpty)
+                if ((op != "n" || _pendingClip != 0) && pathStart >= 0 && _hiddenDepth == 0 && !_path.IsEmpty)
                 {
                     var stroke = op is "S" or "s" or "B" or "B*" or "b" or "b*";
-                    var fill = op is not ("S" or "s");
+                    var fill = op is "f" or "F" or "f*" or "B" or "B*" or "b" or "b*";
                     var pts = new List<(double, double)>();
                     for (var i = 0; i + 1 < _path.Pts.Count; i += 2) pts.Add((_path.Pts[i], _path.Pts[i + 1]));
                     var sc = Math.Sqrt(Math.Abs(_gs.Ctm.Det));
-                    AddObject("path", pathStart, end, _gs.Ctm, Bounds(_gs.Ctm, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pts), stroke ? _gs.LineWidth * sc / 2 : 0), fill, stroke);
+                    var kind = op == "n" ? "clip-path" : _pendingClip != 0 ? "clipped-path" : "path";
+                    AddObject(kind, pathStart, end, _gs.Ctm,
+                        Bounds(_gs.Ctm, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pts), stroke ? _gs.LineWidth * sc / 2 : 0), fill, stroke);
                 }
                 pathStart = -1;
                 break;
@@ -420,7 +439,8 @@ public sealed class ContentInterpreter
             case "j": _gs.Join = (LineJoin)Math.Clamp((int)N(a, 0), 0, 2); break;
             case "M": _gs.MiterLimit = N(a, 0); break;
             case "d": if (a.Count >= 2 && a[0] is PdfArray da) { _gs.Dash = da.Items.Select(x => x.AsNumber() ?? 0).ToArray(); _gs.DashPhase = N(a, 1); } break;
-            case "ri": case "i": break;
+            case "ri": if (a.Count > 0 && a[0] is PdfName intent) _gs.Intent = RenderingIntentNames.Parse(intent.Value); break;
+            case "i": break;
             case "gs": if (a.Count > 0 && a[0] is PdfName gn && R(res.Get("ExtGState")) is PdfDictionary egd && R(egd.Get(gn.Value)) is PdfDictionary g) ApplyExtGState(g, res); break;
 
             case "m": _path.MoveTo(N(a, 0), N(a, 1)); break;
@@ -480,7 +500,7 @@ public sealed class ContentInterpreter
             case "sh": if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName sn && R(res.Get("Shading")) is PdfDictionary shd) Shade(R(shd.Get(sn.Value)), res, null); break;
             case "Do": if (a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd) DoXObject(R(xd.Get(xn.Value)), res, xd.Get(xn.Value) is PdfRef xrf ? xrf.Number : 0); break;
 
-            case "BMC": _hiddenStack.Add(""); _mcidStack.Add(-1); break;
+            case "BMC": _hiddenStack.Add(a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : ""); _mcidStack.Add(-1); break;
             case "BDC":
                 {
                     var hidden = false;
@@ -497,7 +517,7 @@ public sealed class ContentInterpreter
                         PdfObject? prop = a[1] is PdfName pn && R(res.Get("Properties")) is PdfDictionary pd ? R(pd.Get(pn.Value)) : a[1];
                         hidden = prop is PdfDictionary ocd && IsHidden(ocd);
                     }
-                    _hiddenStack.Add(hidden ? "H" : "");
+                    _hiddenStack.Add(hidden ? "H" : a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : "");
                     if (hidden) _hiddenDepth++;
                     break;
                 }
@@ -592,16 +612,34 @@ public sealed class ContentInterpreter
         return valid && result;
     }
 
-    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg) =>
-        OptionalContentState is { } state
-            ? !state.IsVisibleCore(ocg, OptionalContentDisplayEvent, OptionalContentZoom)
+    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg)
+    {
+        if (_optionalContentOff.TryGetValue(ocg, out var off)) return off;
+        off = OptionalContentState is { } state
+            ? !state.IsVisibleCore(ocg, OptionalContentDisplayEvent, OptionalContentZoom, OptionalContentContext)
             : global::PortableDocument.Content.OptionalContentState.IsOff(
-                _f, ocg, cfg, DefaultOptionalContentConfiguration, OptionalContentDisplayEvent, OptionalContentZoom);
+                _f, ocg, cfg, DefaultOptionalContentConfiguration, OptionalContentDisplayEvent, OptionalContentZoom,
+                OptionalContentContext, Warn);
+        _optionalContentOff[ocg] = off;
+        return off;
+    }
 
     void NextLine() { _tlm = Matrix.Translate(0, -_gs.Leading).Then(_tlm); _tm = _tlm; }
 
     void ApplyExtGState(PdfDictionary g, PdfDictionary res)
     {
+        // Apply before /SMask regardless of dictionary entry order.
+        if (R(g.Get("RI")) is PdfName intent) _gs.Intent = RenderingIntentNames.Parse(intent.Value);
+        if (g.Get("UseBlackPtComp") is { } bpc)
+        {
+            switch (R(bpc))
+            {
+                case PdfName { Value: "ON" }: _gs.BlackPointCompensation = BlackPointCompensation.On; break;
+                case PdfName { Value: "OFF" }: _gs.BlackPointCompensation = BlackPointCompensation.Off; break;
+                case PdfName { Value: "Default" }: _gs.BlackPointCompensation = BlackPointCompensation.Default; break;
+                default: Warn("invalid ExtGState /UseBlackPtComp: expected /ON, /OFF or /Default; retaining current state"); break;
+            }
+        }
         foreach (var (k, v0) in g.Entries)
         {
             var v = R(v0);
@@ -644,12 +682,12 @@ public sealed class ContentInterpreter
         {
             var c = ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
             var gcs = R(R(g.Dict.Get("Group")) is PdfDictionary gd ? gd.Get("CS") : null) is { } cso ? PdfColorSpace.Parse(_f, cso, res) : null;
-            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c);
+            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c, _gs.Intent, _gs.BlackPointCompensation);
             else bc = c.Length switch
             {
                 1 => new RgbColor(c[0], c[0], c[0]),
                 3 => new RgbColor(c[0], c[1], c[2]),
-                4 => PdfColorSpace.Cmyk.ToRgb(c),
+                4 => PdfColorSpace.Cmyk.ToRgb(c, _gs.Intent, _gs.BlackPointCompensation),
                 _ => bc
             };
         }
@@ -657,11 +695,13 @@ public sealed class ContentInterpreter
         if (R(sm.Get("TR")) is { } tro && tro is not PdfName && PdfFunction.Parse(_f, tro) is { } trf)
             transfer = x => { var o = trf.Evaluate([x]); return o.Length > 0 ? o[0] : x; };
         var ctm = _gs.Ctm;
+        var intent = _gs.Intent;
+        var blackPointCompensation = _gs.BlackPointCompensation;
         _gs.SoftMaskActive = true;
         _be.SetSoftMask(off =>
         {
             var sb = _be; var saved = _gs;
-            _be = off; _gs = new GState { Ctm = ctm };
+            _be = off; _gs = new GState { Ctm = ctm, Intent = intent, BlackPointCompensation = blackPointCompensation };
             try { DoForm(g, res); }
             finally { _be = sb; _gs = saved; }
         }, lum, bc, transfer);
@@ -690,7 +730,7 @@ public sealed class ContentInterpreter
         var cs = stroke ? _gs.StrokeCs : _gs.FillCs;
         var c = stroke ? _gs.StrokeColor : _gs.FillColor;
         if (c.Length < cs.Components) c = [.. c, .. new double[cs.Components - c.Length]];
-        return cs.Components == 0 ? RgbColor.Black : cs.ToRgb(c);
+        return cs.Components == 0 ? RgbColor.Black : cs.ToRgb(c, _gs.Intent, _gs.BlackPointCompensation);
     }
 
     void Paint(bool fill, bool evenOdd, bool stroke)
@@ -770,7 +810,7 @@ public sealed class ContentInterpreter
             for (var i = i0; i <= i1; i++)
             {
                 _be.Save();
-                _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm) };
+                _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm), Intent = savedGs.Intent, BlackPointCompensation = savedGs.BlackPointCompensation };
                 if (uncolored) { _gs.FillCs = PdfColorSpace.Rgb; _gs.FillColor = [color.R, color.G, color.B]; _gs.StrokeCs = PdfColorSpace.Rgb; _gs.StrokeColor = _gs.FillColor; }
                 var r = new PathData(); r.Rect(bb[0], bb[1], bb[2] - bb[0], bb[3] - bb[1]);
                 _be.Clip(r, _gs.Ctm, false);
@@ -790,8 +830,14 @@ public sealed class ContentInterpreter
         string FontName, RgbColor Color, double Advance, bool Vertical, int Mcid = -1,
         int Form = 0, int FontRef = 0, PdfFont? Font = null, IReadOnlyList<TextPiece>? Pieces = null)
     {
+        /// <summary>One-em glyph space to the same device space as X/Y, including text scale, rise and CTM.</summary>
+        public Matrix RenderingMatrix { get; init; }
+        public double CharacterSpacing { get; init; }
+        public double WordSpacing { get; init; }
         /// <summary>The page sequence surrounding an untagged form invocation; not an MCID in this span's form.</summary>
         public int EnclosingPageMcid { get; init; } = -1;
+        /// <summary>Whether this text is inside an explicit /Artifact marked-content sequence.</summary>
+        public bool IsArtifact { get; init; }
     }
 
     /// <summary>One shown glyph: its raw string bytes, device-space box and writing-axis advance as a TJ number.</summary>
@@ -860,7 +906,12 @@ public sealed class ContentInterpreter
         TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
             Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
-            _curForm, _gs.FontRef, font, pieces) { EnclosingPageMcid = _pageMcid });
+            _curForm, _gs.FontRef, font, pieces)
+        {
+            EnclosingPageMcid = _pageMcid, IsArtifact = _hiddenStack.Contains("A"), RenderingMatrix = trm,
+            CharacterSpacing = _gs.FontSize == 0 ? 0 : _gs.CharSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize,
+            WordSpacing = _gs.FontSize == 0 ? 0 : _gs.WordSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize
+        });
     }
 
     void ShowText(byte[] s, PdfDictionary res, List<TextGlyph>? rec = null, System.Text.StringBuilder? text = null)
@@ -890,18 +941,23 @@ public sealed class ContentInterpreter
             if (DrawGraphics && !hidden)
             {
                 if (font.IsType3) DrawType3(font, run.Code, trm);
-                else if (font.GetGlyph(run.Code) is { } outline)
+                else
                 {
-                    var m = Matrix.Scale(0.001, 0.001).Then(trm);
-                    var mode = _gs.RenderMode;
-                    if (mode is 0 or 2 or 4 or 6) FillGlyph(outline, m);
-                    if (mode is 1 or 2 or 5 or 6)
+                    var outline = font.GetGlyph(run.Code, font.ToUnicode(run));
+                    foreach (var warning in font.Warnings) Warn(warning);
+                    if (outline is not null)
                     {
-                        // Stroke width is in user space, so stroke with the text-space transform folded into the path.
-                        var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(glyphToUser));
-                        _be.Stroke(up, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
+                        var m = Matrix.Scale(0.001, 0.001).Then(trm);
+                        var mode = _gs.RenderMode;
+                        if (mode is 0 or 2 or 4 or 6) FillGlyph(outline, m);
+                        if (mode is 1 or 2 or 5 or 6)
+                        {
+                            // Stroke width is in user space, so stroke with the text-space transform folded into the path.
+                            var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(glyphToUser));
+                            _be.Stroke(up, _gs.Ctm, Style(), Color(true), _gs.StrokeAlpha, _gs.BlendMode);
+                        }
+                        if (mode >= 4) { _textClip ??= new PathData(); _textClip.Append(outline.Transform(m)); }
                     }
-                    if (mode >= 4) { _textClip ??= new PathData(); _textClip.Append(outline.Transform(m)); }
                 }
             }
             _tm = (font.Vertical ? Matrix.Translate(0, advance) : Matrix.Translate(advance * _gs.HScale, 0)).Then(_tm);
@@ -949,7 +1005,7 @@ public sealed class ContentInterpreter
         else if (sub == "Form") DoForm(xs, res, objNum);
     }
 
-    void DoForm(PdfStream xs, PdfDictionary parentRes, int objNum = 0)
+    void DoForm(PdfStream xs, PdfDictionary parentRes, int objNum = 0, bool annotationAppearance = false)
     {
         if (!_activeForms.Add(xs.Dict)) return;
         var saved = _gs; var savedPath = _path; var savedTm = _tm; var savedTlm = _tlm;
@@ -965,7 +1021,7 @@ public sealed class ContentInterpreter
         try
         {
             // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
-            if (_runDepth == _collectDepth && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
+            if ((_runDepth == _collectDepth || annotationAppearance && _runDepth == 0) && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
             else if (_runDepth == _collectDepth) _collectDepth = -1;
             _be.Save();
             _stack.Push(_gs);
@@ -1010,6 +1066,8 @@ public sealed class ContentInterpreter
     void Shade(PdfObject? shObj, PdfDictionary res, Matrix? shadingToDevice)
     {
         if (!DrawGraphics) return;
+        var intent = _gs.Intent;
+        var blackPointCompensation = _gs.BlackPointCompensation;
         var d = shObj as PdfDictionary ?? (shObj as PdfStream)?.Dict;
         if (d is null) return;
         var m = shadingToDevice ?? _gs.Ctm;
@@ -1051,7 +1109,7 @@ public sealed class ContentInterpreter
             if (fns is null) return RgbColor.Black;
             double[] comps = fns.Length == 1 ? fns[0].Evaluate([t]) : fns.Select(fn => fn.Evaluate([t])[0]).ToArray();
             if (comps.Length < cs.Components) comps = [.. comps, .. new double[cs.Components - comps.Length]];
-            return cs.ToRgb(comps);
+            return cs.ToRgb(comps, intent, blackPointCompensation);
         }
 
         double[] Arr(string k) => R(d.Get(k)) is PdfArray a ? a.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [];
@@ -1119,7 +1177,7 @@ public sealed class ContentInterpreter
                 if (sx < dom[0] || sx > dom[1] || sy < dom[2] || sy > dom[3] || fns is null) return null;
                 double[] comps = fns.Length == 1 ? fns[0].Evaluate([sx, sy]) : fns.Select(fn => fn.Evaluate([sx, sy])[0]).ToArray();
                 if (comps.Length < cs.Components) comps = [.. comps, .. new double[cs.Components - comps.Length]];
-                return cs.ToRgb(comps);
+                return cs.ToRgb(comps, intent, blackPointCompensation);
             }, _gs.FillAlpha, _gs.BlendMode);
         }
         else if (type is >= 4 and <= 7 && shObj is PdfStream ms)
@@ -1130,7 +1188,7 @@ public sealed class ContentInterpreter
             var mesh = MeshShading.Decode(type, _f.DecodeStream(ms), dec, Int("BitsPerCoordinate", 8), Int("BitsPerComponent", 8),
                 type == 5 ? 0 : Int("BitsPerFlag", 8), nComps, Int("VerticesPerRow", 0), m);
             var shader = MeshShading.ToShader(mesh, comps => fns is null
-                ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps)
+                ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps, intent, blackPointCompensation)
                 : EvalT(comps[0]));
             _be.PaintShader(shader, _gs.FillAlpha, _gs.BlendMode);
         }
@@ -1204,7 +1262,7 @@ public sealed class ContentInterpreter
     void DrawImage(PdfStream xs, PdfDictionary res)
     {
         if (!DrawGraphics) return;
-        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn);
+        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn, _gs.Intent, _gs.BlackPointCompensation);
         if (warn is not null) Warn(warn);
         if (img is null) return;
         _be.DrawImage(img, _gs.Ctm, _gs.FillAlpha, isMask ? Color(false) : RgbColor.Black, _gs.BlendMode);

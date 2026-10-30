@@ -4,37 +4,68 @@ function base64(bytes) {
   return btoa(text);
 }
 
-function command(url, method = 'GET', body = null, fileName = null) {
-  const u = new URL(url, location.href);
-  const reply = JSON.parse(DotNet.invokeMethod('AdoBye.EditorWasm', 'Request',
-    JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName })));
-  if (reply.error) throw new Error(reply.error);
-  return reply;
-}
-
 export async function start() {
-  const ready = new Promise(resolve => { window.editorRuntimeReady = resolve; });
-  await Blazor.start();
+  const worker = new Worker(new URL('worker.js', import.meta.url), { type: 'module', name: 'PDF engine' });
+  let nextId = 0, failed = null, sequence = Promise.resolve();
+  const pending = new Map();
+  let readyResolve, readyReject;
+  const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
+  const fail = error => {
+    failed = error; readyReject(error);
+    for (const { reject } of pending.values()) reject(error);
+    pending.clear(); worker.terminate();
+    window.dispatchEvent(new ErrorEvent('error', { error, message: error.message }));
+  };
+  worker.onerror = event => fail(new Error(event.message || 'The PDF worker stopped. Reload the editor.'));
+  worker.onmessageerror = () => fail(new Error('The PDF worker returned an unreadable response. Reload the editor.'));
+  worker.onmessage = ({ data }) => {
+    if (data.startupError) { fail(new Error(data.startupError)); return; }
+    if (data.ready) { readyResolve(); return; }
+    const request = pending.get(data.id);
+    if (!request) return;
+    pending.delete(data.id);
+    const error = data.error || data.reply?.error;
+    if (error) request.reject(new Error(error));
+    else request.resolve(data.reply);
+  };
   await ready;
-  delete window.editorRuntimeReady;
+  const command = (url, method = 'GET', body = null, fileName = null) => {
+    if (failed) return Promise.reject(failed);
+    const u = new URL(url, location.href), id = ++nextId;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      try { worker.postMessage({ id, command: JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName }) }); }
+      catch (error) { pending.delete(id); reject(error); }
+    });
+  };
+  const enqueue = operation => {
+    const result = sequence.then(operation);
+    sequence = result.catch(() => {});
+    return result;
+  };
   return {
-    async request(url, options = {}) {
-      let body = null, fileName = null;
-      if (options.body instanceof FormData) {
-        const file = [...options.body.values()].find(value => value instanceof File);
-        if (!file) throw new Error('Choose a file.');
-        body = base64(new Uint8Array(await file.arrayBuffer())); fileName = file.name;
-      } else if (options.body != null) {
-        body = base64(new TextEncoder().encode(options.body));
-      }
-      const reply = command(url, options.method, body, fileName);
-      return new Response(Uint8Array.from(atob(reply.data), c => c.charCodeAt(0)), {
-        headers: { 'Content-Type': reply.contentType, ...(reply.fileName ? { 'X-File-Name': reply.fileName } : {}) },
+    execution: 'worker',
+    request(url, options = {}) {
+      return enqueue(async () => {
+        let body = null, fileName = null;
+        if (options.body instanceof FormData) {
+          const file = [...options.body.values()].find(value => value instanceof File);
+          if (!file) throw new Error('Choose a file.');
+          body = base64(new Uint8Array(await file.arrayBuffer())); fileName = file.name;
+        } else if (options.body != null) {
+          body = base64(new TextEncoder().encode(options.body));
+        }
+        const reply = await command(url, options.method, body, fileName);
+        return new Response(Uint8Array.from(atob(reply.data), c => c.charCodeAt(0)), {
+          headers: { 'Content-Type': reply.contentType, ...(reply.fileName ? { 'X-File-Name': reply.fileName } : {}) },
+        });
       });
     },
     image(url) {
-      const reply = command(url);
-      return `data:${reply.contentType};base64,${reply.data}`;
+      return enqueue(async () => {
+        const reply = await command(url);
+        return `data:${reply.contentType};base64,${reply.data}`;
+      });
     },
     async download(url) {
       const response = await this.request(url);

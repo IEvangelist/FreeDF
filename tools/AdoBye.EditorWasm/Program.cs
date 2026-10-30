@@ -1,30 +1,36 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
-using Microsoft.JSInterop;
+using System.Runtime.InteropServices.JavaScript;
+using System.Runtime.Versioning;
 using PortableDocument.Content;
 
-var host = WebAssemblyHostBuilder.CreateDefault(args).Build();
-await host.Services.GetRequiredService<IJSRuntime>().InvokeVoidAsync("editorRuntimeReady");
-await host.RunAsync();
+return;
 
-public static class BrowserEditor
+[SupportedOSPlatform("browser")]
+public static partial class BrowserEditor
 {
     static readonly EditorSession Session = new(new FontCatalog(), new BrowserFontFallback());
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public sealed record Command(string Method, string Path, Dictionary<string, string> Query, string? Body, string? FileName);
 
-    [JSInvokable]
+    [JSExport]
     public static string Request(string command)
     {
+        Command? c = null;
         try
         {
-            var c = JsonSerializer.Deserialize<Command>(command, Json) ?? throw new ArgumentException("Missing editor command.");
+            c = JsonSerializer.Deserialize<Command>(command, Json) ?? throw new ArgumentException("Missing editor command.");
             var reply = Session.Handle(c.Method, c.Path, c.Query, c.Body is null ? null : Convert.FromBase64String(c.Body), c.FileName);
             return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName }, Json);
         }
 
         catch (Exception e)
         {
+            if (e is System.Security.Cryptography.CryptographicException && c?.Method == "POST" && c.Path is "/api/open" or "/api/import")
+            {
+                var message = "Encrypted PDFs require the server editor. This browser cannot open this protection; no decrypted recovery copy was stored. " + e.Message;
+                Console.Error.WriteLine(message);
+                return JsonSerializer.Serialize(new { error = message }, Json);
+            }
             Console.Error.WriteLine(e);
             return JsonSerializer.Serialize(new { error = e.Message }, Json);
         }

@@ -8,6 +8,23 @@ namespace AdoBye.Tests;
 
 public class ExistingObjectTransformTests
 {
+    [Theory]
+    [InlineData("image")]
+    [InlineData("path")]
+    [InlineData("inline")]
+    public void AnalysisWithoutPaintingMatchesPaintedObjectAndTextMetadata(string kind)
+    {
+        var page = Fixture(Target(kind) + " " + Rest, 0).Pages[0];
+        using var backend = new SoftwareRasterizer(1, 1);
+        var painted = new ContentInterpreter(page.Document.File, backend) { TextSpans = [], Objects = [], DrawAnnotations = false };
+        var box = page.CropBox;
+        painted.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
+        var (spans, objects) = DocumentRenderer.Analyze(page);
+        Assert.Equal(painted.Objects, objects);
+        Assert.Equal(painted.TextSpans.Select(s => (s.Text, s.X, s.Y, s.Width, s.Advance, s.Form, s.Index)),
+            spans.Select(s => (s.Text, s.X, s.Y, s.Width, s.Advance, s.Form, s.Index)));
+    }
+
     const string Rest = "0 0 1 rg 140 30 25 15 re f BT /F1 12 Tf 100 150 Td (Keep) Tj ET";
     const double Sx = 1.5, Sy = 2, Tx = 15, Ty = 20;
 

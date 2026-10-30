@@ -4,7 +4,8 @@ namespace PortableDocument.Content;
 
 /// <summary>
 /// Huffman JPEG decoder: baseline, extended sequential and progressive (SOF0/1/2), plus arithmetic-coded DCT (SOF9/10, JpegArith.cs)
-/// and lossless Huffman (SOF3, JpegLossless.cs). Arithmetic lossless (SOF11), hierarchical and 12-bit DCT are unsupported.
+/// and lossless Huffman (SOF3, JpegLossless.cs). SOF1/2 support 8- and 12-bit precision; other DCT modes require 8 bits.
+/// Arithmetic lossless (SOF11), hierarchical and subsampled interleaved lossless JPEG remain unsupported.
 /// Uses a 64-bit bit buffer, 9-bit Huffman lookahead tables, libjpeg's integer "islow" IDCT and parallel reconstruction.
 /// </summary>
 public static partial class JpegDecoder
@@ -82,7 +83,7 @@ public static partial class JpegDecoder
                     arith = m is 0xC9 or 0xCA;
                     lossless = m == 0xC3;
                     prec = d[seg];
-                    if (lossless ? prec is < 2 or > 16 : prec != 8) return null;
+                    if (lossless ? prec is < 2 or > 16 : prec != 8 && !(prec == 12 && m is 0xC1 or 0xC2)) return null;
                     height = d[seg + 1] << 8 | d[seg + 2]; width = d[seg + 3] << 8 | d[seg + 4];
                     ncomp = d[seg + 5];
                     if (width <= 0 || height <= 0 || ncomp is < 1 or > 4) return null;
@@ -153,6 +154,7 @@ public static partial class JpegDecoder
         }
         if (scans == 0) return null;
         if (lossless) return FinishLossless(comps, width, height, hmax, vmax, adobe, prec, lpt);
+        if (prec == 12) return FinishDct12(comps, qt, width, height, hmax, vmax, adobe);
         var planes = new byte[comps.Length][];
         var quant = new int[comps.Length][];
         for (var i = 0; i < comps.Length; i++)

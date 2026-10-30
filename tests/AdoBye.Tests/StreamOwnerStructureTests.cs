@@ -56,6 +56,79 @@ public class StreamOwnerStructureTests
     }
 
     [Fact]
+    public void TaggedAppearanceTextUsesItsStreamIdentityAndStructureOrder()
+    {
+        var doc = Load(
+            (6, "<< /S /Document /Pg 3 0 R /K [8 0 R 7 0 R] >>"),
+            (9, ObjPdf.Stream("/Span <</MCID 0>> BDC BT /FA 12 Tf 10 80 Td (Appearance) Tj ET EMC",
+                Appearance + " /Resources << /Font << /FA << /Type /Font /Subtype /Type1 /BaseFont /Courier >> >> >>")));
+        var extractor = new StructuredTextExtractor(doc);
+
+        Assert.Equal("Page", string.Concat(global::PortableDocument.Render.PortableDocument.ExtractText(doc.Pages[0]).Select(s => s.Text)));
+        Assert.DoesNotContain(global::PortableDocument.Render.PortableDocument.Analyze(doc.Pages[0]).Spans, s => s.Text == "Appearance");
+        Assert.Equal("Appearance\nPage", extractor.Extract());
+        Assert.Equal("Appearance", extractor.GetMarkedContentText(0, Stream(doc), 0));
+    }
+
+    [Fact]
+    public void ActualTextTakesPrecedenceOverAppearanceTextAndAlt()
+    {
+        var doc = Load(
+            (8, "<< /S /Figure /ActualText (Replacement) /Alt (Description) /K << /Type /MCR /Stm 9 0 R /StmOwn 10 0 R /MCID 0 >> >>"),
+            (9, ObjPdf.Stream("/Span <</MCID 0>> BDC BT /F1 12 Tf 10 80 Td (Appearance) Tj ET EMC", Appearance)));
+
+        Assert.Equal("Page\nReplacement", StructuredTextExtractor.Extract(doc, includeAlt: true));
+    }
+
+    [Fact]
+    public void SelectedNormalAppearanceStateIsExtractedButInactiveStateIsNot()
+    {
+        var doc = Load(
+            (6, "<< /S /Document /Pg 3 0 R /K [8 0 R 12 0 R 7 0 R] >>"),
+            (10, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 100 100] /StructParent 1 /AP << /N << /On 9 0 R /Off 13 0 R >> >> /AS /On >>"),
+            (9, ObjPdf.Stream("/Span <</MCID 0>> BDC BT /F1 12 Tf 10 80 Td (Selected) Tj ET EMC", Appearance)),
+            (12, "<< /S /Figure /Pg 3 0 R /K << /Type /MCR /Stm 13 0 R /StmOwn 10 0 R /MCID 0 >> >>"),
+            (13, ObjPdf.Stream("/Span <</MCID 0>> BDC BT /F1 12 Tf 10 80 Td (Inactive) Tj ET EMC", Appearance)));
+
+        Assert.Equal("Selected\nPage", new StructuredTextExtractor(doc).Extract());
+    }
+
+    [Fact]
+    public void SharedAppearanceStreamContributesOnceAndRequiresMatchingLocalOwner()
+    {
+        var doc = Load(
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /StructParents 0 /Annots [10 0 R 13 0 R] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>"),
+            (9, ObjPdf.Stream("/Span <</MCID 0>> BDC BT /F1 12 Tf 10 80 Td (Shared) Tj ET EMC", Appearance)),
+            (13, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 100 100] /StructParent 2 /AP << /N 9 0 R >> >>"));
+        Assert.Equal("Page\nShared", new StructuredTextExtractor(doc).Extract());
+
+        doc = Load(
+            (8, "<< /S /Figure /Alt (Appearance description) /K << /Type /MCR /Stm 9 0 R /StmOwn 13 0 R /MCID 0 >> >>"),
+            (13, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 100 100] /AP << /N 9 0 R >> >>"));
+        Assert.Equal("Page\nAppearance description", StructuredTextExtractor.Extract(doc, includeAlt: true));
+    }
+
+    [Fact]
+    public void MissingOwnerIsAllowedForLocalAppearanceAndAnnotationContentsAreNotText()
+    {
+        var doc = Load(
+            (8, "<< /S /Figure /K << /Type /MCR /Stm 9 0 R /MCID 0 >> >>"),
+            (10, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 100 100] /Contents (Annotation contents) /AP << /N 9 0 R >> >>"),
+            (9, ObjPdf.Stream("/Span <</MCID 0>> BDC BT /F1 12 Tf 10 80 Td (Appearance) Tj ET EMC", Appearance)));
+
+        Assert.Equal("Page\nAppearance", new StructuredTextExtractor(doc).Extract());
+        Assert.DoesNotContain("Annotation contents", new StructuredTextExtractor(doc).Extract());
+    }
+
+    [Fact]
+    public void StructuredExtractionDoesNotSynthesizeMissingAppearances()
+    {
+        var doc = Load(
+            (10, "<< /Type /Annot /Subtype /FreeText /Rect [0 0 100 100] /Contents (Synthetic only) /DA (/F1 12 Tf) >>"));
+        Assert.Equal("Page", new StructuredTextExtractor(doc).Extract());
+    }
+
+    [Fact]
     public void StmWithoutOwnerStillUsesTheNonPageStreamKey()
     {
         var doc = Load((8, "<< /S /Figure /K << /Type /MCR /Stm 9 0 R /MCID 0 >> >>"));

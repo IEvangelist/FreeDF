@@ -20,11 +20,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <ProjectReference Include="..\..\tools\AdoBye.EditorWeb\AdoBye.EditorWeb.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\..\tools\AdoBye.EditorWeb\FontCatalog.cs" Link="EditorWeb\FontCatalog.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\OverlayBuilder.cs" Link="EditorWeb\OverlayBuilder.cs" />
+    <Compile Include="..\..\tools\AdoBye.EditorWeb\FormObjectEditPolicy.cs" Link="EditorWeb\FormObjectEditPolicy.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\EditorSession.cs" Link="EditorWeb\EditorSession.cs" />
   </ItemGroup>
 

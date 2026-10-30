@@ -17,6 +17,8 @@ public sealed record PdfRenderOptions
     public string? OptionalContentConfigurationName { get; init; }
     /// <summary>Reusable interactive layer state; cannot be combined with a configuration name.</summary>
     public OptionalContentState? OptionalContentState { get; init; }
+    /// <summary>Explicit language and user identities for usage rules; omitted fields leave those rules unapplied.</summary>
+    public OptionalContentContext? OptionalContentContext { get; init; }
     /// <summary>Usage event to apply when rendering optional content.</summary>
     public ContentInterpreter.OptionalContentEvent OptionalContentDisplayEvent { get; init; } =
         ContentInterpreter.OptionalContentEvent.View;
@@ -49,13 +51,16 @@ public static class PortableDocument
     }
 
     /// <summary>Text-showing operators of the page's own content (not forms), positioned in CropBox space: points, origin top-left, y down, unrotated.</summary>
-    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page)
+    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page) => ExtractText(page, includeAnnotationAppearances: false);
+
+    internal static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page, bool includeAnnotationAppearances)
     {
         var box = page.CropBox;
         using var raster = new SoftwareRasterizer(1, 1);
         var interp = new ContentInterpreter(page.Document.File, raster)
         {
-            TextSpans = [], DrawAnnotations = false, DrawGraphics = false
+            TextSpans = [], DrawAnnotations = includeAnnotationAppearances, DrawGraphics = false,
+            SynthesizeAnnotationAppearances = false, CaptureAnnotationAppearanceText = includeAnnotationAppearances
         };
         interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
         return interp.TextSpans;
@@ -66,7 +71,7 @@ public static class PortableDocument
     {
         var box = page.CropBox;
         using var raster = new SoftwareRasterizer(1, 1);
-        var interp = new ContentInterpreter(page.Document.File, raster) { TextSpans = [], Objects = [], DrawAnnotations = false };
+        var interp = new ContentInterpreter(page.Document.File, raster) { TextSpans = [], Objects = [], DrawAnnotations = false, DrawGraphics = false };
         interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
         return (interp.TextSpans, interp.Objects);
     }
@@ -92,6 +97,7 @@ public static class PortableDocument
         interp.OptionalContentState = state;
         interp.OptionalContentDisplayEvent = options.OptionalContentDisplayEvent;
         interp.OptionalContentZoom = scale;
+        interp.OptionalContentContext = options.OptionalContentContext;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }

@@ -174,7 +174,17 @@ public sealed class CffFont
     int[] ReadCharset(int off, int n)
     {
         var cs = new int[n];
-        if (off <= 2) { for (var i = 0; i < n; i++) cs[i] = i; return cs; }
+        if (off is >= 0 and <= 2)
+        {
+            var predefined = off switch
+            {
+                0 => CffStandardStrings.ISOAdobeCharset,
+                1 => CffStandardStrings.ExpertCharset,
+                _ => CffStandardStrings.ExpertSubsetCharset,
+            };
+            Array.Copy(predefined, cs, Math.Min(n, predefined.Length));
+            return cs;
+        }
         var p = off;
         var fmt = _d[p++];
         var g = 1;
@@ -217,7 +227,12 @@ public sealed class CffFont
             for (var c = 0; c < 256; c++) _encoding[c] = StdGlyph(c);
             return;
         }
-        if (off == 1) return; // Expert encoding is resolved by glyph name instead.
+        if (off == 1)
+        {
+            for (var c = 0; c < 256; c++)
+                _encoding[c] = GlyphByName(CffStandardStrings.Strings[CffStandardStrings.ExpertEncoding[c]]);
+            return;
+        }
         var p = off;
         var fmt = _d[p++] & 0x7F;
         if (fmt == 0)
@@ -246,6 +261,8 @@ public sealed class CffFont
         var i = sid - 391;
         return i < _strings.Length ? _strings[i]! : "";
     }
+
+    internal string GlyphNameByCode(int code) => GlyphName(GlyphByCode(code)) is { Length: > 0 } n ? n : ".notdef";
 
     public int GlyphByName(string name)
     {

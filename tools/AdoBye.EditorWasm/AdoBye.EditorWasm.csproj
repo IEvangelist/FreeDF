@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <WasmEnableThreads>false</WasmEnableThreads>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <BlazorEnableCompression>false</BlazorEnableCompression>
     <!-- The shared editor uses reflection-based JSON for its anonymous UI payloads. -->
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
@@ -16,6 +17,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
     <Compile Include="..\AdoBye.EditorWeb\EditorSession.cs" Link="EditorSession.cs" />
+    <Compile Include="..\AdoBye.EditorWeb\FormObjectEditPolicy.cs" Link="FormObjectEditPolicy.cs" />
     <Compile Include="..\AdoBye.EditorWeb\OverlayBuilder.cs" Link="OverlayBuilder.cs" />
     <Compile Include="..\AdoBye.EditorWeb\FontCatalog.cs" Link="FontCatalog.cs" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />

@@ -8,6 +8,7 @@ const html = readFileSync(join(__dirname, 'wwwroot', 'index.html'), 'utf8');
 const saves = html.slice(html.indexOf('let objectSave ='), html.indexOf('function selectObj('));
 const flush = html.slice(html.indexOf('async function flush()'), html.indexOf('\nfunction props()'));
 const act = html.slice(html.indexOf('async function act('), html.indexOf('\nconst upload ='));
+const post = html.slice(html.indexOf('const post ='), html.indexOf('\nconst status ='));
 
 function harness(fetch) {
   const messages = [];
@@ -17,8 +18,8 @@ function harness(fetch) {
     refreshDirty: async () => {}, refresh: async () => {}, clearTimeout,
   });
   vm.runInContext(`let sel = 0, saveT = 0, state = { pageCount: 1 };
-    ${saves}\n${flush}\n${act}
-    globalThis.save = saveObj; globalThis.flush = flush; globalThis.act = act;
+    ${saves}\n${flush}\n${act}\n${post}
+    globalThis.save = saveObj; globalThis.flush = flush; globalThis.act = act; globalThis.post = post;
     globalThis.page = n => { sel = n; };`, context);
   return { ...context, messages };
 }
@@ -100,7 +101,7 @@ for (const failure of ['http', 'network']) {
     let fail = true;
     const h = harness(async () => {
       if (fail && failure === 'network') throw new Error('Disconnected');
-      return { ok: !fail, status: fail ? 500 : 200 };
+      return { ok: !fail, status: fail ? 500 : 200, text: async () => 'Server rejected the edit' };
     });
     await h.save(edit(20));
     assert.match(h.messages[0], /Object edit was not saved/);
@@ -112,3 +113,24 @@ for (const failure of ['http', 'network']) {
     await h.flush();
   });
 }
+
+test('Form child conflicts display the server reason and block save until reset', async () => {
+  let reject = true;
+  const reason = 'Reset graphic-group edits before editing Form children, or save and reopen the document.';
+  const h = harness(async () => ({ ok: !reject, status: reject ? 409 : 200, text: async () => reason }));
+  const child = { ...edit(20), inForm: true };
+  await h.save(child);
+  assert.ok(h.messages[0].includes(reason));
+  await assert.rejects(h.flush(), /Object edits have not been saved/);
+  reject = false;
+  child.edit = null;
+  await h.save(child);
+  await h.flush();
+});
+
+test('page mutation conflicts show the server reason through the document action status', async () => {
+  const reason = 'Save and reopen the document, or reset Form child edits, before changing pages.';
+  const h = harness(async () => ({ ok: false, status: 409, text: async () => reason }));
+  await h.act(() => h.post('/api/delete/0'));
+  assert.deepEqual(h.messages, [reason]);
+});

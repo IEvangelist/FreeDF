@@ -6,6 +6,8 @@ public abstract class PdfColorSpace
 {
     public abstract int Components { get; }
     public abstract RgbColor ToRgb(ReadOnlySpan<double> c);
+    public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => ToRgb(c);
+    public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => ToRgb(c, intent);
     public virtual double[] InitialColor => new double[Components];
     public virtual double[] DefaultDecode(int bpc) => Enumerable.Range(0, Components).SelectMany(_ => new double[] { 0, 1 }).ToArray();
 
@@ -52,27 +54,31 @@ public abstract class PdfColorSpace
         }
     }
 
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfStream, PdfColorSpace> IccCache = new();
+    sealed record IccResult(PdfColorSpace? Space);
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfStream, IccResult> IccCache = new();
     static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IccProfile?> ProfilesByHash = new();
 
     static PdfColorSpace Device(int n) => n switch { 1 => Gray, 4 => Cmyk, _ => Rgb };
 
-    /// <summary>Builds an ICCBased space; falls back to the device space of the same component count when the profile is unusable.</summary>
-    static PdfColorSpace BuildIcc(PdfFile f, PdfStream s, int n)
+    /// <summary>Caches only the profile result; an Alternate may depend on the current resources.</summary>
+    static IccResult BuildIcc(PdfFile f, PdfStream s, int n)
     {
-        var dev = Device(n);
         byte[] data;
-        try { data = f.DecodeStream(s); } catch (Exception) { return dev; }
+        try { data = f.DecodeStream(s); } catch (Exception) { return new(null); }
         var key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data));
         var prof = ProfilesByHash.GetOrAdd(key, _ => IccProfile.TryParse(data));
-        if (prof is null || prof.Components != n) return dev;
-        return prof.IsSrgb ? Rgb : new IccBased(prof);
+        if (prof is null || prof.Components != n) return new(null);
+        // Keep the profile: the approximate sRGB shortcut must not discard explicit BPC context.
+        return new(new IccBased(prof));
     }
 
     sealed class IccBased(IccProfile profile) : PdfColorSpace
     {
         public override int Components => profile.Components;
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => profile.ToSrgb(c);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => profile.ToSrgb(c, intent);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => profile.ToSrgb(c, intent, blackPointCompensation);
     }
 
     /// <summary>CIE XYZ (relative to a given white point) to sRGB: Bradford adaptation to D65, linear sRGB matrix, sRGB transfer curve.</summary>
@@ -174,22 +180,28 @@ public abstract class PdfColorSpace
 
     sealed class Indexed(PdfColorSpace baseCs, byte[] lookup, int hival) : PdfColorSpace
     {
+        readonly double[] _decode = baseCs.DefaultDecode(8);
         public override int Components => 1;
         public override double[] DefaultDecode(int bpc) => [0, (1 << bpc) - 1];
 
-        public override RgbColor ToRgb(ReadOnlySpan<double> c)
+        public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent)
+            => ToRgb(c, intent, BlackPointCompensation.Default);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation)
         {
             var i = Math.Clamp((int)Math.Round(c[0]), 0, hival);
             var n = baseCs.Components;
-            var comps = new double[n];
-            var dec = baseCs.DefaultDecode(8);
+            Span<double> comps = n <= 16 ? stackalloc double[n] : new double[n];
+            var dec = _decode;
             for (var k = 0; k < n; k++)
             {
                 var o = i * n + k;
                 var v = o < lookup.Length ? lookup[o] / 255.0 : 0;
                 comps[k] = dec[2 * k] + v * (dec[2 * k + 1] - dec[2 * k]);
             }
-            return baseCs.ToRgb(comps);
+            return baseCs.ToRgb(comps, intent, blackPointCompensation);
         }
     }
 
@@ -198,10 +210,15 @@ public abstract class PdfColorSpace
         public override int Components => n;
         public override double[] InitialColor => Enumerable.Repeat(1.0, n).ToArray();
 
-        public override RgbColor ToRgb(ReadOnlySpan<double> c)
+        public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent)
+            => ToRgb(c, intent, BlackPointCompensation.Default);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation)
         {
             if (allNone) return new(1, 1, 1);
-            return alt.ToRgb(fn.Evaluate(c.ToArray()));
+            return alt.ToRgb(fn.Evaluate(c.ToArray()), intent, blackPointCompensation);
         }
     }
 
@@ -211,12 +228,17 @@ public abstract class PdfColorSpace
         public PdfColorSpace? Underlying => under;
         public override int Components => under?.Components ?? 0;
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => under is null ? RgbColor.Black : under.ToRgb(c);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => under is null ? RgbColor.Black : under.ToRgb(c, intent);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => under is null ? RgbColor.Black : under.ToRgb(c, intent, blackPointCompensation);
     }
 
     public static PdfColorSpace Parse(PdfFile f, PdfObject? obj, PdfDictionary? resources = null, int depth = 0)
+        => TryParse(f, obj, resources, depth) ?? Gray;
+
+    static PdfColorSpace? TryParse(PdfFile f, PdfObject? obj, PdfDictionary? resources, int depth)
     {
         obj = f.Resolve(obj);
-        if (depth > 8) return Gray;
+        if (depth > 8) return null;
         if (obj is PdfName n)
         {
             switch (n.Value)
@@ -227,10 +249,10 @@ public abstract class PdfColorSpace
                 case "Pattern": return new PatternCs(null);
             }
             if (resources is not null && f.Resolve(resources.Get("ColorSpace")) is PdfDictionary csd && csd.Get(n.Value) is { } named)
-                return Parse(f, named, resources, depth + 1);
-            return Gray;
+                return TryParse(f, named, resources, depth + 1);
+            return null;
         }
-        if (obj is not PdfArray a || a.Count == 0) return Gray;
+        if (obj is not PdfArray a || a.Count == 0) return null;
         var kind = f.Resolve(a[0]).AsName();
         switch (kind)
         {
@@ -254,13 +276,16 @@ public abstract class PdfColorSpace
                     if (a.Count > 1 && f.Resolve(a[1]) is PdfStream s)
                     {
                         var n2 = (int)(f.Resolve(s.Dict.Get("N")).AsNumber() ?? 3);
-                        return IccCache.GetValue(s, _ => BuildIcc(f, s, n2));
+                        var profile = IccCache.GetValue(s, _ => BuildIcc(f, s, n2)).Space;
+                        if (profile is not null) return profile;
+                        var alternate = TryParse(f, s.Dict.Get("Alternate"), resources, depth + 1);
+                        return alternate is not null and not PatternCs && alternate.Components == n2 ? alternate : Device(n2);
                     }
                     return Rgb;
                 }
             case "Indexed" or "I":
                 {
-                    if (a.Count < 4) return Gray;
+                    if (a.Count < 4) return null;
                     var bcs = Parse(f, a[1], resources, depth + 1);
                     var hival = (int)(f.Resolve(a[2]).AsNumber() ?? 255);
                     var lookup = f.Resolve(a[3]) switch { PdfString ps => ps.Bytes, PdfStream st => f.DecodeStream(st), _ => [] };
@@ -268,16 +293,16 @@ public abstract class PdfColorSpace
                 }
             case "Separation" or "DeviceN":
                 {
-                    if (a.Count < 4) return Gray;
+                    if (a.Count < 4) return null;
                     var names = kind == "Separation" ? [f.Resolve(a[1]).AsName() ?? ""] : (f.Resolve(a[1]) as PdfArray)?.Items.Select(x => f.Resolve(x).AsName() ?? "").ToArray() ?? [];
                     var alt = Parse(f, a[2], resources, depth + 1);
                     var fn = PdfFunction.Parse(f, a[3]);
-                    if (fn is null) return Gray;
+                    if (fn is null) return null;
                     return new Tint(alt, fn, Math.Max(1, names.Length), names.Length > 0 && names.All(x => x == "None"));
                 }
             case "Pattern":
                 return new PatternCs(a.Count > 1 ? Parse(f, a[1], resources, depth + 1) : null);
         }
-        return Gray;
+        return null;
     }
 }

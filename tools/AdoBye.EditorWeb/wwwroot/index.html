@@ -111,18 +111,32 @@
   </div>
   <aside id="props"></aside>
 </main>
-<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
+<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><button id="recovery" hidden disabled aria-live="polite">No local recovery</button><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
 <script>
 addEventListener('editor-ready', () => {
-document.querySelector('main').inert = false;
-document.querySelector('header').inert = false;
 const host = window.pdfHost;
+let recovery = null;
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
+  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery'].includes(url.split('?')[0])) {
+    selectionEpoch++;
+    clip = null; pendingUploads.clear(); assetImages.clear();
+  }
+  recovery?.changed(url, options?.method ?? 'GET');
   return response;
 };
-const imageUrl = url => host ? host.image(url) : new URL(url, location.href).href;
+const assetImages = new Map();
+const imageUrl = async url => {
+  if (!host) return new URL(url, location.href).href;
+  if (!url.startsWith('/api/asset/')) return host.image(url);
+  if (!assetImages.has(url)) assetImages.set(url, host.image(url).catch(error => { assetImages.delete(url); throw error; }));
+  return assetImages.get(url);
+};
+function pruneAssetImages() {
+  const ids = new Set([...items.map(it => it.asset), ...undo.flatMap(s => JSON.parse(s).items.map(it => it.asset)), clip?.asset].filter(Boolean));
+  for (const url of assetImages.keys()) if (!ids.has(url.slice('/api/asset/'.length))) assetImages.delete(url);
+}
 const reportError = e => { console.error(e); status(e.message); };
 addEventListener('unhandledrejection', e => { e.preventDefault(); reportError(e.reason); });
 addEventListener('error', e => { if (e.error) reportError(e.error); });
@@ -134,6 +148,7 @@ document.querySelector('label[for="img"], label:has(#img)').onkeydown = e => {
 };
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
+const pendingUploads = new Map();
 let locked = localStorage.getItem('lock-geom') === '1';
 const GEOM = new Set(['x', 'y', 'w', 'h', 'x2', 'y2']);
 const $ = id => document.getElementById(id);
@@ -144,7 +159,7 @@ const famCss = f => FAM[f] ?? `"${String(f).replace(/"/g, '')}", sans-serif`;
 let fontList = [];
 request('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
 const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null;
+let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null, curSpan = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
@@ -157,34 +172,93 @@ const fontFamily = n => {
   return /courier|mono/i.test(n) ? 'Courier' : /times|serif|georgia|garamond|minion/i.test(n) && !/sans/i.test(n) ? 'Times' : 'Helvetica';
 };
 
-// Turns an existing page text run into an editable text item; the original operator is removed on the server.
-function convertSpan(s) {
-  pushUndo();
-  const it = { id: crypto.randomUUID(), type: 'text', x: s.x, y: s.y - 0.95 * s.size, w: 0, h: 0, text: s.text, font: fontFamily(s.font),
+function spanItem(s, text = s.text) {
+  const it = { id: crypto.randomUUID(), type: 'text', x: s.x, y: s.y - 0.95 * s.size, w: s.width, h: 0, text, font: fontFamily(s.font), originalFont: s.font, spacing: s.spacing,
     size: s.size, bold: /bold|black|heavy/i.test(s.font), italic: /italic|oblique/i.test(s.font), color: s.color, fill: '', stroke: '', strokeWidth: 0,
     opacity: 1, asset: '', x2: 0, y2: 0, orig: s.index };
   it.oStyle = `${it.font}|${it.bold}|${it.italic}`;
-  items.push(it); cur = it; curObj = null; paint(); props(); queueSave();
+  return it;
 }
 
-async function refresh() {
+// Only actual edits replace the original operator.
+function convertSpan(s, text = s.text) {
+  pushUndo();
+  const it = spanItem(s, text);
+  items.push(it); cur = it; curObj = null; curSpan = null; paint(); props(); queueSave();
+  return it;
+}
+
+function selectSpan(s) { curSpan = s; cur = null; curObj = null; paint(); props(); }
+
+function spanProps() {
+  const s = curSpan, p = $('props'), draft = spanItem(s);
+  const number = (key, label) => `<label class="fld"><span>${label}</span><input type="number" step="0.1" data-original="${key}" value="${draft[key]}"${locked && GEOM.has(key) ? ' disabled' : ''}></label>`;
+  p.innerHTML = `<section class="head"><h2>Text <em>from page</em></h2></section>
+    <section><label class="fld"><span>Content</span><textarea rows="3" data-original-text>${esc(s.text)}</textarea></label>
+    <p class="hint">Selection does not change the PDF. Changing the content reuses the original font and text transform; characters missing from that font use a fallback. The page shows the PDF engine's actual output.</p></section>
+    <section><h3>Typography</h3><p>${esc(s.font)}</p><div class="row"><button type="button" class="fpb" data-original-font>Change font</button>${number('size', 'Size')}</div>
+    <div class="row"><label class="tgl" title="Bold"><input type="checkbox" data-original="bold" ${draft.bold ? 'checked' : ''}>${ic('bold')}</label><label class="tgl" title="Italic"><input type="checkbox" data-original="italic" ${draft.italic ? 'checked' : ''}>${ic('italic')}</label></div>
+    <label class="fld"><span>Colour</span><input type="color" data-original="color" value="${s.color}"></label></section>
+    <section><h3>Position</h3><div class="row">${number('x', 'X')}${number('y', 'Y')}</div></section>`;
+  const change = (key, value) => { if (draft[key] === value) return; const it = convertSpan(s); it[key] = value; paint(); props(); };
+  p.querySelectorAll('[data-original]').forEach(el => el.oninput = () =>
+    change(el.dataset.original, el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value));
+  p.querySelector('[data-original-font]').onclick = e => openFontPicker(e.currentTarget, draft, family => {
+    const it = convertSpan(s); it.font = family; it.oStyle = null; paint(); props();
+  });
+  const input = p.querySelector('textarea');
+  input.oninput = () => {
+    if (input.value === s.text) return;
+    const start = input.selectionStart, end = input.selectionEnd;
+    convertSpan(s, input.value);
+    const next = p.querySelector('[data-k=text]'); next.focus(); next.setSelectionRange(start, end);
+  };
+  input.onkeydown = e => {
+    if (e.key === 'Escape') { e.preventDefault(); curSpan = null; paint(); props(); }
+  };
+}
+
+let thumbnailObserver;
+async function setImage(img, url) {
+  img.dataset.url = url;
+  const current = () => img.isConnected && img.dataset.url === url;
+  try {
+    const source = await imageUrl(url);
+    if (!current()) return;
+    img.src = source;
+    await img.decode();
+    if (current()) { img.style.opacity = '1'; img.dataset.loadedUrl = url; }
+  } catch (error) {
+    if (current()) throw error;
+  }
+}
+function queueThumbnail(img, url) {
+  img.dataset.url = url;
+  setTimeout(() => {
+    if (!img.isConnected || img.dataset.url !== url) return;
+    setImage(img, url).catch(reportError);
+  }, 0);
+}
+async function refresh(retainedUndo = null) {
   await flush();
   state = await (await request('/api/state')).json();
   $('name').textContent = state.pageCount ? state.fileName + (state.dirty ? ' •' : '') : 'No document';
   $('pages').textContent = state.pageCount ? `${state.pageCount} page${state.pageCount === 1 ? '' : 's'}` : '';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
+  thumbnailObserver?.disconnect();
   const t = $('thumbs'); t.innerHTML = '';
   state.pages.forEach((p, i) => {
     const d = document.createElement('div');
     d.className = 'thumb' + (i === sel ? ' sel' : ''); d.draggable = true;
-    d.innerHTML = `<div class="paper"><img alt="Page ${i + 1}" src="${imageUrl(`/api/page/${i}.png?dpi=40&v=${state.version}`)}"></div><span class="num">${i + 1}</span>
+    const swapped = p.rotation === 90 || p.rotation === 270;
+    d.innerHTML = `<div class="paper"><img alt="Page ${i + 1}" width="${swapped ? p.height : p.width}" height="${swapped ? p.width : p.height}" style="height:auto;opacity:0" data-url="/api/page/${i}.png?dpi=40&v=${state.version}"></div><span class="num">${i + 1}</span>
       <div class="acts"><button class="mini" data-a="l" title="Rotate left">${ic('rotl')}</button><button class="mini" data-a="r" title="Rotate right">${ic('rotr')}</button><button class="mini danger" data-a="x" title="Delete page">${ic('trash')}</button></div>`;
     d.onclick = e => {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'l') act(() => post(`/api/rotate/${i}/270`));
       else if (a === 'r') act(() => post(`/api/rotate/${i}/90`));
       else if (a === 'x') { sel = i; act(() => post(`/api/delete/${i}`)); }
-      else { flush().then(() => { sel = i; select(); }); }
+      else if (i !== sel) { flush().then(() => { sel = i; select(); }); }
     };
     d.ondragstart = () => dragFrom = i;
     d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
@@ -192,24 +266,45 @@ async function refresh() {
     d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); if (dragFrom >= 0 && dragFrom !== i) { sel = i; act(() => post(`/api/move/${dragFrom}/${i}`)); } dragFrom = -1; };
     t.appendChild(d);
   });
-  await select();
+  await select(retainedUndo);
+  thumbnailObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) if (entry.isIntersecting) {
+      thumbnailObserver.unobserve(entry.target);
+      queueThumbnail(entry.target, entry.target.dataset.url);
+    }
+  }, { root: t });
+  t.querySelectorAll('img').forEach(img => thumbnailObserver.observe(img));
 }
 
-async function select() {
-  document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
+let selectionEpoch = 0;
+async function select(retainedUndo = null) {
+  const epoch = ++selectionEpoch, page = sel;
   const v = $('view');
-  if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; props(); return; }
-  items = await (await request(`/api/page/${sel}/items`)).json();
-  spans = await (await request(`/api/page/${sel}/text`)).json();
-  objs = await (await request(`/api/page/${sel}/objects`)).json();
-  fields = await (await request('/api/fields')).json();
-  origKey = okey();
-  cur = null; curObj = null; undo = [];
-  build();
+  v.inert = true;
+  try {
+    await itemSave;
+    if (epoch !== selectionEpoch) return;
+    undo = retainedUndo ?? [];
+    if (!retainedUndo) await post('/api/asset-history');
+    if (epoch !== selectionEpoch) return;
+    document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
+    if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
+    const nextItems = await (await request(`/api/page/${page}/items`)).json();
+    const nextSpans = await (await request(`/api/page/${page}/text`)).json();
+    const nextObjects = await (await request(`/api/page/${page}/objects`)).json();
+    const nextFields = await (await request('/api/fields')).json();
+    if (epoch !== selectionEpoch || page !== sel) return;
+    items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields;
+    origKey = okey();
+    cur = null; curObj = null; curSpan = null;
+    pruneAssetImages();
+    await build();
+    recovery?.uiChanged();
+  } finally { if (epoch === selectionEpoch) v.inert = false; }
 }
 
 // Page geometry: the layer lives in unrotated MediaBox space (points, y down); the CSS transform matches the page /Rotate.
-function build() {
+async function build() {
   const p = state.pages[sel], v = $('view'), r = p.rotation;
   const swap = r === 90 || r === 270;
   const w0 = swap ? p.height : p.width, h0 = swap ? p.width : p.height;
@@ -219,12 +314,14 @@ function build() {
   const dw = w0 * S, dh = h0 * S, Lw = p.width * S, Lh = p.height * S;
   geom = { r, dw, dh, Lw, Lh };
   const dpi = Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))));
-  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" alt="Current PDF page" src="${imageUrl(`/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}`)}"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
+  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" alt="Current PDF page"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
+  const raster = setImage($('base'), `/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}`);
   const tf = { 0: '', 90: `translate(${dw}px,0) rotate(90deg)`, 180: `translate(${dw}px,${dh}px) rotate(180deg)`, 270: `translate(0,${dh}px) rotate(270deg)` }[r] ?? '';
   const layer = $('layer'); layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
   layer.onpointerdown = layerDown;
   $('zv').textContent = Math.round(S * 72 / 96 * 100) + '%'; fitP0 = fitP; navUpdate();
   paint(); props();
+  await raster;
 }
 
 // Client pixel position -> layer pixel position (inverse of the rotation transform).
@@ -241,7 +338,7 @@ function paint() {
     for (const o of objs) {
       if (o.edit?.delete) continue;
       const [x0, y0, x1, y1] = oBox(o);
-      const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}`;
+      const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}${o.inForm ? ' inside its graphic group' : ''}`;
       e.style.left = x0 * S + 'px'; e.style.top = y0 * S + 'px'; e.style.width = Math.max(x1 - x0, 1) * S + 'px'; e.style.height = Math.max(y1 - y0, 1) * S + 'px';
       e.onpointerdown = ev => { if (tool === 'select') startObjMove(ev, o); };
       if (o === curObj) for (const [k, x, y, c] of [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']])
@@ -253,10 +350,21 @@ function paint() {
     const used = new Set(items.filter(i => i.orig != null).map(i => i.orig));
     for (const s of spans) {
       if (used.has(s.index)) continue;
-      const b = document.createElement('div'); b.className = 'span'; b.title = 'Click to edit this text';
+      const b = document.createElement('div'); b.className = 'span' + (s === curSpan ? ' on' : ''); b.title = 'Select this text; edit its content in Properties';
+      if (s === curSpan) b.style.outline = '1px solid var(--accent, #7c5cff)';
       b.style.left = s.x * S + 'px'; b.style.top = (s.y - 0.9 * s.size) * S + 'px';
       b.style.width = Math.max(s.width, 2) * S + 'px'; b.style.height = 1.15 * s.size * S + 'px';
-      b.onpointerdown = ev => { ev.stopPropagation(); convertSpan(s); };
+      b.onpointerdown = ev => {
+        if (locked) { ev.stopPropagation(); selectSpan(s); return; }
+        let it;
+        drag(ev, () => selectSpan(s), (point, start, event) => {
+          if (!it) { it = spanItem(s); items.push(it); cur = it; curSpan = null; }
+          let dx = (point[0] - start[0]) / S, dy = (point[1] - start[1]) / S;
+          if (event?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+          it.x = s.x + dx; it.y = s.y - .95 * s.size + dy; paint();
+        });
+      };
+      b.ondblclick = () => $('props').querySelector('[data-original-text]')?.focus();
       layer.appendChild(b);
     }
   }
@@ -283,9 +391,12 @@ function paint() {
       e.style.textDecoration = [it.underline && 'underline', it.strike && 'line-through'].filter(Boolean).join(' ') || 'none';
       e.style.letterSpacing = (it.spacing || 0) * S + 'px'; if (it.lineHeight > 0) e.style.lineHeight = it.lineHeight;
       if (it.w > 0) e.style.minWidth = it.w * S + 'px';
+      if (it.orig != null) { e.style.color = 'transparent'; e.style.textDecoration = 'none'; }
     } else {
       e.style.width = it.w * S + 'px'; e.style.height = it.h * S + 'px';
-      if (it.type === 'image') e.innerHTML = `<img alt="Inserted image" src="${imageUrl(`/api/asset/${it.asset}`)}">`;
+      if (it.type === 'image') {
+        e.innerHTML = '<img alt="Inserted image">';
+      }
       else {
         e.style.background = it.fill || 'transparent';
         e.style.border = it.stroke && it.strokeWidth > 0 ? `${it.strokeWidth * S}px solid ${it.stroke}` : 'none';
@@ -296,6 +407,7 @@ function paint() {
     if (it.type === 'text') e.ondblclick = () => editText(e, it);
     if (it === cur && !editing) boxHandles(e, it);
     layer.appendChild(e);
+    if (it.type === 'image') setImage(e.querySelector('img'), `/api/asset/${it.asset}`).catch(reportError);
   }
 }
 
@@ -322,14 +434,23 @@ function lineHandles(layer, it) {
   }
 }
 
-function drag(ev, onStart, onMove, onEnd) {
+function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
   ev.preventDefault(); ev.stopPropagation();
-  const start = toLayer(ev.clientX, ev.clientY); pushUndo(); onStart(start);
+  const start = toLayer(ev.clientX, ev.clientY);
+  let changed = mutatesOnStart;
+  if (changed) pushUndo();
+  onStart(start);
   let last = ev;
-  const mv = e => { last = e; onMove(toLayer(e.clientX, e.clientY), start, e); };
+  const mv = e => {
+    last = e;
+    const point = toLayer(e.clientX, e.clientY);
+    if (!changed && point[0] === start[0] && point[1] === start[1]) return;
+    if (!changed) { pushUndo(); changed = true; }
+    onMove(point, start, e);
+  };
   // Pressing or releasing a modifier mid-drag re-applies the last pointer position.
-  const key = e => { if (e.key === 'Shift' || e.key === 'Alt') onMove(toLayer(last.clientX, last.clientY), start, e); };
-  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('keydown', key); removeEventListener('keyup', key); onEnd?.(); queueSave(); props(); };
+  const key = e => { if (changed && (e.key === 'Shift' || e.key === 'Alt')) onMove(toLayer(last.clientX, last.clientY), start, e); };
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('keydown', key); removeEventListener('keyup', key); if (changed) { onEnd?.(); queueSave(); } props(); };
   addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('keydown', key); addEventListener('keyup', key);
 }
 
@@ -347,6 +468,7 @@ function constrainBox(b0, k, dx, dy, e, lockRatio) {
 }
 
 function startMove(ev, it) {
+  curSpan = null;
   if (locked) { ev.stopPropagation(); cur = it; curObj = null; paint(); props(); return; }
   cur = it; curObj = null; let o;
   drag(ev, () => { o = { ...it }; paint(); props(); },
@@ -373,7 +495,8 @@ function startResize(ev, it, k, el) {
 }
 
 function layerDown(ev) {
-  if (tool === 'select') { cur = null; curObj = null; paint(); props(); return; }
+  if (tool === 'select') { cur = null; curObj = null; curSpan = null; paint(); props(); return; }
+  curSpan = null;
   const kind = tool;
   const base = { id: crypto.randomUUID(), type: kind, x: 0, y: 0, w: 0, h: 0, text: '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000',
     fill: '', stroke: '#000000', strokeWidth: 1, opacity: 1, asset: null, x2: 0, y2: 0 };
@@ -381,7 +504,7 @@ function layerDown(ev) {
   if (kind === 'text') {
     const p = toLayer(ev.clientX, ev.clientY); ev.preventDefault();
     pushUndo(); it = { ...base, x: p[0] / S, y: p[1] / S, text: 'Text' }; items.push(it); cur = it; setTool('select'); paint(); props();
-    editText([...document.querySelectorAll('.it')].pop(), it); return;
+    editText([...document.querySelectorAll('.it')].pop(), it); queueSave(); return;
   }
   if (kind === 'rect' || kind === 'ellipse') { base.fill = '#7c5cff'; base.stroke = '#000000'; base.strokeWidth = 0; }
   if (kind === 'redact') { base.fill = '#000000'; base.strokeWidth = 0; }
@@ -404,21 +527,26 @@ function layerDown(ev) {
       const tiny = kind === 'line' ? Math.hypot(it.x2 - it.x, it.y2 - it.y) < 3 : it.w < 3 && it.h < 3;
       if (tiny) { if (kind === 'line') { it.x2 = it.x + 100; } else { it.w = 120; it.h = kind === 'ellipse' ? 120 : 70; } }
       setTool('select'); paint();
-    });
+    }, true);
 }
 
 function editText(el, it) {
+  if (it.orig != null) { $('props').querySelector('[data-k=text]')?.focus(); return; }
   if (!el) return;
   editing = true; el.contentEditable = 'plaintext-only'; el.focus();
   getSelection().selectAllChildren(el);
   el.onpointerdown = e => e.stopPropagation();
   el.onkeydown = e => { if (e.key === 'Escape') el.blur(); };
   let pushed = false;
-  el.oninput = () => { if (!pushed) { pushUndo(); pushed = true; } it.text = el.innerText.replace(/\n$/, ''); queueSave(); };
+  el.oninput = () => {
+    const text = el.innerText.replace(/\n$/, '');
+    if (text === it.text) return;
+    if (!pushed) { pushUndo(); pushed = true; }
+    it.text = text; queueSave();
+  };
   el.onblur = () => {
     editing = false; el.contentEditable = 'false';
-    it.text = el.innerText.replace(/\n$/, ''); queueSave();
-    if (!it.text) items = items.filter(x => x !== it), cur = null;
+    if (!it.text && pushed) { items = items.filter(x => x !== it); cur = null; queueSave(); }
     paint(); props();
   };
 }
@@ -432,7 +560,7 @@ function setTool(t) {
 function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null) })); if (undo.length > 100) undo.shift(); }
 async function doUndo() {
   if (!undo.length) return;
-  const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null;
+  const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null; curSpan = null;
   const changed = [];
   objs.forEach((o, k) => { if (JSON.stringify(o.edit ?? null) !== JSON.stringify(s.ed[k])) { o.edit = s.ed[k]; changed.push(o); } });
   paint(); props(); queueSave();
@@ -459,9 +587,9 @@ function saveObj(o) {
   objectSave = objectSave.then(async () => {
     try {
       const response = await request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
-      if (!response.ok) throw new Error(`${url} ${response.status}`);
+      if (!response.ok) throw new Error((await response.text()) || `${url} ${response.status}`);
       if (sel === page) updateBase();
-      const th = document.querySelectorAll('.thumb img')[page]; if (th) th.src = imageUrl(`/api/page/${page}.png?dpi=40&t=${Date.now()}`);
+      const th = document.querySelectorAll('.thumb img')[page]; if (th) queueThumbnail(th, `/api/page/${page}.png?dpi=40&t=${Date.now()}`);
       await refreshDirty();
       objectSaveErrors.delete(url);
     } catch (error) {
@@ -472,7 +600,7 @@ function saveObj(o) {
   });
   return objectSave;
 }
-function selectObj(o) { cur = null; curObj = o; paint(); props(); }
+function selectObj(o) { cur = null; curSpan = null; curObj = o; paint(); props(); }
 
 function startObjMove(ev, o) {
   if (locked) { ev.stopPropagation(); selectObj(o); return; }
@@ -501,7 +629,8 @@ function objProps() {
   const o = curObj, p = $('props'), b = oBox(o), kinds = { path: 'Shape', image: 'Image', form: 'Graphic group' };
   const num = (k, label, v) => `<label class="fld"><span>${label}</span><input type="number" step="1" data-o="${k}"   value="${+v.toFixed(2)}"${locked ? ' disabled title="Locked"' : ''}></label>`;
   const colour = (k, label, v) => `<label class="fld"><span>${label}</span><div class="swatch"><input type="color" data-oc="${k}" value="${o.edit?.[k] || v}"><code>${(o.edit?.[k] || v).toUpperCase()}</code></div></label>`;
-  p.innerHTML = `<section class="head"><span class="chip">${ic(o.kind === 'image' ? 'image' : o.kind === 'form' ? 'file' : 'square')}</span><h2>${kinds[o.kind] ?? o.kind} <em>from page</em></h2></section>
+  p.innerHTML = `<section class="head"><span class="chip">${ic(o.kind === 'image' ? 'image' : o.kind === 'form' ? 'file' : 'square')}</span><h2>${kinds[o.kind] ?? o.kind} <em>${o.inForm ? 'inside form' : 'from page'}</em></h2></section>
+    ${o.formContentsShared ? '<section><p class="hint">This form is shared, repeated, or cannot be proven unique, so individual painted objects are not editable here; transform the group instead.</p></section>' : ''}
     <section><h3>Position</h3><div class="row">${num('x', 'X', b[0])}${num('y', 'Y', b[1])}</div><div class="row">${num('w', 'Width', b[2] - b[0])}${num('h', 'Height', b[3] - b[1])}</div></section>
     ${o.kind === 'path' && (o.hasFill || o.hasStroke) ? `<section><h3>Appearance</h3>${o.hasFill ? colour('fill', 'Fill', o.fill) : ''}${o.hasStroke ? colour('stroke', 'Stroke', o.stroke) : ''}</section>` : ''}
     <section class="acts2"><button data-oact="reset" title="Restore the original">${ic('rotl')}Reset</button><button class="danger" data-oact="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;
@@ -521,28 +650,55 @@ function objProps() {
   p.querySelector('[data-oact=reset]').onclick = () => { pushUndo(); o.edit = null; paint(); props(); saveObj(o); };
 }
 
-function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
+let itemSave = Promise.resolve();
+function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); recovery?.pending(); }
 async function flush() {
+  try { await itemSave; } catch (e) { if (!saveT) throw e; }
   let pending;
   do { pending = objectSave; await pending; } while (pending !== objectSave);
   if (objectSaveErrors.size) throw new Error('Object edits have not been saved. Retry the failed edits before saving.');
   if (!saveT || !state.pageCount) return;
   clearTimeout(saveT); saveT = 0;
   const i = sel;
+  const body = JSON.stringify({
+    items: items.map(x => ({ ...x })),
+    historyAssets: [...new Set(undo.flatMap(snapshot => JSON.parse(snapshot).items.map(item => item.asset).filter(Boolean)))],
+    clipboardAssets: clip?.asset ? [clip.asset] : [],
+  });
+  const uploads = [...pendingUploads];
   try {
-    await request(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(items.map(({ ...x }) => x)) });
+    const send = async () => {
+      const update = JSON.parse(body);
+      const referenced = new Set([...update.items.map(item => item.asset), ...update.historyAssets, ...update.clipboardAssets].filter(Boolean));
+      for (const [id, file] of uploads) {
+        if (!referenced.has(id)) continue;
+        const upload = new FormData(); upload.append('f', file);
+        await request(`/api/asset?id=${encodeURIComponent(id)}`, { method: 'POST', body: upload });
+      }
+      await request(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+      for (const id of referenced) pendingUploads.delete(id);
+      for (const [id] of uploads) {
+        if (referenced.has(id)) continue;
+        await post(`/api/asset-cancel?id=${encodeURIComponent(id)}`);
+        pendingUploads.delete(id);
+      }
+      pruneAssetImages();
+    };
+    itemSave = itemSave.then(send, send);
+    await itemSave;
   } catch (e) { saveT = -1; throw e; }
-  if (okey() !== origKey) { origKey = okey(); updateBase(); }
+  if (okey() !== origKey || items.some(it => it.orig != null)) { origKey = okey(); updateBase(); }
   const th = document.querySelectorAll('.thumb img')[i];
-  if (th) th.src = imageUrl(`/api/page/${i}.png?dpi=40&t=${Date.now()}`);
+  if (th) queueThumbnail(th, `/api/page/${i}.png?dpi=40&t=${Date.now()}`);
   refreshDirty();
 }
 
 function props() {
   const p = $('props');
+  if (curSpan) return spanProps();
   if (!cur && curObj) return objProps();
   if (!cur) {
-    p.innerHTML = `<section><h2>Properties</h2><p class="hint">Select an object to edit it, click existing text to make it editable, or pick a tool and drag on the page.</p></section>`
+    p.innerHTML = `<section><h2>Properties</h2><p class="hint">Select an object or existing text to inspect it, or pick a tool and drag on the page.</p></section>`
       + (fields.length ? `<section><h2>Form fields</h2>${fields.map((f, i) => f.type === 'Btn'
         ? `<label class="chk"><span>${esc(f.name)}</span><input type="checkbox" data-f="${i}" ${f.value && f.value !== 'Off' ? 'checked' : ''}></label>`
         : `<label class="fld"><span>${esc(f.name)}</span><input type="text" data-f="${i}" value="${esc(f.value)}"></label>`).join('')}</section>` : '');
@@ -551,7 +707,7 @@ function props() {
       await request(`/api/field?n=${encodeURIComponent(f.name)}&v=${encodeURIComponent(v)}`, { method: 'POST' });
       f.value = v; status(`Set ${f.name}`);
       updateBase();
-      document.querySelectorAll('.thumb img').forEach((im, k) => im.src = imageUrl(`/api/page/${k}.png?dpi=40&t=${Date.now()}`));
+      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&t=${Date.now()}`));
     });
     return;
   }
@@ -561,7 +717,7 @@ function props() {
   let h = `<section class="head"><span class="chip">${ic(it.type === 'rect' ? 'square' : it.type)}</span><h2>${names[it.type] ?? it.type}${it.orig != null ? ' <em>from page</em>' : ''}</h2></section>`;
   if (it.type === 'redact') h += `<section><p class="hint">Text, shapes and images touching this box are permanently removed from the saved PDF, then the area is blacked out.</p></section>`;
   if (it.type === 'text') h += `<section><h3>Content</h3><textarea rows="3" data-k="text">${it.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</textarea></section>
-    <section><h3>Typography</h3><div class="row"><label class="fld"><span>Font</span><button type="button" class="fpb" id="fpb" style="font-family:${esc(famCss(it.font))}"><b>${esc(it.font)}</b><i>▾</i></button></label>${n('size', 'Size', 0.5)}</div>
+    <section><h3>Typography</h3>${it.orig != null ? `<p class="hint">Original font: ${esc(it.originalFont || 'from PDF')}. Unchanged family/style reuses its glyphs and transform; unavailable glyphs use fallback fonts. PDF rendering, not browser fonts, is shown on the page.</p>` : ''}<div class="row"><label class="fld"><span>Font</span><button type="button" class="fpb" id="fpb" style="font-family:${esc(famCss(it.font))}"><b>${esc(it.font)}</b><i>▾</i></button></label>${n('size', 'Size', 0.5)}</div>
     <div class="row"><label class="tgl" title="Bold"><input type="checkbox" data-k="bold" ${it.bold ? 'checked' : ''}>${ic('bold')}</label><label class="tgl" title="Italic"><input type="checkbox" data-k="italic" ${it.italic ? 'checked' : ''}>${ic('italic')}</label><label class="tgl tx" title="Underline"><input type="checkbox" data-k="underline" ${it.underline ? 'checked' : ''}><u>U</u></label><label class="tgl tx" title="Strikethrough"><input type="checkbox" data-k="strike" ${it.strike ? 'checked' : ''}><s>S</s></label><span class="grow"></span></div>
     <div class="row seg al" role="group" aria-label="Alignment">${[['left', 'M4 6h16M4 10h10M4 14h16M4 18h10'], ['center', 'M4 6h16M7 10h10M4 14h16M7 18h10'], ['right', 'M4 6h16M10 10h10M4 14h16M10 18h10']].map(([a, d]) => `<button type="button" class="icon${(it.align || 'left') === a ? ' on' : ''}" data-al="${a}" title="Align ${a}"><svg class="i"><path d="${d}"/></svg></button>`).join('')}</div>
     <div class="row">${n('spacing', 'Letter spacing', 0.1)}${n('lineHeight', 'Line height ×', 0.05)}</div>${colour('color', 'Colour')}</section>`;
@@ -574,10 +730,13 @@ function props() {
   p.innerHTML = h;
   if ($('fpb')) $('fpb').onclick = () => openFontPicker($('fpb'), it);
   p.querySelectorAll('[data-k]').forEach(el => {
-    el.onfocus = () => pushUndo();
+    let pushed = false;
     el.oninput = () => {
       const k = el.dataset.k;
-      it[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' || el.type === 'range' ? +el.value : el.value;
+      const value = el.type === 'checkbox' ? el.checked : el.type === 'number' || el.type === 'range' ? +el.value : el.value;
+      if (value === it[k]) return;
+      if (!pushed) { pushUndo(); pushed = true; }
+      it[k] = value;
       if (k === 'fill' || k === 'stroke') { if (k === 'fill' && !it.stroke) it.stroke = '#000000'; const c = el.parentElement.querySelector('code'); if (c) c.textContent = el.value.toUpperCase(); }
       if (k === 'opacity') el.nextElementSibling.textContent = Math.round(it.opacity * 100) + '%';
       paint(); queueSave();
@@ -596,7 +755,7 @@ function props() {
 
 function updateBase() {
   const b = $('base');
-  if (b) b.src = imageUrl(`/api/page/${sel}.png?dpi=${Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))))}&bare=${!preview}&t=${Date.now()}`);
+  if (b) return setImage(b, `/api/page/${sel}.png?dpi=${Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))))}&bare=${!preview}&t=${Date.now()}`);
 }
 async function act(fn) {
   status(host ? 'Processing locally in WebAssembly...' : 'Processing...');
@@ -632,6 +791,7 @@ $('img').onchange = async e => {
   const r = await request('/api/asset', { method: 'POST', body: fd });
   if (!r.ok) { status('Unsupported image (PNG or baseline/progressive JPEG only).'); return; }
   const a = await r.json(), pg = state.pages[sel], w = Math.min(240, pg.width / 2);
+  pendingUploads.set(a.id, f);
   pushUndo();
   cur = { id: crypto.randomUUID(), type: 'image', x: 40, y: 40, w, h: w * a.h / a.w, text: '', font: 'Helvetica', size: 12, bold: false, italic: false, color: '#000000', fill: '', stroke: '', strokeWidth: 0, opacity: 1, asset: a.id, x2: 0, y2: 0 };
   items.push(cur); paint(); props(); queueSave();
@@ -712,10 +872,10 @@ $('fq').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { e.preve
 async function printDoc() {
   if (!state.pageCount) return; await flush();
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
-  const imgs = state.pages.map((p, i) => {
+  const imgs = (await Promise.all(state.pages.map(async (p, i) => {
     const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
-    return `<section style="width:${w}pt;height:${h}pt"><img src="${imageUrl(`/api/page/${i}.png?dpi=150&t=${Date.now()}`)}"></section>`;
-  }).join('');
+    return `<section style="width:${w}pt;height:${h}pt"><img src="${await imageUrl(`/api/page/${i}.png?dpi=150&t=${Date.now()}`)}"></section>`;
+  }))).join('');
   f.srcdoc = `<!doctype html><style>@page{margin:0}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{width:100%;height:100%;display:block}</style>${imgs}`;
   f.onload = async () => {
     const d = f.contentDocument; await Promise.all([...d.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; })));
@@ -736,6 +896,7 @@ function modal(title, body, okLabel, onOk) {
   o.querySelector('.dok').onclick = ok;
   o.onkeydown = e => { if (e.key === 'Escape') close(); else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); ok(); } e.stopPropagation(); };
   document.body.appendChild(o); (o.querySelector('input,textarea,select'))?.focus();
+  return o;
 }
 const PAGE_SIZES = { A4: [595.276, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.276], Letter: [612, 792], Legal: [612, 1008], Tabloid: [792, 1224] };
 const confirmDiscard = () => !state.dirty || confirm('You have unsaved changes. Discard them?');
@@ -771,13 +932,13 @@ const dlUrl = async u => {
 async function saveDoc() {
   if (!state.pageCount) return; await flush();
   const r = await (await request('/api/save', { method: 'POST' })).json();
-  if (r.saved) { await refresh(); status('Saved to ' + r.path); } else saveAs();
+  if (r.saved) { await refreshDirty(); status('Saved to ' + r.path); } else saveAs();
 }
 function saveAs() {
   if (!state.pageCount) return;
   flush().then(() => modal('Save as', `<label>File name<input id="sn" value="${esc(state.fileName.replace(/^edited-/, ''))}"></label><p class="dnote">The PDF is downloaded to your browser's download folder.</p>`, 'Save', async o => {
     let n = o.querySelector('#sn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
-    await dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refresh();
+    await dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refreshDirty();
   }));
 }
 function exportPdf() {
@@ -878,7 +1039,7 @@ addEventListener('resize', () => { if ((lastW >= 1000) !== (innerWidth >= 1000) 
 autoPanels();
 
 // ---- Font picker ----
-function openFontPicker(anchor, it) {
+function openFontPicker(anchor, it, onPick) {
   document.querySelectorAll('.fpop').forEach(x => x.remove());
   const pop = document.createElement('div'); pop.className = 'fpop';
   pop.innerHTML = '<input type="search" placeholder="Search fonts…" aria-label="Search fonts"><div class="fl" role="listbox"></div>';
@@ -892,7 +1053,12 @@ function openFontPicker(anchor, it) {
       html += `<button type="button" role="option" class="fo${x.family === it.font ? ' on' : ''}" data-f="${esc(x.family)}" style="font-family:${esc(famCss(x.family))}">${esc(x.family)}</button>`;
     }
     list.innerHTML = html || '<div class="fh">No matching fonts</div>';
-    list.querySelectorAll('.fo').forEach(b => b.onclick = () => { pushUndo(); it.font = b.dataset.f; pop.remove(); paint(); queueSave(); props(); });
+    list.querySelectorAll('.fo').forEach(b => b.onclick = () => {
+      pop.remove();
+      if (onPick) { onPick(b.dataset.f); return; }
+      if (it.font === b.dataset.f && it.orig == null) return;
+      pushUndo(); it.font = b.dataset.f; if (it.orig != null) it.oStyle = null; paint(); queueSave(); props();
+    });
     list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
   };
   q.oninput = render; render();
@@ -937,7 +1103,13 @@ function paste(at) {
     shift(c, dx, dy); items.push(c); cur = c; curObj = null; clip = { ...c };
   });
 }
-const copyItem = it => { clip = JSON.parse(JSON.stringify(it)); };
+const copyItem = it => {
+  clip = JSON.parse(JSON.stringify(it));
+  const body = JSON.stringify(clip.asset ? [clip.asset] : []);
+  const send = async () => { await post('/api/asset-clipboard', body); pruneAssetImages(); };
+  itemSave = itemSave.then(send, send);
+  itemSave.catch(e => { saveT = -1; reportError(e); });
+};
 const mkItem = (type, x, y) => ({ id: crypto.randomUUID(), type, x, y, w: type === 'text' ? 0 : 120, h: type === 'text' ? 0 : 80, text: type === 'text' ? 'Text' : '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000', fill: type === 'rect' || type === 'ellipse' ? '#4c8dff' : '', stroke: '', strokeWidth: 0, opacity: 1, asset: '', x2: 0, y2: 0 });
 function redactItem(it) {
   const b = bboxOf(it);
@@ -992,7 +1164,7 @@ function menuFor(ev) {
     { label: 'Add ellipse here', run: () => commit(() => { cur = mkItem('ellipse', here.x, here.y); items.push(cur); }) },
     '-',
     { label: 'Undo', key: mod + 'Z', disabled: !undo.length, run: doUndo },
-    { label: 'Deselect', key: 'Esc', disabled: !cur && !curObj, run: () => { cur = null; curObj = null; paint(); props(); } },
+    { label: 'Deselect', key: 'Esc', disabled: !cur && !curObj && !curSpan, run: () => { cur = null; curObj = null; curSpan = null; paint(); props(); } },
   ];
 }
 
@@ -1038,6 +1210,7 @@ addEventListener('keydown', e => {
 
 addEventListener('keydown', e => {
   if (editing || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+  if (curSpan && e.key === 'Escape') { curSpan = null; paint(); props(); return; }
   if (e.ctrlKey || e.metaKey) {
     const k = e.key;
     if (cur && (k === ']' || k === '}' || k === '[' || k === '{')) { e.preventDefault(); arrange(cur, k === ']' ? 'forward' : k === '}' ? 'front' : k === '[' ? 'backward' : 'back'); return; }
@@ -1073,7 +1246,84 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
-refresh().then(() => status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.'));
+async function startEditor() {
+  const ready = async retainedUndo => {
+    await refresh(retainedUndo);
+    document.querySelector('main').inert = false;
+    document.querySelector('header').inert = false;
+    status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
+  };
+  if (!host) return ready();
+  let retained, validateUi;
+  try {
+    const module = await import(new URL('recovery.js', document.baseURI));
+    validateUi = module.validateUi;
+    recovery = await module.createRecovery({
+      capture: { state: async () => (await request('/api/state')).json(), document: async () => (await request('/api/recovery')).blob() },
+      ui: () => ({ sel, zoom, fitMode, preview, undo, clip }),
+      flush, button: $('recovery'), onError: reportError,
+    });
+    retained = await recovery.load();
+  } catch (error) {
+    recovery = null;
+    $('recovery').hidden = false; $('recovery').textContent = 'Recovery unavailable'; $('recovery').title = error.message;
+    await ready();
+    reportError(new Error(`Local recovery unavailable: ${error.message}. Editing still works; download a copy before closing this tab.`));
+    return;
+  }
+  if (!retained) { await ready(); recovery.start(); return; }
+  status('Choose whether to resume the previous local edit.');
+  const prompt = modal('Resume previous edit',
+    '<p>A previous edit is stored on this device. Nothing is opened until you choose Resume. Discard and clear permanently removes the retained copy.</p><p data-recovery-error role="alert"></p>',
+    'Resume', async o => {
+      try {
+        if (retained.format !== 1 || !(retained.payload instanceof Blob)) throw new Error('Unsupported or corrupt local recovery record.');
+        validateUi(retained.ui);
+        const historyItems = retained.ui.undo.flatMap(entry => JSON.parse(entry).items).concat(retained.ui.clip ?? []);
+        const forms = [...new Set(historyItems.filter(item => item.orig >= 10000000).map(item => Math.floor(item.orig / 10000000)))];
+        const reply = await (await post('/api/recovery?forms=' + encodeURIComponent(JSON.stringify(forms)), await retained.payload.text())).json();
+        const remap = item => {
+          if (item?.orig >= 10000000) {
+            const form = Math.floor(item.orig / 10000000), mapped = reply.originalForms[form];
+            if (!mapped) throw new Error('The retained original-text history cannot be mapped.');
+            return { ...item, orig: mapped * 10000000 + item.orig % 10000000 };
+          }
+          return item;
+        };
+        const controls = retained.ui;
+        const restoredUndo = controls.undo.map(entry => {
+          const snapshot = JSON.parse(entry);
+          return JSON.stringify({ ...snapshot, items: snapshot.items.map(remap) });
+        });
+        sel = controls.sel; zoom = controls.zoom; fitMode = controls.fitMode; preview = controls.preview; clip = remap(controls.clip);
+        $('prev').classList.toggle('on', preview);
+        await ready(restoredUndo);
+        recovery.start(retained);
+      } catch (error) {
+        o.querySelector('[data-recovery-error]').textContent = error.message + ' The retained copy has not been deleted.';
+        throw error;
+      }
+    });
+  prompt.querySelector('.dc').textContent = 'Discard and clear';
+  prompt.querySelector('.dc').onclick = async () => {
+    try { await recovery.clear(); await ready(); recovery.start(); prompt.remove(); }
+    catch (error) { prompt.querySelector('[data-recovery-error]').textContent = error.message; }
+  };
+  const resume = prompt.querySelector('.dok').onclick;
+  prompt.querySelector('.dok').onclick = async () => {
+    prompt.querySelectorAll('button').forEach(button => button.disabled = true);
+    try { await resume(); }
+    finally { prompt.querySelectorAll('button').forEach(button => button.disabled = false); }
+  };
+  prompt.onpointerdown = e => { if (e.target === prompt) e.preventDefault(); };
+  prompt.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') e.preventDefault();
+    else if (e.key === 'Enter' && e.target === prompt.querySelector('.dok')) { e.preventDefault(); e.target.click(); }
+  };
+  prompt.querySelector('.dok').focus();
+}
+startEditor().catch(reportError);
 }, { once: true });
 </script>
 </body>

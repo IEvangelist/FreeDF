@@ -15,7 +15,7 @@ namespace PortableDocument.Render;
 /// <item>Text: only the glyphs whose boxes touch a rectangle are dropped (the operator becomes a <c>TJ</c> that keeps the surviving glyphs in place).</item>
 /// <item>Images: a partly covered raster image is re-encoded with the covered pixels blanked; a fully covered one is removed.</item>
 /// <item>Form XObjects: text and images inside forms are redacted in the form's own stream (a form shared by several pages or invocations is redacted everywhere, which over-removes but never leaks).</item>
-/// <item>Vector paths, inline images and image masks that touch a rectangle are removed whole.</item>
+/// <item>Single positive-size <c>re</c> paths in page content (optionally followed by <c>W</c>/<c>W*</c> and then <c>f</c>/<c>F</c>/<c>f*</c> or <c>n</c>) are clipped when their CTM is axis-aligned; other vector paints are removed whole, and unsupported clip-only paths become empty clips.</item>
 /// <item>With a <see cref="PdfEditor"/>: annotations under a rectangle are removed (with their AcroForm field entries), matching redacted phrases in outline titles are replaced, and XMP/Info/thumbnail metadata is scrubbed.</item>
 /// </list>
 /// </summary>
@@ -160,14 +160,17 @@ public static class Redactor
     static byte[] Tail(byte[] content, PdfPage page, IReadOnlyList<BoxRect> rects)
     {
         var box = page.CropBox;
-        var sb = new StringBuilder("\nq 0 g\n");
+        // Isolate source graphics state so its clipping path cannot constrain the redaction mask.
+        var prefix = "q\n"u8.ToArray();
+        var sb = new StringBuilder("\nQ\nn\nq 0 g\n");
         foreach (var r in rects)
             sb.Append(FormattableString.Invariant($"{box.Left + r.X:0.###} {box.Top - r.Y - r.H:0.###} {r.W:0.###} {r.H:0.###} re f\n"));
         sb.Append("Q\n");
         var tail = Encoding.ASCII.GetBytes(sb.ToString());
-        var result = new byte[content.Length + tail.Length];
-        content.CopyTo(result, 0);
-        tail.CopyTo(result, content.Length);
+        var result = new byte[prefix.Length + content.Length + tail.Length];
+        prefix.CopyTo(result, 0);
+        content.CopyTo(result, prefix.Length);
+        tail.CopyTo(result, prefix.Length + content.Length);
         return result;
     }
 
@@ -256,6 +259,16 @@ public static class Redactor
             {
                 if (!seen.Add((o.Start, o.End)) || !Hit(o.X0, o.Y0, o.X1, o.Y1)) continue;
                 if (o.Kind == "form" && o.Ref > 0 && editorMode) continue;
+                if (o.Kind is "path" or "clip-path" or "clipped-path")
+                {
+                    if (TryClipRectangleFill(content, o, rects, out var clipped))
+                        edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, false, null, null, null, Replacement: clipped));
+                    else if (o.Kind is "clip-path" or "clipped-path")
+                        edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, false, null, null, null, Replacement: "0 0 m 0 0 l W n"));
+                    else
+                        edits.Add(new ContentRewriter.ObjectEdit(o.Start, o.End, true, null, null, null));
+                    continue;
+                }
                 if (o.Kind == "image" && editorMode && o.Stream is { } img && o.Ref > 0 && !Covered(o.X0, o.Y0, o.X1, o.Y1)
                     && (form == 0 || file.Resolve(fs!.Dict.Get("Resources")) is PdfDictionary)
                     && ImageDecoder.Decode(file, img, res, out var isMask, out _) is { } data && !isMask)
@@ -273,6 +286,116 @@ public static class Redactor
             if (form == 0) pageContent = content; else forms[form] = content;
         }
         return new Plan(pageContent, forms, images, hitText);
+    }
+
+    static bool TryClipRectangleFill(byte[] content, ContentInterpreter.PageObject obj, IReadOnlyList<BoxRect> rects, out string replacement)
+    {
+        replacement = "";
+        var clipOnly = obj.Kind == "clip-path";
+        if (obj.Form != 0 || obj.HasStroke || obj.HasFill == clipOnly
+            || obj.Ctm.B != 0 || obj.Ctm.C != 0 || obj.Ctm.A == 0 || obj.Ctm.D == 0
+            || !double.IsFinite(obj.Ctm.A) || !double.IsFinite(obj.Ctm.D)
+            || !double.IsFinite(obj.Ctm.Det) || Math.Abs(obj.Ctm.Det) < 1e-12
+            || !TryReadRectangleFill(content, obj.Start, obj.End, out var x, out var y, out var w, out var h, out var clipOp, out var paintOp))
+            return false;
+
+        var ctm = obj.Ctm;
+        var a = ctm.Apply(x, y);
+        var b = ctm.Apply(x + w, y + h);
+        var x0 = Math.Min(a.X, b.X); var x1 = Math.Max(a.X, b.X);
+        var y0 = Math.Min(a.Y, b.Y); var y1 = Math.Max(a.Y, b.Y);
+        if (!double.IsFinite(x0) || !double.IsFinite(y0) || !double.IsFinite(x1) || !double.IsFinite(y1)
+            || x1 <= x0 || y1 <= y0)
+            return false;
+
+        var cuts = rects.Where(r => r.W > 0 && r.H > 0
+                && double.IsFinite(r.X) && double.IsFinite(r.Y) && double.IsFinite(r.W) && double.IsFinite(r.H)
+                && r.X < x1 && r.X + r.W > x0 && r.Y < y1 && r.Y + r.H > y0)
+            .ToArray();
+        if (cuts.Length > 64) return false;
+
+        var xs = new SortedSet<double> { x0, x1 };
+        var ys = new SortedSet<double> { y0, y1 };
+        foreach (var r in cuts)
+        {
+            xs.Add(Math.Clamp(r.X, x0, x1)); xs.Add(Math.Clamp(r.X + r.W, x0, x1));
+            ys.Add(Math.Clamp(r.Y, y0, y1)); ys.Add(Math.Clamp(r.Y + r.H, y0, y1));
+        }
+        var xEdges = xs.ToArray(); var yEdges = ys.ToArray();
+        if ((long)(xEdges.Length - 1) * (yEdges.Length - 1) > 4096) return false;
+
+        var inv = ctm.Invert();
+        var pieces = new StringBuilder();
+        for (var yi = 0; yi + 1 < yEdges.Length; yi++)
+            for (var xi = 0; xi + 1 < xEdges.Length; xi++)
+            {
+                var cx0 = xEdges[xi]; var cx1 = xEdges[xi + 1];
+                var cy0 = yEdges[yi]; var cy1 = yEdges[yi + 1];
+                var mx = cx0 + (cx1 - cx0) / 2; var my = cy0 + (cy1 - cy0) / 2;
+                if (cuts.Any(r => mx >= r.X && mx < r.X + r.W && my >= r.Y && my < r.Y + r.H)) continue;
+
+                var p0 = inv.Apply(cx0, cy0); var p1 = inv.Apply(cx1, cy1);
+                var ux0 = Math.Min(p0.X, p1.X); var ux1 = Math.Max(p0.X, p1.X);
+                var uy0 = Math.Min(p0.Y, p1.Y); var uy1 = Math.Max(p0.Y, p1.Y);
+                if (!double.IsFinite(ux0) || !double.IsFinite(uy0) || !double.IsFinite(ux1) || !double.IsFinite(uy1)
+                    || ux1 <= ux0 || uy1 <= uy0)
+                    return false;
+                var q0 = ctm.Apply(ux0, uy0); var q1 = ctm.Apply(ux1, uy1);
+                var bx0 = Math.Min(q0.X, q1.X); var bx1 = Math.Max(q0.X, q1.X);
+                var by0 = Math.Min(q0.Y, q1.Y); var by1 = Math.Max(q0.Y, q1.Y);
+                if (!double.IsFinite(bx0) || !double.IsFinite(by0) || !double.IsFinite(bx1) || !double.IsFinite(by1)
+                    || cuts.Any(r => bx0 < r.X + r.W && bx1 > r.X && by0 < r.Y + r.H && by1 > r.Y))
+                    return false;
+                pieces.Append(ux0.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append(uy0.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append((ux1 - ux0).ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append((uy1 - uy0).ToString("R", CultureInfo.InvariantCulture)).Append(" re ");
+            }
+
+        if (pieces.Length == 0 && clipOp is not null)
+            pieces.Append("0 0 m 0 0 l ");
+        if (pieces.Length > 0)
+        {
+            if (clipOp is not null) pieces.Append(clipOp).Append(' ');
+            pieces.Append(paintOp);
+        }
+        replacement = pieces.ToString();
+        return true;
+    }
+
+    static bool TryReadRectangleFill(byte[] content, int start, int end,
+        out double x, out double y, out double w, out double h, out string? clipOp, out string paintOp)
+    {
+        x = y = w = h = 0;
+        clipOp = null;
+        paintOp = "";
+        var lexer = new PdfLexer(content, start);
+        var tokens = new List<PdfObject>();
+        while (lexer.Pos < end && tokens.Count < 8 && lexer.ReadObject(false) is { } token) tokens.Add(token);
+        if (lexer.Pos != end || tokens.Count is not (6 or 7)) return false;
+        if (tokens[0].AsNumber() is not { } tx || tokens[1].AsNumber() is not { } ty
+            || tokens[2].AsNumber() is not { } tw || tokens[3].AsNumber() is not { } th
+            || tokens[4] is not PdfKeyword { Value: "re" })
+            return false;
+
+        var paintIndex = 5;
+        if (tokens.Count == 7)
+        {
+            if (tokens[5] is not PdfKeyword { Value: "W" or "W*" } clip) return false;
+            clipOp = clip.Value;
+            paintIndex = 6;
+        }
+        if (tokens[paintIndex] is not PdfKeyword paint) return false;
+        if (paint.Value == "n")
+        {
+            if (clipOp is null) return false;
+        }
+        else if (paint.Value is not ("f" or "F" or "f*")) return false;
+        if (!double.IsFinite(tx) || !double.IsFinite(ty) || !double.IsFinite(tw) || !double.IsFinite(th) || tw <= 0 || th <= 0)
+            return false;
+        x = tx; y = ty; w = tw; h = th;
+        paintOp = paint.Value;
+        return true;
     }
 
     // Blanks pixels whose centre maps (through the image CTM) into a redaction rectangle; the alpha plane is null when everything is opaque.

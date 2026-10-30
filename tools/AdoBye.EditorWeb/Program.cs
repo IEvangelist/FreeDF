@@ -36,6 +36,11 @@ app.MapMethods("/api/{**path}", ["GET", "POST", "PUT"], async (HttpRequest reque
             return Results.File(reply.Data, reply.ContentType, reply.FileName);
         }
     }
+    catch (EditorConflictException e)
+    {
+        app.Logger.LogWarning(e, "Editor command conflicted: {Path}", request.Path);
+        return Results.Text(e.Message, statusCode: StatusCodes.Status409Conflict);
+    }
     catch (Exception e) when (e is ArgumentException or InvalidDataException or NotSupportedException or PortableDocument.Core.PdfParseException)
     {
         app.Logger.LogWarning(e, "Editor command failed: {Path}", request.Path);

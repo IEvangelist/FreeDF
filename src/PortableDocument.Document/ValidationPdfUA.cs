@@ -294,6 +294,7 @@ internal static partial class PdfUAChecks
     static void Annotations(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
+        var objectRefs = new Dictionary<StructElement, HashSet<PdfDictionary>>();
         for (var i = 0; i < c.Doc.Pages.Count; i++)
         {
             if (f.Resolve(c.Doc.Pages[i].Dict.Get("Annots")) is not PdfArray annots) continue;
@@ -302,17 +303,86 @@ internal static partial class PdfUAChecks
                 if (f.Resolve(a) is not PdfDictionary ad) continue;
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
                 if (sub is "Popup" or "PrinterMark" or "TrapNet") continue;
-                if (f.Resolve(ad.Get("StructParent")) is null)
+                var key = f.Resolve(ad.Get("StructParent"));
+                StructElement? parent = null;
+                if (key is null)
                     c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
-                if (sub == "Link" && !(f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 }) && !LinkHasAlt(f, tree, ad))
+                else if (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
+                    || AnnotationParentTreeValue(f, tree, (int)number.Value) is not PdfRef reference
+                    || !f.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse
+                    || reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex)
+                    || f.Resolve(reference) is not PdfDictionary dict
+                    || (parent = tree.ElementFor(dict)) is null)
+                    c.Add("PDFUA-ANNOT-PARENTTREE", ValidationSeverity.Error, $"/{sub} annotation /StructParent must be a non-negative integer key mapping to a parsed structure element in /ParentTree", "ISO 32000-2 14.7.5.4", i);
+                else
+                {
+                    if (!objectRefs.TryGetValue(parent, out var objects))
+                        objectRefs[parent] = objects = AnnotationObjectReferences(f, parent);
+                    if (!objects.Contains(ad))
+                        c.Add("PDFUA-ANNOT-OBJR", ValidationSeverity.Error, $"/{sub} annotation's parent structure element has no direct /OBJR child with an indirect /Obj identifying this annotation", "ISO 32000-2 14.7.5.3", i);
+                }
+                if (sub == "Link" && !(f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 }) && parent?.Alt is not { Length: > 0 })
                     c.Add("PDFUA-LINK-DESCRIPTION", ValidationSeverity.Error, "Link annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.5", "8.9"), i);
             }
         }
     }
 
-    static bool LinkHasAlt(PdfFile f, StructureTree tree, PdfDictionary annot)
+    static PdfObject? AnnotationParentTreeValue(PdfFile f, StructureTree tree, int key)
     {
-        if (f.Resolve(annot.Get("StructParent")).AsNumber() is not { } key || tree.ParentTreeLookup((int)key) is not PdfDictionary el) return false;
-        return tree.ElementFor(el) is { Alt: { Length: > 0 } };
+        if (f.Resolve(tree.Root.Get("ParentTree")) is not PdfDictionary root) return null;
+        // Match ParentTreeLookup's traversal bounds, but retain the raw value required by Table 354.
+        var pending = new Stack<(PdfDictionary Node, int Depth)>();
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        pending.Push((root, 0));
+        var visited = 0;
+        while (pending.TryPop(out var entry) && visited++ < StructureTree.MaxNodes)
+        {
+            var (node, depth) = entry;
+            if (depth >= 32 || !seen.Add(node)) continue;
+            if (f.Resolve(node.Get("Nums")) is PdfArray nums)
+            {
+                for (var i = 0; i + 1 < nums.Count; i += 2)
+                    if (f.Resolve(nums[i]) is PdfInteger { Value: >= 0 and <= int.MaxValue } number
+                        && number.Value == key) return nums[i + 1];
+                continue;
+            }
+            if (f.Resolve(node.Get("Kids")) is not PdfArray kids) continue;
+            for (var i = kids.Count - 1; i >= 0; i--)
+            {
+                if (f.Resolve(kids[i]) is not PdfDictionary kd) continue;
+                if (f.Resolve(kd.Get("Limits")) is PdfArray { Count: >= 2 } lim
+                    && f.Resolve(lim[0]).AsNumber() is { } lo && f.Resolve(lim[1]).AsNumber() is { } hi)
+                {
+                    if (key < lo || key > hi) continue;
+                }
+                if (pending.Count < StructureTree.MaxNodes) pending.Push((kd, depth + 1));
+            }
+        }
+        return null;
+    }
+
+    static HashSet<PdfDictionary> AnnotationObjectReferences(PdfFile f, StructElement element)
+    {
+        var objects = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        foreach (var child in element.Children)
+            if (child is StructObjectRef { Object: PdfDictionary obj }) objects.Add(obj);
+
+        // Parsed OBJR nodes retain only the resolved object; inspect raw K to verify /Obj indirection.
+        var indirectObjects = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var kids = f.Resolve(element.Dict.Get("K"));
+        if (kids is PdfArray array)
+        {
+            foreach (var kid in array.Items.Take(StructureTree.MaxNodes)) AddIndirectObject(kid);
+        }
+        else AddIndirectObject(kids);
+        objects.IntersectWith(indirectObjects);
+        return objects;
+
+        void AddIndirectObject(PdfObject? kid)
+        {
+            if (f.Resolve(kid) is PdfDictionary dict && f.Resolve(dict.Get("Type")).AsName() == "OBJR"
+                && dict.Get("Obj") is PdfRef reference && f.Resolve(reference) is PdfDictionary obj)
+                indirectObjects.Add(obj);
+        }
     }
 }

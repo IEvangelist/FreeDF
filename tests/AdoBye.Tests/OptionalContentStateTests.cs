@@ -288,4 +288,339 @@ public class OptionalContentStateTests
         Assert.True(restored.IsLocked(Named("C")));
         Assert.Empty(restored.Warnings);
     }
+
+    static PdfDocument UsageDocument(string usageA, string usageB = "", string categories = "/Language",
+        string? configuration = null, string configs = "", string extraObjects = "") =>
+        Load(configuration ?? $"/BaseState /ON /AS [<< /Event /View /Category [{categories}] /OCGs [5 0 R 6 0 R] >>]",
+            configs: configs, extraObjects: extraObjects, objects:
+                $"5 0 obj\n<< /Type /OCG /Name (A) /Usage << {usageA} >> >>\nendobj\n" +
+                $"6 0 obj\n<< /Type /OCG /Name (B) /Usage << {usageB} >> >>\nendobj\n" +
+                "7 0 obj\n<< /Type /OCG /Name (C) >>\nendobj\n");
+
+    [Theory]
+    [InlineData("en-US", "en-US", "", true)]
+    [InlineData("EN-us", "en-US", "/Preferred /OFF", true)]
+    [InlineData("en-GB", "en-US", "/Preferred /ON", true)]
+    [InlineData("en", "en-US", "/Preferred /ON", true)]
+    [InlineData("en-US", "en", "/Preferred /ON", true)]
+    [InlineData("en-GB", "en-US", "", false)]
+    [InlineData("en-GB", "en-US", "/Preferred /OFF", false)]
+    [InlineData("eng-US", "en-US", "/Preferred /ON", false)]
+    [InlineData("fr-FR", "en-US", "/Preferred /ON", false)]
+    [InlineData("zh-Hant-TW", "zh-Hans-CN", "/Preferred /ON", true)]
+    [InlineData("EN-us-u-CA-gregory", "en-US-u-ca-gregory", "", true)]
+    [InlineData("x-custom", "X-CUSTOM", "", true)]
+    [InlineData("", "en-US", "/Preferred /ON", false)]
+    [InlineData("en-US", "", "/Preferred /ON", false)]
+    [InlineData("", "", "", true)]
+    public void Language_uses_exact_or_preferred_primary_language_matches(string language, string requested,
+        string preferred, bool visible)
+    {
+        var doc = UsageDocument($"/Language << /Lang ({language}) {preferred} >>");
+        var state = new OptionalContentState(doc);
+        Assert.Equal(visible, state.IsVisible(Group(doc, 5), context: new() { Language = requested }));
+        Assert.True(state.IsVisible(Group(doc, 6), context: new() { Language = requested }));
+        Assert.Empty(state.Warnings);
+    }
+
+    [Fact]
+    public void Language_exact_match_suppresses_preferred_partials_only_within_the_same_application()
+    {
+        var doc = UsageDocument("/Language << /Lang (en-GB) /Preferred /ON >>", "/Language << /Lang (en-US) >>");
+        var context = new OptionalContentContext { Language = "en-US" };
+        var state = new OptionalContentState(doc);
+        Assert.False(state.IsVisible(Group(doc, 5), context: context));
+        Assert.True(state.IsVisible(Group(doc, 6), context: context));
+
+        var separate = UsageDocument("/Language << /Lang (en-GB) /Preferred /ON >>", "/Language << /Lang (en-US) >>",
+            configuration: "/BaseState /OFF /AS [" +
+                "<< /Event /View /Category [/Language] /OCGs [5 0 R] >> " +
+                "<< /Event /View /Category [/Language] /OCGs [6 0 R] >>]");
+        var separateState = new OptionalContentState(separate);
+        Assert.True(separateState.IsVisible(Group(separate, 5), context: context));
+        Assert.True(separateState.IsVisible(Group(separate, 6), context: context));
+    }
+
+    [Theory]
+    [InlineData("Ind", "Ada", null, null, true)]
+    [InlineData("Ind", "ada", null, null, false)]
+    [InlineData("Ind", "Ada ", null, null, false)]
+    [InlineData("Ttl", "unrelated", "Ada", null, true)]
+    [InlineData("Ttl", "Ada", "Engineer", null, false)]
+    [InlineData("Org", null, null, "Ada", true)]
+    [InlineData("Org", "Ada", "Ada", "Company", false)]
+    public void User_matches_only_the_supplied_identity_of_the_declared_type(string type, string? name,
+        string? title, string? organization, bool visible)
+    {
+        var doc = UsageDocument($"/User << /Type /{type} /Name [(Other) (Ada)] >>", categories: "/User");
+        var state = new OptionalContentState(doc);
+        Assert.Equal(visible, state.IsVisible(Group(doc, 5), context: new()
+        {
+            UserName = name, UserTitle = title, UserOrganization = organization,
+        }));
+        Assert.Empty(state.Warnings);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Omitted_context_preserves_configuration_and_reports_unapplied_rules(bool initiallyVisible)
+    {
+        var doc = UsageDocument("/Language << /Lang (fr) >> /User << /Type /Ind /Name (Ada) >>",
+            categories: "/Language /User",
+            configuration: $"/BaseState /{(initiallyVisible ? "ON" : "OFF")} /AS [" +
+                "<< /Event /View /Category [/Language /User] /OCGs [5 0 R] >>]");
+        var state = new OptionalContentState(doc);
+        Assert.Equal(initiallyVisible, state.IsVisible(Group(doc, 5)));
+        Assert.Equal(initiallyVisible, state.IsVisible(Group(doc, 5), context: new()));
+        Assert.Equal(2, state.Warnings.Count);
+        var rendered = Render(doc, state);
+        Assert.Contains(rendered.Warnings, w => w.Contains("caller language context required"));
+        Assert.Contains(rendered.Warnings, w => w.Contains("caller identity context required"));
+    }
+
+    [Theory]
+    [InlineData("/Language /bad", "/Language")]
+    [InlineData("/Language << >>", "/Language")]
+    [InlineData("/Language << /Lang /en >>", "/Language")]
+    [InlineData("/Language << /Lang (en_US) >>", "/Language")]
+    [InlineData("/Language << /Lang (en-) >>", "/Language")]
+    [InlineData("/Language << /Lang (en--US) >>", "/Language")]
+    [InlineData("/Language << /Lang (123) >>", "/Language")]
+    [InlineData("/Language << /Lang (abcdefghi) >>", "/Language")]
+    [InlineData("/Language << /Lang (en) /Preferred true >>", "/Language")]
+    [InlineData("/Language << /Lang (en) /Preferred /bad >>", "/Language")]
+    [InlineData("/User /bad", "/User")]
+    [InlineData("/User << /Type /bad /Name (Ada) >>", "/User")]
+    [InlineData("/User << /Name (Ada) >>", "/User")]
+    [InlineData("/User << /Type /Ind >>", "/User")]
+    [InlineData("/User << /Type /Ind /Name /Ada >>", "/User")]
+    [InlineData("/User << /Type /Ind /Name [] >>", "/User")]
+    [InlineData("/User << /Type /Ind /Name [(Ada) 42] >>", "/User")]
+    [InlineData("/User << /Type /Ind /Name [99 0 R] >>", "/User")]
+    [InlineData("/Language 99 0 R", "/Language")]
+    [InlineData("/User 99 0 R", "/User")]
+    public void Malformed_context_rules_warn_without_changing_configuration(string usage, string category)
+    {
+        var doc = UsageDocument(usage, categories: category);
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), context: new() { Language = "en", UserName = "Ada" }));
+        Assert.Contains(state.Warnings, w => w.StartsWith("invalid optional-content"));
+        Assert.True(state.IsVisible(Group(doc, 6)));
+    }
+
+    [Theory]
+    [InlineData("en_US")]
+    [InlineData("en-")]
+    [InlineData(" en")]
+    public void Invalid_caller_language_does_not_change_visibility(string language)
+    {
+        var doc = UsageDocument("/Language << /Lang (fr) >>");
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), context: new() { Language = language }));
+        Assert.Contains("invalid optional-content Language context", state.Warnings);
+    }
+
+    [Fact]
+    public void Usage_rules_require_application_selection_and_matching_event()
+    {
+        var doc = UsageDocument("/Language << /Lang (fr) >> /User << /Type /Ind /Name (Other) >>",
+            configuration: "/BaseState /ON /AS [<< /Event /Print /Category [/Language /User] /OCGs [5 0 R] >>]");
+        var context = new OptionalContentContext { Language = "en", UserName = "Ada" };
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), context: context));
+        Assert.False(state.IsVisible(Group(doc, 5), ContentInterpreter.OptionalContentEvent.Print, context: context));
+        Assert.True(state.IsVisible(Group(doc, 6), ContentInterpreter.OptionalContentEvent.Print, context: context));
+        Assert.True(state.IsVisible(Group(doc, 5), ContentInterpreter.OptionalContentEvent.Export, context: context));
+        var noApplications = UsageDocument("/Language << /Lang (fr) >>", configuration: "/BaseState /ON");
+        Assert.True(new OptionalContentState(noApplications).IsVisible(Group(noApplications, 5), context: context));
+    }
+
+    [Theory]
+    [InlineData("/OCGs /bad")]
+    [InlineData("/OCGs 5 0 R")]
+    public void Context_categories_require_a_valid_application_group_array(string groups)
+    {
+        var doc = UsageDocument("/Language << /Lang (fr) >> /User << /Type /Ind /Name (Other) >>",
+            configuration: $"/BaseState /ON /AS [<< /Event /View /Category [/Language /User] {groups} >>]");
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), context: new() { Language = "en", UserName = "Ada" }));
+        Assert.Contains(state.Warnings, w => w.Contains("application OCGs array"));
+    }
+
+    [Theory]
+    [InlineData("/Language /User")]
+    [InlineData("/User /Language")]
+    public void Context_recommendations_are_conjoined_and_can_enable_initially_off_layers(string categories)
+    {
+        var doc = UsageDocument("/Language << /Lang (en) >> /User << /Type /Ind /Name (Ada) >>",
+            configuration: $"/BaseState /OFF /AS [<< /Event /Export /Category [{categories}] /OCGs [5 0 R] >>]");
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), ContentInterpreter.OptionalContentEvent.Export,
+            context: new() { Language = "en", UserName = "Ada" }));
+        Assert.False(state.IsVisible(Group(doc, 5), ContentInterpreter.OptionalContentEvent.Export,
+            context: new() { Language = "en", UserName = "Other" }));
+        Assert.False(state.IsVisible(Group(doc, 5), ContentInterpreter.OptionalContentEvent.Export,
+            context: new() { Language = "fr", UserName = "Ada" }));
+    }
+
+    [Fact]
+    public void Context_recommendations_cannot_undo_off_recommendations_in_other_applications()
+    {
+        var doc = UsageDocument("/Language << /Lang (en-GB) /Preferred /ON >> /User << /Type /Ind /Name (Ada) >>",
+            "/Language << /Lang (en-US) >>",
+            configuration: "/BaseState /ON /AS [" +
+                "<< /Event /View /Category [/Language] /OCGs [5 0 R 6 0 R] >> " +
+                "<< /Event /View /Category [/User] /OCGs [5 0 R] >> " +
+                "<< /Event /View /Category [/Language] /OCGs [5 0 R] >>]");
+        var state = new OptionalContentState(doc);
+        Assert.False(state.IsVisible(Group(doc, 5), context: new() { Language = "en-US", UserName = "Ada" }));
+    }
+
+    [Theory]
+    [InlineData("/View /Language /Zoom", "OFF", 1, false)]
+    [InlineData("/Language /View /Zoom", "OFF", 1, false)]
+    [InlineData("/Language /View /Zoom", "ON", 1, true)]
+    [InlineData("/Language /View /Zoom", "ON", 2, false)]
+    public void New_categories_respect_existing_event_and_zoom_recommendations(string categories,
+        string viewState, double zoom, bool visible)
+    {
+        var doc = UsageDocument($"/Language << /Lang (en) >> /View << /ViewState /{viewState} >> /Zoom << /max 1.5 >>",
+            configuration: $"/BaseState /OFF /AS [<< /Event /View /Category [{categories}] /OCGs [5 0 R] >>]");
+        Assert.Equal(visible, new OptionalContentState(doc).IsVisible(Group(doc, 5), zoom: zoom,
+            context: new() { Language = "en" }));
+    }
+
+    [Fact]
+    public void Named_configuration_locked_peers_and_manual_overrides_use_the_supplied_context()
+    {
+        var doc = UsageDocument("/Language << /Lang (en) >>", configuration: "/BaseState /OFF",
+            configs: "/Configs [<< /Name (Named) /BaseState /Unchanged /Locked [5 0 R] /RBGroups [[5 0 R 6 0 R]] " +
+                "/AS [<< /Event /View /Category [/Language] /OCGs [5 0 R 6 0 R] >>] >>]");
+        var state = new OptionalContentState(doc, "Named");
+        var context = new OptionalContentContext { Language = "en" };
+        Assert.False(new OptionalContentState(doc).IsVisible(Group(doc, 5), context: context));
+        Assert.True(state.IsVisible(Group(doc, 5), context: context));
+        Assert.Throws<InvalidOperationException>(() => state.SetVisibility(Group(doc, 6), true, context: context));
+        Assert.False(state.IsVisible(Group(doc, 6), context: context));
+        Assert.Throws<InvalidOperationException>(() => state.SetVisibility(Group(doc, 5), false, context: context));
+        state.SetVisibility(Group(doc, 6), true, context: new() { Language = "fr" });
+        Assert.True(state.IsVisible(Group(doc, 6), context: context));
+
+        var manual = new OptionalContentState(doc, "Named");
+        manual.SetVisibility(Group(doc, 6), true);
+        Assert.True(manual.IsVisible(Group(doc, 6), context: new() { Language = "fr" }));
+    }
+
+    [Fact]
+    public void Rendering_and_direct_interpreter_share_context_and_refresh_cached_visibility_between_renders()
+    {
+        var doc = UsageDocument("/Language << /Lang (en) >>", "/Language << /Lang (fr) >>");
+        var context = new OptionalContentContext { Language = "en" };
+        var rendered = DocumentRenderer.RenderPage(doc.Pages[0], new PdfRenderOptions { OptionalContentContext = context }, 72);
+        Assert.Equal((255, 0, 0), Pixel(rendered, 50));
+        Assert.Equal((255, 255, 255), Pixel(rendered, 150));
+        Assert.Empty(rendered.Warnings);
+
+        using var raster = new SoftwareRasterizer(200, 200);
+        var interpreter = new ContentInterpreter(doc.File, raster) { OptionalContentContext = context };
+        interpreter.Render(doc.Pages[0], Matrix.Identity);
+        interpreter.OptionalContentContext = new() { Language = "fr" };
+        interpreter.Render(doc.Pages[0], Matrix.Identity);
+        var repeated = new RenderedPage(200, 200, raster.ToRgba(), interpreter.Warnings);
+        Assert.Equal((0, 0, 255), Pixel(repeated, 150));
+        Assert.Empty(interpreter.Warnings);
+
+        var state = new OptionalContentState(doc);
+        var warnings = DocumentRenderer.RenderPage(doc.Pages[0], new PdfRenderOptions { OptionalContentState = state }, 72);
+        Assert.Contains(warnings.Warnings, w => w.Contains("caller language context required"));
+        Assert.Contains(state.Warnings, w => w.Contains("caller language context required"));
+    }
+
+    [Fact]
+    public void Indirect_usage_dictionaries_names_and_languages_are_resolved()
+    {
+        var doc = UsageDocument("/Language 8 0 R /User 9 0 R", categories: "/Language /User",
+            extraObjects: "8 0 obj\n<< /Lang 10 0 R /Preferred /ON >>\nendobj\n" +
+                "9 0 obj\n<< /Type /Ind /Name [11 0 R] >>\nendobj\n" +
+                "10 0 obj\n(en)\nendobj\n11 0 obj\n(Ada)\nendobj\n");
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), context: new() { Language = "en-US", UserName = "Ada" }));
+        Assert.Empty(state.Warnings);
+    }
+
+    [Fact]
+    public void Descriptive_and_unknown_categories_warn_without_executing_active_content()
+    {
+        var doc = UsageDocument("/CreatorInfo << /Creator (App) /Subtype /Artwork >> /PageElement << /Subtype /HF >> " +
+            "/User << /Type /Ind /Name (Ada) >> /A << /S /JavaScript /JS (throw new Error) >>",
+            categories: "/CreatorInfo /PageElement /Unknown 42");
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), context: new() { UserName = "Other" }));
+        Assert.Equal(4, state.Warnings.Count);
+        Assert.All(state.Warnings, w => Assert.StartsWith("unsupported optional-content usage category", w));
+        Assert.Equal((255, 0, 0), Pixel(Render(doc, state), 50));
+    }
+
+    [Fact]
+    public void All_exact_matches_and_all_preferred_partials_are_enabled()
+    {
+        var doc = UsageDocument("/Language << /Lang (en-US) >>", "/Language << /Lang (EN-us) >>");
+        var state = new OptionalContentState(doc);
+        Assert.All(state.Groups.Take(2), g => Assert.True(state.IsVisible(g, context: new() { Language = "en-US" })));
+        var partials = UsageDocument("/Language << /Lang (en-US) /Preferred /ON >>",
+            "/Language << /Lang (en-GB) /Preferred /ON >>");
+        var partialState = new OptionalContentState(partials);
+        Assert.All(partialState.Groups.Take(2),
+            g => Assert.True(partialState.IsVisible(g, context: new() { Language = "en-AU" })));
+    }
+
+    [Fact]
+    public void Manual_visibility_overrides_context_driven_layer_state_and_does_not_change_language_metadata()
+    {
+        var doc = UsageDocument("/Language << /Lang (en) >> /User << /Type /Ind /Name (Ada) >>",
+            categories: "/Language /User");
+        var state = new OptionalContentState(doc);
+        var a = Group(doc, 5);
+        var matching = new OptionalContentContext { Language = "en", UserName = "Ada" };
+        var other = new OptionalContentContext { Language = "fr", UserName = "Other" };
+        Assert.False(state.IsVisible(a, context: other));
+        state.SetVisibility(a, true, context: other);
+        Assert.True(state.IsVisible(a, context: other));
+        state.SetVisibility(a, false, context: matching);
+        Assert.False(state.IsVisible(a, context: matching));
+        var usage = Assert.IsType<PdfDictionary>(doc.File.Resolve(a.Get("Usage")));
+        var language = Assert.IsType<PdfDictionary>(doc.File.Resolve(usage.Get("Language")));
+        Assert.Equal("en", Assert.IsType<PdfString>(doc.File.Resolve(language.Get("Lang"))).Text);
+        Assert.Null(doc.File.Catalog.Get("Lang"));
+        Assert.Null(doc.Pages[0].Dict.Get("Lang"));
+    }
+
+    [Theory]
+    [InlineData("5 1 R", true)]
+    [InlineData("5 0 R 6 1 R", true)]
+    [InlineData("5 0 R 99 0 R", true)]
+    [InlineData("5 0 R << /Type /OCG /Usage << /Language << /Lang (en-US) >> >> >>", true)]
+    [InlineData("5 0 R 6 0 R", false)]
+    public void Invalid_application_references_cannot_select_layers_or_suppress_preferred_language(string groups, bool visible)
+    {
+        var doc = UsageDocument("/Language << /Lang (en-GB) /Preferred /ON >>", "/Language << /Lang (en-US) >>",
+            configuration: $"/BaseState /ON /AS [<< /Event /View /Category [/Language] /OCGs [{groups}] >>]");
+        var state = new OptionalContentState(doc);
+        Assert.Equal(visible, state.IsVisible(Group(doc, 5), context: new() { Language = "en-US" }));
+        if (visible) Assert.Contains(state.Warnings, w => w.Contains("application OCGs reference"));
+        else Assert.Empty(state.Warnings);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/OCGs []")]
+    public void Omitted_or_empty_application_group_list_selects_no_context_driven_layers(string groups)
+    {
+        var doc = UsageDocument("/Language << /Lang (fr) >> /User << /Type /Ind /Name (Other) >>",
+            configuration: $"/BaseState /ON /AS [<< /Event /View /Category [/Language /User] {groups} >>]");
+        var state = new OptionalContentState(doc);
+        Assert.True(state.IsVisible(Group(doc, 5), context: new() { Language = "en", UserName = "Ada" }));
+        Assert.Empty(state.Warnings);
+    }
 }

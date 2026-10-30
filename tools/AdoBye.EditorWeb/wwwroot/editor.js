@@ -1,17 +1,10 @@
 // One editor UI, with either HTTP or an entirely local WebAssembly transport.
 async function startEditor() {
-  const script = document.createElement('script');
-  script.src = new URL('_framework/blazor.webassembly.js', document.baseURI);
-  script.setAttribute('autostart', 'false');
-  script.onload = async () => {
-    try {
-      const { start } = await import(new URL('host.js', document.baseURI));
-      window.pdfHost = await start();
-      window.dispatchEvent(new Event('editor-ready'));
-    } catch (e) { showStartupError(e); }
-  };
-  script.onerror = () => showStartupError(new Error('WebAssembly could not load. Check your connection and reload.'));
-  document.head.appendChild(script);
+  try {
+    const { start } = await import(new URL('host.js', document.baseURI));
+    window.pdfHost = await start();
+    window.dispatchEvent(new Event('editor-ready'));
+  } catch (e) { showStartupError(e); }
 }
 
 function showStartupError(error) {
