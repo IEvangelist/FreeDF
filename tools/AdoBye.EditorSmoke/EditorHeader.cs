@@ -5,6 +5,19 @@ static class EditorHeader
 {
     static void Check(bool ok, string message) { if (!ok) throw new Exception("FAIL: " + message); }
 
+    public static async Task State(IPage page, bool dirty)
+    {
+        var word = dirty ? "Unsaved" : "Saved";
+        try
+        {
+            await page.WaitForFunctionAsync("""
+                ([word, dirty]) => { const s = document.getElementById('dstate'), r = s.getBoundingClientRect();
+                  return !s.hidden && s.textContent === word && s.dataset.dirty === String(dirty) && r.width >= 6 && r.height > 0 && getComputedStyle(s).display !== 'none'; }
+                """, new object[] { word, dirty }, new() { Timeout = 10000 });
+        }
+        catch (TimeoutException) { throw new Exception($"FAIL: header status should read {word} (visible dot on mobile), got '{await page.Locator("#dstate").TextContentAsync()}' data-dirty={await page.Locator("#dstate").GetAttributeAsync("data-dirty")}"); }
+    }
+
     public static async Task Empty(IPage page)
     {
         Check(await page.EvaluateAsync<bool>("document.getElementById('name').textContent === 'No document' && document.getElementById('doc').classList.contains('empty') && document.getElementById('dstate').hidden"), "Header shows a clear empty state with no status when no document is open");
@@ -15,10 +28,11 @@ static class EditorHeader
     {
         var where = mobile ? "mobile" : "desktop";
         await Order(page, where);
+        await State(page, false);
         Check(await page.EvaluateAsync<bool>("""
             mobile => { const n = document.getElementById('name'), s = document.getElementById('dstate');
-              return !document.getElementById('doc').classList.contains('empty') && n.title === n.textContent && n.textContent.length > 0 && (mobile || (!s.hidden && ['Saved', 'Unsaved'].includes(s.textContent))); }
-            """, mobile), where + ": open document shows its name with tooltip" + (mobile ? "" : " and saved/unsaved status"));
+              return !document.getElementById('doc').classList.contains('empty') && n.title === n.textContent && n.textContent.length > 0 && !s.hidden && s.getBoundingClientRect().width >= 6 && ['Saved', 'Unsaved'].includes(s.textContent) && (mobile ? getComputedStyle(s).fontSize === '0px' : getComputedStyle(s).fontSize !== '0px'); }
+            """, mobile), where + ": open document shows its name with tooltip and a saved/unsaved status (dot only on mobile)");
         if (!mobile) return;
         const string longName = "a-very-long-quarterly-board-report-with-appendices-and-redlines-final-final-v12.pdf";
         await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = longName, MimeType = "application/pdf", Buffer = pdf });
