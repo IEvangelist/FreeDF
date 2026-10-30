@@ -15,15 +15,22 @@ public static partial class BrowserEditor
     [JSExport]
     public static string Request(string command)
     {
+        Command? c = null;
         try
         {
-            var c = JsonSerializer.Deserialize<Command>(command, Json) ?? throw new ArgumentException("Missing editor command.");
+            c = JsonSerializer.Deserialize<Command>(command, Json) ?? throw new ArgumentException("Missing editor command.");
             var reply = Session.Handle(c.Method, c.Path, c.Query, c.Body is null ? null : Convert.FromBase64String(c.Body), c.FileName);
             return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName }, Json);
         }
 
         catch (Exception e)
         {
+            if (e is System.Security.Cryptography.CryptographicException && c?.Method == "POST" && c.Path is "/api/open" or "/api/import")
+            {
+                var message = "Encrypted PDFs require the server editor. This browser cannot open this protection; no decrypted recovery copy was stored. " + e.Message;
+                Console.Error.WriteLine(message);
+                return JsonSerializer.Serialize(new { error = message }, Json);
+            }
             Console.Error.WriteLine(e);
             return JsonSerializer.Serialize(new { error = e.Message }, Json);
         }

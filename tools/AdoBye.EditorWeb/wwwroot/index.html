@@ -111,19 +111,19 @@
   </div>
   <aside id="props"></aside>
 </main>
-<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
+<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><button id="recovery" hidden disabled aria-live="polite">No local recovery</button><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
 <script>
 addEventListener('editor-ready', () => {
-document.querySelector('main').inert = false;
-document.querySelector('header').inert = false;
 const host = window.pdfHost;
+let recovery = null;
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
-  if (options?.method === 'POST' && ['/api/new', '/api/open'].includes(url.split('?')[0])) {
+  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery'].includes(url.split('?')[0])) {
     selectionEpoch++;
     clip = null; pendingUploads.clear(); assetImages.clear();
   }
+  recovery?.changed(url, options?.method ?? 'GET');
   return response;
 };
 const assetImages = new Map();
@@ -239,7 +239,7 @@ function queueThumbnail(img, url) {
     setImage(img, url).catch(reportError);
   }, 0);
 }
-async function refresh() {
+async function refresh(retainedUndo = null) {
   await flush();
   state = await (await request('/api/state')).json();
   $('name').textContent = state.pageCount ? state.fileName + (state.dirty ? ' •' : '') : 'No document';
@@ -266,7 +266,7 @@ async function refresh() {
     d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); if (dragFrom >= 0 && dragFrom !== i) { sel = i; act(() => post(`/api/move/${dragFrom}/${i}`)); } dragFrom = -1; };
     t.appendChild(d);
   });
-  await select();
+  await select(retainedUndo);
   thumbnailObserver = new IntersectionObserver(entries => {
     for (const entry of entries) if (entry.isIntersecting) {
       thumbnailObserver.unobserve(entry.target);
@@ -277,15 +277,15 @@ async function refresh() {
 }
 
 let selectionEpoch = 0;
-async function select() {
+async function select(retainedUndo = null) {
   const epoch = ++selectionEpoch, page = sel;
   const v = $('view');
   v.inert = true;
   try {
     await itemSave;
     if (epoch !== selectionEpoch) return;
-    undo = [];
-    await post('/api/asset-history');
+    undo = retainedUndo ?? [];
+    if (!retainedUndo) await post('/api/asset-history');
     if (epoch !== selectionEpoch) return;
     document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
     if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
@@ -296,9 +296,10 @@ async function select() {
     if (epoch !== selectionEpoch || page !== sel) return;
     items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields;
     origKey = okey();
-    cur = null; curObj = null; curSpan = null; undo = [];
+    cur = null; curObj = null; curSpan = null;
     pruneAssetImages();
     await build();
+    recovery?.uiChanged();
   } finally { if (epoch === selectionEpoch) v.inert = false; }
 }
 
@@ -650,7 +651,7 @@ function objProps() {
 }
 
 let itemSave = Promise.resolve();
-function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
+function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); recovery?.pending(); }
 async function flush() {
   try { await itemSave; } catch (e) { if (!saveT) throw e; }
   let pending;
@@ -895,6 +896,7 @@ function modal(title, body, okLabel, onOk) {
   o.querySelector('.dok').onclick = ok;
   o.onkeydown = e => { if (e.key === 'Escape') close(); else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); ok(); } e.stopPropagation(); };
   document.body.appendChild(o); (o.querySelector('input,textarea,select'))?.focus();
+  return o;
 }
 const PAGE_SIZES = { A4: [595.276, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.276], Letter: [612, 792], Legal: [612, 1008], Tabloid: [792, 1224] };
 const confirmDiscard = () => !state.dirty || confirm('You have unsaved changes. Discard them?');
@@ -1244,7 +1246,84 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
-refresh().then(() => status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.'));
+async function startEditor() {
+  const ready = async retainedUndo => {
+    await refresh(retainedUndo);
+    document.querySelector('main').inert = false;
+    document.querySelector('header').inert = false;
+    status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
+  };
+  if (!host) return ready();
+  let retained, validateUi;
+  try {
+    const module = await import(new URL('recovery.js', document.baseURI));
+    validateUi = module.validateUi;
+    recovery = await module.createRecovery({
+      capture: { state: async () => (await request('/api/state')).json(), document: async () => (await request('/api/recovery')).blob() },
+      ui: () => ({ sel, zoom, fitMode, preview, undo, clip }),
+      flush, button: $('recovery'), onError: reportError,
+    });
+    retained = await recovery.load();
+  } catch (error) {
+    recovery = null;
+    $('recovery').hidden = false; $('recovery').textContent = 'Recovery unavailable'; $('recovery').title = error.message;
+    await ready();
+    reportError(new Error(`Local recovery unavailable: ${error.message}. Editing still works; download a copy before closing this tab.`));
+    return;
+  }
+  if (!retained) { await ready(); recovery.start(); return; }
+  status('Choose whether to resume the previous local edit.');
+  const prompt = modal('Resume previous edit',
+    '<p>A previous edit is stored on this device. Nothing is opened until you choose Resume. Discard and clear permanently removes the retained copy.</p><p data-recovery-error role="alert"></p>',
+    'Resume', async o => {
+      try {
+        if (retained.format !== 1 || !(retained.payload instanceof Blob)) throw new Error('Unsupported or corrupt local recovery record.');
+        validateUi(retained.ui);
+        const historyItems = retained.ui.undo.flatMap(entry => JSON.parse(entry).items).concat(retained.ui.clip ?? []);
+        const forms = [...new Set(historyItems.filter(item => item.orig >= 10000000).map(item => Math.floor(item.orig / 10000000)))];
+        const reply = await (await post('/api/recovery?forms=' + encodeURIComponent(JSON.stringify(forms)), await retained.payload.text())).json();
+        const remap = item => {
+          if (item?.orig >= 10000000) {
+            const form = Math.floor(item.orig / 10000000), mapped = reply.originalForms[form];
+            if (!mapped) throw new Error('The retained original-text history cannot be mapped.');
+            return { ...item, orig: mapped * 10000000 + item.orig % 10000000 };
+          }
+          return item;
+        };
+        const controls = retained.ui;
+        const restoredUndo = controls.undo.map(entry => {
+          const snapshot = JSON.parse(entry);
+          return JSON.stringify({ ...snapshot, items: snapshot.items.map(remap) });
+        });
+        sel = controls.sel; zoom = controls.zoom; fitMode = controls.fitMode; preview = controls.preview; clip = remap(controls.clip);
+        $('prev').classList.toggle('on', preview);
+        await ready(restoredUndo);
+        recovery.start(retained);
+      } catch (error) {
+        o.querySelector('[data-recovery-error]').textContent = error.message + ' The retained copy has not been deleted.';
+        throw error;
+      }
+    });
+  prompt.querySelector('.dc').textContent = 'Discard and clear';
+  prompt.querySelector('.dc').onclick = async () => {
+    try { await recovery.clear(); await ready(); recovery.start(); prompt.remove(); }
+    catch (error) { prompt.querySelector('[data-recovery-error]').textContent = error.message; }
+  };
+  const resume = prompt.querySelector('.dok').onclick;
+  prompt.querySelector('.dok').onclick = async () => {
+    prompt.querySelectorAll('button').forEach(button => button.disabled = true);
+    try { await resume(); }
+    finally { prompt.querySelectorAll('button').forEach(button => button.disabled = false); }
+  };
+  prompt.onpointerdown = e => { if (e.target === prompt) e.preventDefault(); };
+  prompt.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') e.preventDefault();
+    else if (e.key === 'Enter' && e.target === prompt.querySelector('.dok')) { e.preventDefault(); e.target.click(); }
+  };
+  prompt.querySelector('.dok').focus();
+}
+startEditor().catch(reportError);
 }, { once: true });
 </script>
 </body>

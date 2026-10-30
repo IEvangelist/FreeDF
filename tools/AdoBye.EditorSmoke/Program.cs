@@ -14,7 +14,8 @@ if (args.Length >= 4 && args[0] == "--profile")
 }
 
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
-if (args.Length != 1 && !textSelectionOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection] <published-wwwroot>");
+var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -64,6 +65,12 @@ try
     {
         await EditorTextSelection.Run(page);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
+        return;
+    }
+    if (recoveryOnly)
+    {
+        await EditorRecovery.Run(page);
+        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors));
         return;
     }
     await page.Locator("#fileBtn").ClickAsync();
@@ -193,6 +200,9 @@ try
     await page.WaitForFunctionAsync("!document.getElementById('view').inert && document.getElementById('pn').value === '1' && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url");
     Check(await page.EvaluateAsync<bool>("async () => { const img = document.getElementById('base'); return img.src === await pdfHost.image(img.dataset.url); }"),
         "Queued obsolete zoom/navigation renders cannot replace the final selected page");
+    await EditorRecovery.Run(page);
+    Check(errors.All(ExpectedRecoveryError), "No unexpected browser errors during recovery: " + string.Join("\n", errors));
+    errors.Clear();
     await page.SetViewportSizeAsync(390, 844);
     await page.ReloadAsync();
     await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
@@ -214,3 +224,5 @@ static void Check(bool success, string message)
 {
     if (!success) throw new Exception("FAIL: " + message);
 }
+static bool ExpectedRecoveryError(string error) =>
+    error.Contains("simulated recovery quota failure") || error.Contains("Encrypted PDFs require the server editor");

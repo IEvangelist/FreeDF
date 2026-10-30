@@ -4,8 +4,9 @@ The Pages build runs the **same editor UI and C# PDF engine** as
 `tools/AdoBye.EditorWeb`, entirely in browser WebAssembly. There is no PDF API
 server. Opening a PDF reads a local `File`; parsing, rendering, edits and exports
 stay in a dedicated local browser worker. Downloads use local blobs. There is no telemetry,
-external font request, PDF upload, service worker, or browser persistence of PDF
-contents. Closing/reloading the tab discards its document; save a copy first.
+external font request, PDF upload, or service worker. The browser now retains
+the previous editable session locally in IndexedDB and asks before resuming it;
+download important documents rather than relying on browser storage.
 The host still makes ordinary GET requests for its static app/runtime assets.
 Replacing item lists or removing/importing pages prunes uploaded image bytes
 that no live page item, retained UI undo snapshot, or editor clipboard references; shared asset IDs
@@ -64,10 +65,11 @@ required on Pages. `.nojekyll` preserves the `_framework` folder.
 | Page rotate/delete/reorder/duplicate; blank insert; merge/import | Same page editor |
 | Title/document metadata; search/case matching/highlights | Same local session |
 | Save / Save as / Download; PDF page-range extraction | Downloads a copy; cannot overwrite the original filesystem path |
+| Reload / previous edit recovery | Explicit Resume previous edit or Discard and clear; unencrypted editable state, undo and clipboard remain local in IndexedDB |
 | PNG, all-pages PNG ZIP, text, compressed PDF exports | Local downloads |
 | Print, fullscreen, keyboard shortcuts, panels | Browser APIs and existing editor UI; printing uses locally rendered page images |
 | Password-protected export | Not available in WASM: .NET browser lacks the required synchronous PDF cryptography. The browser menu explicitly offers unprotected compression instead; the server keeps protected export |
-| Password/certificate-protected input | Not added: the existing open UI has no password/certificate prompt. Encrypted files may fail with a visible error; decrypt locally first or use the library/server tools |
+| Password/certificate-protected input | The existing open UI has no password/certificate prompt. Unsupported browser cryptography reports an explicit server-editor limitation. Successfully opened/imported encrypted input disables recovery; decrypted bytes and passwords are never cached for recovery |
 | Installed fonts and system font fallback | Browser cannot enumerate host fonts. New text offers the five standard PDF families; original embedded fonts can still be reused. Non-embedded fonts render using bundled, licensed Bitstream Vera Sans regular/bold substitutes, not exact serif/monospace/italic/Symbol/Dingbats/CJK fidelity. For exact appearance and broader character coverage, use PDFs with embedded fonts or the server editor |
 
 The existing PDF engine's format/coverage limitations still apply (see
@@ -109,6 +111,50 @@ re-encoded: original per-pair TJ kerning is not a general shaping engine.
 typography sample and a sheared/scaled variant. It checks untouched state,
 unchanged input/cancel, exact save/reopen PNGs and every text run's geometry,
 then verifies supported actual edits retain embedded font, baseline and matrix.
+
+## Local recovery
+
+The browser retains one editable session in the origin's `adobye-editor`
+IndexedDB database. Startup shows **Resume previous edit** with **Resume** and
+**Discard and clear**, without opening or rendering the retained document.
+Blank startup cannot overwrite that record. Resume restores the unflattened
+source PDF, pending overlay/original-text and graphic/Form-child edits, page
+operations, field values, metadata, filename/dirty state, current page's undo
+stack, clipboard and their image bytes. Original Form references are remapped
+across serialization, including original-text references in UI undo snapshots.
+Invalid backend records are validated in an isolated session before replacing
+the live editor. A failed resume keeps the retained copy and shows an error.
+
+Snapshots coalesce after 1.5 seconds of inactivity and flush pending item/object
+saves first. PDF serialization runs in the PDF worker, not a pointer handler;
+view-only updates reuse the last PDF/model payload. Writes/deletes are
+sequenced IndexedDB transactions requesting strict durability. **Recovery saved**
+appears only after transaction completion; **Recovery pending** is not a
+durability guarantee. Quota, blocked storage, corruption and initialization
+errors are visible. A failed write can be retried without losing the open edit.
+Click the recovery indicator to clear the retained copy and pause recovery for
+the current document; opening/creating another document enables it again.
+Discard at startup permanently deletes the retained record.
+
+No PDF bytes, image blobs or edit data go into localStorage; it retains only
+lightweight preferences such as geometry locking. No open/export password is
+persisted. Recovery of encrypted input is deliberately unsupported: a session
+opened from or importing encrypted input cannot emit a recovery snapshot, even
+if it subsequently saves unencrypted. Browser cryptography that cannot open the
+input reports the limitation without replacing the current document.
+
+Recovery is a local working copy, not a secure export or backup. It contains
+the original unredacted input so edits/undo remain possible. Clear it after
+sensitive work. Browser eviction, private-browsing policies, device failure and
+closing before **Recovery saved** can lose changes; keep downloaded copies.
+
+`AdoBye.EditorSmoke --recovery <absolute-published-wwwroot>` checks real embedded-
+font text edits and exact resumed raster pixels, image delete/undo/clipboard
+paste across reload, prompt gating, durable writes/deletes, encrypted-input
+limitations, corrupt-record retention and quota failure/retry. Pointer movement
+alone is asserted to cause no PDF snapshot. Shared-session tests also cover
+fields/metadata, page operations, direct graphics and unique Form-child edits,
+repeated recovery, missing references and atomic failure.
 
 ## Measured editor performance
 
@@ -158,6 +204,40 @@ not the managed/linear WASM heap. There is still one PDF runtime/managed heap,
 plus message/base64 and raster copies crossing the worker boundary. Large files,
 high-resolution exports and transient decoder memory remain bounded only by
 browser limits, not by the small encoded-PNG cache.
+
+### Recovery-inclusive replay
+
+The same four fixtures/settings were replayed in three cache-disabled Chromium
+contexts after recovery integration. The profiler now measures the additional
+`local-recovery` phase through durable completion and enforces the same
+less-than-200-ms heartbeat goal during it. Medians in milliseconds:
+
+| Sample | Fresh-render pointer acknowledgement | Fresh-render wall time | Text-edit wall time | Save/download wall time | Recovery worker command |
+|---|---:|---:|---:|---:|---:|
+| Embedded typography | 1.8 | 726 | 726 | 193 | 47 |
+| Vector graphics | 2.7 | 801 | 676 | 193 | 18 |
+| Images | 1.4 | 1152 | 1208 | 211 | 56 |
+| Multipage report | 1.5 | 1396 | 873 | 195 | 14 |
+
+All twelve fresh-render phases and twelve recovery phases met the latency goal.
+Worst steady-state heartbeat delay was 45.1 ms; worst during recovery was
+42.8 ms. No steady-state long tasks were recorded, including during recovery.
+The recovery phase's 1460-1525-ms document medians mostly include the 1.5-second
+debounce, not serialization CPU. Exactly two local commands (state plus
+snapshot) occur in each recovery phase, with no raster requests.
+First-page PNG hashes again match the pre-worker baseline exactly in all twelve
+cases. Cold-ready times were 802/731/733 ms in this local replay; these are not
+a cold-download speedup claim. Managed/linear heap allocation and worker CPU are
+still not measured by main-thread CDP metrics. Recovery adds a persistent
+PDF/model/image working copy and transient JSON/base64/Blob copies, not a memory
+reduction. Underlying raster CPU, FIFO result latency and large-file memory
+limits remain unresolved.
+
+The integrated Release build passed, with 1579/1579 full solution tests and
+85/85 selected recovery/session/Form HTTP/annotation-structure cases, no
+failures/skips. Full static-site Chromium smoke also passes original text
+fidelity, worker race fencing, recovery/failure paths, mobile layout and no
+outbound PDF traffic.
 
 ### Earlier redundant-work reduction
 

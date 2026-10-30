@@ -165,6 +165,8 @@ static class EditorPerformance
                         await page.Locator(".mdl").WaitForAsync(new() { State = WaitForSelectorState.Detached });
                         if (await download.FailureAsync() is { } failure) throw new Exception(failure);
                     });
+                    if (await page.Locator("#recovery").CountAsync() > 0)
+                        await Measure("local-recovery", () => page.WaitForFunctionAsync("document.getElementById('recovery').textContent === 'Recovery saved'"));
                     async Task Measure(string phase, Func<Task> action)
                     {
                         await page.EvaluateAsync("() => { profileCommands=[]; profileLongTasks=[]; profileHeartbeatDelays=[]; profileInputDelays=[]; window.profileStart=performance.now(); }");
@@ -176,8 +178,8 @@ static class EditorPerformance
                         records.Add(new { repeat, document = name, phase, result, inputAckMs = phase == "fresh-render-input" ? inputAckMs : null, before, after });
                         Console.WriteLine($"{repeat} {name} {phase}: {result.GetProperty("ms").GetDouble():F0} ms, {result.GetProperty("commands").GetArrayLength()} commands");
                         await File.WriteAllTextAsync(output, JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true }));
-                        if (phase == "fresh-render-input" && await page.EvaluateAsync<bool>("pdfHost.execution === 'worker'") &&
-                            (inputAckMs >= 200 || result.GetProperty("heartbeatDelays").EnumerateArray().Any(delay => delay.GetDouble() >= 200)))
+                        if (phase is "fresh-render-input" or "local-recovery" && await page.EvaluateAsync<bool>("pdfHost.execution === 'worker'") &&
+                            ((phase == "fresh-render-input" && inputAckMs >= 200) || result.GetProperty("heartbeatDelays").EnumerateArray().Any(delay => delay.GetDouble() >= 200)))
                             throw new Exception($"{name}: worker render exceeded the 200 ms input/heartbeat latency goal.");
                     }
                 }
