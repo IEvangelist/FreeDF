@@ -252,14 +252,16 @@ allocation below 200 MB; allocation is not peak browser working set.
 
 Hosted CI uses `--profile-ci <raw.json> docs\performance\editor-ci-known-misses.v1.json`.
 Its versioned policy retains the six open goals and measured AOT values, prints
-`KNOWN MISSES (open work)` plus the full strict-goal miss table in the job summary,
+`KNOWN MISSES (baseline open work)` plus the full strict-goal miss table in the job summary,
 and uploads both. Timing regression ceilings are 2.5x recorded p50/p95 with a
 50-ms floor for near-zero timings; deterministic allocation, cache/raster-count,
 fixed-41-dpi pixel hashes and no-blank checks are not relaxed. New **CI-relative**
 budget failures block the job. New strict-goal misses below those relative
 ceilings remain visible as `NEW GOAL MISS`, not claims of goal attainment.
-A known group that passes its original goal must be removed from the policy.
-`tools\Test-EditorProfileCi.ps1` verifies seven synthetic rejection cases.
+A runner that meets a known original goal is marked `MET`, not rejected for
+being faster than the reference machine. The versioned baseline remains intact.
+`tools\Test-EditorProfileCi.ps1` verifies six synthetic rejection cases and
+acceptance of an improved known goal; no regression ceiling is changed.
 
 For authoritative strict goals, unset `EDITOR_PROFILE_REPORT_ONLY` and run the
 ordinary `--profile` (or `--profile-summary` on saved data); six original goals
