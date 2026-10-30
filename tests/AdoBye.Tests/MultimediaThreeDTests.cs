@@ -237,6 +237,64 @@ public class MultimediaThreeDTests
         Assert.Equal(12, node.Matrix?.Count);
     }
 
+    static PdfDocument SelectorPdf(string[] objects, string root)
+    {
+        var pdf = "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Annots [4 0 R] >>\nendobj\n" +
+            $"4 0 obj\n<< /Type /Annot /Subtype /Screen /Rect [0 0 1 1] /A << /S /Rendition /OP 0 /R {root} >> >>\nendobj\n" +
+            string.Concat(objects) +
+            "trailer\n<< /Root 1 0 R /Size 5000 >>\n%%EOF\n";
+        return PdfDocument.Load(System.Text.Encoding.ASCII.GetBytes(pdf));
+    }
+
+    [Fact]
+    public void Fan_out_selector_dag_is_memoized_bounded_and_reports_truncation()
+    {
+        // 70 levels, each listing the next level twice: 2^70 paths without memoization.
+        var objects = Enumerable.Range(0, 70)
+            .Select(i => $"{100 + i} 0 obj\n<< /S /SR /R [{101 + i} 0 R {101 + i} 0 R] >>\nendobj\n")
+            .Append("170 0 obj\n<< /S /MR /N (leaf) >>\nendobj\n")
+            .ToArray();
+        var rendition = Assert.IsType<PdfRendition>(SelectorPdf(objects, "100 0 R").GetRenditionActions()[0].Rendition);
+
+        Assert.True(rendition.Truncated);
+        Assert.Equal(2, rendition.Renditions.Count);
+        Assert.Same(rendition.Renditions[0], rendition.Renditions[1]);
+    }
+
+    [Fact]
+    public void Wide_selector_exceeding_node_budget_is_truncated_with_raw_children_kept()
+    {
+        var children = string.Join(' ', Enumerable.Range(0, 1500).Select(i => $"{200 + i} 0 R"));
+        var objects = new[] { $"100 0 obj\n<< /S /SR /R [{children}] >>\nendobj\n" }
+            .Concat(Enumerable.Range(0, 1500).Select(i => $"{200 + i} 0 obj\n<< /S /MR >>\nendobj\n"))
+            .ToArray();
+        var rendition = Assert.IsType<PdfRendition>(SelectorPdf(objects, "100 0 R").GetRenditionActions()[0].Rendition);
+
+        Assert.True(rendition.Truncated);
+        Assert.True(rendition.Renditions.Count < 1500);
+        Assert.Equal(1500, Assert.IsType<PdfArray>(rendition.Dictionary.Get("R")).Count);
+    }
+
+    [Fact]
+    public void Shared_children_are_reused_and_cycles_are_not_truncation()
+    {
+        var objects = new[]
+        {
+            "100 0 obj\n<< /S /SR /R [101 0 R 102 0 R] >>\nendobj\n",
+            "101 0 obj\n<< /S /SR /R [103 0 R 100 0 R] >>\nendobj\n",
+            "102 0 obj\n<< /S /SR /R [103 0 R] >>\nendobj\n",
+            "103 0 obj\n<< /S /MR /N (shared) >>\nendobj\n",
+        };
+        var rendition = Assert.IsType<PdfRendition>(SelectorPdf(objects, "100 0 R").GetRenditionActions()[0].Rendition);
+
+        Assert.False(rendition.Truncated);
+        Assert.Same(rendition.Renditions[0].Renditions[0], rendition.Renditions[1].Renditions[0]);
+        Assert.Single(rendition.Renditions[0].Renditions);
+    }
+
     [Fact]
     public void Round_trip_preserves_multimedia_and_three_d_metadata()
     {

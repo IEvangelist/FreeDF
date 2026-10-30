@@ -78,7 +78,11 @@ public sealed record PdfMediaClip(
     PdfMediaOffset? MustHonorEnd,
     PdfMediaOffset? BestEffortBegin,
     PdfMediaOffset? BestEffortEnd,
-    PdfDictionary Dictionary);
+    PdfDictionary Dictionary)
+{
+    /// <summary>True when the section chain hit the depth or node budget while this clip was read; the raw dictionaries remain inspectable.</summary>
+    public bool Truncated { get; init; }
+}
 
 /// <summary>
 /// Inert play behavior from a media play parameters MH or BE dictionary (Table 280), using spec defaults
@@ -131,7 +135,14 @@ public sealed record PdfRendition(
     PdfMediaPlayParameters? PlayParameters,
     PdfMediaScreenParameters? ScreenParameters,
     IReadOnlyList<PdfRendition> Renditions,
-    PdfDictionary Dictionary);
+    PdfDictionary Dictionary)
+{
+    /// <summary>
+    /// True when a depth (64) or total-node (1024 per top-level read) budget was hit while reading this rendition or its
+    /// descendants; omitted children remain available through the raw dictionaries. Shared children are read once and reused.
+    /// </summary>
+    public bool Truncated { get; init; }
+}
 
 /// <summary>
 /// Inert rendition action (ISO 32000-1:2008 Table 214; ISO 32000-2 12.6.4.13). <see cref="Operation"/> is the raw /OP
@@ -300,7 +311,24 @@ public static class MultimediaFeatures
 
     /// <summary>Reads a rendition dictionary (or a selector tree) as inert metadata; returns null when the value is not a dictionary.</summary>
     public static PdfRendition? ReadRendition(this PdfFile f, PdfObject? value) =>
-        ReadRendition(f, value, 0, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance));
+        ReadRendition(f, value, 0, new ReadContext());
+
+    /// <summary>Per top-level read: shared node budget plus memoization so shared (DAG) children are read once.</summary>
+    sealed class ReadContext
+    {
+        public const int MaxNodes = 1024;
+        public int Nodes;
+        public bool Truncated;
+        public readonly Dictionary<PdfDictionary, PdfRendition?> Renditions = new(ReferenceEqualityComparer.Instance);
+        public readonly Dictionary<PdfDictionary, PdfMediaClip?> Clips = new(ReferenceEqualityComparer.Instance);
+
+        public bool TryTake()
+        {
+            if (Nodes < MaxNodes) { Nodes++; return true; }
+            Truncated = true;
+            return false;
+        }
+    }
 
     static IEnumerable<(int Page, int Index, PdfDictionary Annotation)> Annotations(PdfDocument doc, string subtype)
     {
@@ -315,27 +343,34 @@ public static class MultimediaFeatures
         }
     }
 
-    static PdfRendition? ReadRendition(PdfFile f, PdfObject? value, int depth, HashSet<PdfDictionary> ancestors)
+    static PdfRendition? ReadRendition(PdfFile f, PdfObject? value, int depth, ReadContext ctx)
     {
-        if (depth > MaxDepth || f.Resolve(value) is not PdfDictionary rendition || !ancestors.Add(rendition)) return null;
+        if (f.Resolve(value) is not PdfDictionary rendition) return null;
+        if (ctx.Renditions.TryGetValue(rendition, out var cached)) return cached;
+        if (depth > MaxDepth) { ctx.Truncated = true; return null; }
+        if (!ctx.TryTake()) return null;
+        ctx.Renditions[rendition] = null; // in-progress marker: a cycle resolves to null
         var mustHonor = f.Resolve(rendition.Get("MH")) as PdfDictionary;
         var bestEffort = f.Resolve(rendition.Get("BE")) as PdfDictionary;
         var alternatives = new List<PdfRendition>();
         if (f.Resolve(rendition.Get("R")) is PdfArray array)
             foreach (var item in array.Items)
-                if (ReadRendition(f, item, depth + 1, ancestors) is { } child)
+                if (ReadRendition(f, item, depth + 1, ctx) is { } child)
                     alternatives.Add(child);
         var result = new PdfRendition(
             f.Resolve(rendition.Get("S")).AsName(),
             Text(f, rendition.Get("N")),
             ReadCriteria(f, mustHonor?.Get("C")),
             ReadCriteria(f, bestEffort?.Get("C")),
-            ReadClip(f, rendition.Get("C"), 0, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance)),
+            ReadClip(f, rendition.Get("C"), 0, ctx),
             ReadPlayParameters(f, rendition.Get("P")),
             ReadScreenParameters(f, rendition.Get("SP")),
             alternatives,
-            rendition);
-        ancestors.Remove(rendition);
+            rendition)
+        {
+            Truncated = ctx.Truncated,
+        };
+        ctx.Renditions[rendition] = result;
         return result;
     }
 
@@ -401,9 +436,13 @@ public static class MultimediaFeatures
         return list;
     }
 
-    static PdfMediaClip? ReadClip(PdfFile f, PdfObject? value, int depth, HashSet<PdfDictionary> ancestors)
+    static PdfMediaClip? ReadClip(PdfFile f, PdfObject? value, int depth, ReadContext ctx)
     {
-        if (depth > MaxDepth || f.Resolve(value) is not PdfDictionary clip || !ancestors.Add(clip)) return null;
+        if (f.Resolve(value) is not PdfDictionary clip) return null;
+        if (ctx.Clips.TryGetValue(clip, out var cached)) return cached;
+        if (depth > MaxDepth) { ctx.Truncated = true; return null; }
+        if (!ctx.TryTake()) return null;
+        ctx.Clips[clip] = null; // in-progress marker: a cycle resolves to null
         var subtype = f.Resolve(clip.Get("S")).AsName();
         var mustHonor = f.Resolve(clip.Get("MH")) as PdfDictionary;
         var bestEffort = f.Resolve(clip.Get("BE")) as PdfDictionary;
@@ -420,13 +459,16 @@ public static class MultimediaFeatures
             ReadPlayers(f, clip.Get("PL")),
             Text(f, mustHonor?.Get("BU")),
             Text(f, bestEffort?.Get("BU")),
-            section ? ReadClip(f, clip.Get("D"), depth + 1, ancestors) : null,
+            section ? ReadClip(f, clip.Get("D"), depth + 1, ctx) : null,
             section ? ReadOffset(f, mustHonor?.Get("B")) : null,
             section ? ReadOffset(f, mustHonor?.Get("E")) : null,
             section ? ReadOffset(f, bestEffort?.Get("B")) : null,
             section ? ReadOffset(f, bestEffort?.Get("E")) : null,
-            clip);
-        ancestors.Remove(clip);
+            clip)
+        {
+            Truncated = ctx.Truncated,
+        };
+        ctx.Clips[clip] = result;
         return result;
     }
 
