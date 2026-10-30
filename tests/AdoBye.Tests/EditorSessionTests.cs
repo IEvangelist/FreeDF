@@ -112,4 +112,36 @@ public class EditorSessionTests
         Assert.Empty(items.RootElement.EnumerateArray());
         Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
     }
+
+    [Fact]
+    public void UndoReferencesKeepDeletedImagesUntilHistoryIsReleased()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var asset = Upload(session);
+        var image = Image("undo", asset);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([image], []));
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], [asset]));
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([image], []));
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], [asset]));
+        Call(session, "POST", "/api/asset-history");
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
+    }
+
+    [Fact]
+    public void UnclaimedUploadSurvivesConcurrentItemUpdatesUntilItIsAttached()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var asset = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], []));
+        Call(session, "POST", "/api/asset-history");
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([Image("pending", asset)], []));
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], []));
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
+    }
 }

@@ -23,6 +23,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     bool prepared;
     readonly Dictionary<int, List<Item>> items = [];
     readonly Dictionary<string, Asset> assets = [];
+    readonly HashSet<string> unclaimedAssets = [];
+    readonly Dictionary<int, HashSet<string>> historyAssets = [];
     OverlayBuilder? overlayBuilder;
     readonly Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)> texts = [];
     readonly Dictionary<int, Dictionary<int, ObjEdit>> objEdits = [];
@@ -47,7 +49,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     void Reset(PdfEditor e)
     {
         editor = e;
-        items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear();
+        items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear(); unclaimedAssets.Clear(); historyAssets.Clear();
         overlayBuilder = new(editor, assets, catalog);
         Changed(); savePath = null; savedVersion = version;
     }
@@ -190,8 +192,11 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     {
         var livePages = Enumerable.Range(0, editor.PageCount).Select(editor.PageId).ToHashSet();
         foreach (var id in items.Keys.Where(id => !livePages.Contains(id)).ToArray()) items.Remove(id);
+        foreach (var id in historyAssets.Keys.Where(id => !livePages.Contains(id)).ToArray()) historyAssets.Remove(id);
         var referenced = items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>().ToHashSet();
-        foreach (var id in assets.Keys.Where(id => !referenced.Contains(id)).ToArray()) assets.Remove(id);
+        referenced.UnionWith(historyAssets.Values.SelectMany(ids => ids));
+        unclaimedAssets.ExceptWith(referenced);
+        foreach (var id in assets.Keys.Where(id => !referenced.Contains(id) && !unclaimedAssets.Contains(id)).ToArray()) assets.Remove(id);
     }
     byte[] Render(PdfPage page, double dpi) => DocumentRenderer.RenderPage(page, new PdfRenderOptions { FontFallback = fontFallback }, dpi).ToPng();
 
@@ -241,7 +246,22 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             {
                 case "items":
                     if (method == "GET") return AsJson(items.GetValueOrDefault(id) ?? []);
-                    if (method == "PUT") { items[id] = Read<List<Item>>() ?? []; PruneAssets(); Changed(); return Ok; }
+                    if (method == "PUT")
+                    {
+                        using var payload = JsonDocument.Parse(body ?? []);
+                        if (payload.RootElement.ValueKind == JsonValueKind.Array)
+                        {
+                            items[id] = Read<List<Item>>() ?? [];
+                            historyAssets.Remove(id);
+                        }
+                        else
+                        {
+                            var update = Read<ItemUpdate>() ?? throw new ArgumentException("Missing item update.");
+                            items[id] = update.Items;
+                            historyAssets[id] = update.HistoryAssets.ToHashSet();
+                        }
+                        PruneAssets(); Changed(); return Ok;
+                    }
                     break;
                 case "text" when method == "GET":
                     return AsJson(EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
@@ -309,7 +329,10 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     if (mime == "image/jpeg") { if (JpegDecoder.Decode(bytes, out w, out h, out _) is null) throw new ArgumentException("Unsupported JPEG."); }
                     else (w, h, _) = PngWriter.Decode(bytes);
                     var key = Guid.NewGuid().ToString("N"); assets[key] = new(bytes, mime);
+                    unclaimedAssets.Add(key);
                     return AsJson(new { id = key, w, h });
+                case "asset-history":
+                    historyAssets.Clear(); PruneAssets(); return Ok;
                 case "delete": CheckPageMutation(); editor.DeletePage(int.Parse(p[2], CultureInfo.InvariantCulture)); PruneAssets(); break;
                 case "move": CheckPageMutation(); editor.MovePage(int.Parse(p[2], CultureInfo.InvariantCulture), int.Parse(p[3], CultureInfo.InvariantCulture)); break;
                 case "rotate":
@@ -467,3 +490,5 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
 public sealed record ObjEdit(bool Delete = false, double Sx = 1, double Sy = 1, double Tx = 0, double Ty = 0, string? Fill = null, string? Stroke = null);
 
 public sealed class EditorConflictException(string message) : InvalidOperationException(message);
+
+public sealed record ItemUpdate(List<Item> Items, List<string> HistoryAssets);

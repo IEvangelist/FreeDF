@@ -196,6 +196,9 @@ async function refresh() {
 }
 
 async function select() {
+  await itemSave;
+  undo = [];
+  await post('/api/asset-history');
   document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
   const v = $('view');
   if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; props(); return; }
@@ -522,6 +525,7 @@ function objProps() {
   p.querySelector('[data-oact=reset]').onclick = () => { pushUndo(); o.edit = null; paint(); props(); saveObj(o); };
 }
 
+let itemSave = Promise.resolve();
 function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
 async function flush() {
   let pending;
@@ -530,8 +534,14 @@ async function flush() {
   if (!saveT || !state.pageCount) return;
   clearTimeout(saveT); saveT = 0;
   const i = sel;
+  const body = JSON.stringify({
+    items: items.map(x => ({ ...x })),
+    historyAssets: [...new Set(undo.flatMap(snapshot => JSON.parse(snapshot).items.map(item => item.asset).filter(Boolean)))],
+  });
   try {
-    await request(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(items.map(({ ...x }) => x)) });
+    const send = () => request(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+    itemSave = itemSave.then(send, send);
+    await itemSave;
   } catch (e) { saveT = -1; throw e; }
   if (okey() !== origKey) { origKey = okey(); updateBase(); }
   const th = document.querySelectorAll('.thumb img')[i];
