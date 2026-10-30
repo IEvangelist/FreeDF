@@ -435,7 +435,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         foreach (var p in polys) AddPoly(p, ctm);
     }
 
-    static IEnumerable<(List<(double X, double Y)>, bool)> ApplyDash(List<(double X, double Y)> pts, bool closed, StrokeStyle s)
+    internal static IEnumerable<(List<(double X, double Y)>, bool)> ApplyDash(List<(double X, double Y)> pts, bool closed, StrokeStyle s)
     {
         var dash = s.Dash;
         double sum = 0; var anyNeg = false; var allZero = true;

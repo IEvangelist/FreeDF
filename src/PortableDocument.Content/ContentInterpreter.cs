@@ -391,7 +391,7 @@ public sealed class ContentInterpreter
                 if (o is not PdfKeyword k) { ops.Add(o); if (ops.Count > 512) ops.RemoveAt(0); continue; }
                 if (k.Value == "BI")
                 {
-                    if (collect && _hiddenDepth == 0) { var s0 = SkipWhite(content, stmtStart); var c0 = _gs.Ctm; InlineImage(lx, res); AddObject("image", s0, lx.Pos, c0, UnitSquare(c0)); }
+                    if (collect && _hiddenDepth == 0) { var s0 = SkipWhite(content, stmtStart); var c0 = _gs.Ctm; _lastInline = null; InlineImage(lx, res); AddObject("image", s0, lx.Pos, c0, UnitSquare(c0), stream: _lastInline); }
                     else InlineImage(lx, res);
                     ops.Clear(); stmtStart = lx.Pos; continue;
                 }
@@ -407,8 +407,27 @@ public sealed class ContentInterpreter
     }
 
     /// <summary>A painted graphics object or clipping path located by byte range in its owning stream: the page content (<paramref name="Form"/> 0) or a form XObject (its object number).</summary>
+    /// <remarks><see cref="Inv"/> numbers the invocation of <paramref name="Form"/> that owns the object (0 for the page); for a "form" object <see cref="ChildInv"/> is the invocation it starts.
+    /// <see cref="Style"/> and the alpha values describe the graphics state at paint time; <see cref="StrokePattern"/> is set when the stroke colour is a pattern or the paint has non-trivial blending.</remarks>
     public sealed record PageObject(int Index, string Kind, int Start, int End, Matrix Ctm, double X0, double Y0, double X1, double Y1,
-        bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth, int Form = 0, PdfStream? Stream = null, int Ref = 0);
+        bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth, int Form = 0, PdfStream? Stream = null, int Ref = 0)
+    {
+        public int Inv { get; init; }
+        public int ChildInv { get; init; }
+        public StrokeStyle? Style { get; init; }
+        public double FillAlpha { get; init; } = 1;
+        public double StrokeAlpha { get; init; } = 1;
+        public bool ComplexPaint { get; init; }
+    }
+
+    /// <summary>When true, content hidden by optional-content settings is still recorded (analysis only; used so redaction also removes hidden content).</summary>
+    public bool CollectHidden { get; set; }
+
+    /// <summary>When true, inline-image objects carry their reconstructed stream in <see cref="PageObject.Stream"/> (redaction only).</summary>
+    public bool CaptureInlineImages { get; set; }
+
+    int _curInv, _invCounter, _pendingFormObj = -1;
+    PdfStream? _lastInline;
 
     /// <summary>When set, page-content paint objects and clipping paths are recorded here.</summary>
     public List<PageObject>? Objects { get; set; }
@@ -425,7 +444,13 @@ public sealed class ContentInterpreter
     }
 
     void AddObject(string kind, int start, int end, Matrix ctm, (double X0, double Y0, double X1, double Y1) b, bool fill = false, bool stroke = false, PdfStream? stream = null, int xref = 0)
-        => Objects!.Add(new PageObject(Objects.Count, kind, start, end, ctm, b.X0, b.Y0, b.X1, b.Y1, fill, stroke, fill ? Color(false) : default, stroke ? Color(true) : default, _gs.LineWidth, _curForm, stream, xref));
+        => Objects!.Add(new PageObject(Objects.Count, kind, start, end, ctm, b.X0, b.Y0, b.X1, b.Y1, fill, stroke, fill ? Color(false) : default, stroke ? Color(true) : default, _gs.LineWidth, _curForm, stream, xref)
+        {
+            Inv = _curInv,
+            Style = new StrokeStyle(_gs.LineWidth, _gs.Cap, _gs.Join, _gs.MiterLimit, _gs.Dash, _gs.DashPhase),
+            FillAlpha = _gs.FillAlpha, StrokeAlpha = _gs.StrokeAlpha,
+            ComplexPaint = _gs.BlendMode != "Normal" || _gs.SoftMaskActive || stroke && (_gs.StrokePattern is not null || _gs.StrokeOverprint) || fill && (_gs.FillPattern is not null || _gs.FillOverprint),
+        });
 
     void Observe(string op, List<PdfObject> a, PdfDictionary res, byte[] content, int stmtStart, int end, ref int pathStart)
     {
@@ -450,8 +475,9 @@ public sealed class ContentInterpreter
                 break;
             case "Do":
                 if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd && R(xd.Get(xn.Value)) is PdfStream xs
-                    && !(R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc)))
+                    && !(R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc) && !CollectHidden))
                 {
+                    _pendingFormObj = -1;
                     var sub = R(xs.Dict.Get("Subtype")).AsName();
                     var xnum = xd.Get(xn.Value) is PdfRef xr ? xr.Number : 0;
                     if (sub == "Image") AddObject("image", SkipWhite(content, stmtStart), end, _gs.Ctm, UnitSquare(_gs.Ctm), stream: xs, xref: xnum);
@@ -460,6 +486,7 @@ public sealed class ContentInterpreter
                         var fm = R(xs.Dict.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
                         var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, 1, 1];
                         AddObject("form", SkipWhite(content, stmtStart), end, _gs.Ctm, Bounds(fm.Then(_gs.Ctm), [(bb[0], bb[1]), (bb[2], bb[1]), (bb[0], bb[3]), (bb[2], bb[3])], 0), xref: xnum);
+                        _pendingFormObj = Objects!.Count - 1;
                     }
                 }
                 break;
@@ -563,7 +590,7 @@ public sealed class ContentInterpreter
                     if (a.Count >= 2 && a[0].AsName() == "OC")
                     {
                         PdfObject? prop = a[1] is PdfName pn && R(res.Get("Properties")) is PdfDictionary pd ? R(pd.Get(pn.Value)) : a[1];
-                        hidden = prop is PdfDictionary ocd && IsHidden(ocd);
+                        hidden = prop is PdfDictionary ocd && IsHidden(ocd) && !CollectHidden;
                     }
                     _hiddenStack.Add(hidden ? "H" : a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : "");
                     if (hidden) _hiddenDepth++;
@@ -1078,6 +1105,8 @@ public sealed class ContentInterpreter
         public int EnclosingPageMcid { get; init; } = -1;
         /// <summary>Whether this text is inside an explicit /Artifact marked-content sequence.</summary>
         public bool IsArtifact { get; init; }
+        /// <summary>The invocation of <see cref="Form"/> that produced this span (0 for page content).</summary>
+        public int Inv { get; init; }
     }
 
     /// <summary>One shown glyph: its raw string bytes, device-space box and writing-axis advance as a TJ number.</summary>
@@ -1148,6 +1177,7 @@ public sealed class ContentInterpreter
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
             _curForm, _gs.FontRef, font, pieces)
         {
+            Inv = _curInv,
             EnclosingPageMcid = _pageMcid, IsArtifact = _hiddenStack.Contains("A"), RenderingMatrix = trm,
             CharacterSpacing = _gs.FontSize == 0 ? 0 : _gs.CharSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize,
             WordSpacing = _gs.FontSize == 0 ? 0 : _gs.WordSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize
@@ -1240,7 +1270,7 @@ public sealed class ContentInterpreter
     void DoXObject(PdfObject? obj, PdfDictionary res, int objNum = 0)
     {
         if (obj is not PdfStream xs || _hiddenDepth > 0) return;
-        if (R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc)) return;
+        if (R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc) && !CollectHidden) return;
         var sub = R(xs.Dict.Get("Subtype")).AsName();
         if (sub == "Image") DrawImage(xs, res);
         else if (sub == "Form") DoForm(xs, res, objNum);
@@ -1250,7 +1280,7 @@ public sealed class ContentInterpreter
     {
         if (!_activeForms.Add(xs.Dict)) return;
         var saved = _gs; var savedPath = _path; var savedTm = _tm; var savedTlm = _tlm;
-        var sCollect = _collectDepth; var sForm = _curForm; var sIdx = _spanIndex;
+        var sCollect = _collectDepth; var sForm = _curForm; var sIdx = _spanIndex; var sInv = _curInv;
         var savedHidden = _hiddenStack; var savedMcids = _mcidStack;
         var savedHiddenDepth = _hiddenDepth; var savedPageMcid = _pageMcid;
         var stackDepth = _stack.Count;
@@ -1262,7 +1292,13 @@ public sealed class ContentInterpreter
         try
         {
             // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
-            if ((_runDepth == _collectDepth || annotationAppearance && _runDepth == 0) && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
+            if ((_runDepth == _collectDepth || annotationAppearance && _runDepth == 0) && objNum > 0)
+            {
+                _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; _curInv = ++_invCounter;
+                if (_pendingFormObj >= 0 && Objects is not null && _pendingFormObj < Objects.Count && Objects[_pendingFormObj].Ref == objNum)
+                    Objects[_pendingFormObj] = Objects[_pendingFormObj] with { ChildInv = _curInv };
+                _pendingFormObj = -1;
+            }
             else if (_runDepth == _collectDepth) _collectDepth = -1;
             _be.Save();
             _stack.Push(_gs);
@@ -1296,7 +1332,7 @@ public sealed class ContentInterpreter
             if (_mcidStack.Count > 0) Warn("unclosed marked content in form");
             _hiddenStack = savedHidden; _mcidStack = savedMcids;
             _hiddenDepth = savedHiddenDepth; _pageMcid = savedPageMcid;
-            _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx;
+            _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx; _curInv = sInv;
             _activeForms.Remove(xs.Dict);
             if (grouped) _be.EndGroup();
             while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
@@ -1513,6 +1549,7 @@ public sealed class ContentInterpreter
         if (_hiddenDepth > 0) return;
         if (d.TryGetValue("Filter", out var fv)) d["Filter"] = ExpandNames(fv);
         var stream = new PdfStream(new PdfDictionary(d), raw);
+        if (CaptureInlineImages) _lastInline = stream;
         try { DrawImage(stream, res); } catch (Exception e) when (e is NotSupportedException or IndexOutOfRangeException or ArgumentException) { Warn("inline image: " + e.Message); }
     }
 
