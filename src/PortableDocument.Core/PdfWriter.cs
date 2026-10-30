@@ -15,6 +15,8 @@ public sealed class PdfWriteOptions
     public PdfEncryption? Encryption { get; init; }
     /// <summary>When set, receives the mapping from input object numbers to the numbers used in the written file.</summary>
     public Dictionary<int, int>? ObjectMapOut { get; init; }
+    /// <summary>The 16-byte file identifier to write (default: random). Set it for reproducible output.</summary>
+    public byte[]? FileId { get; init; }
 }
 
 /// <summary>Serializes an object graph to a fresh PDF (classic xref or xref/object streams, optionally compressed and encrypted), or appends an incremental update. Unreachable objects are dropped and numbers are reassigned on full writes.</summary>
@@ -57,7 +59,7 @@ public static class PdfWriter
         if (options.ObjectMapOut is { } mapOut) foreach (var (k, v) in map) mapOut[k] = v;
 
         if (options.ObjectStreams && string.Compare(version, "1.5", StringComparison.Ordinal) < 0) version = "1.5";
-        id ??= RandomNumberGenerator.GetBytes(16);
+        id ??= options.FileId ?? RandomNumberGenerator.GetBytes(16);
         var enc = options.Encryption is null ? null : new PdfEncryptor(options.Encryption, id);
         var ms = new MemoryStream();
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }

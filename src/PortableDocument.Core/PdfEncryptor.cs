@@ -35,6 +35,8 @@ public sealed class PdfEncryption
     public PdfEncryptionMethod Method { get; init; } = PdfEncryptionMethod.Aes256;
     /// <summary>Certificates that can open the file (public-key handler). Per-recipient permissions override <see cref="Permissions"/>.</summary>
     public IReadOnlyList<PdfRecipient>? Recipients { get; init; }
+    /// <summary>Source of the file key, salts and IVs (default: a cryptographic RNG). A deterministic source makes output reproducible, which is only appropriate for fixtures and samples.</summary>
+    public Func<int, byte[]>? RandomBytes { get; init; }
 }
 
 internal sealed class PdfEncryptor
@@ -43,6 +45,7 @@ internal sealed class PdfEncryptor
     [0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41, 0x64, 0x00, 0x4E, 0x56, 0xFF, 0xFA, 0x01, 0x08, 0x2E, 0x2E, 0x00, 0xB6, 0xD0, 0x68, 0x3E, 0x80, 0x2F, 0x0C, 0xA9, 0xFE, 0x64, 0x53, 0x69, 0x7A];
 
     readonly byte[] _key;
+    readonly Func<int, byte[]> _rng;
     readonly PdfEncryptionMethod _method;
     public bool EncryptMetadata { get; }
     public PdfDictionary Dict { get; }
@@ -50,9 +53,10 @@ internal sealed class PdfEncryptor
     public PdfEncryptor(PdfEncryption o, byte[] id)
     {
         _method = o.Method;
+        _rng = o.RandomBytes ?? RandomNumberGenerator.GetBytes;
         EncryptMetadata = o.EncryptMetadata;
         if (o.Recipients is { Count: > 0 } rc) { (_key, Dict) = PubSec(o, rc); return; }
-        if (o.Method == PdfEncryptionMethod.Aes256) { _key = RandomNumberGenerator.GetBytes(32); Dict = Aes256Dict(o); return; }
+        if (o.Method == PdfEncryptionMethod.Aes256) { _key = _rng(32); Dict = Aes256Dict(o); return; }
         (_key, Dict) = Legacy(o, id);
     }
 
@@ -63,10 +67,10 @@ internal sealed class PdfEncryptor
         byte[] Pwd(string s) => Encoding.UTF8.GetBytes(s).Take(127).ToArray();
         var up = Pwd(o.UserPassword);
         var op = Pwd(o.OwnerPassword.Length > 0 ? o.OwnerPassword : o.UserPassword);
-        var uv = RandomNumberGenerator.GetBytes(8); var uk = RandomNumberGenerator.GetBytes(8);
+        var uv = _rng(8); var uk = _rng(8);
         var u = Join(PdfDecryptor.Hash2B(up, uv, []), uv, uk);
         var ue = AesNoPad(PdfDecryptor.Hash2B(up, uk, []), _key);
-        var ov = RandomNumberGenerator.GetBytes(8); var ok = RandomNumberGenerator.GetBytes(8);
+        var ov = _rng(8); var ok = _rng(8);
         var o48 = Join(PdfDecryptor.Hash2B(op, ov, u), ov, ok);
         var oe = AesNoPad(PdfDecryptor.Hash2B(op, ok, u), _key);
 
@@ -75,7 +79,7 @@ internal sealed class PdfEncryptor
         perms[4] = perms[5] = perms[6] = perms[7] = 0xFF;
         perms[8] = (byte)(o.EncryptMetadata ? 'T' : 'F');
         "adb"u8.CopyTo(perms.AsSpan(9));
-        RandomNumberGenerator.GetBytes(4).CopyTo(perms, 12);
+        _rng(4).CopyTo(perms, 12);
         using var aes = Aes.Create();
         aes.Key = _key;
         var permsEnc = aes.EncryptEcb(perms, PaddingMode.None);
@@ -211,14 +215,14 @@ internal sealed class PdfEncryptor
         {
             using var a = Aes.Create();
             a.Key = _key;
-            var iv0 = RandomNumberGenerator.GetBytes(16);
+            var iv0 = _rng(16);
             return [.. iv0, .. a.EncryptCbc(data, iv0, PaddingMode.PKCS7)];
         }
         var key = ObjKey(num, gen);
         if (_method is PdfEncryptionMethod.Rc4_40 or PdfEncryptionMethod.Rc4_128) return PdfDecryptor.Rc4(key, data);
         using var aes = Aes.Create();
         aes.Key = key;
-        var iv = RandomNumberGenerator.GetBytes(16);
+        var iv = _rng(16);
         return [.. iv, .. aes.EncryptCbc(data, iv, PaddingMode.PKCS7)];
     }
 }
