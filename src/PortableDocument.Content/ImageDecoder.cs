@@ -62,8 +62,9 @@ public static class ImageDecoder
                 cs = (csObj is null && jx.IccProfile is not null ? PdfColorSpace.FromIccProfile(jx.IccProfile, jx.Components) : null)
                     ?? jx.Components switch { 1 => PdfColorSpace.Gray, 4 => PdfColorSpace.Cmyk, _ => PdfColorSpace.Rgb };
             }
-            // Keep native precision only where the 8-bit direct path below would not already be exact.
-            if (jx.Samples16 is not null && (colorKeyMask || decode is not null || (cs != PdfColorSpace.Gray && cs != PdfColorSpace.Rgb)))
+            // Keep native precision only where the 8-bit direct path below would not already be exact. A colour-key
+            // /Mask keeps matching 8-bit samples, as before 16-bit support was added.
+            if (jx.Samples16 is not null && !colorKeyMask && (decode is not null || (cs != PdfColorSpace.Gray && cs != PdfColorSpace.Rgb)))
             { data = jx.Samples16; bpc = 16; }
             if (smaskInData > 0) jpxAlpha = jx;
         }

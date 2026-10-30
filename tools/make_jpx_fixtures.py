@@ -783,13 +783,19 @@ def emit_depth(name, bits, rgb=False, extra=None, expected="scaled"):
     print("wrote", name, bits, "bit", len(data), "bytes")
 
 
-def emit_subsampled(name, xr, yr, w=8, h=8):
-    """One component at XRsiz/YRsiz > 1 (SIZ patched after OpenJPEG encoding the reduced plane). The expected
-    samples are hand-derived: reference-grid sample (X, Y) lies between plane samples at multiples of XRsiz/YRsiz and is
-    bilinearly interpolated (round half up) with edge replication; OpenJPEG itself does not define upsampling."""
+def emit_subsampled(name, xr, yr, w=8, h=8, ramp=False):
+    """One component at XRsiz/YRsiz > 1 (SIZ patched after OpenJPEG encoding the reduced plane).
+
+    NOT independently decoded: OpenJPEG defines no upsampling. "selfderived" fixtures use a hand-written bilinear
+    model (reference-grid sample (X, Y) interpolated between plane samples at multiples of XRsiz/YRsiz, round half
+    up, edge replication). "analytic-ramp" fixtures use a plane that is an exact linear ramp, whose bilinear
+    reconstruction has the closed form 5 + 12*X/XRsiz + 20*Y/YRsiz (X, Y clamped to the last plane sample), independent
+    of any interpolation code."""
     cw, ch = -(-w // xr), -(-h // yr)
     rng = np.random.default_rng(xr * 10 + yr)
     plane = rng.integers(0, 256, (ch, cw)).astype(np.uint8)
+    if ramp:
+        plane = (5 + 12 * np.arange(cw)[None, :] + 20 * np.arange(ch)[:, None]).astype(np.uint8)
     buf = io.BytesIO()
     Image.fromarray(plane, "L").save(buf, format="JPEG2000", no_jp2=True, num_resolutions=1)
     data = bytearray(buf.getvalue())
@@ -812,6 +818,12 @@ def emit_subsampled(name, xr, yr, w=8, h=8):
             p = plane.astype(np.int64)
             num = (p[j0, i0] * (xr - fx) + p[j0, i1] * fx) * (yr - fy) + (p[j1, i0] * (xr - fx) + p[j1, i1] * fx) * fy
             out[y, x] = (num + xr * yr // 2) // (xr * yr)
+    if ramp:
+        from fractions import Fraction
+        for y in range(h):
+            for x in range(w):
+                v = 5 + Fraction(12 * min(x, xr * (cw - 1)), xr) + Fraction(20 * min(y, yr * (ch - 1)), yr)
+                out[y, x] = int((v * 2 + 1) // 2)
     make_pdf(os.path.join(OUT, name + ".pdf"), w, h, bytes(data), {"ColorSpace": Name.DeviceGray})
     open(os.path.join(OUT, name + ".bin"), "wb").write(out.tobytes())
     open(os.path.join(OUT, name + ".meta"), "w").write(f"L {w} {h} 0")
@@ -889,9 +901,11 @@ def emit_precision_subsampling_and_styles(rgb, gray):
         emit_depth(f"gray{bits}-lossless", bits)
         emit_depth(f"rgb{bits}-lossless", bits, rgb=True)
     emit_depth("gray12-decode-inverted", 12, extra={"ColorSpace": Name.DeviceGray, "Decode": [1, 0]}, expected="inverted")
-    emit_subsampled("subsampled-2x2", 2, 2)
-    emit_subsampled("subsampled-2x1", 2, 1)
-    emit_subsampled("subsampled-3x2-odd", 3, 2, w=9, h=7)
+    emit_subsampled("subsampled-selfderived-2x2", 2, 2)
+    emit_subsampled("subsampled-selfderived-2x1", 2, 1)
+    emit_subsampled("subsampled-selfderived-3x2-odd", 3, 2, w=9, h=7)
+    emit_subsampled("subsampled-analytic-ramp-2x2", 2, 2, ramp=True)
+    emit_subsampled("subsampled-analytic-ramp-2x1", 2, 1, ramp=True)
     styles = {"bypass": 1, "reset": 2, "termall": 4, "vcausal": 8, "pterm": 16, "segsym": 32, "all": 63}
     for label, mode in styles.items():
         emit_opj(f"cblk-style-{label}", rgb, ["-M", str(mode), "-b", "16,16", "-n", "3"])

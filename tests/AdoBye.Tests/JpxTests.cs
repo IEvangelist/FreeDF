@@ -457,6 +457,31 @@ public class JpxTests
         Assert.True(different > raw.Length / 4, "the Adobe RGB profile must visibly change the sRGB interpretation");
     }
 
+    [Theory]
+    [InlineData("gray-lossless")]
+    [InlineData("gray12-lossless")]
+    public void ColourKeyMaskStillMatchesEightBitSamples(string name)
+    {
+        var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(Dir, name + ".pdf")));
+        var xo = (PdfDictionary)doc.File.Resolve(doc.Pages[0].Resources.Get("XObject"))!;
+        var img = (PdfStream)doc.File.Resolve(xo.Get("Im0"))!;
+        var expected = File.ReadAllBytes(Path.Combine(Dir, name + ".bin"));
+        var key = expected[0];
+        img.Dict.Entries["ColorSpace"] = new PdfName("DeviceGray");
+        img.Dict.Entries["Mask"] = new PdfArray([new PdfInteger(key), new PdfInteger(key)]);
+        var data = ImageDecoder.Decode(doc.File, img, doc.Pages[0].Resources, out _, out _);
+        Assert.NotNull(data);
+        var masked = 0;
+        for (var i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i], data!.Rgba[i * 4]);
+            var transparent = expected[i] == key;
+            Assert.Equal(transparent ? 0 : 255, data.Rgba[i * 4 + 3]);
+            if (transparent) masked++;
+        }
+        Assert.True(masked > 0);
+    }
+
     static byte[] Codestream(string name)
     {
         var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(Dir, name + ".pdf")));
