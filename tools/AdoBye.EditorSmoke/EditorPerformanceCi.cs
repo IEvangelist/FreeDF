@@ -35,6 +35,10 @@ static class EditorPerformanceCi
             }
         }
         var failures = new List<string>();
+        var warnings = new List<string>();
+        var timingRows = new List<string>();
+        using var raw = JsonDocument.Parse(await File.ReadAllTextAsync(profile));
+        var records = raw.RootElement.EnumerateArray().ToArray();
         var actualGroups = rows.Select(r => (r.Document, r.Phase, r.Metric)).ToHashSet();
         foreach (var key in reference.Keys)
             if (!actualGroups.Contains(key)) failures.Add($"Missing reference group: {key}.");
@@ -62,10 +66,21 @@ static class EditorPerformanceCi
             { failures.Add($"New unreferenced timing group: {row.Document} {row.Phase} {row.Metric}."); continue; }
             var p50Limit = Math.Max(policy.MinimumTimingMs, baseline.P50 * policy.TimingFactor);
             var p95Limit = Math.Max(policy.MinimumTimingMs, baseline.P95 * policy.TimingFactor);
-            if (row.P50 >= p50Limit || row.P95 >= p95Limit)
-                failures.Add($"CI timing regression: {row.Document} {row.Phase} {row.Metric}: {row.P50:F1}/{row.P95:F1} >= {p50Limit:F1}/{p95Limit:F1} ms.");
+            var repeats = records.Where(r => Document(r.GetProperty("document").GetString()!) == row.Document &&
+                r.GetProperty("phase").GetString() == row.Phase && r.TryGetProperty("result", out _)).ToArray();
+            if (repeats.Length != 3 || repeats.Select(r => r.GetProperty("repeat").GetInt32()).Distinct().Count() != 3)
+            { failures.Add($"Incomplete repeat set: {row.Document} {row.Phase} {row.Metric}."); continue; }
+            var tails = repeats.Select(r => RepeatP95(r, row.Metric)).Order().ToArray();
+            if (tails.Any(t => !double.IsFinite(t)))
+            { failures.Add($"Nonfinite repeat timing: {row.Document} {row.Phase} {row.Metric}."); continue; }
+            var medianTail = tails[1];
+            if (row.P50 >= p50Limit || medianTail >= p95Limit)
+                failures.Add($"CI timing regression: {row.Document} {row.Phase} {row.Metric}: median {row.P50:F1}, median repeat p95 {medianTail:F1} >= {p50Limit:F1}/{p95Limit:F1} ms; maximum {row.Maximum:F1} ms.");
+            else if (row.P95 >= p95Limit)
+                warnings.Add($"Isolated timing outlier: {row.Document} {row.Phase} {row.Metric}; maximum {row.Maximum:F1} ms, median repeat p95 {medianTail:F1} ms.");
+            if (row.P95 >= p95Limit || row.P50 >= p50Limit)
+                timingRows.Add($"| {row.Document} / {row.Phase} / {row.Metric} | {string.Join(" / ", tails.Select(t => t.ToString("F1", CultureInfo.InvariantCulture)))} | {medianTail:F1} | {row.Maximum:F1} | {p50Limit:F1} / {p95Limit:F1} |");
         }
-        using var raw = JsonDocument.Parse(await File.ReadAllTextAsync(profile));
         var images = raw.RootElement.EnumerateArray().Where(r => r.GetProperty("phase").GetString() == "first-page-image").ToArray();
         foreach (var expected in policy.Pixels)
         {
@@ -80,6 +95,10 @@ static class EditorPerformanceCi
 
         var summary = new StringBuilder("# Editor performance CI\n\n");
         summary.AppendLine($"Policy v{policy.Version}: relative timing ceilings {policy.TimingFactor:F1}x reference, minimum {policy.MinimumTimingMs:F0} ms. Original goals are unchanged.");
+        summary.AppendLine("\nHosted timing gates require a breach in at least two of three repeats: the median of per-repeat p95s, not the maximum of three repeats. Median ceilings are also retained. Strict local p50/p95 reports and deterministic gates are unchanged.");
+        summary.AppendLine("\n## Hosted timing outliers and regressions\n\n| Document / phase / metric | Repeat p95s (sorted) | Median repeat p95 | Maximum observation | Median / tail ceilings |\n|---|---:|---:|---:|---:|");
+        foreach (var timing in timingRows) summary.AppendLine(timing);
+        foreach (var warning in warnings) summary.AppendLine("\nWARNING: " + warning);
         summary.AppendLine("\n## KNOWN MISSES (baseline open work)\n\n| Document / phase / metric | Current p50 / p95 | Original goal | Recorded AOT p50 / p95 | This runner |\n|---|---:|---:|---:|---|");
         foreach (var miss in policy.KnownMisses)
         {
@@ -92,10 +111,29 @@ static class EditorPerformanceCi
         summary.AppendLine("\nTiming CI uses relative ceilings, not a claim that strict goals pass. Pixel/allocation/raster-count gates are not relaxed.");
         summary.AppendLine(failures.Count == 0 ? "\nCI regression gates passed; strict-goal results are reported above." : "\n## CI gate failures\n\n" + string.Join("\n", failures.Select(f => "- " + f)));
         await File.WriteAllTextAsync(profile + ".ci.md", summary.ToString());
-        await File.WriteAllTextAsync(profile + ".ci.json", JsonSerializer.Serialize(new { policy.Version, failures }, new JsonSerializerOptions { WriteIndented = true }));
+        await File.WriteAllTextAsync(profile + ".ci.json", JsonSerializer.Serialize(new { policy.Version, failures, warnings }, new JsonSerializerOptions { WriteIndented = true }));
         if (Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY") is { Length: > 0 } jobSummary)
             await File.AppendAllTextAsync(jobSummary, summary.ToString());
         Console.WriteLine(summary);
         if (failures.Count > 0) throw new Exception(string.Join(Environment.NewLine, failures));
+    }
+
+    static double RepeatP95(JsonElement record, string metric)
+    {
+        var result = record.GetProperty("result");
+        double[] values = metric switch
+        {
+            "total-ms" => [result.GetProperty("ms").GetDouble()],
+            "input-ack-ms" => [record.GetProperty("inputAckMs").GetDouble()],
+            "event-frame-max-ms" => result.GetProperty("presentation").EnumerateArray().Select(e => e.GetProperty("ms").GetDouble()).ToArray(),
+            "heartbeat-max-ms" => result.GetProperty("heartbeatDelays").EnumerateArray().Select(e => e.GetDouble()).ToArray(),
+            "long-task-max-ms" => result.GetProperty("longTasks").EnumerateArray().Select(e => e.GetProperty("ms").GetDouble()).ToArray(),
+            _ => result.GetProperty("interactions").EnumerateArray().Where(e => e.GetProperty("phase").GetString() + "-ms" == metric)
+                .Select(e => e.GetProperty("ms").GetDouble()).ToArray(),
+        };
+        if (values.Length == 0) return 0;
+        if (values.Any(v => !double.IsFinite(v))) return double.NaN;
+        Array.Sort(values);
+        return values[(int)Math.Ceiling(values.Length * .95) - 1];
     }
 }

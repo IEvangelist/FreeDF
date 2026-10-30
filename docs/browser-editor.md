@@ -264,9 +264,20 @@ budget failures block the job. New strict-goal misses below those relative
 ceilings remain visible as `NEW GOAL MISS`, not claims of goal attainment.
 A runner that meets a known original goal is marked `MET`, not rejected for
 being faster than the reference machine. The versioned baseline remains intact.
-`tools\Test-EditorProfileCi.ps1` verifies eight synthetic policy cases, including
+Hosted timing decisions require a breach in at least two of three repeats:
+the median of per-repeat p95s is compared with the unchanged tail ceiling,
+while the median ceiling is retained. With only three repeat observations, the
+old pooled p95 was their maximum, so a single scheduling stall could block a
+release. Maxima and isolated-outlier warnings remain in the job summary/JSON.
+This changes only hosted timing decisions, not the authoritative strict report
+or any pixel, allocation, cache/raster-count, completeness or no-blank gate.
+The profile also waits for Undo's page replacement before selecting text, so
+the next operation cannot accidentally target a stale span.
+`tools\Test-EditorProfileCi.ps1` verifies ten synthetic policy cases, including
 rejection of regressions, acceptance of an improved goal and visibility when a
-fixed goal regresses; no timing ceiling is changed.
+fixed goal regresses. A single-repeat timing outlier passes with a warning;
+two-repeat breaches fail. Even one deterministic hash/allocation/raster-reuse
+failure still fails; no timing ceiling is changed.
 
 For authoritative strict goals, unset `EDITOR_PROFILE_REPORT_ONLY` and run the
 ordinary `--profile` (or `--profile-summary` on saved data). In the latest

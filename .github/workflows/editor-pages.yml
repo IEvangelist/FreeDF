@@ -77,19 +77,6 @@ jobs:
           "${{ github.workspace }}/samples/03-typography-embedded.pdf"
           "${{ github.workspace }}/samples/09-images.pdf"
           "${{ github.workspace }}/samples/20-report.pdf"
-      - name: Diagnose previous-live control on the same hosted runner
-        if: always()
-        env:
-          EDITOR_PROFILE_REPORT_ONLY: '1'
-          EDITOR_PROFILE_BASELINE_CONTROL: '1'
-        run: >-
-          dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke --
-          --profile "https://ievangelist.github.io/csharp-pdf/"
-          "${{ runner.temp }}/editor-control.json"
-          "${{ github.workspace }}/samples/01-spec-showcase.pdf"
-          "${{ github.workspace }}/samples/03-typography-embedded.pdf"
-          "${{ github.workspace }}/samples/09-images.pdf"
-          "${{ github.workspace }}/samples/20-report.pdf"
       - name: Enforce CI regressions and report open performance goals
         if: always() && steps.profile.outcome != 'skipped'
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --profile-ci "${{ runner.temp }}/editor-profile.json" "${{ github.workspace }}/docs/performance/editor-ci-known-misses.v1.json"
@@ -109,7 +96,6 @@ jobs:
             ${{ runner.temp }}/editor-page-image
             ${{ runner.temp }}/editor-profile.json*
             ${{ runner.temp }}/editor-profile-ci-tests
-            ${{ runner.temp }}/editor-control.json*
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.deploy)
         with:
