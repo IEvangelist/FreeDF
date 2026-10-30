@@ -10,8 +10,12 @@ The host still makes ordinary GET requests for its static app/runtime assets.
 Replacing item lists or removing/importing pages prunes uploaded image bytes
 that no live page item or retained UI undo snapshot references; shared asset IDs
 remain available while any live item references them. Item/history updates are
-atomic and ordered. Uploads remain protected until first attached, or document
-reset, so concurrent item saves cannot discard an image still being inserted.
+atomic and ordered. Unclaimed uploads expire after ten minutes (swept on the next
+editor command), or can be explicitly cancelled with `POST /api/asset-cancel?id=...`.
+Neither expiry nor cancellation removes live-item or undo-history references.
+The UI keeps pending upload files until an item save succeeds, allowing failed
+saves to retry with the same asset ID even after expiry; abandoned pending files
+are cancelled when their references are released.
 Clearing navigation history releases its references; removed pages' item lists
 are discarded.
 

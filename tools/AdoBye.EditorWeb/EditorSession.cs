@@ -10,7 +10,7 @@ using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using AdoBye.EditorWeb;
 
 /// <summary>The editor's in-memory operations, shared by the HTTP and browser hosts.</summary>
-public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallback = null)
+public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallback = null, TimeProvider? timeProvider = null)
 {
     public sealed record Reply(byte[] Data, string ContentType = "application/json", string? FileName = null);
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -23,7 +23,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     bool prepared;
     readonly Dictionary<int, List<Item>> items = [];
     readonly Dictionary<string, Asset> assets = [];
-    readonly HashSet<string> unclaimedAssets = [];
+    readonly Dictionary<string, DateTimeOffset> unclaimedAssets = [];
+    readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     readonly Dictionary<int, HashSet<string>> historyAssets = [];
     OverlayBuilder? overlayBuilder;
     readonly Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)> texts = [];
@@ -195,14 +196,16 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         foreach (var id in historyAssets.Keys.Where(id => !livePages.Contains(id)).ToArray()) historyAssets.Remove(id);
         var referenced = items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>().ToHashSet();
         referenced.UnionWith(historyAssets.Values.SelectMany(ids => ids));
-        unclaimedAssets.ExceptWith(referenced);
-        foreach (var id in assets.Keys.Where(id => !referenced.Contains(id) && !unclaimedAssets.Contains(id)).ToArray()) assets.Remove(id);
+        foreach (var id in unclaimedAssets.Keys.Where(id => referenced.Contains(id) || clock.GetUtcNow() - unclaimedAssets[id] >= TimeSpan.FromMinutes(10)).ToArray())
+            unclaimedAssets.Remove(id);
+        foreach (var id in assets.Keys.Where(id => !referenced.Contains(id) && !unclaimedAssets.ContainsKey(id)).ToArray()) assets.Remove(id);
     }
     byte[] Render(PdfPage page, double dpi) => DocumentRenderer.RenderPage(page, new PdfRenderOptions { FontFallback = fontFallback }, dpi).ToPng();
 
     /// <summary>Dispatches a local command. Neither this method nor the WASM host performs network I/O.</summary>
     public Reply Handle(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body = null, string? uploadName = null)
     {
+        PruneAssets();
         string? Q(string key) => query.GetValueOrDefault(key);
         int Int(string key, int fallback) => int.TryParse(Q(key), out var n) ? n : fallback;
         double? Number(string key) => double.TryParse(Q(key), CultureInfo.InvariantCulture, out var n) ? n : null;
@@ -328,9 +331,20 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     int w, h;
                     if (mime == "image/jpeg") { if (JpegDecoder.Decode(bytes, out w, out h, out _) is null) throw new ArgumentException("Unsupported JPEG."); }
                     else (w, h, _) = PngWriter.Decode(bytes);
-                    var key = Guid.NewGuid().ToString("N"); assets[key] = new(bytes, mime);
-                    unclaimedAssets.Add(key);
+                    var key = Q("id") ?? Guid.NewGuid().ToString("N");
+                    if (assets.TryGetValue(key, out var existing))
+                    {
+                        if (!existing.Data.AsSpan().SequenceEqual(bytes)) throw new ArgumentException("Asset ID already contains a different image.");
+                    }
+                    else
+                    {
+                        assets[key] = new(bytes, mime);
+                        unclaimedAssets[key] = clock.GetUtcNow();
+                    }
                     return AsJson(new { id = key, w, h });
+                case "asset-cancel":
+                    if (Q("id") is not { } cancelled) throw new ArgumentException("Missing asset ID.");
+                    unclaimedAssets.Remove(cancelled); PruneAssets(); return Ok;
                 case "asset-history":
                     historyAssets.Clear(); PruneAssets(); return Ok;
                 case "delete": CheckPageMutation(); editor.DeletePage(int.Parse(p[2], CultureInfo.InvariantCulture)); PruneAssets(); break;

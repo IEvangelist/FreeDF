@@ -144,4 +144,49 @@ public class EditorSessionTests
         Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], []));
         Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
     }
+
+    sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public void UnclaimedUploadsExpireAtTenMinutesAndCanBeRetriedWithTheSameId()
+    {
+        var clock = new Clock();
+        var session = new EditorSession(new FontCatalog(), timeProvider: clock);
+        Call(session, "POST", "/api/new");
+        var asset = Upload(session);
+        clock.Now += TimeSpan.FromMinutes(10) - TimeSpan.FromTicks(1);
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        clock.Now += TimeSpan.FromTicks(1);
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
+        var png = PngWriter.Encode(1, 1, [255, 0, 0, 255]);
+        session.Handle("POST", "/api/asset", new Dictionary<string, string> { ["id"] = asset }, png);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([Image("retry", asset)], []));
+        clock.Now += TimeSpan.FromHours(1);
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+    }
+
+    [Fact]
+    public void ExpiryAndCancelPreserveLiveAndUndoReferences()
+    {
+        var clock = new Clock();
+        var session = new EditorSession(new FontCatalog(), timeProvider: clock);
+        Call(session, "POST", "/api/new");
+        var live = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([Image("live", live)], []));
+        var history = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([Image("live", live)], [history]));
+        var abandoned = Upload(session);
+        Call(session, "POST", "/api/asset-cancel", query: [("id", abandoned)]);
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + abandoned));
+        foreach (var id in new[] { live, history }) Call(session, "POST", "/api/asset-cancel", query: [("id", id)]);
+        clock.Now += TimeSpan.FromHours(1);
+        foreach (var id in new[] { live, history }) Assert.NotEmpty(Call(session, "GET", "/api/asset/" + id).Data);
+        Call(session, "POST", "/api/asset-history");
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + history));
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + live).Data);
+    }
 }

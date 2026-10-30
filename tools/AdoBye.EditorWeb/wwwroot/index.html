@@ -134,6 +134,7 @@ document.querySelector('label[for="img"], label:has(#img)').onkeydown = e => {
 };
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
+const pendingUploads = new Map();
 let locked = localStorage.getItem('lock-geom') === '1';
 const GEOM = new Set(['x', 'y', 'w', 'h', 'x2', 'y2']);
 const $ = id => document.getElementById(id);
@@ -538,8 +539,24 @@ async function flush() {
     items: items.map(x => ({ ...x })),
     historyAssets: [...new Set(undo.flatMap(snapshot => JSON.parse(snapshot).items.map(item => item.asset).filter(Boolean)))],
   });
+  const uploads = [...pendingUploads];
   try {
-    const send = () => request(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+    const send = async () => {
+      const update = JSON.parse(body);
+      const referenced = new Set([...update.items.map(item => item.asset), ...update.historyAssets].filter(Boolean));
+      for (const [id, file] of uploads) {
+        if (!referenced.has(id)) continue;
+        const upload = new FormData(); upload.append('f', file);
+        await request(`/api/asset?id=${encodeURIComponent(id)}`, { method: 'POST', body: upload });
+      }
+      await request(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+      for (const id of referenced) pendingUploads.delete(id);
+      for (const [id] of uploads) {
+        if (referenced.has(id)) continue;
+        await post(`/api/asset-cancel?id=${encodeURIComponent(id)}`);
+        pendingUploads.delete(id);
+      }
+    };
     itemSave = itemSave.then(send, send);
     await itemSave;
   } catch (e) { saveT = -1; throw e; }
@@ -643,6 +660,7 @@ $('img').onchange = async e => {
   const r = await request('/api/asset', { method: 'POST', body: fd });
   if (!r.ok) { status('Unsupported image (PNG or baseline/progressive JPEG only).'); return; }
   const a = await r.json(), pg = state.pages[sel], w = Math.min(240, pg.width / 2);
+  pendingUploads.set(a.id, f);
   pushUndo();
   cur = { id: crypto.randomUUID(), type: 'image', x: 40, y: 40, w, h: w * a.h / a.w, text: '', font: 'Helvetica', size: 12, bold: false, italic: false, color: '#000000', fill: '', stroke: '', strokeWidth: 0, opacity: 1, asset: a.id, x2: 0, y2: 0 };
   items.push(cur); paint(); props(); queueSave();

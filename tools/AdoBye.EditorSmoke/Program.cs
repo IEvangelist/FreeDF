@@ -108,6 +108,22 @@ try
           if (!image.w || !image.h) throw new Error('Image did not decode');
         }
         """);
+    // Deletion saves an empty live list, but undo must still be able to fetch the image bytes.
+    if (await page.Locator("#prev").EvaluateAsync<bool>("el => el.classList.contains('on')"))
+        await page.Locator("#prev").ClickAsync();
+    await page.Locator("#img").SetInputFilesAsync(new FilePayload
+    {
+        Name = "undo.png", MimeType = "image/png",
+        Buffer = PortableDocument.Render.PngWriter.Encode(1, 1, [255, 0, 0, 255]),
+    });
+    await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
+    await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Locator("#layer .it").Filter(new() { Has = page.Locator("img") }).ClickAsync();
+    await page.Keyboard.PressAsync("Delete");
+    await page.WaitForFunctionAsync("async () => !(await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
+    await page.Keyboard.PressAsync("Control+z");
+    await page.WaitForFunctionAsync("document.querySelector('#layer .it img')?.naturalWidth > 0");
+    await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/0/items')).json()).some(item => item.type === 'image')");
     Check(errors.IsEmpty, "No browser errors during editing: " + string.Join("\n", errors));
     var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
     if (artifacts is not null)
@@ -134,7 +150,7 @@ try
     if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-mobile.png") });
     Check(network.IsEmpty, "No uploads, API requests, external requests or root-relative assets: " + string.Join(", ", network));
     Check(errors.IsEmpty, "No browser errors: " + string.Join(", ", errors));
-    Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode, error recovery, mobile layout, and no outbound PDF traffic.");
+    Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo, error recovery, mobile layout, and no outbound PDF traffic.");
 }
 finally { await app.StopAsync(); files.Dispose(); }
 
