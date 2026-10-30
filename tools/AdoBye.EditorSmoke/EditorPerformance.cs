@@ -99,6 +99,13 @@ static class EditorPerformance
                 page.SetDefaultTimeout(180000);
                 page.PageError += (_, error) => Console.Error.WriteLine(error);
                 var cdp = await context.NewCDPSessionAsync(page);
+                if (Environment.GetEnvironmentVariable("EDITOR_PROFILE_CPU_RATE") is { } cpuRate)
+                {
+                    if (!double.TryParse(cpuRate, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rate) ||
+                        !double.IsFinite(rate) || rate < 1)
+                        throw new ArgumentException("EDITOR_PROFILE_CPU_RATE must be a finite CPU slowdown >= 1.");
+                    await cdp.SendAsync("Emulation.setCPUThrottlingRate", new Dictionary<string, object> { ["rate"] = rate });
+                }
                 await cdp.SendAsync("Performance.enable");
                 await cdp.SendAsync("Network.enable");
                 await cdp.SendAsync("Network.setCacheDisabled", new Dictionary<string, object> { ["cacheDisabled"] = true });

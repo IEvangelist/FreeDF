@@ -226,7 +226,7 @@ async function setImage(img, url) {
   const current = () => img.isConnected && img.dataset.url === url;
   try {
     const source = await imageUrl(url);
-    if (!current()) return;
+    if (!await pagePresentationReady(current)) return;
     img.src = source;
     await img.decode();
     if (current()) { img.style.opacity = '1'; img.dataset.loadedUrl = url; }
@@ -333,17 +333,31 @@ function applyPageLayout(r, dw, dh, Lw, Lh, fitP) {
   paint(); props();
 }
 
+async function pagePresentationReady(current) {
+  while (document.querySelector('.mdl')) {
+    await new Promise(resolve => {
+      const observer = new MutationObserver(() => {
+        if (!document.querySelector('.mdl')) { observer.disconnect(); resolve(); }
+      });
+      observer.observe(document.body, { childList: true });
+    });
+    // Let modal confirmation and removal paint before replacing the backdrop.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+  return current();
+}
+
 async function decodeBase(url, epoch, retry = 0) {
   try {
     const source = await imageUrl(url);
-    if (epoch !== buildEpoch) return false;
+    if (!await pagePresentationReady(() => epoch === buildEpoch)) return false;
     const candidate = new Image();
     candidate.alt = 'Current PDF page';
     candidate.src = source;
     const started = performance.now();
     await candidate.decode();
     if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'decode', url, ms: performance.now() - started });
-    if (epoch !== buildEpoch) return false;
+    if (!await pagePresentationReady(() => epoch === buildEpoch)) return false;
     const old = $('base');
     const requestedUrl = $('base')?.dataset.targetUrl ?? url;
     candidate.id = 'base'; candidate.dataset.url = requestedUrl; candidate.dataset.loadedUrl = url;
