@@ -159,6 +159,10 @@ static class EditorPerformance
                     await Frames(page);
                     if (await page.Locator(".thumb").CountAsync() > 1)
                     {
+                        var nextPagePrefetched = await page.EvaluateAsync<bool>(
+                            "() => { const url = new URL(document.getElementById('base').dataset.targetUrl, location.href); url.pathname = url.pathname.slice(0, url.pathname.lastIndexOf('/') + 1) + '1.png'; url.searchParams.set('dpi', '40'); return pdfHost.hasCachedImage(url.pathname + url.search); }");
+                        if (!nextPagePrefetched)
+                            throw new Exception($"{name}: the next-page preview was not cached before navigation.");
                         await Measure("next-page", async () =>
                         {
                             await page.Locator("#np").ClickAsync();

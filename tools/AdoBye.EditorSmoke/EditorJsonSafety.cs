@@ -16,6 +16,7 @@ static class EditorJsonSafety
             var saved = await page.EvaluateAsync<JsonElement>("""
                 async base64 => {
                   const check = (ok, message) => { if (!ok) throw new Error('JSON safety: ' + message); };
+                  window.profileWorkerStages = [];
                   const json = async (url, body) => (await pdfHost.request(url,
                     body === undefined ? {} : {method:'POST', body:JSON.stringify(body)})).json();
                   const download = async () => {
@@ -27,6 +28,8 @@ static class EditorJsonSafety
                   const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
                   const form = new FormData(); form.append('file', new File([bytes], 'forms.pdf'));
                   await pdfHost.request('/api/open', {method:'POST', body:form});
+                  const upload = profileWorkerStages.find(stage => stage.url === '/api/open');
+                  check(upload?.binaryUpload === true && upload.uploadBytes === bytes.byteLength, 'binary PDF upload transport');
                   const state = await json('/api/state');
                   check(state.pageCount > 0 && state.pages[0].width > 0 && typeof state.version === 'number', 'state shape');
                   const fonts = await json('/api/fonts');

@@ -90,7 +90,7 @@ static class EditorPerformanceCi
         foreach (var row in rows.Where(r => !r.Passed))
             summary.AppendLine($"| {(known.ContainsKey((row.Document, row.Phase, row.Metric)) ? "KNOWN" : "NEW GOAL MISS")} | {row.Document} / {row.Phase} / {row.Metric} | {row.P50:F1} / {row.P95:F1} | {row.P50Budget} / {row.P95Budget} |");
         summary.AppendLine("\nTiming CI uses relative ceilings, not a claim that strict goals pass. Pixel/allocation/raster-count gates are not relaxed.");
-        summary.AppendLine(failures.Count == 0 ? "\nCI regression gates passed; known goals remain open." : "\n## CI gate failures\n\n" + string.Join("\n", failures.Select(f => "- " + f)));
+        summary.AppendLine(failures.Count == 0 ? "\nCI regression gates passed; strict-goal results are reported above." : "\n## CI gate failures\n\n" + string.Join("\n", failures.Select(f => "- " + f)));
         await File.WriteAllTextAsync(profile + ".ci.md", summary.ToString());
         await File.WriteAllTextAsync(profile + ".ci.json", JsonSerializer.Serialize(new { policy.Version, failures }, new JsonSerializerOptions { WriteIndented = true }));
         if (Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY") is { Length: > 0 } jobSummary)

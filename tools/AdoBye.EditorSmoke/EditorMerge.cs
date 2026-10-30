@@ -13,13 +13,13 @@ static class EditorMerge
         string[] stack =
         [
             "   at EditorSession.Handle(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)",
-            "   at BrowserEditor.Request(String command)",
+            "   at BrowserEditor.Execute(Command c, Byte[] body)",
         ];
         for (var i = 0; i < entries.Length; i++)
         {
             if (!ExpectedError(entries[i])) { if (!otherExpected(entries[i])) return false; continue; }
             if (!entries[i].StartsWith("System.ArgumentException:", StringComparison.Ordinal)) continue;
-            // AOT may inline ImportRange; the two boundary frames must still match.
+            // AOT may inline ImportRange; the state-boundary frames must still match.
             if (i + 1 < entries.Length && entries[i + 1] == "   at EditorSession.ImportRange(String range, Int32 count, String label)") i++;
             foreach (var frame in stack)
                 if (++i >= entries.Length || entries[i] != frame) return false;

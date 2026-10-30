@@ -9,6 +9,7 @@ New-Item $Output -ItemType Directory -Force | Out-Null
 $cases = @{
     'new-timing' = 'CI timing regression: 03-typography-embedded.pdf cached-zoom'
     'known-timing' = 'CI timing regression: 01-spec-showcase.pdf open'
+    'reopened' = 'NEW GOAL MISS | 03-typography-embedded.pdf / next-page / total-ms'
     'pixels' = 'Decoded pixel gate'
     'allocation' = 'Deterministic gate'
     'raster' = 'Deterministic gate'
@@ -37,6 +38,7 @@ foreach ($name in $cases.Keys) {
                     })
                 }
             }
+            'reopened' { if ($r.document -eq '03-typography-embedded.pdf' -and $r.phase -eq 'next-page') { $r.result.ms = 110 } }
             'resolved' { if ($r.document -eq '01-spec-showcase.pdf' -and $r.phase -eq 'open') { $r.result.ms = 200 } }
         }
     }
@@ -47,6 +49,13 @@ foreach ($name in $cases.Keys) {
     if ($name -eq 'resolved') {
         if ($LASTEXITCODE -ne 0) { throw 'An improved known goal unexpectedly failed' }
         Write-Host 'PASS: improved known goal accepted without changing regression ceilings'
+        continue
+    }
+    if ($name -eq 'reopened') {
+        if ($LASTEXITCODE -ne 0) { throw 'A removed known miss unexpectedly failed the relative timing gate' }
+        $summary = Get-Content "$path.ci.md" -Raw
+        if (!$summary.Contains($cases[$name])) { throw 'A reopened strict-goal miss was not shown as NEW GOAL MISS' }
+        Write-Host 'PASS: a resolved goal regression is surfaced as a new strict-goal miss'
         continue
     }
     if ($LASTEXITCODE -eq 0) { throw "$name unexpectedly passed" }
