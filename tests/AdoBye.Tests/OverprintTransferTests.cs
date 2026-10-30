@@ -117,6 +117,17 @@ public class OverprintTransferTests
         Assert.Equal(knockout.Rgba, o0.Rgba);
     }
 
+    // Consistency check only: the expectation reuses the naive-complement model of the simulation, so it does not prove ISO conformance.
+    // Overprint on RGB output is an approximation; see the independent analytic case below.
+    [Fact]
+    public void Overprint_OverBlankBackdropEqualsSourceExactly()
+    {
+        // Hand-derived from Table 148/149 (OPM 1): unpainted colorants keep the backdrop's 0.0, so over white the result is the source colour.
+        var p = Render("/O1 gs 0 1 0 0 k 50 50 100 100 re f", Ops, overprint: true);
+        var source = Px(Render("0 1 0 0 k 50 50 100 100 re f", Ops), 100, 100);
+        Near(Px(p, 100, 100), source, 0);
+    }
+
     [Fact]
     public void Overprint_NonzeroModeKeepsBackdropWhereComponentsAreZero()
     {
