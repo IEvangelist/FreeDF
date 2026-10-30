@@ -127,6 +127,8 @@ public interface IRenderBackend
     void Save();
     void Restore();
     void Clip(PathData path, Matrix ctm, bool evenOdd);
+    /// <summary>Intersects the clip with the area a stroke of <paramref name="path"/> would paint, so a pattern can be painted through the stroke. Returns false (clip unchanged) when unsupported.</summary>
+    bool ClipStroke(PathData path, Matrix ctm, StrokeStyle style) => false;
     void Fill(PathData path, Matrix ctm, bool evenOdd, RgbColor color, double alpha, string blendMode);
     void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode);
     /// <summary>As <see cref="Fill(PathData, Matrix, bool, RgbColor, double, string)"/> with overprint simulation; backends that do not simulate overprint paint normally.</summary>
