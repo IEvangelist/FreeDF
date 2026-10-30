@@ -98,7 +98,7 @@ public sealed class ContentInterpreter
                 var clip = new PathData(); clip.Rect(box.Left, box.Bottom, box.Width, box.Height);
                 _be.Clip(clip, baseMatrix, false);
             }
-            if (DrawGraphics) _be.BeginGroup(isolated, knockout, 1, "Normal", colorSpace);
+            if (DrawGraphics) { _be.SetAlphaIsShape(false); _be.BeginGroup(isolated, knockout, 1, "Normal", colorSpace); }
             try
             {
                 var stackDepth = _stack.Count;
@@ -1133,6 +1133,7 @@ public sealed class ContentInterpreter
                 {
                     _be.BeginGroup(isolated, knockout, alpha, bm);
                     _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
+                    _gs.AlphaIsShape = false; _be.SetAlphaIsShape(false); // 11.6.6: a group starts with alpha-is-shape false (restored by the enclosing Save/Restore)
                     grouped = true;
                 }
             }
