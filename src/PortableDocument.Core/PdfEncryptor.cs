@@ -35,7 +35,10 @@ public sealed class PdfEncryption
     public PdfEncryptionMethod Method { get; init; } = PdfEncryptionMethod.Aes256;
     /// <summary>Certificates that can open the file (public-key handler). Per-recipient permissions override <see cref="Permissions"/>.</summary>
     public IReadOnlyList<PdfRecipient>? Recipients { get; init; }
-    /// <summary>Source of the file key, salts and IVs (default: a cryptographic RNG). A deterministic source makes output reproducible, which is only appropriate for fixtures and samples.</summary>
+    /// <summary>
+    /// Source of the file key, salts and IVs (default: a cryptographic RNG); it must return exactly the requested number of bytes.
+    /// A constant or otherwise non-random source makes output reproducible, which is ONLY appropriate for test fixtures and sample files and must never be used to protect real documents.
+    /// </summary>
     public Func<int, byte[]>? RandomBytes { get; init; }
 }
 
@@ -53,7 +56,9 @@ internal sealed class PdfEncryptor
     public PdfEncryptor(PdfEncryption o, byte[] id)
     {
         _method = o.Method;
-        _rng = o.RandomBytes ?? RandomNumberGenerator.GetBytes;
+        _rng = o.RandomBytes is { } custom
+            ? n => custom(n) is { } b && b.Length == n ? b : throw new ArgumentException($"PdfEncryption.RandomBytes must return exactly {n} bytes")
+            : RandomNumberGenerator.GetBytes;
         EncryptMetadata = o.EncryptMetadata;
         if (o.Recipients is { Count: > 0 } rc) { (_key, Dict) = PubSec(o, rc); return; }
         if (o.Method == PdfEncryptionMethod.Aes256) { _key = _rng(32); Dict = Aes256Dict(o); return; }

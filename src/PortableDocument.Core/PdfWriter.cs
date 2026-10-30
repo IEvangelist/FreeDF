@@ -15,8 +15,14 @@ public sealed class PdfWriteOptions
     public PdfEncryption? Encryption { get; init; }
     /// <summary>When set, receives the mapping from input object numbers to the numbers used in the written file.</summary>
     public Dictionary<int, int>? ObjectMapOut { get; init; }
-    /// <summary>The 16-byte file identifier to write (default: random). Set it for reproducible output.</summary>
-    public byte[]? FileId { get; init; }
+    /// <summary>The 16-byte file identifier to write (default: random). Set it for reproducible output; the array is copied.</summary>
+    public byte[]? FileId
+    {
+        get => _fileId?.ToArray();
+        init => _fileId = value is null ? null : value.Length == 16 ? value.ToArray() : throw new ArgumentException("FileId must be exactly 16 bytes", nameof(value));
+    }
+
+    byte[]? _fileId;
 }
 
 /// <summary>Serializes an object graph to a fresh PDF (classic xref or xref/object streams, optionally compressed and encrypted), or appends an incremental update. Unreachable objects are dropped and numbers are reassigned on full writes.</summary>

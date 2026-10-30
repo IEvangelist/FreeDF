@@ -17,17 +17,7 @@ var passwords = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 
 if (args.Length >= 2 && args[0] == "generate")
 {
-    // generate <out-dir> [name-fragment]: authors the samples with this repo's own writer (see Kit/ and Gen/).
-    var only = args.Length > 2 ? args[2] : "";
-    var gens = typeof(Program).Assembly.GetTypes()
-        .Where(t => t.Namespace == "AdoBye.Samples.Gen" && t.GetField("Out") is not null && t.GetMethod("Build") is not null)
-        .Select(t => (Out: (string)t.GetField("Out")!.GetRawConstantValue()!, Build: t.GetMethod("Build")!))
-        .Where(g => g.Out.Contains(only, StringComparison.Ordinal)).OrderBy(g => g.Out, StringComparer.Ordinal);
-    foreach (var g in gens)
-    {
-        g.Build.Invoke(null, [Path.Combine(args[1], g.Out)]);
-        Console.WriteLine("built " + g.Out);
-    }
+    foreach (var name in AdoBye.Samples.SampleGenerator.Generate(args[1], args.Length > 2 ? args[2] : "")) Console.WriteLine("built " + name);
     return 0;
 }
 

@@ -116,28 +116,32 @@ public sealed partial class PdfEditor
         return b;
     }
 
-    /// <summary>Sets (or replaces) an entry of the document catalog, e.g. /Outlines, /PageLabels, /Names or /AcroForm; the value may reference objects from <see cref="AddObject"/> or <see cref="ImportPages"/>.</summary>
+    /// <summary>Sets (or replaces) an entry of the document catalog, e.g. /Outlines, /PageLabels, /Names or /AcroForm; the value may reference objects from <see cref="AddObject"/> or <see cref="ImportValue"/>. /Type and /Pages are managed by the editor and cannot be set.</summary>
     public void SetCatalogEntry(string key, PdfObject value)
     {
         Require(PdfPermissions.Modify);
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(value);
+        if (key is "Type" or "Pages") throw new ArgumentException($"/{key} is managed by the editor", nameof(key));
         var d = (PdfDictionary)_objs[_catalog];
         _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { [key] = value });
     }
 
-    readonly Dictionary<PdfDocument, Dictionary<int, int>> _importMaps = [];
+    // Weak keys: remembering an import must not keep the (possibly large, possibly decrypted) source document alive.
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfDocument, Dictionary<int, int>> _importMaps = [];
 
     /// <summary>
     /// Copies pages (with everything they reference) from another document, inserting at <paramref name="insertAt"/> (default: end).
-    /// Returns the mapping from that document's object numbers to the numbers used here (kept across calls for the same source),
-    /// so catalog-level structures (outlines, form fields, layers) can be rebuilt with <see cref="ImportValue"/>.
+    /// The editor remembers which source objects it has copied (without holding on to <paramref name="src"/>), so catalog-level structures
+    /// such as form fields or layers can be brought over afterwards with <see cref="ImportValue"/> without duplicating objects.
     /// </summary>
-    public IReadOnlyDictionary<int, int> ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null)
+    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null)
     {
         Require(PdfPermissions.Assemble);
         var f = src.File;
         var chosen = (indices ?? Enumerable.Range(0, src.Pages.Count)).ToList();
         var (srcNum, allPageNums) = PageNumbers(src);
-        var map = ImportMap(src);
+        var map = new Dictionary<int, int>();
         var work = new Queue<int>();
         var newPages = new List<int>();
         foreach (var i in chosen)
@@ -160,12 +164,12 @@ public sealed partial class PdfEditor
             _objs[dst] = new PdfDictionary(e);
         }
         _pages.InsertRange(insertAt ?? _pages.Count, newPages);
-        return map;
+        _importMaps.AddOrUpdate(src, map);
     }
 
     /// <summary>
-    /// Deep-copies a value from <paramref name="src"/> (e.g. its /AcroForm or /OCProperties) into this document, reusing objects already imported with
-    /// <see cref="ImportPages"/>. References to pages that were not imported become null.
+    /// Deep-copies a value from <paramref name="src"/> (e.g. its /AcroForm or /OCProperties) into this document, reusing objects copied by the latest
+    /// <see cref="ImportPages"/> call for the same source. References to pages that were not imported become null.
     /// </summary>
     public PdfObject ImportValue(PdfDocument src, PdfObject? value)
     {
@@ -179,7 +183,7 @@ public sealed partial class PdfEditor
         return copy;
     }
 
-    Dictionary<int, int> ImportMap(PdfDocument src) => _importMaps.TryGetValue(src, out var m) ? m : _importMaps[src] = [];
+    Dictionary<int, int> ImportMap(PdfDocument src) => _importMaps.GetValue(src, _ => []);
 
     static (Dictionary<PdfDictionary, int> ByDict, HashSet<int> Pages) PageNumbers(PdfDocument src)
     {
@@ -234,12 +238,22 @@ public sealed partial class PdfEditor
     public PdfRef AddObject(PdfObject o) { var n = _next++; _objs[n] = o; return new PdfRef(n, 0); }
 
     /// <summary>Allocates an object number to be filled with <see cref="SetObject"/>, for structures whose members reference each other (e.g. outline items).</summary>
-    public PdfRef ReserveObject() => AddObject(PdfNull.Instance);
+    public PdfRef ReserveObject()
+    {
+        var r = AddObject(PdfNull.Instance);
+        _reserved.Add(r.Number);
+        return r;
+    }
 
+    readonly HashSet<int> _reserved = [];
+
+    /// <summary>Fills an object obtained from <see cref="ReserveObject"/>; other objects (pages, catalog, imported content) cannot be replaced this way.</summary>
     public void SetObject(PdfRef reference, PdfObject o)
     {
         Require(PdfPermissions.Modify);
-        if (!_objs.ContainsKey(reference.Number)) throw new ArgumentException("unknown object", nameof(reference));
+        ArgumentNullException.ThrowIfNull(o);
+        if (reference.Generation != 0 || !_reserved.Contains(reference.Number))
+            throw new ArgumentException("only objects returned by ReserveObject can be set", nameof(reference));
         _objs[reference.Number] = o;
     }
 
