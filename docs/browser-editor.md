@@ -158,6 +158,24 @@ repeated recovery, missing references and atomic failure.
 
 ## Measured editor performance
 
+### Worker transfer and exact image conversion: 2026-10-30
+
+The [dated performance checkpoint](performance/2026-10-30.md) separates
+total-operation latency from UI blocking, records matched before/after runs
+on the current C# sample corpus, and documents remaining misses. Worker-side
+binary conversion/transfer removes the large save/recovery UI stalls; exact
+byte conversion improves identity DeviceRGB/gray images without changing
+rendered pixels. Fresh high-DPI raster work is still slow.
+
+The profile now also covers a generated 12-page/high-DPI fixture, cached
+zoom/navigation, event-to-next-frame latency, and overlay-only bare-raster
+cache/pixel equivalence. It writes p50/p95 summaries and explicit budget
+misses, then fails by default **after** collecting all three repetitions.
+`EDITOR_PROFILE_REPORT_ONLY=1` captures a diagnostic run, not a passing gate.
+Use `--profile-summary <raw.json>` to apply the same budgets without repeating
+the browser workload. Sidebar continuity and raster-count assertions remain
+hard failures even in diagnostic mode.
+
 ### Input responsiveness during fresh PDF work
 
 The PDF runtime now loads directly through the supported `.NET` JavaScript
@@ -250,7 +268,7 @@ size, plus exact first-page PNG hashes. PDF bytes stay in the browser; profiling
 the public site does not upload documents or call an editor server.
 
 ```powershell
-$pdfs = '03-typography-embedded.pdf', '05-vector-graphics.pdf', '09-images.pdf', '20-report.pdf' |
+$pdfs = '01-spec-showcase.pdf', '03-typography-embedded.pdf', '09-images.pdf', '20-report.pdf' |
     ForEach-Object { (Resolve-Path (Join-Path samples $_)).Path }
 $site = (Resolve-Path tools\AdoBye.EditorWasm\bin\pages\wwwroot).Path
 dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --profile https://ievangelist.github.io/csharp-pdf/ "$env:TEMP\editor-live.json" @pdfs

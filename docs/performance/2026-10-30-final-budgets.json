@@ -1,0 +1,9 @@
+[
+  " cold-start long-task-max-ms: p50=71.000, p95=73.000; budgets 50.000/50.000",
+  "01-spec-showcase.pdf open total-ms: p50=714.300, p95=848.300; budgets 250.000/500.000",
+  "03-typography-embedded.pdf next-page total-ms: p50=181.200, p95=182.600; budgets 100.000/200.000",
+  "09-images.pdf open total-ms: p50=391.200, p95=434.200; budgets 250.000/500.000",
+  "20-report.pdf next-page total-ms: p50=149.400, p95=150.200; budgets 100.000/200.000",
+  "large-12-page.pdf next-page total-ms: p50=148.700, p95=149.400; budgets 100.000/200.000",
+  "large-12-page.pdf open total-ms: p50=452.300, p95=464.600; budgets 250.000/500.000"
+]

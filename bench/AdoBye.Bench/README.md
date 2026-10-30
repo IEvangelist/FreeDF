@@ -42,6 +42,68 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Serialized refresh: 2026-10-30
+
+The [43-case report](results/2026-10-30.md) and [CSV](results/2026-10-30.csv)
+retain the six-corpus parser/text comparison plus seven render/JPEG/parser
+cases. Release preflight passed all six inputs; the measurement completed all
+43 cases in 17m 05s. Environment remains Windows 11 / Core i9-10900 /
+.NET SDK 10.0.403 / .NET 10.0.14. A shared validation lock excluded other
+coordinated .NET/Node/browser workloads for this command, not unrelated OS
+activity. Exact measurement arguments:
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\AdoBye.Bench -- --filter "*PdfOpenBench*" "*TextExtractionBench*" "*OpenDocumentTextBench*" "*RenderBench*" --join --warmupCount 6 --iterationCount 15 --iterationTime 1000 --launchCount 1
+```
+
+The renderer's job label still says `ShortRun`, but the report/CSV confirm
+**six warmups and fifteen one-second measurement iterations**, not the
+attribute's short defaults. There is no corresponding checked-in historical
+renderer run, so 115.922 ms text / 260.196 ms vector / 23.405 ms image and
+8.557 / 17.164 ms baseline/progressive JPEG are a new baseline, not a claimed
+render speedup. Parser-only `RenderBench.Parse` is 18.816 us.
+
+The fixed `bench\fixtures` inputs retain their original bytes:
+
+| Fixture | Bytes | SHA-256 |
+|---|---:|---|
+| text.pdf | 13273 | D6E01E37007C1BE70253FE983B7AAC72958DC2C379AF774CF50E897692A68216 |
+| vector.pdf | 153694 | 35133AE41A9FB1F432B7C287F35A7792A11CE72CADE9E9DDC35CE5C2B5975714 |
+| image.pdf | 403807 | 7E30EA13A0B91E8B9BFD532107DDDE1D912013111B8CBE8E2A4C2717102343BE |
+
+Samples 03 / 06 / 09 were regenerated with the C# authoring tool during
+integration; they are **different bytes** from the 2026-10-29 corpus. Their
+current same-input two-engine comparisons remain valid, but cross-date
+differences cannot isolate library speed. Current SHA-256 values are
+B78B0FF94FEEDEBE472671B79B8D6C671175C90149B89C91FB48EF5A6FE83738 /
+559A8146672A1A1597BDE96BBC2211AE8CDE68040AB8436B3C9807391EC64682 /
+66442101158EC936566FAE96914CC0A1401222EACB61E2410DF4C7A9AC663115.
+
+Selected fixed-corpus comparisons (microseconds, means; historical text/vector
+extraction uses the later text-path control rather than superseded baseline):
+
+| Operation / fixture | Previous | Current | Interpretation |
+|---|---:|---:|---|
+| Open text | 20.967 | 18.780 | Lower mean, not attributable to the image-only change |
+| Open vector | 13.835 | 12.959 | Small cross-run difference |
+| Open image | 7.656 | 7.360 | Small cross-run difference |
+| Open + extract text | 4404.1 | 4716.248 | About 7% higher; current 99.9% error is 243.315 us; monitor |
+| Open + extract vector | 5700.9 | 5796.548 | Within current 320.512 us error; no win/regression claim |
+| Open + extract image | 92.832 | 86.805 | Lower mean; blank-text workload, not text throughput |
+
+The text fresh-extraction mean is a regression signal, not dismissed as
+unrelated: PdfPig also moved from 11876.1 to 12446.381 us (about 5%), and
+PortableDocument's current interval overlaps the prior mean's interval.
+The image conversion fast path is not executed by text-only interpretation.
+A matched control is needed before attributing this cross-date change.
+Already-open cases still warn about short iterations (minimum 4.952 to
+66.592 ms in affected cases) and multimodal distributions; do not rank their
+small differences. The renderer has no comparison baseline, so joined ratio
+columns show `?` for it, as expected.
+
+The editor-specific matched before/after changes and remaining latency misses
+are recorded [separately](../../docs/performance/2026-10-30.md).
+
 AdoBye's text-only interpreter retains decoded text, spans, glyph bytes, geometry, advances, and form traversal, but does not paint paths, rasterize glyphs, decode image pixels, or build editor graphics-object lists. `Analyze` and rendering retain those operations. Typeface fallback still depends on installed fonts; both engines' font caches and JIT are warmed before the timed measurements, and no cold-process startup claims are made.
 
 ## Profiling
