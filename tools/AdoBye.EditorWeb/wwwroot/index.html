@@ -120,7 +120,7 @@ const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
   if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery'].includes(url.split('?')[0])) {
-    selectionEpoch++;
+    selectionEpoch++; buildEpoch++; clearTimeout(baseRenderTimer); shownPage = -1;
     clip = null; pendingUploads.clear(); assetImages.clear();
   }
   recovery?.changed(url, options?.method ?? 'GET');
@@ -146,7 +146,7 @@ document.querySelectorAll('button[title]').forEach(b => {
 document.querySelector('label[for="img"], label:has(#img)').onkeydown = e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('img').click(); }
 };
-let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
+let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1, buildEpoch = 0, shownPage = -1, baseRenderTimer = 0, layoutBuildTimer = 0, pageImageRetryEpoch = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
 const pendingUploads = new Map();
 let locked = localStorage.getItem('lock-geom') === '1';
@@ -184,7 +184,7 @@ function spanItem(s, text = s.text) {
 function convertSpan(s, text = s.text) {
   pushUndo();
   const it = spanItem(s, text);
-  items.push(it); cur = it; curObj = null; curSpan = null; paint(); props(); queueSave();
+  items.push(it); cur = it; curObj = null; curSpan = null; paint(); props(); queueSave(120);
   return it;
 }
 
@@ -288,7 +288,7 @@ async function select(retainedUndo = null) {
     if (!retainedUndo) await post('/api/asset-history');
     if (epoch !== selectionEpoch) return;
     document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
-    if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
+    if (!state.pageCount) { buildEpoch++; shownPage = -1; clearTimeout(baseRenderTimer); v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
     const nextItems = await (await request(`/api/page/${page}/items`)).json();
     const nextSpans = await (await request(`/api/page/${page}/text`)).json();
     const nextObjects = await (await request(`/api/page/${page}/objects`)).json();
@@ -304,7 +304,78 @@ async function select(retainedUndo = null) {
 }
 
 // Page geometry: the layer lives in unrotated MediaBox space (points, y down); the CSS transform matches the page /Rotate.
-async function build() {
+function applyPageLayout(r, dw, dh, Lw, Lh, fitP) {
+  const v = $('view');
+  if (!$('page')) v.innerHTML = '<div id="page"><img id="base" alt="Current PDF page"><div id="layer"></div></div>';
+  const page = $('page'), layer = $('layer');
+  page.style.width = `${dw}px`; page.style.height = `${dh}px`;
+  layer.style.width = `${Lw}px`; layer.style.height = `${Lh}px`;
+  const tf = { 0: '', 90: `translate(${dw}px,0) rotate(90deg)`, 180: `translate(${dw}px,${dh}px) rotate(180deg)`, 270: `translate(0,${dh}px) rotate(270deg)` }[r] ?? '';
+  layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
+  layer.onpointerdown = layerDown;
+  geom = { r, dw, dh, Lw, Lh };
+  $('zv').textContent = Math.round(S * 72 / 96 * 100) + '%'; fitP0 = fitP; navUpdate();
+  paint(); props();
+}
+
+async function decodeBase(url, epoch, retry = 0) {
+  try {
+    const source = await imageUrl(url);
+    if (epoch !== buildEpoch) return false;
+    const candidate = new Image();
+    candidate.alt = 'Current PDF page';
+    candidate.src = source;
+    const started = performance.now();
+    await candidate.decode();
+    if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'decode', url, ms: performance.now() - started });
+    if (epoch !== buildEpoch) return false;
+    const old = $('base');
+    const requestedUrl = $('base')?.dataset.targetUrl ?? url;
+    candidate.id = 'base'; candidate.dataset.url = requestedUrl; candidate.dataset.loadedUrl = url;
+    candidate.dataset.targetUrl = requestedUrl;
+    candidate.onerror = () => {
+      if (candidate !== $('base') || epoch !== buildEpoch) return;
+      if (pageImageRetryEpoch === epoch) { reportError(new Error(`Page ${sel + 1} image failed to load after retry.`)); return; }
+      pageImageRetryEpoch = epoch;
+      host?.evictImage?.(url);
+      decodeBase(url, epoch, 1).catch(reportError);
+    };
+    if (old) old.replaceWith(candidate);
+    else if ($('page')) $('page').prepend(candidate);
+    else {
+      const page = document.createElement('div'), layer = document.createElement('div');
+      page.id = 'page'; layer.id = 'layer';
+      page.append(candidate, layer); $('view').replaceChildren(page);
+    }
+    shownPage = sel;
+    if (window.profileRenderStages) {
+      const swappedAt = performance.now();
+      requestAnimationFrame(() => window.profileRenderStages.push({ stage: 'paint', url, ms: performance.now() - swappedAt }));
+    }
+    return true;
+  } catch (error) {
+    if (epoch !== buildEpoch) return false;
+    if (retry === 0 && pageImageRetryEpoch !== epoch) {
+      pageImageRetryEpoch = epoch;
+      host?.evictImage?.(url);
+      return decodeBase(url, epoch, 1);
+    }
+    reportError(new Error(`Unable to render page ${sel + 1}: ${error instanceof Error ? error.message : error}`));
+    return false;
+  }
+}
+
+function scheduleBaseRender(url, epoch) {
+  clearTimeout(baseRenderTimer);
+  baseRenderTimer = setTimeout(() => {
+    baseRenderTimer = 0;
+    decodeBase(url, epoch).catch(reportError);
+  }, 180);
+}
+
+async function build(immediateBase = false) {
+  const epoch = ++buildEpoch;
+  clearTimeout(baseRenderTimer);
   const p = state.pages[sel], v = $('view'), r = p.rotation;
   const swap = r === 90 || r === 270;
   const w0 = swap ? p.height : p.width, h0 = swap ? p.width : p.height;
@@ -312,16 +383,29 @@ async function build() {
   if (fitMode === 'width') zoom = Math.max((v.clientWidth - 48) / w0, 0.2) / fitP;
   S = fitP * zoom;
   const dw = w0 * S, dh = h0 * S, Lw = p.width * S, Lh = p.height * S;
-  geom = { r, dw, dh, Lw, Lh };
   const dpi = Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))));
-  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" alt="Current PDF page"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
-  const raster = setImage($('base'), `/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}`);
-  const tf = { 0: '', 90: `translate(${dw}px,0) rotate(90deg)`, 180: `translate(${dw}px,${dh}px) rotate(180deg)`, 270: `translate(0,${dh}px) rotate(270deg)` }[r] ?? '';
-  const layer = $('layer'); layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
-  layer.onpointerdown = layerDown;
-  $('zv').textContent = Math.round(S * 72 / 96 * 100) + '%'; fitP0 = fitP; navUpdate();
-  paint(); props();
-  await raster;
+  const targetUrl = `/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}`;
+  const current = shownPage === sel && $('base')?.naturalWidth > 0;
+  const targetCached = host?.hasCachedImage(targetUrl) ?? false;
+  if (current) {
+    const previewUrl = `/api/page/${sel}.png?dpi=${Math.min(dpi, 40)}&v=${state.version}&bare=${!preview}`;
+    if (immediateBase && !targetCached && $('base').dataset.loadedUrl !== previewUrl) {
+      await decodeBase(previewUrl, epoch);
+      if (epoch !== buildEpoch) return;
+    }
+    $('base').dataset.targetUrl = targetUrl;
+    applyPageLayout(r, dw, dh, Lw, Lh, fitP);
+    if ($('base').dataset.loadedUrl === targetUrl) return;
+    if (targetCached) await decodeBase(targetUrl, epoch);
+    else scheduleBaseRender(targetUrl, epoch);
+    return;
+  }
+
+  const firstUrl = targetCached ? targetUrl : `/api/page/${sel}.png?dpi=${Math.min(dpi, 40)}&v=${state.version}&bare=${!preview}`;
+  if (!await decodeBase(firstUrl, epoch)) return;
+  $('base').dataset.targetUrl = targetUrl;
+  applyPageLayout(r, dw, dh, Lw, Lh, fitP);
+  if (firstUrl !== targetUrl) scheduleBaseRender(targetUrl, epoch);
 }
 
 // Client pixel position -> layer pixel position (inverse of the rotation transform).
@@ -542,7 +626,7 @@ function editText(el, it) {
     const text = el.innerText.replace(/\n$/, '');
     if (text === it.text) return;
     if (!pushed) { pushUndo(); pushed = true; }
-    it.text = text; queueSave();
+    it.text = text; queueSave(120);
   };
   el.onblur = () => {
     editing = false; el.contentEditable = 'false';
@@ -588,9 +672,9 @@ function saveObj(o) {
     try {
       const response = await request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
       if (!response.ok) throw new Error((await response.text()) || `${url} ${response.status}`);
-      if (sel === page) updateBase();
-      const th = document.querySelectorAll('.thumb img')[page]; if (th) queueThumbnail(th, `/api/page/${page}.png?dpi=40&t=${Date.now()}`);
       await refreshDirty();
+      if (sel === page) updateBase();
+      const th = document.querySelectorAll('.thumb img')[page]; if (th) queueThumbnail(th, `/api/page/${page}.png?dpi=40&v=${state.version}`);
       objectSaveErrors.delete(url);
     } catch (error) {
       objectSaveErrors.set(url, error);
@@ -651,7 +735,7 @@ function objProps() {
 }
 
 let itemSave = Promise.resolve();
-function queueSave() { clearTimeout(saveT); saveT = setTimeout(flush, 300); recovery?.pending(); }
+function queueSave(delay = 300) { clearTimeout(saveT); saveT = setTimeout(flush, delay); recovery?.pending(); }
 async function flush() {
   try { await itemSave; } catch (e) { if (!saveT) throw e; }
   let pending;
@@ -687,10 +771,12 @@ async function flush() {
     itemSave = itemSave.then(send, send);
     await itemSave;
   } catch (e) { saveT = -1; throw e; }
-  if (okey() !== origKey || items.some(it => it.orig != null)) { origKey = okey(); updateBase(); }
+  const redrawBase = okey() !== origKey || items.some(it => it.orig != null);
+  if (redrawBase) origKey = okey();
   const th = document.querySelectorAll('.thumb img')[i];
-  if (th) queueThumbnail(th, `/api/page/${i}.png?dpi=40&t=${Date.now()}`);
-  refreshDirty();
+  if (th) queueThumbnail(th, `/api/page/${i}.png?dpi=40&v=${state.version + 1}`);
+  await refreshDirty();
+  if (redrawBase) updateBase();
 }
 
 function props() {
@@ -706,8 +792,8 @@ function props() {
       const f = fields[+el.dataset.f], v = el.type === 'checkbox' ? (el.checked ? 'Yes' : 'Off') : el.value;
       await request(`/api/field?n=${encodeURIComponent(f.name)}&v=${encodeURIComponent(v)}`, { method: 'POST' });
       f.value = v; status(`Set ${f.name}`);
-      updateBase();
-      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&t=${Date.now()}`));
+      await refreshDirty(); updateBase();
+      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&v=${state.version}`));
     });
     return;
   }
@@ -739,7 +825,7 @@ function props() {
       it[k] = value;
       if (k === 'fill' || k === 'stroke') { if (k === 'fill' && !it.stroke) it.stroke = '#000000'; const c = el.parentElement.querySelector('code'); if (c) c.textContent = el.value.toUpperCase(); }
       if (k === 'opacity') el.nextElementSibling.textContent = Math.round(it.opacity * 100) + '%';
-      paint(); queueSave();
+      paint(); queueSave(it.type === 'text' ? 120 : 300);
     };
   });
   p.querySelectorAll('[data-al]').forEach(b => b.onclick = () => { pushUndo(); it.align = b.dataset.al; paint(); props(); queueSave(); });
@@ -754,8 +840,7 @@ function props() {
 }
 
 function updateBase() {
-  const b = $('base');
-  if (b) return setImage(b, `/api/page/${sel}.png?dpi=${Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))))}&bare=${!preview}&t=${Date.now()}`);
+  if (state.pageCount) return build(true).catch(reportError);
 }
 async function act(fn) {
   status(host ? 'Processing locally in WebAssembly...' : 'Processing...');
@@ -798,7 +883,8 @@ $('img').onchange = async e => {
 };
 // ---- Navigation, zoom, find, print, full screen, file menu ----
 async function refreshDirty() {
-  const s = await (await request('/api/state')).json(); state.dirty = s.dirty; state.canSave = s.canSave; state.fileName = s.fileName;
+  const s = await (await request('/api/state')).json();
+  Object.assign(state, { version: s.version, pageCount: s.pageCount, pages: s.pages, dirty: s.dirty, canSave: s.canSave, fileName: s.fileName });
   $('name').textContent = s.pageCount ? s.fileName + (s.dirty ? ' •' : '') : 'No document';
 }
 function navUpdate() {
@@ -874,7 +960,7 @@ async function printDoc() {
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
   const imgs = (await Promise.all(state.pages.map(async (p, i) => {
     const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
-    return `<section style="width:${w}pt;height:${h}pt"><img src="${await imageUrl(`/api/page/${i}.png?dpi=150&t=${Date.now()}`)}"></section>`;
+    return `<section style="width:${w}pt;height:${h}pt"><img src="${await imageUrl(`/api/page/${i}.png?dpi=150&v=${state.version}&bare=false`)}"></section>`;
   }))).join('');
   f.srcdoc = `<!doctype html><style>@page{margin:0}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{width:100%;height:100%;display:block}</style>${imgs}`;
   f.onload = async () => {
@@ -1011,7 +1097,15 @@ addEventListener('keydown', e => {
   else if (e.key === 'End') { e.preventDefault(); goPage(state.pageCount - 1); }
 }, true);
 
-addEventListener('resize', () => state.pageCount && build());
+function scheduleLayoutBuild() {
+  clearTimeout(layoutBuildTimer);
+  // Let the settled layout schedule its own replacement instead of rendering a stale size.
+  clearTimeout(baseRenderTimer);
+  baseRenderTimer = 0;
+  layoutBuildTimer = setTimeout(() => { if (state.pageCount) build().catch(reportError); }, 90);
+}
+new ResizeObserver(scheduleLayoutBuild).observe($('view'));
+addEventListener('resize', scheduleLayoutBuild);
 addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); document.body.id = 'drop'; } });
 addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''; });
 addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); document.body.id = ''; act(() => upload(state.pageCount ? '/api/import' : '/api/open', e.dataTransfer.files[0])); } });
@@ -1024,7 +1118,6 @@ function setPanel(side, open, user) {
   }
   m.classList.toggle('hide-' + side, !open); b.classList.toggle('on', open); b.setAttribute('aria-pressed', open);
   if (user) localStorage.setItem('panel-' + side, open ? '1' : '0');
-  if (state.pageCount) setTimeout(() => build(), 220);
 }
 function autoPanels() {
   // Saved choice wins; otherwise collapse panels as the window narrows.

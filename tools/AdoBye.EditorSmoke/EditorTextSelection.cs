@@ -17,7 +17,8 @@ static class EditorTextSelection
             await page.WaitForFunctionAsync("name => document.getElementById('name').textContent === name && document.getElementById('status').textContent.startsWith('Ready.') && document.getElementById('base')?.naturalWidth > 0", name);
             if (await page.Locator("#pn").InputValueAsync() != "1") await page.Locator(".thumb").First.ClickAsync();
             await page.WaitForFunctionAsync("document.getElementById('pn').value === '1' && document.getElementById('base')?.naturalWidth > 0");
-            var before = await page.EvaluateAsync<string>("document.getElementById('base').src");
+            await page.WaitForFunctionAsync("document.querySelector('#base')?.dataset.loadedUrl === document.querySelector('#base')?.dataset.targetUrl");
+            var before = await BasePixelHash(page);
             var state = await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/state')).json())");
             await page.Locator("#layer .span").First.ClickAsync();
             var input = page.Locator("[data-original-text]");
@@ -33,7 +34,7 @@ static class EditorTextSelection
                 name + ": selection/focus/unchanged input/Escape/deselect must not dirty or mutate the session: " + state + " -> " + afterState);
             Check(await page.EvaluateAsync<int>("async () => (await (await pdfHost.request('/api/page/0/items')).json()).length") == 0,
                 name + ": selection must not create a replacement item");
-            Check(await page.EvaluateAsync<string>("document.getElementById('base').src") == before,
+            Check(await BasePixelHash(page) == before,
                 name + ": untouched selection must not repaint or displace text");
             await page.Locator("#dl").ClickAsync();
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
@@ -48,7 +49,8 @@ static class EditorTextSelection
             await page.WaitForFunctionAsync("name => document.getElementById('name').textContent === 'round-trip-' + name && document.getElementById('status').textContent.startsWith('Ready.') && document.getElementById('base')?.naturalWidth > 0", name);
             if (await page.Locator("#pn").InputValueAsync() != "1") await page.Locator(".thumb").First.ClickAsync();
             await page.WaitForFunctionAsync("document.getElementById('pn').value === '1' && document.getElementById('base')?.naturalWidth > 0");
-            Check(await page.EvaluateAsync<string>("document.getElementById('base').src") == before,
+            await page.WaitForFunctionAsync("document.querySelector('#base')?.dataset.loadedUrl === document.querySelector('#base')?.dataset.targetUrl");
+            Check(await BasePixelHash(page) == before,
                 name + ": untouched save/reopen retains exact rendered pixels");
             var editableSpans = originalSpans.Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text)).ToList();
             var supported = editableSpans.FindIndex(s => s.Font?.FontFile is not null &&
@@ -74,6 +76,15 @@ static class EditorTextSelection
         }
         Console.WriteLine("PASS: embedded/transformed original text selection, unchanged input/cancel, exact save/reopen pixels and geometry, actual-edit font/matrix retention.");
     }
+
+    public static Task<string> BasePixelHash(IPage page) => page.EvaluateAsync<string>("async () => {" +
+        "const image=document.getElementById('base'), canvas=document.createElement('canvas');" +
+        "canvas.width=image.naturalWidth; canvas.height=image.naturalHeight;" +
+        "const context=canvas.getContext('2d'); context.drawImage(image,0,0);" +
+        "const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;" +
+        "const digest=await crypto.subtle.digest('SHA-256',pixels);" +
+        "return `${canvas.width}x${canvas.height}:`+Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');" +
+        "}");
 
     static void Check(bool success, string message)
     {

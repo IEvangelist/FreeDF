@@ -20,7 +20,7 @@ public static partial class BrowserEditor
         {
             c = JsonSerializer.Deserialize<Command>(command, Json) ?? throw new ArgumentException("Missing editor command.");
             var reply = Session.Handle(c.Method, c.Path, c.Query, c.Body is null ? null : Convert.FromBase64String(c.Body), c.FileName);
-            return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName }, Json);
+            return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName, performance = Session.LastRenderMetrics }, Json);
         }
 
         catch (Exception e)
