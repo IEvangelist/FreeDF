@@ -58,7 +58,7 @@ static class EditorHeader
               const h = document.getElementById('sponsor'), b = document.getElementById('sponsorBadge'), f = document.querySelector('footer'), fr = f.getBoundingClientRect(), br = b.getBoundingClientRect();
               const bg = el => getComputedStyle(el).backgroundColor;
               const okBadge = mobile ? getComputedStyle(b).display === 'none'
-                : plain(b) && br.right <= fr.right && fr.right - br.right <= 16 && br.top >= fr.top && br.bottom <= fr.bottom && br.height >= 20
+                : plain(b) && br.right <= fr.right && fr.right - br.right <= 16 + 28 && br.top >= fr.top + 2 && br.bottom <= fr.bottom - 2 && br.height >= 18
                   && ['status', 'recovery', 'keys'].every(id => { const e = document.getElementById(id); return e.hidden || getComputedStyle(e).display === 'none' || e.getBoundingClientRect().right <= br.left + 1; })
                   && ratio(getComputedStyle(b).color, 'rgb(21, 23, 28)') >= 4.5;
               return plain(h) && ratio(getComputedStyle(h).color, bg(document.querySelector('header'))) >= 3 && okBadge
@@ -70,6 +70,25 @@ static class EditorHeader
                 && r.width >= (mobile ? 44 : 30) && r.height >= (mobile ? 44 : 30)
                 && before(document.getElementById('fs'), a) && before(a, document.getElementById('dl')); function before(x, y) { return !!(x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING); } }
             """), where + ": header Sponsor heart keeps its tooltip, hit target and position beside the right-hand actions");
+        Check(await page.EvaluateAsync<bool>("""
+            () => { const url = 'https://github.com/IEvangelist/csharp-pdf', mobile = innerWidth <= 600, q = id => document.getElementById(id);
+              const plain = a => a.tagName === 'A' && a.href === url && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer' && a.getAttribute('aria-label') === 'View source on GitHub' && a.title === 'View source on GitHub';
+              const h = q('ghLink'), f = q('ghFooter'), dl = q('dl').getBoundingClientRect(), hr = h.getBoundingClientRect(), b = q('sponsorBadge').getBoundingClientRect(), fr = f.getBoundingClientRect(), foot = document.querySelector('footer').getBoundingClientRect();
+              const mid = r => (r.top + r.bottom) / 2;
+              const okHeader = mobile ? getComputedStyle(h).display === 'none' : plain(h) && hr.left >= dl.right - 1 && hr.left - dl.right <= 12 && Math.abs(mid(hr) - mid(dl)) < 8 && hr.width >= 30 && hr.height >= 30 && hr.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;
+              const okFooter = mobile ? plain(f) && fr.width >= 44 && fr.height >= 44 && fr.right <= innerWidth && fr.top >= foot.top && fr.bottom <= foot.bottom && document.documentElement.scrollWidth <= innerWidth : plain(f) && fr.left >= b.right - 1 && fr.left - b.right <= 12 && fr.right <= foot.right && padOk() && Math.abs(fr.height - b.height) < .5 && Math.abs(mid(fr) - mid(b)) < 1 && b.top >= foot.top + 2 && b.bottom <= foot.bottom - 2;
+              function padOk() { const el = q('sponsorBadge'), s = getComputedStyle(el), e = el.getBoundingClientRect(); return (e.height - parseFloat(s.borderTopWidth) - parseFloat(s.borderBottomWidth) - parseFloat(s.lineHeight)) / 2 >= 3; }
+              return okHeader && okFooter; }
+            """), where + ": GitHub mark links open the repository in a new tab; desktop: right of Download and right of the Sponsor badge (inset, centred, padded); mobile: header link collapses, 44px status-bar link remains");
+        Check(await page.EvaluateAsync<bool>("""
+            () => { const lum = c => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+              const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+              return ratio(getComputedStyle(document.getElementById('ghLink')).color, getComputedStyle(document.querySelector('header')).backgroundColor) >= 3
+                && ratio(getComputedStyle(document.getElementById('ghFooter')).color, getComputedStyle(document.querySelector('footer')).backgroundColor) >= 3; }
+            """), where + ": GitHub mark links meet 3:1 contrast");
+        Check(await page.EvaluateAsync<bool>("""
+            () => { const q = id => document.getElementById(id); return !!(q('dl').compareDocumentPosition(q('ghLink')) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(q('ghLink').compareDocumentPosition(q('tr')) & Node.DOCUMENT_POSITION_FOLLOWING); }
+            """), where + ": header GitHub link follows Download in focus order");
         Check(await page.EvaluateAsync<bool>("""
             () => { const q = id => document.getElementById(id), brand = document.querySelector('header .brand'), file = q('fileBtn'), doc = q('doc'),
                 before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
