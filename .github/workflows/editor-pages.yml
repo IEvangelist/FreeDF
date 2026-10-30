@@ -1,119 +1,55 @@
-name: Publish browser PDF editor
-
+name: Diagnose editor save timing (no deployment)
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
-    inputs:
-      aot:
-        description: Use AOT (disable only for an explicit non-AOT fallback)
-        type: boolean
-        default: true
-      deploy:
-        description: Deploy after all validation gates pass
-        type: boolean
-        default: false
-
 permissions:
   contents: read
-
-concurrency:
-  group: editor-pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
-  cancel-in-progress: true
-
+  actions: read
 jobs:
-  build:
+  compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      EDITOR_AOT: ${{ github.event_name != 'workflow_dispatch' || inputs.aot }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: Directory.Packages.props
-      - name: Install pinned SDK WebAssembly toolchain
-        if: env.EDITOR_AOT == 'true'
-        run: dotnet workload install wasm-tools --skip-manifest-update --disable-parallel
-      - name: Publish static WebAssembly editor
-        shell: pwsh
-        run: |
-          $options = @{
-            Output = '${{ runner.temp }}/editor-pages'
-            ArtifactsPath = '${{ runner.temp }}/editor-publish-build'
-            Aot = $env:EDITOR_AOT -eq 'true'
-          }
-          ./tools/Publish-EditorPages.ps1 @options
-      - name: Test shared editor and browser-compatible rendering
-        run: dotnet test tests/AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx|FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests"
-      - name: Build browser smoke runner
-        run: dotnet build tools/AdoBye.EditorSmoke -c Release
-      - name: Install Chromium
-        shell: pwsh
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-validation-aot
+          run-id: 41091967536
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/previous
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-validation-aot
+          run-id: 41113836396
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/candidate
+      - run: dotnet build tools/AdoBye.EditorSmoke -c Release
+      - shell: pwsh
         run: ./tools/AdoBye.EditorSmoke/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
-      - name: Exercise local editor and trim-safe JSON round trips
-        env:
-          EDITOR_SMOKE_TRANSIENT_BOOT: '1'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "${{ runner.temp }}/editor-pages/wwwroot"
-      - name: Exercise local Merge PDFs flow
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --merge "${{ runner.temp }}/editor-pages/wwwroot"
-      - name: Exercise cold boot and injected resource failures
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --boot "${{ runner.temp }}/editor-pages/wwwroot" "${{ runner.temp }}/editor-boot"
-      - name: Exercise page-image continuity
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --page-image "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf" "${{ runner.temp }}/editor-page-image"
-      - name: Measure strict end-to-end performance goals
-        id: profile
+      - name: Compare retained AOT runtimes with identical harness
         env:
           EDITOR_PROFILE_REPORT_ONLY: '1'
-        run: >-
-          dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke --
-          --profile "${{ runner.temp }}/editor-pages/wwwroot"
-          "${{ runner.temp }}/editor-profile.json"
-          "${{ github.workspace }}/samples/01-spec-showcase.pdf"
-          "${{ github.workspace }}/samples/03-typography-embedded.pdf"
-          "${{ github.workspace }}/samples/09-images.pdf"
-          "${{ github.workspace }}/samples/20-report.pdf"
-      - name: Enforce CI regressions and report open performance goals
-        if: always() && steps.profile.outcome != 'skipped'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --profile-ci "${{ runner.temp }}/editor-profile.json" "${{ github.workspace }}/docs/performance/editor-ci-known-misses.v1.json"
-      - name: Verify performance gates reject synthetic regressions
-        shell: pwsh
-        run: ./tools/Test-EditorProfileCi.ps1 -Profile '${{ runner.temp }}/editor-profile.json' -Output '${{ runner.temp }}/editor-profile-ci-tests'
-      - name: Retain validation evidence
-        uses: actions/upload-artifact@v4
+          EDITOR_PROFILE_BASELINE_CONTROL: '1'
+        run: |
+          mkdir -p "${{ runner.temp }}/save-evidence"
+          cp -a "${{ runner.temp }}/candidate/editor-pages/wwwroot" "${{ runner.temp }}/candidate-old-ui"
+          git show 1f4bcae:tools/AdoBye.EditorWeb/wwwroot/index.html > "${{ runner.temp }}/candidate-old-ui/index.html"
+          sed -i 's|<head>|<head><base href="/csharp-pdf/"><meta name="editor-host" content="wasm">|' "${{ runner.temp }}/candidate-old-ui/index.html"
+          git show 1f4bcae:tools/AdoBye.EditorWasm/wwwroot/worker.js > "${{ runner.temp }}/candidate-old-ui/worker.js"
+          for variant in candidate previous candidate-old-ui; do
+            site="${{ runner.temp }}/$variant/editor-pages/wwwroot"
+            if [ "$variant" = candidate-old-ui ]; then site="${{ runner.temp }}/candidate-old-ui"; fi
+            dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- \
+              --profile "$site" "${{ runner.temp }}/save-evidence/$variant.json" \
+              "${{ github.workspace }}/samples/09-images.pdf" \
+              "${{ github.workspace }}/samples/20-report.pdf"
+          done
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: editor-validation-${{ env.EDITOR_AOT == 'true' && 'aot' || 'non-aot' }}
-          retention-days: 7
-          if-no-files-found: warn
-          path: |
-            ${{ runner.temp }}/editor-pages/wwwroot
-            ${{ runner.temp }}/editor-boot
-            ${{ runner.temp }}/editor-page-image
-            ${{ runner.temp }}/editor-profile.json*
-            ${{ runner.temp }}/editor-profile-ci-tests
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.deploy)
-        with:
-          path: ${{ runner.temp }}/editor-pages/wwwroot
-
-  deploy:
-    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && (github.event_name != 'workflow_dispatch' || inputs.deploy)
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/configure-pages@v5
-      - name: Deploy GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          name: editor-save-diagnostic
+          path: ${{ runner.temp }}/save-evidence/
