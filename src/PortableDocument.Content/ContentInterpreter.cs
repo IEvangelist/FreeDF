@@ -1021,9 +1021,12 @@ public sealed class ContentInterpreter
             var pad = padDev * Math.Max(Math.Sqrt(inv.A * inv.A + inv.B * inv.B), Math.Sqrt(inv.C * inv.C + inv.D * inv.D));
             minX -= pad; maxX += pad; minY -= pad; maxY += pad;
         }
+        // Each axis is checked separately in double so tiny steps cannot wrap an integer product past the limit.
+        var tilesX = Math.Ceiling((maxX - bx0) / xs) - Math.Floor((minX - bx1) / xs) + 1;
+        var tilesY = Math.Ceiling((maxY - by0) / ys) - Math.Floor((minY - by1) / ys) + 1;
+        if (!(tilesX <= 20000 && tilesY <= 20000 && tilesX * tilesY <= 20000)) { Warn("tiling pattern with too many tiles skipped"); return; }
         var i0 = (long)Math.Floor((minX - bx1) / xs); var i1 = (long)Math.Ceiling((maxX - bx0) / xs);
         var j0 = (long)Math.Floor((minY - by1) / ys); var j1 = (long)Math.Ceiling((maxY - by0) / ys);
-        if ((i1 - i0 + 1) * (j1 - j0 + 1) > 20000) { Warn("tiling pattern with too many tiles skipped"); return; }
         var uncolored = (int)(R(d.Get("PaintType")).AsNumber() ?? 1) == 2;
         var content = _f.DecodeStream(pat);
         var res = R(d.Get("Resources")) as PdfDictionary ?? new PdfDictionary();

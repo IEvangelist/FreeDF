@@ -400,9 +400,9 @@ public class GraphicsGapTests
         return sb.ToString();
     }
 
-    static RenderedPage Patches(int type, string stream)
+    static RenderedPage Patches(int type, string stream, string decode = "0 255 0 255 0 1 0 1 0 1")
     {
-        var objs = $"5 0 obj\n<< /ShadingType {type} /ColorSpace /DeviceRGB /BitsPerCoordinate 8 /BitsPerComponent 8 /BitsPerFlag 8 /Decode [0 255 0 255 0 1 0 1 0 1] /Length {stream.Length} >>\nstream\n{stream}\nendstream\nendobj\n";
+        var objs = $"5 0 obj\n<< /ShadingType {type} /ColorSpace /DeviceRGB /BitsPerCoordinate 8 /BitsPerComponent 8 /BitsPerFlag 8 /Decode [{decode}] /Length {stream.Length} >>\nstream\n{stream}\nendstream\nendobj\n";
         var bytes = TestPdf.Build("/S sh", "/Shading << /S 5 0 R >>", objs, "[0 0 256 256]", brokenXref: true);
         return DocumentRenderer.RenderPage(PdfDocument.Load(bytes).Pages[0], 72);
     }
@@ -459,6 +459,39 @@ public class GraphicsGapTests
         Assert.Equal(explicitPatch.Rgba, continued.Rgba);
         var alone = Patches(6, first);
         Assert.NotEqual(alone.Rgba, continued.Rgba);
+    }
+
+    // ---- Hostile inputs
+
+    static string Big(int digits) => "1" + new string('0', digits);
+    static string Tiny(int zeros) => "0." + new string('0', zeros) + "1";
+
+    [Theory]
+    [InlineData(6, 308, 308, 1)]
+    [InlineData(7, 308, 308, 1)]
+    [InlineData(6, 200, 308, 1)]
+    [InlineData(7, 2, 308, 308)]
+    public void PatchWithHugeDecodeRanges_RendersWithoutThrowing(int type, int coordDigits, int colourDigits, int unused)
+    {
+        _ = unused;
+        var c = Big(coordDigits); var k = Big(colourDigits);
+        var decode = $"-{c} {c} -{c} {c} -{k} {k} 0 1 0 1";
+        (int, int)[] pts = [(64, 64), (10, 100), (20, 160), (64, 192), (100, 235), (150, 150), (192, 192), (240, 160), (200, 100), (192, 64), (150, 20), (100, 70), (106, 106), (106, 149), (149, 149), (149, 106)];
+        var p = Patches(type, PatchBytes(0, pts.Take(type == 6 ? 12 : 16).ToArray(), [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]), decode);
+        Assert.NotNull(p);
+    }
+
+    [Theory]
+    [InlineData(12, 12)]
+    [InlineData(12, -1)]
+    [InlineData(-1, 300)]
+    [InlineData(5, 5)]
+    public void TilingPatternWithTinySteps_IsSkippedRatherThanWrappingTheTileCount(int xZeros, int yZeros)
+    {
+        string Step(int z) => z < 0 ? "1" : Tiny(z);
+        var p = Render("/Pattern cs /P scn 0 0 200 200 re f", "/Pattern << /P 5 0 R >>",
+            TilingPattern(5, $"/PaintType 1 /TilingType 1 /BBox [0 0 10 10] /XStep {Step(xZeros)} /YStep {Step(yZeros)}", "1 0 0 rg 0 0 10 10 re f"));
+        Assert.Contains(p.Warnings, w => w.Contains("too many tiles", StringComparison.Ordinal));
     }
 
     // ---- Tiling patterns (8.7.3)

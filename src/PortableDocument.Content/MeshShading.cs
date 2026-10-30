@@ -128,7 +128,7 @@ static class MeshShading
                 br.Align();
                 p = pp; c = cc; have = true;
                 var finite = true;
-                foreach (var q in p) if (!double.IsFinite(q.X) || !double.IsFinite(q.Y)) finite = false;
+                foreach (var q in p) if (!double.IsFinite(q.X) || !double.IsFinite(q.Y) || Math.Abs(q.X) > 1e100 || Math.Abs(q.Y) > 1e100) finite = false;
                 if (finite) Tessellate(mesh, p, c, decode);
             }
         }
@@ -185,7 +185,7 @@ static class MeshShading
         }
         var nc = Math.Sqrt(colorCross / (4 * ColorTolerance));
         // Cells narrower than a pixel cannot change the raster; MaxDivisions bounds work for pathological control nets.
-        int Clamp(double n, double len) => (int)Math.Clamp(Math.Ceiling(Math.Max(n, nc)), 1, Math.Min(MaxDivisions, Math.Max(1, Math.Ceiling(len))));
+        int Clamp(double n, double len) => DivisionCount(n, nc, len);
         var du = Clamp(nu, lenU); var dv = Clamp(nv, lenV);
 
         var grid = new Vertex[du + 1, dv + 1];
@@ -211,6 +211,14 @@ static class MeshShading
                 mesh.Triangles.Add((grid[i, j], grid[i + 1, j], grid[i, j + 1]));
                 mesh.Triangles.Add((grid[i + 1, j], grid[i + 1, j + 1], grid[i, j + 1]));
             }
+    }
+
+    /// <summary>Division count for one axis; non-finite estimates (overflowing coordinates or an infinite /Decode range) take the maximum.</summary>
+    static int DivisionCount(double n, double colorN, double len)
+    {
+        var want = double.IsNaN(n) || double.IsNaN(colorN) ? MaxDivisions : Math.Max(n, colorN);
+        var cap = double.IsFinite(len) ? Math.Min(MaxDivisions, Math.Max(1, Math.Ceiling(len))) : MaxDivisions;
+        return (int)Math.Clamp(double.IsFinite(want) ? Math.Ceiling(want) : MaxDivisions, 1, cap);
     }
 
     static double Dist((double X, double Y) a, (double X, double Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
