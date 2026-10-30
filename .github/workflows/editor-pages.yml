@@ -58,6 +58,7 @@ jobs:
       - name: Exercise local editor and trim-safe JSON round trips
         env:
           EDITOR_SMOKE_TRANSIENT_BOOT: '1'
+          EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-save-overlap
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "${{ runner.temp }}/editor-pages/wwwroot"
       - name: Exercise local Merge PDFs flow
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --merge "${{ runner.temp }}/editor-pages/wwwroot"
@@ -94,6 +95,7 @@ jobs:
             ${{ runner.temp }}/editor-pages/wwwroot
             ${{ runner.temp }}/editor-boot
             ${{ runner.temp }}/editor-page-image
+            ${{ runner.temp }}/editor-save-overlap
             ${{ runner.temp }}/editor-profile.json*
             ${{ runner.temp }}/editor-profile-ci-tests
       - uses: actions/upload-pages-artifact@v3

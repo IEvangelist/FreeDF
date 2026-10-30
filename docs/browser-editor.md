@@ -279,6 +279,14 @@ fixed goal regresses. A single-repeat timing outlier passes with a warning;
 two-repeat breaches fail. Even one deterministic hash/allocation/raster-reuse
 failure still fails; no timing ceiling is changed.
 
+The full browser smoke also releases pending edit renders while the real Save
+dialog owns input at 4x CPU slowdown. Page and thumbnail presentation is deferred
+until the dialog closes and confirmation paints; superseded replacements are
+still discarded. The test requires no in-dialog replacements or blank frames,
+the exact requested image to resume, and confirmation input-to-frame latency
+at or below 50 ms. This covers the edit/render overlap rather than waiting for
+the editor to settle before Save. Hosted artifacts retain `save-overlap.json`.
+
 For authoritative strict goals, unset `EDITOR_PROFILE_REPORT_ONLY` and run the
 ordinary `--profile` (or `--profile-summary` on saved data). In the latest
 three-repeat local AOT profile before the render-feature integration, startup's
