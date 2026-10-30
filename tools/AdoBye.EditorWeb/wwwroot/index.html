@@ -334,12 +334,13 @@ function applyPageLayout(r, dw, dh, Lw, Lh, fitP) {
 }
 
 async function pagePresentationReady(current) {
-  while (document.querySelector('.mdl')) {
+  const pending = () => document.querySelector('.mdl:not([data-render-ready])');
+  while (pending()) {
     await new Promise(resolve => {
       const observer = new MutationObserver(() => {
-        if (!document.querySelector('.mdl')) { observer.disconnect(); resolve(); }
+        if (!pending()) { observer.disconnect(); resolve(); }
       });
-      observer.observe(document.body, { childList: true });
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-render-ready'] });
     });
     // Let modal confirmation and removal paint before replacing the backdrop.
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -1014,7 +1015,18 @@ function modal(title, body, okLabel, onOk) {
   const opener = document.activeElement;
   const close = () => { o.remove(); if (opener?.isConnected) opener.focus(); };
   o.querySelector('.dc').onclick = close; o.onpointerdown = e => { if (e.target === o) close(); };
-  const ok = async () => { try { if (await onOk(o) !== false) close(); } catch (e) { const error = o.querySelector('[data-error]'); if (error) error.textContent = e.message; status(e.message); } };
+  let submitting = false;
+  const ok = async () => {
+    if (submitting) return;
+    submitting = true;
+    try {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (!o.isConnected) return;
+      o.dataset.renderReady = '';
+      if (await onOk(o) !== false) close();
+    } catch (e) { const error = o.querySelector('[data-error]'); if (error) error.textContent = e.message; status(e.message); }
+    finally { delete o.dataset.renderReady; submitting = false; }
+  };
   o.querySelector('.dok').onclick = ok;
   o.onkeydown = e => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
