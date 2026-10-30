@@ -236,8 +236,10 @@ public static partial class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection, with inert typed metadata for local, remote, embedded, and DPart go-to, URI, named, and submit-form actions.
+    /// Returns action dictionaries for inspection, with inert typed metadata for the supported action subtypes.
     /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
+    /// The walk is bounded (per-root work budget, depth limit, cycle cuts); if it stops early the list is incomplete,
+    /// so use <see cref="GetActionReport"/> and check <see cref="PdfActionReport.Truncated"/>.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc) => GetActionReport(doc).Actions;
 
@@ -255,6 +257,7 @@ public static partial class SafeContentFeatures
     internal sealed class ActionSink : List<PdfAction>
     {
         public const int MaxWork = 10_000;
+        public const int MaxTotal = 1_000_000;
         public int Work;
         public bool Truncated;
         public readonly HashSet<PdfArray> ActiveArrays = new(ReferenceEqualityComparer.Instance);
@@ -413,16 +416,21 @@ public static partial class SafeContentFeatures
     {
         var sink = (ActionSink)actions;
         if (depth > MaxDepth) { sink.Truncated = true; return; }
-        if (++sink.Work > ActionSink.MaxWork) { sink.Truncated = true; return; }
-        if (f.Resolve(value) is PdfArray array)
+        var resolved = f.Resolve(value);
+        if (resolved is not (PdfArray or PdfDictionary)) return;
+        // Budget is per root (depth 0) so unrelated roots cannot starve each other, and only containers are charged.
+        if (depth == 0) sink.Work = 0;
+        if (++sink.Work > ActionSink.MaxWork || sink.Count >= ActionSink.MaxTotal) { sink.Truncated = true; return; }
+        if (resolved is PdfArray array)
         {
-            if (!sink.ActiveArrays.Add(array)) return;
+            if (!sink.ActiveArrays.Add(array)) { sink.Truncated = true; return; }
             for (var i = 0; i < array.Count; i++)
                 AddActionChain(f, array[i], scope, $"{trigger}[{i}]", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
             sink.ActiveArrays.Remove(array);
             return;
         }
-        if (f.Resolve(value) is not PdfDictionary action || !ancestors.Add(action)) return;
+        if (resolved is not PdfDictionary action) return;
+        if (!ancestors.Add(action)) { sink.Truncated = true; return; }
         var type = f.Resolve(action.Get("S")).AsName();
         actions.Add(new PdfAction(
             scope,

@@ -15,7 +15,7 @@ public class ActionAnnotationFormDetailTests
             "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
             $"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] {pageExtra} >>\nendobj\n" +
             objects +
-            "trailer\n<< /Root 1 0 R /Size 100 >>\n%%EOF\n";
+            "trailer\n<< /Root 1 0 R /Size 100000 >>\n%%EOF\n";
         return PdfDocument.Load(Encoding.ASCII.GetBytes(pdf));
     }
 
@@ -252,6 +252,30 @@ public class ActionAnnotationFormDetailTests
         var set = doc.GetFormFieldDetails();
         Assert.False(set.Truncated);
         Assert.Empty(set.Fields);
+    }
+
+    [Fact]
+    public void Many_action_free_annotations_and_fields_do_not_starve_later_actions()
+    {
+        const int n = 5_000;
+        var sb = new StringBuilder();
+        var annots = new StringBuilder();
+        var fields = new StringBuilder();
+        for (var i = 0; i < n; i++)
+        {
+            sb.Append($"{100 + i} 0 obj\n<< /Subtype /Square /Rect [0 0 1 1] >>\nendobj\n");
+            annots.Append($"{100 + i} 0 R ");
+            sb.Append($"{20000 + i} 0 obj\n<< /FT /Tx /T (f{i}) >>\nendobj\n");
+            fields.Append($"{20000 + i} 0 R ");
+        }
+        sb.Append("40000 0 obj\n<< /Subtype /Link /Rect [0 0 1 1] /A << /S /JavaScript /JS (late) >> >>\nendobj\n");
+        sb.Append("40001 0 obj\n<< /FT /Tx /T (last) /A << /S /Launch /F (x) >> >>\nendobj\n");
+        var doc = Load("/AcroForm << /Fields [" + fields + "40001 0 R] >>", "/Annots [" + annots + "40000 0 R]", sb.ToString());
+        var report = doc.GetActionReport();
+        Assert.False(report.Truncated);
+        Assert.Contains(report.Actions, a => a.JavaScriptDetails is not null);
+        Assert.Contains(report.Actions, a => a.LaunchDetails is not null);
+        Assert.Equal(2, doc.GetActions().Count);
     }
 
     [Fact]
