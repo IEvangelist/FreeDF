@@ -272,7 +272,11 @@ release. Maxima and isolated-outlier warnings remain in the job summary/JSON.
 This changes only hosted timing decisions, not the authoritative strict report
 or any pixel, allocation, cache/raster-count, completeness or no-blank gate.
 The profile also waits for Undo's page replacement before selecting text, so
-the next operation cannot accidentally target a stale span.
+the next operation cannot accidentally target a stale span. Original-text
+selection uses Playwright's visibility/stability checks rather than a forced
+click, then verifies conversion to the editable Properties field and a
+repeat-specific changed value. A commit timeout retains the field and command
+diagnostics; it is still a failure, never a skipped timing group.
 `tools\Test-EditorProfileCi.ps1` verifies ten synthetic policy cases, including
 rejection of regressions, acceptance of an improved goal and visibility when a
 fixed goal regresses. A single-repeat timing outlier passes with a warning;
