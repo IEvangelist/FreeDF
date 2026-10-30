@@ -11,6 +11,8 @@ public sealed record RenderedPage(int Width, int Height, byte[] Rgba, IReadOnlyL
 
 public sealed record PdfRenderOptions
 {
+    /// <summary>Host-provided substitutes for non-embedded fonts; null uses installed system fonts.</summary>
+    public IFontFallback? FontFallback { get; init; }
     /// <summary>Name of a catalog /OCProperties /Configs entry; omitted selects the default /D configuration.</summary>
     public string? OptionalContentConfigurationName { get; init; }
     /// <summary>Reusable interactive layer state; cannot be combined with a configuration name.</summary>
@@ -86,7 +88,7 @@ public static class PortableDocument
         var scale = dpi / 72.0 * page.UserUnit;
         var m = PageMatrix(page, scale, out var w, out var h);
         using var raster = new SoftwareRasterizer(w, h);
-        var interp = new ContentInterpreter(page.Document.File, raster);
+        var interp = new ContentInterpreter(page.Document.File, raster, options.FontFallback);
         if (options.OptionalContentState is not null && options.OptionalContentConfigurationName is not null)
             throw new ArgumentException("Specify optional-content state or a configuration name, not both.", nameof(options));
         var state = options.OptionalContentState ?? new OptionalContentState(page.Document, options.OptionalContentConfigurationName);

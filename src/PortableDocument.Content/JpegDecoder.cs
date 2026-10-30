@@ -163,7 +163,7 @@ public static partial class JpegDecoder
         // Reconstruct block rows of all components in parallel.
         var jobs = new List<(int C, int Row)>();
         for (var i = 0; i < comps.Length; i++) for (var r = 0; r < comps[i].BH; r++) jobs.Add((i, r));
-        var par = (long)width * height > 40_000;
+        var par = !OperatingSystem.IsBrowser() && (long)width * height > 40_000;
         if (par) Parallel.ForEach(jobs, j => ReconstructRow(comps[j.C], quant[j.C], planes[j.C], j.Row));
         else foreach (var j in jobs) ReconstructRow(comps[j.C], quant[j.C], planes[j.C], j.Row);
         return Assemble(comps, planes, width, height, hmax, vmax, adobe, par);

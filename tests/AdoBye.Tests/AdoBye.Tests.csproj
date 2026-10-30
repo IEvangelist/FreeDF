@@ -27,6 +27,7 @@
     <Compile Include="..\..\tools\AdoBye.EditorWeb\FontCatalog.cs" Link="EditorWeb\FontCatalog.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\OverlayBuilder.cs" Link="EditorWeb\OverlayBuilder.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\FormObjectEditPolicy.cs" Link="EditorWeb\FormObjectEditPolicy.cs" />
+    <Compile Include="..\..\tools\AdoBye.EditorWeb\EditorSession.cs" Link="EditorWeb\EditorSession.cs" />
   </ItemGroup>
 
   <ItemGroup>

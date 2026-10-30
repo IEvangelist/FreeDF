@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <title>AdoBye - PDF Editor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/editor.css">
+<link rel="stylesheet" href="editor.css">
+<script src="editor.js" defer></script>
 </head>
 <body>
 <svg class="sprite" aria-hidden="true"><defs>
@@ -81,7 +82,7 @@
         <button data-tool="ellipse" class="icon" title="Ellipse (E)"><svg class="i"><use href="#i-ellipse"/></svg></button>
         <button data-tool="line" class="icon" title="Line (L)"><svg class="i"><use href="#i-line"/></svg></button>
         <button data-tool="redact" class="icon" title="Redact: permanently removes content beneath (X)"><svg class="i"><use href="#i-redact"/></svg></button>
-        <label class="btn icon" title="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
+        <label class="btn icon" title="Insert image" tabindex="0" role="button" aria-label="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
       </div>
       <span class="grow"></span>
       <button id="lock" class="icon toggle" title="Lock positions and sizes (Ctrl+Shift+L)" aria-pressed="false"><svg class="i"><use href="#i-unlock"/></svg></button>
@@ -110,19 +111,38 @@
   </div>
   <aside id="props"></aside>
 </main>
-<footer><span id="status">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
+<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span></footer>
 <script>
+addEventListener('editor-ready', () => {
+document.querySelector('main').inert = false;
+document.querySelector('header').inert = false;
+const host = window.pdfHost;
+const request = async (url, options) => {
+  const response = await (host ? host.request(url, options) : fetch(url, options));
+  if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
+  return response;
+};
+const imageUrl = url => host ? host.image(url) : new URL(url, location.href).href;
+const reportError = e => { console.error(e); status(e.message); };
+addEventListener('unhandledrejection', e => { e.preventDefault(); reportError(e.reason); });
+addEventListener('error', e => { if (e.error) reportError(e.error); });
+document.querySelectorAll('button[title]').forEach(b => {
+  if (!b.hasAttribute('aria-label')) b.setAttribute('aria-label', b.title);
+});
+document.querySelector('label[for="img"], label:has(#img)').onkeydown = e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('img').click(); }
+};
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1;
 let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
 let locked = localStorage.getItem('lock-geom') === '1';
 const GEOM = new Set(['x', 'y', 'w', 'h', 'x2', 'y2']);
 const $ = id => document.getElementById(id);
-const post = (u, body) => fetch(u, { method: 'POST', body }).then(async r => { if (!r.ok) throw new Error((await r.text()) || (u + ' ' + r.status)); });
+const post = (u, body) => request(u, { method: 'POST', body });
 const status = t => $('status').textContent = t;
 const FAM = { Helvetica: 'Arial, Helvetica, sans-serif', Times: '"Times New Roman", Times, serif', Courier: '"Courier New", monospace', Symbol: 'Symbol, serif', ZapfDingbats: '"Zapf Dingbats", "Segoe UI Symbol", serif' };
 const famCss = f => FAM[f] ?? `"${String(f).replace(/"/g, '')}", sans-serif`;
 let fontList = [];
-fetch('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
+request('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
 const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -149,7 +169,7 @@ function convertSpan(s) {
 
 async function refresh() {
   await flush();
-  state = await (await fetch('/api/state')).json();
+  state = await (await request('/api/state')).json();
   $('name').textContent = state.pageCount ? state.fileName + (state.dirty ? ' •' : '') : 'No document';
   $('pages').textContent = state.pageCount ? `${state.pageCount} page${state.pageCount === 1 ? '' : 's'}` : '';
   sel = Math.min(sel, state.pageCount - 1); if (sel < 0) sel = 0;
@@ -157,7 +177,7 @@ async function refresh() {
   state.pages.forEach((p, i) => {
     const d = document.createElement('div');
     d.className = 'thumb' + (i === sel ? ' sel' : ''); d.draggable = true;
-    d.innerHTML = `<div class="paper"><img src="/api/page/${i}.png?dpi=40&v=${state.version}"></div><span class="num">${i + 1}</span>
+    d.innerHTML = `<div class="paper"><img alt="Page ${i + 1}" src="${imageUrl(`/api/page/${i}.png?dpi=40&v=${state.version}`)}"></div><span class="num">${i + 1}</span>
       <div class="acts"><button class="mini" data-a="l" title="Rotate left">${ic('rotl')}</button><button class="mini" data-a="r" title="Rotate right">${ic('rotr')}</button><button class="mini danger" data-a="x" title="Delete page">${ic('trash')}</button></div>`;
     d.onclick = e => {
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -179,10 +199,10 @@ async function select() {
   document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
   const v = $('view');
   if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; props(); return; }
-  items = await (await fetch(`/api/page/${sel}/items`)).json();
-  spans = await (await fetch(`/api/page/${sel}/text`)).json();
-  objs = await (await fetch(`/api/page/${sel}/objects`)).json();
-  fields = await (await fetch('/api/fields')).json();
+  items = await (await request(`/api/page/${sel}/items`)).json();
+  spans = await (await request(`/api/page/${sel}/text`)).json();
+  objs = await (await request(`/api/page/${sel}/objects`)).json();
+  fields = await (await request('/api/fields')).json();
   origKey = okey();
   cur = null; curObj = null; undo = [];
   build();
@@ -199,7 +219,7 @@ function build() {
   const dw = w0 * S, dh = h0 * S, Lw = p.width * S, Lh = p.height * S;
   geom = { r, dw, dh, Lw, Lh };
   const dpi = Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))));
-  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" src="/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
+  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" alt="Current PDF page" src="${imageUrl(`/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}`)}"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
   const tf = { 0: '', 90: `translate(${dw}px,0) rotate(90deg)`, 180: `translate(${dw}px,${dh}px) rotate(180deg)`, 270: `translate(0,${dh}px) rotate(270deg)` }[r] ?? '';
   const layer = $('layer'); layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
   layer.onpointerdown = layerDown;
@@ -265,7 +285,7 @@ function paint() {
       if (it.w > 0) e.style.minWidth = it.w * S + 'px';
     } else {
       e.style.width = it.w * S + 'px'; e.style.height = it.h * S + 'px';
-      if (it.type === 'image') e.innerHTML = `<img src="/api/asset/${it.asset}">`;
+      if (it.type === 'image') e.innerHTML = `<img alt="Inserted image" src="${imageUrl(`/api/asset/${it.asset}`)}">`;
       else {
         e.style.background = it.fill || 'transparent';
         e.style.border = it.stroke && it.strokeWidth > 0 ? `${it.strokeWidth * S}px solid ${it.stroke}` : 'none';
@@ -438,12 +458,10 @@ function saveObj(o) {
   const page = sel, url = `/api/page/${page}/objects/${o.index}`, body = JSON.stringify(o.edit ?? null);
   objectSave = objectSave.then(async () => {
     try {
-      const response = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+      const response = await request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
       if (!response.ok) throw new Error((await response.text()) || `${url} ${response.status}`);
-      if (sel === page) {
-        const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now());
-      }
-      const th = document.querySelectorAll('.thumb img')[page]; if (th) th.src = `/api/page/${page}.png?dpi=40&t=${Date.now()}`;
+      if (sel === page) updateBase();
+      const th = document.querySelectorAll('.thumb img')[page]; if (th) th.src = imageUrl(`/api/page/${page}.png?dpi=40&t=${Date.now()}`);
       await refreshDirty();
       objectSaveErrors.delete(url);
     } catch (error) {
@@ -512,10 +530,12 @@ async function flush() {
   if (!saveT || !state.pageCount) return;
   clearTimeout(saveT); saveT = 0;
   const i = sel;
-  await fetch(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(items.map(({ ...x }) => x)) });
-  if (okey() !== origKey) { origKey = okey(); const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now()); }
+  try {
+    await request(`/api/page/${i}/items`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(items.map(({ ...x }) => x)) });
+  } catch (e) { saveT = -1; throw e; }
+  if (okey() !== origKey) { origKey = okey(); updateBase(); }
   const th = document.querySelectorAll('.thumb img')[i];
-  if (th) th.src = `/api/page/${i}.png?dpi=40&t=${Date.now()}`;
+  if (th) th.src = imageUrl(`/api/page/${i}.png?dpi=40&t=${Date.now()}`);
   refreshDirty();
 }
 
@@ -529,10 +549,10 @@ function props() {
         : `<label class="fld"><span>${esc(f.name)}</span><input type="text" data-f="${i}" value="${esc(f.value)}"></label>`).join('')}</section>` : '');
     p.querySelectorAll('[data-f]').forEach(el => el.onchange = async () => {
       const f = fields[+el.dataset.f], v = el.type === 'checkbox' ? (el.checked ? 'Yes' : 'Off') : el.value;
-      await fetch(`/api/field?n=${encodeURIComponent(f.name)}&v=${encodeURIComponent(v)}`, { method: 'POST' });
+      await request(`/api/field?n=${encodeURIComponent(f.name)}&v=${encodeURIComponent(v)}`, { method: 'POST' });
       f.value = v; status(`Set ${f.name}`);
-      const b = $('base'); if (b) b.src = b.src.replace(/&t=\d+/, '&t=' + Date.now());
-      document.querySelectorAll('.thumb img').forEach((im, k) => im.src = `/api/page/${k}.png?dpi=40&t=${Date.now()}`);
+      updateBase();
+      document.querySelectorAll('.thumb img').forEach((im, k) => im.src = imageUrl(`/api/page/${k}.png?dpi=40&t=${Date.now()}`));
     });
     return;
   }
@@ -575,7 +595,18 @@ function props() {
   });
 }
 
-async function act(fn) { try { await flush(); await fn(); await refresh(); } catch (e) { status(e.message); } }
+function updateBase() {
+  const b = $('base');
+  if (b) b.src = imageUrl(`/api/page/${sel}.png?dpi=${Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))))}&bare=${!preview}&t=${Date.now()}`);
+}
+async function act(fn) {
+  status(host ? 'Processing locally in WebAssembly...' : 'Processing...');
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await flush(); await fn(); await refresh();
+    status(host ? 'Ready. PDFs stay on this device. Save downloads a copy.' : 'Ready.');
+  } catch (e) { reportError(e); }
+}
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 
 $('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.target.files[0]));
@@ -584,7 +615,6 @@ $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/27
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
 $('del').onclick = () => state.pageCount && confirm('Delete this page?') && act(() => post(`/api/delete/${sel}`));
 $('title').onclick = () => { const t = prompt('Document title'); if (t) act(() => post('/api/title?t=' + encodeURIComponent(t))); };
-$('dl').onclick = async () => { if (state.pageCount) { await flush(); location.href = '/api/download'; } };
 document.querySelectorAll('#tools [data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 $('zi').onclick = () => zoomBy(1.25);
 $('zo').onclick = () => zoomBy(1 / 1.25);
@@ -600,7 +630,7 @@ $('prev').onclick = async () => { await flush(); preview = !preview; $('prev').c
 $('img').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f || !state.pageCount) return;
   const fd = new FormData(); fd.append('f', f);
-  const r = await fetch('/api/asset', { method: 'POST', body: fd });
+  const r = await request('/api/asset', { method: 'POST', body: fd });
   if (!r.ok) { status('Unsupported image (PNG or baseline/progressive JPEG only).'); return; }
   const a = await r.json(), pg = state.pages[sel], w = Math.min(240, pg.width / 2);
   pushUndo();
@@ -609,7 +639,7 @@ $('img').onchange = async e => {
 };
 // ---- Navigation, zoom, find, print, full screen, file menu ----
 async function refreshDirty() {
-  const s = await (await fetch('/api/state')).json(); state.dirty = s.dirty; state.canSave = s.canSave; state.fileName = s.fileName;
+  const s = await (await request('/api/state')).json(); state.dirty = s.dirty; state.canSave = s.canSave; state.fileName = s.fileName;
   $('name').textContent = s.pageCount ? s.fileName + (s.dirty ? ' •' : '') : 'No document';
 }
 function navUpdate() {
@@ -662,7 +692,7 @@ function paintFind(layer) {
 }
 async function runFind() {
   const q = $('fq').value;
-  hits = q ? await (await fetch(`/api/find?q=${encodeURIComponent(q)}&cs=${findCase}`)).json() : [];
+  hits = q ? await (await request(`/api/find?q=${encodeURIComponent(q)}&cs=${findCase}`)).json() : [];
   hitI = hits.length ? Math.max(0, hits.findIndex(h => h.page >= sel)) : -1;
   findShow();
 }
@@ -685,7 +715,7 @@ async function printDoc() {
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
   const imgs = state.pages.map((p, i) => {
     const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
-    return `<section style="width:${w}pt;height:${h}pt"><img src="${location.origin}/api/page/${i}.png?dpi=150&t=${Date.now()}"></section>`;
+    return `<section style="width:${w}pt;height:${h}pt"><img src="${imageUrl(`/api/page/${i}.png?dpi=150&t=${Date.now()}`)}"></section>`;
   }).join('');
   f.srcdoc = `<!doctype html><style>@page{margin:0}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{width:100%;height:100%;display:block}</style>${imgs}`;
   f.onload = async () => {
@@ -720,7 +750,7 @@ function newDoc() {
 }
 function insertBlank(at) { return act(() => post(`/api/blank/${at}`)).then(() => goPage(at)); }
 function docProps() {
-  fetch('/api/info').then(r => r.json()).then(d => {
+  request('/api/info').then(r => r.json()).then(d => {
     const f = (k, l) => `<label>${l}<input data-i="${k}" value="${esc(d[k] ?? '')}"></label>`;
     modal('Document properties', f('title', 'Title') + f('author', 'Author') + f('subject', 'Subject') + f('keywords', 'Keywords') + f('creator', 'Creator') + f('producer', 'Producer')
       + `<p class="dnote">${esc(d.file)} · ${d.pages} page${d.pages === '1' ? '' : 's'}</p>`, 'Apply', o => {
@@ -729,33 +759,48 @@ function docProps() {
     });
   });
 }
-const dlUrl = u => { const a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); };
+const dlUrl = async u => {
+  if (host) return host.download(u);
+  const response = await request(u);
+  const url = URL.createObjectURL(await response.blob());
+  const a = document.createElement('a'); a.href = url;
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  a.download = encoded ? decodeURIComponent(encoded[1]) : disposition.match(/filename="?([^";]+)/i)?.[1] || 'document.pdf';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+};
 async function saveDoc() {
   if (!state.pageCount) return; await flush();
-  const r = await (await fetch('/api/save', { method: 'POST' })).json();
+  const r = await (await request('/api/save', { method: 'POST' })).json();
   if (r.saved) { await refresh(); status('Saved to ' + r.path); } else saveAs();
 }
 function saveAs() {
   if (!state.pageCount) return;
   flush().then(() => modal('Save as', `<label>File name<input id="sn" value="${esc(state.fileName.replace(/^edited-/, ''))}"></label><p class="dnote">The PDF is downloaded to your browser's download folder.</p>`, 'Save', async o => {
     let n = o.querySelector('#sn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
-    dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refresh();
+    await dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refresh();
   }));
 }
 function exportPdf() {
   if (!state.pageCount) return;
   flush().then(() => modal('Export pages as PDF', `<label>Pages<input id="er" placeholder="All, or e.g. 1-3, 5" value="${sel + 1}"></label><p class="dnote">Leave blank to export every page.</p>`, 'Export',
-    o => { dlUrl(`/api/export/pdf?pages=${encodeURIComponent(o.querySelector('#er').value)}&name=export.pdf`); }));
+    o => dlUrl(`/api/export/pdf?pages=${encodeURIComponent(o.querySelector('#er').value)}&name=export.pdf`)));
 }
 function exportImages() {
   if (!state.pageCount) return;
   flush().then(() => modal('Export as images', `<label>Resolution<select id="ed"><option value="96">96 dpi (screen)</option><option value="150" selected>150 dpi</option><option value="300">300 dpi (print)</option></select></label>
     <label>Scope<select id="es"><option value="p">Current page (PNG)</option><option value="a">All pages (ZIP)</option></select></label>`, 'Export', o => {
-    const dpi = o.querySelector('#ed').value; dlUrl(o.querySelector('#es').value === 'p' ? `/api/export/png?page=${sel}&dpi=${dpi}` : `/api/export/zip?dpi=${dpi}`);
+    const dpi = o.querySelector('#ed').value; return dlUrl(o.querySelector('#es').value === 'p' ? `/api/export/png?page=${sel}&dpi=${dpi}` : `/api/export/zip?dpi=${dpi}`);
   }));
 }
 const exportText = () => state.pageCount && flush().then(() => dlUrl('/api/export/text'));
-const exportSecure = () => { if (!state.pageCount) return; const u = prompt('Open password (leave empty for compressed, unprotected copy)', ''); if (u === null) return; const o = u ? prompt('Owner password (blank = same as open password)', '') : ''; if (o === null) return; flush().then(() => dlUrl('/api/export/secure?user=' + encodeURIComponent(u) + '&owner=' + encodeURIComponent(o))); };
+const exportSecure = () => {
+  if (!state.pageCount) return;
+  if (host) return flush().then(() => dlUrl('/api/export/secure'));
+  const u = prompt('Open password (leave empty for compressed, unprotected copy)', ''); if (u === null) return;
+  const o = u ? prompt('Owner password (blank = same as open password)', '') : ''; if (o === null) return;
+  flush().then(() => dlUrl('/api/export/secure?user=' + encodeURIComponent(u) + '&owner=' + encodeURIComponent(o)));
+};
 async function closeDoc() { if (!confirmDiscard()) return; await act(() => post('/api/close')); }
 const pickFile = id => { const i = $(id); i.value = ''; i.click(); };
 function openFileMenu() {
@@ -772,7 +817,7 @@ function openFileMenu() {
       { label: 'Duplicate current page', run: () => act(() => post(`/api/duplicate/${sel}`)).then(() => goPage(sel + 1)) }, '-',
       { label: 'Pages from another PDF…', run: () => pickFile('merge') }] },
     { label: 'Export', disabled: !has, sub: [
-      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }, { label: 'Compressed / password-protected PDF…', run: exportSecure }] },
+      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }, { label: host ? 'Compressed PDF (no password)' : 'Compressed / password-protected PDF…', run: exportSecure }] },
     '-',
     { label: 'Print…', key: mod + 'P', disabled: !has, run: printDoc },
     { label: 'Document properties…', disabled: !has, run: docProps },
@@ -1029,7 +1074,8 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
-refresh();
+refresh().then(() => status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.'));
+}, { once: true });
 </script>
 </body>
 </html>
