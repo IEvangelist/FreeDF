@@ -122,8 +122,11 @@ static class EditorBoot
                 else Check(attempts.Count == (scenario == "transient" ? 3 : 1) && attempts.Values.All(n => n == 3), "Every injected transient failure recovers on attempt three.");
                 Check(await page.GetByRole(AriaRole.Alert).CountAsync() == 0, "Recovered boot leaves no terminal error.");
             }
+            var retryCount = await page.EvaluateAsync<int>("pdfHost.bootRetries");
+            if (scenario is "transient" or "module")
+                Check(retryCount == (scenario == "transient" ? 6 : 2), "Recovered loader retries remain observable.");
             Check(unexpected.IsEmpty, "Static GETs only, including worker resources: " + string.Join(", ", unexpected));
-            results.Add(new { scenario, attempts, errors, unexpected });
+            results.Add(new { scenario, attempts, retryCount, errors, unexpected });
         }
         var medianMs = coldStarts.Order().ElementAt(1);
         await File.WriteAllTextAsync(Path.Combine(output, baseline ? "boot-baseline.json" : "boot-resilience.json"),

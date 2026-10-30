@@ -1,5 +1,10 @@
 const backoff = [250, 750, 1750];
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+let bootRetries = 0;
+function retry(name, reason) {
+  bootRetries++;
+  console.warn(`[PDF boot] retry ${bootRetries}: ${name} (${reason})`);
+}
 
 async function loadRuntime() {
   for (let attempt = 0; ; attempt++) {
@@ -10,6 +15,7 @@ async function loadRuntime() {
       return (await import(url.href)).dotnet;
     } catch (error) {
       if (!(error instanceof TypeError) || attempt === backoff.length) throw error;
+      retry('dotnet.js', error.name);
       await pause(backoff[attempt]);
     }
   }
@@ -34,7 +40,10 @@ async function loadResource(name, uri, integrity) {
       await response.body?.cancel();
       if (response.status < 500) throw failure;
     }
-    if (attempt < backoff.length) await pause(backoff[attempt]);
+    if (attempt < backoff.length) {
+      retry(name, response ? `HTTP ${response.status}` : failure.name);
+      await pause(backoff[attempt]);
+    }
   }
   throw new Error(`Could not load ${name} after four attempts. ${failure.message}`);
 }
@@ -80,7 +89,7 @@ try {
       self.postMessage({ id, error: error.message, timings: { workerMs: performance.now() - start } });
     }
   };
-  self.postMessage({ ready: true });
+  self.postMessage({ ready: true, bootRetries });
 } catch (error) {
   self.postMessage({ startupError: error.message });
 }

@@ -4,7 +4,7 @@ using System.Text.Json;
 
 static class EditorPerformanceReport
 {
-    sealed record Row(string Document, string Phase, string Metric, int Samples, double P50, double P95,
+    internal sealed record Row(string Document, string Phase, string Metric, int Samples, double P50, double P95,
         double Maximum, double? P50Budget, double? P95Budget, bool Passed);
 
     public static async Task<IReadOnlyList<string>> Write(string path)
@@ -85,6 +85,9 @@ static class EditorPerformanceReport
         ("edit-text", "text-edit-commit-ms") => (250, 500),
         ("zoom" or "undo", "zoom-ms" or "undo-ms") => (100, 200),
         ("cached-zoom", "total-ms") => (100, 200),
+        ("fresh-render-input", "total-ms") => (1000, 1500),
+        ("fresh-render-input", "allocatedBytes") => (200_000_000, 200_000_000),
+        ("cached-zoom" or "cached-next-page", "raster-misses") => (1, 1),
         _ => (null, null),
     };
 }

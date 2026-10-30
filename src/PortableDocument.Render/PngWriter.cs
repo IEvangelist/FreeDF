@@ -5,17 +5,38 @@ namespace PortableDocument.Render;
 
 public static class PngWriter
 {
-    public static byte[] Encode(int w, int h, byte[] rgba)
+    public static byte[] Encode(int w, int h, byte[] rgba) => Encode(w, h, rgba, OperatingSystem.IsBrowser());
+
+    internal static byte[] Encode(int w, int h, byte[] rgba, bool streamRows)
     {
         using var ms = new MemoryStream();
         ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
         var ihdr = new byte[13];
         WriteBE(ihdr, 0, w); WriteBE(ihdr, 4, h); ihdr[8] = 8; ihdr[9] = 6;
         Chunk(ms, "IHDR", ihdr);
-        var raw = new byte[(w * 4 + 1) * h];
-        for (var y = 0; y < h; y++) Buffer.BlockCopy(rgba, y * w * 4, raw, y * (w * 4 + 1) + 1, w * 4);
         using var z = new MemoryStream();
-        using (var zs = new ZLibStream(z, CompressionLevel.Fastest, true)) zs.Write(raw);
+        using (var zs = new ZLibStream(z, CompressionLevel.Fastest, true))
+        {
+            if (streamRows)
+            {
+                var stride = w * 4 + 1;
+                var rows = Math.Min(h, Math.Max(1, 65536 / stride));
+                var block = new byte[stride * rows];
+                for (var y = 0; y < h; y += rows)
+                {
+                    var count = Math.Min(rows, h - y);
+                    for (var row = 0; row < count; row++)
+                        Buffer.BlockCopy(rgba, (y + row) * w * 4, block, row * stride + 1, w * 4);
+                    zs.Write(block.AsSpan(0, count * stride));
+                }
+            }
+            else
+            {
+                var raw = new byte[(w * 4 + 1) * h];
+                for (var y = 0; y < h; y++) Buffer.BlockCopy(rgba, y * w * 4, raw, y * (w * 4 + 1) + 1, w * 4);
+                zs.Write(raw);
+            }
+        }
         Chunk(ms, "IDAT", z.ToArray());
         Chunk(ms, "IEND", []);
         return ms.ToArray();

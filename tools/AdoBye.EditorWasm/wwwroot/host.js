@@ -1,6 +1,6 @@
 export async function start() {
   const worker = new Worker(new URL('worker.js', import.meta.url), { type: 'module', name: 'PDF engine' });
-  let nextId = 0, failed = null, sequence = Promise.resolve();
+  let nextId = 0, failed = null, bootRetries = 0, sequence = Promise.resolve();
   const pending = new Map();
   const imageCache = new Map();
   const imageCacheLimit = 8 * 1024 * 1024;
@@ -35,7 +35,7 @@ export async function start() {
   worker.onmessageerror = () => fail(new Error('The PDF worker returned an unreadable response. Reload the editor.'));
   worker.onmessage = ({ data }) => {
     if (data.startupError) { fail(new Error(data.startupError)); return; }
-    if (data.ready) { clearTimeout(startupTimeout); readyResolve(); return; }
+    if (data.ready) { bootRetries = data.bootRetries; clearTimeout(startupTimeout); readyResolve(); return; }
     const request = pending.get(data.id);
     if (!request) return;
     pending.delete(data.id);
@@ -63,6 +63,7 @@ export async function start() {
   };
   return {
     execution: 'worker',
+    bootRetries,
     request(url, options = {}) {
       return enqueue(async () => {
         let body = null, fileName = null;

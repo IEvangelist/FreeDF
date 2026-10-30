@@ -1,11 +1,16 @@
 param(
     [string] $Output = (Join-Path $PSScriptRoot 'AdoBye.EditorWasm\bin\pages'),
-    [string] $BasePath = '/csharp-pdf/'
+    [string] $BasePath = '/csharp-pdf/',
+    [switch] $Aot,
+    [string] $ArtifactsPath
 )
 $ErrorActionPreference = 'Stop'
 if ($BasePath -notmatch '^/([A-Za-z0-9._-]+/)*$') { throw 'BasePath must start and end with / and contain only path segments.' }
 $project = Join-Path $PSScriptRoot 'AdoBye.EditorWasm\AdoBye.EditorWasm.csproj'
-dotnet publish $project -c Release -o $Output --nologo
+$publishArgs = @('publish', $project, '-c', 'Release', '-o', $Output, '--nologo')
+if ($Aot) { $publishArgs += @('-p:RunAOTCompilation=true', '-p:PublishTrimmed=true', '-p:WasmEnableSIMD=true') }
+if ($ArtifactsPath) { $publishArgs += @('--artifacts-path', $ArtifactsPath) }
+dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw 'WebAssembly publish failed.' }
 $site = Join-Path $Output 'wwwroot'
 $index = Join-Path $site 'index.html'
