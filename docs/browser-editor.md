@@ -253,7 +253,7 @@ Fresh-render gates additionally require p50/p95 below 1000/1500 ms and managed
 allocation below 200 MB; allocation is not peak browser working set.
 
 Hosted CI uses `--profile-ci <raw.json> docs\performance\editor-ci-known-misses.v1.json`.
-Its versioned policy lists only the two currently unresolved goals and prints
+Its versioned policy retains the two established known misses and prints
 `KNOWN MISSES (baseline open work)` plus the full strict-goal miss table in the job summary,
 and uploads both. The historical AOT reference CSV is preserved; fixed goals
 removed from the allowlist will be classified as `NEW GOAL MISS` if they regress.
@@ -270,9 +270,16 @@ fixed goal regresses; no timing ceiling is changed.
 
 For authoritative strict goals, unset `EDITOR_PROFILE_REPORT_ONLY` and run the
 ordinary `--profile` (or `--profile-summary` on saved data). In the latest
-three-repeat local AOT profile, startup's maximum long task and showcase open
-remain over budget; the other four original misses now meet their goals.
-Hosted CI's noise tolerance does not change those goals.
+three-repeat local AOT profile before the render-feature integration, startup's
+maximum long task and showcase open remained over budget; the other four
+original misses met their goals. The post-integration profile currently reports
+three strict-goal misses: startup maximum long task 73/78 ms against 50/50,
+showcase open 330/332.6 ms against 250/500, and cached typography next-page
+presentation 100.1/100.9 ms against 100/200. The latter is a new strict-goal
+miss, not added to the allowlist; ordinary next-page selection remains
+98.8/99.7 ms for typography, 97.1/97.4 ms for the report and 97.2/98.2 ms for
+the generated large document. The relative CI gate is separate and does not
+relabel these strict misses as passing their original goals.
 
 ### Navigation preview
 
@@ -476,7 +483,8 @@ merging. Passwords are never requested or persisted by this dialog. If a
 supported encrypted import occurs in the server host, recovery is disabled
 rather than caching a decrypted copy. Merge stays local in both hosts.
 
-The integrated Release build succeeds and full suite passes 1696/1696. A local
+At the earlier seven-branch checkpoint, the Release build succeeded and the
+full suite passed 1696/1696. A local
 static WASM publish into a fresh output directory validates 207 artifacts (without the optional `wasm-tools`
 optimization workload). Full Chromium smoke passes text fidelity, recovery,
 clipboard/assets and desktop/mobile header assertions; the separate `--merge`
