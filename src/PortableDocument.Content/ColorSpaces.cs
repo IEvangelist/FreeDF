@@ -2,11 +2,16 @@ using PortableDocument.Core;
 
 namespace PortableDocument.Content;
 
+/// <summary>DeviceN /Attributes (8.6.6.5, Table 71): <see cref="Subtype"/> is "DeviceN" or "NChannel"; <see cref="Colorants"/> maps colorant names to their Separation spaces; mixing hint keys are listed but not simulated.</summary>
+public sealed record DeviceNAttributes(string Subtype, PdfColorSpace? ProcessColorSpace, IReadOnlyList<string> ProcessComponents, IReadOnlyDictionary<string, PdfColorSpace> Colorants, IReadOnlyList<string> MixingHintKeys);
+
 public abstract class PdfColorSpace
 {
     public abstract int Components { get; }
     /// <summary>Colorant names of a Separation or DeviceN space; null for every other space.</summary>
     public virtual IReadOnlyList<string>? Colorants => null;
+    /// <summary>The /Attributes dictionary of a DeviceN space (8.6.6.5); null for every other space. Informational: screen conversion always uses the tint transform.</summary>
+    public virtual DeviceNAttributes? Attributes => null;
     public abstract RgbColor ToRgb(ReadOnlySpan<double> c);
     public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => ToRgb(c);
     public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => ToRgb(c, intent);
@@ -38,21 +43,8 @@ public abstract class PdfColorSpace
 
         public override RgbColor ToRgb(ReadOnlySpan<double> v)
         {
-            double c = C(v[0]), m = C(v[1]), y = C(v[2]), k = C(v[3]);
-            // Polynomial approximation of SWOP CMYK (as used by pdf.js) rather than naive 1-min(1,c+k).
-            var r = 255 + c * (-4.387332384609988 * c + 54.48615194189176 * m + 18.82290502165302 * y + 212.25662451639585 * k + -285.2331026137004)
-                + m * (1.7149763477362134 * m - 5.6096736904047315 * y + -17.873870861415444 * k - 5.497006427196366)
-                + y * (-2.5217340131683033 * y - 21.248923337353073 * k + 17.5119270841813)
-                + k * (-21.86122147463605 * k - 189.48180835922747);
-            var g = 255 + c * (8.841041422036149 * c + 60.118027045597366 * m + 6.871425592049007 * y + 31.159100130055922 * k - 79.2970844816548)
-                + m * (-15.310361306967817 * m + 17.575251261109482 * y + 131.35250912493976 * k - 190.9453302588951)
-                + y * (4.444339102852739 * y + 9.8632861493405 * k - 24.86741582555878)
-                + k * (-20.737325471181034 * k - 187.80453709719578);
-            var b = 255 + c * (0.8842522430003296 * c + 8.078677503112928 * m + 30.89978309703729 * y - 0.23883238689178934 * k + -14.183576799673286)
-                + m * (10.49593273432072 * m + 63.02378494754052 * y + 50.606957656360734 * k - 112.23884253719248)
-                + y * (0.03296041114873217 * y + 115.60384449646641 * k + -193.58209356861505)
-                + k * (-22.33816807309886 * k - 180.12613974708367);
-            return new(C(r / 255), C(g / 255), C(b / 255));
+            CmykConversion.ToRgb(v[0], v[1], v[2], v[3], out var r, out var g, out var b);
+            return new(r, g, b);
         }
     }
 
@@ -139,6 +131,9 @@ public abstract class PdfColorSpace
         return r;
     }
 
+    static bool ValidWhite(double[] w) => w.Length >= 3 && w.All(double.IsFinite) && w[0] > 0 && w[1] > 0 && w[2] > 0;
+    static double Gamma(double g) => double.IsFinite(g) && g > 0 ? g : 1;
+
     sealed class CalGray(double[] white, double gamma) : PdfColorSpace
     {
         readonly XyzToSrgb _x = new(white[0], white[1], white[2]);
@@ -165,9 +160,12 @@ public abstract class PdfColorSpace
     {
         if (f.Resolve(dictObj) is not PdfDictionary d) return rgb ? Rgb : Gray;
         var white = Nums(f, d.Get("WhitePoint"), 3, [0.9505, 1, 1.089]);
-        if (white[1] <= 0 || white[0] <= 0 || white[2] <= 0) return rgb ? Rgb : Gray;
-        if (!rgb) return new CalGray(white, f.Resolve(d.Get("Gamma")).AsNumber() ?? 1);
-        return new CalRgb(white, Nums(f, d.Get("Gamma"), 3, [1, 1, 1]), Nums(f, d.Get("Matrix"), 9, [1, 0, 0, 0, 1, 0, 0, 0, 1]));
+        if (!ValidWhite(white)) return rgb ? Rgb : Gray;
+        if (!rgb) return new CalGray(white, Gamma(f.Resolve(d.Get("Gamma")).AsNumber() ?? 1));
+        var g = Nums(f, d.Get("Gamma"), 3, [1, 1, 1]);
+        var m = Nums(f, d.Get("Matrix"), 9, [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        if (!m.All(double.IsFinite)) m = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+        return new CalRgb(white, [Gamma(g[0]), Gamma(g[1]), Gamma(g[2])], m);
     }
 
     sealed class Lab : PdfColorSpace
@@ -188,8 +186,10 @@ public abstract class PdfColorSpace
         }
     }
 
-    sealed class Indexed(PdfColorSpace baseCs, byte[] lookup, int hival) : PdfColorSpace
+    sealed class Indexed(PdfColorSpace baseCs, byte[] lookup, int hivalRaw) : PdfColorSpace
     {
+        // 8.6.6.3: hival is 0...255; clamp malformed values so index clamping never sees an inverted range.
+        readonly int hival = Math.Clamp(hivalRaw, 0, 255);
         readonly double[] _decode = baseCs.DefaultDecode(8);
         public override int Components => 1;
         public override double[] DefaultDecode(int bpc) => [0, (1 << bpc) - 1];
@@ -215,10 +215,11 @@ public abstract class PdfColorSpace
         }
     }
 
-    sealed class Tint(PdfColorSpace alt, PdfFunction fn, int n, bool allNone, string[] names) : PdfColorSpace
+    sealed class Tint(PdfColorSpace alt, PdfFunction fn, int n, bool allNone, string[] names, DeviceNAttributes? attributes = null) : PdfColorSpace
     {
         public override int Components => n;
         public override IReadOnlyList<string>? Colorants => names;
+        public override DeviceNAttributes? Attributes => attributes;
         public override double[] InitialColor => Enumerable.Repeat(1.0, n).ToArray();
 
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
@@ -229,8 +230,31 @@ public abstract class PdfColorSpace
         public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation)
         {
             if (allNone) return new(1, 1, 1);
-            return alt.ToRgb(fn.Evaluate(c.ToArray()), intent, blackPointCompensation);
+            var o = fn.Evaluate(c.ToArray());
+            // A tint transform that yields fewer values than the alternate needs leaves the rest at 0 instead of throwing.
+            if (o.Length < alt.Components) { var padded = new double[alt.Components]; o.CopyTo(padded, 0); o = padded; }
+            return alt.ToRgb(o, intent, blackPointCompensation);
         }
+    }
+
+    static DeviceNAttributes? ParseAttributes(PdfFile f, PdfObject? obj, PdfDictionary? resources, int depth)
+    {
+        if (f.Resolve(obj) is not PdfDictionary d) return null;
+        var subtype = f.Resolve(d.Get("Subtype")).AsName() is "NChannel" ? "NChannel" : "DeviceN";
+        PdfColorSpace? processCs = null; string[] processComponents = [];
+        if (f.Resolve(d.Get("Process")) is PdfDictionary p)
+        {
+            var pcs = TryParse(f, p.Get("ColorSpace"), resources, depth + 1);
+            processCs = pcs is PatternCs ? null : pcs;
+            if (f.Resolve(p.Get("Components")) is PdfArray pc) processComponents = pc.Items.Select(x => f.Resolve(x).AsName() ?? "").ToArray();
+        }
+        var colorants = new Dictionary<string, PdfColorSpace>(StringComparer.Ordinal);
+        if (f.Resolve(d.Get("Colorants")) is PdfDictionary cd)
+            foreach (var (name, v) in cd.Entries)
+                if (TryParse(f, v, resources, depth + 1) is { } sep and not PatternCs && sep.Colorants is { Count: 1 }) colorants[name] = sep;
+        string[] hints = [];
+        if (f.Resolve(d.Get("MixingHints")) is PdfDictionary mh) hints = mh.Entries.Select(e => e.Key).ToArray();
+        return new DeviceNAttributes(subtype, processCs, processComponents, colorants, hints);
     }
 
     /// <summary>Pattern colour space; underlying colour space used for uncoloured tiling patterns.</summary>
@@ -277,8 +301,8 @@ public abstract class PdfColorSpace
                     var lab = new Lab();
                     if (a.Count > 1 && f.Resolve(a[1]) is PdfDictionary d)
                     {
-                        if (f.Resolve(d.Get("WhitePoint")) is PdfArray wp && wp.Count >= 3) lab.White = wp.Items.Select(x => f.Resolve(x).AsNumber() ?? 1).ToArray();
-                        if (f.Resolve(d.Get("Range")) is PdfArray r && r.Count >= 4) lab.Range = r.Items.Select(x => f.Resolve(x).AsNumber() ?? 0).ToArray();
+                        if (f.Resolve(d.Get("WhitePoint")) is PdfArray wp && wp.Count >= 3 && Nums(f, wp, 3, lab.White) is var w && ValidWhite(w)) lab.White = w;
+                        if (f.Resolve(d.Get("Range")) is PdfArray r && r.Count >= 4 && Nums(f, r, 4, lab.Range) is var rg && rg.All(double.IsFinite)) lab.Range = rg;
                     }
                     return lab;
                 }
@@ -309,7 +333,8 @@ public abstract class PdfColorSpace
                     var alt = Parse(f, a[2], resources, depth + 1);
                     var fn = PdfFunction.Parse(f, a[3]);
                     if (fn is null) return null;
-                    return new Tint(alt, fn, Math.Max(1, names.Length), names.Length > 0 && names.All(x => x == "None"), names);
+                    var attrs = kind == "DeviceN" && a.Count > 4 ? ParseAttributes(f, a[4], resources, depth) : null;
+                    return new Tint(alt, fn, Math.Max(1, names.Length), names.Length > 0 && names.All(x => x == "None"), names, attrs);
                 }
             case "Pattern":
                 return new PatternCs(a.Count > 1 ? Parse(f, a[1], resources, depth + 1) : null);
