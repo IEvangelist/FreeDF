@@ -121,15 +121,16 @@ const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
   if (options?.method === 'POST' && ['/api/new', '/api/open'].includes(url.split('?')[0])) {
+    selectionEpoch++;
     clip = null; pendingUploads.clear(); assetImages.clear();
   }
   return response;
 };
 const assetImages = new Map();
-const imageUrl = url => {
+const imageUrl = async url => {
   if (!host) return new URL(url, location.href).href;
   if (!url.startsWith('/api/asset/')) return host.image(url);
-  if (!assetImages.has(url)) assetImages.set(url, host.image(url));
+  if (!assetImages.has(url)) assetImages.set(url, host.image(url).catch(error => { assetImages.delete(url); throw error; }));
   return assetImages.get(url);
 };
 function pruneAssetImages() {
@@ -218,14 +219,24 @@ function spanProps() {
 }
 
 let thumbnailObserver;
+async function setImage(img, url) {
+  img.dataset.url = url;
+  const current = () => img.isConnected && img.dataset.url === url;
+  try {
+    const source = await imageUrl(url);
+    if (!current()) return;
+    img.src = source;
+    await img.decode();
+    if (current()) { img.style.opacity = '1'; img.dataset.loadedUrl = url; }
+  } catch (error) {
+    if (current()) throw error;
+  }
+}
 function queueThumbnail(img, url) {
   img.dataset.url = url;
   setTimeout(() => {
     if (!img.isConnected || img.dataset.url !== url) return;
-    try {
-      img.onload = () => { img.style.opacity = '1'; img.dataset.loadedUrl = url; };
-      img.src = imageUrl(url);
-    } catch (e) { reportError(e); }
+    setImage(img, url).catch(reportError);
   }, 0);
 }
 async function refresh() {
@@ -247,7 +258,7 @@ async function refresh() {
       if (a === 'l') act(() => post(`/api/rotate/${i}/270`));
       else if (a === 'r') act(() => post(`/api/rotate/${i}/90`));
       else if (a === 'x') { sel = i; act(() => post(`/api/delete/${i}`)); }
-      else { flush().then(() => { sel = i; select(); }); }
+      else if (i !== sel) { flush().then(() => { sel = i; select(); }); }
     };
     d.ondragstart = () => dragFrom = i;
     d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
@@ -265,25 +276,34 @@ async function refresh() {
   t.querySelectorAll('img').forEach(img => thumbnailObserver.observe(img));
 }
 
+let selectionEpoch = 0;
 async function select() {
-  await itemSave;
-  undo = [];
-  await post('/api/asset-history');
-  document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
+  const epoch = ++selectionEpoch, page = sel;
   const v = $('view');
-  if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
-  items = await (await request(`/api/page/${sel}/items`)).json();
-  spans = await (await request(`/api/page/${sel}/text`)).json();
-  objs = await (await request(`/api/page/${sel}/objects`)).json();
-  fields = await (await request('/api/fields')).json();
-  origKey = okey();
-  cur = null; curObj = null; curSpan = null; undo = [];
-  pruneAssetImages();
-  build();
+  v.inert = true;
+  try {
+    await itemSave;
+    if (epoch !== selectionEpoch) return;
+    undo = [];
+    await post('/api/asset-history');
+    if (epoch !== selectionEpoch) return;
+    document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
+    if (!state.pageCount) { v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
+    const nextItems = await (await request(`/api/page/${page}/items`)).json();
+    const nextSpans = await (await request(`/api/page/${page}/text`)).json();
+    const nextObjects = await (await request(`/api/page/${page}/objects`)).json();
+    const nextFields = await (await request('/api/fields')).json();
+    if (epoch !== selectionEpoch || page !== sel) return;
+    items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields;
+    origKey = okey();
+    cur = null; curObj = null; curSpan = null; undo = [];
+    pruneAssetImages();
+    await build();
+  } finally { if (epoch === selectionEpoch) v.inert = false; }
 }
 
 // Page geometry: the layer lives in unrotated MediaBox space (points, y down); the CSS transform matches the page /Rotate.
-function build() {
+async function build() {
   const p = state.pages[sel], v = $('view'), r = p.rotation;
   const swap = r === 90 || r === 270;
   const w0 = swap ? p.height : p.width, h0 = swap ? p.width : p.height;
@@ -293,12 +313,14 @@ function build() {
   const dw = w0 * S, dh = h0 * S, Lw = p.width * S, Lh = p.height * S;
   geom = { r, dw, dh, Lw, Lh };
   const dpi = Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))));
-  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" alt="Current PDF page" src="${imageUrl(`/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}`)}"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
+  v.innerHTML = `<div id="page" style="width:${dw}px;height:${dh}px"><img id="base" alt="Current PDF page"><div id="layer" style="width:${Lw}px;height:${Lh}px"></div></div>`;
+  const raster = setImage($('base'), `/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}&t=${Date.now()}`);
   const tf = { 0: '', 90: `translate(${dw}px,0) rotate(90deg)`, 180: `translate(${dw}px,${dh}px) rotate(180deg)`, 270: `translate(0,${dh}px) rotate(270deg)` }[r] ?? '';
   const layer = $('layer'); layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
   layer.onpointerdown = layerDown;
   $('zv').textContent = Math.round(S * 72 / 96 * 100) + '%'; fitP0 = fitP; navUpdate();
   paint(); props();
+  await raster;
 }
 
 // Client pixel position -> layer pixel position (inverse of the rotation transform).
@@ -371,7 +393,9 @@ function paint() {
       if (it.orig != null) { e.style.color = 'transparent'; e.style.textDecoration = 'none'; }
     } else {
       e.style.width = it.w * S + 'px'; e.style.height = it.h * S + 'px';
-      if (it.type === 'image') e.innerHTML = `<img alt="Inserted image" src="${imageUrl(`/api/asset/${it.asset}`)}">`;
+      if (it.type === 'image') {
+        e.innerHTML = '<img alt="Inserted image">';
+      }
       else {
         e.style.background = it.fill || 'transparent';
         e.style.border = it.stroke && it.strokeWidth > 0 ? `${it.strokeWidth * S}px solid ${it.stroke}` : 'none';
@@ -382,6 +406,7 @@ function paint() {
     if (it.type === 'text') e.ondblclick = () => editText(e, it);
     if (it === cur && !editing) boxHandles(e, it);
     layer.appendChild(e);
+    if (it.type === 'image') setImage(e.querySelector('img'), `/api/asset/${it.asset}`).catch(reportError);
   }
 }
 
@@ -563,7 +588,7 @@ function saveObj(o) {
       const response = await request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
       if (!response.ok) throw new Error((await response.text()) || `${url} ${response.status}`);
       if (sel === page) updateBase();
-      const th = document.querySelectorAll('.thumb img')[page]; if (th) th.src = imageUrl(`/api/page/${page}.png?dpi=40&t=${Date.now()}`);
+      const th = document.querySelectorAll('.thumb img')[page]; if (th) queueThumbnail(th, `/api/page/${page}.png?dpi=40&t=${Date.now()}`);
       await refreshDirty();
       objectSaveErrors.delete(url);
     } catch (error) {
@@ -681,7 +706,7 @@ function props() {
       await request(`/api/field?n=${encodeURIComponent(f.name)}&v=${encodeURIComponent(v)}`, { method: 'POST' });
       f.value = v; status(`Set ${f.name}`);
       updateBase();
-      document.querySelectorAll('.thumb img').forEach((im, k) => im.src = imageUrl(`/api/page/${k}.png?dpi=40&t=${Date.now()}`));
+      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&t=${Date.now()}`));
     });
     return;
   }
@@ -729,7 +754,7 @@ function props() {
 
 function updateBase() {
   const b = $('base');
-  if (b) b.src = imageUrl(`/api/page/${sel}.png?dpi=${Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))))}&bare=${!preview}&t=${Date.now()}`);
+  if (b) return setImage(b, `/api/page/${sel}.png?dpi=${Math.min(300, Math.max(40, Math.round(72 * S * (devicePixelRatio || 1))))}&bare=${!preview}&t=${Date.now()}`);
 }
 async function act(fn) {
   status(host ? 'Processing locally in WebAssembly...' : 'Processing...');
@@ -846,10 +871,10 @@ $('fq').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { e.preve
 async function printDoc() {
   if (!state.pageCount) return; await flush();
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
-  const imgs = state.pages.map((p, i) => {
+  const imgs = (await Promise.all(state.pages.map(async (p, i) => {
     const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
-    return `<section style="width:${w}pt;height:${h}pt"><img src="${imageUrl(`/api/page/${i}.png?dpi=150&t=${Date.now()}`)}"></section>`;
-  }).join('');
+    return `<section style="width:${w}pt;height:${h}pt"><img src="${await imageUrl(`/api/page/${i}.png?dpi=150&t=${Date.now()}`)}"></section>`;
+  }))).join('');
   f.srcdoc = `<!doctype html><style>@page{margin:0}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{width:100%;height:100%;display:block}</style>${imgs}`;
   f.onload = async () => {
     const d = f.contentDocument; await Promise.all([...d.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; })));

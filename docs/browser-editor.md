@@ -3,7 +3,7 @@
 The Pages build runs the **same editor UI and C# PDF engine** as
 `tools/AdoBye.EditorWeb`, entirely in browser WebAssembly. There is no PDF API
 server. Opening a PDF reads a local `File`; parsing, rendering, edits and exports
-stay in the tab's memory. Downloads use local blobs. There is no telemetry,
+stay in a dedicated local browser worker. Downloads use local blobs. There is no telemetry,
 external font request, PDF upload, service worker, or browser persistence of PDF
 contents. Closing/reloading the tab discards its document; save a copy first.
 The host still makes ordinary GET requests for its static app/runtime assets.
@@ -72,8 +72,8 @@ required on Pages. `.nojekyll` preserves the `_framework` folder.
 
 The existing PDF engine's format/coverage limitations still apply (see
 `spec-matrix.md`). Complex or large documents and high-DPI multi-page exports
-can block the tab or exhaust browser memory. This host deliberately uses
-single-threaded WASM for Pages compatibility, and disables trimming to preserve
+can take substantial worker time or exhaust browser memory. This host deliberately uses
+single-threaded WASM in a dedicated module worker for Pages compatibility, and disables trimming to preserve
 the shared editor's reflection-based JSON payloads. Initial download is larger
 than a trimmed/AOT-specialized app; no `wasm-tools` workload is required.
 
@@ -111,6 +111,55 @@ unchanged input/cancel, exact save/reopen PNGs and every text run's geometry,
 then verifies supported actual edits retain embedded font, baseline and matrix.
 
 ## Measured editor performance
+
+### Input responsiveness during fresh PDF work
+
+The PDF runtime now loads directly through the supported `.NET` JavaScript
+runtime/`JSExport` API in `worker.js`; no Blazor runtime or PDF engine runs on the
+UI thread. Commands remain FIFO and failures reject the caller without poisoning
+the next retry. Page/asset/print images are asynchronous. Superseded image targets
+and stale page-selection responses cannot overwrite current UI state.
+The existing browser `Parallel.For` guards and `WasmEnableThreads=false` remain:
+there are no shared-memory threads, service workers, or COOP/COEP requirements.
+
+The same four fixtures, settings and three fresh Chromium contexts were measured
+again at the selection checkpoint and with worker execution. The profiler now
+adds an uncached 137-dpi render, sends a trusted CDP pointer event while it is in
+flight, and measures delivery of independent 16-ms worker heartbeat messages.
+It enforces a 200-ms fresh-render input/heartbeat goal for the worker host.
+Medians in milliseconds:
+
+| Sample | Pointer dispatch acknowledgement, before → worker | Maximum heartbeat delivery delay per run, before → worker | Fresh-work phase wall time, before → worker |
+|---|---:|---:|---:|
+| Embedded typography | 536 → 2 | 562 → 0.7 | 618 → 954 |
+| Vector graphics | 402 → 2 | 429 → 0.2 | 486 → 914 |
+| Images | 784 → 2 | 807 → 0.2 | 867 → 1297 |
+| Multipage report | 1140 → 2 | 1169 → 0.3 | 1225 → 1526 |
+
+Across all measured steady-state phases/runs, worst heartbeat delay decreased
+from 1221 ms to 42 ms. Image text-edit main-thread blocking
+`sum(max(longTaskMs-50, 0))` decreased from a 746-ms median to zero while total
+edit wall time was about 1224 → 1306 ms. Zoom wall times were 374/292/661/608 ms
+before and 439/325/739/689 ms afterward:
+this change removes UI blocking, not the underlying raster computation.
+After moving work off-thread, lazy thumbnail jobs can still be queued when the
+first page becomes ready; their time now lands in the following fresh-work phase
+(2-5 total commands, rather than one). Those phase wall times are therefore not
+isolated decoder CPU measurements. FIFO thumbnail/raster work can still delay a
+later PDF result even though input, panels and pointer handling remain responsive.
+
+First-page PNG hashes matched exactly for all four fixtures in all three runs.
+Cold-ready times were 973/966/901 ms before and 865/1084/980 ms after in these
+uncompressed local runs; no cold-download optimization is claimed.
+Main-thread CDP task time during fresh-work phases dropped from roughly
+428-1233 ms to 10-20 ms, but those metrics now exclude the worker's CPU.
+Observed main-context JS heap was 4.9-23.5 MiB before and 2.9-20.2 MiB after,
+not the managed/linear WASM heap. There is still one PDF runtime/managed heap,
+plus message/base64 and raster copies crossing the worker boundary. Large files,
+high-resolution exports and transient decoder memory remain bounded only by
+browser limits, not by the small encoded-PNG cache.
+
+### Earlier redundant-work reduction
 
 The Chromium runner also supports `--profile <published-wwwroot-or-url> <output.json> <absolute-pdf-paths...>`.
 It runs three fresh, cache-disabled browser contexts at 1440x1000 and device scale 1,
@@ -156,7 +205,8 @@ Save/download performs three local commands instead of 10-15, with no page or
 thumbnail rerenders. Median save CPU task time drops from 468/760/1025/770 ms
 to 38/39/90/29 ms (text/vector/image/report), and median save blocking above the
 50 ms long-task threshold drops from 306/425/841/621 ms to 0/0/13/0 ms.
-Image text-edit blocking falls from 1213 to 768 ms; it is still too long.
+At that checkpoint image text-edit blocking fell from 1213 to 768 ms; the
+unacceptable residual motivated the subsequent worker slice above.
 
 Cold startup was measured separately: live 3960/1428/1203 ms (11,663,034
 transferred bytes each), local before 1306/1042/1089 ms and after
@@ -165,10 +215,10 @@ are not comparable download benchmarks (local baseline transferred 30,604,390
 bytes). This slice does not claim a startup/bundle-size improvement.
 JavaScript heap readings vary with GC (roughly 5-20 MiB in these runs) and do
 not include the managed WASM heap; no managed-allocation improvement is claimed.
-Fresh rasterization/image decode and zoom still execute synchronously on the
-main thread, and the 8 MiB encoded cache does not bound transient raster/decoder
-memory. Moving that work off-thread or further reducing raster CPU remains a
-follow-up, not a solved responsiveness claim.
+At that checkpoint fresh rasterization/image decode and zoom still ran
+synchronously on the main thread. The worker slice above subsequently moved
+that work off the UI thread; reducing total raster CPU and bounding transient
+raster/decoder memory remain follow-ups.
 
 Validation for this slice passes 142/142 focused session/object/structure/action
 cases and 1549/1549 full Release cases, with zero failures/skips. The incremental

@@ -59,6 +59,7 @@ try
     }
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
+    Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
     if (textSelectionOnly)
     {
         await EditorTextSelection.Run(page);
@@ -79,7 +80,7 @@ try
     await text.FillAsync("Browser local round trip");
     await text.PressAsync("Escape");
     await page.Locator("#prev").ClickAsync();
-    await page.WaitForFunctionAsync("document.getElementById('base').naturalWidth > 0");
+    await page.WaitForFunctionAsync("document.getElementById('prev').classList.contains('on') && document.getElementById('base').dataset.url.includes('bare=false') && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url && document.getElementById('base').naturalWidth > 0");
     Check(await page.EvaluateAsync<bool>("document.getElementById('base').src.startsWith('data:image/png;base64,')"), "Local rendered preview");
     Check(await page.EvaluateAsync<bool>("""
         () => {
@@ -182,6 +183,16 @@ try
     // The intentionally invalid PDF is logged by both the C# boundary and UI error reporter.
     errors.Clear();
     await EditorTextSelection.Run(page);
+    await page.EvaluateAsync("() => { window.renderProbe = pdfHost.image('/api/page/0.png?dpi=149'); }");
+    await page.Locator("#zi").ClickAsync();
+    await page.Locator("#zi").ClickAsync();
+    await page.Locator("#zo").ClickAsync();
+    await page.Locator(".thumb").Nth(1).ClickAsync();
+    await page.Locator(".thumb").First.ClickAsync();
+    await page.EvaluateAsync("async () => { await window.renderProbe; }");
+    await page.WaitForFunctionAsync("!document.getElementById('view').inert && document.getElementById('pn').value === '1' && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url");
+    Check(await page.EvaluateAsync<bool>("async () => { const img = document.getElementById('base'); return img.src === await pdfHost.image(img.dataset.url); }"),
+        "Queued obsolete zoom/navigation renders cannot replace the final selected page");
     await page.SetViewportSizeAsync(390, 844);
     await page.ReloadAsync();
     await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");

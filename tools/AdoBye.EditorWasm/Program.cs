@@ -1,19 +1,18 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
-using Microsoft.JSInterop;
+using System.Runtime.InteropServices.JavaScript;
+using System.Runtime.Versioning;
 using PortableDocument.Content;
 
-var host = WebAssemblyHostBuilder.CreateDefault(args).Build();
-await host.Services.GetRequiredService<IJSRuntime>().InvokeVoidAsync("editorRuntimeReady");
-await host.RunAsync();
+return;
 
-public static class BrowserEditor
+[SupportedOSPlatform("browser")]
+public static partial class BrowserEditor
 {
     static readonly EditorSession Session = new(new FontCatalog(), new BrowserFontFallback());
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public sealed record Command(string Method, string Path, Dictionary<string, string> Query, string? Body, string? FileName);
 
-    [JSInvokable]
+    [JSExport]
     public static string Request(string command)
     {
         try

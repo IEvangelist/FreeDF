@@ -10,6 +10,13 @@ static class EditorPerformance
     const string Observe = """
         window.profileCommands = [];
         window.profileLongTasks = [];
+        window.profileHeartbeatDelays = [];
+        window.profileInputDelays = [];
+        const heartbeatUrl = URL.createObjectURL(new Blob(['setInterval(()=>postMessage(performance.timeOrigin+performance.now()),16)'], {type:'text/javascript'}));
+        const heartbeat = new Worker(heartbeatUrl);
+        URL.revokeObjectURL(heartbeatUrl);
+        heartbeat.onmessage = e => profileHeartbeatDelays.push(performance.timeOrigin + performance.now() - e.data);
+        addEventListener('pointermove', e => profileInputDelays.push(performance.now()-e.timeStamp));
         new PerformanceObserver(list => {
           for (const e of list.getEntries()) window.profileLongTasks.push({start: e.startTime, ms: e.duration});
         }).observe({type:'longtask', buffered:true});
@@ -27,8 +34,12 @@ static class EditorPerformance
                 }
               : url => {
                   const start = performance.now();
-                  try { return original(url); }
-                  finally { profileCommands.push({url, start, ms:performance.now()-start}); }
+                  const record = () => profileCommands.push({url, start, ms:performance.now()-start});
+                  try {
+                    const value = original(url);
+                    if (value && typeof value.then === 'function') return value.finally(record);
+                    record(); return value;
+                  } catch (e) { record(); throw e; }
                 };
           }
         }
@@ -77,6 +88,7 @@ static class EditorPerformance
                 foreach (var document in documents)
                 {
                     var name = Path.GetFileName(document);
+                    double? inputAckMs = null;
                     await Measure("open", async () =>
                     {
                         await page.Locator("#open").SetInputFilesAsync(Path.GetFullPath(document));
@@ -84,6 +96,19 @@ static class EditorPerformance
                     });
                     var baseImage = await page.Locator("#base").GetAttributeAsync("src");
                     records.Add(new { repeat, document = name, phase = "first-page-image", hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Convert.FromBase64String(baseImage!.Split(',')[1]))) });
+                    await Measure("fresh-render-input", async () =>
+                    {
+                        var render = page.EvaluateAsync("async () => { await new Promise(resolve=>setTimeout(resolve,20)); await pdfHost.image('/api/page/0.png?dpi=137'); }");
+                        await Task.Delay(50);
+                        var watch = System.Diagnostics.Stopwatch.StartNew();
+                        await cdp.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
+                        {
+                            ["type"] = "mouseMoved", ["x"] = 20, ["y"] = 20,
+                            ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0,
+                        });
+                        inputAckMs = watch.Elapsed.TotalMilliseconds;
+                        await render;
+                    });
                     await Measure("zoom", async () =>
                     {
                         await page.Locator("#zi").ClickAsync();
@@ -127,7 +152,7 @@ static class EditorPerformance
                         await Measure("edit-text", async () =>
                         {
                             await span.ClickAsync(new() { Force = true });
-                            var text = page.Locator("#props textarea[data-k=text]");
+                            var text = page.Locator("#props textarea[data-k=text], #props textarea[data-original-text]");
                             await text.FillAsync("Measured editor change");
                             await text.PressAsync("Tab");
                             await Saved(page);
@@ -137,19 +162,23 @@ static class EditorPerformance
                     {
                         await page.Locator("#dl").ClickAsync();
                         var download = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
+                        await page.Locator(".mdl").WaitForAsync(new() { State = WaitForSelectorState.Detached });
                         if (await download.FailureAsync() is { } failure) throw new Exception(failure);
                     });
                     async Task Measure(string phase, Func<Task> action)
                     {
-                        await page.EvaluateAsync("() => { profileCommands=[]; profileLongTasks=[]; window.profileStart=performance.now(); }");
+                        await page.EvaluateAsync("() => { profileCommands=[]; profileLongTasks=[]; profileHeartbeatDelays=[]; profileInputDelays=[]; window.profileStart=performance.now(); }");
                         var before = await cdp.SendAsync("Performance.getMetrics");
                         await action();
                         await Frames(page);
-                        var result = await page.EvaluateAsync<JsonElement>("({ms:performance.now()-profileStart, commands:profileCommands, longTasks:profileLongTasks})");
+                        var result = await page.EvaluateAsync<JsonElement>("({ms:performance.now()-profileStart, commands:profileCommands, longTasks:profileLongTasks, heartbeatDelays:profileHeartbeatDelays, inputDelays:profileInputDelays})");
                         var after = await cdp.SendAsync("Performance.getMetrics");
-                        records.Add(new { repeat, document = name, phase, result, before, after });
+                        records.Add(new { repeat, document = name, phase, result, inputAckMs = phase == "fresh-render-input" ? inputAckMs : null, before, after });
                         Console.WriteLine($"{repeat} {name} {phase}: {result.GetProperty("ms").GetDouble():F0} ms, {result.GetProperty("commands").GetArrayLength()} commands");
                         await File.WriteAllTextAsync(output, JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true }));
+                        if (phase == "fresh-render-input" && await page.EvaluateAsync<bool>("pdfHost.execution === 'worker'") &&
+                            (inputAckMs >= 200 || result.GetProperty("heartbeatDelays").EnumerateArray().Any(delay => delay.GetDouble() >= 200)))
+                            throw new Exception($"{name}: worker render exceeded the 200 ms input/heartbeat latency goal.");
                     }
                 }
             }

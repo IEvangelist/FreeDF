@@ -15,7 +15,7 @@ static class EditorTextSelection
         {
             await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = name, MimeType = "application/pdf", Buffer = bytes });
             await page.WaitForFunctionAsync("name => document.getElementById('name').textContent === name && document.getElementById('status').textContent.startsWith('Ready.') && document.getElementById('base')?.naturalWidth > 0", name);
-            await page.Locator(".thumb").First.ClickAsync();
+            if (await page.Locator("#pn").InputValueAsync() != "1") await page.Locator(".thumb").First.ClickAsync();
             await page.WaitForFunctionAsync("document.getElementById('pn').value === '1' && document.getElementById('base')?.naturalWidth > 0");
             var before = await page.EvaluateAsync<string>("document.getElementById('base').src");
             var state = await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/state')).json())");
@@ -46,7 +46,7 @@ static class EditorTextSelection
                 name + ": untouched save retains every text run's font and geometry");
             await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "round-trip-" + name, MimeType = "application/pdf", Buffer = saved });
             await page.WaitForFunctionAsync("name => document.getElementById('name').textContent === 'round-trip-' + name && document.getElementById('status').textContent.startsWith('Ready.') && document.getElementById('base')?.naturalWidth > 0", name);
-            await page.Locator(".thumb").First.ClickAsync();
+            if (await page.Locator("#pn").InputValueAsync() != "1") await page.Locator(".thumb").First.ClickAsync();
             await page.WaitForFunctionAsync("document.getElementById('pn').value === '1' && document.getElementById('base')?.naturalWidth > 0");
             Check(await page.EvaluateAsync<string>("document.getElementById('base').src") == before,
                 name + ": untouched save/reopen retains exact rendered pixels");
