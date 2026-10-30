@@ -40,6 +40,17 @@ static class EditorPageImage
                 ViewportSize = new() { Width = 1440, Height = 1000 },
                 DeviceScaleFactor = 1,
             });
+            var unexpectedRequests = new List<string>();
+            var site = new Uri(source);
+            context.Request += (_, request) =>
+            {
+                var url = new Uri(request.Url);
+                if (url.Scheme is not ("http" or "https")) return;
+                if (request.Method != "GET" || url.GetLeftPart(UriPartial.Authority) != site.GetLeftPart(UriPartial.Authority) ||
+                    (!url.AbsolutePath.StartsWith("/csharp-pdf/", StringComparison.Ordinal) && url.AbsolutePath != "/favicon.ico") ||
+                    url.AbsolutePath.Contains("/api/", StringComparison.Ordinal))
+                    unexpectedRequests.Add(request.Method + " " + request.Url);
+            };
             page = await context.NewPageAsync();
             page.SetDefaultTimeout(30000);
             page.PageError += (_, error) => records.Add(new { type = "page-error", message = error });
@@ -196,6 +207,9 @@ static class EditorPageImage
                 throw new Exception($"Active page image disappeared in one of {frames.GetArrayLength()} sampled frames.");
             }
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "page-image-final.png") });
+            records.Add(new { type = "network-check", unexpectedRequests });
+            if (unexpectedRequests.Count > 0)
+                throw new Exception("Unexpected external/upload/API traffic: " + string.Join(", ", unexpectedRequests));
             await File.WriteAllTextAsync(Path.Combine(output, "page-image-trace.json"),
                 JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"PASS: active page image remained decoded and nonblank through zoom, sidebar and page-navigation stress on {source}.");
