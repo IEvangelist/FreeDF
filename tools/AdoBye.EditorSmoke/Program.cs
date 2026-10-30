@@ -13,6 +13,12 @@ if (args is ["--raster-profile", var rasterSite, var rasterOutput, var rasterPdf
     return;
 }
 
+if (args is ["--profile-ci", var ciProfile, var ciPolicy])
+{
+    await EditorPerformanceCi.Run(ciProfile, ciPolicy);
+    return;
+}
+
 if (args is ["--profile-summary", var profile])
 {
     var misses = await EditorPerformanceReport.Write(profile);
@@ -42,7 +48,8 @@ if (args.Length == 4 && args[0] == "--page-image")
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge] <published-wwwroot>");
+var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -94,14 +101,25 @@ try
     {
         if (booting && Framework(response.Url))
         {
-            if (response.Status >= 500) { bootFailures[ResourceKey(response.Url)] = $"HTTP {response.Status}"; return; }
+            if (response.Status >= 500)
+            {
+                var key = ResourceKey(response.Url);
+                bootSuccesses[key] = false;
+                bootFailures[key] = $"HTTP {response.Status}";
+                return;
+            }
             if (response.Ok) bootSuccesses[ResourceKey(response.Url)] = true;
         }
         if (response.Status >= 400) errors.Enqueue($"{response.Status} {response.Url}");
     };
     context.RequestFailed += (_, request) =>
     {
-        if (booting && Framework(request.Url)) bootFailures[ResourceKey(request.Url)] = request.Failure ?? "Network failure";
+        if (booting && Framework(request.Url))
+        {
+            var key = ResourceKey(request.Url);
+            bootSuccesses[key] = false;
+            bootFailures[key] = request.Failure ?? "Network failure";
+        }
         else errors.Enqueue($"Request failed: {request.Url}: {request.Failure}");
     };
     var injectBootRetry = Environment.GetEnvironmentVariable("EDITOR_SMOKE_TRANSIENT_BOOT") == "1";
@@ -121,7 +139,7 @@ try
     }
     booting = false;
     var bootRetries = await page.EvaluateAsync<int>("pdfHost.bootRetries");
-    var recovered = bootRetries > 0 && !bootFailures.IsEmpty && bootFailures.Keys.All(bootSuccesses.ContainsKey);
+    var recovered = bootRetries > 0 && !bootFailures.IsEmpty && bootFailures.Keys.All(key => bootSuccesses.GetValueOrDefault(key));
     Check(bootFailures.IsEmpty || recovered, "Every transient framework delivery failure recovered.");
     Check(!injectBootRetry || injectedBootFailure && recovered, "Injected transient delivery failure is recorded and recovered.");
     foreach (var error in bootConsole) if (!recovered) errors.Enqueue(error);
@@ -129,6 +147,12 @@ try
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
     Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
+    if (jsonSafetyOnly)
+    {
+        await EditorJsonSafety.Run(context, address + "/csharp-pdf/");
+        Check(network.IsEmpty && errors.IsEmpty, "No unexpected JSON-safety browser errors or traffic.");
+        return;
+    }
     if (textSelectionOnly)
     {
         await EditorTextSelection.Run(page);
@@ -296,6 +320,7 @@ try
     Check(await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).IsVisibleAsync(), "Mobile file controls");
     await page.Keyboard.PressAsync("Escape");
     if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-mobile.png") });
+    await EditorJsonSafety.Run(context, address + "/csharp-pdf/");
     Check(network.IsEmpty, "No uploads, API requests, external requests or root-relative assets: " + string.Join(", ", network));
     Check(errors.IsEmpty, "No browser errors: " + string.Join(", ", errors));
     Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo and clipboard paste after navigation/history release, error recovery, mobile layout, and no outbound PDF traffic.");

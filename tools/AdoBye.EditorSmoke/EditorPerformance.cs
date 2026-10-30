@@ -124,8 +124,8 @@ static class EditorPerformance
                     await SidebarProbe(page, repeat, name, "mobile", 390, output, records);
                     await page.SetViewportSizeAsync(1440, 1000);
                     await Frames(page);
-                    var baseImage = await page.Locator("#base").GetAttributeAsync("src");
-                    var png = Convert.FromBase64String(baseImage!.Split(',')[1]);
+                    var baseImage = await page.EvaluateAsync<string>("() => pdfHost.image('/api/page/0.png?dpi=41')");
+                    var png = Convert.FromBase64String(baseImage.Split(',')[1]);
                     var pixels = PortableDocument.Render.PngWriter.Decode(png);
                     records.Add(new { repeat, document = name, phase = "first-page-image",
                         hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(png)),

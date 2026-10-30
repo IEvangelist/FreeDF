@@ -12,7 +12,6 @@ static class EditorMerge
         var entries = errors.ToArray();
         string[] stack =
         [
-            "   at EditorSession.ImportRange(String range, Int32 count, String label)",
             "   at EditorSession.Handle(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)",
             "   at BrowserEditor.Request(String command)",
         ];
@@ -20,6 +19,8 @@ static class EditorMerge
         {
             if (!ExpectedError(entries[i])) { if (!otherExpected(entries[i])) return false; continue; }
             if (!entries[i].StartsWith("System.ArgumentException:", StringComparison.Ordinal)) continue;
+            // AOT may inline ImportRange; the two boundary frames must still match.
+            if (i + 1 < entries.Length && entries[i + 1] == "   at EditorSession.ImportRange(String range, Int32 count, String label)") i++;
             foreach (var frame in stack)
                 if (++i >= entries.Length || entries[i] != frame) return false;
         }
@@ -60,10 +61,9 @@ static class EditorMerge
         Check(await page.EvaluateAsync<bool>("!!document.activeElement?.closest('.mrow')"), "Focus survives removal.");
         await page.Keyboard.PressAsync("Escape");
         Check(await dialog.CountAsync() == 0, "Escape closes after reordering/removal.");
-        await page.Locator("#fileBtn").FocusAsync();
-        await page.Keyboard.PressAsync("Enter");
-        await page.GetByRole(AriaRole.Menuitem, new() { Name = "Merge PDFs…" }).FocusAsync();
-        var reopen = await page.RunAndWaitForFileChooserAsync(() => page.Keyboard.PressAsync("Enter"));
+        await page.Locator("#fileBtn").PressAsync("Enter");
+        var reopen = await page.RunAndWaitForFileChooserAsync(() =>
+            page.GetByRole(AriaRole.Menuitem, new() { Name = "Merge PDFs…" }).PressAsync("Enter"));
         await reopen.SetFilesAsync(Sample("20-report.pdf"));
         await dialog.Locator(".mrow").Nth(0).WaitForAsync();
         var keyboardChooser = await page.RunAndWaitForFileChooserAsync(() => dialog.Locator("#mga").PressAsync("Enter"));

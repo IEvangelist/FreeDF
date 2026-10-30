@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -30,8 +31,35 @@ static class EditorRasterProfile
             await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 1000 } });
             var page = await context.NewPageAsync();
             page.SetDefaultTimeout(180000);
+            var main = await context.NewCDPSessionAsync(page);
+            var traceReady = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            main.Event("Tracing.tracingComplete").OnEvent += (_, data) =>
+                traceReady.SetResult(data!.Value.GetProperty("stream").GetString()!);
+            await main.SendAsync("Tracing.start", new Dictionary<string, object>
+                { ["categories"] = "devtools.timeline,v8,disabled-by-default-v8.compile", ["transferMode"] = "ReturnAsStream" });
+            await main.SendAsync("Profiler.enable");
+            await main.SendAsync("Profiler.start");
             await page.GotoAsync(address + "/csharp-pdf/");
             await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+            var startup = (await main.SendAsync("Profiler.stop"))!.Value;
+            await File.WriteAllTextAsync(Path.Combine(output, "startup.cpuprofile"), startup.GetProperty("profile").GetRawText());
+            await main.SendAsync("Tracing.end");
+            var traceStream = await traceReady.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var trace = new StringBuilder();
+            try
+            {
+                while (true)
+                {
+                    var chunk = (await main.SendAsync("IO.read", new Dictionary<string, object> { ["handle"] = traceStream }))!.Value;
+                    var data = chunk.GetProperty("data").GetString()!;
+                    trace.Append(chunk.TryGetProperty("base64Encoded", out var encoded) && encoded.GetBoolean()
+                        ? Encoding.UTF8.GetString(Convert.FromBase64String(data)) : data);
+                    if (chunk.GetProperty("eof").GetBoolean()) break;
+                }
+            }
+            finally { await main.SendAsync("IO.close", new Dictionary<string, object> { ["handle"] = traceStream }); }
+            await File.WriteAllTextAsync(Path.Combine(output, "startup.trace.json"), trace.ToString());
+            await main.DetachAsync();
             await page.Locator("#open").SetInputFilesAsync(Path.GetFullPath(document));
             await page.WaitForFunctionAsync("document.getElementById('base')?.naturalWidth > 0 && document.getElementById('status').textContent.startsWith('Ready.')");
             await page.WaitForFunctionAsync("document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl");
@@ -66,7 +94,7 @@ static class EditorRasterProfile
             }
             await Worker("Profiler.enable");
             var measurements = new List<JsonElement>();
-            foreach (var dpi in new[] { 137, 240 })
+            foreach (var dpi in new[] { 41, 137, 240 })
             {
                 await Worker("Profiler.start");
                 var measurement = await page.EvaluateAsync<JsonElement>("""
