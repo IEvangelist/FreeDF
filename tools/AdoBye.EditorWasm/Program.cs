@@ -31,7 +31,7 @@ public static partial class BrowserEditor
                 Console.Error.WriteLine(message);
                 return JsonSerializer.Serialize(new { error = message }, Json);
             }
-            Console.Error.WriteLine(e);
+            Console.Error.WriteLine(e is NotSupportedException ? e.Message : e);
             return JsonSerializer.Serialize(new { error = e.Message }, Json);
         }
     }

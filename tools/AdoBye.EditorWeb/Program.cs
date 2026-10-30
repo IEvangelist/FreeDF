@@ -15,7 +15,7 @@ app.MapMethods("/api/{**path}", ["GET", "POST", "PUT"], async (HttpRequest reque
 {
     byte[]? body = null;
     string? uploadName = null;
-    if (request.HasFormContentType && request.Path.Value is "/api/open" or "/api/import" or "/api/inspect" or "/api/asset")
+    if (request.HasFormContentType && request.Path.Value is "/api/open" or "/api/import" or "/api/import-batch" or "/api/inspect" or "/api/asset")
     {
         var form = await request.ReadFormAsync();
         var file = form.Files.FirstOrDefault() ?? throw new BadHttpRequestException("Choose a file.");

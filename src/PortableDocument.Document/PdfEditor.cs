@@ -135,12 +135,16 @@ public sealed partial class PdfEditor
     /// The editor remembers which source objects it has copied (without holding on to <paramref name="src"/>), so catalog-level structures
     /// such as form fields or layers can be brought over afterwards with <see cref="ImportValue"/> without duplicating objects.
     /// </summary>
-    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null)
+    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null, PdfImportOptions? options = null)
     {
         Require(PdfPermissions.Assemble);
         var f = src.File;
         var chosen = (indices ?? Enumerable.Range(0, src.Pages.Count)).ToList();
         var (srcNum, allPageNums) = PageNumbers(src);
+        var at = insertAt ?? _pages.Count;
+        var oldCount = _pages.Count;
+        var destLabels = options is { PageLabels: true } ? CurrentLabelRanges() : null;
+        var pageMap = new Dictionary<int, int>();
         var map = new Dictionary<int, int>();
         var work = new Queue<int>();
         var newPages = new List<int>();
@@ -149,13 +153,15 @@ public sealed partial class PdfEditor
             var p = src.Pages[i];
             var n = srcNum.TryGetValue(p.Dict, out var sn) ? sn : -1 - newPages.Count;
             var dst = _next++;
-            if (n >= 0) map[n] = dst;
+            if (n >= 0) { map[n] = dst; pageMap.TryAdd(n, dst); }
             newPages.Add(dst);
             var merged = new Dictionary<string, PdfObject>(p.Dict.Entries);
             foreach (var k in Inheritable) if (!merged.ContainsKey(k) && p.Inherited.TryGetValue(k, out var v)) merged[k] = v;
             merged.Remove("Parent");
             _objs[dst] = new PdfDictionary(merged.ToDictionary(kv => kv.Key, kv => CopyFrom(f, map, allPageNums, work, kv.Value)));
         }
+        PdfObject? drCopy = options is { Forms: true } && f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary sf && f.Resolve(sf.Get("DR")) is PdfDictionary sdr
+            ? CopyFrom(f, map, allPageNums, work, sdr) : null;
         Drain(f, map, allPageNums, work);
         foreach (var dst in newPages)
         {
@@ -163,7 +169,10 @@ public sealed partial class PdfEditor
             var e = new Dictionary<string, PdfObject>(d.Entries) { ["Parent"] = new PdfRef(_pagesRoot, 0) };
             _objs[dst] = new PdfDictionary(e);
         }
-        _pages.InsertRange(insertAt ?? _pages.Count, newPages);
+        _pages.InsertRange(at, newPages);
+        if (options is { Forms: true }) MergeForms(src, newPages, drCopy);
+        if (options is { Outlines: true }) MergeOutlines(src, pageMap, options.OutlineTitle, newPages.Count > 0 ? newPages[0] : 0);
+        if (destLabels is not null) MergePageLabels(src, chosen, destLabels, oldCount, at);
         _importMaps.AddOrUpdate(src, map);
     }
 

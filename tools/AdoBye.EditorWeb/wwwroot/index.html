@@ -1002,26 +1002,24 @@ function mergePdfs(files = []) {
   const o = modal('Merge PDFs', `<div id="mg"></div><button id="mga" type="button">Add PDFs…</button>
     <label>Insert at<select id="mat"><option value="${n}">End of document</option><option value="0">Beginning</option><option value="${sel + 1}">After current page (${sel + 1})</option><option value="p">Before page number…</option></select></label>
     <label id="mpl" hidden>Before page<input id="mpn" type="number" min="1" max="${n + 1}" value="${n + 1}"></label>
-    <p class="dnote">Files merge in the order listed. Pages are copied on this device; nothing is uploaded and passwords are never stored.</p>`, 'Merge', async () => {
+    <p class="dnote">Files merge in the order listed, as one step. Pages are copied on this device; nothing is uploaded and passwords are never stored. Form fields, bookmarks, page labels and links between merged pages are kept. Not carried over: document JavaScript, tagged structure, layers, attachments, signatures, and links to pages you leave out.</p>`, 'Merge', async () => {
     if (!list.length) throw new Error('Add at least one PDF.');
     if (list.some(e => e.error)) throw new Error('Remove the files that cannot be merged first.');
-    let at = o.querySelector('#mat').value === 'p' ? Math.min(n, Math.max(0, (+o.querySelector('#mpn').value || n + 1) - 1)) : +o.querySelector('#mat').value;
-    const first = at; let merged = 0;
-    let ok = false;
+    for (const e of list) {
+      const parts = e.range.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.some(s => !/^\d+(\s*-\s*\d*)?$/.test(s))) throw new Error(`${e.file.name}: page ranges use numbers, commas and dashes, such as 1-3, 5.`);
+      if (parts.length && !parts.some(s => { const [a, b] = s.split('-').map(x => x.trim()); const lo = +a, hi = b === undefined ? lo : b === '' ? e.pages : +b; return Math.max(1, Math.min(lo, hi)) <= Math.min(e.pages, Math.max(lo, hi)); }))
+        throw new Error(`${e.file.name}: no pages in range. It has ${e.pages} page${e.pages === 1 ? '' : 's'}.`);
+    }
+    const at = o.querySelector('#mat').value === 'p' ? Math.min(n, Math.max(0, (+o.querySelector('#mpn').value || n + 1) - 1)) : +o.querySelector('#mat').value;
+    let result = null;
     await act(async () => {
-      try {
-        for (const [i, e] of list.entries()) {
-          status(`Merging ${i + 1} of ${list.length}: ${e.file.name}…`);
-          const r = await (await request(`/api/import?at=${at}&pages=${encodeURIComponent(e.range)}`, { method: 'POST', body: formOf(e.file) })).json();
-          at += r.count; merged += r.count;
-        }
-        ok = true;
-      } catch (err) {
-        if (merged) await refresh();
-        throw new Error(`${err.message}${merged ? ` (${merged} page${merged === 1 ? '' : 's'} from earlier files were already added.)` : ''}`);
-      }
+      status(`Merging ${list.length} file${list.length === 1 ? '' : 's'}…`);
+      const body = new FormData(); body.append('f', await packFiles(list.map(e => e.file)));
+      const query = `at=${at}&ranges=${encodeURIComponent(list.map(e => e.range).join('|'))}&names=${encodeURIComponent(JSON.stringify(list.map(e => e.file.name)))}`;
+      result = await (await request(`/api/import-batch?${query}`, { method: 'POST', body })).json();
     });
-    if (ok) { await goPage(first); status(`Merged ${merged} page${merged === 1 ? '' : 's'} from ${list.length} file${list.length === 1 ? '' : 's'}. Ready.`); }
+    if (result) { await goPage(result.first); status(`Merged ${result.count} page${result.count === 1 ? '' : 's'} from ${result.files} file${result.files === 1 ? '' : 's'}. Ready.`); }
   });
   const render = () => {
     o.querySelector('#mg').innerHTML = list.map((e, i) => `<div class="mrow" data-i="${i}"><span class="mn" title="${esc(e.file.name)}">${esc(e.file.name)}</span>
@@ -1041,7 +1039,7 @@ function mergePdfs(files = []) {
   o.addFiles = async added => {
     for (const file of added) {
       const e = { file, range: '' };
-      try { Object.assign(e, await (await request('/api/inspect', { method: 'POST', body: formOf(file) })).json()); }
+      try { const info = await (await request('/api/inspect', { method: 'POST', body: formOf(file) })).json(); e.pages = info.pageCount; e.encrypted = info.encrypted; }
       catch (err) { e.error = err.message; }
       if (!o.isConnected) return;
       list.push(e); render();
@@ -1050,6 +1048,15 @@ function mergePdfs(files = []) {
   mergeDialog = o; render(); o.addFiles(files);
 }
 const formOf = f => { const fd = new FormData(); fd.append('f', f); return fd; };
+// One request carries every file (uint32 count, then uint32 length + bytes per file) so the merge is a single all-or-nothing step.
+async function packFiles(files) {
+  const buffers = await Promise.all(files.map(f => f.arrayBuffer()));
+  const out = new Uint8Array(4 + buffers.reduce((s, b) => s + 4 + b.byteLength, 0)), view = new DataView(out.buffer);
+  view.setUint32(0, buffers.length, true);
+  let p = 4;
+  for (const b of buffers) { view.setUint32(p, b.byteLength, true); out.set(new Uint8Array(b), p + 4); p += 4 + b.byteLength; }
+  return new File([out], 'merge.bin');
+}
 function docProps() {
   request('/api/info').then(r => r.json()).then(d => {
     const f = (k, l) => `<label>${l}<input data-i="${k}" value="${esc(d[k] ?? '')}"></label>`;

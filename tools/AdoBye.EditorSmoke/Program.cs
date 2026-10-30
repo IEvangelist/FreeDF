@@ -77,14 +77,14 @@ try
     if (mergeOnly)
     {
         await EditorMerge.Run(page);
-        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors));
+        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: multi-file Merge PDFs (flag/remove encrypted, reorder, page range, insert position), page count, render, save and reopen.");
         return;
     }
     if (recoveryOnly)
     {
         await EditorRecovery.Run(page);
-        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors));
+        Check(network.IsEmpty && errors.All(ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
     }
     await page.Locator("#fileBtn").ClickAsync();
@@ -240,4 +240,4 @@ static void Check(bool success, string message)
     if (!success) throw new Exception("FAIL: " + message);
 }
 static bool ExpectedRecoveryError(string error) =>
-    error.Contains("simulated recovery quota failure") || error.Contains("Encrypted PDFs require the server editor");
+    error.Contains("simulated recovery quota failure") || error.Contains("Encrypted PDFs require the server editor") || error.Contains("password-protected or uses encryption");
