@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using PortableDocument.Document;
+using PortableDocument.Render;
 using Pdf = PortableDocument.Render.PortableDocument;
 
 public class EditorSessionTests
@@ -51,5 +52,64 @@ public class EditorSessionTests
         using var state = JsonDocument.Parse(Call(a, "GET", "/api/state").Data);
         Assert.False(state.RootElement.GetProperty("canSave").GetBoolean());
         Assert.Throws<ArgumentException>(() => Call(a, "GET", "/api/export/pdf", query: [("pages", "999")]));
+    }
+
+    static string Upload(EditorSession session)
+    {
+        var png = PngWriter.Encode(1, 1, [255, 0, 0, 255]);
+        using var reply = JsonDocument.Parse(session.Handle("POST", "/api/asset", new Dictionary<string, string>(), png).Data);
+        return reply.RootElement.GetProperty("id").GetString()!;
+    }
+
+    static Item Image(string id, string asset) =>
+        new(id, "image", 0, 0, 10, 10, null, null, 0, false, false, null, null, null, 0, 1, asset, 0, 0);
+
+    [Fact]
+    public void ReplacingAndDeletingItemsReleasesUnreferencedAssetBytes()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var first = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new[] { Image("image", first) });
+        var second = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new[] { Image("image", second) });
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + first));
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + second).Data);
+        Call(session, "PUT", "/api/page/0/items", Array.Empty<Item>());
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + second));
+    }
+
+    [Fact]
+    public void SharedAssetSurvivesWhileAnotherItemOrPageReferencesIt()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        Call(session, "POST", "/api/blank/1");
+        var asset = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new[] { Image("a", asset), Image("b", asset) });
+        Call(session, "PUT", "/api/page/1/items", new[] { Image("c", asset) });
+        Call(session, "PUT", "/api/page/0/items", new[] { Image("b", asset) });
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        Call(session, "POST", "/api/delete/0");
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+        using var items = JsonDocument.Parse(Call(session, "GET", "/api/page/0/items").Data);
+        Assert.Equal("c", Assert.Single(items.RootElement.EnumerateArray()).GetProperty("id").GetString());
+        Call(session, "POST", "/api/delete/0");
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
+    }
+
+    [Fact]
+    public void RemovedPageItemsCannotRetainAssetsAfterImport()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var asset = Upload(session);
+        Call(session, "PUT", "/api/page/0/items", new[] { Image("removed", asset) });
+        var original = Call(session, "GET", "/api/download").Data;
+        Call(session, "POST", "/api/delete/0");
+        session.Handle("POST", "/api/import", new Dictionary<string, string>(), original);
+        using var items = JsonDocument.Parse(Call(session, "GET", "/api/page/0/items").Data);
+        Assert.Empty(items.RootElement.EnumerateArray());
+        Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
     }
 }

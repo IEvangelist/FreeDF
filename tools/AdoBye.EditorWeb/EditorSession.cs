@@ -186,6 +186,13 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     }
     PdfDocument BaseSnap() { Prepare(); return baseSnapshot ??= PdfDocument.Load(editor.Save(false)); }
     void Changed() { version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); sharedFormReferences = null; prepared = false; }
+    void PruneAssets()
+    {
+        var livePages = Enumerable.Range(0, editor.PageCount).Select(editor.PageId).ToHashSet();
+        foreach (var id in items.Keys.Where(id => !livePages.Contains(id)).ToArray()) items.Remove(id);
+        var referenced = items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>().ToHashSet();
+        foreach (var id in assets.Keys.Where(id => !referenced.Contains(id)).ToArray()) assets.Remove(id);
+    }
     byte[] Render(PdfPage page, double dpi) => DocumentRenderer.RenderPage(page, new PdfRenderOptions { FontFallback = fontFallback }, dpi).ToPng();
 
     /// <summary>Dispatches a local command. Neither this method nor the WASM host performs network I/O.</summary>
@@ -234,7 +241,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             {
                 case "items":
                     if (method == "GET") return AsJson(items.GetValueOrDefault(id) ?? []);
-                    if (method == "PUT") { items[id] = Read<List<Item>>() ?? []; Changed(); return Ok; }
+                    if (method == "PUT") { items[id] = Read<List<Item>>() ?? []; PruneAssets(); Changed(); return Ok; }
                     break;
                 case "text" when method == "GET":
                     return AsJson(EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
@@ -294,7 +301,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "open":
                     Reset(PdfEditor.Open(body ?? throw new ArgumentException("Choose a PDF.")));
                     fileName = uploadName ?? "document.pdf"; return Ok;
-                case "import": CheckPageMutation(); editor.ImportPages(PdfDocument.Load(body ?? [])); Changed(); return Ok;
+                case "import": CheckPageMutation(); editor.ImportPages(PdfDocument.Load(body ?? [])); PruneAssets(); Changed(); return Ok;
                 case "asset":
                     var bytes = body ?? [];
                     var mime = bytes.Length > 2 && bytes[0] == 0xff && bytes[1] == 0xd8 ? "image/jpeg" : "image/png";
@@ -303,7 +310,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     else (w, h, _) = PngWriter.Decode(bytes);
                     var key = Guid.NewGuid().ToString("N"); assets[key] = new(bytes, mime);
                     return AsJson(new { id = key, w, h });
-                case "delete": CheckPageMutation(); editor.DeletePage(int.Parse(p[2], CultureInfo.InvariantCulture)); break;
+                case "delete": CheckPageMutation(); editor.DeletePage(int.Parse(p[2], CultureInfo.InvariantCulture)); PruneAssets(); break;
                 case "move": CheckPageMutation(); editor.MovePage(int.Parse(p[2], CultureInfo.InvariantCulture), int.Parse(p[3], CultureInfo.InvariantCulture)); break;
                 case "rotate":
                     CheckPageMutation();

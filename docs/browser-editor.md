@@ -7,6 +7,9 @@ stay in the tab's memory. Downloads use local blobs. There is no telemetry,
 external font request, PDF upload, service worker, or browser persistence of PDF
 contents. Closing/reloading the tab discards its document; save a copy first.
 The host still makes ordinary GET requests for its static app/runtime assets.
+Replacing item lists or removing/importing pages prunes uploaded image bytes
+that no live page item references; shared asset IDs remain available while any
+live item references them. Removed pages' item lists are discarded.
 
 ## Publishing
 
