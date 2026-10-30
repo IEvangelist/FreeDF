@@ -66,8 +66,7 @@ static class EditorMerge
         var reopen = await page.RunAndWaitForFileChooserAsync(() => page.Keyboard.PressAsync("Enter"));
         await reopen.SetFilesAsync(Sample("20-report.pdf"));
         await dialog.Locator(".mrow").Nth(0).WaitForAsync();
-        await dialog.Locator("#mga").FocusAsync();
-        var keyboardChooser = await page.RunAndWaitForFileChooserAsync(() => page.Keyboard.PressAsync("Enter"));
+        var keyboardChooser = await page.RunAndWaitForFileChooserAsync(() => dialog.Locator("#mga").PressAsync("Enter"));
         await keyboardChooser.SetFilesAsync([Sample("22-invoice.pdf"), Sample("17-encrypted-user-password.pdf"), Sample("11-acroform.pdf"), Sample("12-navigation.pdf")]);
         await dialog.Locator(".mrow").Nth(4).WaitForAsync();
         Check(await dialog.Locator(".mrow .merr").CountAsync() == 1, "The password-protected file is flagged, not opened.");
