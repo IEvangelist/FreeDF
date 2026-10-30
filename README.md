@@ -4,6 +4,7 @@ Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to t
 
 - `src/` core, document, content and render libraries (`PortableDocument.*`)
 - `tools/AdoBye.EditorWeb` browser editor: `dotnet run -c Release --project tools/AdoBye.EditorWeb -- file.pdf`
+- `tools/AdoBye.EditorWasm` static, browser-local WebAssembly editor with automatic GitHub Pages publishing; see [browser editor setup, operations and smoke checks](docs/browser-editor.md)
 - `samples/` 26 example PDFs, see `samples/README.md`
 - `docs/spec-matrix.md` spec coverage and known gaps
 

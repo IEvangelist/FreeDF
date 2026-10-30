@@ -1,0 +1,57 @@
+name: Publish browser PDF editor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: editor-pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Publish static WebAssembly editor
+        shell: pwsh
+        run: ./tools/Publish-EditorPages.ps1 -Output '${{ runner.temp }}/editor-pages'
+      - name: Test shared editor and browser-compatible rendering
+        run: dotnet test tests/AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx|FullyQualifiedName~RenderTests"
+      - name: Build browser smoke runner
+        run: dotnet build tools/AdoBye.EditorSmoke -c Release
+      - name: Install Chromium
+        shell: pwsh
+        run: ./tools/AdoBye.EditorSmoke/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+      - name: Exercise local editor at repository base path
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "${{ runner.temp }}/editor-pages/wwwroot"
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: ${{ runner.temp }}/editor-pages/wwwroot
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

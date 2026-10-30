@@ -88,7 +88,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 }
             }
         }
-        if ((long)_w * _h > 100_000)
+        if (!OperatingSystem.IsBrowser() && (long)_w * _h > 100_000)
         {
             const int Band = 32;
             Parallel.For(0, (_h + Band - 1) / Band, b => Rows(b * Band, Math.Min(_h, b * Band + Band)));
@@ -661,7 +661,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 Put((y - _oy) * _lw + (x - _ox), r, g, b, cov, al, mode);
             }
         }
-        if ((long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
+        if (!OperatingSystem.IsBrowser() && (long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
         else for (var y = y0; y < y1; y++) Row(y);
     }
 

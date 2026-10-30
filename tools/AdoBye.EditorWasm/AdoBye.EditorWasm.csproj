@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WasmEnableThreads>false</WasmEnableThreads>
+    <BlazorEnableCompression>false</BlazorEnableCompression>
+    <!-- The shared editor uses reflection-based JSON for its anonymous UI payloads. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\samples\_gen\fonts\Vera.ttf" LogicalName="Vera.ttf" />
+    <EmbeddedResource Include="..\..\samples\_gen\fonts\VeraBd.ttf" LogicalName="VeraBd.ttf" />
+    <Content Include="..\..\samples\_gen\fonts\bitstream-vera-license.txt" Link="wwwroot\bitstream-vera-license.txt" CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <Compile Include="..\AdoBye.EditorWeb\EditorSession.cs" Link="EditorSession.cs" />
+    <Compile Include="..\AdoBye.EditorWeb\OverlayBuilder.cs" Link="OverlayBuilder.cs" />
+    <Compile Include="..\AdoBye.EditorWeb\FontCatalog.cs" Link="FontCatalog.cs" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.css" Link="wwwroot\editor.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.js" Link="wwwroot\editor.js" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

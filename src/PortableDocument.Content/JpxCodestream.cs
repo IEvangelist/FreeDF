@@ -685,7 +685,7 @@ internal sealed class JpxCodestream
                             jobs.Add(new Job(cb, res.Bands[bi], tc.Cod.Style, tc.Roi, nb, tc.Cod.Transform == 1 && tc.Q.Style == 0));
                         }
         var arr = jobs.ToArray();
-        if (arr.Length < 8)
+        if (OperatingSystem.IsBrowser() || arr.Length < 8)
         {
             var t1 = new JpxTier1();
             foreach (var j in arr) RunJob(t1, j);
