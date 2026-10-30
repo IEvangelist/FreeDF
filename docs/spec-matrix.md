@@ -60,6 +60,8 @@ Additional bounded PDF/UA annotation checks verify `/StructParent` -> ParentTree
 
 The expanded BPC/UA/DPart/root-field/MacExpert batch passes 833/833 combined focused and 1393/1393 full Release cases. The Release solution build succeeds with four warnings (EditorWeb CS8602, TransparencyTests CS0675, FontCmapTests xUnit2029, SecurityTests xUnit2013). Clause statuses remain 15 Partial / 0 Todo; full parity is not established.
 
+Subsequent additions await Release validation and are not covered by those totals: inert `SubmitFormDetails` exposes local file-specification/Fields/Flags/CharSet values and raw dictionaries without submission, field lookup, defaults or inheritance interpretation (12.7.6.2). New JPX fixtures cover two tiles/two tile-parts each with packed headers preceding bodies in the same tile-part. Marker ordering and complete-header placement were reviewed against T.800 A.7.4/A.7.5. The transformed PPM stream has independent OpenJPEG evidence; PPT expected samples derive from the decoded original source, since OpenJPEG 2.5.4 rejects the transformed multipart PPT. No decoder code changes accompany these fixtures; earlier-tile-part headers and broader combinations remain gaps.
+
 ## Editor
 
 | Feature | Status |
