@@ -100,6 +100,65 @@ public class JpxTests
     }
 
     [Theory]
+    [InlineData("ppm-lossless", 0xFF60)]
+    [InlineData("ppt-lossless", 0xFF61)]
+    public void PackedMarkerSplitsRequireCompletePacketHeaders(string name, int marker)
+    {
+        for (var split = 1; split < 9; split++)
+        {
+            var data = SplitPackedMarkers(name, marker, split + (marker == 0xFF60 ? 4 : 0));
+            var image = JpxDecoder.Decode(data, 3, false, false, out var warning);
+            if (split % 3 == 0)
+            {
+                Assert.NotNull(image);
+                Assert.Null(warning);
+                Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), image.Samples);
+            }
+            else
+            {
+                Assert.Null(image);
+                Assert.Contains("packet header crosses a packed marker segment boundary", warning);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void RejectsPpmSegmentEndingWithinOrImmediatelyAfterNppm(int split)
+    {
+        var data = SplitPackedMarkers("ppm-lossless", 0xFF60, split);
+        Assert.Null(JpxDecoder.Decode(data, 3, false, false, out var warning));
+        Assert.Contains("PPM marker segment ends before a completed packet header", warning);
+    }
+
+    static byte[] SplitPackedMarkers(string name, int marker, int split)
+    {
+        var data = Codestream(name);
+        var first = FindMarker(data, marker);
+        var second = first + 2 + ReadU16(data, first + 2);
+        var end = second + 2 + ReadU16(data, second + 2);
+        var payload = data.AsSpan(first + 5, ReadU16(data, first + 2) - 3).ToArray()
+            .Concat(data.AsSpan(second + 5, ReadU16(data, second + 2) - 3).ToArray()).ToArray();
+        var result = data[..first].ToList();
+        void Segment(int index, ReadOnlySpan<byte> bytes)
+        {
+            result.Add((byte)(marker >> 8)); result.Add((byte)marker);
+            var length = bytes.Length + 3;
+            result.Add((byte)(length >> 8)); result.Add((byte)length);
+            result.Add((byte)index);
+            result.AddRange(bytes.ToArray());
+        }
+        Segment(0, payload.AsSpan(0, split));
+        Segment(1, payload.AsSpan(split));
+        result.AddRange(data[end..]);
+        Assert.Equal(data.Length, result.Count);
+        return [.. result];
+    }
+
+    [Theory]
     [InlineData("ppm-lossless", 0xFF60, "duplicate PPM")]
     [InlineData("ppt-lossless", 0xFF61, "duplicate PPT")]
     public void RejectsDuplicatePackedHeaderMarkerIndices(string name, int marker, string warning)
@@ -303,7 +362,7 @@ public class JpxTests
         throw new InvalidDataException($"marker 0x{marker:X4} not found");
     }
 
-    static byte[] PpmMarker() => [0xFF, 0x60, 0, 7, 0, 0, 0, 0, 0];
+    static byte[] PpmMarker() => [0xFF, 0x60, 0, 8, 0, 0, 0, 0, 1, 0];
 
     static byte[] Insert(byte[] data, int offset, byte[] insert)
     {

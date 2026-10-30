@@ -116,7 +116,9 @@ internal sealed class JpxCodestream
         public readonly Dictionary<int, int> Roi = [];
     }
 
-    sealed record TilePartData(int Start, int Length, byte[]? PacketHeaders);
+    sealed record PackedHeaders(byte[] Data, int[] SegmentEnds);
+
+    sealed record TilePartData(int Start, int Length, PackedHeaders? PacketHeaders);
 
     sealed class PackedHeaderException(string message) : Exception(message);
 
@@ -244,7 +246,7 @@ internal sealed class JpxCodestream
             p += 12;
             var tpEnd = psot == 0 ? end : (int)Math.Min(end, sot + psot);
             if (psot == 0 && tpEnd - 2 >= p && U16(tpEnd - 2) == 0xFFD9) tpEnd -= 2;
-            byte[]? ppmPartHeaders = null;
+            PackedHeaders? ppmPartHeaders = null;
             if (ppmData is not null)
             {
                 if (!TryTakePpmHeaders(ppmData, ref ppmPos, out ppmPartHeaders, out var error))
@@ -300,7 +302,7 @@ internal sealed class JpxCodestream
             ts.Parts.Add(new TilePartData(p, tpEnd - p, ppmData is not null || pptMarkers.Count > 0 ? packetHeaders : null));
             p = tpEnd;
         }
-        if (ppmData is not null && ppmPos != ppmData.Length) { Warning = "JPX: unused PPM packet-header data"; return false; }
+        if (ppmData is not null && ppmPos != ppmData.Data.Length) { Warning = "JPX: unused PPM packet-header data"; return false; }
         foreach (var ts in tiles.Values)
         {
             if (ts.Parts.Exists(part => part.PacketHeaders is not null)) continue;
@@ -310,12 +312,17 @@ internal sealed class JpxCodestream
         return Finish(tiles);
     }
 
-    static byte[]? JoinPackedSegments(SortedDictionary<int, byte[]> segments)
+    static PackedHeaders? JoinPackedSegments(SortedDictionary<int, byte[]> segments)
     {
         if (segments.Count == 0) return null;
         using var joined = new MemoryStream();
-        foreach (var segment in segments.Values) joined.Write(segment);
-        return joined.ToArray();
+        var ends = new List<int>();
+        foreach (var segment in segments.Values)
+        {
+            joined.Write(segment);
+            ends.Add((int)joined.Length);
+        }
+        return new(joined.ToArray(), [.. ends]);
     }
 
     static bool HasContiguousIndices(SortedDictionary<int, byte[]> segments, out int missingIndex)
@@ -329,15 +336,25 @@ internal sealed class JpxCodestream
         return true;
     }
 
-    static bool TryTakePpmHeaders(byte[] data, ref int pos, out byte[] headers, out string error)
+    static bool TryTakePpmHeaders(PackedHeaders packed, ref int pos, out PackedHeaders? headers, out string error)
     {
-        headers = [];
+        headers = null;
         error = "";
+        var data = packed.Data;
         if (data.Length - pos < 4) { error = "truncated PPM Nppm field"; return false; }
+        foreach (var end in packed.SegmentEnds)
+            if (end > pos && end <= pos + 4)
+            {
+                error = "PPM marker segment ends before a completed packet header";
+                return false;
+            }
         var length = (uint)(data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]);
         pos += 4;
         if (length > data.Length - pos) { error = "truncated PPM packet-header payload"; return false; }
-        headers = data.AsSpan(pos, (int)length).ToArray();
+        var start = pos;
+        var ends = packed.SegmentEnds.Where(end => end > start && end <= start + (int)length)
+            .Select(end => end - start).ToArray();
+        headers = new(data.AsSpan(pos, (int)length).ToArray(), ends);
         pos += (int)length;
         return true;
     }
@@ -521,8 +538,8 @@ internal sealed class JpxCodestream
                 var partPos = part.Start;
                 var partEnd = part.Start + part.Length;
                 var headerPos = 0;
-                var headers = part.PacketHeaders;
-                if (headers is null)
+                var packed = part.PacketHeaders;
+                if (packed is null)
                 {
                     while (partPos < partEnd && packetIndex < order.Count)
                     {
@@ -533,6 +550,8 @@ internal sealed class JpxCodestream
                     }
                     continue;
                 }
+                var headers = packed.Data;
+                var segmentIndex = 0;
                 while (headerPos < headers.Length && packetIndex < order.Count)
                 {
                     var pk = order[packetIndex++];
@@ -540,6 +559,10 @@ internal sealed class JpxCodestream
                     var res = tc.Res[pk.R];
                     try { ReadPacket(_d, ref partPos, partEnd, headers, ref headerPos, res, res.Prec[pk.P], pk.L, tc.Cod.Style, pend); }
                     catch (IndexOutOfRangeException) { throw new PackedHeaderException("contains a truncated packet header"); }
+                    if (segmentIndex < packed.SegmentEnds.Length && headerPos > packed.SegmentEnds[segmentIndex])
+                        throw new PackedHeaderException("packet header crosses a packed marker segment boundary");
+                    if (segmentIndex < packed.SegmentEnds.Length && headerPos == packed.SegmentEnds[segmentIndex])
+                        segmentIndex++;
                 }
                 if (headerPos < headers.Length) throw new PackedHeaderException("has more packet headers than the tile packet order");
                 if (partPos < partEnd) throw new PackedHeaderException("has unreferenced tile-part packet data");
