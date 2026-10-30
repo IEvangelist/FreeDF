@@ -30,7 +30,28 @@ public sealed record PdfAction(
     public PdfGoToDpAction? GoToDpDetails { get; init; }
     public PdfUriAction? UriDetails { get; init; }
     public PdfNamedAction? NamedDetails { get; init; }
+    public PdfSubmitFormAction? SubmitFormDetails { get; init; }
 }
+
+/// <summary>
+/// Inert /SubmitForm metadata (ISO 32000-2:2020, 12.7.6.2, Tables 239 and 240).
+/// Only references within the current PDF are dereferenced; no target is parsed or accessed,
+/// no field names are looked up, and no form data is collected or submitted.
+/// Missing or wrong-type entries are null and remain available in Dictionary.
+/// Only entries on this action are exposed; inheritance and defaults are not computed.
+/// Array elements, file specifications, flag bits, and encoding labels are not validated or interpreted.
+/// </summary>
+/// <param name="FileSpecification">The required /F URL file specification string or dictionary, retained without decoding target bytes or reading embedded data.</param>
+/// <param name="Fields">The optional /Fields array of field references and/or field-name strings, retained without resolving its elements. Malformed elements are preserved too.</param>
+/// <param name="Flags">The optional inheritable /Flags integer, including malformed negative or reserved-bit values. The PDF default is 0, not permission to execute an action; null preserves absence or a wrong type.</param>
+/// <param name="CharSet">The optional inheritable PDF 2.0 /CharSet string, with its bytes and unrecognised encoding labels preserved.</param>
+/// <param name="Dictionary">The original action dictionary, including unrecognised or malformed entries.</param>
+public sealed record PdfSubmitFormAction(
+    PdfObject? FileSpecification,
+    PdfArray? Fields,
+    long? Flags,
+    PdfString? CharSet,
+    PdfDictionary Dictionary);
 
 /// <summary>
 /// Inert /GoTo metadata (ISO 32000-2:2020, 12.6.4.2, Table 202). Only references
@@ -165,7 +186,7 @@ public static class SafeContentFeatures
     const int MaxDepth = 64;
 
     /// <summary>
-    /// Returns action dictionaries for inspection, with inert typed metadata for local, remote, embedded, and DPart go-to, URI and named actions.
+    /// Returns action dictionaries for inspection, with inert typed metadata for local, remote, embedded, and DPart go-to, URI, named, and submit-form actions.
     /// Payloads are never interpreted or executed, and external files, destinations, and URIs are never accessed.
     /// </summary>
     public static IReadOnlyList<PdfAction> GetActions(this PdfDocument doc)
@@ -345,6 +366,7 @@ public static class SafeContentFeatures
             GoToDpDetails = type == "GoToDp" ? ReadGoToDpAction(f, action) : null,
             UriDetails = type == "URI" ? ReadUriAction(f, action) : null,
             NamedDetails = type == "Named" ? ReadNamedAction(f, action) : null,
+            SubmitFormDetails = type == "SubmitForm" ? ReadSubmitFormAction(f, action) : null,
         });
         if (action.Get("Next") is { } next)
             AddActionChain(f, next, scope, $"{trigger}/Next", name, pageIndex, annotationIndex, fieldName, depth + 1, ancestors, actions);
@@ -438,6 +460,17 @@ public static class SafeContentFeatures
         new(
             f.Resolve(action.Get("N")) as PdfName,
             action);
+
+    static PdfSubmitFormAction ReadSubmitFormAction(PdfFile f, PdfDictionary action)
+    {
+        var file = f.Resolve(action.Get("F"));
+        return new PdfSubmitFormAction(
+            file is PdfString or PdfDictionary ? file : null,
+            f.Resolve(action.Get("Fields")) as PdfArray,
+            f.Resolve(action.Get("Flags")) is PdfInteger flags ? flags.Value : null,
+            f.Resolve(action.Get("CharSet")) as PdfString,
+            action);
+    }
 
     static string? StringValue(PdfFile f, PdfObject? value) =>
         f.Resolve(value) is PdfString text ? text.Text : null;
