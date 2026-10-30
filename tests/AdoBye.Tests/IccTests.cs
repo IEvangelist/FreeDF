@@ -578,14 +578,14 @@ public class IccTests
     public void MissingIntentTable_FallsBackToA2B0(RenderingIntent intent)
     {
         var profile = IccProfile.TryParse(IntentProfile(relative: false, saturation: false))!;
-        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, RenderingIntent.Perceptual, referenceBlack: false);
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], intent)).R, RenderingIntent.Perceptual, referenceBlack: intent == RenderingIntent.Saturation);
     }
 
     [Fact]
     public void MissingSaturationTable_DoesNotFallBackToRelative()
     {
         var profile = IccProfile.TryParse(IntentProfile(saturation: false))!;
-        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], RenderingIntent.Saturation)).R, RenderingIntent.Perceptual, referenceBlack: false);
+        AssertIntentColor(Round(profile.ToSrgb([0.3, 0.4, 0.5], RenderingIntent.Saturation)).R, RenderingIntent.Perceptual);
     }
 
     [Fact]

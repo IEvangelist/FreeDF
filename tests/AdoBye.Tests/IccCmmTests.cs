@@ -123,13 +123,8 @@ public class IccCmmTests
         return result;
     }
 
-    // Cases where Little CMS applies black-point compensation implicitly: it forces BPC for v4 perceptual/saturation
-    // chains (its built-in sRGB output is v4). The spec (6.3.4.3) only defines a perceptual reference black for v4 profiles,
-    // and PDF defaults UseBlackPtComp to Off, so these are intentionally not matched without an explicit BPC request.
-    static readonly string[] ImplicitLcmsBpc = ["RGB v2 Perceptual bpc=0", "RGB v2 Saturation bpc=0", "CMYK v2 Perceptual bpc=0", "RGB v4 Saturation bpc=0"];
-
     public static IEnumerable<object[]> MatchingCases() =>
-        Reference().Keys.Where(k => !ImplicitLcmsBpc.Contains(k)).Select(k => new object[] { k });
+        Reference().Keys.Select(k => new object[] { k });
 
     static RenderingIntent ParseIntent(string s) => Enum.Parse<RenderingIntent>(s);
 
@@ -164,20 +159,46 @@ public class IccCmmTests
         }
     }
 
+    [Fact]
+    public void CorruptB2A_DisablesOnlyDestinationUse_NotTheA2BRenderingPath()
+    {
+        var a2b = Mft2(4, 3, CmykCorners());
+        var good = IccProfile.TryParse(CmykProfile(2))!;
+        double[] input = [0.2, 0.4, 0.6, 0.1];
+        // Truncated mft2 (declares a CLUT larger than the tag) and a mAB/mBA whose curve offsets overflow the tag.
+        var truncated = Mft2(3, 4, B2aCorners()).Take(60).ToArray();
+        var overflow = Mab(true, 3, 4, B2aCornersV4());
+        BinaryPrimitives.WriteUInt32BigEndian(overflow.AsSpan(12), 0x7FFFFFF0);
+        foreach (var bad in new[] { truncated, overflow })
+        {
+            var data = Profile("CMYK", "Lab ", "prtr", 2, ("A2B0", a2b), ("A2B1", a2b), ("A2B2", a2b), ("B2A0", bad), ("wtpt", D50));
+            foreach (var destination in new[] { false, true })
+            {
+                var profile = IccProfile.TryParse(data, destination);
+                Assert.NotNull(profile);
+                Assert.Equal(Srgb8(good, input, RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off),
+                    Srgb8(profile, input, RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off));
+                // BPC falls back to the darkest-colorant estimate (no round trip) and still converts.
+                Assert.True(profile.SupportsBlackPointCompensation(RenderingIntent.RelativeColorimetric));
+                Assert.False(IccProfile.TryConvert(IccProfile.TryParse(RgbProfile(2), true)!, [0.5, 0.5, 0.5], profile,
+                    RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off, new double[4]));
+            }
+        }
+    }
+
     [Theory]
     [InlineData("RGB v2 Perceptual bpc=0", 0)]
     [InlineData("RGB v2 Saturation bpc=0", 0)]
     [InlineData("RGB v4 Saturation bpc=0", 16)]
-    public void ImplicitLcmsBpc_IsNotAppliedWithoutRequest_AndExplicitBpcMatches(string key, int lcmsBlack)
+    public void PerceptualAndSaturation_AreImplicitlyBlackCompensated_LikeLittleCms(string key, int lcmsBlack)
     {
         var parts = key.Split(' ');
-        var major = int.Parse(parts[1][1..]);
+        var profile = IccProfile.TryParse(RgbProfile(int.Parse(parts[1][1..])))!;
         var intent = ParseIntent(parts[2]);
-        var profile = IccProfile.TryParse(RgbProfile(major))!;
-        Assert.Equal(lcmsBlack, Reference()[key][0].Output[0]);
-        // The profile's own black (L* 8) is retained: spec-only v4 perceptual black is not defined for saturation / pre-v4.
-        Assert.InRange(Srgb8(profile, [0, 0, 0], intent, BlackPointCompensation.Off)[0], 23, 25);
-        Assert.InRange(Srgb8(profile, [0, 0, 0], intent, BlackPointCompensation.On)[0], lcmsBlack - 1, lcmsBlack + 1);
+        foreach (var bpc in new[] { BlackPointCompensation.Off, BlackPointCompensation.Default, BlackPointCompensation.On })
+            Assert.InRange(Srgb8(profile, [0, 0, 0], intent, bpc)[0], lcmsBlack - 1, lcmsBlack + 1);
+        // Relative colorimetric still honours the flag.
+        Assert.InRange(Srgb8(profile, [0, 0, 0], RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off)[0], 23, 25);
     }
 
     [Fact]
@@ -204,10 +225,9 @@ public class IccCmmTests
         Assert.Equal(Expected(Y(20) + yb * (1 - Y(20))), Srgb8(v4, [0.3, 0.4, 0.5], RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off)[0], 1.0);
         var v4White = IccProfile.TryParse(Constant(4, 100))!;
         Assert.Equal(255, Srgb8(v4White, [0.3, 0.4, 0.5], RenderingIntent.Perceptual, BlackPointCompensation.Off)[0]);
-        // Pre-v4 perceptual: 6.3.4.3 adjustment to the v4 PCS followed by the black-to-destination map is the identity.
+        // Pre-v4 perceptual: Little CMS compensates the estimated black (L* 20 payload) to sRGB black.
         var v2 = IccProfile.TryParse(Constant(2, 20))!;
-        Assert.Equal(Srgb8(v2, [0.3, 0.4, 0.5], RenderingIntent.Perceptual, BlackPointCompensation.Off),
-            Srgb8(v2, [0.3, 0.4, 0.5], RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off));
+        Assert.Equal(0, Srgb8(v2, [0.3, 0.4, 0.5], RenderingIntent.Perceptual, BlackPointCompensation.Off)[0]);
     }
 
     [Fact]
@@ -229,6 +249,7 @@ public class IccCmmTests
         Assert.Equal(on, Srgb8(profile, input, RenderingIntent.RelativeColorimetric, BlackPointCompensation.On));
         Assert.Equal(Srgb8(profile, input, RenderingIntent.AbsoluteColorimetric, BlackPointCompensation.Off),
             Srgb8(profile, input, RenderingIntent.AbsoluteColorimetric, BlackPointCompensation.On));
+        profile.ToSrgb(input, RenderingIntent.Perceptual, BlackPointCompensation.Off);
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 1000; i++)
         {

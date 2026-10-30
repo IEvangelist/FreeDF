@@ -7,9 +7,10 @@ namespace PortableDocument.Content;
 /// ICC profile reader/evaluator (ICC.1 v2/v4) converting device values to sRGB. Supports matrix/TRC RGB, gray TRC, and
 /// LUT profiles (lut8, lut16, lutAToB) for RGB/CMYK via A2B0/A2B1/A2B2. PCS is D50 XYZ or Lab; output is sRGB (Bradford D50 → D65).
 /// Evaluation is allocation-free; CMYK/RGB LUT profiles bake a 17-point grid after enough calls to amortise the cost.
-/// Perceptual PCS black (ICC.1:2022 6.3.4.3, Table 16): v4 A2B0 tables are mapped from the perceptual reference
-/// black to the analytic sRGB black (XYZ 0) by the white-preserving affine XYZ map; v2 perceptual tables are
-/// treated as having black 0 (6.3.4.3 pre-v4 adjustment followed by the same map is the identity), so they are unchanged.
+/// Perceptual/saturation black: like Little CMS 2.17 against its v4 sRGB output, LUT transforms for these intents are
+/// always black-compensated (v4: Table 16 reference black, ICC.1:2022 6.3.4.3 defines it only for perceptual; v2 or
+/// saturation: estimated black) - this is a LittleCMS-compatibility choice, not a PDF/ICC requirement. Relative
+/// colorimetric follows UseBlackPtComp; absolute never compensates.
 /// Optional BPC uses a parse-time prepared XYZ affine map for the matrix/gray relative-colorimetric subset, and for
 /// LUT profiles the Little CMS algorithm (cmsDetectBlackPoint: v4 perceptual/saturation reference black; CMYK output
 /// relative via the perceptual A2B0/B2A0 round trip; otherwise the darkest-colorant Y, clamped to L* 50, made neutral).
@@ -310,22 +311,30 @@ public sealed class IccProfile
             p._transforms[(int)RenderingIntent.RelativeColorimetric].Lut = relative;
             p._transforms[(int)RenderingIntent.Saturation].Lut = saturation;
             p._transforms[(int)RenderingIntent.AbsoluteColorimetric].Lut = relative;
-            // 6.3.4.3 Table 16: v4 perceptual PCS black maps to the (analytic) destination black.
+            // Little CMS forces BPC for perceptual/saturation into its v4 sRGB output (see ToSrgb); the v4 Table 16 map is
+            // kept for transforms evaluated without BPC (TryConvert).
             if (major >= 4 && perceptual is not null)
                 p._transforms[(int)RenderingIntent.Perceptual].Map = BlackMap(PerceptualBlack, [0, 0, 0]);
+            // A corrupt B2A table must disable only destination use / the CMYK black round trip, never the A2B path.
+            Lut? SafeB2A(string name)
+            {
+                try { return ReadTag(name, 3, n, true); } catch (Exception) { return null; }
+            }
+            Lut? b2a0 = null;
+            if (includeDestination || (cls == OutputClass && n == 4 && perceptual is not null && tags.ContainsKey(Sig("B2A0"))))
+                b2a0 = SafeB2A("B2A0");
             if (includeDestination)
             {
-                var b0 = ReadTag("B2A0", 3, n, true);
-                p._b2a[(int)RenderingIntent.Perceptual] = b0;
-                p._b2a[(int)RenderingIntent.RelativeColorimetric] = ReadTag("B2A1", 3, n, true) ?? b0;
-                p._b2a[(int)RenderingIntent.Saturation] = ReadTag("B2A2", 3, n, true) ?? b0;
+                p._b2a[(int)RenderingIntent.Perceptual] = b2a0;
+                p._b2a[(int)RenderingIntent.RelativeColorimetric] = SafeB2A("B2A1") ?? b2a0;
+                p._b2a[(int)RenderingIntent.Saturation] = SafeB2A("B2A2") ?? b2a0;
                 p._b2a[(int)RenderingIntent.AbsoluteColorimetric] = p._b2a[(int)RenderingIntent.RelativeColorimetric];
             }
-            if (cls == OutputClass && n == 4 && perceptual is not null && tags.ContainsKey(Sig("B2A0")))
+            if (cls == OutputClass && n == 4 && perceptual is not null && b2a0 is not null)
             {
                 // Little CMS BlackPointUsingPerceptualBlack: PCS black -> B2A0 -> A2B0 (perceptual round trip).
-                var b0 = includeDestination ? p._b2a[(int)RenderingIntent.Perceptual] : ReadTag("B2A0", 3, n, true);
-                if (b0 is not null) p._perceptualRoundTripY = RoundTripBlackY(b0, perceptual, major >= 4 ? PerceptualBlack : [0, 0, 0]);
+                try { p._perceptualRoundTripY = RoundTripBlackY(b2a0, perceptual, major >= 4 ? PerceptualBlack : [0, 0, 0]); }
+                catch (Exception) { p._perceptualRoundTripY = null; }
             }
             // ICC.1:2022 6.3.2.2 (4)-(6): source media white / destination D50 media white.
             // As in lcms _cmsReadMediaWhitePoint, v2 display profiles use D50.
@@ -972,7 +981,11 @@ public sealed class IccProfile
                 Encode(m[3] * r + m[4] * g + m[5] * b + m[10]),
                 Encode(m[6] * r + m[7] * g + m[8] * b + m[11]));
         }
-        var lutBpc = blackPointCompensation == BlackPointCompensation.On && EnsureLutBpc(intent);
+        // Little CMS 2.17 (_cmsLinkProfiles) forces BPC for perceptual/saturation when a chain profile is v4, which its
+        // built-in sRGB output always is; match it for LUT transforms regardless of the PDF flag. Relative colorimetric
+        // follows UseBlackPtComp; absolute never compensates. This follows LittleCMS, not an ICC/PDF requirement.
+        var lutBpc = (blackPointCompensation == BlackPointCompensation.On
+            || intent is RenderingIntent.Perceptual or RenderingIntent.Saturation) && EnsureLutBpc(intent);
         if (IsSrgb) return new(Math.Clamp(c[0], 0, 1), Math.Clamp(c[1], 0, 1), Math.Clamp(c[2], 0, 1));
         Span<float> o = stackalloc float[3];
         var transform = lutBpc ? _bpcTransforms[(int)intent] : _transforms[(int)intent];
