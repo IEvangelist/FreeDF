@@ -15,7 +15,7 @@ app.MapMethods("/api/{**path}", ["GET", "POST", "PUT"], async (HttpRequest reque
 {
     byte[]? body = null;
     string? uploadName = null;
-    if (request.HasFormContentType && request.Path.Value is "/api/open" or "/api/import" or "/api/asset")
+    if (request.HasFormContentType && request.Path.Value is "/api/open" or "/api/import" or "/api/inspect" or "/api/asset")
     {
         var form = await request.ReadFormAsync();
         var file = form.Files.FirstOrDefault() ?? throw new BadHttpRequestException("Choose a file.");
@@ -41,7 +41,7 @@ app.MapMethods("/api/{**path}", ["GET", "POST", "PUT"], async (HttpRequest reque
         app.Logger.LogWarning(e, "Editor command conflicted: {Path}", request.Path);
         return Results.Text(e.Message, statusCode: StatusCodes.Status409Conflict);
     }
-    catch (Exception e) when (e is ArgumentException or InvalidDataException or NotSupportedException or PortableDocument.Core.PdfParseException)
+    catch (Exception e) when (e is ArgumentException or InvalidDataException or NotSupportedException or PortableDocument.Core.PdfParseException or System.Security.Cryptography.CryptographicException)
     {
         app.Logger.LogWarning(e, "Editor command failed: {Path}", request.Path);
         return Results.BadRequest(e.Message);

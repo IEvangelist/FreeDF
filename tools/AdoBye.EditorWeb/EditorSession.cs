@@ -525,10 +525,19 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                         Q("forms") is { } historyForms ? JsonSerializer.Deserialize<List<int>>(historyForms) : null) });
                 case "import":
                     CheckPageMutation();
-                    var imported = PdfDocument.Load(body ?? []);
-                    editor.ImportPages(imported);
+                    var imported = PdfDocument.Load(body ?? throw new ArgumentException("Choose a PDF."));
+                    var pageRange = Q("pages");
+                    if (pageRange is not null && pageRange.Any(c => !char.IsAsciiDigit(c) && c is not (',' or '-' or ' ')))
+                        throw new ArgumentException("Page ranges use numbers, commas and dashes, such as 1-3, 5.");
+                    var chosen = ParseRange(pageRange, imported.Pages.Count);
+                    if (chosen.Count == 0) throw new ArgumentException("No pages in range. The PDF has " + imported.Pages.Count + " page(s).");
+                    var firstNew = Q("at") is { } atText ? Math.Clamp(int.Parse(atText, CultureInfo.InvariantCulture), 0, editor.PageCount) : editor.PageCount;
+                    editor.ImportPages(imported, chosen, firstNew);
                     recoverySupported &= !imported.File.IsEncrypted;
-                    PruneAssets(); Changed(); return Ok;
+                    PruneAssets(); Changed(); return AsJson(new { first = firstNew, count = chosen.Count });
+                case "inspect":
+                    var probe = PdfDocument.Load(body ?? throw new ArgumentException("Choose a PDF."));
+                    return AsJson(new { pageCount = probe.Pages.Count, encrypted = probe.File.IsEncrypted });
                 case "asset":
                     var bytes = body ?? [];
                     var mime = bytes.Length > 2 && bytes[0] == 0xff && bytes[1] == 0xd8 ? "image/jpeg" : "image/png";
