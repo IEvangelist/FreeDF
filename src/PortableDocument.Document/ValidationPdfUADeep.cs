@@ -5,7 +5,7 @@ namespace PortableDocument.Document;
 /// <summary>
 /// Deeper PDF/UA checks (ISO 14289-1 clause 7 / Matterhorn Protocol; ISO 14289-2 where the requirement carries over): content tagging and MCID mapping,
 /// structure-type nesting, notes, form-field and annotation descriptions, font mapping and document-level flags.
-/// Rule semantics follow the published veraPDF PDF/UA-1 profile; rules without a profile counterpart say so in their messages.
+/// Rules were compared by hand with the published veraPDF PDFUA-1 profile (e.g. 7.1-1/2/3, 7.2-11..16/36..40, 7.4.4-1, 7.9-1/2, 7.18.1-2/3); rules without a profile counterpart say so in their messages. veraPDF itself was not run.
 /// </summary>
 internal static class PdfUADeepChecks
 {
@@ -79,6 +79,8 @@ internal static class PdfUADeepChecks
     public static void ContentTagging(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
+        var byPage = tree.Elements().SelectMany(e => e.MarkedContent).Where(m => m.Stream is null && m.PageIndex is not null)
+            .GroupBy(m => m.PageIndex!.Value).ToDictionary(g => g.Key, g => g.ToList());
         for (var i = 0; i < c.Doc.Pages.Count; i++)
         {
             var page = c.Doc.Pages[i];
@@ -87,7 +89,8 @@ internal static class PdfUADeepChecks
             var props = f.Resolve(page.Resources?.Get("Properties")) as PdfDictionary;
             var used = new HashSet<int>();
             Scan(c, content, props, i, tree, used);
-            foreach (var mc in tree.Elements().SelectMany(e => e.MarkedContent).Where(m => m.Stream is null && m.PageIndex == i && !used.Contains(m.Mcid)).Take(100))
+            if (byPage.TryGetValue(i, out var refs))
+                foreach (var mc in refs.Where(m => !used.Contains(m.Mcid)).Take(100))
                 c.Add("PDFUA-MCID-MISSING", ValidationSeverity.Warning, $"structure tree references MCID {mc.Mcid} but the page content has no such marked-content sequence", "ISO 32000-2 14.7.4.2", i);
         }
     }
@@ -174,7 +177,7 @@ internal static class PdfUADeepChecks
                     if (kids.Count(k => k.StandardType == "THead") > 1) c.Add("PDFUA-TABLE-THEAD-MULTIPLE", ValidationSeverity.Error, "Table has more than one THead", sec, e.PageIndex);
                     if (kids.Count(k => k.StandardType == "TFoot") > 1) c.Add("PDFUA-TABLE-TFOOT-MULTIPLE", ValidationSeverity.Error, "Table has more than one TFoot", sec, e.PageIndex);
                     if (!kids.Any(k => k.StandardType == "TBody") && kids.Any(k => k.StandardType is "THead" or "TFoot"))
-                        c.Add("PDFUA-TABLE-TBODY", ValidationSeverity.Error, "Table has THead or TFoot but no TBody", sec, e.PageIndex);
+                        c.Add("PDFUA-TABLE-TBODY", ValidationSeverity.Error, "Table has THead or TFoot but no TBody (veraPDF PDFUA-1 7.2-13/14)", sec, e.PageIndex);
                     CaptionRules(c, e, kids, "PDFUA-TABLE-CAPTION", sec, firstOrLast: true);
                     break;
                 case "THead" or "TBody" or "TFoot":

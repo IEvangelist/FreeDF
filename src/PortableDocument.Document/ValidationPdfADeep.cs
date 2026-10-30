@@ -6,7 +6,7 @@ namespace PortableDocument.Document;
 
 /// <summary>
 /// Deeper PDF/A checks: ICC profile consistency, Info/XMP equivalence, XMP extension schemas, font dictionary completeness and form/action restrictions.
-/// Rule semantics follow the published veraPDF validation profiles (ISO 19005-1/-2/-3); rules without a profile counterpart are marked in their messages.
+/// Rules were compared with the published veraPDF profiles PDFA-1B/2B/3B (rule ids cited per check); rules without a profile counterpart say so in their messages. This is not a certification.
 /// </summary>
 internal static partial class PdfADeepChecks
 {
@@ -52,7 +52,7 @@ internal static partial class PdfADeepChecks
             c.Add("PDFA-XMP-PACKET-HEADER", ValidationSeverity.Error, "XMP packet header must not use the bytes or encoding attributes", Clause(c, "6.7.5", "6.6.2.1", "6.6.2.1"));
 
         foreach (var problem in x.ExtensionProblems.Take(50))
-            c.Add("PDFA-XMP-EXTENSION-INVALID", ValidationSeverity.Error, $"PDF/A extension schema is not well formed: {problem}", Clause(c, "6.7.8", "6.6.2.3.2", "6.6.2.3.2"));
+            c.Add("PDFA-XMP-EXTENSION-INVALID", ValidationSeverity.Error, $"PDF/A extension schema is not well formed: {problem}", Clause(c, "6.7.8", "6.6.2.3.3", "6.6.2.3.3"));
 
         var reported = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (ns, local) in x.Properties)
@@ -63,8 +63,9 @@ internal static partial class PdfADeepChecks
                 c.Add("PDFA-XMP-EXTENSION-UNDECLARED", ValidationSeverity.Error, $"XMP property {{{ns}}}{local} is not predefined and is not described by a PDF/A extension schema", Clause(c, "6.7.9", "6.6.2.3.1", "6.6.2.3.1"));
         }
 
-        if (f.Resolve(f.Trailer.Get("Info")) is not PdfDictionary info) return;
-        var clause = Clause(c, "6.7.3", "6.6.2.3", "6.6.2.3");
+        // veraPDF PDF/A-1b has CosInfo rules 6.7.3-1..8; the PDF/A-2b and -3b profiles contain no Info/XMP equivalence rules, so this check is part 1 only.
+        if (c.Part != 1 || f.Resolve(f.Trailer.Get("Info")) is not PdfDictionary info) return;
+        var clause = "ISO 19005-1 6.7.3"; // veraPDF PDFA-1B CosInfo 6.7.3-1..8
         const string pdfNs = "http://ns.adobe.com/pdf/1.3/";
         const string xmpNs = "http://ns.adobe.com/xap/1.0/";
 
@@ -116,7 +117,7 @@ internal static partial class PdfADeepChecks
     }
 
     internal static DateTimeOffset? ParseXmpDate(string s) =>
-        DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d) ? d.ToUniversalTime() : null;
+        DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d) ? new DateTimeOffset(d.UtcTicks - d.UtcTicks % TimeSpan.TicksPerSecond, TimeSpan.Zero) : null;
 
     public static void IccProfiles(ValidationContext c)
     {

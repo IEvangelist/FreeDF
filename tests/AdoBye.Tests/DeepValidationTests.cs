@@ -3,7 +3,7 @@ using PortableDocument.Document;
 
 namespace AdoBye.Tests;
 
-/// <summary>Deep PDF/A and PDF/UA rules. Each rule has a conformant and a deliberately non-conformant fixture; rule semantics mirror the veraPDF profiles.</summary>
+/// <summary>Deep PDF/A and PDF/UA rules. Each rule has a conformant and a deliberately non-conformant fixture; rule semantics were compared by hand with the published veraPDF profiles (PDFA-1B/2B/3B, PDFUA-1); veraPDF itself was not run.</summary>
 public class DeepValidationTests
 {
     const string PdfAIdXmp = "<rdf:Description rdf:about='' xmlns:pdfaid='http://www.aiim.org/pdfa/ns/id/' pdfaid:part='{0}' pdfaid:conformance='B'/>";
@@ -116,7 +116,26 @@ public class DeepValidationTests
     [Fact]
     public void InfoMatchingXmpIsClean()
     {
-        var r = A(PdfA(Xmp(2, DocXmp), infoIndex: 1, extras: DocInfo));
+        var r = A(PdfA(Xmp(1, DocXmp), infoIndex: 1, extras: DocInfo), PdfValidationProfile.PdfA1b);
+        Assert.False(r.Has("PDFA-XMP-INFO-MISMATCH"), string.Join("\n", r.Findings));
+        Assert.True(r.IsCompliant, string.Join("\n", r.Findings));
+    }
+
+    [Fact]
+    public void InfoXmpEquivalenceIsAPartOneRuleOnly()
+    {
+        // veraPDF PDFA-2B/3B contain no CosInfo rules; differing Info entries must not be reported.
+        var differing = DocInfo.Replace("/Title (T)", "/Title (Other)").Replace("/Author (A)", "/Author (A; B)").Replace("D:20240102030405Z", "D:20250102030405Z");
+        foreach (var (part, profile) in new[] { (2, PdfValidationProfile.PdfA2b), (3, PdfValidationProfile.PdfA3b) })
+            Assert.False(A(PdfA(Xmp(part, DocXmp), infoIndex: 1, extras: differing), profile).Has("PDFA-XMP-INFO-MISMATCH"));
+        Assert.True(A(PdfA(Xmp(1, DocXmp), infoIndex: 1, extras: differing), PdfValidationProfile.PdfA1b).Has("PDFA-XMP-INFO-MISMATCH"));
+    }
+
+    [Fact]
+    public void InfoDatesAreComparedAtSecondPrecisionAcrossTimeZones()
+    {
+        var xmp = DocXmp.Replace("2024-01-02T03:04:05+00:00", "2024-01-02T04:04:05.789+01:00");
+        var r = A(PdfA(Xmp(1, xmp), infoIndex: 1, extras: DocInfo), PdfValidationProfile.PdfA1b);
         Assert.False(r.Has("PDFA-XMP-INFO-MISMATCH"), string.Join("\n", r.Findings));
         Assert.True(r.IsCompliant, string.Join("\n", r.Findings));
     }
@@ -134,14 +153,14 @@ public class DeepValidationTests
     {
         var info = DocInfo.Replace(original, replacement);
         Assert.NotEqual(DocInfo, info);
-        var r = A(PdfA(Xmp(2, DocXmp), infoIndex: 1, extras: info));
+        var r = A(PdfA(Xmp(1, DocXmp), infoIndex: 1, extras: info), PdfValidationProfile.PdfA1b);
         Assert.Contains(r.Findings, f => f.RuleId == "PDFA-XMP-INFO-MISMATCH" && f.Severity == ValidationSeverity.Error);
     }
 
     [Fact]
     public void InfoEntryWithoutXmpCounterpartIsReported()
     {
-        var r = A(PdfA(Xmp(), infoIndex: 1, extras: "<< /Producer (P) >>"));
+        var r = A(PdfA(Xmp(1), infoIndex: 1, extras: "<< /Producer (P) >>"), PdfValidationProfile.PdfA1b);
         Assert.True(r.Has("PDFA-XMP-INFO-MISMATCH"));
     }
 
@@ -184,7 +203,9 @@ public class DeepValidationTests
             ObjPdf.Stream(""),
             ObjPdf.Stream("<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d' bytes='100'?><x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>" + Xmp() + "</rdf:RDF></x:xmpmeta><?xpacket end='w'?>", "/Type /Metadata /Subtype /XML"));
         Dump(pdf);
-        Assert.True(A(pdf).Has("PDFA-XMP-PACKET-HEADER"));
+        Assert.True(A(pdf).Has("PDFA-XMP-PACKET-HEADER")); // veraPDF 1B 6.7.5-1/2 and 2B/3B 6.6.2.1-2/3 ban bytes/encoding in every part
+        Assert.True(A(pdf, PdfValidationProfile.PdfA3b).Has("PDFA-XMP-PACKET-HEADER")); // veraPDF PDFA-1B 6.7.5-1/2 and PDFA-2B/3B 6.6.2.1-2/3 ban bytes/encoding in every part
+        Assert.True(A(pdf, PdfValidationProfile.PdfA3b).Has("PDFA-XMP-PACKET-HEADER"));
     }
 
     // ---- PDF/A: fonts, actions, forms ----
