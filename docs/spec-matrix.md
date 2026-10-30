@@ -12,12 +12,20 @@ The 2026-10-30 child-branch integration adds bounded JBIG2 Huffman refinement,
 inert clause-13 metadata, Type 1 MM/Expert, DocMDP/timestamps/DSS inspection,
 C# sample generation and local editor merging/header polish. Focused Release
 selectors pass 29 JBIG2, 9 multimedia, 24 Type 1, 57 signature/security,
-38 sample/reproducibility and 35 merge/generator interaction cases (selectors
-overlap; do not sum them). Full Release passes **1687/1687**, zero failures/skips;
+38 sample/reproducibility and 36 merge/generator interaction cases (selectors
+overlap; do not sum them). Full Release passes **1688/1688**, zero failures/skips;
 the solution build succeeds with six warnings, including an unused test field
 in the signature slice. Integrated WASM publication and Chromium full-editor,
 merge and page-image smoke pass. The matrix remains **15 Partial / 0 Todo**,
 plus the redaction/signature rows with explicit limitations: not full parity.
+
+Evidence boundaries: the JBIG2 Huffman refinement fixtures use an independent
+encoder and PDFium cross-check; jbig2dec/pdf.js do not decode these fixtures.
+Non-byte-aligned symbol widths and nonzero RDW/RDH refinements are not
+independently verified. Inert rendition/clip traversal uses depth 64 and 1024
+total nodes per top-level read with memoization and `Truncated` reporting.
+Signature timestamp unit tokens are self-built (no live TSA); the pyHanko
+interoperability fixtures provide independent evidence, not chain trust.
 
 ## Parser (`PortableDocument.Core`, `PortableDocument.Document`)
 

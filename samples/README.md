@@ -69,7 +69,7 @@ Layout: `Kit/Doc.cs` (document, pages, content streams, form XObjects, resources
 Tests: `SamplesTests` opens every committed sample (with the passwords above) and renders page 1 without warnings. `GeneratedSamplesTests` regenerates all samples into a temp folder and checks that 01-26 equal the committed files byte-for-byte, and that 27 has exactly the pages of the others, bookmarks and labels per sample, 17/18 merged with their text, retargeted and named-destination links, and the same form fields, layers, attachments, structure tree and nested bookmarks as the sources.
 
 Integrated validation on 2026-10-30 passes 38 focused sample/reproducibility
-cases and the 1687-case full Release suite. The editor's separate local
+cases and the 1688-case full Release suite. The editor's separate local
 **File > Merge PDFs** flow also passes Chromium save/render/reopen with these
 regenerated samples. These integration runs do not repeat or extend the
 independent comparison evidence below.

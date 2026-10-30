@@ -9,13 +9,16 @@ The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows 
 The seven child workstreams are integrated without rewriting their commits.
 Focused Release tests pass: JBIG2 29, multimedia/3D 9, Type 1 24,
 signatures/security 57, samples/reproducibility 38 and merge/generator interaction
-35 (overlapping selectors). Full Release passes 1687/1687 with no skips/failures;
+36 (overlapping selectors). Full Release passes 1688/1688 with no skips/failures;
 the solution build succeeds with six warnings. Full Chromium editor smoke
 preserves text fidelity, recovery and desktop/mobile header behavior; separate
 merge and page-image smoke pass on the integrated WASM output.
 
 An integration regression verifies that a failed atomic import batch restores
 the generator's prior weak source-object import maps as well as pages/objects.
+The original three-argument `ImportPages` overload is retained for compiled
+callers; the merge-options overload is additive, with a reflection regression
+for both signatures.
 Local File > Merge PDFs carries forms, outlines and page labels, not arbitrary
 catalog structures. The generated full collection additionally preserves the
 specific non-colliding sample structures described in `samples/README.md`.
@@ -26,6 +29,14 @@ validation counts in later paragraphs describe earlier checkpoints. Performance
 profiling and library benchmark reruns were paused for integration; the pending
 latency budgets and large-save/recovery main-thread stalls remain unresolved.
 No new benchmark claims or full-parity claim are made.
+
+Independent-evidence limits: Huffman refinement fixtures are encoder-generated
+and PDFium-cross-checked, not decodable by jbig2dec/pdf.js; non-byte-aligned
+symbol widths and nonzero RDW/RDH still need independent references.
+Multimedia rendition/clip traversal is capped at depth 64 and 1024 total nodes
+per top-level read with memoization/`Truncated`, not unbounded graph support.
+DocTimeStamp unit tokens are self-built, not issued by a TSA; pyHanko fixtures
+provide independent interop evidence, while chain trust remains reported only.
 
 ## Parser and document model
 

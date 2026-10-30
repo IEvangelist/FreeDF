@@ -316,6 +316,8 @@ mobile uses a status dot and collapsed controls. Local recovery keeps its
 separate durable-checkpoint status and explicit Resume/Discard prompt. The
 one-time GitHub Sponsors link is a plain external anchor with
 `noopener noreferrer`; it does not preconnect or send document data.
+The checkout frequency query is asserted, but the available tier list and actual
+one-time checkout still require manual verification on GitHub.
 
 **File > Merge PDFs** accepts multiple local PDFs (or a drop into its dialog).
 Review/reorder/remove files, select one-based page ranges and choose an insertion
@@ -324,6 +326,7 @@ registers imported AcroForm fields (renaming collisions), nests outlines under
 file bookmarks and preserves page labels. Existing page overlays stay with
 their pages; a failure leaves the document unchanged. This does not merge every
 catalog-level structure (for example, arbitrary tags/layers/attachment trees).
+Document JavaScript and signatures are not carried into the merged catalog.
 Page insertion is not an overlay undo operation; retain/download the original
 when the merge must be reversible.
 
@@ -332,8 +335,8 @@ merging. Passwords are never requested or persisted by this dialog. If a
 supported encrypted import occurs in the server host, recovery is disabled
 rather than caching a decrypted copy. Merge stays local in both hosts.
 
-The integrated Release build succeeds and full suite passes 1687/1687. A local
-static WASM publish validates 245 artifacts (without the optional `wasm-tools`
+The integrated Release build succeeds and full suite passes 1688/1688. A local
+static WASM publish into a fresh output directory validates 207 artifacts (without the optional `wasm-tools`
 optimization workload). Full Chromium smoke passes text fidelity, recovery,
 clipboard/assets and desktop/mobile header assertions; the separate `--merge`
 scenario covers encrypted-input rejection, order/ranges/insertion, saved page
