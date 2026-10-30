@@ -5,6 +5,8 @@ decoded by OpenJPEG through Pillow, 8-bit interleaved) and name.meta ("MODE widt
 
 Packed-header cases follow T.800 (11/2015) A.7.4/A.7.5 (and A.6.6 for POC), including complete
 packet-header boundaries between marker segments, and require exact OpenJPEG/source equality.
+Multi-tile PPM is also decoded by OpenJPEG; multi-tile-part PPT expected samples come from the
+OpenJPEG-decoded source because OpenJPEG 2.5.4 does not decode PPT headers across tile-parts.
 """
 import io
 import os
@@ -219,6 +221,105 @@ def pack_packet_headers(data, marker):
 
     result[shifted_sot + 6:shifted_sot + 10] = new_psot.to_bytes(4, "big")
     return bytes(result)
+
+
+def pack_multi_tile_part_headers(data, marker):
+    """Splits each two-tile codestream into two tile-parts and packs their headers."""
+    if marker not in ("PPM", "PPT") or not data.startswith(b"\xff\x4f"):
+        raise ValueError("multi-tile packed-header fixture requires a raw PPM or PPT codestream")
+
+    pos = 2
+    while pos < len(data):
+        current, next_pos = _marker(data, pos)
+        if current == 0xFF90:
+            first_sot = pos
+            break
+        pos = next_pos
+    else:
+        raise ValueError("codestream has no tile-part")
+
+    ppm_records = []
+    tile_parts = []
+    pos = first_sot
+    while pos < len(data) and data[pos:pos + 2] == b"\xff\x90":
+        psot = int.from_bytes(data[pos + 6:pos + 10], "big")
+        tile_end = pos + psot
+        if psot == 0 or tile_end > len(data):
+            raise ValueError("multi-tile fixture requires bounded tile-parts")
+
+        packet_lengths = []
+        tile_header = bytearray()
+        marker_pos = pos + 12
+        while marker_pos < tile_end:
+            current, next_pos = _marker(data, marker_pos)
+            if current == 0xFF93:
+                sod = marker_pos
+                break
+            if current == 0xFF58:
+                value = 0
+                for byte in data[marker_pos + 5:next_pos]:
+                    value = value << 7 | (byte & 0x7f)
+                    if byte & 0x80 == 0:
+                        packet_lengths.append(value)
+                        value = 0
+                if data[next_pos - 1] & 0x80:
+                    raise ValueError("incomplete PLT packet length")
+            else:
+                tile_header += data[marker_pos:next_pos]
+            marker_pos = next_pos
+        else:
+            raise ValueError("tile-part has no SOD marker")
+
+        payload = data[sod + 2:tile_end]
+        if not packet_lengths or sum(packet_lengths) != len(payload):
+            raise ValueError("PLT lengths do not match tile packet data")
+        packets = []
+        offset = 0
+        for length in packet_lengths:
+            packet = payload[offset:offset + length]
+            header_length = _packet_header_length(packet)
+            packets.append((packet[:header_length], packet[header_length:]))
+            offset += length
+        if len(packets) < 2:
+            raise ValueError("each tile must contain at least two packets")
+
+        original_sot = bytearray(data[pos:pos + 12])
+        for part_index, packet_group in enumerate((packets[:1], packets[1:])):
+            headers = bytearray()
+            header_ends = []
+            body = bytearray()
+            for header, packet_body in packet_group:
+                headers += header
+                header_ends.append(len(headers))
+                body += packet_body
+            packed_markers = b""
+            if marker == "PPT":
+                packed_markers = _packed_segments(0xFF61, headers, header_ends)
+            else:
+                ppm_records.append(len(headers).to_bytes(4, "big") + headers)
+
+            sot = bytearray(original_sot)
+            sot[6:10] = (14 + len(tile_header) + len(packed_markers) + len(body)).to_bytes(4, "big")
+            sot[10] = part_index
+            sot[11] = 2
+            tile_parts.extend(sot)
+            tile_parts.extend(tile_header)
+            tile_parts.extend(packed_markers)
+            tile_parts += b"\xff\x93" + body
+        pos = tile_end
+
+    if pos != len(data) - 2 or data[pos:] != b"\xff\xd9" or len(tile_parts) == 0:
+        raise ValueError("fixture requires only bounded tile-parts followed by EOC")
+    if marker == "PPM":
+        if len(ppm_records) != 4:
+            raise ValueError(f"expected four tile-part PPM records, found {len(ppm_records)}")
+        ppm_payload = b"".join(ppm_records)
+        split = len(ppm_records[0]) + len(ppm_records[1])
+        ppm_markers = bytearray()
+        for index, chunk in enumerate((ppm_payload[:split], ppm_payload[split:])):
+            ppm_markers += b"\xff\x60" + (len(chunk) + 3).to_bytes(2, "big") + bytes((index,)) + chunk
+        return data[:first_sot] + ppm_markers + bytes(tile_parts) + data[-2:]
+    return data[:first_sot] + bytes(tile_parts) + data[-2:]
 
 
 def add_poc(data, layers, resolutions, components, end_components=None, malformed=None, tile_poc=False,
@@ -590,6 +691,34 @@ def emit_poc_packed(marker):
     print("wrote", name, "RGB", im.width, im.height, len(data), "bytes")
 
 
+def emit_multi_tile_packed(marker):
+    # T.800 (11/2015) A.7.4/A.7.5: four tile-parts carry separate packet-header records.
+    yy, xx = np.mgrid[0:8, 0:16]
+    samples = np.stack((xx * 8 + yy, 40 + xx + 2 * yy, 120 + 2 * xx + yy), axis=-1).astype(np.uint8)
+    im = Image.fromarray(samples, "RGB")
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG2000", no_jp2=True, progression="LRCP", num_resolutions=1,
+            irreversible=False, mct=0, plt=True, tile_size=(8, 8))
+    original = buf.getvalue()
+    source = Image.open(io.BytesIO(original))
+    source.load()
+    arr = np.asarray(source)
+    if source.mode != "RGB" or not np.array_equal(arr, samples):
+        raise ValueError("OpenJPEG sample mismatch for multi-tile packed-header source")
+    data = pack_multi_tile_part_headers(original, marker)
+    if marker == "PPM":
+        ref = Image.open(io.BytesIO(data))
+        ref.load()
+        if ref.mode != "RGB" or not np.array_equal(np.asarray(ref), arr):
+            raise ValueError("OpenJPEG sample mismatch for multi-tile PPM fixture")
+    name = f"{marker.lower()}-multitile-multipart-lossless"
+    make_pdf(os.path.join(OUT, name + ".pdf"), im.width, im.height, data,
+             {"ColorSpace": Name.DeviceRGB})
+    open(os.path.join(OUT, name + ".bin"), "wb").write(np.ascontiguousarray(arr).tobytes())
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"RGB {im.width} {im.height} 0")
+    print("wrote", name, "RGB", im.width, im.height, len(data), "bytes")
+
+
 def main():
     rgb = picture(96, 72)
     gray = rgb.convert("L")
@@ -638,6 +767,7 @@ def main():
     emit("ppt-lossless", packed, packed="PPT", num_resolutions=1, irreversible=False, mct=0, plt=True)
     for marker in ("PPM", "PPT"):
         emit_poc_packed(marker)
+        emit_multi_tile_packed(marker)
 
 
 if __name__ == "__main__":

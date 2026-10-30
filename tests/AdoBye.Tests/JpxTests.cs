@@ -324,6 +324,72 @@ public class JpxTests
         Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), image.Samples);
     }
 
+    [Theory]
+    [InlineData("ppm-multitile-multipart-lossless", 0xFF60)]
+    [InlineData("ppt-multitile-multipart-lossless", 0xFF61)]
+    public void PackedHeadersStayAssociatedAcrossTilesAndTileParts(string name, int marker)
+    {
+        var data = Codestream(name);
+        var firstSot = FindMarker(data, 0xFF90);
+        var mainPpmIndices = new List<int>();
+        var ppmSegments = new List<byte[]>();
+        for (var pos = 2; pos < firstSot;)
+        {
+            var current = ReadU16(data, pos);
+            var length = ReadU16(data, pos + 2);
+            if (current == 0xFF60)
+            {
+                mainPpmIndices.Add(data[pos + 4]);
+                ppmSegments.Add(data.AsSpan(pos + 5, length - 3).ToArray());
+            }
+            pos += 2 + length;
+        }
+
+        if (marker == 0xFF60)
+        {
+            Assert.Equal(new[] { 0, 1 }, mainPpmIndices);
+            var segmentLengths = ppmSegments.Select(ReadPpmHeaderLengths).ToArray();
+            Assert.All(segmentLengths, lengths => Assert.Equal(2, lengths.Count));
+            var nppmLengths = segmentLengths.SelectMany(lengths => lengths).ToArray();
+            Assert.Equal(4, nppmLengths.Length);
+            Assert.Equal(nppmLengths[0], nppmLengths[2]);
+            Assert.Equal(nppmLengths[1], nppmLengths[3]);
+            Assert.True(nppmLengths[1] > nppmLengths[0]);
+        }
+        else
+        {
+            Assert.Empty(mainPpmIndices);
+        }
+
+        var parts = ReadTileParts(data);
+        Assert.Equal(new[] { (0, 0), (0, 1), (1, 0), (1, 1) },
+            parts.Select(part => (part.Tile, part.Index)));
+        foreach (var part in parts)
+        {
+            Assert.Equal(2, part.Count);
+            Assert.True(part.End > part.Sod + 2, "tile-part has no packet body");
+            var pptIndices = new List<int>();
+            for (var pos = part.Start + 12; pos < part.Sod;)
+            {
+                var current = ReadU16(data, pos);
+                var length = ReadU16(data, pos + 2);
+                if (current == 0xFF61) pptIndices.Add(data[pos + 4]);
+                pos += 2 + length;
+            }
+            if (marker == 0xFF61)
+                Assert.Equal(part.Index == 0 ? new[] { 0 } : new[] { 0, 1 }, pptIndices);
+            else
+                Assert.Empty(pptIndices);
+        }
+
+        var image = JpxDecoder.Decode(data, 3, false, false, out var warning);
+        Assert.NotNull(image);
+        Assert.Null(warning);
+        Assert.Equal(16, image.Width);
+        Assert.Equal(8, image.Height);
+        Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), image.Samples);
+    }
+
     [Fact]
     public void RejectsPpmMarkerInTilePartHeader()
     {
@@ -360,6 +426,40 @@ public class JpxTests
         for (var i = 0; i + 1 < data.Length; i++)
             if (data[i] == (byte)(marker >> 8) && data[i + 1] == (byte)marker) return i;
         throw new InvalidDataException($"marker 0x{marker:X4} not found");
+    }
+
+    readonly record struct TilePart(int Tile, int Index, int Count, int Start, int Sod, int End);
+
+    static List<TilePart> ReadTileParts(byte[] data)
+    {
+        var parts = new List<TilePart>();
+        var pos = FindMarker(data, 0xFF90);
+        while (pos + 12 <= data.Length && ReadU16(data, pos) == 0xFF90)
+        {
+            var end = pos + (int)ReadU32(data, pos + 6);
+            var sod = pos + 12;
+            while (sod + 2 <= end && ReadU16(data, sod) != 0xFF93)
+                sod += 2 + ReadU16(data, sod + 2);
+            Assert.True(sod + 2 <= end, "tile-part has no SOD marker");
+            parts.Add(new TilePart(ReadU16(data, pos + 4), data[pos + 10], data[pos + 11], pos, sod, end));
+            pos = end;
+        }
+        return parts;
+    }
+
+    static List<uint> ReadPpmHeaderLengths(byte[] data)
+    {
+        var lengths = new List<uint>();
+        for (var pos = 0; pos < data.Length;)
+        {
+            Assert.True(data.Length - pos >= 4, "PPM data ends inside an Nppm field");
+            var length = ReadU32(data, pos);
+            pos += 4;
+            Assert.InRange(length, 1u, (uint)(data.Length - pos));
+            lengths.Add(length);
+            pos += (int)length;
+        }
+        return lengths;
     }
 
     static byte[] PpmMarker() => [0xFF, 0x60, 0, 8, 0, 0, 0, 0, 1, 0];
