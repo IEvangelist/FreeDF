@@ -31,4 +31,91 @@ public class Jbig2Tests
             if ((data.Rgba[i * 4] > 127) != (expected[i] == '1')) bad++;
         Assert.Equal(0, bad);
     }
+
+    [Fact]
+    public void DecodesMmrHalftonePatternAndGridPlanes()
+    {
+        const string eofb = "000000000001000000000001";
+        var stream = new List<byte>();
+        AddSegment(stream, 1, 48, PageInfo(4, 4));
+        AddSegment(stream, 2, 16, PatternDictionary());
+        AddSegment(stream, 3, 20, HalftoneRegion(), [2]);
+        AddSegment(stream, 4, 49, []);
+        AddSegment(stream, 5, 51, []);
+
+        var data = Jbig2Decoder.Decode([.. stream], null, 4, 4, out var warning);
+
+        Assert.Null(warning);
+        Assert.Equal(new byte[] { 0xCF, 0xCF, 0x3F, 0x3F }, data);
+
+        byte[] PageInfo(int width, int height)
+        {
+            var payload = new List<byte>();
+            WriteInt(payload, width);
+            WriteInt(payload, height);
+            WriteInt(payload, 0);
+            WriteInt(payload, 0);
+            payload.Add(0);
+            payload.AddRange([0, 0]);
+            return [.. payload];
+        }
+
+        byte[] PatternDictionary()
+        {
+            var payload = new List<byte> { 1, 2, 2 };
+            WriteInt(payload, 1);
+            payload.AddRange(PackBits("001011111" + "11" + eofb));
+            return [.. payload];
+        }
+
+        byte[] HalftoneRegion()
+        {
+            var payload = new List<byte>();
+            WriteInt(payload, 4);
+            WriteInt(payload, 4);
+            WriteInt(payload, 0);
+            WriteInt(payload, 0);
+            payload.Add(0);
+            payload.Add(1);
+            WriteInt(payload, 2);
+            WriteInt(payload, 2);
+            WriteInt(payload, 0);
+            WriteInt(payload, 0);
+            payload.AddRange([2, 0, 0, 0]);
+            payload.AddRange(PackBits(
+                "00100110101010" +
+                "0100101" +
+                eofb));
+            return [.. payload];
+        }
+
+        static byte[] PackBits(string bits)
+        {
+            var packed = new byte[(bits.Length + 7) / 8];
+            for (var i = 0; i < bits.Length; i++)
+                if (bits[i] == '1')
+                    packed[i >> 3] |= (byte)(0x80 >> (i & 7));
+            return packed;
+        }
+
+        static void AddSegment(List<byte> destination, byte number, byte type, byte[] payload, byte[]? references = null)
+        {
+            references ??= [];
+            destination.Add(number);
+            destination.Add(type);
+            destination.Add((byte)(references.Length << 5));
+            destination.AddRange(references);
+            destination.Add(0);
+            WriteInt(destination, payload.Length);
+            destination.AddRange(payload);
+        }
+
+        static void WriteInt(List<byte> destination, int value)
+        {
+            destination.Add((byte)(value >> 24));
+            destination.Add((byte)(value >> 16));
+            destination.Add((byte)(value >> 8));
+            destination.Add((byte)value);
+        }
+    }
 }
