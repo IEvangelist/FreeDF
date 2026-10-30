@@ -9,6 +9,7 @@ sealed class GState
     public PdfColorSpace FillCs = PdfColorSpace.Gray, StrokeCs = PdfColorSpace.Gray;
     public double[] FillColor = [0], StrokeColor = [0];
     public RenderingIntent Intent = RenderingIntent.RelativeColorimetric;
+    public BlackPointCompensation BlackPointCompensation = BlackPointCompensation.Default;
     public PdfObject? FillPattern, StrokePattern;
     public double LineWidth = 1, MiterLimit = 10, DashPhase;
     public LineCap Cap; public LineJoin Join;
@@ -629,6 +630,16 @@ public sealed class ContentInterpreter
     {
         // Apply before /SMask regardless of dictionary entry order.
         if (R(g.Get("RI")) is PdfName intent) _gs.Intent = RenderingIntentNames.Parse(intent.Value);
+        if (g.Get("UseBlackPtComp") is { } bpc)
+        {
+            switch (R(bpc))
+            {
+                case PdfName { Value: "ON" }: _gs.BlackPointCompensation = BlackPointCompensation.On; break;
+                case PdfName { Value: "OFF" }: _gs.BlackPointCompensation = BlackPointCompensation.Off; break;
+                case PdfName { Value: "Default" }: _gs.BlackPointCompensation = BlackPointCompensation.Default; break;
+                default: Warn("invalid ExtGState /UseBlackPtComp: expected /ON, /OFF or /Default; retaining current state"); break;
+            }
+        }
         foreach (var (k, v0) in g.Entries)
         {
             var v = R(v0);
@@ -671,12 +682,12 @@ public sealed class ContentInterpreter
         {
             var c = ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
             var gcs = R(R(g.Dict.Get("Group")) is PdfDictionary gd ? gd.Get("CS") : null) is { } cso ? PdfColorSpace.Parse(_f, cso, res) : null;
-            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c, _gs.Intent);
+            if (gcs is not null && gcs.Components == c.Length) bc = gcs.ToRgb(c, _gs.Intent, _gs.BlackPointCompensation);
             else bc = c.Length switch
             {
                 1 => new RgbColor(c[0], c[0], c[0]),
                 3 => new RgbColor(c[0], c[1], c[2]),
-                4 => PdfColorSpace.Cmyk.ToRgb(c, _gs.Intent),
+                4 => PdfColorSpace.Cmyk.ToRgb(c, _gs.Intent, _gs.BlackPointCompensation),
                 _ => bc
             };
         }
@@ -685,11 +696,12 @@ public sealed class ContentInterpreter
             transfer = x => { var o = trf.Evaluate([x]); return o.Length > 0 ? o[0] : x; };
         var ctm = _gs.Ctm;
         var intent = _gs.Intent;
+        var blackPointCompensation = _gs.BlackPointCompensation;
         _gs.SoftMaskActive = true;
         _be.SetSoftMask(off =>
         {
             var sb = _be; var saved = _gs;
-            _be = off; _gs = new GState { Ctm = ctm, Intent = intent };
+            _be = off; _gs = new GState { Ctm = ctm, Intent = intent, BlackPointCompensation = blackPointCompensation };
             try { DoForm(g, res); }
             finally { _be = sb; _gs = saved; }
         }, lum, bc, transfer);
@@ -718,7 +730,7 @@ public sealed class ContentInterpreter
         var cs = stroke ? _gs.StrokeCs : _gs.FillCs;
         var c = stroke ? _gs.StrokeColor : _gs.FillColor;
         if (c.Length < cs.Components) c = [.. c, .. new double[cs.Components - c.Length]];
-        return cs.Components == 0 ? RgbColor.Black : cs.ToRgb(c, _gs.Intent);
+        return cs.Components == 0 ? RgbColor.Black : cs.ToRgb(c, _gs.Intent, _gs.BlackPointCompensation);
     }
 
     void Paint(bool fill, bool evenOdd, bool stroke)
@@ -798,7 +810,7 @@ public sealed class ContentInterpreter
             for (var i = i0; i <= i1; i++)
             {
                 _be.Save();
-                _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm), Intent = savedGs.Intent };
+                _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm), Intent = savedGs.Intent, BlackPointCompensation = savedGs.BlackPointCompensation };
                 if (uncolored) { _gs.FillCs = PdfColorSpace.Rgb; _gs.FillColor = [color.R, color.G, color.B]; _gs.StrokeCs = PdfColorSpace.Rgb; _gs.StrokeColor = _gs.FillColor; }
                 var r = new PathData(); r.Rect(bb[0], bb[1], bb[2] - bb[0], bb[3] - bb[1]);
                 _be.Clip(r, _gs.Ctm, false);
@@ -1044,6 +1056,7 @@ public sealed class ContentInterpreter
     {
         if (!DrawGraphics) return;
         var intent = _gs.Intent;
+        var blackPointCompensation = _gs.BlackPointCompensation;
         var d = shObj as PdfDictionary ?? (shObj as PdfStream)?.Dict;
         if (d is null) return;
         var m = shadingToDevice ?? _gs.Ctm;
@@ -1085,7 +1098,7 @@ public sealed class ContentInterpreter
             if (fns is null) return RgbColor.Black;
             double[] comps = fns.Length == 1 ? fns[0].Evaluate([t]) : fns.Select(fn => fn.Evaluate([t])[0]).ToArray();
             if (comps.Length < cs.Components) comps = [.. comps, .. new double[cs.Components - comps.Length]];
-            return cs.ToRgb(comps, intent);
+            return cs.ToRgb(comps, intent, blackPointCompensation);
         }
 
         double[] Arr(string k) => R(d.Get(k)) is PdfArray a ? a.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [];
@@ -1153,7 +1166,7 @@ public sealed class ContentInterpreter
                 if (sx < dom[0] || sx > dom[1] || sy < dom[2] || sy > dom[3] || fns is null) return null;
                 double[] comps = fns.Length == 1 ? fns[0].Evaluate([sx, sy]) : fns.Select(fn => fn.Evaluate([sx, sy])[0]).ToArray();
                 if (comps.Length < cs.Components) comps = [.. comps, .. new double[cs.Components - comps.Length]];
-                return cs.ToRgb(comps, intent);
+                return cs.ToRgb(comps, intent, blackPointCompensation);
             }, _gs.FillAlpha, _gs.BlendMode);
         }
         else if (type is >= 4 and <= 7 && shObj is PdfStream ms)
@@ -1164,7 +1177,7 @@ public sealed class ContentInterpreter
             var mesh = MeshShading.Decode(type, _f.DecodeStream(ms), dec, Int("BitsPerCoordinate", 8), Int("BitsPerComponent", 8),
                 type == 5 ? 0 : Int("BitsPerFlag", 8), nComps, Int("VerticesPerRow", 0), m);
             var shader = MeshShading.ToShader(mesh, comps => fns is null
-                ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps, intent)
+                ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps, intent, blackPointCompensation)
                 : EvalT(comps[0]));
             _be.PaintShader(shader, _gs.FillAlpha, _gs.BlendMode);
         }
@@ -1238,7 +1251,7 @@ public sealed class ContentInterpreter
     void DrawImage(PdfStream xs, PdfDictionary res)
     {
         if (!DrawGraphics) return;
-        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn, _gs.Intent);
+        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn, _gs.Intent, _gs.BlackPointCompensation);
         if (warn is not null) Warn(warn);
         if (img is null) return;
         _be.DrawImage(img, _gs.Ctm, _gs.FillAlpha, isMask ? Color(false) : RgbColor.Black, _gs.BlendMode);

@@ -7,6 +7,8 @@ namespace PortableDocument.Content;
 /// ICC profile reader/evaluator (ICC.1 v2/v4) converting device values to sRGB. Supports matrix/TRC RGB, gray TRC, and
 /// LUT profiles (lut8, lut16, lutAToB) for RGB/CMYK via A2B0/A2B1/A2B2. PCS is D50 XYZ or Lab; output is sRGB (Bradford D50 → D65).
 /// Evaluation is allocation-free; CMYK/RGB LUT profiles bake a 17-point grid after enough calls to amortise the cost.
+/// Optional BPC uses a parse-time prepared XYZ affine map for the bounded matrix/gray relative-colorimetric
+/// subset reported by <see cref="SupportsBlackPointCompensation"/>; it is not universal ISO 18619 estimation.
 /// </summary>
 public sealed class IccProfile
 {
@@ -21,6 +23,9 @@ public sealed class IccProfile
     readonly Transform[] _transforms = [new(), new(), new(), new()];
     double[] _whiteScale = [1, 1, 1];
     float[] _absoluteM = new float[9];
+    float[]? _blackPointM;
+    float? _grayBlack;
+    const float MaxEstimatedBlack = 0.1841865f; // Neutral L* = 50; higher endpoints are not estimated.
     const int GridPoints = 17;
 
     sealed class Transform
@@ -44,6 +49,14 @@ public sealed class IccProfile
             if (x >= 1f) return t[^1];
             var p = x * (t.Length - 1); var i = (int)p; var f = p - i;
             return t[i] + (t[i + 1] - t[i]) * f;
+        }
+
+        public bool HasMonotoneUnitWhite()
+        {
+            if (T[^1] != 1f || !(T[0] >= 0f && T[0] < 1f)) return false;
+            for (var i = 1; i < T.Length; i++)
+                if (!float.IsFinite(T[i]) || T[i] < T[i - 1]) return false;
+            return true;
         }
     }
 
@@ -234,6 +247,10 @@ public sealed class IccProfile
                 }
             }
             p.DetectSrgb();
+            if ((major is 2 or 4) && (cls is 0x73636E72 or 0x6D6E7472) && !pcsLab
+                && relative is null && p._kind == Kind.Gray && p._trc[0].HasMonotoneUnitWhite()
+                && p._trc[0].T[0] <= MaxEstimatedBlack)
+                p._grayBlack = p._trc[0].T[0];
             return p;
         }
         IccProfile? LutOnly() => relative is not null ? Configure(new IccProfile(n, Kind.Lut)) : null;
@@ -269,8 +286,55 @@ public sealed class IccProfile
                 prof._absoluteM[r * 3 + c] = (float)(XyzToRgb[r * 3] * prof._whiteScale[0] * xyz[c]
                     + XyzToRgb[r * 3 + 1] * prof._whiteScale[1] * xyz[3 + c]
                     + XyzToRgb[r * 3 + 2] * prof._whiteScale[2] * xyz[6 + c]);
+        if ((major is 2 or 4) && (cls is 0x73636E72 or 0x6D6E7472) && !pcsLab && relative is null)
+            prof.PrepareBlackPoint(xyz);
         return prof;
     }
+
+    void PrepareBlackPoint(float[] xyz)
+    {
+        if (_trc.Any(c => !c.HasMonotoneUnitWhite()) || xyz.Any(v => v < 0 || !float.IsFinite(v)))
+            return;
+        var black = _trc[0].T[0];
+        if (black > MaxEstimatedBlack) return;
+        if (_trc.Any(c => Math.Abs(c.T[0] - black) > 0.000001)) return;
+        double[] white = [0.9642, 1, 0.8249];
+        var scale = new double[3];
+        var offset = new double[3];
+        for (var r = 0; r < 3; r++)
+        {
+            var sum = (double)xyz[r * 3] + xyz[r * 3 + 1] + xyz[r * 3 + 2];
+            if (Math.Abs(sum - white[r]) > 0.0001) return;
+            var sourceBlack = (double)xyz[r * 3] * _trc[0].T[0]
+                + xyz[r * 3 + 1] * _trc[1].T[0] + xyz[r * 3 + 2] * _trc[2].T[0];
+            if (!(sourceBlack < white[r])) return;
+            // XYZ' = (W - Bd)/(W - Bs) * XYZ + W*(Bd - Bs)/(W - Bs).
+            // The analytic sRGB destination has Bd = 0; W is PCS D50.
+            scale[r] = white[r] / (white[r] - sourceBlack);
+            offset[r] = -scale[r] * sourceBlack;
+        }
+        var matrix = new float[12];
+        for (var r = 0; r < 3; r++)
+        {
+            for (var c = 0; c < 3; c++)
+                for (var k = 0; k < 3; k++)
+                    matrix[r * 3 + c] += (float)(XyzToRgb[r * 3 + k] * scale[k] * xyz[k * 3 + c]);
+            for (var k = 0; k < 3; k++)
+                matrix[9 + r] += (float)(XyzToRgb[r * 3 + k] * offset[k]);
+        }
+        _blackPointM = matrix;
+    }
+
+    /// <summary>
+    /// Whether a bounded source-black estimate is available: v2/v4 input/display XYZ matrix/TRC RGB
+    /// with nonnegative colorants, D50 white and equal black endpoints, or gray TRC; curves must be
+    /// monotone with unit white and black no higher than neutral L* 50. Only relative colorimetric
+    /// without an A2B transform is supported. RGB D50 row-sum tolerance is 0.0001, endpoint tolerance 0.000001.
+    /// LUT, other classes/versions, perceptual and saturation estimation are not implemented.
+    /// Unsupported estimation preserves ordinary conversion; absolute intent always disables BPC.
+    /// </summary>
+    public bool SupportsBlackPointCompensation(RenderingIntent intent) =>
+        intent == RenderingIntent.RelativeColorimetric && (_grayBlack.HasValue || _blackPointM is not null);
 
     static Lut? ReadLut(byte[] data, int o, int size, int nIn, bool pcsLab, int major)
     {
@@ -468,8 +532,28 @@ public sealed class IccProfile
         => ToSrgb(c, RenderingIntent.RelativeColorimetric);
 
     public RgbColor ToSrgb(ReadOnlySpan<double> c, RenderingIntent intent)
+        => ToSrgb(c, intent, BlackPointCompensation.Default);
+
+    /// <summary>Converts to analytic sRGB (destination black XYZ zero); Default is Off.</summary>
+    public RgbColor ToSrgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation)
     {
         if ((uint)intent > (uint)RenderingIntent.AbsoluteColorimetric) intent = RenderingIntent.RelativeColorimetric;
+        if (blackPointCompensation == BlackPointCompensation.On && SupportsBlackPointCompensation(intent))
+        {
+            if (_grayBlack is { } black)
+            {
+                var y = _trc[0].Eval((float)Math.Clamp(c[0], 0, 1));
+                var e = Encode((y - black) / (1 - black));
+                return new(e, e, e);
+            }
+            var m = _blackPointM!;
+            var r = _trc[0].Eval((float)Math.Clamp(c[0], 0, 1));
+            var g = _trc[1].Eval((float)Math.Clamp(c[1], 0, 1));
+            var b = _trc[2].Eval((float)Math.Clamp(c[2], 0, 1));
+            return new(Encode(m[0] * r + m[1] * g + m[2] * b + m[9]),
+                Encode(m[3] * r + m[4] * g + m[5] * b + m[10]),
+                Encode(m[6] * r + m[7] * g + m[8] * b + m[11]));
+        }
         if (IsSrgb) return new(Math.Clamp(c[0], 0, 1), Math.Clamp(c[1], 0, 1), Math.Clamp(c[2], 0, 1));
         Span<float> o = stackalloc float[3];
         var transform = _transforms[(int)intent];

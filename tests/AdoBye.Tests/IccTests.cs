@@ -68,6 +68,344 @@ public class IccTests
 
     static (int R, int G, int B) Round(RgbColor c) => ((int)Math.Round(c.R * 255), (int)Math.Round(c.G * 255), (int)Math.Round(c.B * 255));
 
+    static byte[] SampledCurve(params int[] values)
+    {
+        var b = new List<byte>();
+        U32(b, Sig("curv")); U32(b, 0); U32(b, (uint)values.Length);
+        foreach (var value in values) U16(b, value);
+        return [.. b];
+    }
+
+    static byte[] BpcProfile(bool gray = false, int version = 4, byte[]? curve = null)
+    {
+        curve ??= SampledCurve(6554, 65535);
+        var data = gray ? Profile("GRAY", "XYZ ", ("kTRC", curve), ("wtpt", Xyz(0.9642, 1, 0.8249)))
+            : Profile("RGB ", "XYZ ",
+                ("rXYZ", Xyz(0.4360747, 0.2225045, 0.0139322)),
+                ("gXYZ", Xyz(0.3850649, 0.7168786, 0.0971045)),
+                ("bXYZ", Xyz(0.1430804, 0.0606169, 0.7138633)),
+                ("rTRC", curve), ("gTRC", curve), ("bTRC", curve), ("wtpt", Xyz(0.9642, 1, 0.8249)));
+        data[8] = (byte)version;
+        Encoding.ASCII.GetBytes("scnr").CopyTo(data, 12);
+        return data;
+    }
+
+    [Theory]
+    [InlineData(false, 2, false)]
+    [InlineData(false, 4, false)]
+    [InlineData(true, 2, false)]
+    [InlineData(true, 4, false)]
+    [InlineData(false, 2, true)]
+    [InlineData(false, 4, true)]
+    [InlineData(true, 2, true)]
+    [InlineData(true, 4, true)]
+    public void Bpc_MapsNonzeroBlackToSrgbBlack_AnchorsWhite_AndChangesMidtones(bool gray, int version, bool display)
+    {
+        var data = BpcProfile(gray, version);
+        if (display) Encoding.ASCII.GetBytes("mntr").CopyTo(data, 12);
+        var profile = IccProfile.TryParse(data)!;
+        Assert.True(profile.SupportsBlackPointCompensation(RenderingIntent.RelativeColorimetric));
+        double[] black = gray ? [0] : [0, 0, 0];
+        double[] white = gray ? [1] : [1, 1, 1];
+        double[] mid = gray ? [128.0 / 255] : [128.0 / 255, 128.0 / 255, 128.0 / 255];
+        var intent = RenderingIntent.RelativeColorimetric;
+        Assert.InRange(Round(profile.ToSrgb(black)).R, 88, 90);
+        Assert.Equal((0, 0, 0), Round(profile.ToSrgb(black, intent, BlackPointCompensation.On)));
+        Assert.Equal((255, 255, 255), Round(profile.ToSrgb(white, intent, BlackPointCompensation.On)));
+        Assert.Equal(Round(profile.ToSrgb(white)), Round(profile.ToSrgb(white, intent, BlackPointCompensation.On)));
+        // Independent Pillow/Little CMS 2.17 reference: input 128 -> OFF 196, ON 188.
+        Assert.InRange(Round(profile.ToSrgb(mid, intent, BlackPointCompensation.Off)).R, 195, 197);
+        Assert.InRange(Round(profile.ToSrgb(mid, intent, BlackPointCompensation.On)).R, 187, 189);
+        Assert.Equal(profile.ToSrgb(mid), profile.ToSrgb(mid, intent, BlackPointCompensation.Off));
+        Assert.Equal(profile.ToSrgb(mid), profile.ToSrgb(mid, intent, BlackPointCompensation.Default));
+        if (!gray)
+            Assert.Equal((137, 188, 225), Round(profile.ToSrgb([64.0 / 255, 128.0 / 255, 192.0 / 255], intent, BlackPointCompensation.On)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Bpc_AbsoluteAlwaysDisables_AndOtherIntentEstimationIsExplicitlyUnsupported(bool gray)
+    {
+        var profile = IccProfile.TryParse(BpcProfile(gray))!;
+        double[] input = gray ? [0] : [0, 0, 0];
+        foreach (var intent in new[] { RenderingIntent.AbsoluteColorimetric, RenderingIntent.Perceptual, RenderingIntent.Saturation })
+        {
+            Assert.False(profile.SupportsBlackPointCompensation(intent));
+            Assert.Equal(profile.ToSrgb(input, intent), profile.ToSrgb(input, intent, BlackPointCompensation.On));
+        }
+    }
+
+    [Fact]
+    public void Bpc_LutEstimationIsUnsupported_AndIntentGridsDoNotLeakChoice()
+    {
+        var profile = IccProfile.TryParse(IntentProfile())!;
+        double[] input = [0.25, 0.5, 0.75];
+        foreach (var intent in Enum.GetValues<RenderingIntent>())
+        {
+            Assert.False(profile.SupportsBlackPointCompensation(intent));
+            var baseline = profile.ToSrgb(input, intent);
+            for (var i = 0; i < 4200; i++) profile.ToSrgb(input, intent, BlackPointCompensation.On);
+            Assert.Equal(Round(baseline), Round(profile.ToSrgb(input, intent, BlackPointCompensation.On)));
+            Assert.Equal(Round(baseline), Round(profile.ToSrgb(input, intent, BlackPointCompensation.Off)));
+        }
+    }
+
+    [Theory]
+    [InlineData("nonmonotone")]
+    [InlineData("nonunitwhite")]
+    [InlineData("highblack")]
+    [InlineData("unequalblack")]
+    [InlineData("nonD50")]
+    [InlineData("negativecolorant")]
+    [InlineData("output")]
+    [InlineData("version")]
+    [InlineData("Lab")]
+    public void Bpc_UnsupportedEstimatesAreObservable_AndPreserveBaseline(string condition)
+    {
+        var curve = condition switch
+        {
+            "nonmonotone" => SampledCurve(6554, 0, 65535),
+            "nonunitwhite" => SampledCurve(6554, 60000),
+            "highblack" => SampledCurve(32768, 65535),
+            _ => SampledCurve(6554, 65535)
+        };
+        var data = Profile("RGB ", condition == "Lab" ? "Lab " : "XYZ ",
+            ("rXYZ", Xyz(condition == "negativecolorant" ? -0.4360747 : 0.4360747, 0.2225045, 0.0139322)),
+            ("gXYZ", Xyz(condition == "nonD50" ? 0.1 : 0.3850649, 0.7168786, 0.0971045)),
+            ("bXYZ", Xyz(0.1430804, 0.0606169, 0.7138633)), ("rTRC", curve),
+            ("gTRC", condition == "unequalblack" ? Identity() : curve), ("bTRC", curve));
+        data[8] = condition == "version" ? (byte)3 : (byte)4;
+        Encoding.ASCII.GetBytes(condition == "output" ? "prtr" : "scnr").CopyTo(data, 12);
+        var profile = IccProfile.TryParse(data)!;
+        Assert.NotNull(profile);
+        Assert.False(profile.SupportsBlackPointCompensation(RenderingIntent.RelativeColorimetric));
+        Assert.Equal(profile.ToSrgb([0.25, 0.5, 0.75]),
+            profile.ToSrgb([0.25, 0.5, 0.75], RenderingIntent.RelativeColorimetric, BlackPointCompensation.On));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Bpc_SharedProfilesAlternateConfigurations_WithoutAllocation(bool gray)
+    {
+        var data = BpcProfile(gray);
+        var components = gray ? 1 : 3;
+        var (file, space) = IccSpace(data, components);
+        var first = PdfColorSpace.Parse(file, space);
+        var other = IccSpace(data, components);
+        var second = PdfColorSpace.Parse(other.File, other.Space);
+        Assert.Same(first, PdfColorSpace.Parse(file, space));
+        double[] input = gray ? [0] : [0, 0, 0];
+        var intent = RenderingIntent.RelativeColorimetric;
+        var off = first.ToRgb(input, intent, BlackPointCompensation.Off);
+        for (var i = 0; i < 100; i++)
+        {
+            second.ToRgb(input, intent, BlackPointCompensation.On);
+            first.ToRgb(input, intent, BlackPointCompensation.Off);
+        }
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 1000; i++)
+        {
+            second.ToRgb(input, intent, BlackPointCompensation.On);
+            first.ToRgb(input, intent, BlackPointCompensation.Off);
+        }
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0L, allocated);
+        Assert.Equal((0, 0, 0), Round(second.ToRgb(input, intent, BlackPointCompensation.On)));
+        Assert.Equal(off, first.ToRgb(input, intent, BlackPointCompensation.Default));
+    }
+
+    const string BpcStates = "/ExtGState << /On << /UseBlackPtComp /ON >> /Off << /UseBlackPtComp /OFF >> /Default << /UseBlackPtComp /Default >> >>";
+
+    [Theory]
+    [InlineData("Off")]
+    [InlineData("Default")]
+    public void Bpc_ExtGStateQRestores_WithoutResettingColor(string state)
+    {
+        var page = RenderIcc(BpcProfile(), 3,
+            $"/CS0 cs 0 0 0 sc /On gs q /{state} gs 0 0 100 200 re f Q 100 0 100 200 re f",
+            resources: BpcStates);
+        Assert.InRange(Px(page, 50, 100).R, 88, 90);
+        Assert.Equal((0, 0, 0), Px(page, 150, 100));
+        Assert.Empty(page.Warnings);
+    }
+
+    [Theory]
+    [InlineData("/Unknown")]
+    [InlineData("true")]
+    [InlineData("17")]
+    [InlineData("(ON)")]
+    [InlineData("null")]
+    public void Bpc_InvalidValuesWarnAndRetainState(string value)
+    {
+        var page = RenderIcc(BpcProfile(), 3,
+            "/CS0 cs 0 0 0 sc /On gs /Bad gs 0 0 200 200 re f",
+            resources: $"/ExtGState << /On << /UseBlackPtComp /ON >> /Bad << /UseBlackPtComp {value} >> >>");
+        Assert.Equal((0, 0, 0), Px(page, 100, 100));
+        Assert.Contains(page.Warnings, w => w.Contains("/UseBlackPtComp"));
+    }
+
+    [Theory]
+    [InlineData("/RI /AbsoluteColorimetric /UseBlackPtComp /ON")]
+    [InlineData("/UseBlackPtComp /ON /RI /AbsoluteColorimetric")]
+    public void Bpc_ExtGStateAbsoluteIntentWinsRegardlessOfEntryOrder(string entries)
+    {
+        var page = RenderIcc(BpcProfile(), 3, "/CS0 cs 0 0 0 sc /G0 gs 0 0 200 200 re f",
+            resources: $"/ExtGState << /G0 << {entries} >> >>");
+        Assert.InRange(Px(page, 100, 100).R, 88, 90);
+    }
+
+    [Fact]
+    public void Bpc_IntentOperatorDoesNotLatchAbsoluteOverride()
+    {
+        var page = RenderIcc(BpcProfile(), 3,
+            "/On gs /CS0 cs 0 0 0 sc /AbsoluteColorimetric ri 0 0 100 200 re f /RelativeColorimetric ri 100 0 100 200 re f",
+            resources: BpcStates);
+        Assert.InRange(Px(page, 50, 100).R, 88, 90);
+        Assert.Equal((0, 0, 0), Px(page, 150, 100));
+    }
+
+    [Theory]
+    [InlineData("Indexed")]
+    [InlineData("Separation")]
+    [InlineData("DeviceN")]
+    [InlineData("Pattern")]
+    public void Bpc_WrappersPreserveContext(string kind)
+    {
+        var (file, icc) = IccSpace(BpcProfile(), 3);
+        var function = Object("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [1 1 1] /N 1 >>");
+        PdfObject[] args = kind switch
+        {
+            "Indexed" => [new PdfName(kind), icc, new PdfInteger(0), new PdfString([0, 0, 0])],
+            "Separation" => [new PdfName(kind), new PdfName("Spot"), icc, function],
+            "DeviceN" => [new PdfName(kind), new PdfArray([new PdfName("Spot")]), icc, function],
+            _ => [new PdfName(kind), icc]
+        };
+        var wrapper = PdfColorSpace.Parse(file, new PdfArray([.. args]));
+        double[] input = kind == "Pattern" ? [0, 0, 0] : [0];
+        Assert.Equal((0, 0, 0), Round(wrapper.ToRgb(input, RenderingIntent.RelativeColorimetric, BlackPointCompensation.On)));
+        Assert.InRange(Round(wrapper.ToRgb(input, RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off)).R, 88, 90);
+        Assert.InRange(Round(wrapper.ToRgb(input, RenderingIntent.AbsoluteColorimetric, BlackPointCompensation.On)).R, 88, 90);
+    }
+
+    [Theory]
+    [InlineData("", "", 0)]
+    [InlineData("/Intent /RelativeColorimetric", "", 0)]
+    [InlineData("/Intent /AbsoluteColorimetric", "", 89)]
+    [InlineData("", "/AbsoluteColorimetric ri", 89)]
+    [InlineData("/Intent /RelativeColorimetric", "/AbsoluteColorimetric ri", 0)]
+    public void Bpc_RepeatedImageAndInlineImage_HonorImageIntentWithoutLeaking(string entry, string parentIntent, int expected)
+    {
+        var image = StreamObject(6, $"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /CS0 {entry}",
+            "\0\0\0");
+        var page = RenderIcc(BpcProfile(), 3,
+            $"{parentIntent} /On gs q 100 0 0 200 0 0 cm /Im0 Do Q /Off gs q 100 0 0 200 100 0 cm /Im0 Do Q",
+            resources: BpcStates + " /XObject << /Im0 6 0 R >>", objects: image);
+        Assert.InRange(Px(page, 50, 100).R, Math.Max(0, expected - 1), expected + 1);
+        Assert.InRange(Px(page, 150, 100).R, 88, 90);
+        var inline = RenderIcc(BpcProfile(), 3,
+            $"{parentIntent} /On gs 200 0 0 200 0 0 cm BI /W 1 /H 1 /BPC 8 /CS /CS0 {entry} ID \0\0\0 EI",
+            resources: BpcStates);
+        Assert.InRange(Px(inline, 100, 100).R, Math.Max(0, expected - 1), expected + 1);
+    }
+
+    [Fact]
+    public void Bpc_ImageSoftMask_InheritsChoice_ButKeepsItsOwnIntent()
+    {
+        var (file, space) = IccSpace(BpcProfile(gray: true), 1);
+        var maskDict = (PdfDictionary)Object("<< /Width 1 /Height 1 /BitsPerComponent 8 >>");
+        maskDict.Entries["ColorSpace"] = space;
+        var dict = (PdfDictionary)Object("<< /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceRGB >>");
+        dict.Entries["SMask"] = new PdfStream(maskDict, [0]);
+        var image = new PdfStream(dict, [255, 0, 0]);
+        var res = (PdfDictionary)Object("<< >>");
+        var on = ImageDecoder.Decode(file, image, res, out _, out _, RenderingIntent.RelativeColorimetric, BlackPointCompensation.On)!;
+        var off = ImageDecoder.Decode(file, image, res, out _, out _, RenderingIntent.RelativeColorimetric, BlackPointCompensation.Off)!;
+        Assert.Equal(0, on.Rgba[3]);
+        Assert.InRange(off.Rgba[3], 88, 90);
+        maskDict.Entries["Intent"] = new PdfName("AbsoluteColorimetric");
+        var absolute = ImageDecoder.Decode(file, image, res, out _, out _, RenderingIntent.RelativeColorimetric, BlackPointCompensation.On)!;
+        Assert.Equal(off.Rgba[3], absolute.Rgba[3]);
+    }
+
+    [Theory]
+    [InlineData("On", 0)]
+    [InlineData("Off", 89)]
+    public void Bpc_StrokeAndType3Text_InheritChoice(string state, int expected)
+    {
+        var stroke = RenderIcc(BpcProfile(), 3, $"/{state} gs /CS0 CS 0 0 0 SC 100 w 0 100 m 200 100 l S",
+            resources: BpcStates);
+        Assert.InRange(Px(stroke, 100, 100).R, Math.Max(0, expected - 1), expected + 1);
+        var glyph = StreamObject(6, "", "1000 0 0 0 1000 1000 d1 0 0 1000 1000 re f");
+        const string font = "/Font << /F0 << /Type /Font /Subtype /Type3 /FontBBox [0 0 1000 1000] /FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << /A 6 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1000] >> >>";
+        var text = RenderIcc(BpcProfile(), 3, $"/{state} gs /CS0 cs 0 0 0 sc BT /F0 100 Tf 50 50 Td (A) Tj ET",
+            resources: BpcStates + " " + font, objects: glyph);
+        Assert.InRange(Px(text, 100, 100).R, Math.Max(0, expected - 1), expected + 1);
+    }
+
+    [Theory]
+    [InlineData("On", 0)]
+    [InlineData("Off", 89)]
+    public void Bpc_FunctionAndMeshShading_InheritChoice(string state, int expected)
+    {
+        const string fn = "/Function << /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [0 0 0] /N 1 >>";
+        var axial = RenderIcc(BpcProfile(), 3, $"/{state} gs /Sh0 sh",
+            resources: BpcStates + $" /Shading << /Sh0 << /ShadingType 2 /ColorSpace /CS0 /Coords [0 0 200 0] {fn} /Extend [true true] >> >>");
+        Assert.InRange(Px(axial, 100, 100).R, Math.Max(0, expected - 1), expected + 1);
+        var mesh = StreamObject(6,
+            "/ShadingType 5 /ColorSpace /CS0 /BitsPerCoordinate 8 /BitsPerComponent 8 /VerticesPerRow 2 /Decode [0 200 0 200 0 1 0 1 0 1]",
+            Encoding.Latin1.GetString([0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 0, 0]));
+        var page = RenderIcc(BpcProfile(), 3, $"/{state} gs /Sh0 sh",
+            resources: BpcStates + " /Shading << /Sh0 6 0 R >>", objects: mesh);
+        Assert.InRange(Px(page, 100, 100).R, Math.Max(0, expected - 1), expected + 1);
+    }
+
+    [Theory]
+    [InlineData(false, "ON", 255)]
+    [InlineData(true, "ON", 255)]
+    [InlineData(false, "OFF", 166)]
+    [InlineData(true, "OFF", 166)]
+    public void Bpc_SoftMaskBackdropAndContent_InheritStateBeforeMaskEvaluation(bool backdrop, string state, int expected)
+    {
+        var content = backdrop ? "" : "/CS0 cs 0 0 0 sc 0 0 200 200 re f";
+        var mask = StreamObject(6, "/Type /XObject /Subtype /Form /BBox [0 0 200 200] /Group << /S /Transparency /CS [/ICCBased 5 0 R] >>", content);
+        var bc = backdrop ? "/BC [0 0 0]" : "";
+        var page = RenderIcc(BpcProfile(), 3, "/G0 gs 0 g 0 0 200 200 re f",
+            resources: $"/ExtGState << /G0 << /SMask << /S /Luminosity {bc} /G 6 0 R >> /UseBlackPtComp /{state} /RI /RelativeColorimetric >> >>",
+            objects: mask);
+        Assert.InRange(Px(page, 100, 100).R, expected - 1, Math.Min(255, expected + 1));
+    }
+
+    [Theory]
+    [InlineData(false, "On", 0)]
+    [InlineData(true, "On", 0)]
+    [InlineData(false, "Off", 89)]
+    [InlineData(true, "Off", 89)]
+    public void Bpc_ColoredAndUncoloredPatterns_InheritChoice(bool uncolored, string state, int expected)
+    {
+        var paint = uncolored ? "" : "/CS0 cs 0 0 0 sc ";
+        var pattern = StreamObject(6,
+            $"/Type /Pattern /PatternType 1 /PaintType {(uncolored ? 2 : 1)} /TilingType 1 /BBox [0 0 20 20] /XStep 20 /YStep 20 /Resources << /ColorSpace << /CS0 [/ICCBased 5 0 R] >> >>",
+            paint + "0 0 20 20 re f");
+        var color = uncolored ? "/CS1 cs 0 0 0 /P0 scn" : "/Pattern cs /P0 scn";
+        var page = RenderIcc(BpcProfile(), 3, $"/{state} gs {color} 0 0 200 200 re f",
+            resources: BpcStates + " /Pattern << /P0 6 0 R >>", objects: pattern, colorSpaces: "/CS1 [/Pattern /CS0]");
+        Assert.InRange(Px(page, 110, 110).R, Math.Max(0, expected - 1), expected + 1);
+    }
+
+    [Fact]
+    public void Bpc_FormInheritsState_AndRestoresCallerChoice()
+    {
+        var form = StreamObject(6, "/Type /XObject /Subtype /Form /BBox [0 0 200 200]",
+            "/CS0 cs 0 0 0 sc 0 0 100 200 re f /Off gs");
+        var page = RenderIcc(BpcProfile(), 3,
+            "/On gs /F0 Do /CS0 cs 0 0 0 sc 100 0 100 200 re f",
+            resources: BpcStates + " /XObject << /F0 6 0 R >>", objects: form);
+        Assert.Equal((0, 0, 0), Px(page, 50, 100));
+        Assert.Equal((0, 0, 0), Px(page, 150, 100));
+    }
+
     [Fact]
     public void MatrixRgb_IdentityCurves_AreLinearLight()
     {
@@ -131,11 +469,11 @@ public class IccTests
         Assert.Null(IccProfile.TryParse(bad));
     }
 
-    static RenderedPage RenderIcc(byte[] icc, int n, string content, string alternate = "", string resources = "", string objects = "")
+    static RenderedPage RenderIcc(byte[] icc, int n, string content, string alternate = "", string resources = "", string objects = "", string colorSpaces = "")
     {
         var data = Encoding.Latin1.GetString(icc);
         var obj = $"5 0 obj\n<< /N {n} /Length {data.Length} {alternate} >>\nstream\n{data}\nendstream\nendobj\n";
-        var pdf = TestPdf.Build(content, "/ColorSpace << /CS0 [/ICCBased 5 0 R] >> " + resources, obj + objects, brokenXref: true);
+        var pdf = TestPdf.Build(content, $"/ColorSpace << /CS0 [/ICCBased 5 0 R] {colorSpaces} >> " + resources, obj + objects, brokenXref: true);
         return DocumentRenderer.RenderPage(PdfDocument.Load(pdf).Pages[0], 72);
     }
 

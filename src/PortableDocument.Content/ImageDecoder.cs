@@ -8,6 +8,9 @@ public static class ImageDecoder
         => Decode(f, xs, res, out isMask, out warning, RenderingIntent.RelativeColorimetric, depth);
 
     public static ImageData? Decode(PdfFile f, PdfStream xs, PdfDictionary res, out bool isMask, out string? warning, RenderingIntent intent, int depth = 0)
+        => Decode(f, xs, res, out isMask, out warning, intent, BlackPointCompensation.Default, depth);
+
+    public static ImageData? Decode(PdfFile f, PdfStream xs, PdfDictionary res, out bool isMask, out string? warning, RenderingIntent intent, BlackPointCompensation blackPointCompensation, int depth = 0)
     {
         warning = null;
         var d = xs.Dict;
@@ -108,7 +111,7 @@ public static class ImageDecoder
                 if (!cache.TryGetValue(key, out var col))
                 {
                     for (var k = 0; k < nc; k++) comps[k] = decode[2 * k] + raw[k] / maxv * (decode[2 * k + 1] - decode[2 * k]);
-                    col = cs.ToRgb(comps, imageIntent);
+                    col = cs.ToRgb(comps, imageIntent, blackPointCompensation);
                     if (cache.Count < 100000) cache[key] = col;
                 }
                 var p = (y * w + x) * 4;
@@ -139,9 +142,9 @@ public static class ImageDecoder
 
         if (depth == 0)
         {
-            if (R(d.Get("SMask")) is PdfStream sm && Decode(f, sm, res, out _, out _, intent, depth + 1) is { } smi)
+            if (R(d.Get("SMask")) is PdfStream sm && Decode(f, sm, res, out _, out _, intent, blackPointCompensation, depth + 1) is { } smi)
                 ApplyAlpha(rgba, w, h, smi, true);
-            else if (R(d.Get("Mask")) is PdfStream mk && Decode(f, mk, res, out var mkMask, out _, intent, depth + 1) is { } mki)
+            else if (R(d.Get("Mask")) is PdfStream mk && Decode(f, mk, res, out var mkMask, out _, intent, blackPointCompensation, depth + 1) is { } mki)
                 ApplyAlpha(rgba, w, h, mki, !mkMask);
         }
         return new ImageData(w, h, rgba);

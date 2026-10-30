@@ -7,6 +7,7 @@ public abstract class PdfColorSpace
     public abstract int Components { get; }
     public abstract RgbColor ToRgb(ReadOnlySpan<double> c);
     public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => ToRgb(c);
+    public virtual RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => ToRgb(c, intent);
     public virtual double[] InitialColor => new double[Components];
     public virtual double[] DefaultDecode(int bpc) => Enumerable.Range(0, Components).SelectMany(_ => new double[] { 0, 1 }).ToArray();
 
@@ -68,7 +69,8 @@ public abstract class PdfColorSpace
         var key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data));
         var prof = ProfilesByHash.GetOrAdd(key, _ => IccProfile.TryParse(data));
         if (prof is null || prof.Components != n) return new(null);
-        return new(prof.IsSrgb ? Rgb : new IccBased(prof));
+        // Keep the profile: the approximate sRGB shortcut must not discard explicit BPC context.
+        return new(new IccBased(prof));
     }
 
     sealed class IccBased(IccProfile profile) : PdfColorSpace
@@ -76,6 +78,7 @@ public abstract class PdfColorSpace
         public override int Components => profile.Components;
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => profile.ToSrgb(c);
         public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => profile.ToSrgb(c, intent);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => profile.ToSrgb(c, intent, blackPointCompensation);
     }
 
     /// <summary>CIE XYZ (relative to a given white point) to sRGB: Bradford adaptation to D65, linear sRGB matrix, sRGB transfer curve.</summary>
@@ -184,6 +187,9 @@ public abstract class PdfColorSpace
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
 
         public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent)
+            => ToRgb(c, intent, BlackPointCompensation.Default);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation)
         {
             var i = Math.Clamp((int)Math.Round(c[0]), 0, hival);
             var n = baseCs.Components;
@@ -195,7 +201,7 @@ public abstract class PdfColorSpace
                 var v = o < lookup.Length ? lookup[o] / 255.0 : 0;
                 comps[k] = dec[2 * k] + v * (dec[2 * k + 1] - dec[2 * k]);
             }
-            return baseCs.ToRgb(comps, intent);
+            return baseCs.ToRgb(comps, intent, blackPointCompensation);
         }
     }
 
@@ -207,9 +213,12 @@ public abstract class PdfColorSpace
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => ToRgb(c, RenderingIntent.RelativeColorimetric);
 
         public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent)
+            => ToRgb(c, intent, BlackPointCompensation.Default);
+
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation)
         {
             if (allNone) return new(1, 1, 1);
-            return alt.ToRgb(fn.Evaluate(c.ToArray()), intent);
+            return alt.ToRgb(fn.Evaluate(c.ToArray()), intent, blackPointCompensation);
         }
     }
 
@@ -220,6 +229,7 @@ public abstract class PdfColorSpace
         public override int Components => under?.Components ?? 0;
         public override RgbColor ToRgb(ReadOnlySpan<double> c) => under is null ? RgbColor.Black : under.ToRgb(c);
         public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent) => under is null ? RgbColor.Black : under.ToRgb(c, intent);
+        public override RgbColor ToRgb(ReadOnlySpan<double> c, RenderingIntent intent, BlackPointCompensation blackPointCompensation) => under is null ? RgbColor.Black : under.ToRgb(c, intent, blackPointCompensation);
     }
 
     public static PdfColorSpace Parse(PdfFile f, PdfObject? obj, PdfDictionary? resources = null, int depth = 0)
