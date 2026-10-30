@@ -8,6 +8,27 @@ var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Dev-time equivalent of the Pages `samples/` folder: serves the repo's samples/ (01-26 committed, 27 generated) plus a computed manifest.
+var samplesDir = SamplesDirectory();
+if (samplesDir is not null)
+{
+    string? manifestJson = null; DateTime manifestStamp = default;
+    app.MapGet("/samples/manifest.json", () =>
+    {
+        var stamp = Directory.GetFiles(samplesDir, "*.pdf").Select(File.GetLastWriteTimeUtc).DefaultIfEmpty().Max();
+        if (manifestJson is null || stamp != manifestStamp)
+        {
+            manifestJson = AdoBye.Samples.SampleManifest.ToJson(AdoBye.Samples.SampleManifest.Entries(samplesDir));
+            manifestStamp = stamp;
+        }
+        return Results.Text(manifestJson, "application/json");
+    });
+    app.MapGet("/samples/{file}", (string file) =>
+        System.Text.RegularExpressions.Regex.IsMatch(file, @"^\d\d-[a-z0-9-]+\.pdf$") && File.Exists(Path.Combine(samplesDir, file))
+            ? Results.File(Path.Combine(samplesDir, file), "application/pdf")
+            : Results.NotFound());
+}
+
 var gate = new object();
 var session = new EditorSession(FontCatalog.Scan());
 if (initial is not null) session.OpenFile(initial);
@@ -49,3 +70,11 @@ app.MapMethods("/api/{**path}", ["GET", "POST", "PUT"], async (HttpRequest reque
 });
 Console.WriteLine($"AdoBye editor running at http://localhost:{port}");
 app.Run();
+
+static string? SamplesDirectory()
+{
+    foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
+            if (File.Exists(Path.Combine(dir.FullName, "samples", "01-spec-showcase.pdf"))) return Path.Combine(dir.FullName, "samples");
+    return null;
+}

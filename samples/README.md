@@ -45,7 +45,17 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 
 ## The full collection
 
-`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26, and `.gitignore` excludes it); `tools/Validate-Samples.ps1` or `AdoBye.Samples generate samples 27-` creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
+**Where is it?** Three places, all the same bytes (generation is deterministic):
+
+* **Public site:** the browser editor loads it with one click: the **Open the full sample collection** button on the empty state, **File > Open sample > Full sample collection**, or the deep link `#sample=27-full-collection` / `?sample=27` (for example `https://ievangelist.github.io/csharp-pdf/#sample=27-full-collection`). The Pages publish (`tools/Publish-EditorPages.ps1`) generates it and ships `samples/27-full-collection.pdf`, `samples/01-…26-….pdf` and `samples/manifest.json` (name, title, description, size, pages, sha256) as static files. They are fetched only on demand (never at startup, not precached), same-origin, and the loader verifies size and sha256 against the manifest before opening. Publish with `-SkipSamples` to omit them; the editor then works as before and the button reports that the collection is not published.
+* **Local HTTP host:** `dotnet run --project tools/AdoBye.EditorWeb` serves the same `/samples/manifest.json` and `/samples/*.pdf` from this folder (generate 27 first, below).
+* **On disk:** it is not committed (`.gitignore`). Generate it into this folder with
+
+  ```powershell
+  dotnet run --project tools/AdoBye.Samples -c Release -- generate samples 27-
+  ```
+
+`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26); `tools/Validate-Samples.ps1` or the command above creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
 
 * **Navigation:** one collapsed bookmark per sample (`NN  Title`) that lands on the sample's first page and nests that sample's own bookmarks (`12` and `20`/`26` have them); page labels read `NN · label` (sample `12` keeps its roman / decimal / `A-` labels under the prefix); `PageMode UseOutlines`.
 * **Links:** the `GoToR` tiles of `01` are rewritten to plain `GoTo` destinations so they jump inside the merged file.
