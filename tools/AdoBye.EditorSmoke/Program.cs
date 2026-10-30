@@ -150,7 +150,7 @@ try
     Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
     if (saveOverlapOnly)
     {
-        await EditorSaveOverlap.Run(context, address + "/csharp-pdf/");
+        await EditorSaveOverlap.Run(browser, address + "/csharp-pdf/");
         return;
     }
     if (jsonSafetyOnly)
@@ -267,8 +267,14 @@ try
     await page.WaitForFunctionAsync("async () => (await (await window.pdfHost.request('/api/page/1/items')).json()).some(item => item.type === 'image')");
     await page.Locator("#dl").ClickAsync();
     await page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).WaitForAsync();
+    var pendingSave = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
+    if (await pendingSave.FailureAsync() is { } pendingFailure) throw new Exception(pendingFailure);
+    await page.WaitForFunctionAsync("!document.querySelector('.mdl')");
     await page.WaitForFunctionAsync("[...document.querySelectorAll('.thumb img')].every(img => img.naturalWidth > 0 && img.dataset.loadedUrl === img.dataset.url)");
     await page.WaitForFunctionAsync("document.querySelector('#base')?.dataset.loadedUrl === document.querySelector('#base')?.dataset.targetUrl");
+    // Separately check a subsequent unchanged Save: it must not start new renders.
+    await page.Locator("#dl").ClickAsync();
+    await page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).WaitForAsync();
     await page.EvaluateAsync("""
         () => {
           window.saveRenders = [];
@@ -327,7 +333,7 @@ try
     await page.Keyboard.PressAsync("Escape");
     if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-mobile.png") });
     await EditorJsonSafety.Run(context, address + "/csharp-pdf/");
-    await EditorSaveOverlap.Run(context, address + "/csharp-pdf/");
+    await EditorSaveOverlap.Run(browser, address + "/csharp-pdf/");
     Check(network.IsEmpty, "No uploads, API requests, external requests or root-relative assets: " + string.Join(", ", network));
     Check(errors.IsEmpty, "No browser errors: " + string.Join(", ", errors));
     Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo and clipboard paste after navigation/history release, error recovery, mobile layout, and no outbound PDF traffic.");

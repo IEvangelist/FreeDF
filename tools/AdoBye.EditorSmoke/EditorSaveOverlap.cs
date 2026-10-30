@@ -1,10 +1,23 @@
 using System.Text.Json;
 using Microsoft.Playwright;
+using PortableDocument.Document;
+using Pdf = PortableDocument.Render.PortableDocument;
 
 static class EditorSaveOverlap
 {
-    public static async Task Run(IBrowserContext context, string source)
+    public static async Task Run(IBrowser browser, string source)
     {
+        await using var context = await browser.NewContextAsync(new()
+        {
+            AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 },
+        });
+        var network = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        context.Request += (_, request) =>
+        {
+            if (request.Url.StartsWith("http:", StringComparison.Ordinal) || request.Url.StartsWith("https:", StringComparison.Ordinal))
+                if (!request.Url.StartsWith(source, StringComparison.Ordinal) || request.Method != "GET" || new Uri(request.Url).AbsolutePath.Contains("/api/"))
+                    network.Enqueue(request.Method + " " + request.Url);
+        };
         var page = await context.NewPageAsync();
         page.SetDefaultTimeout(90000);
         var cdp = await context.NewCDPSessionAsync(page);
@@ -71,6 +84,10 @@ static class EditorSaveOverlap
                 var download = await page.RunAndWaitForDownloadAsync(() => button.ClickAsync());
                 await page.WaitForFunctionAsync("!document.querySelector('.mdl') && document.getElementById('base') !== saveOverlap.original && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl && saveOverlap.events.length >= 4");
                 if (await download.FailureAsync() is { } failure) throw new Exception(failure);
+                var saved = PdfDocument.Load(await File.ReadAllBytesAsync((await download.PathAsync())!));
+                var savedText = string.Concat(saved.Pages.SelectMany(Pdf.ExtractText).Select(span => span.Text));
+                if (!savedText.Contains($"Save overlap edit {repeat}", StringComparison.Ordinal))
+                    throw new Exception("Save overlap download lost the edit while presentation was deferred: " + savedText);
                 var result = await page.EvaluateAsync<JsonElement>("""
                     overlap => {
                       const s = saveOverlap;
@@ -97,6 +114,7 @@ static class EditorSaveOverlap
                 throw new Exception("Save overlap committed a pending replacement while the Save dialog owned input.");
             if (results.Any(r => r.GetProperty("maxMs").GetDouble() > 50))
                 throw new Exception("Save confirmation input-to-frame exceeded the unchanged 50 ms ceiling at 4x CPU.");
+            if (!network.IsEmpty) throw new Exception("Save overlap made unexpected network requests: " + string.Join(", ", network));
             Console.WriteLine("PASS: pending replacement deferred across Save confirmation at 4x CPU, input-to-frame <= 50 ms, no blank frames and exact replacement resumed.");
         }
         finally { await page.CloseAsync(); }
