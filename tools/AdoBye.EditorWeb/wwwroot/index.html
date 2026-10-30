@@ -279,6 +279,9 @@ async function refresh(retainedUndo = null) {
 }
 
 let selectionEpoch = 0;
+const cancelNeighborPrefetch = () => { clearTimeout(neighborPrefetchTimer); neighborPrefetchTimer = 0; };
+addEventListener('pointerdown', cancelNeighborPrefetch, true);
+addEventListener('keydown', cancelNeighborPrefetch, true);
 function scheduleNeighborPrefetch() {
   clearTimeout(neighborPrefetchTimer);
   neighborPrefetchTimer = 0;

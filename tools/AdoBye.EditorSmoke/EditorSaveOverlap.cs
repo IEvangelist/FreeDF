@@ -26,6 +26,37 @@ static class EditorSaveOverlap
         {
             await page.GotoAsync(source);
             await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+            await page.EvaluateAsync("""
+                () => {
+                  const timeout = window.setTimeout, cancel = window.clearTimeout;
+                  window.prefetchInput = {scheduled:[], cancelled:[],
+                    restore:() => {window.setTimeout=timeout; window.clearTimeout=cancel;}};
+                  window.setTimeout = (callback, delay, ...args) => {
+                    if (delay !== 250) return timeout(callback, delay, ...args);
+                    const id = timeout(callback, 60000, ...args);
+                    prefetchInput.scheduled.push(id);
+                    return id;
+                  };
+                  window.clearTimeout = id => {
+                    if (prefetchInput.scheduled.includes(id)) prefetchInput.cancelled.push(id);
+                    cancel(id);
+                  };
+                }
+                """);
+            var report = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "20-report.pdf"));
+            await page.Locator("#open").SetInputFilesAsync(report);
+            await page.WaitForFunctionAsync("document.getElementById('name').textContent === '20-report.pdf' && !document.getElementById('view').inert && prefetchInput.scheduled.length > 0");
+            await page.Locator("[data-tool=rect]").ClickAsync();
+            if (!await page.EvaluateAsync<bool>("prefetchInput.scheduled.every(id => prefetchInput.cancelled.includes(id))"))
+                throw new Exception("Pointer input did not cancel pending speculative neighbor work.");
+            await page.Locator("#np").ClickAsync();
+            await page.WaitForFunctionAsync("!document.getElementById('view').inert && prefetchInput.scheduled.length > 1");
+            await page.Keyboard.PressAsync("Escape");
+            if (!await page.EvaluateAsync<bool>("prefetchInput.scheduled.every(id => prefetchInput.cancelled.includes(id))"))
+                throw new Exception("Keyboard input did not cancel pending speculative neighbor work.");
+            await page.EvaluateAsync("prefetchInput.restore()");
+            await page.Locator("[data-tool=select]").ClickAsync();
+            Console.WriteLine("PASS: pointer and keyboard input cancel queued neighbor prefetch before editing.");
             var sample = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "09-images.pdf"));
             await page.Locator("#open").SetInputFilesAsync(sample);
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === '09-images.pdf' && document.getElementById('base')?.naturalWidth > 0 && !document.getElementById('view').inert && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl");
