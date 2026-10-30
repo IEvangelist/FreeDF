@@ -36,6 +36,8 @@ jobs:
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "${{ runner.temp }}/editor-pages/wwwroot"
       - name: Exercise local Merge PDFs flow
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --merge "${{ runner.temp }}/editor-pages/wwwroot"
+      - name: Exercise cold boot and injected resource failures
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --boot "${{ runner.temp }}/editor-pages/wwwroot" "${{ runner.temp }}/editor-boot"
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with:

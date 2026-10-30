@@ -7,6 +7,12 @@ using Microsoft.Playwright;
 using PortableDocument.Document;
 using Pdf = PortableDocument.Render.PortableDocument;
 
+if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline")
+{
+    await EditorBoot.Run(args[1], args[2], args[0] == "--boot-baseline");
+    return;
+}
+
 if (args.Length >= 4 && args[0] == "--profile")
 {
     await EditorPerformance.Run(args[1], args[2], args[3..]);

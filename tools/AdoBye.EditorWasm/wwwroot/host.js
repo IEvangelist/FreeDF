@@ -29,16 +29,19 @@ export async function start() {
   let readyResolve, readyReject;
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   const fail = error => {
+    if (failed) return;
+    clearTimeout(startupTimeout);
     failed = error; readyReject(error);
     for (const { reject } of pending.values()) reject(error);
     pending.clear(); worker.terminate();
     window.dispatchEvent(new ErrorEvent('error', { error, message: error.message }));
   };
+  const startupTimeout = setTimeout(() => fail(new Error('The PDF engine did not finish loading within 90 seconds. Check your connection and reload the editor.')), 90000);
   worker.onerror = event => fail(new Error(event.message || 'The PDF worker stopped. Reload the editor.'));
   worker.onmessageerror = () => fail(new Error('The PDF worker returned an unreadable response. Reload the editor.'));
   worker.onmessage = ({ data }) => {
     if (data.startupError) { fail(new Error(data.startupError)); return; }
-    if (data.ready) { readyResolve(); return; }
+    if (data.ready) { clearTimeout(startupTimeout); readyResolve(); return; }
     const request = pending.get(data.id);
     if (!request) return;
     pending.delete(data.id);
