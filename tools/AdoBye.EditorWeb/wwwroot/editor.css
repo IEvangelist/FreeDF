@@ -37,9 +37,13 @@ header { display: flex; align-items: center; gap: 6px; padding: 0 12px; backgrou
 .brand { display: flex; align-items: center; gap: 9px; margin-right: 6px; }
 .logo { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(135deg, #4c8dff, #2f5fd0); color: #fff; font-weight: 700; font-size: 11px; letter-spacing: -.02em; }
 .brand strong { font-size: 13px; font-weight: 650; letter-spacing: -.005em; }
-.doc { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 auto 0 8px; padding: 0 10px; height: 28px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--fg-2); }
+.doc { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 auto 0 4px; padding: 0 10px; height: 28px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--fg-2); }
 .doc svg.i { color: var(--mut); width: 14px; height: 14px; }
-#name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+#name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; min-width: 0; color: var(--fg); }
+.doc.empty #name { color: var(--mut); }
+#dstate { flex: none; font-size: 11px; color: var(--mut); }
+#dstate::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+#dstate[data-dirty="true"] { color: #e0a43a; }
 #pages { color: var(--mut); font-size: 12px; }
 #pages:not(:empty)::before { content: "·"; margin-right: 8px; }
 
@@ -54,7 +58,7 @@ footer #keys { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { footer #keys, footer .sp { display: none; } .brand strong { display: none; } }
 @media (max-width: 900px) { header .lbl { display: none; } header .btn, header button.primary { padding: 0; width: var(--h); justify-content: center; } .doc #pages { display: none; } }
-@media (max-width: 720px) { .doc { display: none; } header .sp { flex: 1; height: auto; background: none; margin: 0; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
+@media (max-width: 720px) { .doc { flex: none; margin-right: 0; padding: 0 8px; } .doc > svg.i, #dstate { display: none; } #name { max-width: 28vw; } header .sp { flex: 1; height: auto; background: none; margin: 0; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
 @media (max-width: 600px) {
   main { --lw: 0px; --rw: 0px; position: relative; }
   #thumbs, #props { visibility: hidden; }
