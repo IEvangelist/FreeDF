@@ -74,7 +74,8 @@ not use the WASM loader and keeps its existing behavior.
 
 Pages serves the observed runtime assets with `Cache-Control: max-age=600`,
 ETags and `Vary: Accept-Encoding`; this repository cannot configure custom Pages
-response headers. Compression is disabled in this publish, and there is no
+response headers. SDK compression is disabled by default (Pages has been observed
+to apply gzip itself), and there is no
 service worker. The runtime manifest in `dotnet.js` names fingerprinted assemblies
 and native/runtime modules. A cached manifest crossing a deployment can therefore
 refer to an asset that no longer exists; Reload is the recovery action, not an
@@ -127,12 +128,22 @@ zero overhead or of public-network performance.
 | Password/certificate-protected input | The existing open UI has no password/certificate prompt. Unsupported browser cryptography reports an explicit server-editor limitation. Successfully opened/imported encrypted input disables recovery; decrypted bytes and passwords are never cached for recovery |
 | Installed fonts and system font fallback | Browser cannot enumerate host fonts. New text offers the five standard PDF families; original embedded fonts can still be reused. Non-embedded fonts render using bundled, licensed Bitstream Vera Sans regular/bold substitutes, not exact serif/monospace/italic/Symbol/Dingbats/CJK fidelity. For exact appearance and broader character coverage, use PDFs with embedded fonts or the server editor |
 
+Recovered startup retries are logged as `[PDF boot] retry ...` console warnings
+and exposed as `pdfHost.bootRetries`; nothing is sent to telemetry. Smoke checks
+record the count and accept transient framework HTTP/network failures only when
+the same resource subsequently succeeds and the loader reports a retry. Missing
+resources, terminal failures and unrelated browser errors remain failures.
+Set `EDITOR_SMOKE_TRANSIENT_BOOT=1` for the ordinary Chromium smoke to inject
+one framework HTTP 503 and verify its recovered-error accounting explicitly.
+
 The existing PDF engine's format/coverage limitations still apply (see
 `spec-matrix.md`). Complex or large documents and high-DPI multi-page exports
 can take substantial worker time or exhaust browser memory. This host deliberately uses
 single-threaded WASM in a dedicated module worker for Pages compatibility, and disables trimming to preserve
 the shared editor's reflection-based JSON payloads. Initial download is larger
-than a trimmed/AOT-specialized app; no `wasm-tools` workload is required.
+than a trimmed/AOT-specialized app; no `wasm-tools` workload is required for the
+default publish. The explicit `-Aot` experiment trims the framework with application
+reflection roots preserved; it does not change the default Pages workflow.
 
 The shared session preserves unique indirect Form-child editing. Shared,
 repeated, hidden, nested or ambiguous children remain withheld. Graphic-group
@@ -230,6 +241,13 @@ misses, then fails by default **after** collecting all three repetitions.
 Use `--profile-summary <raw.json>` to apply the same budgets without repeating
 the browser workload. Sidebar continuity and raster-count assertions remain
 hard failures even in diagnostic mode.
+
+The [user-local AOT comparison](performance/2026-10-30-aot.md) records substantially
+lower uncached raster/open latency, exact decoded pixel hashes, worker-inclusive
+gzip-equivalent payload sizes and six remaining original budget misses. Browser
+PNG encoding uses bounded row batches rather than another whole-page copy.
+Fresh-render gates additionally require p50/p95 below 1000/1500 ms and managed
+allocation below 200 MB; allocation is not peak browser working set.
 
 ### Input responsiveness during fresh PDF work
 
@@ -442,6 +460,21 @@ The publish script checks required static assets and WASM magic bytes. Override
 `-Output` to publish elsewhere and `-BasePath` for another repository path or `/`.
 Always pass an absolute publish directory to the smoke runner (`dotnet run`
 starts in its project directory).
+
+For an explicit AOT comparison, install the pinned SDK and `wasm-tools` in a
+user-writable dotnet root, set `DOTNET_ROOT`/`PATH` only for that command, then:
+
+```powershell
+.\tools\Publish-EditorPages.ps1 -Aot -Output "$env:TEMP\adobye-aot-pages" -ArtifactsPath "$env:TEMP\adobye-aot-build"
+.\tools\Publish-EditorPages.ps1 -Output "$env:TEMP\adobye-control-pages" -ArtifactsPath "$env:TEMP\adobye-control-build"
+```
+
+Keep intermediates separate: reusing the default `obj` across AOT and non-AOT
+can mix trimmed and untrimmed artifacts. AOT requires trimming; the opt-in roots
+all five application assemblies for reflection-based editor payloads, retains
+globalization and enables SIMD without enabling threads. Run the same full,
+boot, merge, page-image and profile checks against both outputs before changing
+production publishing.
 
 The Chromium runner hosts **only static files** under `/csharp-pdf/`, with no
 editor API and no custom response headers. It exercises the real UI for
