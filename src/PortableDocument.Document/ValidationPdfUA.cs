@@ -15,9 +15,13 @@ internal static partial class PdfUAChecks
         c.Guard("metadata", () => Metadata(c));
         c.Guard("security", () => Security(c));
         c.Guard("fonts", () => Fonts(c));
+        c.Guard("document flags", () => PdfUADeepChecks.DocumentFlags(c));
+        c.Guard("font mapping", () => PdfUADeepChecks.Fonts(c));
         c.Guard("pages", () => Pages(c));
         var tree = c.Doc.Structure;
         if (tree is null) return;
+        c.Guard("content tagging", () => PdfUADeepChecks.ContentTagging(c, tree));
+        c.Guard("structure rules", () => PdfUADeepChecks.StructureRules(c, tree));
         c.Guard("structure types", () => StructureTypes(c, tree));
         c.Guard("language", () => Language(c, tree));
         c.Guard("figures", () => Figures(c, tree));
@@ -323,8 +327,34 @@ internal static partial class PdfUAChecks
                 }
                 if (sub == "Link" && !(f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 }) && parent?.Alt is not { Length: > 0 })
                     c.Add("PDFUA-LINK-DESCRIPTION", ValidationSeverity.Error, "Link annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.5", "8.9"), i);
+                if ((((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) & 2) != 0) continue;
+                if (sub == "Link" && parent is not null && parent.StandardType != "Link")
+                    c.Add("PDFUA-LINK-STRUCT", ValidationSeverity.Error, $"Link annotation is nested in /{parent.Type}, expected Link", Clause(c, "7.18.5", "8.9"), i);
+                else if (sub == "Widget")
+                {
+                    if (parent is not null && parent.StandardType != "Form")
+                        c.Add("PDFUA-FORM-STRUCT", ValidationSeverity.Error, $"Widget annotation is nested in /{parent.Type}, expected Form", Clause(c, "7.18.4", "8.9"), i);
+                    if (HasFieldType(f, ad) && !HasText(f, ad, "TU") && !HasText(f, ad, "Contents") && parent?.Alt is not { Length: > 0 })
+                        c.Add("PDFUA-FORM-TU", ValidationSeverity.Error, "form field has no /TU tooltip (nor /Contents or structure /Alt)", Clause(c, "7.18.1", "8.9"), i);
+                }
+                else if (sub != "Link" && !HasText(f, ad, "Contents") && parent?.Alt is not { Length: > 0 })
+                    c.Add("PDFUA-ANNOT-CONTENTS", ValidationSeverity.Error, $"/{sub} annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.1", "8.9"), i);
             }
         }
+    }
+
+    static bool HasFieldType(PdfFile f, PdfDictionary? d)
+    {
+        for (var n = 0; d is not null && n < 64; n++, d = f.Resolve(d.Get("Parent")) as PdfDictionary)
+            if (d.Get("FT") is not null) return true;
+        return false;
+    }
+
+    static bool HasText(PdfFile f, PdfDictionary? d, string key)
+    {
+        for (var n = 0; d is not null && n < 64; n++, d = f.Resolve(d.Get("Parent")) as PdfDictionary)
+            if (f.Resolve(d.Get(key)) is PdfString { Bytes.Length: > 0 }) return true;
+        return false;
     }
 
     static PdfObject? AnnotationParentTreeValue(PdfFile f, StructureTree tree, int key)

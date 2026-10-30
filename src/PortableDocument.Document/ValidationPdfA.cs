@@ -37,9 +37,13 @@ internal static class PdfAChecks
         c.Guard("transparency", () => Transparency(c));
         c.Guard("annotations", () => Annotations(c));
         c.Guard("object scan", () => ObjectScan(c));
+        c.Guard("metadata consistency", () => PdfADeepChecks.Metadata(c));
+        c.Guard("icc profiles", () => PdfADeepChecks.IccProfiles(c));
+        c.Guard("font dictionaries", () => PdfADeepChecks.FontDictionaries(c));
+        c.Guard("actions and forms", () => PdfADeepChecks.ActionsAndForms(c));
     }
 
-    static string Clause(ValidationContext c, string a1, string a2, string a3) => c.Part switch { 1 => $"ISO 19005-1 {a1}", 2 => $"ISO 19005-2 {a2}", _ => $"ISO 19005-3 {a3}" };
+    internal static string Clause(ValidationContext c, string a1, string a2, string a3) => c.Part switch { 1 => $"ISO 19005-1 {a1}", 2 => $"ISO 19005-2 {a2}", _ => $"ISO 19005-3 {a3}" };
 
     static void FileStructure(ValidationContext c)
     {
@@ -76,9 +80,8 @@ internal static class PdfAChecks
         else if (part != c.Part.ToString()) c.Add("PDFA-XMP-ID-PART", ValidationSeverity.Error, $"pdfaid:part is '{part}', expected '{c.Part}'", Clause(c, "6.7.11", "6.6.4", "6.6.4"));
         if (part is not null && conf is null) c.Add("PDFA-XMP-ID-CONFORMANCE", ValidationSeverity.Error, "XMP has no pdfaid:conformance", Clause(c, "6.7.11", "6.6.4", "6.6.4"));
         else if (conf is not null && conf != "B") c.Add("PDFA-XMP-ID-CONFORMANCE", ValidationSeverity.Error, $"pdfaid:conformance is '{conf}'; level B was requested", Clause(c, "6.7.11", "6.6.4", "6.6.4"));
-        if (f.Resolve(f.Trailer.Get("Info")) is PdfDictionary info && f.Resolve(info.Get("Title")) is PdfString t && t.Text.Length > 0 && string.IsNullOrEmpty(x.Get(XmpData.Dc, "title")))
-            c.Add("PDFA-XMP-INFO-MISMATCH", ValidationSeverity.Warning, "Info /Title has no matching dc:title in XMP", Clause(c, "6.7.3", "6.6.2.3", "6.6.2.3"));
     }
+
 
     static void Fonts(ValidationContext c)
     {
