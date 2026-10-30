@@ -54,6 +54,34 @@ function base64(bytes) {
   return btoa(text);
 }
 
+// Fallback fonts and CJK glyph chunks are same-origin files under fallback-fonts/, fetched on first use (never at startup).
+// Failed or missing files are reported as unavailable so rendering degrades to the built-in fallback instead of retrying.
+async function supplyFallbackFonts(exports) {
+  const paths = JSON.parse(exports.BrowserEditor.TakeFontRequests());
+  await Promise.all(paths.map(async path => {
+    try {
+      const response = await fetch(new URL(`fallback-fonts/${path}`, import.meta.url), {
+        credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      exports.BrowserEditor.ProvideFontAsset(path, { bytes: new Uint8Array(await response.arrayBuffer()) });
+    } catch {
+      exports.BrowserEditor.FontAssetUnavailable(path);
+    }
+  }));
+  return paths.length;
+}
+
+// Page renders are repeatable, so a GET that needed fonts is run again once they arrive; other methods only prefetch.
+async function withFallbackFonts(exports, method, run) {
+  let reply = run();
+  for (let attempt = 0; attempt < 4 && await supplyFallbackFonts(exports) > 0; attempt++) {
+    if (method !== 'GET') break;
+    reply = run();
+  }
+  return reply;
+}
+
 try {
   const dotnet = await loadRuntime();
   const runtime = await dotnet
@@ -77,14 +105,14 @@ try {
         uploadPrepareMs = performance.now() - requestStart;
         binaryUpload = true;
         const dotnetStart = performance.now();
-        reply = JSON.parse(exports.BrowserEditor.RequestBinary(method, u.pathname, query, { bytes }, fileName));
+        reply = await withFallbackFonts(exports, method, () => JSON.parse(exports.BrowserEditor.RequestBinary(method, u.pathname, query, { bytes }, fileName)));
         dotnetMs = performance.now() - dotnetStart;
       } else {
         if (body != null) body = base64(new TextEncoder().encode(body));
         const command = JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName });
         uploadEncodeMs = performance.now() - requestStart;
         const dotnetStart = performance.now();
-        reply = JSON.parse(exports.BrowserEditor.Request(command));
+        reply = await withFallbackFonts(exports, method, () => JSON.parse(exports.BrowserEditor.Request(command)));
         dotnetMs = performance.now() - dotnetStart;
       }
       const timings = { dotnetMs, uploadEncodeMs, uploadPrepareMs, uploadBytes, binaryUpload, workerMs: performance.now() - start };

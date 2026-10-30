@@ -2,15 +2,31 @@ using System.Text.Json;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using PortableDocument.Content;
+using PortableDocument.FallbackFonts;
 
 return;
 
 [SupportedOSPlatform("browser")]
 public static partial class BrowserEditor
 {
-    static readonly EditorSession Session = new(new FontCatalog(), new BrowserFontFallback());
+    // Fallback fonts and CJK glyph chunks are fetched by the host on first use (see worker.js) and handed over through ProvideFontAsset.
+    static readonly ProvidedAssetSource FontAssets = new();
+    static readonly EditorSession Session = new(new FontCatalog(), new BundledFontFallback(FontAssets, new BrowserFontFallback()));
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public sealed record Command(string Method, string Path, Dictionary<string, string> Query, string? Body, string? FileName);
+
+    [JSExport]
+    public static string TakeFontRequests() => JsonSerializer.Serialize(FontAssets.TakeRequests(), Json);
+
+    [JSExport]
+    public static void ProvideFontAsset(string path, JSObject body)
+    {
+        using var b = body;
+        FontAssets.Provide(path, b.GetPropertyAsByteArray("bytes"));
+    }
+
+    [JSExport]
+    public static void FontAssetUnavailable(string path) => FontAssets.Provide(path, null);
 
     [JSExport]
     public static string Request(string command)
@@ -74,7 +90,7 @@ public static partial class BrowserEditor
     }
 }
 
-/// <summary>Licensed in-repo substitutes; embedded PDF fonts still take precedence.</summary>
+/// <summary>Last-resort substitute (Bitstream Vera) used only when the lazily fetched fallback fonts cannot be loaded, for example offline on first use.</summary>
 sealed class BrowserFontFallback : IFontFallback
 {
     readonly TrueTypeFont regular = Load("Vera.ttf"), bold = Load("VeraBd.ttf");

@@ -14,6 +14,21 @@ public interface ICjkFontFallback
     TrueTypeFont? FindCjk(string ordering, bool serif);
 }
 
+/// <summary>
+/// Optional capability of an <see cref="IFontFallback"/>: outline data (1000 units per em, y up) for a Unicode scalar of an Adobe CJK ordering,
+/// used when no installed font covers it. Returns null when the glyph is unavailable or its data has not been loaded yet.
+/// </summary>
+public interface ICjkGlyphFallback
+{
+    PathData? GetCjkGlyph(string ordering, bool serif, int codePoint);
+}
+
+/// <summary>Optional capability of a fallback whose data arrives asynchronously (browser): true while a render may be missing glyphs that are still being fetched.</summary>
+public interface IFontAssetPending
+{
+    bool HasPending { get; }
+}
+
 /// <summary>Resolves non-embedded fonts from the host's installed fonts (Windows, macOS, Linux directories).</summary>
 public sealed class SystemFontFallback : IFontFallback, ICjkFontFallback
 {
@@ -127,7 +142,7 @@ public sealed class PdfFont
     CMap? _cmap;
     string _ordering = "";
     Dictionary<int, int>? _cidToUni;
-    public bool HasOutlines => _tt?.HasGlyf == true || _cff is not null || _t1 is not null;
+    public bool HasOutlines => _tt?.HasGlyf == true || _cff is not null || _t1 is not null || _cjkGlyphs is not null;
     public IReadOnlyList<string> Warnings => _openTypeLayout?.Warnings ?? Array.Empty<string>();
     readonly PdfFile _f;
     readonly string?[] _names = new string?[256];
@@ -141,6 +156,10 @@ public sealed class PdfFont
     byte[]? _cidToGid;
     bool _symbolic;
     bool _fallbackUsed;
+    Std14Metrics? _std14;
+    ICjkGlyphFallback? _cjkGlyphs;
+    bool _cjkSerif;
+    readonly bool[] _pdfWidth = new bool[256];
     Dictionary<int, int>? _toUnicode;
     readonly Dictionary<(int Code, string Unicode), PathData?> _glyphCache = [];
     public PdfDictionary? CharProcs { get; }
@@ -289,17 +308,27 @@ public sealed class PdfFont
         }
         if (_tt is null && _cff is null && _t1 is null && !IsType3)
         {
+            var cls = FontSubstitution.Classify(BaseFont, flags,
+                f.Resolve(descriptor.Get("ItalicAngle")).AsNumber() ?? 0,
+                f.Resolve(descriptor.Get("FontWeight")).AsNumber() ?? 0,
+                f.Resolve(descriptor.Get("StemV")).AsNumber() ?? 0);
             var n = BaseFont.ToLowerInvariant();
-            var bold = n.Contains("bold") || n.Contains("black") || (flags & (1 << 18)) != 0;
-            var italic = n.Contains("italic") || n.Contains("oblique") || (flags & 64) != 0;
-            var mono = n.Contains("courier") || n.Contains("mono") || (flags & 1) != 0;
-            var serif = n.Contains("times") || n.Contains("serif") && !n.Contains("sans") || n.Contains("georgia") || n.Contains("garamond") || n.Contains("palatino") || n.Contains("roman") || (flags & 2) != 0 && !n.Contains("sans");
-            if (IsType0 && _ordering is "Japan1" or "GB1" or "CNS1" or "Korea1" && fallback is ICjkFontFallback cjk)
+            if (!IsType0 && FontSubstitution.Std14(BaseFont, cls) is { } std) _std14 = Std14Metrics.Get(std);
+            if (IsType0 && _ordering is "Japan1" or "GB1" or "CNS1" or "Korea1")
             {
-                _tt = cjk.FindCjk(_ordering, serif && !n.Contains("gothic") && !n.Contains("hei"));
-                if (_tt is not null) _cidToUni = CidToUnicode(_ordering);
+                var cjkSerif = cls.Serif && !n.Contains("gothic") && !n.Contains("hei");
+                if (fallback is ICjkFontFallback cjk)
+                {
+                    _tt = cjk.FindCjk(_ordering, cjkSerif);
+                    if (_tt is not null) _cidToUni = CidToUnicode(_ordering);
+                }
+                if (_tt is null && fallback is ICjkGlyphFallback glyphs)
+                {
+                    _cjkGlyphs = glyphs; _cjkSerif = cjkSerif;
+                    _cidToUni = CidToUnicode(_ordering);
+                }
             }
-            _tt ??= fallback.Find(BaseFont, bold, italic, mono, serif);
+            if (_cjkGlyphs is null) _tt ??= fallback.Find(BaseFont, cls.Bold, cls.Italic, cls.Mono, cls.Serif);
             _fallbackUsed = true;
         }
         _openTypeLayout ??= _tt;
@@ -374,7 +403,13 @@ public sealed class PdfFont
             baseEnc = _f.Resolve(ed.Get("BaseEncoding")).AsName();
             diffs = _f.Resolve(ed.Get("Differences")) as PdfArray;
         }
+        var builtin = _std14 is { IsSymbolic: true } && FontFile is null;
         baseEnc ??= (_symbolic || _t1 is not null || _cff is { IsCid: false }) && FontFile is not null ? null : "StandardEncoding";
+        if (builtin)
+        {
+            baseEnc = null;
+            for (var code = 0; code < 256; code++) _names[code] = _std14!.BuiltinName(code) ?? ".notdef";
+        }
         if (baseEnc == "MacExpertEncoding")
         {
             Array.Fill(_names, ".notdef");
@@ -406,7 +441,7 @@ public sealed class PdfFont
         var first = (int)(_f.Resolve(dict.Get("FirstChar")).AsNumber() ?? 0);
         if (_f.Resolve(dict.Get("Widths")) is PdfArray wa)
             for (var i = 0; i < wa.Count && first + i < 256; i++)
-                if (first + i >= 0 && _f.Resolve(wa[i]).AsNumber() is { } w) { _widths[first + i] = w; _hasWidth[first + i] = true; }
+                if (first + i >= 0 && _f.Resolve(wa[i]).AsNumber() is { } w) { _widths[first + i] = w; _hasWidth[first + i] = true; _pdfWidth[first + i] = true; }
     }
 
     static Dictionary<int, int> ParseToUnicode(byte[] data)
@@ -473,6 +508,9 @@ public sealed class PdfFont
         n.StartsWith("B5") || n.Contains("B5-") || n.StartsWith("CNS") ? "CNS1" :
         n.StartsWith("KSC") ? "Korea1" : "";
 
+    /// <summary>Radicals, compatibility ideographs and private-use scalars lose ties against the ordinary character that shares their CID.</summary>
+    static int Rank(int cp) => cp is >= 0x2E80 and <= 0x2FDF or >= 0xE000 and <= 0xFAFF or >= 0x1F000 ? 1 : 0;
+
     static readonly Dictionary<string, Dictionary<int, int>> CidUniCache = [];
 
     /// <summary>CID to Unicode for an Adobe CJK ordering, inverted from the Uni*-UTF16-H CMap (lowest code point wins).</summary>
@@ -490,7 +528,7 @@ public sealed class PdfFont
                     if (len == 2) cp = (int)code;
                     else if (len == 4 && code >> 16 is >= 0xD800 and < 0xDC00) cp = 0x10000 + (((int)(code >> 16) - 0xD800) << 10) + ((int)(code & 0xFFFF) - 0xDC00);
                     else continue;
-                    if (cid > 0 && (!d.TryGetValue(cid, out var old) || cp < old)) d[cid] = cp;
+                    if (cid > 0 && (!d.TryGetValue(cid, out var old) || Rank(cp) < Rank(old) || Rank(cp) == Rank(old) && cp < old)) d[cid] = cp;
                 }
             // Half-width/proportional Latin CIDs are absent from the Unicode CMaps; recover them from the legacy 1-byte ASCII ranges.
             foreach (var sec in ordering switch { "Japan1" => new[] { "UniJIS-UCS2-HW-H", "90ms-RKSJ-H" }, "GB1" => ["GBK-EUC-H"], "CNS1" => ["ETen-B5-H"], "Korea1" => ["KSCms-UHC-H"], _ => [] })
@@ -567,10 +605,21 @@ public sealed class PdfFont
         }
     }
 
+    /// <summary>AFM advance of a code in a non-embedded standard-14 font that has no /Widths entry for it.</summary>
+    double? Std14Width(int c)
+    {
+        if (_std14 is null || c is < 0 or > 255) return null;
+        var name = _names[c];
+        if (_std14.TryWidth(name, out var w)) return w;
+        if (name is not null && UnicodeForName(name) is { Length: > 0 } u && _std14.TryWidthByUnicode(char.ConvertToUtf32(u, 0), out w)) return w;
+        return null;
+    }
+
     double FallbackWidth(int c)
     {
         if (_cff is not null) { var cg = CffGlyphId(c); return cg > 0 ? _cff.Advance(cg) : _missingWidth; }
         if (_t1 is not null) { var tn = T1Name(c); return tn is not null ? _t1.Advance(tn) : _missingWidth; }
+        if (_fallbackUsed && Std14Width(c) is { } std) return std;
         if (_tt is null) return _missingWidth > 0 ? _missingWidth : 500;
         var g = GlyphIdFor(c);
         return g > 0 ? _tt.Advance(g) : _missingWidth;
@@ -682,9 +731,25 @@ public sealed class PdfFont
             if (Vertical && IsType0 && _openTypeLayout is not null)
                 gid = _openTypeLayout.SubstituteVertical(gid, verticalUnicode);
             if (gid > 0 || FontFile is not null && IsType0) p = _tt.GetOutline(gid);
+            if (p is not null && gid > 0 && _fallbackUsed && !IsType0 && code is >= 0 and < 256 && _pdfWidth[code]) p = FitToWidth(p, _widths[code], _tt.Advance(gid));
+        }
+        else if (_cjkGlyphs is not null)
+        {
+            var cp = _cidToUni?.GetValueOrDefault(code) ?? 0;
+            if (cp > 0) p = _cjkGlyphs.GetCjkGlyph(_ordering, _cjkSerif, cp);
+            if (p is null) return null;
         }
         _glyphCache[key] = p;
         return p;
+    }
+
+    /// <summary>Scales a substitute glyph horizontally so its advance matches the PDF's /Widths (layout is preserved; wide and narrow faces are condensed or expanded).</summary>
+    static PathData FitToWidth(PathData glyph, double pdfWidth, double substituteAdvance)
+    {
+        if (pdfWidth <= 0 || substituteAdvance <= 0) return glyph;
+        var ratio = pdfWidth / substituteAdvance;
+        if (Math.Abs(ratio - 1) < 0.03) return glyph;
+        return glyph.Transform(Matrix.Scale(Math.Clamp(ratio, 0.5, 1.5), 1));
     }
 
     public PdfStream? GetCharProc(int code)
@@ -694,7 +759,7 @@ public sealed class PdfFont
         return name is null ? null : _f.Resolve(CharProcs.Get(name)) as PdfStream;
     }
 
-    string? UnicodeForName(string name) => GlyphList.Lookup(name, BaseFont == "ZapfDingbats" ||
+    string? UnicodeForName(string name) => GlyphList.Lookup(name, _std14?.Name == "ZapfDingbats" || BaseFont == "ZapfDingbats" ||
         BaseFont.Length > 7 && BaseFont[6] == '+' && BaseFont.AsSpan(7).SequenceEqual("ZapfDingbats"));
 
     /// <summary>Maps an Adobe glyph name to its complete Unicode sequence, or null when no component maps.</summary>

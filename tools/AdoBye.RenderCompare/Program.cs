@@ -3,11 +3,12 @@ using Microsoft.Playwright;
 using PortableDocument.Document;
 using PortableDocument.Render;
 
-// Usage: AdoBye.RenderCompare <pdf|dir>... [--out dir] [--dpi 96] [--page-tolerance 0.02] [--channel msedge|chrome] [--no-browser]
+// Usage: AdoBye.RenderCompare <pdf|dir>... [--out dir] [--dpi 96] [--page-tolerance 0.02] [--channel msedge|chrome] [--no-browser] [--fallback system|bundled]
 // Renders each PDF with our renderer and with the browser's built-in PDF viewer (PDFium on Chrome/Edge),
 // then diffs the two and writes PNGs + report.json. Exit code 1 if any fixture exceeds its tolerance.
+// --fallback bundled renders non-embedded fonts with the bundled Liberation/DejaVu/Noto fallback data instead of the installed system fonts.
 
-var inputs = new List<string>(); var outDir = "compare-out"; double dpi = 96, tol = 0.02; var channel = "msedge"; var noBrowser = false;
+var inputs = new List<string>(); var outDir = "compare-out"; double dpi = 96, tol = 0.02; var channel = "msedge"; var noBrowser = false; var fallback = "system";
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -17,9 +18,11 @@ for (var i = 0; i < args.Length; i++)
         case "--page-tolerance": tol = double.Parse(args[++i]); break;
         case "--channel": channel = args[++i]; break;
         case "--no-browser": noBrowser = true; break;
+        case "--fallback": fallback = args[++i]; break;
         default: inputs.Add(args[i]); break;
     }
 }
+var options = new PdfRenderOptions { FontFallback = fallback == "bundled" ? PortableDocument.FallbackFonts.BundledFontFallback.CreateDefault() : null };
 var files = inputs.SelectMany(p => Directory.Exists(p) ? Directory.EnumerateFiles(p, "*.pdf", SearchOption.AllDirectories) : [p]).OrderBy(x => x).ToList();
 if (files.Count == 0) { Console.Error.WriteLine("No PDFs given."); return 2; }
 Directory.CreateDirectory(outDir);
@@ -36,7 +39,7 @@ foreach (var file in files)
 {
     var name = Path.GetFileNameWithoutExtension(file);
     var doc = PdfDocument.Open(file);
-    var ours = DocumentRenderer.RenderPage(doc.Pages[0], dpi);
+    var ours = DocumentRenderer.RenderPage(doc.Pages[0], options, dpi);
     File.WriteAllBytes(Path.Combine(outDir, name + ".ours.png"), ours.ToPng());
     if (browser is null) { results.Add(new { file = name, warnings = ours.Warnings }); continue; }
 

@@ -287,6 +287,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         var doc = bare ? BaseSnap() : Snap();
         var snapshotMs = snapshot.Elapsed.TotalMilliseconds;
         var png = RenderProfiled(doc.Pages[index], dpi, snapshotMs, total, allocated, collections);
+        // Glyph data still being fetched (browser): this render is provisional and the host will ask again.
+        if (fontFallback is IFontAssetPending { HasPending: true }) return png;
         if (png.Length <= RenderCacheLimit)
         {
             while (renderCacheBytes + png.Length > RenderCacheLimit)

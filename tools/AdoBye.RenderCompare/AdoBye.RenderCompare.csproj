@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.FallbackFonts\PortableDocument.FallbackFonts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <Description>Optional metric-compatible fallback fonts (Liberation, DejaVu) and lazily loaded Noto Sans CJK glyph data for non-embedded PDF fonts.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PortableDocument.Content\PortableDocument.Content.csproj" />
+    <InternalsVisibleTo Include="AdoBye.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Tiny index of which CJK chunks exist; the font and glyph data itself is never compiled into the assembly. -->
+    <EmbeddedResource Include="Resources\cjk-index.bin" LogicalName="PortableDocument.FallbackFonts.cjk-index.bin" />
+    <EmbeddedResource Include="fallback-fonts\licenses\manifest.json" LogicalName="PortableDocument.FallbackFonts.licenses.json" />
+    <!-- Desktop hosts get the data next to their binaries; browser hosts serve the same folder from wwwroot. -->
+    <None Include="fallback-fonts\**" Link="fallback-fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles\any\any\fallback-fonts\" />
+  </ItemGroup>
+
+</Project>
