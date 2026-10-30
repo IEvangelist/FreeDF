@@ -184,13 +184,17 @@ static class EditorPerformance
                     });
                     await Measure("selection-drag", async () =>
                     {
-                        await page.Locator("#layer .it").Last.WaitForAsync(new() { State = WaitForSelectorState.Visible });
-                        var box = await page.Locator("#layer .it").Last.BoundingBoxAsync()
-                            ?? throw new Exception("The created overlay has no visible bounds.");
-                        await page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
+                        await using var handle = await page.WaitForFunctionAsync("""
+                            () => { const r = [...document.querySelectorAll('#layer .it')].at(-1)?.getBoundingClientRect();
+                              return r?.width > 0 && r.height > 0 && r.toJSON(); }
+                            """);
+                        var box = await handle.JsonValueAsync<JsonElement>();
+                        var x = box.GetProperty("x").GetSingle() + box.GetProperty("width").GetSingle() / 2;
+                        var y = box.GetProperty("y").GetSingle() + box.GetProperty("height").GetSingle() / 2;
+                        await page.Mouse.MoveAsync(x, y);
                         var started = await page.EvaluateAsync<double>("performance.now()");
                         await page.Mouse.DownAsync();
-                        await page.Mouse.MoveAsync(box.X + box.Width / 2 + 20, box.Y + box.Height / 2 + 20, new() { Steps = 12 });
+                        await page.Mouse.MoveAsync(x + 20, y + 20, new() { Steps = 12 });
                         await page.Mouse.UpAsync();
                         await Frames(page);
                         var visualMs = await page.EvaluateAsync<double>("start => performance.now() - start", started);
