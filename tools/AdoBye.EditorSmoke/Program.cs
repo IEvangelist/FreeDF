@@ -101,6 +101,7 @@ try
     await text.WaitForAsync();
     await text.FillAsync("Browser local round trip");
     await text.PressAsync("Escape");
+    await EditorHeader.State(page, true);
     await page.Locator("#prev").ClickAsync();
     await page.WaitForFunctionAsync("document.getElementById('prev').classList.contains('on') && document.getElementById('base').dataset.url.includes('bare=false') && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url && document.getElementById('base').naturalWidth > 0");
     Check(await page.EvaluateAsync<bool>("document.getElementById('base').src.startsWith('data:image/png;base64,')"), "Local rendered preview");
@@ -119,6 +120,7 @@ try
     await page.Locator("#sn").FillAsync("local-round-trip.pdf");
     var download = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
     var downloaded = await download.PathAsync() ?? throw new Exception("No downloaded PDF.");
+    await EditorHeader.State(page, false);
     Check(download.SuggestedFilename == "local-round-trip.pdf", "Download filename");
     var pdf = PdfDocument.Open(downloaded);
     var extracted = string.Join("", Pdf.ExtractText(pdf.Pages[0]).Select(s => s.Text));
@@ -188,7 +190,8 @@ try
         """);
     var savedAgain = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
     if (await savedAgain.FailureAsync() is { } downloadFailure) throw new Exception(downloadFailure);
-    await page.WaitForFunctionAsync("!document.querySelector('.mdl') && !document.getElementById('name').textContent.includes('•')");
+    await page.WaitForFunctionAsync("!document.querySelector('.mdl')");
+    await EditorHeader.State(page, false);
     Check(await page.EvaluateAsync<int>("window.saveRenders.length") == 0, "Saving does not rerender unchanged pages or thumbnails: " + await page.EvaluateAsync<string>("JSON.stringify(window.saveRenders)"));
     Check(errors.IsEmpty, "No browser errors during editing: " + string.Join("\n", errors));
     await EditorHeader.Open(page, false, []);

@@ -60,6 +60,7 @@ static class EditorRecovery
             Check(raster == await EditorTextSelection.BasePixelHash(page), "Resume retains exact original-font/geometry raster fidelity.");
             Check(state == await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())"), "Resume retains editable original-text replacement data, not a flattened PDF.");
             Check(await page.EvaluateAsync<bool>("async () => (await (await pdfHost.request('/api/state')).json()).dirty"), "Unsaved state remains unsaved.");
+            await EditorHeader.State(page, true);
             await page.Keyboard.PressAsync("Control+z");
             await page.WaitForFunctionAsync("document.querySelectorAll('#layer .it img').length === 1");
             await page.Keyboard.PressAsync("Control+v");
