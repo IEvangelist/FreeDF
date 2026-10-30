@@ -37,7 +37,8 @@ public sealed class PdfEncryption
     public IReadOnlyList<PdfRecipient>? Recipients { get; init; }
     /// <summary>
     /// Source of the file key, salts and IVs (default: a cryptographic RNG); it must return exactly the requested number of bytes.
-    /// A constant or otherwise non-random source makes output reproducible, which is ONLY appropriate for test fixtures and sample files and must never be used to protect real documents.
+    /// A constant or otherwise non-random source can make password-encrypted output reproducible, which is ONLY appropriate for test fixtures and sample files and must never be used to protect real documents.
+    /// Public-key recipient CMS envelopes still use platform cryptographic randomness and are not byte-reproducible.
     /// </summary>
     public Func<int, byte[]>? RandomBytes { get; init; }
 }
@@ -157,11 +158,11 @@ internal sealed class PdfEncryptor
 
     // Public-key handler (§7.6.5): a random 20-byte seed + 4 permission bytes go into one CMS EnvelopedData per recipient;
     // the file key is SHA-1 (SHA-256 for AESV3) over the seed, all recipient blobs and 0xFFFFFFFF when metadata stays clear.
-    static (byte[] Key, PdfDictionary Dict) PubSec(PdfEncryption o, IReadOnlyList<PdfRecipient> recipients)
+    (byte[] Key, PdfDictionary Dict) PubSec(PdfEncryption o, IReadOnlyList<PdfRecipient> recipients)
     {
         var m = o.Method;
         if (m == PdfEncryptionMethod.Rc4_40) throw new NotSupportedException("40-bit RC4 is not supported for the public-key handler");
-        var seed = RandomNumberGenerator.GetBytes(20);
+        var seed = _rng(20);
         var blobs = new List<byte[]>();
         foreach (var rc in recipients)
         {

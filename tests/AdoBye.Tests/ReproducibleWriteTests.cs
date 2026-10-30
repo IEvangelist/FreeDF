@@ -1,5 +1,7 @@
 using PortableDocument.Core;
 using PortableDocument.Document;
+using System.Security.Cryptography.Pkcs;
+using System.Security.Cryptography.X509Certificates;
 using Xunit;
 
 namespace AdoBye.Tests;
@@ -21,6 +23,38 @@ public class ReproducibleWriteTests
     [Fact]
     public void RandomBytesMustReturnTheRequestedLength() =>
         Assert.Throws<ArgumentException>(() => PdfEditor.Create().Save(options: new PdfWriteOptions { Encryption = Encryption(n => new byte[n - 1]) }));
+
+    [Fact]
+    public void PublicKeySeedUsesValidatedFixtureRandomnessButCmsRemainsRandom()
+    {
+        using var cert = SecurityTests.Cert("fixture-recipient");
+        var requests = new List<int>();
+        var encryption = new PdfEncryption
+        {
+            Recipients = [new PdfRecipient(cert)],
+            RandomBytes = n => { requests.Add(n); return Constant(n); },
+        };
+        PdfDictionary Write()
+        {
+            var file = PdfFile.Load(PdfEditor.Create().Save(options: new PdfWriteOptions
+            { Encryption = encryption, FileId = new byte[16] }), certificate: cert);
+            var dictionary = Assert.IsType<PdfDictionary>(file.Resolve(file.Trailer.Get("Encrypt")));
+            return Assert.IsType<PdfDictionary>(Assert.IsType<PdfDictionary>(dictionary.Get("CF")).Get("DefaultCryptFilter"));
+        }
+        var first = Write();
+        var second = Write();
+        Assert.Equal(2, requests.Count(n => n == 20));
+        var recipients = Assert.IsType<PdfArray>(first.Get("Recipients"));
+        var blob = Assert.IsType<PdfString>(recipients[0]).Bytes;
+        var cms = new EnvelopedCms();
+        cms.Decode(blob);
+        cms.Decrypt(new X509Certificate2Collection(cert));
+        Assert.Equal(Constant(20), cms.ContentInfo.Content[..20]);
+        var other = Assert.IsType<PdfArray>(second.Get("Recipients"));
+        Assert.NotEqual(blob, Assert.IsType<PdfString>(other[0]).Bytes);
+        Assert.Throws<ArgumentException>(() => PdfEditor.Create().Save(options: new PdfWriteOptions
+        { Encryption = new PdfEncryption { Recipients = [new PdfRecipient(cert)], RandomBytes = n => new byte[n - 1] } }));
+    }
 
     [Fact]
     public void FileIdMustBeSixteenBytesAndIsCopied()
