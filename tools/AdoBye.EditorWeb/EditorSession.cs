@@ -207,8 +207,14 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     {
         if (baseSnapshot is null)
         {
-            Prepare(originalTextOnly: true);
-            baseSnapshot = PdfDocument.Load(editor.Save());
+            if (!items.Values.Any(page => page.Any(AffectsBase)) &&
+                !objEdits.Values.Any(page => page.Count > 0) && formObjEdits.Count == 0)
+                baseSnapshot = Pristine();
+            else
+            {
+                Prepare(originalTextOnly: true);
+                baseSnapshot = PdfDocument.Load(editor.Save());
+            }
         }
         return baseSnapshot;
     }
