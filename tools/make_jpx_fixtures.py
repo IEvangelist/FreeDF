@@ -608,7 +608,7 @@ def emit(name, im, tol=0, extra=None, expected_mode=None, packed=None, **kw):
     if packed is not None and (ref.mode != im.mode or not np.array_equal(arr, np.asarray(im))):
         raise ValueError(f"OpenJPEG sample mismatch for {packed} packed-header fixture")
     if arr.dtype == np.uint16:
-        arr = (arr >> 8).astype(np.uint8)
+        arr = ((arr.astype(np.uint32) * 255 + 32767) // 65535).astype(np.uint8)
     mode = {1: "L", 2: "LA", 3: "RGB", 4: "RGBA"}[1 if arr.ndim == 2 else arr.shape[2]]
     if expected_mode == "RGB" and mode == "RGBA":
         arr = arr[..., :3]
@@ -729,6 +729,179 @@ def emit_multi_tile_packed(marker, early_headers=False, header_only_first=False)
     print("wrote", name, "RGB", im.width, im.height, len(data), "bytes")
 
 
+def emit_opj(name, im, args, tol=0, extra=None):
+    """Encodes with the OpenJPEG CLI (code-block style / ROI switches Pillow does not expose)."""
+    import shutil
+    import subprocess
+    import tempfile
+    exe = os.environ.get("OPJ_COMPRESS") or shutil.which("opj_compress")
+    if exe is None:
+        print("skip", name, "(opj_compress not found; set OPJ_COMPRESS)")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "in.ppm" if im.mode == "RGB" else "in.pgm")
+        dst = os.path.join(tmp, "out.j2k")
+        im.save(src)
+        subprocess.run([exe, "-i", src, "-o", dst, *args], check=True, capture_output=True)
+        data = open(dst, "rb").read()
+    ref = Image.open(io.BytesIO(data))
+    ref.load()
+    arr = np.asarray(ref)
+    if tol == 0 and not np.array_equal(arr, np.asarray(im)):
+        raise ValueError(f"{name}: OpenJPEG round trip is not lossless")
+    mode = "L" if arr.ndim == 2 else "RGB"
+    w, h = ref.size
+    make_pdf(os.path.join(OUT, name + ".pdf"), w, h, data, extra)
+    open(os.path.join(OUT, name + ".bin"), "wb").write(np.ascontiguousarray(arr).tobytes())
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"{mode} {w} {h} {tol}")
+    print("wrote", name, mode, w, h, len(data), "bytes", args)
+
+
+def emit_depth(name, bits, rgb=False, extra=None, expected="scaled"):
+    """Native 10/12/16-bit samples encoded by OpenJPEG (imagecodecs). The expected 8-bit output is the
+    hand-derived exact rounding floor((x * 255 + max / 2) / max); `expected="inverted"` applies /Decode [1 0]."""
+    import imagecodecs
+    rng = np.random.default_rng(bits)
+    shape = (40, 56, 3) if rgb else (40, 56)
+    mx = (1 << bits) - 1
+    x = rng.integers(0, mx + 1, shape).astype(np.uint16)
+    if rgb:
+        x[0, :4, :] = np.array([[0, 0, 0], [mx, mx, mx], [1, mx - 1, mx // 2], [mx // 2, mx // 2 + 1, 5]], np.uint16)
+    else:
+        x[0, :4] = (0, mx, 1, mx - 1)
+    data = imagecodecs.jpeg2k_encode(x, reversible=True, mct=False, bitspersample=bits, codecformat=imagecodecs.JPEG2K.CODEC.J2K)
+    ref = imagecodecs.jpeg2k_decode(data)
+    if not np.array_equal(ref, x):
+        raise ValueError(f"{name}: OpenJPEG {bits}-bit round trip differs")
+    v = (x.astype(np.int64) * 255 + mx // 2) // mx
+    if expected == "inverted":
+        v = 255 - v
+    h, w = x.shape[:2]
+    make_pdf(os.path.join(OUT, name + ".pdf"), w, h, data, extra)
+    open(os.path.join(OUT, name + ".bin"), "wb").write(np.ascontiguousarray(v.astype(np.uint8)).tobytes())
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"{'RGB' if rgb else 'L'} {w} {h} {1 if expected == 'inverted' else 0}")
+    print("wrote", name, bits, "bit", len(data), "bytes")
+
+
+def emit_subsampled(name, xr, yr, w=8, h=8):
+    """One component at XRsiz/YRsiz > 1 (SIZ patched after OpenJPEG encoding the reduced plane). The expected
+    samples are hand-derived: reference-grid sample (X, Y) lies between plane samples at multiples of XRsiz/YRsiz and is
+    bilinearly interpolated (round half up) with edge replication; OpenJPEG itself does not define upsampling."""
+    cw, ch = -(-w // xr), -(-h // yr)
+    rng = np.random.default_rng(xr * 10 + yr)
+    plane = rng.integers(0, 256, (ch, cw)).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(plane, "L").save(buf, format="JPEG2000", no_jp2=True, num_resolutions=1)
+    data = bytearray(buf.getvalue())
+    siz = data.index(b"\xff\x51")
+    struct.pack_into(">IIIIII", data, siz + 6, w, h, 0, 0, w, h)  # Xsiz Ysiz XOsiz YOsiz XTsiz YTsiz
+    assert data[siz + 40] == 7  # Ssiz: 8-bit unsigned
+    data[siz + 41], data[siz + 42] = xr, yr
+    out = np.zeros((h, w), np.uint8)
+    for y in range(h):
+        for x in range(w):
+            i0, fx = x // xr, x % xr
+            j0, fy = y // yr, y % yr
+            i1, j1 = min(i0 + 1, cw - 1), min(j0 + 1, ch - 1)
+            if i0 >= cw - 1:
+                i0 = i1 = cw - 1
+                fx = 0
+            if j0 >= ch - 1:
+                j0 = j1 = ch - 1
+                fy = 0
+            p = plane.astype(np.int64)
+            num = (p[j0, i0] * (xr - fx) + p[j0, i1] * fx) * (yr - fy) + (p[j1, i0] * (xr - fx) + p[j1, i1] * fx) * fy
+            out[y, x] = (num + xr * yr // 2) // (xr * yr)
+    make_pdf(os.path.join(OUT, name + ".pdf"), w, h, bytes(data), {"ColorSpace": Name.DeviceGray})
+    open(os.path.join(OUT, name + ".bin"), "wb").write(out.tobytes())
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"L {w} {h} 0")
+    print("wrote", name, xr, yr)
+
+
+def matrix_rgb_profile():
+    """Minimal ICC v2 matrix/TRC profile with Adobe RGB (1998) D50 colorants and gamma 2.19921875."""
+    def fix(v):
+        return struct.pack(">i", round(v * 65536))
+
+    def xyz(x, y, z):
+        return b"XYZ \0\0\0\0" + fix(x) + fix(y) + fix(z)
+
+    def text(s):
+        return b"text\0\0\0\0" + s + b"\0"
+
+    desc = b"desc\0\0\0\0" + struct.pack(">I", 6) + b"Adobe\0" + b"\0" * 4 + b"\0\0\0\0" + b"\0" * 70
+    curve = b"curv\0\0\0\0" + struct.pack(">IH", 1, 0x0233) + b"\0\0"
+    tags = [(b"desc", desc), (b"cprt", text(b"none")), (b"wtpt", xyz(0.9642, 1.0, 0.8249)),
+            (b"rXYZ", xyz(0.60974, 0.31111, 0.01947)), (b"gXYZ", xyz(0.20528, 0.62567, 0.06087)),
+            (b"bXYZ", xyz(0.14919, 0.06322, 0.74457)), (b"rTRC", curve), (b"gTRC", curve), (b"bTRC", curve)]
+    table = struct.pack(">I", len(tags))
+    body = b""
+    offset = 128 + 4 + 12 * len(tags)
+    for sig, data in tags:
+        pad = -len(data) % 4
+        table += sig + struct.pack(">II", offset + len(body), len(data))
+        body += data + b"\0" * pad
+    header = bytearray(128)
+    header[4:8] = b"none"
+    header[8:12] = bytes([2, 0x10, 0, 0])
+    header[12:24] = b"mntrRGB XYZ "
+    header[36:40] = b"acsp"
+    header[68:80] = fix(0.9642) + fix(1.0) + fix(0.8249)
+    out = bytearray(header) + table + body
+    out[0:4] = struct.pack(">I", len(out))
+    return bytes(out)
+
+
+def jp2_box(kind, payload):
+    return struct.pack(">I", 8 + len(payload)) + kind + payload
+
+
+def emit_icc(name, im):
+    """JP2 colr method 2 (embedded ICC) with no PDF /ColorSpace; Pillow cannot write the box, so the JP2 wrapper is
+    assembled here around an OpenJPEG codestream. Expected pixels come from lcms2 (Pillow ImageCms)."""
+    from PIL import ImageCms
+    profile = matrix_rgb_profile()
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG2000", no_jp2=True)
+    codestream = buf.getvalue()
+    w, h = im.size
+    ihdr = struct.pack(">IIHBBBB", h, w, 3, 7, 7, 0, 0)
+    colr = bytes([2, 0, 0]) + profile
+    data = (jp2_box(b"jP  ", b"\r\n\x87\n") + jp2_box(b"ftyp", b"jp2 \0\0\0\0jp2 ")
+            + jp2_box(b"jp2h", jp2_box(b"ihdr", ihdr) + jp2_box(b"colr", colr)) + jp2_box(b"jp2c", codestream))
+    ref = Image.open(io.BytesIO(data))
+    ref.load()
+    if not np.array_equal(np.asarray(ref), np.asarray(im)):
+        raise ValueError("OpenJPEG did not decode the colr method 2 JP2 losslessly")
+    transform = ImageCms.buildTransform(ImageCms.ImageCmsProfile(io.BytesIO(profile)), ImageCms.createProfile("sRGB"),
+                                        "RGB", "RGB", renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC)
+    arr = np.asarray(ImageCms.applyTransform(ref.convert("RGB"), transform))
+    w, h = ref.size
+    make_pdf(os.path.join(OUT, name + ".pdf"), w, h, data)
+    open(os.path.join(OUT, name + ".bin"), "wb").write(np.ascontiguousarray(arr).tobytes())
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"RGB {w} {h} 3")
+    print("wrote", name, "icc", len(profile), "bytes profile")
+
+
+def emit_precision_subsampling_and_styles(rgb, gray):
+    emit_icc("jp2-colr-icc", rgb)
+    for bits in (10, 12):
+        emit_depth(f"gray{bits}-lossless", bits)
+        emit_depth(f"rgb{bits}-lossless", bits, rgb=True)
+    emit_depth("gray12-decode-inverted", 12, extra={"ColorSpace": Name.DeviceGray, "Decode": [1, 0]}, expected="inverted")
+    emit_subsampled("subsampled-2x2", 2, 2)
+    emit_subsampled("subsampled-2x1", 2, 1)
+    emit_subsampled("subsampled-3x2-odd", 3, 2, w=9, h=7)
+    styles = {"bypass": 1, "reset": 2, "termall": 4, "vcausal": 8, "pterm": 16, "segsym": 32, "all": 63}
+    for label, mode in styles.items():
+        emit_opj(f"cblk-style-{label}", rgb, ["-M", str(mode), "-b", "16,16", "-n", "3"])
+    emit_opj("cblk-style-bypass-lossy", rgb, ["-M", "1", "-I", "-r", "6", "-b", "16,16"], tol=3)
+    emit_opj("cblk-style-termall-vcausal-lossy", rgb, ["-M", "12", "-I", "-r", "6", "-b", "16,16"], tol=3)
+    emit_opj("cblk-style-bypass-layers", gray, ["-M", "1", "-r", "20,8,1", "-b", "8,8"])
+    emit_opj("roi-maxshift", gray, ["-ROI", "c=0,U=9"])
+    emit_opj("roi-maxshift-rgb-styles", rgb, ["-mct", "0", "-ROI", "c=1,U=6", "-M", "38"])
+
+
 def main():
     rgb = picture(96, 72)
     gray = rgb.convert("L")
@@ -768,6 +941,7 @@ def main():
     g16 = np.asarray(gray).astype(np.uint16) * 257
     g16 = g16 ^ np.random.default_rng(5).integers(0, 256, g16.shape).astype(np.uint16)
     emit("gray16-lossless", Image.fromarray(g16, "I;16"))
+    emit_precision_subsampling_and_styles(rgb, gray)
     emit_poc("poc-rlcp", rgb)
     emit_poc("poc-tile-rlcp", rgb, tile_poc=True)
     emit_multi_range_spatial_poc("poc-spatial-multirange", rgb)

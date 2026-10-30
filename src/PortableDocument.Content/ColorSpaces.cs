@@ -75,6 +75,14 @@ public abstract class PdfColorSpace
         return new(new IccBased(prof));
     }
 
+    /// <summary>Builds a colour space from raw ICC profile bytes (for example a JP2 colr method 2 box); null when unparsable or the component count differs.</summary>
+    internal static PdfColorSpace? FromIccProfile(byte[] data, int n)
+    {
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data));
+        var prof = ProfilesByHash.GetOrAdd(key, _ => IccProfile.TryParse(data));
+        return prof is null || prof.Components != n ? null : new IccBased(prof);
+    }
+
     sealed class IccBased(IccProfile profile) : PdfColorSpace
     {
         public override int Components => profile.Components;

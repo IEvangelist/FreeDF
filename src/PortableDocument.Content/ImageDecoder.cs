@@ -52,11 +52,19 @@ public static class ImageDecoder
             var csObj = R(d.Get("ColorSpace"));
             var indexed = csObj is PdfArray { Items.Count: > 0 } ca && R(ca.Items[0]) is PdfName { Value: "Indexed" or "I" };
             var smaskInData = (int)(R(d.Get("SMaskInData")).AsNumber() ?? 0);
-            var jx = JpxDecoder.Decode(data, csObj is null ? 0 : cs.Components, indexed, smaskInData > 0, out var jxWarn);
+            var colorKeyMask = R(d.Get("Mask")) is PdfArray;
+            var jx = JpxDecoder.Decode(data, csObj is null ? 0 : cs.Components, indexed, smaskInData > 0, out var jxWarn, allowWide: !indexed);
             if (jx is null) { warning = jxWarn ?? "JPX could not be decoded"; return null; }
             warning = jxWarn;
             data = jx.Samples; w = jx.Width; h = jx.Height; bpc = 8;
-            if (csObj is null || cs.Components != jx.Components) cs = jx.Components switch { 1 => PdfColorSpace.Gray, 4 => PdfColorSpace.Cmyk, _ => PdfColorSpace.Rgb };
+            if (csObj is null || cs.Components != jx.Components)
+            {
+                cs = (csObj is null && jx.IccProfile is not null ? PdfColorSpace.FromIccProfile(jx.IccProfile, jx.Components) : null)
+                    ?? jx.Components switch { 1 => PdfColorSpace.Gray, 4 => PdfColorSpace.Cmyk, _ => PdfColorSpace.Rgb };
+            }
+            // Keep native precision only where the 8-bit direct path below would not already be exact.
+            if (jx.Samples16 is not null && (colorKeyMask || decode is not null || (cs != PdfColorSpace.Gray && cs != PdfColorSpace.Rgb)))
+            { data = jx.Samples16; bpc = 16; }
             if (smaskInData > 0) jpxAlpha = jx;
         }
         else if (codec is not null)

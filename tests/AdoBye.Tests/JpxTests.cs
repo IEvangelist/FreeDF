@@ -414,6 +414,49 @@ public class JpxTests
         Assert.Contains("PPM and PPT markers cannot be combined", warning);
     }
 
+    [Theory]
+    [InlineData("gray10-lossless", 10, 1)]
+    [InlineData("rgb12-lossless", 12, 3)]
+    [InlineData("gray16-lossless", 16, 1)]
+    public void WideComponentsKeepNativePrecisionScaledToSixteenBits(string name, int depth, int comps)
+    {
+        var data = Codestream(name);
+        var narrow = JpxDecoder.Decode(data, 0, false, false, out _);
+        var wide = JpxDecoder.Decode(data, 0, false, false, out _, allowWide: true);
+        Assert.NotNull(narrow);
+        Assert.NotNull(wide);
+        Assert.Null(narrow.Samples16);
+        Assert.NotNull(wide.Samples16);
+        Assert.Equal(comps, wide.Components);
+        Assert.Equal(wide.Samples, narrow.Samples);
+        var max = (1L << depth) - 1;
+        var distinct = new HashSet<int>();
+        for (var i = 0; i < wide.Samples.Length; i++)
+        {
+            var s16 = wide.Samples16![2 * i] << 8 | wide.Samples16[2 * i + 1];
+            var native = (s16 * max + 32767) / 65535; // inverse of the full-range scaling
+            Assert.Equal(s16, (native * 65535 + max / 2) / max);
+            Assert.Equal((s16 * 255 + 32767) / 65535, wide.Samples[i]);
+            distinct.Add(s16);
+        }
+        Assert.True(distinct.Count > 255, "expected more than 8 bits of precision to survive");
+    }
+
+    [Fact]
+    public void Jp2ColrIccProfileIsAppliedWhenColorSpaceIsAbsent()
+    {
+        var data = Codestream("jp2-colr-icc");
+        var image = JpxDecoder.Decode(data, 0, false, false, out _);
+        Assert.NotNull(image?.IccProfile);
+        Assert.Equal(3, image.Components);
+        var expected = File.ReadAllBytes(Path.Combine(Dir, "jp2-colr-icc.bin"));
+        var raw = image.Samples;
+        var different = 0;
+        for (var i = 0; i < raw.Length; i++)
+            if (Math.Abs(raw[i] - expected[i]) > 3) different++;
+        Assert.True(different > raw.Length / 4, "the Adobe RGB profile must visibly change the sRGB interpretation");
+    }
+
     static byte[] Codestream(string name)
     {
         var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(Dir, name + ".pdf")));
