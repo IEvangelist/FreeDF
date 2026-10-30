@@ -30,6 +30,179 @@ public class EditorMergeTests
     static int Pages(EditorSession s) { using var state = Json(s, "GET", "/api/state"); return state.RootElement.GetProperty("pageCount").GetInt32(); }
     static int PageCount(string prefix) => PdfDocument.Load(File.ReadAllBytes(Sample(prefix))).Pages.Count;
 
+    static PdfDocument Reload(PdfEditor editor) => PdfDocument.Load(editor.Save());
+    static PdfDocument Doc(string prefix) => PdfDocument.Load(File.ReadAllBytes(Sample(prefix)));
+    static IEnumerable<PdfOutlineItem> Flatten(IEnumerable<PdfOutlineItem> items) => items.SelectMany(i => new[] { i }.Concat(Flatten(i.Children)));
+
+    [Fact]
+    public void MergedFormFieldsAreRegisteredRenamedOnCollisionAndEditable()
+    {
+        var source = Doc("11-");
+        var names = source.GetFormFields().Select(f => f.FullName).ToList();
+        Assert.NotEmpty(names);
+        var editor = PdfEditor.Open(Doc("01-"));
+        Assert.False(editor.SetFieldValue(names[0], "x"));
+        editor.ImportPages(source, null, null, PdfImportOptions.Merge("forms"));
+        var merged = Reload(editor).GetFormFields();
+        foreach (var name in names) Assert.Contains(merged, f => f.FullName == name);
+        Assert.True(editor.SetFieldValue(names[0], "merged value"));
+        Assert.Contains(Reload(editor).GetFormFields(), f => f.FullName == names[0] && f.Value == "merged value");
+
+        editor.ImportPages(source, null, null, PdfImportOptions.Merge("forms again"));
+        var twice = Reload(editor).GetFormFields().Select(f => f.FullName).ToList();
+        Assert.Equal(twice.Count, twice.Distinct().Count());
+        Assert.Equal(names.Count * 2, twice.Count);
+        Assert.Contains(twice, n => n.StartsWith(names[0].Split('.')[0] + "_2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PlainPageCopiesDoNotRegisterFieldsOrOutlines()
+    {
+        var editor = PdfEditor.Open(Doc("01-"));
+        var before = Reload(editor).GetFormFields().Count;
+        editor.ImportPages(Doc("11-"));
+        Assert.Equal(before, Reload(editor).GetFormFields().Count);
+    }
+
+    [Fact]
+    public void FieldsOnOmittedPagesAreNotMerged()
+    {
+        var source = Doc("11-");
+        var editor = PdfEditor.Open(Doc("01-"));
+        editor.ImportPages(source, [], null, PdfImportOptions.Merge());
+        Assert.Equal(Doc("01-").GetFormFields().Count, Reload(editor).GetFormFields().Count);
+    }
+
+    [Fact]
+    public void MergedOutlinesNestUnderTheFileBookmarkAndPointAtImportedPages()
+    {
+        var source = Doc("12-");
+        var baseDoc = Doc("01-");
+        var baseCount = baseDoc.Pages.Count;
+        var editor = PdfEditor.Open(baseDoc);
+        var existing = Flatten(baseDoc.GetOutlines()).Count();
+        editor.ImportPages(source, null, null, PdfImportOptions.Merge("12-navigation"));
+        var merged = Reload(editor);
+        var all = Flatten(merged.GetOutlines()).ToList();
+        var wrapper = merged.GetOutlines().Single(o => o.Title == "12-navigation");
+        Assert.Equal(baseCount, wrapper.PageIndex);
+        Assert.Equal(Flatten(source.GetOutlines()).Count(), Flatten(wrapper.Children).Count());
+        Assert.Equal(existing + 1 + Flatten(source.GetOutlines()).Count(), all.Count);
+        Assert.All(Flatten(wrapper.Children).Where(i => i.PageIndex is not null), i => Assert.InRange(i.PageIndex!.Value, baseCount, merged.Pages.Count - 1));
+        var originalDestinations = Flatten(source.GetOutlines()).Select(i => i.PageIndex).ToList();
+        Assert.Equal(originalDestinations.Select(p => p is null ? (int?)null : p + baseCount), Flatten(wrapper.Children).Select(i => i.PageIndex));
+    }
+
+    [Fact]
+    public void OutlineItemsForOmittedPagesAreDropped()
+    {
+        var source = Doc("12-");
+        var editor = PdfEditor.Open(Doc("01-"));
+        editor.ImportPages(source, [0], null, PdfImportOptions.Merge("only first"));
+        var merged = Reload(editor);
+        var kept = Flatten(merged.GetOutlines().Single(o => o.Title == "only first").Children).ToList();
+        Assert.All(kept, i => Assert.Equal(Doc("01-").Pages.Count, i.PageIndex ?? Doc("01-").Pages.Count));
+        Assert.True(kept.Count < Flatten(source.GetOutlines()).Count());
+    }
+
+    [Fact]
+    public void ImportedPagesKeepTheirSourcePageLabels()
+    {
+        var source = Doc("12-");
+        var editor = PdfEditor.Open(Doc("01-"));
+        var baseCount = editor.PageCount;
+        var before = Enumerable.Range(0, baseCount).Select(Doc("01-").GetPageLabel).ToList();
+        editor.ImportPages(source, null, null, PdfImportOptions.Merge());
+        var merged = Reload(editor);
+        for (var i = 0; i < baseCount; i++) Assert.Equal(before[i], merged.GetPageLabel(i));
+        for (var i = 0; i < source.Pages.Count; i++) Assert.Equal(source.GetPageLabel(i), merged.GetPageLabel(baseCount + i));
+    }
+
+    [Fact]
+    public void InsertingInTheMiddleKeepsExistingLabelsAttachedToTheirPages()
+    {
+        var source = Doc("12-");
+        var editor = PdfEditor.Open(source);
+        var before = Enumerable.Range(0, source.Pages.Count).Select(source.GetPageLabel).ToList();
+        editor.ImportPages(Doc("20-"), [0], 2, PdfImportOptions.Merge());
+        var merged = Reload(editor);
+        Assert.Equal(before[0], merged.GetPageLabel(0));
+        Assert.Equal(before[1], merged.GetPageLabel(1));
+        for (var i = 2; i < before.Count; i++) Assert.Equal(before[i], merged.GetPageLabel(i + 1));
+    }
+
+    [Fact]
+    public void AnnotationPdfMergesWithEveryAnnotationAndStaysRenderable()
+    {
+        var source = Doc("10-");
+        var editor = PdfEditor.Open(Doc("01-"));
+        var baseCount = editor.PageCount;
+        editor.ImportPages(source, null, null, PdfImportOptions.Merge("10"));
+        var merged = Reload(editor);
+        for (var i = 0; i < source.Pages.Count; i++)
+            Assert.Equal(AnnotationCount(source, i), AnnotationCount(merged, baseCount + i));
+    }
+
+    static int AnnotationCount(PdfDocument doc, int page) =>
+        doc.File.Resolve(doc.Pages[page].Dict.Get("Annots")) is PortableDocument.Core.PdfArray a ? a.Count : 0;
+
+    [Fact]
+    public void BatchImportIsAllOrNothing()
+    {
+        var session = Open("01-");
+        var before = Pages(session);
+        var bad = Frames(File.ReadAllBytes(Sample("20-")), File.ReadAllBytes(Sample("22-")));
+        var ex = Assert.Throws<ArgumentException>(() => session.Handle("POST", "/api/import-batch", Q(("ranges", "|99"), ("names", "[\"20-report.pdf\",\"22-invoice.pdf\"]")), bad));
+        Assert.Contains("22-invoice.pdf", ex.Message);
+        Assert.Equal(before, Pages(session));
+        Assert.Equal(before, PdfDocument.Load(session.Handle("GET", "/api/download", NoQuery, null).Data).Pages.Count);
+
+        using var ok = Json(session, "POST", "/api/import-batch", Frames(File.ReadAllBytes(Sample("20-")), File.ReadAllBytes(Sample("22-"))), ("at", "0"), ("ranges", "1|"));
+        Assert.Equal(2, ok.RootElement.GetProperty("files").GetInt32());
+        Assert.Equal(1 + PageCount("22-"), ok.RootElement.GetProperty("count").GetInt32());
+        Assert.Equal(before + 1 + PageCount("22-"), Pages(session));
+        Assert.NotEmpty(session.Handle("GET", "/api/page/0.png", Q(("dpi", "40")), null).Data);
+    }
+
+    [Fact]
+    public void BatchImportRollsBackWhenALaterFileFailsMidway()
+    {
+        var editor = PdfEditor.Open(Doc("01-"));
+        var count = editor.PageCount;
+        Assert.ThrowsAny<Exception>(() => editor.ImportBatch([(Doc("20-"), [0], PdfImportOptions.Merge("a")), (Doc("22-"), [999], PdfImportOptions.Merge("b"))], 0));
+        Assert.Equal(count, editor.PageCount);
+        Assert.Equal(count, Reload(editor).Pages.Count);
+    }
+
+    static byte[] Frames(params byte[][] files)
+    {
+        var ms = new MemoryStream();
+        ms.Write(BitConverter.GetBytes((uint)files.Length));
+        foreach (var f in files) { ms.Write(BitConverter.GetBytes((uint)f.Length)); ms.Write(f); }
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void BatchWithAnEncryptedFileIsRejectedAndNamesTheFile()
+    {
+        var session = Open("01-");
+        var before = Pages(session);
+        var ex = Assert.ThrowsAny<Exception>(() => session.Handle("POST", "/api/import-batch", Q(("names", "[\"a.pdf\",\"17-encrypted-user-password.pdf\"]")),
+            Frames(File.ReadAllBytes(Sample("20-")), File.ReadAllBytes(Sample("17-")))));
+        Assert.Contains("17-encrypted-user-password.pdf", ex.Message);
+        Assert.Equal(before, Pages(session));
+    }
+
+    [Fact]
+    public void MergedFormFieldsRemainEditableThroughTheSession()
+    {
+        var session = Open("01-");
+        session.Handle("POST", "/api/import", NoQuery, File.ReadAllBytes(Sample("11-")), "11-acroform.pdf");
+        var names = Doc("11-").GetFormFields().Select(f => f.FullName).ToList();
+        var merged = PdfDocument.Load(session.Handle("GET", "/api/download", NoQuery, null).Data);
+        foreach (var name in names) Assert.Contains(merged.GetFormFields(), f => f.FullName == name);
+    }
+
     [Fact]
     public void InspectReportsPageCountWithoutChangingTheDocument()
     {

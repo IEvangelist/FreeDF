@@ -114,11 +114,15 @@ public sealed partial class PdfEditor
     }
 
     /// <summary>Copies pages (with everything they reference) from another document, inserting at <paramref name="insertAt"/> (default: end).</summary>
-    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null)
+    public void ImportPages(PdfDocument src, IEnumerable<int>? indices = null, int? insertAt = null, PdfImportOptions? options = null)
     {
         Require(PdfPermissions.Assemble);
         var f = src.File;
         var chosen = (indices ?? Enumerable.Range(0, src.Pages.Count)).ToList();
+        var at = insertAt ?? _pages.Count;
+        var oldCount = _pages.Count;
+        var destLabels = options is { PageLabels: true } ? CurrentLabelRanges() : null;
+        var pageMap = new Dictionary<int, int>();
         var srcNum = new Dictionary<PdfDictionary, int>(ReferenceEqualityComparer.Instance);
         foreach (var (n, e) in f.Xref) if (e.InUse && f.GetObject(n) is PdfDictionary d) srcNum[d] = n;
 
@@ -133,25 +137,34 @@ public sealed partial class PdfEditor
             var p = src.Pages[i];
             var n = srcNum.TryGetValue(p.Dict, out var sn) ? sn : -1 - newPages.Count;
             var dst = _next++;
-            if (n >= 0) map[n] = dst;
+            if (n >= 0) { map[n] = dst; pageMap.TryAdd(n, dst); }
             newPages.Add(dst);
             var merged = new Dictionary<string, PdfObject>(p.Dict.Entries);
             foreach (var k in Inheritable) if (!merged.ContainsKey(k) && p.Inherited.TryGetValue(k, out var v)) merged[k] = v;
             merged.Remove("Parent");
             _objs[dst] = new PdfDictionary(merged.ToDictionary(kv => kv.Key, kv => Copy(kv.Value)));
         }
-        while (work.Count > 0)
-        {
-            var n = work.Dequeue();
-            _objs[map[n]] = Copy(f.GetObject(n));
-        }
+        PdfObject? drCopy = options is { Forms: true } && f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary sf && f.Resolve(sf.Get("DR")) is PdfDictionary sdr ? Copy(sdr) : null;
+        Drain();
         foreach (var dst in newPages)
         {
             var d = (PdfDictionary)_objs[dst];
             var e = new Dictionary<string, PdfObject>(d.Entries) { ["Parent"] = new PdfRef(_pagesRoot, 0) };
             _objs[dst] = new PdfDictionary(e);
         }
-        _pages.InsertRange(insertAt ?? _pages.Count, newPages);
+        _pages.InsertRange(at, newPages);
+        if (options is { Forms: true }) { MergeForms(src, newPages, drCopy); Drain(); }
+        if (options is { Outlines: true }) MergeOutlines(src, pageMap, options.OutlineTitle, newPages.Count > 0 ? newPages[0] : 0);
+        if (destLabels is not null) MergePageLabels(src, chosen, destLabels, oldCount, at);
+
+        void Drain()
+        {
+            while (work.Count > 0)
+            {
+                var n = work.Dequeue();
+                _objs[map[n]] = Copy(f.GetObject(n));
+            }
+        }
 
         PdfObject Copy(PdfObject? o) => o switch
         {

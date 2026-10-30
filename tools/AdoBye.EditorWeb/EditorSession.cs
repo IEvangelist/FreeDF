@@ -476,18 +476,34 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                         Q("forms") is { } historyForms ? JsonSerializer.Deserialize<List<int>>(historyForms) : null) });
                 case "import":
                     CheckPageMutation();
-                    var imported = PdfDocument.Load(body ?? throw new ArgumentException("Choose a PDF."));
-                    var pageRange = Q("pages");
-                    if (pageRange is not null && pageRange.Any(c => !char.IsAsciiDigit(c) && c is not (',' or '-' or ' ')))
-                        throw new ArgumentException("Page ranges use numbers, commas and dashes, such as 1-3, 5.");
-                    var chosen = ParseRange(pageRange, imported.Pages.Count);
-                    if (chosen.Count == 0) throw new ArgumentException("No pages in range. The PDF has " + imported.Pages.Count + " page(s).");
-                    var firstNew = Q("at") is { } atText ? Math.Clamp(int.Parse(atText, CultureInfo.InvariantCulture), 0, editor.PageCount) : editor.PageCount;
-                    editor.ImportPages(imported, chosen, firstNew);
+                    var imported = LoadImport(body ?? throw new ArgumentException("Choose a PDF."), uploadName ?? "PDF");
+                    var chosen = ImportRange(Q("pages"), imported.Pages.Count, uploadName ?? "PDF");
+                    var firstNew = ImportPosition(Q("at"));
+                    editor.ImportPages(imported, chosen, firstNew, PdfImportOptions.Merge(BookmarkTitle(uploadName)));
                     recoverySupported &= !imported.File.IsEncrypted;
                     PruneAssets(); Changed(); return AsJson(new { first = firstNew, count = chosen.Count });
+                case "import-batch":
+                    {
+                        CheckPageMutation();
+                        var frames = ReadFrames(body ?? throw new ArgumentException("Choose at least one PDF."));
+                        var names = Q("names") is { } namesJson ? JsonSerializer.Deserialize<List<string>>(namesJson, Json) ?? [] : [];
+                        var ranges = (Q("ranges") ?? "").Split('|');
+                        var batch = new List<(PdfDocument, List<int>, PdfImportOptions)>();
+                        var encrypted = false;
+                        for (var k = 0; k < frames.Count; k++)
+                        {
+                            var label = k < names.Count && names[k].Length > 0 ? names[k] : $"File {k + 1}";
+                            var doc = LoadImport(frames[k], label);
+                            encrypted |= doc.File.IsEncrypted;
+                            batch.Add((doc, ImportRange(k < ranges.Length ? ranges[k] : null, doc.Pages.Count, label), PdfImportOptions.Merge(BookmarkTitle(label))));
+                        }
+                        var start = ImportPosition(Q("at"));
+                        editor.ImportBatch(batch, start);
+                        recoverySupported &= !encrypted;
+                        PruneAssets(); Changed(); return AsJson(new { first = start, count = batch.Sum(b => b.Item2.Count), files = batch.Count });
+                    }
                 case "inspect":
-                    var probe = PdfDocument.Load(body ?? throw new ArgumentException("Choose a PDF."));
+                    var probe = LoadImport(body ?? throw new ArgumentException("Choose a PDF."), uploadName ?? "This PDF");
                     return AsJson(new { pageCount = probe.Pages.Count, encrypted = probe.File.IsEncrypted });
                 case "asset":
                     var bytes = body ?? [];
@@ -561,6 +577,51 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     void RequirePages()
     {
         if (editor.PageCount == 0) throw new ArgumentException("Open or create a PDF first.");
+    }
+
+    static PdfDocument LoadImport(byte[] bytes, string label)
+    {
+        try { return PdfDocument.Load(bytes); }
+        catch (Exception e) when (e is System.Security.Cryptography.CryptographicException or PlatformNotSupportedException)
+        {
+            throw new NotSupportedException($"{label} is password-protected or uses encryption this editor cannot open. Passwords are never requested or stored.", e);
+        }
+        catch (Exception e) when (e is not ArgumentException)
+        {
+            throw new ArgumentException($"{label} is not a readable PDF ({e.Message}).", e);
+        }
+    }
+
+    static List<int> ImportRange(string? range, int count, string label)
+    {
+        if (range is not null && range.Any(c => !char.IsAsciiDigit(c) && c is not (',' or '-' or ' ')))
+            throw new ArgumentException($"{label}: page ranges use numbers, commas and dashes, such as 1-3, 5.");
+        var chosen = ParseRange(range, count);
+        if (chosen.Count == 0) throw new ArgumentException($"{label}: no pages in range. The PDF has {count} page(s).");
+        return chosen;
+    }
+
+    int ImportPosition(string? atText) => atText is not null ? Math.Clamp(int.Parse(atText, CultureInfo.InvariantCulture), 0, editor.PageCount) : editor.PageCount;
+
+    static string? BookmarkTitle(string? fileName) => string.IsNullOrWhiteSpace(fileName) ? null : Path.GetFileNameWithoutExtension(fileName);
+
+    // Framing: uint32 count, then per file a uint32 length followed by that many bytes (little endian).
+    static List<byte[]> ReadFrames(byte[] body)
+    {
+        var frames = new List<byte[]>();
+        var span = body.AsSpan();
+        if (span.Length < 4) throw new ArgumentException("Choose at least one PDF.");
+        var count = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(span);
+        var pos = 4;
+        for (uint i = 0; i < count; i++)
+        {
+            if (pos + 4 > span.Length) throw new ArgumentException("The merge request is truncated.");
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(span[pos..]); pos += 4;
+            if (length > span.Length - pos) throw new ArgumentException("The merge request is truncated.");
+            frames.Add(span.Slice(pos, (int)length).ToArray()); pos += (int)length;
+        }
+        if (frames.Count == 0) throw new ArgumentException("Choose at least one PDF.");
+        return frames;
     }
 
     Reply Find(string q, bool matchCase)
