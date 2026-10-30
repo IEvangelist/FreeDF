@@ -152,6 +152,10 @@ standard_differences = Dictionary(
     BaseEncoding=Name.StandardEncoding,
     Differences=Array([33, Name.dollaroldstyle]),
 )
+mac_expert_differences = Dictionary(
+    BaseEncoding=Name.MacExpertEncoding,
+    Differences=Array([33, Name.dollaroldstyle]),
+)
 
 fonts = Dictionary(
     ExpertBare=add_pdf_font(pdf, expert_bare, "Type1C", "SyntheticExpert"),
@@ -164,6 +168,8 @@ fonts = Dictionary(
     ExpertStandard=add_pdf_font(pdf, expert_bare, "Type1C", "SyntheticExpert", standard_differences),
     ExpertMac=add_pdf_font(pdf, expert_bare, "Type1C", "SyntheticExpert", Name.MacExpertEncoding),
     ExpertToUnicode=add_pdf_font(pdf, expert_bare, "Type1C", "SyntheticExpert", to_unicode=unicode_cmap),
+    MacExpertDifferences=add_pdf_font(pdf, expert_bare, "Type1C", "SyntheticExpert", mac_expert_differences),
+    MacExpertToUnicode=add_pdf_font(pdf, expert_bare, "Type1C", "SyntheticExpert", Name.MacExpertEncoding, unicode_cmap),
 )
 
 content = b"BT /ExpertBare 12 Tf <212223> Tj ET"

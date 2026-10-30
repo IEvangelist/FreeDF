@@ -97,8 +97,34 @@ public class CffTests
         Assert.Null(standard.GetGlyph(34));
 
         var macExpert = Font(doc, "ExpertMac");
-        Assert.Equal("", macExpert.ToUnicode(33));
-        Assert.Null(macExpert.GetGlyph(33));
+        Assert.Equal(PdfFont.NameToUnicode("exclamsmall"), macExpert.ToUnicode(33));
+        Assert.Equal(PdfFont.NameToUnicode("Hungarumlautsmall"), macExpert.ToUnicode(34));
+        Assert.Equal("", macExpert.ToUnicode(127));
+        Assert.NotNull(macExpert.GetGlyph(33));
+        Assert.NotNull(macExpert.GetGlyph(34));
+        Assert.Null(macExpert.GetGlyph(127));
+        Assert.Equal(0.51, macExpert.Decode([33]).Single().Width, 2);
+        Assert.Equal(0.62, macExpert.Decode([34]).Single().Width, 2);
+        var macExpertUnicode = PdfFont.NameToUnicode("exclamsmall")!;
+        Assert.True(macExpert.TryEncode(char.ConvertToUtf32(macExpertUnicode, 0), out var macExpertBytes, out var macExpertWidth));
+        Assert.Equal(new byte[] { 33 }, macExpertBytes);
+        Assert.Equal(0.51, macExpertWidth, 2);
+        Assert.False(macExpert.TryEncode('#', out _, out _));
+
+        var macExpertDifferences = Font(doc, "MacExpertDifferences");
+        Assert.Equal(PdfFont.NameToUnicode("dollaroldstyle"), macExpertDifferences.ToUnicode(33));
+        Assert.Equal(PdfFont.NameToUnicode("Hungarumlautsmall"), macExpertDifferences.ToUnicode(34));
+        Assert.NotNull(macExpertDifferences.GetGlyph(33));
+        Assert.Equal(0.74, macExpertDifferences.Decode([33]).Single().Width, 2);
+        Assert.True(macExpertDifferences.TryEncode(0xF724, out var macExpertDifferenceBytes, out var macExpertDifferenceWidth));
+        Assert.Equal(new byte[] { 33 }, macExpertDifferenceBytes);
+        Assert.Equal(0.74, macExpertDifferenceWidth, 2);
+
+        var macExpertToUnicode = Font(doc, "MacExpertToUnicode");
+        Assert.Equal("X", macExpertToUnicode.ToUnicode(33));
+        Assert.NotNull(macExpertToUnicode.GetGlyph(33));
+        Assert.True(macExpertToUnicode.TryEncode('X', out var macExpertToUnicodeBytes, out _));
+        Assert.Equal(new byte[] { 33 }, macExpertToUnicodeBytes);
     }
 
     [Fact]
