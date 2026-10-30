@@ -136,6 +136,28 @@ public class RedactionCoverageTests
         Assert.Equal(1, AllStreamText(saved).Split("(SECRETINNER)").Length - 1);
     }
 
+    [Fact]
+    public void Curve_that_only_grazes_the_rectangle_is_still_rewritten()
+    {
+        // The true peak is y=75.5; the flattened polyline stays up to the 0.05 tolerance below it.
+        var saved = Redact(TestPdf.Build("1 0 0 rg 20 20 m 20 94 100 94 100 20 c f"), new(50, 110, 20, 14.51));
+        Assert.DoesNotContain("20 20 m 20 94 100 94 100 20 c", AllStreamText(saved));
+    }
+
+    [Fact]
+    public void Redacted_form_copy_drops_side_data_that_can_describe_removed_content()
+    {
+        const string form = "BT /F1 20 Tf 10 10 Td (SECRETFORM) Tj ET";
+        var objs = $"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 200 50] /Resources << {Font} >> /Metadata 8 0 R /PieceInfo << /App << /Private (PRIVATEPIECE) /Data (PRIVATEPIECE2) >> >> /LastModified (D:20200101000000) /Length {form.Length} >>\nstream\n{form}\nendstream\nendobj\n"
+            + "8 0 obj\n<< /Type /Metadata /Subtype /XML /Length 14 >>\nstream\nPRIVATEMETADAT\nendstream\nendobj\n";
+        var pdf = TestPdf.Build("q 1 0 0 1 0 100 cm /Fm1 Do Q", $"{Font} /XObject << /Fm1 5 0 R >>", objs, brokenXref: true);
+        var all = AllStreamText(Redact(pdf, new(0, 50, 200, 50)));
+        Assert.DoesNotContain("SECRETFORM", all);
+        Assert.DoesNotContain("PRIVATEPIECE", all);
+        Assert.DoesNotContain("PRIVATEMETADAT", all);
+        Assert.DoesNotContain("D:2020", all);
+    }
+
     static byte[] ImagePdf(string content, string image, string extra = "") =>
         TestPdf.Build(content, "/XObject << /Im1 7 0 R >>", $"7 0 obj\n<< /Type /XObject /Subtype /Image {extra} >>\nstream\n{image}\nendstream\nendobj\n", brokenXref: true);
 

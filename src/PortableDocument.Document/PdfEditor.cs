@@ -491,6 +491,8 @@ public sealed partial class PdfEditor
         if (!_objs.TryGetValue(sourceObjectNumber, out var o) || o is not PdfStream st) throw new ArgumentException("Not a stream object.", nameof(sourceObjectNumber));
         var e = new Dictionary<string, PdfObject>(st.Dict.Entries);
         e.Remove("Filter"); e.Remove("DecodeParms"); e.Remove("DL"); e["Length"] = new PdfInteger(data.Length);
+        // Side data of the source form can describe the redacted content; the copy keeps only rendering keys.
+        foreach (var key in new[] { "Metadata", "PieceInfo", "Thumb", "AF", "LastModified", "StructParent", "StructParents" }) e.Remove(key);
         var sd = new PdfDictionary(e);
         if (xobjects is { Count: > 0 } || dropXObjects is { Count: > 0 }) sd = WithXObjects(sd, xobjects ?? new Dictionary<string, PdfObject>(), _objs, dropXObjects);
         return AddObject(new PdfStream(sd, data));
