@@ -7,10 +7,13 @@ The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows 
 ## 2026-10-30 integrated checkpoint
 
 The seven child workstreams are integrated without rewriting their commits.
-Focused Release tests pass: JBIG2 29, multimedia/3D 9, Type 1 24,
+Initial focused Release tests passed: JBIG2 29, multimedia/3D 9, Type 1 24,
 signatures/security 57, samples/reproducibility 38 and merge/generator interaction
-36 (overlapping selectors). Full Release passes 1688/1688 with no skips/failures;
-the solution build succeeds with six warnings. Full Chromium editor smoke
+36 (overlapping selectors). After review fixes, the focused merge/3D/DocMDP/
+reproducible-write selector passes 67 cases and full Release passes 1696/1696
+with no skips/failures. The solution build succeeds (four warnings emitted by
+the latest incremental build; the six previously reported warning sites remain).
+Full Chromium editor smoke
 preserves text fidelity, recovery and desktop/mobile header behavior; separate
 merge and page-image smoke pass on the integrated WASM output.
 
@@ -37,6 +40,16 @@ Multimedia rendition/clip traversal is capped at depth 64 and 1024 total nodes
 per top-level read with memoization/`Truncated`, not unbounded graph support.
 DocTimeStamp unit tokens are self-built, not issued by a TSA; pyHanko fixtures
 provide independent interop evidence, while chain trust remains reported only.
+3D detail traversal shares a 1024-work-item budget across one annotation read,
+caps each stream at 64 views and each node/measure/section list at 256 entries,
+memoizes streams/views by resolved object identity, and exposes `Truncated`
+without discarding raw dictionaries/arrays. Regression fixtures use 500 shared
+annotations, 100 views and up to 10000 shared detail entries.
+Document timestamps reject unsupported hash names before invoking the provider.
+Public-key seed randomness uses the validated fixture hook, but CMS recipient
+envelopes still use platform randomness and are not byte-reproducible.
+Merge keyboard/failure regressions now reach backend rejection, not just client
+validation; the existing mid-import rollback test checks prior source import maps.
 
 ## Parser and document model
 

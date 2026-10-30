@@ -11,11 +11,12 @@ Form-action inspection additionally exposes typed inert ResetForm `/Fields`/`/Fl
 The 2026-10-30 child-branch integration adds bounded JBIG2 Huffman refinement,
 inert clause-13 metadata, Type 1 MM/Expert, DocMDP/timestamps/DSS inspection,
 C# sample generation and local editor merging/header polish. Focused Release
-selectors pass 29 JBIG2, 9 multimedia, 24 Type 1, 57 signature/security,
+initial selectors passed 29 JBIG2, 9 multimedia, 24 Type 1, 57 signature/security,
 38 sample/reproducibility and 36 merge/generator interaction cases (selectors
-overlap; do not sum them). Full Release passes **1688/1688**, zero failures/skips;
-the solution build succeeds with six warnings, including an unused test field
-in the signature slice. Integrated WASM publication and Chromium full-editor,
+overlap; do not sum them). After review fixes, 67 focused merge/3D/DocMDP/
+reproducible-write cases and full Release **1696/1696** pass, zero failures/skips;
+the solution build succeeds (four warnings in the latest incremental build;
+the six previously reported warning sites remain). Integrated WASM publication and Chromium full-editor,
 merge and page-image smoke pass. The matrix remains **15 Partial / 0 Todo**,
 plus the redaction/signature rows with explicit limitations: not full parity.
 
@@ -26,6 +27,12 @@ independently verified. Inert rendition/clip traversal uses depth 64 and 1024
 total nodes per top-level read with memoization and `Truncated` reporting.
 Signature timestamp unit tokens are self-built (no live TSA); the pyHanko
 interoperability fixtures provide independent evidence, not chain trust.
+3D detail inspection has a shared 1024-work-item budget, 64 views per stream,
+256 entries per node/measure/section list and per-read stream/view memoization;
+`Truncated` reports incomplete typed lists while raw objects remain available.
+Unsupported document-timestamp hash names are rejected, not silently mapped to
+SHA-256. Fixture randomness controls the public-key seed but not the platform's
+CMS-envelope randomness; public-key output is not byte-reproducible.
 
 ## Parser (`PortableDocument.Core`, `PortableDocument.Document`)
 

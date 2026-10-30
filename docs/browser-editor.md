@@ -330,16 +330,23 @@ Document JavaScript and signatures are not carried into the merged catalog.
 Page insertion is not an overlay undo operation; retain/download the original
 when the merge must be reversible.
 
+Enter/Space activate the focused row or Add PDFs button; reordering/removing a
+row retains focus, Tab stays inside the dialog and Escape cancels. Backend
+rejections keep the ordered files, ranges and insertion choice open with an
+inline error for correction and retry.
+
 Encrypted inputs unsupported by the browser are flagged by filename before
 merging. Passwords are never requested or persisted by this dialog. If a
 supported encrypted import occurs in the server host, recovery is disabled
 rather than caching a decrypted copy. Merge stays local in both hosts.
 
-The integrated Release build succeeds and full suite passes 1688/1688. A local
+The integrated Release build succeeds and full suite passes 1696/1696. A local
 static WASM publish into a fresh output directory validates 207 artifacts (without the optional `wasm-tools`
 optimization workload). Full Chromium smoke passes text fidelity, recovery,
 clipboard/assets and desktop/mobile header assertions; the separate `--merge`
-scenario covers encrypted-input rejection, order/ranges/insertion, saved page
+scenario covers keyboard controls/focus/Escape, inline backend rejection,
+direct host requests with a later invalid-range or encrypted frame (unchanged
+state, recovery history/assets and working overlay undo), order/ranges/insertion, saved page
 count/text, form registration, outlines/labels, render and reopen. A batched
 desktop/mobile screenshot check accompanies these assertions. This does not
 complete the outstanding latency/benchmark pass.
