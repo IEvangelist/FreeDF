@@ -13,6 +13,12 @@ if (args.Length >= 4 && args[0] == "--profile")
     return;
 }
 
+if (args.Length == 4 && args[0] == "--page-image")
+{
+    await EditorPageImage.Run(args[1], args[2], args[3]);
+    return;
+}
+
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 if (args.Length != 1 && !textSelectionOnly && !recoveryOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery] <published-wwwroot>");
@@ -160,6 +166,7 @@ try
     await page.Locator("#dl").ClickAsync();
     await page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).WaitForAsync();
     await page.WaitForFunctionAsync("[...document.querySelectorAll('.thumb img')].every(img => img.naturalWidth > 0 && img.dataset.loadedUrl === img.dataset.url)");
+    await page.WaitForFunctionAsync("document.querySelector('#base')?.dataset.loadedUrl === document.querySelector('#base')?.dataset.targetUrl");
     await page.EvaluateAsync("""
         () => {
           window.saveRenders = [];

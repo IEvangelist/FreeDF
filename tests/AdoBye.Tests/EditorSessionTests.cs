@@ -66,6 +66,22 @@ public class EditorSessionTests
     }
 
     [Fact]
+    public void OverlayOnlyChangesRetainBarePageRasterCache()
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var bare = Call(session, "GET", "/api/page/0.png", query: [("dpi", "40"), ("bare", "true")]).Data;
+        var full = Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data;
+        var rectangle = new Item("rectangle", "rect", 20, 30, 80, 60, null, null, 0, false, false,
+            null, "#ff0000", "#000000", 1, 1, null, 0, 0);
+
+        Call(session, "PUT", "/api/page/0/items", new[] { rectangle });
+
+        Assert.Same(bare, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40"), ("bare", "true")]).Data);
+        Assert.NotSame(full, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data);
+    }
+
+    [Fact]
     public void LocalEditSaveRoundTripAndPageOperations()
     {
         var session = new EditorSession(new FontCatalog());

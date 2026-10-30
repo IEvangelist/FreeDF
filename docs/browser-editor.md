@@ -336,6 +336,22 @@ and external requests. Shared-session tests check the saved PDF with the parser
 and text extractor. Set `EDITOR_SMOKE_ARTIFACTS` to a directory to capture
 desktop/mobile screenshots.
 
+For active-page image reliability, run the focused Chromium regression against
+the published static site and one or more local sample PDFs:
+
+```powershell
+$sample = (Resolve-Path samples\26-repacked-object-streams.pdf).Path
+$artifacts = Join-Path $env:TEMP 'pdf-page-image'
+dotnet run -c Release --project tools\AdoBye.EditorSmoke -- --page-image $site $sample $artifacts
+```
+
+It samples the displayed page image on every animation frame while zooming,
+toggling both sidebars and navigating pages; it also checks decoded pixels and
+injects transient/permanent decode failures to verify cache-bypass retry,
+last-good-image retention and visible error reporting. Failure screenshots and
+the frame trace are written to the artifact directory. The command can be
+repeated with other sample paths; keep PDFs local to the browser.
+
 The original server host remains available:
 
 ```powershell

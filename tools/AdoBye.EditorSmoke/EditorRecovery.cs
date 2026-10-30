@@ -41,8 +41,8 @@ static class EditorRecovery
             await page.WaitForFunctionAsync("!document.querySelector('#layer .it img')");
             await Durable(page);
             Check(await Images(page) == 0, "Deleted image is retained only by clipboard/undo.");
-            await page.WaitForFunctionAsync("document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url");
-            var raster = await page.Locator("#base").GetAttributeAsync("src");
+            await page.WaitForFunctionAsync("document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl");
+            var raster = await EditorTextSelection.BasePixelHash(page);
             var state = await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())");
             var retained = await page.EvaluateAsync<string>("async () => JSON.stringify(await (" + Read + ")())");
             Check(retained != "null", "Saved means the IndexedDB transaction completed.");
@@ -56,7 +56,8 @@ static class EditorRecovery
             await prompt.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true }).ClickAsync();
             await prompt.WaitForAsync(new() { State = WaitForSelectorState.Detached });
             await Ready(page);
-            Check(raster == await page.Locator("#base").GetAttributeAsync("src"), "Resume retains exact original-font/geometry raster fidelity.");
+            await page.WaitForFunctionAsync("document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl");
+            Check(raster == await EditorTextSelection.BasePixelHash(page), "Resume retains exact original-font/geometry raster fidelity.");
             Check(state == await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())"), "Resume retains editable original-text replacement data, not a flattened PDF.");
             Check(await page.EvaluateAsync<bool>("async () => (await (await pdfHost.request('/api/state')).json()).dirty"), "Unsaved state remains unsaved.");
             await page.Keyboard.PressAsync("Control+z");

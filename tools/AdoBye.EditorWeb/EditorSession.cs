@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using PortableDocument.Content;
@@ -13,6 +14,9 @@ using AdoBye.EditorWeb;
 public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallback = null, TimeProvider? timeProvider = null)
 {
     public sealed record Reply(byte[] Data, string ContentType = "application/json", string? FileName = null);
+    public sealed record RenderMetrics(double SnapshotMs, double RasterMs, double PngEncodeMs, double TotalMs,
+        long AllocatedBytes, int Gen0Collections, bool CacheHit);
+    public RenderMetrics? LastRenderMetrics { get; private set; }
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     PdfEditor editor = PdfEditor.Create();
     int version, savedVersion;
@@ -106,6 +110,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         return [m.A, m.B, m.C, m.D, m.E, m.F];
     }
     static bool IsReset(ObjEdit? e) => e is null || e == new ObjEdit();
+    static bool AffectsBase(Item item) => item.Orig is not null || item.Type == "redact";
     void CheckPageMutation()
     {
         if (formObjEdits.Count > 0) throw new EditorConflictException("Save and reopen the document, or reset Form child edits, before changing pages.");
@@ -207,17 +212,41 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         }
         return baseSnapshot;
     }
-    void Changed()
+    void Changed(bool baseChanged = true, int? changedPage = null)
     {
-        version++; snapshot = null; baseSnapshot = null; snapshotBytes = null; pristine = null; texts.Clear(); sharedFormReferences = null; prepared = false;
-        renderedPages.Clear(); renderOrder.Clear(); renderCacheBytes = 0;
+        version++; snapshot = null; snapshotBytes = null; prepared = false; findCache = null; findVersion = -1;
+        if (baseChanged)
+        {
+            baseSnapshot = null; pristine = null; texts.Clear(); sharedFormReferences = null;
+            renderedPages.Clear(); renderOrder.Clear(); renderCacheBytes = 0;
+            return;
+        }
+
+        foreach (var key in renderedPages.Keys.Where(key => !key.Bare && (changedPage is null || key.Page == changedPage)).ToArray())
+        {
+            renderCacheBytes -= renderedPages[key].Length;
+            renderedPages.Remove(key);
+        }
+        var retained = renderOrder.Where(renderedPages.ContainsKey).Distinct().ToArray();
+        renderOrder.Clear();
+        foreach (var key in retained) renderOrder.Enqueue(key);
     }
 
     byte[] PagePng(int index, int dpi, bool bare)
     {
         var key = (editor.PageId(index), dpi, bare);
-        if (renderedPages.TryGetValue(key, out var cached)) return cached;
-        var png = Render((bare ? BaseSnap() : Snap()).Pages[index], dpi);
+        if (renderedPages.TryGetValue(key, out var cached))
+        {
+            LastRenderMetrics = new(0, 0, 0, 0, 0, 0, true);
+            return cached;
+        }
+        var total = Stopwatch.StartNew();
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        var collections = GC.CollectionCount(0);
+        var snapshot = Stopwatch.StartNew();
+        var doc = bare ? BaseSnap() : Snap();
+        var snapshotMs = snapshot.Elapsed.TotalMilliseconds;
+        var png = RenderProfiled(doc.Pages[index], dpi, snapshotMs, total, allocated, collections);
         if (png.Length <= RenderCacheLimit)
         {
             while (renderCacheBytes + png.Length > RenderCacheLimit)
@@ -244,7 +273,20 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             unclaimedAssets.Remove(id);
         foreach (var id in assets.Keys.Where(id => !referenced.Contains(id) && !unclaimedAssets.ContainsKey(id)).ToArray()) assets.Remove(id);
     }
-    byte[] Render(PdfPage page, double dpi) => DocumentRenderer.RenderPage(page, new PdfRenderOptions { FontFallback = fontFallback }, dpi).ToPng();
+    byte[] Render(PdfPage page, double dpi) =>
+        DocumentRenderer.RenderPage(page, new PdfRenderOptions { FontFallback = fontFallback }, dpi).ToPng();
+
+    byte[] RenderProfiled(PdfPage page, double dpi, double snapshotMs, Stopwatch total, long allocated, int collections)
+    {
+        var raster = Stopwatch.StartNew();
+        var rendered = DocumentRenderer.RenderPage(page, new PdfRenderOptions { FontFallback = fontFallback }, dpi);
+        var rasterMs = raster.Elapsed.TotalMilliseconds;
+        var encode = Stopwatch.StartNew();
+        var png = rendered.ToPng();
+        LastRenderMetrics = new(snapshotMs, rasterMs, encode.Elapsed.TotalMilliseconds, total.Elapsed.TotalMilliseconds,
+            GC.GetAllocatedBytesForCurrentThread() - allocated, GC.CollectionCount(0) - collections, false);
+        return png;
+    }
 
     sealed record RecoveryPage(int Id, List<Item> Items, Dictionary<int, ObjEdit> Objects, List<string> History);
     sealed record RecoveryForm(int Form, int Start, int End, ObjEdit Edit);
@@ -349,6 +391,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     /// <summary>Dispatches a local command. Neither this method nor the WASM host performs network I/O.</summary>
     public Reply Handle(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body = null, string? uploadName = null)
     {
+        LastRenderMetrics = null;
         PruneAssets();
         string? Q(string key) => query.GetValueOrDefault(key);
         int Int(string key, int fallback) => int.TryParse(Q(key), out var n) ? n : fallback;
@@ -396,20 +439,26 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     if (method == "GET") return AsJson(items.GetValueOrDefault(id) ?? []);
                     if (method == "PUT")
                     {
+                        var oldBaseItems = items.GetValueOrDefault(id)?.Where(AffectsBase).ToArray() ?? [];
                         using var payload = JsonDocument.Parse(body ?? []);
+                        List<Item> updatedItems;
                         if (payload.RootElement.ValueKind == JsonValueKind.Array)
                         {
-                            items[id] = Read<List<Item>>() ?? [];
+                            updatedItems = Read<List<Item>>() ?? [];
+                            items[id] = updatedItems;
                             historyAssets.Remove(id);
                         }
                         else
                         {
                             var update = Read<ItemUpdate>() ?? throw new ArgumentException("Missing item update.");
-                            items[id] = update.Items;
+                            updatedItems = update.Items;
+                            items[id] = updatedItems;
                             historyAssets[id] = update.HistoryAssets.ToHashSet();
                             if (update.ClipboardAssets is { } clipboard) clipboardAssets = clipboard.ToHashSet();
                         }
-                        PruneAssets(); Changed(); return Ok;
+                        var newBaseItems = updatedItems.Where(AffectsBase).ToArray();
+                        var baseChanged = !oldBaseItems.SequenceEqual(newBaseItems);
+                        PruneAssets(); Changed(baseChanged, id); return Ok;
                     }
                     break;
                 case "text" when method == "GET":
