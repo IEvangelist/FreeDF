@@ -117,7 +117,7 @@
 <script>
 addEventListener('editor-ready', () => {
 const host = window.pdfHost;
-let recovery = null;
+let recovery = null, samples = null;
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
@@ -1182,6 +1182,7 @@ function openFileMenu() {
   openMenuAt(buildMenu([
     { label: 'New…', key: 'Alt+N', run: newDoc },
     { label: 'Open…', key: mod + 'O', run: () => confirmDiscard() && pickFile('open') },
+    samples && { label: 'Open sample', sub: samples.menuEntries() },
     '-',
     { label: 'Save', key: mod + 'S', disabled: !has, run: saveDoc },
     { label: 'Save as…', key: mod + 'Shift+S', disabled: !has, run: saveAs },
@@ -1481,6 +1482,11 @@ async function startEditor() {
     document.querySelector('main').inert = false;
     document.querySelector('header').inert = false;
     status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
+    // Samples are fetched only on demand; a missing samples.js (older publish) just leaves the feature off.
+    if (!samples) import(new URL('samples.js', document.baseURI)).then(m => {
+      samples = m.createSamples({ open: file => act(() => upload('/api/open', file), e => { throw e; }), isDirty: () => state.dirty, confirmReplace: confirmDiscard, status });
+      return samples.deepLink();
+    }).catch(e => console.warn('Sample loader unavailable:', e));
   };
   if (!host) return ready();
   let retained, validateUi;
