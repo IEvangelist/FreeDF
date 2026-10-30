@@ -257,7 +257,7 @@ public class DPartValidationTests
         Assert.False(report.IsComplete);
         Assert.Equal(PdfDPartRoot.MaxNodeVisits,
             report.Issues.Count(i => i.Code == PdfDPartIssueCode.InvalidNodeNameType));
-        var boundary = Assert.Single(report.Issues.Where(i => i.Code == PdfDPartIssueCode.NodeNameListBoundary));
+        var boundary = Assert.Single(report.Issues, i => i.Code == PdfDPartIssueCode.NodeNameListBoundary);
         Assert.Equal(PdfDPartBoundary.NodeLimit, boundary.Boundary);
         Assert.Same(names, boundary.RawValue);
         Assert.Equal(PdfDPartRoot.MaxNodeVisits + 1, names.Count);
@@ -440,7 +440,7 @@ public class DPartValidationTests
             "6 0 obj\n<< /Parent 5 0 R /Start 10000 0 R /End 10001 0 R >>\nendobj\n" +
             "7 0 obj\n<< /Parent 5 0 R /Start 10001 0 R /End 10002 0 R >>\nendobj\n"),
             PdfDPartIssueCode.OverlappingRanges);
-        Assert.Equal(1, Assert.Single(report.Issues.Where(i => i.Code == PdfDPartIssueCode.OverlappingRanges)).PageIndex);
+        Assert.Equal(1, Assert.Single(report.Issues, i => i.Code == PdfDPartIssueCode.OverlappingRanges).PageIndex);
     }
 
     [Theory]
@@ -573,8 +573,8 @@ public class DPartValidationTests
         Assert.IsType<PdfDictionary>(doc.File.GetObject(2)).Entries["Kids"] = kids;
         var report = HasIssue(doc, PdfDPartIssueCode.PageTreeBoundary);
         Assert.False(report.IsComplete);
-        Assert.Same(kids, Assert.Single(report.Issues.Where(i =>
-            i.Code == PdfDPartIssueCode.PageTreeBoundary && i.Boundary == PdfDPartBoundary.NodeLimit)).RawValue);
+        Assert.Same(kids, Assert.Single(report.Issues, i =>
+            i.Code == PdfDPartIssueCode.PageTreeBoundary && i.Boundary == PdfDPartBoundary.NodeLimit).RawValue);
         Assert.Equal(PdfDPartRoot.MaxNodeVisits + 1, kids.Count);
     }
 
