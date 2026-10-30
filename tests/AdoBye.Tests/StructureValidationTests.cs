@@ -1,5 +1,6 @@
 using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using System.Text;
+using PortableDocument.Core;
 using PortableDocument.Document;
 using PortableDocument.Render;
 
@@ -139,6 +140,118 @@ public class StructureTests
     [InlineData("Hx", null)]
     [InlineData("P", null)]
     public void HeadingLevels(string type, int? level) => Assert.Equal(level, StructureTree.HeadingLevel(type));
+}
+
+public class StructureConsistencyTests
+{
+    static PdfDocument Load(string documentKids = "[7 0 R]", string paragraph = "<< /S /P /P 6 0 R /Pg 3 0 R /K 0 >>", string parentTree = "<< /Nums [0 [7 0 R]] >>", params string[] more) =>
+        PdfDocument.Load(ObjPdf.Build(
+            [
+                "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
+                "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /StructParents 0 >>",
+                ObjPdf.Stream("/P <</MCID 0>> BDC BT /F1 12 Tf 10 50 Td (Body) Tj ET EMC"),
+                "<< /Type /StructTreeRoot /K 6 0 R /ParentTree 8 0 R >>",
+                $"<< /S /Document /P 5 0 R /K {documentKids} >>",
+                paragraph,
+                parentTree,
+                .. more,
+            ]));
+
+    static string[] Codes(PdfDocument doc) => doc.Structure!.CheckConsistency().Select(issue => issue.Code).Distinct().Order().ToArray();
+
+    [Fact]
+    public void ConsistentTreeHasNoIssues()
+    {
+        var doc = Load();
+        Assert.Empty(doc.Structure!.CheckConsistency());
+        Assert.True(doc.Structure.GetParentTreeDiagnostics()!.IsValid);
+        Assert.Equal("Body", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
+    public void ParentAndParentTreeMismatchesAreReported()
+    {
+        Assert.Equal(["STRUCT-P-MISMATCH"], Codes(Load(paragraph: "<< /S /P /P 5 0 R /Pg 3 0 R /K 0 >>")));
+        Assert.Equal(["STRUCT-P-MISSING"], Codes(Load(paragraph: "<< /S /P /Pg 3 0 R /K 0 >>")));
+        Assert.Equal(["STRUCT-PARENTTREE-MISMATCH"], Codes(Load(parentTree: "<< /Nums [0 [6 0 R]] >>")));
+    }
+
+    [Fact]
+    public void ParentTreeProblemsAreReported()
+    {
+        Assert.Contains("STRUCT-PARENTTREE-MISMATCH", Codes(Load(parentTree: "<< /Nums [1 [7 0 R]] >>")));
+        Assert.Contains("STRUCT-PARENTTREE-MISSING", Codes(Load(parentTree: "null")));
+    }
+
+    [Fact]
+    public void DuplicateMarkedContentClaimsKeepTheFirstOwner()
+    {
+        var doc = Load("[7 0 R 9 0 R]", more: "<< /S /P /P 6 0 R /Pg 3 0 R /K 0 >>");
+        Assert.Contains("STRUCT-MCID-DUPLICATE", Codes(doc));
+        Assert.Same(doc.Structure!.ElementFor((PdfDictionary)doc.File.GetObject(7)!), doc.Structure.FindMarkedContent(0, 0)!.Parent);
+    }
+
+    [Fact]
+    public void CyclicAndSharedElementsAreReportedAsParseIssuesWithoutLoopingOrDuplicating()
+    {
+        var doc = Load("[7 0 R 6 0 R 7 0 R]");
+        var issues = doc.Structure!.ParseIssues;
+        Assert.Equal(2, issues.Count(issue => issue.Code == "STRUCT-ELEMENT-REVISITED"));
+        Assert.Single(doc.Structure.Elements(), element => element.Type == "P");
+        Assert.Equal("Body", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Theory]
+    [InlineData("<< /Type /MCR /Pg 3 0 R /MCID 0 /Stm << /F (other.pdf) >> >>", "STRUCT-MCR-STM-NONLOCAL")]
+    [InlineData("<< /Type /MCR /Pg 3 0 R /MCID 0 /Stm 4 0 R /StmOwn << /Type /Annot >> >>", "STRUCT-MCR-STMOWN")]
+    [InlineData("<< /Type /MCR /Pg 3 0 R >>", "STRUCT-MCR-MCID")]
+    [InlineData("<< /Type /OBJR /Pg 3 0 R >>", "STRUCT-OBJR-OBJ")]
+    public void MalformedOrExternalReferencesAreReportedAndInert(string kid, string code)
+    {
+        var doc = Load(paragraph: $"<< /S /P /P 6 0 R /Pg 3 0 R /K [{kid}] >>");
+        Assert.Contains(doc.Structure!.ParseIssues, issue => issue.Code == code);
+        Assert.Equal("", StructuredTextExtractor.Extract(doc));
+        Assert.All(doc.Structure.ParseIssues, issue => Assert.StartsWith("ISO 32000-2 14.7.5", issue.Clause));
+    }
+
+    [Fact]
+    public void PageLessMarkedContentIsAmbiguous()
+    {
+        var doc = Load(paragraph: "<< /S /P /P 6 0 R /K 0 >>");
+        Assert.Contains("STRUCT-MCR-NOPAGE", Codes(doc));
+    }
+
+    [Fact]
+    public void ObjectReferencesMustMapBackThroughTheParentTree()
+    {
+        const string annotation = "<< /Type /Annot /Subtype /Stamp /Rect [0 0 10 10] /StructParent 1 >>";
+        const string figure = "<< /S /Figure /P 6 0 R /K << /Type /OBJR /Obj 7 0 R >> >>";
+        var ok = Load("[9 0 R]", paragraph: annotation, parentTree: "<< /Nums [1 9 0 R] >>", more: figure);
+        Assert.Empty(ok.Structure!.CheckConsistency());
+        var bad = Load("[9 0 R]", paragraph: annotation, parentTree: "<< /Nums [1 [9 0 R]] >>", more: figure);
+        Assert.Equal(["STRUCT-OBJR-PARENTTREE"], Codes(bad));
+        var duplicate = Load("[9 0 R 10 0 R]", paragraph: annotation, parentTree: "<< /Nums [1 9 0 R] >>", more: [figure, figure]);
+        Assert.Contains("STRUCT-OBJR-DUPLICATE", Codes(duplicate));
+    }
+
+    [Fact]
+    public void ParentTreeDiagnosticsReportDuplicateOrderLimitsAndCycles()
+    {
+        var doc = Load(parentTree: "<< /Kids [9 0 R 10 0 R 8 0 R] >>",
+            more: ["<< /Limits [0 2] /Nums [2 [7 0 R] 0 [7 0 R]] >>", "<< /Limits [5 6] /Nums [2 [7 0 R]] >>"]);
+        var kinds = doc.Structure!.GetParentTreeDiagnostics()!.Issues.Select(issue => issue.Kind).Distinct().Order().ToArray();
+        Assert.Equal(["Cycle", "DuplicateKey", "KeyOutOfOrder", "LimitsMismatch"], kinds);
+    }
+
+    [Fact]
+    public void IssueListsAreBounded()
+    {
+        var doc = Load($"[7 0 R {string.Concat(Enumerable.Repeat("7 0 R ", 1200))}]");
+        Assert.Equal(1000, doc.Structure!.ParseIssues.Count);
+        Assert.True(doc.Structure.IssuesTruncated);
+        Assert.Equal(1000, doc.Structure.CheckConsistency().Count);
+    }
 }
 
 public class ValidationTests

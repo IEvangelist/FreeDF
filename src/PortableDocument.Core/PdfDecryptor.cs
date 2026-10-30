@@ -13,17 +13,18 @@ public sealed class PdfDecryptor
     enum Method { None, Rc4, AesV2, AesV3 }
 
     readonly byte[] _key;
-    readonly Method _stm, _str;
+    readonly Method _stm, _str, _eff;
     readonly int _v;
     public bool EncryptMetadata { get; }
     public int Permissions { get; }
     public int Revision { get; }
 
-    PdfDecryptor(byte[] key, Method stm, Method str, int v, bool encMeta, int p, int r, int keyBits, bool owner, bool pubKey)
+    PdfDecryptor(byte[] key, Method stm, Method str, int v, bool encMeta, int p, int r, int keyBits, bool owner, bool pubKey, Method? eff = null)
     {
         _key = key; _stm = stm; _str = str; _v = v; EncryptMetadata = encMeta; Permissions = p; Revision = r;
+        _eff = eff ?? stm;
         KeyLength = keyBits; IsOwner = owner; IsPublicKey = pubKey;
-        EncryptionMethod = (stm == Method.None ? str : stm) switch
+        EncryptionMethod = (stm != Method.None ? stm : str != Method.None ? str : _eff) switch
         {
             Method.AesV3 => PdfEncryptionMethod.Aes256,
             Method.AesV2 => PdfEncryptionMethod.Aes128,
@@ -53,7 +54,7 @@ public sealed class PdfDecryptor
         var v = Int("V"); var r = Int("R"); var p = Int("P");
         var length = Int("Length", 40);
         var encMeta = resolve(enc.Get("EncryptMetadata")) is not PdfBoolean { Value: false };
-        Method stm = Method.Rc4, str = Method.Rc4;
+        Method stm = Method.Rc4, str = Method.Rc4, eff = Method.Rc4;
         PdfDictionary? cf = null;
         if (v >= 4)
         {
@@ -70,6 +71,8 @@ public sealed class PdfDecryptor
                 return resolve(d.Get("CFM")).AsName() switch { "V2" => Method.Rc4, "AESV2" => Method.AesV2, "AESV3" => Method.AesV3, _ => Method.None };
             }
             stm = Of("StmF"); str = Of("StrF");
+            // 7.6.6, Table 20: /EFF defaults to /StmF when absent.
+            eff = enc.Get("EFF") is null ? stm : Of("EFF");
             if (v == 4) length = 128;
         }
         if (v == 1) length = 40;
@@ -91,7 +94,7 @@ public sealed class PdfDecryptor
             }
         }
         if (key is null) throw new PdfPasswordException("Incorrect or missing password");
-        return new PdfDecryptor(key, stm, str, v, encMeta, p, r, v >= 5 ? 256 : length, owner, false);
+        return new PdfDecryptor(key, stm, str, v, encMeta, p, r, v >= 5 ? 256 : length, owner, false, eff);
     }
 
     // Public-key handler (§7.6.5): the file key is a hash of the CMS-protected seed, the recipient blobs and (if clear metadata) 0xFFFFFFFF.
@@ -251,7 +254,7 @@ public sealed class PdfDecryptor
         if (type == "XRef" || (type == "Metadata" && !EncryptMetadata)) return st.RawData;
         var f = st.Dict.Get("Filter");
         var first = f is PdfArray { Items.Count: > 0 } fa ? fa.Items[0].AsName() : f.AsName();
-        return first == "Crypt" ? st.RawData : Seal(st.RawData, num, 0, _stm);
+        return first == "Crypt" ? st.RawData : Seal(st.RawData, num, 0, type == "EmbeddedFile" ? _eff : _stm);
     }
 
     byte[] Seal(byte[] data, int num, int gen, Method m)
@@ -288,6 +291,6 @@ public sealed class PdfDecryptor
         var f = st.Dict.Get("Filter");
         var first = f is PdfArray { Items.Count: > 0 } fa ? fa.Items[0].AsName() : f.AsName();
         if (first == "Crypt") return new PdfStream(dict, st.RawData);
-        return new PdfStream(dict, Run(st.RawData, num, gen, _stm));
+        return new PdfStream(dict, Run(st.RawData, num, gen, type == "EmbeddedFile" ? _eff : _stm));
     }
 }

@@ -196,6 +196,146 @@ public class DocumentFeatureTests
         Assert.All(files, file => Assert.Equal("actual.txt", file.FileName));
     }
 
+    static byte[] FeaturesBytes() => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "features", "features.pdf"));
+
+    [Theory]
+    [InlineData(PdfEncryptionMethod.Aes256, true)]
+    [InlineData(PdfEncryptionMethod.Aes256, false)]
+    [InlineData(PdfEncryptionMethod.Aes128, true)]
+    [InlineData(PdfEncryptionMethod.Aes128, false)]
+    public void Embedded_files_survive_embedded_files_only_encryption_across_save_paths(PdfEncryptionMethod method, bool encryptMetadata)
+    {
+        var source = PdfDocument.Load(FeaturesBytes());
+        var expected = Assert.Single(source.GetEmbeddedFiles());
+        var options = new PdfWriteOptions
+        {
+            Encryption = new PdfEncryption
+            {
+                UserPassword = "u", OwnerPassword = "o", Method = method, EncryptMetadata = encryptMetadata, EmbeddedFilesOnly = true,
+            },
+        };
+        var encrypted = PdfEditor.Open(source).Save(options: options);
+        var raw = System.Text.Encoding.Latin1.GetString(encrypted);
+        Assert.Contains("/EFF /StdCF", raw);
+        Assert.Contains("/StmF /Identity", raw);
+        Assert.DoesNotContain("hello attachment", raw);
+        Assert.Throws<PdfPasswordException>(() => PdfDocument.Load(encrypted));
+        Assert.Equal(expected.Data, Assert.Single(PdfDocument.Load(encrypted, "u").GetEmbeddedFiles()).Data);
+
+        // Incremental saves are refused for encrypted sources; the full-rewrite paths below must keep the attachment.
+        var incremental = PdfEditor.Open(PdfDocument.Load(encrypted, "u"));
+        Assert.False(incremental.CanSaveIncremental);
+        Assert.Throws<InvalidOperationException>(() => incremental.SaveIncremental());
+
+        var redacted = PdfEditor.Open(PdfDocument.Load(encrypted, "u"));
+        PortableDocument.Render.Redactor.Apply(redacted, 0, [new PortableDocument.Render.Redactor.BoxRect(0, 0, 200, 50)]);
+        Assert.Equal(expected.Data, Assert.Single(PdfDocument.Load(redacted.Save(options: options), "u").GetEmbeddedFiles()).Data);
+        Assert.Equal(expected.Data, Assert.Single(PdfDocument.Load(PdfEditor.Open(PdfDocument.Load(encrypted, "u")).Save()).GetEmbeddedFiles()).Data);
+    }
+
+    [Fact]
+    public void Embedded_files_only_encryption_requires_an_aes_password_handler()
+    {
+        var editor = PdfEditor.Open(PdfDocument.Load(FeaturesBytes()));
+        Assert.Throws<NotSupportedException>(() => editor.Save(options: new PdfWriteOptions
+        { Encryption = new PdfEncryption { Method = PdfEncryptionMethod.Rc4_128, EmbeddedFilesOnly = true } }));
+    }
+
+    static byte[] NameTreePdf(string tree, string extra = "") =>
+        System.Text.Encoding.ASCII.GetBytes("%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles 3 0 R >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n" +
+            tree + extra +
+            "90 0 obj\n<< /Type /Filespec /F (a.txt) >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 100 >>\n%%EOF\n");
+
+    [Fact]
+    public void Name_tree_diagnostics_report_order_duplicate_and_limits_problems_without_changing_lookup()
+    {
+        var doc = PdfDocument.Load(NameTreePdf(
+            "3 0 obj\n<< /Kids [4 0 R 5 0 R 6 0 R] /Limits [(a) (z)] >>\nendobj\n" +
+            "4 0 obj\n<< /Limits [(a) (c)] /Names [(a) 90 0 R (c) 90 0 R] >>\nendobj\n" +
+            "5 0 obj\n<< /Limits [(b) (c)] /Names [(b) 90 0 R (c) 90 0 R] >>\nendobj\n" +
+            "6 0 obj\n<< /Limits [(x) (z)] /Names [(y) 90 0 R (z) 90 0 R] >>\nendobj\n"));
+        var diagnostics = Assert.IsType<PdfTreeDiagnostics>(doc.GetEmbeddedFilesNameTreeDiagnostics());
+
+        Assert.Equal(new[] { "DuplicateKey", "KeyOutOfOrder", "LimitsMismatch", "LimitsOnRoot" },
+            diagnostics.Issues.Select(issue => issue.Kind).Distinct().Order());
+        Assert.Equal(6, diagnostics.KeyCount);
+        Assert.False(diagnostics.IsValid);
+        Assert.Equal(6, doc.GetFileSpecifications().Count);
+    }
+
+    [Fact]
+    public void Name_tree_diagnostics_accept_a_valid_tree_and_flag_missing_or_malformed_limits()
+    {
+        var valid = PdfDocument.Load(NameTreePdf(
+            "3 0 obj\n<< /Kids [4 0 R 5 0 R] >>\nendobj\n" +
+            "4 0 obj\n<< /Limits [(a) (b)] /Names [(a) 90 0 R (b) 90 0 R] >>\nendobj\n" +
+            "5 0 obj\n<< /Limits [(c) (d)] /Names [(c) 90 0 R (d) 90 0 R] >>\nendobj\n"));
+        Assert.True(valid.GetEmbeddedFilesNameTreeDiagnostics()!.IsValid);
+
+        var bad = PdfDocument.Load(NameTreePdf(
+            "3 0 obj\n<< /Kids [4 0 R 5 0 R 6 0 R] >>\nendobj\n" +
+            "4 0 obj\n<< /Names [(a) 90 0 R] >>\nendobj\n" +
+            "5 0 obj\n<< /Limits [(b)] /Names [(b) 90 0 R] >>\nendobj\n" +
+            "6 0 obj\n<< /Limits [(d) (c)] /Names [(c) 90 0 R (d) 90 0 R] >>\nendobj\n"));
+        Assert.Equal(new[] { "LimitsInverted", "LimitsMalformed", "LimitsMissing" },
+            bad.GetEmbeddedFilesNameTreeDiagnostics()!.Issues.Select(issue => issue.Kind).Distinct().Order());
+    }
+
+    [Fact]
+    public void Name_tree_diagnostics_are_cycle_safe_and_bounded()
+    {
+        var shared = PdfDocument.Load(NameTreePdf(
+            "3 0 obj\n<< /Kids [4 0 R 4 0 R 3 0 R] >>\nendobj\n" +
+            "4 0 obj\n<< /Limits [(a) (a)] /Names [(a) 90 0 R] >>\nendobj\n"));
+        Assert.Contains(shared.GetEmbeddedFilesNameTreeDiagnostics()!.Issues, issue => issue.Kind == "Cycle");
+
+        var chain = new System.Text.StringBuilder();
+        for (var node = 3; node < 80; node++)
+            chain.Append($"{node} 0 obj\n<< /Kids [{node + 1} 0 R] /Limits [(a) (a)] >>\nendobj\n");
+        chain.Append("80 0 obj\n<< /Limits [(a) (a)] /Names [(a) 90 0 R] >>\nendobj\n");
+        var deep = PdfDocument.Load(NameTreePdf(chain.ToString()));
+        Assert.True(deep.GetEmbeddedFilesNameTreeDiagnostics()!.Truncated);
+        Assert.Null(PdfDocument.Load(TestPdf.Build("0 0 10 10 re f")).GetEmbeddedFilesNameTreeDiagnostics());
+    }
+
+    [Fact]
+    public void Collection_exposes_folders_navigator_and_typed_item_values()
+    {
+        var doc = PdfDocument.Load(System.Text.Encoding.ASCII.GetBytes("%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(f) 10 0 R] >> >> /Collection << /View /C /Navigator 5 0 R /Folders 6 0 R " +
+            "/Schema << /Title << /Subtype /S /N (Title) >> /Pages << /Subtype /N /N (Pages) >> /Stamp << /Subtype /D /N (Stamp) >> >> >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n" +
+            "5 0 obj\n<< /Type /Navigator /Layout [/FutureLayout /Tree] >>\nendobj\n" +
+            "6 0 obj\n<< /Type /Folder /ID 0 /Name (root) /Child 7 0 R /Free [3 9] >>\nendobj\n" +
+            "7 0 obj\n<< /ID 1 /Name (docs) /Parent 6 0 R /Next 8 0 R /Child 9 0 R /Desc (Documents) >>\nendobj\n" +
+            "8 0 obj\n<< /ID 2 /Name (DOCS) /Parent 6 0 R /Next 7 0 R >>\nendobj\n" +
+            "9 0 obj\n<< /ID 1 /Name (inner) /Parent 7 0 R >>\nendobj\n" +
+            "10 0 obj\n<< /Type /Filespec /F (a.txt) /CI << /Title << /Type /CollectionSubitem /D (Report) /P (pre-) >> /Pages (seven) /Stamp (D:20250101000000Z) /Extra 4.5 >> >>\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 11 >>\n%%EOF\n"));
+        var collection = Assert.IsType<PdfDocumentCollection>(doc.GetCollection());
+
+        Assert.Equal(new[] { "FutureLayout", "Tree" }, Assert.IsType<PdfCollectionNavigator>(collection.Navigator).Layouts);
+        Assert.Equal(new long?[] { 0, 1, 1, 2 }, collection.Folders.Select(folder => folder.Id));
+        Assert.Equal(new[] { 0, 1, 2, 1 }, collection.Folders.Select(folder => folder.Depth));
+        Assert.Equal("Documents", collection.Folders[1].Description);
+        Assert.Equal(new[] { "DuplicateFolderId:1", "DuplicateSiblingName:DOCS", "Cycle" }.Order(), collection.FolderIssues.Distinct().Order());
+        Assert.False(collection.FoldersTruncated);
+        Assert.Contains("Free", collection.Folders[0].Dictionary.Entries.Keys);
+
+        var values = doc.GetCollectionItemValues(Assert.Single(doc.GetFileSpecifications()).CollectionItem).ToDictionary(value => value.Key);
+        Assert.Equal("Report", values["Title"].Text);
+        Assert.Equal("pre-", values["Title"].Prefix);
+        Assert.True(values["Title"].MatchesSchema);
+        Assert.Null(values["Pages"].Number);
+        Assert.False(values["Pages"].MatchesSchema);
+        Assert.Equal("D:20250101000000Z", values["Stamp"].Date);
+        Assert.Equal(4.5, values["Extra"].Number);
+        Assert.Null(values["Extra"].MatchesSchema);
+    }
+
     static byte[] CollectionDateSortPdf()
     {
         const string pdf = "%PDF-2.0\n" +

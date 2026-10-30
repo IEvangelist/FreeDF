@@ -16,9 +16,19 @@ public sealed class StructuredTextExtractor
     readonly Dictionary<PdfStream, int> _streamNumbers = new(ReferenceEqualityComparer.Instance);
     readonly Dictionary<int, Dictionary<PdfStream, string>> _objectText = [];
     readonly HashSet<(int Page, PdfDictionary Annotation)> _visitedAnnotations = [];
+    readonly Dictionary<int, Dictionary<PdfStream, List<PdfStream>>> _objectRoots = [];
+    readonly Dictionary<PdfStream, List<PdfStream>> _nestedForms = new(ReferenceEqualityComparer.Instance);
+    List<PdfStream>? _objectReferenceForms;
+    int _nestedWork;
+
+    const int MaxNestedFormDepth = 32;
+    const int MaxNestedFormWork = 100_000;
 
     /// <summary>Emit /Alt for elements (typically figures) that carry no text of their own.</summary>
     public bool IncludeAlt { get; init; }
+
+    /// <summary>True when nested Form XObject discovery under annotation appearances or /OBJR Form targets hit the total-work or depth budget; text of unreached forms is not attributed.</summary>
+    public bool NestedFormsTruncated { get; private set; }
 
     public StructuredTextExtractor(PdfDocument doc) => _doc = doc;
 
@@ -109,7 +119,7 @@ public sealed class StructuredTextExtractor
         var seen = new HashSet<(int Form, int Index)>();
         var objectBuilders = new Dictionary<PdfStream, StringBuilder>(ReferenceEqualityComparer.Instance);
         var objectLast = new Dictionary<PdfStream, global::PortableDocument.Content.ContentInterpreter.TextSpan>(ReferenceEqualityComparer.Instance);
-        var objectSeen = new HashSet<(int Form, int Index)>();
+        var objectSeen = new HashSet<(PdfStream Root, int Form, int Index)>();
         foreach (var s in spans)
         {
             var form = s.Form;
@@ -117,17 +127,20 @@ public sealed class StructuredTextExtractor
             if (form > 0 && _doc.File.GetObject(form) is PdfStream stream)
             {
                 _streamNumbers[stream] = form;
+                // Text already owned by a page MCR enclosing this Do is not repeated through OBJR.
                 if (!s.IsArtifact && (mcid < 0 || _doc.Structure?.FindMarkedContent(stream, mcid) is null)
-                    && AnnotationAppearances(pageIndex).ContainsKey(stream)
-                    && objectSeen.Add((form, s.Index)))
-                {
-                    if (!objectBuilders.TryGetValue(stream, out var builder)) objectBuilders[stream] = builder = new StringBuilder();
-                    if (objectLast.TryGetValue(stream, out var previous) && NeedsSpace(previous, s)
-                        && builder.Length > 0 && !char.IsWhiteSpace(builder[^1])
-                        && s.Text.Length > 0 && !char.IsWhiteSpace(s.Text[0])) builder.Append(' ');
-                    builder.Append(s.Text);
-                    objectLast[stream] = s;
-                }
+                    && !(s.EnclosingPageMcid >= 0 && _doc.Structure?.FindMarkedContent(pageIndex, s.EnclosingPageMcid) is not null)
+                    && ObjectRoots(pageIndex).TryGetValue(stream, out var roots))
+                    foreach (var root in roots)
+                    {
+                        if (!objectSeen.Add((root, form, s.Index))) continue;
+                        if (!objectBuilders.TryGetValue(root, out var builder)) objectBuilders[root] = builder = new StringBuilder();
+                        if (objectLast.TryGetValue(root, out var previous) && NeedsSpace(previous, s)
+                            && builder.Length > 0 && !char.IsWhiteSpace(builder[^1])
+                            && s.Text.Length > 0 && !char.IsWhiteSpace(s.Text[0])) builder.Append(' ');
+                        builder.Append(s.Text);
+                        objectLast[root] = s;
+                    }
             }
             if (mcid < 0) { form = 0; mcid = s.EnclosingPageMcid; }
             if (mcid < 0) continue;
@@ -145,20 +158,90 @@ public sealed class StructuredTextExtractor
         return d;
     }
 
-    // Explicit MCRs retain their text; OBJR contributes the remaining selected appearance text.
+    // Maps every stream whose text may be attributed through OBJR (selected annotation appearances and /OBJR Form XObject
+    // targets) and the Form XObjects nested beneath them to those root streams.
+    Dictionary<PdfStream, List<PdfStream>> ObjectRoots(int pageIndex)
+    {
+        if (_objectRoots.TryGetValue(pageIndex, out var map)) return map;
+        map = new(ReferenceEqualityComparer.Instance);
+        _objectRoots[pageIndex] = map;
+        var resources = pageIndex >= 0 && pageIndex < _doc.Pages.Count ? _doc.Pages[pageIndex].Resources : null;
+        foreach (var root in AnnotationAppearances(pageIndex).Keys.Concat(ObjectReferenceForms()))
+            foreach (var form in NestedForms(root, resources).Prepend(root))
+            {
+                if (!map.TryGetValue(form, out var list)) map[form] = list = [];
+                if (!list.Contains(root)) list.Add(root);
+            }
+        return map;
+    }
+
+    List<PdfStream> ObjectReferenceForms()
+    {
+        if (_objectReferenceForms is not null) return _objectReferenceForms;
+        var forms = new List<PdfStream>();
+        var known = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+        _objectReferenceForms = forms;
+        if (_doc.Structure is null) return forms;
+        foreach (var element in _doc.Structure.Elements())
+            foreach (var reference in element.Children.OfType<StructObjectRef>())
+                if (reference.Object is PdfStream form && IsForm(form) && known.Add(form))
+                    forms.Add(form);
+        return forms;
+    }
+
+    bool IsForm(PdfStream stream) => _doc.File.Resolve(stream.Dict.Get("Subtype")).AsName() == "Form";
+
+    // Breadth-first and visited-set bounded: a shared form is expanded once, so reuse cannot fan out exponentially.
+    List<PdfStream> NestedForms(PdfStream root, PdfDictionary? inherited)
+    {
+        if (_nestedForms.TryGetValue(root, out var cached)) return cached;
+        var result = new List<PdfStream>();
+        _nestedForms[root] = result;
+        var file = _doc.File;
+        var seen = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance) { root };
+        var queue = new Queue<(PdfStream Form, PdfDictionary? Inherited, int Depth)>();
+        queue.Enqueue((root, inherited, 0));
+        while (queue.TryDequeue(out var item))
+        {
+            var resources = file.Resolve(item.Form.Dict.Get("Resources")) as PdfDictionary ?? item.Inherited;
+            if (resources is null || file.Resolve(resources.Get("XObject")) is not PdfDictionary xObjects) continue;
+            if (item.Depth >= MaxNestedFormDepth) { NestedFormsTruncated = true; continue; }
+            foreach (var (_, value) in xObjects.Entries)
+            {
+                if (++_nestedWork > MaxNestedFormWork) { NestedFormsTruncated = true; return result; }
+                if (file.Resolve(value) is PdfStream child && IsForm(child) && seen.Add(child))
+                {
+                    result.Add(child);
+                    queue.Enqueue((child, resources, item.Depth + 1));
+                }
+            }
+        }
+        return result;
+    }
+
+    // Explicit MCRs retain their text; OBJR contributes the remaining selected appearance or Form XObject text
+    // (ISO 32000-2 14.7.5.3 and 14.7.5.4: the referenced object's /StructParent must lead back to the containing element).
     string? GetObjectText(StructObjectRef reference)
     {
-        if (reference.PageIndex is not { } page || reference.Object is not PdfDictionary annotation
+        var target = reference.Object switch
+        {
+            PdfStream form when IsForm(form) => form.Dict,
+            PdfDictionary annotation => annotation,
+            _ => null,
+        };
+        if (reference.PageIndex is not { } page || target is null
             || reference.Parent is not { } parent
-            || _doc.File.Resolve(annotation.Get("StructParent")) is not PdfInteger { Value: >= 0 and <= int.MaxValue } key
+            || _doc.File.Resolve(target.Get("StructParent")) is not PdfInteger { Value: >= 0 and <= int.MaxValue } key
             || _doc.Structure?.ParentTreeLookup((int)key.Value) is not PdfDictionary owner
             || !ReferenceEquals(owner, parent.Dict))
             return null;
         PageText(page);
         if (!_objectText.TryGetValue(page, out var texts)) return null;
+        if (reference.Object is PdfStream directForm)
+            return texts.TryGetValue(directForm, out var formText) && _visitedAnnotations.Add((page, target)) ? formText : null;
         foreach (var (stream, owners) in AnnotationAppearances(page))
-            if (owners.Contains(annotation) && texts.TryGetValue(stream, out var text)
-                && _visitedAnnotations.Add((page, annotation)))
+            if (owners.Contains(target) && texts.TryGetValue(stream, out var text)
+                && _visitedAnnotations.Add((page, target)))
                 return text;
         return null;
     }
