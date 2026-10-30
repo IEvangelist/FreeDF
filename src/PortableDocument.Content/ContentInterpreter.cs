@@ -23,6 +23,8 @@ sealed class GState
     public bool FillOverprint, StrokeOverprint;
     public int OverprintMode;
     public TransferFunctions? Transfer;
+    public bool AlphaIsShape, TextKnockout = true;
+
     public GState Clone() => (GState)MemberwiseClone();
 }
 
@@ -150,7 +152,7 @@ public sealed class ContentInterpreter
                         throw new PdfParseException($"Page transparency group /{key} has an invalid component count.");
                     return mapped;
                 }
-                if (device != PdfColorSpace.Cmyk) return device;
+                return device != PdfColorSpace.Cmyk ? device : CmykGroupSpace;
             }
             else if (spaces?.Get(name.Value) is { } named)
             {
@@ -161,7 +163,42 @@ public sealed class ContentInterpreter
         // The general colour parser deliberately falls back for unsupported spaces/profiles.
         // A blending space needs an inverse transform, so that fallback is not valid here.
         var kind = obj is PdfArray { Count: > 0 } a ? R(a[0]).AsName() : obj.AsName();
-        throw new NotSupportedException($"Page transparency group colour space /{kind ?? "invalid"} is not supported; only DeviceGray and DeviceRGB blending are implemented.");
+        if (obj is PdfArray { Count: >= 2 } arr)
+        {
+            switch (kind)
+            {
+                case "CalGray" when R(arr[1]) is PdfDictionary gd && GroupNumbers(gd.Get("WhitePoint"), 3) is { } gw:
+                    return new GroupBlendColorSpace(GroupBlendSpace.CalGray(R(gd.Get("Gamma")).AsNumber() ?? 1));
+                case "CalRGB" when R(arr[1]) is PdfDictionary cd && GroupNumbers(cd.Get("WhitePoint"), 3) is { } cw:
+                    {
+                        var calibrated = GroupBlendSpace.CalRgb(cw, GroupNumbers(cd.Get("Gamma"), 3) ?? [1, 1, 1],
+                            GroupNumbers(cd.Get("Matrix"), 9) ?? [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+                        if (calibrated is not null) return new GroupBlendColorSpace(calibrated);
+                        break;
+                    }
+                case "ICCBased" when R(arr[1]) is PdfStream icc:
+                    {
+                        // Only the component count selects the model; profile transfer curves/primaries are not inverted.
+                        var n = (int)(R(icc.Dict.Get("N")).AsNumber() ?? 0);
+                        byte[]? data = null;
+                        try { data = _f.DecodeStream(icc); } catch (Exception) { }
+                        if (data is not null && IccProfile.TryParse(data) is { } profile && profile.Components == n && n is 1 or 3 or 4)
+                            return n == 1 ? PdfColorSpace.Gray : n == 3 ? PdfColorSpace.Rgb : CmykGroupSpace;
+                        break;
+                    }
+            }
+        }
+        throw new NotSupportedException($"Page transparency group colour space /{kind ?? "invalid"} is not supported; only DeviceGray, DeviceRGB, DeviceCMYK, CalGray, CalRGB and ICCBased blending are implemented.");
+    }
+
+    static readonly PdfColorSpace CmykGroupSpace = new GroupBlendColorSpace(GroupBlendSpace.Cmyk);
+
+    double[]? GroupNumbers(PdfObject? o, int n)
+    {
+        if (R(o) is not PdfArray a || a.Count < n) return null;
+        var v = new double[n];
+        for (var i = 0; i < n; i++) { if (R(a[i]).AsNumber() is not { } x) return null; v[i] = x; }
+        return v;
     }
 
     // ISO 32000-2 12.5.5: map the transformed appearance BBox onto the annotation Rect.
@@ -365,7 +402,7 @@ public sealed class ContentInterpreter
                 ops.Clear(); stmtStart = lx.Pos;
             }
         }
-        finally { _runDepth--; }
+        finally { EndTextKnockout(); _runDepth--; }
         while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
     }
 
@@ -473,6 +510,7 @@ public sealed class ContentInterpreter
 
             case "BT": _tm = _tlm = Matrix.Identity; _textClip = null; break;
             case "ET":
+                EndTextKnockout();
                 if (_textClip is { IsEmpty: false } tc) _be.Clip(tc, Matrix.Identity, false);
                 _textClip = null; break;
             case "Tc": _gs.CharSpace = N(a, 0); break;
@@ -687,6 +725,8 @@ public sealed class ContentInterpreter
                 case "BM": _gs.BlendMode = FirstKnownBlend(v) ?? "Normal"; break;
                 case "Font": if (v is PdfArray { Count: 2 } fa && R(fa[0]) is PdfDictionary fd) { _gs.Font = GetFont(fd); _gs.FontSize = R(fa[1]).AsNumber() ?? 0; } break;
                 case "SMask": ApplySoftMask(v, res); break;
+                case "AIS": _gs.AlphaIsShape = v is PdfBoolean { Value: true }; if (DrawGraphics) _be.SetAlphaIsShape(_gs.AlphaIsShape); break;
+                case "TK": _gs.TextKnockout = v is not PdfBoolean { Value: false }; break;
             }
         }
     }
@@ -771,10 +811,59 @@ public sealed class ContentInterpreter
         var clip = _pendingClip; _pendingClip = 0;
         if (DrawGraphics && _hiddenDepth == 0 && !p.IsEmpty)
         {
-            if (fill) FillPath(p, evenOdd);
-            if (stroke) StrokeBackend(p, _gs.Ctm, Style());
+            // 11.7.4.4: fill and stroke of one painting operator form a knockout group, so the stroke replaces the fill where they overlap.
+            var knockout = fill && stroke && NeedsObjectGroup() && BeginPathKnockout(p);
+            try
+            {
+                if (fill) FillPath(p, evenOdd);
+                if (stroke) StrokeBackend(p, _gs.Ctm, Style());
+            }
+            finally { if (knockout) { _be.EndGroup(); _be.Restore(); } }
         }
         if (DrawGraphics && clip != 0) _be.Clip(p, _gs.Ctm, clip == 2);
+    }
+
+    // Constant alpha, a non-Normal blend mode or a soft mask is what makes overlapping elements of one object observable.
+    bool NeedsObjectGroup() => _gs.FillAlpha < 1 || _gs.StrokeAlpha < 1 || _gs.BlendMode != "Normal" || _gs.SoftMaskActive;
+
+    /// <summary>Opens a non-isolated knockout group clipped to the stroked bounds of <paramref name="p"/> so the layer stays small.</summary>
+    bool BeginPathKnockout(PathData p)
+    {
+        var pts = p.Pts;
+        if (pts.Count < 2) return false;
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        for (var i = 0; i + 1 < pts.Count; i += 2)
+        {
+            x0 = Math.Min(x0, pts[i]); x1 = Math.Max(x1, pts[i]); y0 = Math.Min(y0, pts[i + 1]); y1 = Math.Max(y1, pts[i + 1]);
+        }
+        var ctm = _gs.Ctm;
+        var scale = Math.Sqrt(Math.Abs(ctm.A * ctm.D - ctm.B * ctm.C));
+        if (!(scale > 1e-9) || double.IsNaN(x0 + x1 + y0 + y1)) return false;
+        var pad = Math.Max(_gs.LineWidth, 0) / 2 * (_gs.Join == LineJoin.Miter ? Math.Max(_gs.MiterLimit, 1) : 1) + 2 / scale;
+        var box = new PathData(); box.Rect(x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad);
+        _be.Save();
+        _be.Clip(box, ctm, false);
+        _be.BeginGroup(false, true, 1, "Normal");
+        return true;
+    }
+
+    bool _textKnockout;
+    int _textKnockoutDepth;
+
+    /// <summary>11.7.4.5: with /TK true the glyphs of one text object are elements of a knockout group (opened lazily at the first painted glyph).</summary>
+    void BeginTextKnockout()
+    {
+        if (_textKnockout || !_gs.TextKnockout || !NeedsObjectGroup()) return;
+        _be.Save();
+        _be.BeginGroup(false, true, 1, "Normal");
+        _textKnockout = true; _textKnockoutDepth = _runDepth;
+    }
+
+    void EndTextKnockout()
+    {
+        if (!_textKnockout || _textKnockoutDepth != _runDepth) return;
+        _textKnockout = false;
+        _be.EndGroup(); _be.Restore();
     }
 
     StrokeStyle Style() => new(_gs.LineWidth, _gs.Cap, _gs.Join, _gs.MiterLimit, _gs.Dash, _gs.DashPhase);
@@ -1048,6 +1137,7 @@ public sealed class ContentInterpreter
                     {
                         var m = Matrix.Scale(0.001, 0.001).Then(trm);
                         var mode = _gs.RenderMode;
+                        if (mode is 0 or 1 or 2 or 4 or 5 or 6) BeginTextKnockout();
                         if (mode is 0 or 2 or 4 or 6) FillGlyph(outline, m);
                         if (mode is 1 or 2 or 5 or 6)
                         {

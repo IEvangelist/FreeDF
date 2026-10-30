@@ -151,4 +151,6 @@ public interface IRenderBackend
         BeginGroup(isolated, knockout, alpha, blendMode);
     }
     void EndGroup() { }
+    /// <summary>ExtGState /AIS (11.6.4.4): constant alpha is shape rather than opacity. Backends that ignore it treat alpha as opacity.</summary>
+    void SetAlphaIsShape(bool alphaIsShape) { }
 }

@@ -34,9 +34,12 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     float[]? _ip, _ia; // initial backdrop colour/alpha (non-isolated groups)
     bool _ko;      // knockout group
     bool _gray;    // current blending space (gray is stored as three equal components)
+    GroupBlendSpace? _bs; // non-RGB/Gray blending space (CMYK, CalGray, CalRGB); layers stay sRGB, only blend functions run in this space
+    bool _conv;    // colours must be projected into a one-component blending space before compositing
+    bool _ais;     // ExtGState /AIS: constant alpha is shape, not opacity (only distinguishable inside knockout groups)
     readonly Stack<Group> _groups = new();
     ClipMask _clip;
-    readonly Stack<(ClipMask, ClipMask?)> _stack = new();
+    readonly Stack<(ClipMask, ClipMask?, bool)> _stack = new();
 
     Edge[] _edges = new Edge[512]; int _en;
     double _minX, _minY, _maxX, _maxY; bool _bad;
@@ -100,8 +103,10 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static byte ToByte(float v) { var i = (int)(v * 255f + 0.5f); return (byte)(i < 0 ? 0 : i > 255 ? 255 : i); }
 
-    public void Save() => _stack.Push((_clip, _preMask));
-    public void Restore() { if (_stack.Count > 0) (_clip, _preMask) = _stack.Pop(); }
+    public void Save() => _stack.Push((_clip, _preMask, _ais));
+    public void Restore() { if (_stack.Count > 0) (_clip, _preMask, _ais) = _stack.Pop(); }
+
+    public void SetAlphaIsShape(bool alphaIsShape) => _ais = alphaIsShape;
 
     ClipMask? _preMask; // clip in force before the current soft mask was applied
 
@@ -586,16 +591,50 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     void Put(int o, float r, float g, float b, float shape, float q, Blend mode)
     {
         // Classic device conversion (10.4.2.2), before compositing rather than after flattening.
-        if (_gray) r = g = b = Lum(r, g, b);
+        if (_conv) Project(ref r, ref g, ref b);
         var a = _a;
         if (a is null) { BlendOpaque(_px, o * 3, r, g, b, shape * q, mode); return; }
         PutLayer(o, r, g, b, shape, q, mode);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void BlendOpaque(float[] px, int o, float r, float g, float b, float a, Blend mode)
+    void Project(ref float r, ref float g, ref float b)
     {
-        if (mode != Blend.Normal) BlendRgb(mode, px[o], px[o + 1], px[o + 2], r, g, b, out r, out g, out b);
+        if (_bs is null) { r = g = b = Lum(r, g, b); return; }
+        Span<float> c = stackalloc float[4];
+        _bs.FromRgb(r, g, b, c);
+        _bs.ToRgb(c, out r, out g, out b);
+    }
+
+    /// <summary>Blend function in the current group's blending space (11.3.5): RGB/Gray directly, other spaces through <see cref="GroupBlendSpace"/>.</summary>
+    void Mix(Blend mode, float br, float bg, float bb, float sr, float sg, float sb, out float r, out float g, out float b)
+    {
+        if (_bs is null) BlendRgb(mode, br, bg, bb, sr, sg, sb, out r, out g, out b);
+        else BlendIn(_bs, mode, br, bg, bb, sr, sg, sb, out r, out g, out b);
+    }
+
+    static void BlendIn(GroupBlendSpace s, Blend mode, float br, float bg, float bb, float sr, float sg, float sb, out float r, out float g, out float b)
+    {
+        Span<float> cb = stackalloc float[4], cs = stackalloc float[4], o = stackalloc float[4];
+        var n = s.Components;
+        s.FromRgb(br, bg, bb, cb); s.FromRgb(sr, sg, sb, cs);
+        // Subtractive spaces are complemented so that the additive blend functions apply (11.3.5.2).
+        if (s.Subtractive) for (var i = 0; i < n; i++) { cb[i] = 1f - cb[i]; cs[i] = 1f - cs[i]; }
+        if (mode < Blend.Hue) for (var i = 0; i < n; i++) o[i] = B(mode, cb[i], cs[i]);
+        else if (n == 1) { BlendRgb(mode, cb[0], cb[0], cb[0], cs[0], cs[0], cs[0], out o[0], out _, out _); }
+        else
+        {
+            BlendRgb(mode, cb[0], cb[1], cb[2], cs[0], cs[1], cs[2], out o[0], out o[1], out o[2]);
+            // CMYK nonseparable modes act on the CMY complements; K comes from the source for Luminosity and the backdrop otherwise (11.3.5.3).
+            if (n == 4) o[3] = mode == Blend.Luminosity ? cs[3] : cb[3];
+        }
+        if (s.Subtractive) for (var i = 0; i < n; i++) o[i] = 1f - o[i];
+        s.ToRgb(o, out r, out g, out b);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    void BlendOpaque(float[] px, int o, float r, float g, float b, float a, Blend mode)
+    {
+        if (mode != Blend.Normal) Mix(mode, px[o], px[o + 1], px[o + 2], r, g, b, out r, out g, out b);
         if (a >= 0.9999f) { px[o] = r; px[o + 1] = g; px[o + 2] = b; return; }
         px[o] += (r - px[o]) * a;
         px[o + 1] += (g - px[o + 1]) * a;
@@ -603,12 +642,12 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     }
 
     /// <summary>ISO 32000-2 11.3.6 compositing of source (cs, as) over backdrop (cb, ab).</summary>
-    static void Comp(float cbr, float cbg, float cbb, float ab, float r, float g, float b, float s, Blend mode,
+    void Comp(float cbr, float cbg, float cbb, float ab, float r, float g, float b, float s, Blend mode,
         out float orr, out float og, out float ob, out float oa)
     {
         if (mode != Blend.Normal && ab > 0f)
         {
-            BlendRgb(mode, cbr, cbg, cbb, r, g, b, out var br, out var bg, out var bb);
+            Mix(mode, cbr, cbg, cbb, r, g, b, out var br, out var bg, out var bb);
             r += ab * (br - r); g += ab * (bg - g); b += ab * (bb - b);
         }
         oa = ab + s - ab * s;
@@ -629,6 +668,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             return;
         }
         if (shape <= 0f) return;
+        if (_ais) { shape *= q; q = 1f; } // /AIS true: constant alpha is shape, so it fades the knockout instead of the opacity (11.6.4.4)
         float ir = 0, ig = 0, ib = 0, ia = 0;
         if (_ip is { } ip) { ir = ip[o3]; ig = ip[o3 + 1]; ib = ip[o3 + 2]; ia = _ia![o]; }
         Comp(ir, ig, ib, ia, r, g, b, q, mode, out var nr, out var ng, out var nb, out var na);
@@ -748,6 +788,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         public float[] Px = [], PPx = []; public float[]? A, Ag, Ip, Ia, PA, PAg, PIp, PIa;
         public int Ox, Oy, Lw, Lh, POx, POy, PLw, PLh;
         public bool Ko, PKo, PGray, Isolated, Pooled;
+        public GroupBlendSpace? PBs;
         public ClipMask Outer = null!; public ClipMask? OuterPre;
         public float Alpha; public Blend Mode;
     }
@@ -766,16 +807,19 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode, PdfColorSpace? colorSpace)
     {
-        if (colorSpace is not null && colorSpace != PdfColorSpace.Gray && colorSpace != PdfColorSpace.Rgb)
-            throw new NotSupportedException("Only DeviceGray and DeviceRGB transparency group blending are implemented.");
-        var gray = colorSpace is null ? _gray : colorSpace == PdfColorSpace.Gray;
-        if (!isolated && gray != _gray)
+        bool gray; GroupBlendSpace? bs;
+        if (colorSpace is null) { gray = _gray; bs = _bs; }
+        else if (colorSpace == PdfColorSpace.Gray) { gray = true; bs = null; }
+        else if (colorSpace == PdfColorSpace.Rgb) { gray = false; bs = null; }
+        else if (colorSpace is GroupBlendColorSpace gb) { gray = false; bs = gb.Space; }
+        else throw new NotSupportedException("Only DeviceGray, DeviceRGB, DeviceCMYK, CalGray, CalRGB and ICCBased transparency group blending are implemented.");
+        if (!isolated && (gray != _gray || !ReferenceEquals(bs, _bs)))
             throw new NotSupportedException("Non-isolated transparency groups must inherit the backdrop's colour space.");
         var c = _clip;
         var g = new Group
         {
             PPx = _px, PA = _a, PAg = _ag, PIp = _ip, PIa = _ia, POx = _ox, POy = _oy, PLw = _lw, PLh = _lh, PKo = _ko,
-            Ko = knockout, PGray = _gray, Isolated = isolated, Outer = c, OuterPre = _preMask, Alpha = (float)alpha, Mode = ParseBlend(blendMode),
+            Ko = knockout, PGray = _gray, PBs = _bs, Isolated = isolated, Outer = c, OuterPre = _preMask, Alpha = (float)alpha, Mode = ParseBlend(blendMode),
         };
         _groups.Push(g);
         _preMask = null;
@@ -801,6 +845,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             Array.Copy(g.Px, g.Ip, n * 3); Array.Copy(g.A, g.Ia, n);
         }
         _px = g.Px; _a = g.A; _ag = g.Ag; _ip = g.Ip; _ia = g.Ia; _ox = g.Ox; _oy = g.Oy; _lw = w; _lh = h; _ko = knockout; _gray = gray;
+        _bs = bs; _conv = gray || (bs?.Lossy ?? false);
         _clip = new ClipMask { X0 = c.X0, Y0 = c.Y0, X1 = c.X1, Y1 = c.Y1 };
     }
 
@@ -809,6 +854,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         if (_groups.Count == 0) return;
         var g = _groups.Pop();
         _px = g.PPx; _a = g.PA; _ag = g.PAg; _ip = g.PIp; _ia = g.PIa; _ox = g.POx; _oy = g.POy; _lw = g.PLw; _lh = g.PLh; _ko = g.PKo; _gray = g.PGray;
+        _bs = g.PBs; _conv = _gray || (_bs?.Lossy ?? false);
         _clip = g.Outer; _preMask = g.OuterPre;
         if (!g.Pooled) return;
         var c = g.Outer;
