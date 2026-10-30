@@ -391,7 +391,7 @@ public sealed class ContentInterpreter
                 if (o is not PdfKeyword k) { ops.Add(o); if (ops.Count > 512) ops.RemoveAt(0); continue; }
                 if (k.Value == "BI")
                 {
-                    if (collect && _hiddenDepth == 0) { var s0 = SkipWhite(content, stmtStart); var c0 = _gs.Ctm; InlineImage(lx, res); AddObject("image", s0, lx.Pos, c0, UnitSquare(c0)); }
+                    if (collect && _hiddenDepth == 0) { var s0 = SkipWhite(content, stmtStart); var c0 = _gs.Ctm; _lastInline = null; InlineImage(lx, res); AddObject("image", s0, lx.Pos, c0, UnitSquare(c0), stream: _lastInline); }
                     else InlineImage(lx, res);
                     ops.Clear(); stmtStart = lx.Pos; continue;
                 }
@@ -407,8 +407,27 @@ public sealed class ContentInterpreter
     }
 
     /// <summary>A painted graphics object or clipping path located by byte range in its owning stream: the page content (<paramref name="Form"/> 0) or a form XObject (its object number).</summary>
+    /// <remarks><see cref="Inv"/> numbers the invocation of <paramref name="Form"/> that owns the object (0 for the page); for a "form" object <see cref="ChildInv"/> is the invocation it starts.
+    /// <see cref="Style"/> and the alpha values describe the graphics state at paint time; <see cref="StrokePattern"/> is set when the stroke colour is a pattern or the paint has non-trivial blending.</remarks>
     public sealed record PageObject(int Index, string Kind, int Start, int End, Matrix Ctm, double X0, double Y0, double X1, double Y1,
-        bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth, int Form = 0, PdfStream? Stream = null, int Ref = 0);
+        bool HasFill, bool HasStroke, RgbColor Fill, RgbColor Stroke, double LineWidth, int Form = 0, PdfStream? Stream = null, int Ref = 0)
+    {
+        public int Inv { get; init; }
+        public int ChildInv { get; init; }
+        public StrokeStyle? Style { get; init; }
+        public double FillAlpha { get; init; } = 1;
+        public double StrokeAlpha { get; init; } = 1;
+        public bool ComplexPaint { get; init; }
+    }
+
+    /// <summary>When true, content hidden by optional-content settings is still recorded (analysis only; used so redaction also removes hidden content).</summary>
+    public bool CollectHidden { get; set; }
+
+    /// <summary>When true, inline-image objects carry their reconstructed stream in <see cref="PageObject.Stream"/> (redaction only).</summary>
+    public bool CaptureInlineImages { get; set; }
+
+    int _curInv, _invCounter, _pendingFormObj = -1;
+    PdfStream? _lastInline;
 
     /// <summary>When set, page-content paint objects and clipping paths are recorded here.</summary>
     public List<PageObject>? Objects { get; set; }
@@ -425,7 +444,13 @@ public sealed class ContentInterpreter
     }
 
     void AddObject(string kind, int start, int end, Matrix ctm, (double X0, double Y0, double X1, double Y1) b, bool fill = false, bool stroke = false, PdfStream? stream = null, int xref = 0)
-        => Objects!.Add(new PageObject(Objects.Count, kind, start, end, ctm, b.X0, b.Y0, b.X1, b.Y1, fill, stroke, fill ? Color(false) : default, stroke ? Color(true) : default, _gs.LineWidth, _curForm, stream, xref));
+        => Objects!.Add(new PageObject(Objects.Count, kind, start, end, ctm, b.X0, b.Y0, b.X1, b.Y1, fill, stroke, fill ? Color(false) : default, stroke ? Color(true) : default, _gs.LineWidth, _curForm, stream, xref)
+        {
+            Inv = _curInv,
+            Style = new StrokeStyle(_gs.LineWidth, _gs.Cap, _gs.Join, _gs.MiterLimit, _gs.Dash, _gs.DashPhase),
+            FillAlpha = _gs.FillAlpha, StrokeAlpha = _gs.StrokeAlpha,
+            ComplexPaint = _gs.BlendMode != "Normal" || _gs.SoftMaskActive || stroke && (_gs.StrokePattern is not null || _gs.StrokeOverprint) || fill && (_gs.FillPattern is not null || _gs.FillOverprint),
+        });
 
     void Observe(string op, List<PdfObject> a, PdfDictionary res, byte[] content, int stmtStart, int end, ref int pathStart)
     {
@@ -450,8 +475,9 @@ public sealed class ContentInterpreter
                 break;
             case "Do":
                 if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd && R(xd.Get(xn.Value)) is PdfStream xs
-                    && !(R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc)))
+                    && !(R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc) && !CollectHidden))
                 {
+                    _pendingFormObj = -1;
                     var sub = R(xs.Dict.Get("Subtype")).AsName();
                     var xnum = xd.Get(xn.Value) is PdfRef xr ? xr.Number : 0;
                     if (sub == "Image") AddObject("image", SkipWhite(content, stmtStart), end, _gs.Ctm, UnitSquare(_gs.Ctm), stream: xs, xref: xnum);
@@ -460,6 +486,7 @@ public sealed class ContentInterpreter
                         var fm = R(xs.Dict.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
                         var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, 1, 1];
                         AddObject("form", SkipWhite(content, stmtStart), end, _gs.Ctm, Bounds(fm.Then(_gs.Ctm), [(bb[0], bb[1]), (bb[2], bb[1]), (bb[0], bb[3]), (bb[2], bb[3])], 0), xref: xnum);
+                        _pendingFormObj = Objects!.Count - 1;
                     }
                 }
                 break;
@@ -470,6 +497,8 @@ public sealed class ContentInterpreter
 
     void Exec(string op, List<PdfObject> a, PdfDictionary res)
     {
+        // 8.7.3.3: an uncoloured tiling pattern's content stream shall not set colours; the colour comes from the pattern's scn operands.
+        if (_uncolored && op is "CS" or "cs" or "SC" or "SCN" or "sc" or "scn" or "G" or "g" or "RG" or "rg" or "K" or "k") return;
         if (!DrawGraphics && Objects is null && op is
             "m" or "l" or "c" or "v" or "y" or "h" or "re" or
             "S" or "s" or "f" or "F" or "f*" or "B" or "B*" or "b" or "b*" or "n" or "W" or "W*")
@@ -561,7 +590,7 @@ public sealed class ContentInterpreter
                     if (a.Count >= 2 && a[0].AsName() == "OC")
                     {
                         PdfObject? prop = a[1] is PdfName pn && R(res.Get("Properties")) is PdfDictionary pd ? R(pd.Get(pn.Value)) : a[1];
-                        hidden = prop is PdfDictionary ocd && IsHidden(ocd);
+                        hidden = prop is PdfDictionary ocd && IsHidden(ocd) && !CollectHidden;
                     }
                     _hiddenStack.Add(hidden ? "H" : a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : "");
                     if (hidden) _hiddenDepth++;
@@ -816,7 +845,7 @@ public sealed class ContentInterpreter
             try
             {
                 if (fill) FillPath(p, evenOdd);
-                if (stroke) StrokeBackend(p, _gs.Ctm, Style());
+                if (stroke) StrokePath(p, _gs.Ctm, Style());
             }
             finally { if (knockout) { _be.EndGroup(); _be.Restore(); } }
         }
@@ -872,22 +901,42 @@ public sealed class ContentInterpreter
     {
         if (_gs.FillCs is PdfColorSpace.PatternCs && _gs.FillPattern is { } pat)
         {
-            var pd = pat as PdfDictionary ?? (pat as PdfStream)?.Dict;
-            var type = (int)(R(pd?.Get("PatternType")).AsNumber() ?? 0);
-            if (type == 2 && pd is not null)
-            {
-                _be.Save();
-                _be.Clip(p, _gs.Ctm, evenOdd);
-                var pm = R(pd.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
-                var saved = _gs.Ctm;
-                Shade(R(pd.Get("Shading")), new PdfDictionary(), pm.Then(BaseCtm));
-                _gs.Ctm = saved;
-                _be.Restore();
-            }
-            else if (type == 1 && pat is PdfStream ps) TilingFill(p, evenOdd, ps);
+            PatternPaint(p, evenOdd, pat, null);
             return;
         }
         FillBackend(p, _gs.Ctm, evenOdd);
+    }
+
+    /// <summary>Strokes with the current stroke colour; a pattern stroke paints the pattern through the stroke outline.</summary>
+    void StrokePath(PathData p, Matrix ctm, StrokeStyle style)
+    {
+        if (_gs.StrokeCs is PdfColorSpace.PatternCs && _gs.StrokePattern is { } pat && ctm == _gs.Ctm)
+        {
+            PatternPaint(p, false, pat, style);
+            return;
+        }
+        StrokeBackend(p, ctm, style);
+    }
+
+    void PatternPaint(PathData p, bool evenOdd, PdfObject pat, StrokeStyle? style)
+    {
+        var pd = pat as PdfDictionary ?? (pat as PdfStream)?.Dict;
+        var type = (int)(R(pd?.Get("PatternType")).AsNumber() ?? 0);
+        if (type == 2 && pd is not null)
+        {
+            _be.Save();
+            try
+            {
+                if (style is not null) { if (!_be.ClipStroke(p, _gs.Ctm, style)) return; }
+                else _be.Clip(p, _gs.Ctm, evenOdd);
+                var pm = R(pd.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
+                var saved = _gs.Ctm;
+                Shade(R(pd.Get("Shading")), new PdfDictionary(), pm.Then(BaseCtm), asPattern: true);
+                _gs.Ctm = saved;
+            }
+            finally { _be.Restore(); }
+        }
+        else if (type == 1 && pat is PdfStream ps) TilingFill(p, evenOdd, ps, style);
     }
 
     bool IsFullyOpaque(bool stroke) => (stroke ? _gs.StrokeAlpha : _gs.FillAlpha) >= 1 && _gs.BlendMode == "Normal" && !_gs.SoftMaskActive;
@@ -963,19 +1012,27 @@ public sealed class ContentInterpreter
     Matrix BaseCtm { get; set; } = Matrix.Identity;
     public void SetBase(Matrix m) => BaseCtm = m;
 
-    void TilingFill(PathData p, bool evenOdd, PdfStream pat)
+    int _patternDepth;
+    bool _uncolored;
+
+    /// <summary>Paints a tiling pattern (ISO 32000-2 8.7.3) through <paramref name="p"/> filled, or through its stroke when <paramref name="style"/> is given.</summary>
+    void TilingFill(PathData p, bool evenOdd, PdfStream pat, StrokeStyle? style = null)
     {
+        var stroke = style is not null;
         var d = pat.Dict;
         var bbox = R(d.Get("BBox")) as PdfArray;
         if (bbox is null || bbox.Count < 4) return;
         var bb = bbox.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
-        double xs = R(d.Get("XStep")).AsNumber() ?? (bb[2] - bb[0]), ys = R(d.Get("YStep")).AsNumber() ?? (bb[3] - bb[1]);
-        if (xs == 0) xs = bb[2] - bb[0];
-        if (ys == 0) ys = bb[3] - bb[1];
-        if (xs == 0 || ys == 0) return;
+        double bx0 = Math.Min(bb[0], bb[2]), bx1 = Math.Max(bb[0], bb[2]), by0 = Math.Min(bb[1], bb[3]), by1 = Math.Max(bb[1], bb[3]);
+        if (_patternDepth >= 4) { Warn("tiling pattern nested too deeply"); return; }
+        // A negative step tiles in the opposite direction, which covers the same lattice; a zero step is invalid and falls back to the cell size.
+        var xs = Math.Abs(R(d.Get("XStep")).AsNumber() ?? 0); var ys = Math.Abs(R(d.Get("YStep")).AsNumber() ?? 0);
+        if (xs == 0) xs = bx1 - bx0;
+        if (ys == 0) ys = by1 - by0;
+        if (xs == 0 || ys == 0 || !double.IsFinite(xs + ys)) return;
         var pm = (R(d.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity).Then(BaseCtm);
         var inv = pm.Invert();
-        // Bounds of the filled path in pattern space determine the tile range.
+        // Bounds of the painted area in pattern space determine the tile range.
         double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
         var dev = p.Transform(_gs.Ctm);
         for (var i = 0; i < dev.Pts.Count; i += 2)
@@ -983,32 +1040,54 @@ public sealed class ContentInterpreter
             var (px, py) = inv.Apply(dev.Pts[i], dev.Pts[i + 1]);
             minX = Math.Min(minX, px); maxX = Math.Max(maxX, px); minY = Math.Min(minY, py); maxY = Math.Max(maxY, py);
         }
-        var i0 = (int)Math.Floor((minX - bb[2]) / xs); var i1 = (int)Math.Ceiling((maxX - bb[0]) / xs);
-        var j0 = (int)Math.Floor((minY - bb[3]) / ys); var j1 = (int)Math.Ceiling((maxY - bb[1]) / ys);
-        if ((long)(i1 - i0 + 1) * (j1 - j0 + 1) > 20000) { Warn("tiling pattern with too many tiles skipped"); return; }
-        var paintType = (int)(R(d.Get("PaintType")).AsNumber() ?? 1);
-        var uncolored = paintType == 2;
+        if (!(minX <= maxX && minY <= maxY && double.IsFinite(minX + maxX + minY + maxY))) return;
+        if (style is not null)
+        {
+            var scale = Math.Sqrt(Math.Abs(_gs.Ctm.Det));
+            var padDev = Math.Max(style.Width, 0) / 2 * (style.Join == LineJoin.Miter ? Math.Max(style.MiterLimit, 1) : 1) * scale + 1;
+            var pad = padDev * Math.Max(Math.Sqrt(inv.A * inv.A + inv.B * inv.B), Math.Sqrt(inv.C * inv.C + inv.D * inv.D));
+            minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+        }
+        // Each axis is checked separately in double so tiny steps cannot wrap an integer product past the limit.
+        var tilesX = Math.Ceiling((maxX - bx0) / xs) - Math.Floor((minX - bx1) / xs) + 1;
+        var tilesY = Math.Ceiling((maxY - by0) / ys) - Math.Floor((minY - by1) / ys) + 1;
+        if (!(tilesX <= 20000 && tilesY <= 20000 && tilesX * tilesY <= 20000)) { Warn("tiling pattern with too many tiles skipped"); return; }
+        var i0 = (long)Math.Floor((minX - bx1) / xs); var i1 = (long)Math.Ceiling((maxX - bx0) / xs);
+        var j0 = (long)Math.Floor((minY - by1) / ys); var j1 = (long)Math.Ceiling((maxY - by0) / ys);
+        var uncolored = (int)(R(d.Get("PaintType")).AsNumber() ?? 1) == 2;
         var content = _f.DecodeStream(pat);
         var res = R(d.Get("Resources")) as PdfDictionary ?? new PdfDictionary();
-        var color = PaintColor(false);
+        var color = PaintColor(stroke);
         _be.Save();
-        _be.Clip(p, _gs.Ctm, evenOdd);
+        if (style is not null) { if (!_be.ClipStroke(p, _gs.Ctm, style)) { _be.Restore(); return; } }
+        else _be.Clip(p, _gs.Ctm, evenOdd);
         var savedGs = _gs; var savedStack = new Stack<GState>(_stack.Reverse()); var savedPath = _path;
-        for (var j = j0; j <= j1; j++)
-            for (var i = i0; i <= i1; i++)
-            {
-                _be.Save();
-                _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm), Intent = savedGs.Intent, BlackPointCompensation = savedGs.BlackPointCompensation };
-                if (uncolored) { _gs.FillCs = PdfColorSpace.Rgb; _gs.FillColor = [color.R, color.G, color.B]; _gs.StrokeCs = PdfColorSpace.Rgb; _gs.StrokeColor = _gs.FillColor; }
-                var r = new PathData(); r.Rect(bb[0], bb[1], bb[2] - bb[0], bb[3] - bb[1]);
-                _be.Clip(r, _gs.Ctm, false);
-                _path = new PathData();
-                Run(content, res);
-                _be.Restore();
-            }
-        _gs = savedGs; _path = savedPath;
-        _stack.Clear(); foreach (var s in savedStack.Reverse()) _stack.Push(s);
-        _be.Restore();
+        var savedBase = BaseCtm; var savedUncolored = _uncolored;
+        _patternDepth++;
+        try
+        {
+            for (var j = j0; j <= j1; j++)
+                for (var i = i0; i <= i1; i++)
+                {
+                    _be.Save();
+                    _gs = new GState { Ctm = Matrix.Translate(i * xs, j * ys).Then(pm), Intent = savedGs.Intent, BlackPointCompensation = savedGs.BlackPointCompensation };
+                    if (uncolored) { _gs.FillCs = PdfColorSpace.Rgb; _gs.FillColor = [color.R, color.G, color.B]; _gs.StrokeCs = PdfColorSpace.Rgb; _gs.StrokeColor = _gs.FillColor; }
+                    // 8.7.3.1: a pattern used inside the cell is positioned relative to the cell's own coordinate space.
+                    BaseCtm = _gs.Ctm; _uncolored = uncolored;
+                    var r = new PathData(); r.Rect(bx0, by0, bx1 - bx0, by1 - by0);
+                    _be.Clip(r, _gs.Ctm, false);
+                    _path = new PathData();
+                    Run(content, res);
+                    _be.Restore();
+                }
+        }
+        finally
+        {
+            _patternDepth--; BaseCtm = savedBase; _uncolored = savedUncolored;
+            _gs = savedGs; _path = savedPath;
+            _stack.Clear(); foreach (var s in savedStack.Reverse()) _stack.Push(s);
+            _be.Restore();
+        }
     }
 
     /// <summary>A text-showing operator (Tj, TJ, ' or ") in the page's own content stream, with its device-space geometry.</summary>
@@ -1026,6 +1105,8 @@ public sealed class ContentInterpreter
         public int EnclosingPageMcid { get; init; } = -1;
         /// <summary>Whether this text is inside an explicit /Artifact marked-content sequence.</summary>
         public bool IsArtifact { get; init; }
+        /// <summary>The invocation of <see cref="Form"/> that produced this span (0 for page content).</summary>
+        public int Inv { get; init; }
     }
 
     /// <summary>One shown glyph: its raw string bytes, device-space box and writing-axis advance as a TJ number.</summary>
@@ -1096,6 +1177,7 @@ public sealed class ContentInterpreter
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
             _curForm, _gs.FontRef, font, pieces)
         {
+            Inv = _curInv,
             EnclosingPageMcid = _pageMcid, IsArtifact = _hiddenStack.Contains("A"), RenderingMatrix = trm,
             CharacterSpacing = _gs.FontSize == 0 ? 0 : _gs.CharSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize,
             WordSpacing = _gs.FontSize == 0 ? 0 : _gs.WordSpace * Math.Sqrt(trm.C * trm.C + trm.D * trm.D) / _gs.FontSize
@@ -1143,7 +1225,7 @@ public sealed class ContentInterpreter
                         {
                             // Stroke width is in user space, so stroke with the text-space transform folded into the path.
                             var up = outline.Transform(Matrix.Scale(0.001, 0.001).Then(glyphToUser));
-                            StrokeBackend(up, _gs.Ctm, Style());
+                            StrokePath(up, _gs.Ctm, Style());
                         }
                         if (mode >= 4) { _textClip ??= new PathData(); _textClip.Append(outline.Transform(m)); }
                     }
@@ -1188,7 +1270,7 @@ public sealed class ContentInterpreter
     void DoXObject(PdfObject? obj, PdfDictionary res, int objNum = 0)
     {
         if (obj is not PdfStream xs || _hiddenDepth > 0) return;
-        if (R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc)) return;
+        if (R(xs.Dict.Get("OC")) is PdfDictionary oc && IsHidden(oc) && !CollectHidden) return;
         var sub = R(xs.Dict.Get("Subtype")).AsName();
         if (sub == "Image") DrawImage(xs, res);
         else if (sub == "Form") DoForm(xs, res, objNum);
@@ -1198,7 +1280,7 @@ public sealed class ContentInterpreter
     {
         if (!_activeForms.Add(xs.Dict)) return;
         var saved = _gs; var savedPath = _path; var savedTm = _tm; var savedTlm = _tlm;
-        var sCollect = _collectDepth; var sForm = _curForm; var sIdx = _spanIndex;
+        var sCollect = _collectDepth; var sForm = _curForm; var sIdx = _spanIndex; var sInv = _curInv;
         var savedHidden = _hiddenStack; var savedMcids = _mcidStack;
         var savedHiddenDepth = _hiddenDepth; var savedPageMcid = _pageMcid;
         var stackDepth = _stack.Count;
@@ -1210,7 +1292,13 @@ public sealed class ContentInterpreter
         try
         {
             // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
-            if ((_runDepth == _collectDepth || annotationAppearance && _runDepth == 0) && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
+            if ((_runDepth == _collectDepth || annotationAppearance && _runDepth == 0) && objNum > 0)
+            {
+                _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; _curInv = ++_invCounter;
+                if (_pendingFormObj >= 0 && Objects is not null && _pendingFormObj < Objects.Count && Objects[_pendingFormObj].Ref == objNum)
+                    Objects[_pendingFormObj] = Objects[_pendingFormObj] with { ChildInv = _curInv };
+                _pendingFormObj = -1;
+            }
             else if (_runDepth == _collectDepth) _collectDepth = -1;
             _be.Save();
             _stack.Push(_gs);
@@ -1244,7 +1332,7 @@ public sealed class ContentInterpreter
             if (_mcidStack.Count > 0) Warn("unclosed marked content in form");
             _hiddenStack = savedHidden; _mcidStack = savedMcids;
             _hiddenDepth = savedHiddenDepth; _pageMcid = savedPageMcid;
-            _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx;
+            _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx; _curInv = sInv;
             _activeForms.Remove(xs.Dict);
             if (grouped) _be.EndGroup();
             while (_stack.Count > stackDepth) { _gs = _stack.Pop(); _be.Restore(); }
@@ -1253,17 +1341,40 @@ public sealed class ContentInterpreter
     }
 
     // ---- Shadings ----
-    void Shade(PdfObject? shObj, PdfDictionary res, Matrix? shadingToDevice)
+    /// <summary>Paints a shading. /BBox (8.7.4.3) is a temporary clip in shading space; /Background applies only to shading patterns (<paramref name="asPattern"/>), not to sh.
+    /// /AntiAlias is advisory and ignored.</summary>
+    void Shade(PdfObject? shObj, PdfDictionary res, Matrix? shadingToDevice, bool asPattern = false)
     {
         if (!DrawGraphics) return;
-        var intent = _gs.Intent;
-        var blackPointCompensation = _gs.BlackPointCompensation;
         var d = shObj as PdfDictionary ?? (shObj as PdfStream)?.Dict;
         if (d is null) return;
         var m = shadingToDevice ?? _gs.Ctm;
+        if (R(d.Get("BBox")) is PdfArray bb && bb.Count >= 4)
+        {
+            var v = bb.Items.Take(4).Select(x => R(x).AsNumber() ?? 0).ToArray();
+            var box = new PathData(); box.Rect(Math.Min(v[0], v[2]), Math.Min(v[1], v[3]), Math.Abs(v[2] - v[0]), Math.Abs(v[3] - v[1]));
+            _be.Save();
+            try { _be.Clip(box, m, false); ShadeCore(shObj, d, res, m, asPattern); }
+            finally { _be.Restore(); }
+        }
+        else ShadeCore(shObj, d, res, m, asPattern);
+    }
+
+    void ShadeCore(PdfObject? shObj, PdfDictionary d, PdfDictionary res, Matrix m, bool asPattern)
+    {
+        var intent = _gs.Intent;
+        var blackPointCompensation = _gs.BlackPointCompensation;
         var inv = m.Invert();
         var type = (int)(R(d.Get("ShadingType")).AsNumber() ?? 0);
         var cs = PdfColorSpace.Parse(_f, d.Get("ColorSpace"), res);
+        RgbColor? background = null;
+        if (asPattern && R(d.Get("Background")) is PdfArray bga && bga.Count >= cs.Components && cs.Components > 0)
+            background = cs.ToRgb(bga.Items.Take(cs.Components).Select(x => R(x).AsNumber() ?? 0).ToArray(), intent, blackPointCompensation);
+        void PaintBg(Func<double, double, RgbColor?> shader, double alpha, string blendMode)
+        {
+            if (background is { } bg) { var inner = shader; shader = (x, y) => inner(x, y) ?? bg; }
+            PaintShader(shader, alpha, blendMode);
+        }
         PdfFunction[]? fns = null;
         var fo = R(d.Get("Function"));
         if (type is >= 4 and <= 7 && fo is not null)
@@ -1309,15 +1420,18 @@ public sealed class ContentInterpreter
         {
             var c = Arr("Coords"); var dom = Arr("Domain") is { Length: 2 } dm ? dm : [0, 1]; var ext = Ext();
             if (fns is null) return;
-            // Pre-sample the colour ramp for speed.
-            var ramp = new RgbColor[257];
-            for (var i = 0; i <= 256; i++) ramp[i] = EvalT(dom[0] + (dom[1] - dom[0]) * i / 256.0);
-            RgbColor At(double s) => ramp[(int)Math.Round(Math.Clamp(s, 0, 1) * 256)];
+            // Pre-sample the colour ramp; the step count follows the on-screen gradient length so a hard stop is placed within a quarter pixel.
+            var axis = type == 2 && c.Length >= 4 ? Math.Sqrt((c[2] - c[0]) * (c[2] - c[0]) + (c[3] - c[1]) * (c[3] - c[1]))
+                : type == 3 && c.Length >= 6 ? Math.Max(Math.Sqrt((c[3] - c[0]) * (c[3] - c[0]) + (c[4] - c[1]) * (c[4] - c[1])), Math.Max(Math.Abs(c[2]), Math.Abs(c[5]))) : 0;
+            var steps = double.IsFinite(axis) ? (int)Math.Clamp(Math.Ceiling(axis * Math.Sqrt(Math.Abs(m.Det)) * 4), 256, 4096) : 256;
+            var ramp = new RgbColor[steps + 1];
+            for (var i = 0; i <= steps; i++) ramp[i] = EvalT(dom[0] + (dom[1] - dom[0]) * i / steps);
+            RgbColor At(double s) => ramp[(int)Math.Round(Math.Clamp(s, 0, 1) * steps)];
             if (type == 2 && c.Length >= 4)
             {
                 double x0 = c[0], y0 = c[1], dx = c[2] - c[0], dy = c[3] - c[1];
                 var den = dx * dx + dy * dy;
-                PaintShader((px, py) =>
+                PaintBg((px, py) =>
                 {
                     var (ux, uy) = inv.Apply(px, py);
                     var s = den == 0 ? 0 : ((ux - x0) * dx + (uy - y0) * dy) / den;
@@ -1329,7 +1443,7 @@ public sealed class ContentInterpreter
             else if (type == 3 && c.Length >= 6)
             {
                 double x0 = c[0], y0 = c[1], r0 = c[2], x1 = c[3], y1 = c[4], r1 = c[5];
-                PaintShader((px, py) =>
+                PaintBg((px, py) =>
                 {
                     var (ux, uy) = inv.Apply(px, py);
                     // Solve |p - (c0 + s(c1-c0))| = r0 + s(r1-r0) for the largest valid s.
@@ -1360,7 +1474,7 @@ public sealed class ContentInterpreter
             var dom = Arr("Domain") is { Length: 4 } dm ? dm : [0, 1, 0, 1];
             var mm = R(d.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity;
             var minv = mm.Invert();
-            PaintShader((px, py) =>
+            PaintBg((px, py) =>
             {
                 var (ux, uy) = inv.Apply(px, py);
                 var (sx, sy) = minv.Apply(ux, uy);
@@ -1380,7 +1494,7 @@ public sealed class ContentInterpreter
             var shader = MeshShading.ToShader(mesh, comps => fns is null
                 ? cs.ToRgb(comps.Length < cs.Components ? [.. comps, .. new double[cs.Components - comps.Length]] : comps, intent, blackPointCompensation)
                 : EvalT(comps[0]));
-            PaintShader(shader, _gs.FillAlpha, _gs.BlendMode);
+            PaintBg(shader, _gs.FillAlpha, _gs.BlendMode);
         }
         else Warn($"shading type {type} not rendered");
     }
@@ -1435,6 +1549,7 @@ public sealed class ContentInterpreter
         if (_hiddenDepth > 0) return;
         if (d.TryGetValue("Filter", out var fv)) d["Filter"] = ExpandNames(fv);
         var stream = new PdfStream(new PdfDictionary(d), raw);
+        if (CaptureInlineImages) _lastInline = stream;
         try { DrawImage(stream, res); } catch (Exception e) when (e is NotSupportedException or IndexOutOfRangeException or ArgumentException) { Warn("inline image: " + e.Message); }
     }
 

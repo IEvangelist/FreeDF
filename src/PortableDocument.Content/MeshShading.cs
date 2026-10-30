@@ -127,11 +127,9 @@ static class MeshShading
                 for (var i = skipCols; i < 4; i++) cc[i] = Col();
                 br.Align();
                 p = pp; c = cc; have = true;
-                // Subdivide in proportion to the patch's device size so large patches stay smooth.
-                double mnx = double.MaxValue, mxx = double.MinValue, mny = double.MaxValue, mxy = double.MinValue;
-                foreach (var q in p) { mnx = Math.Min(mnx, q.X); mxx = Math.Max(mxx, q.X); mny = Math.Min(mny, q.Y); mxy = Math.Max(mxy, q.Y); }
-                var span = Math.Max(mxx - mnx, mxy - mny);
-                Tessellate(mesh, p, c, double.IsFinite(span) ? Math.Clamp((int)Math.Ceiling(span / 8), 8, 40) : 8);
+                var finite = true;
+                foreach (var q in p) if (!double.IsFinite(q.X) || !double.IsFinite(q.Y) || Math.Abs(q.X) > 1e100 || Math.Abs(q.Y) > 1e100) finite = false;
+                if (finite) Tessellate(mesh, p, c, decode);
             }
         }
         return mesh;
@@ -143,16 +141,61 @@ static class MeshShading
         => ((-4 * a.X + 6 * (b.X + c.X) - 2 * (d.X + e.X) + 3 * (f.X + g.X) - h.X) / 9,
             (-4 * a.Y + 6 * (b.Y + c.Y) - 2 * (d.Y + e.Y) + 3 * (f.Y + g.Y) - h.Y) / 9);
 
-    static void Tessellate(Mesh mesh, (double X, double Y)[,] p, double[][] c, int n)
+    /// <summary>Maximum geometric deviation (device pixels) of the triangulated patch from the exact bicubic surface.</summary>
+    const double GeometryTolerance = 0.125;
+    /// <summary>Maximum colour error, as a fraction of each component's /Decode range, from interpolating bilinear colours across triangles.</summary>
+    const double ColorTolerance = 1.0 / 1024;
+    const int MaxDivisions = 256;
+
+    /// <summary>
+    /// Triangulates a Coons/tensor patch (ISO 32000-2 8.7.4.5.7-8) so the result stays within <see cref="GeometryTolerance"/> of the bicubic Bezier
+    /// surface and within <see cref="ColorTolerance"/> of the bilinear colour field. The division counts follow from the control net: a cubic's second
+    /// derivative is at most 6x the largest second difference of its control points, so linear interpolation with n segments errs by at most 6M/(8n^2);
+    /// the triangle split of a bilinear term errs by at most its coefficient/4 per cell.
+    /// </summary>
+    static void Tessellate(Mesh mesh, (double X, double Y)[,] p, double[][] c, double[] decode)
     {
-        var grid = new Vertex[n + 1, n + 1];
-        var bu = new double[4]; var bv = new double[4];
-        for (var iu = 0; iu <= n; iu++)
+        double mu = 0, mv = 0, mc = 0, lenU = 0, lenV = 0;
+        for (var j = 0; j < 4; j++)
         {
-            var u = (double)iu / n; Bern(u, bu);
-            for (var iv = 0; iv <= n; iv++)
+            double l = 0;
+            for (var i = 0; i < 3; i++) l += Dist(p[i, j], p[i + 1, j]);
+            lenU = Math.Max(lenU, l);
+            for (var i = 0; i < 2; i++) mu = Math.Max(mu, Dist2(p[i, j], p[i + 1, j], p[i + 2, j]));
+        }
+        for (var i = 0; i < 4; i++)
+        {
+            double l = 0;
+            for (var j = 0; j < 3; j++) l += Dist(p[i, j], p[i, j + 1]);
+            lenV = Math.Max(lenV, l);
+            for (var j = 0; j < 2; j++) mv = Math.Max(mv, Dist2(p[i, j], p[i, j + 1], p[i, j + 2]));
+        }
+        for (var i = 0; i < 3; i++)
+            for (var j = 0; j < 3; j++)
+                mc = Math.Max(mc, Math.Sqrt(Math.Pow(p[i + 1, j + 1].X - p[i + 1, j].X - p[i, j + 1].X + p[i, j].X, 2) + Math.Pow(p[i + 1, j + 1].Y - p[i + 1, j].Y - p[i, j + 1].Y + p[i, j].Y, 2)));
+        var mixed = Math.Sqrt(6.75 * mc / GeometryTolerance);
+        var nu = Math.Max(Math.Sqrt(2.25 * mu / GeometryTolerance), mixed);
+        var nv = Math.Max(Math.Sqrt(2.25 * mv / GeometryTolerance), mixed);
+
+        double colorCross = 0;
+        for (var k = 0; k < c[0].Length; k++)
+        {
+            var range = Math.Abs(decode[5 + 2 * k] - decode[4 + 2 * k]);
+            if (range > 0) colorCross = Math.Max(colorCross, Math.Abs(c[0][k] - c[1][k] - c[3][k] + c[2][k]) / range);
+        }
+        var nc = Math.Sqrt(colorCross / (4 * ColorTolerance));
+        // Cells narrower than a pixel cannot change the raster; MaxDivisions bounds work for pathological control nets.
+        int Clamp(double n, double len) => DivisionCount(n, nc, len);
+        var du = Clamp(nu, lenU); var dv = Clamp(nv, lenV);
+
+        var grid = new Vertex[du + 1, dv + 1];
+        var bu = new double[4]; var bv = new double[4];
+        for (var iu = 0; iu <= du; iu++)
+        {
+            var u = (double)iu / du; Bern(u, bu);
+            for (var iv = 0; iv <= dv; iv++)
             {
-                var v = (double)iv / n; Bern(v, bv);
+                var v = (double)iv / dv; Bern(v, bv);
                 double x = 0, y = 0;
                 for (var i = 0; i < 4; i++)
                     for (var j = 0; j < 4; j++) { var w = bu[i] * bv[j]; x += w * p[i, j].X; y += w * p[i, j].Y; }
@@ -162,13 +205,25 @@ static class MeshShading
                 grid[iu, iv] = new Vertex(x, y, col);
             }
         }
-        for (var i = 0; i < n; i++)
-            for (var j = 0; j < n; j++)
+        for (var i = 0; i < du; i++)
+            for (var j = 0; j < dv; j++)
             {
                 mesh.Triangles.Add((grid[i, j], grid[i + 1, j], grid[i, j + 1]));
                 mesh.Triangles.Add((grid[i + 1, j], grid[i + 1, j + 1], grid[i, j + 1]));
             }
     }
+
+    /// <summary>Division count for one axis; non-finite estimates (overflowing coordinates or an infinite /Decode range) take the maximum.</summary>
+    static int DivisionCount(double n, double colorN, double len)
+    {
+        var want = double.IsNaN(n) || double.IsNaN(colorN) ? MaxDivisions : Math.Max(n, colorN);
+        var cap = double.IsFinite(len) ? Math.Min(MaxDivisions, Math.Max(1, Math.Ceiling(len))) : MaxDivisions;
+        return (int)Math.Clamp(double.IsFinite(want) ? Math.Ceiling(want) : MaxDivisions, 1, cap);
+    }
+
+    static double Dist((double X, double Y) a, (double X, double Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+    static double Dist2((double X, double Y) a, (double X, double Y) b, (double X, double Y) c)
+        => Math.Sqrt(Math.Pow(a.X - 2 * b.X + c.X, 2) + Math.Pow(a.Y - 2 * b.Y + c.Y, 2));
 
     static void Bern(double t, double[] b)
     {

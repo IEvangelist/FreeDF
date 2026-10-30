@@ -14,7 +14,7 @@ public class ObjectReferenceTextTests
 
     static PdfDocument Load(params (int Number, string Body)[] replacements)
     {
-        var bodies = new[]
+        var bodies = new List<string>
         {
             "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -29,8 +29,112 @@ public class ObjectReferenceTextTests
             "<< /Nums [1 7 0 R 2 [8 0 R]] >>",
             ObjPdf.Stream("BT /F1 12 Tf (Inactive) Tj ET", Appearance),
         };
-        foreach (var (number, body) in replacements) bodies[number - 1] = body;
-        return PdfDocument.Load(ObjPdf.Build(bodies));
+        foreach (var (number, body) in replacements)
+        {
+            while (bodies.Count < number) bodies.Add("null");
+            bodies[number - 1] = body;
+        }
+        return PdfDocument.Load(ObjPdf.Build(bodies.ToArray()));
+    }
+
+    const string FormFont = "/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>";
+    const string WholePage = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /StructParents 0 /Resources << /XObject << /Fm 13 0 R >> /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>";
+    const string FormObjr = "<< /S /Figure /K << /Type /OBJR /Pg 3 0 R /Obj 13 0 R >> >>";
+
+    static PdfDocument WholeForm(string formKeys = "/StructParent 3", params (int Number, string Body)[] more) => Load(
+        [
+            (3, WholePage),
+            (4, ObjPdf.Stream("/Fm Do")),
+            (7, FormObjr),
+            (11, "<< /Nums [1 7 0 R 3 7 0 R] >>"),
+            (13, ObjPdf.Stream("BT /F1 12 Tf 10 50 Td (Form text) Tj ET", Appearance + " " + formKeys + " " + FormFont)),
+            .. more,
+        ]);
+
+    [Fact]
+    public void NestedAppearanceFormsContributeThroughTheOuterAppearance()
+    {
+        var doc = Load(
+            (10, ObjPdf.Stream(Text + " /Inner Do", Appearance + " /Resources << /XObject << /Inner 12 0 R >> /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>")),
+            (12, ObjPdf.Stream("BT /F1 12 Tf 10 40 Td (Nested) Tj ET", Appearance + " /Resources << /XObject << /Outer 10 0 R >> /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>")));
+        var extractor = new StructuredTextExtractor(doc);
+        Assert.Equal("Appearance Nested", extractor.Extract());
+        Assert.False(extractor.NestedFormsTruncated);
+    }
+
+    [Fact]
+    public void NestedFormsStayUnattributedWhenExplicitlyTaggedByMcr()
+    {
+        var doc = Load(
+            (6, "<< /S /Document /Pg 3 0 R /K [7 0 R 8 0 R] >>"),
+            (8, "<< /S /P /Pg 3 0 R /K << /Type /MCR /Stm 12 0 R /MCID 0 >> >>"),
+            (10, ObjPdf.Stream(Text + " /Inner Do", Appearance + " /Resources << /XObject << /Inner 12 0 R >> /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>")),
+            (11, "<< /Nums [1 7 0 R 2 [8 0 R]] >>"),
+            (12, ObjPdf.Stream("/Span <</MCID 0>> BDC BT /F1 12 Tf 10 40 Td (Nested) Tj ET EMC", Appearance + " /StructParents 2 " + FormFont)));
+        Assert.Equal("Appearance\nNested", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
+    public void ManyPagesWithObjrFormsAttributeEachFormToItsOwnPage()
+    {
+        const int pages = 60;
+        var bodies = new List<string>
+        {
+            "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 3 0 R >>",
+            $"<< /Type /Pages /Kids [{string.Concat(Enumerable.Range(0, pages).Select(i => $"{6 + 4 * i} 0 R "))}] /Count {pages} >>",
+            "<< /Type /StructTreeRoot /K 4 0 R /ParentTree 5 0 R >>",
+            $"<< /S /Document /K [{string.Concat(Enumerable.Range(0, pages).Select(i => $"{9 + 4 * i} 0 R "))}] >>",
+            $"<< /Nums [{string.Concat(Enumerable.Range(0, pages).Select(i => $"{i} {9 + 4 * i} 0 R "))}] >>",
+        };
+        for (var i = 0; i < pages; i++)
+        {
+            var b = 6 + 4 * i;
+            bodies.Add($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents {b + 1} 0 R /Resources << /XObject << /Fm {b + 2} 0 R >> >> >>");
+            bodies.Add(ObjPdf.Stream("/Fm Do"));
+            bodies.Add(ObjPdf.Stream($"BT /F1 12 Tf 10 50 Td (T{i}) Tj ET", $"/Type /XObject /Subtype /Form /BBox [0 0 100 100] /StructParent {i} /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>"));
+            bodies.Add($"<< /S /Figure /K << /Type /OBJR /Pg {b} 0 R /Obj {b + 2} 0 R >> >>");
+        }
+        var text = StructuredTextExtractor.Extract(PdfDocument.Load(ObjPdf.Build(bodies.ToArray())));
+        Assert.Equal(Enumerable.Range(0, pages).Select(i => $"T{i}"), text!.Split('\n'));
+    }
+
+    [Fact]
+    public void WholeObjectFormXObjectContributesTextWhenStructParentMapsBack()
+    {
+        var doc = WholeForm();
+        Assert.Equal("Form text", StructuredTextExtractor.Extract(doc));
+        Assert.Equal("Form text", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/StructParent 4")]
+    [InlineData("/StructParent -3")]
+    [InlineData("/StructParent 1")]
+    public void WholeObjectFormXObjectNeedsAMatchingStructParent(string keys)
+    {
+        var doc = WholeForm(keys, (11, "<< /Nums [1 6 0 R 3 7 0 R] >>"));
+        Assert.Equal("", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
+    public void WholeObjectFormInsideAnEnclosingPageMcrIsNotDuplicated()
+    {
+        var doc = WholeForm(more:
+        [
+            (4, ObjPdf.Stream("/Span <</MCID 0>> BDC /Fm Do EMC")),
+            (6, "<< /S /Document /Pg 3 0 R /K [7 0 R 14 0 R] >>"),
+            (11, "<< /Nums [0 [14 0 R] 3 7 0 R] >>"),
+            (14, "<< /S /P /Pg 3 0 R /K 0 >>"),
+        ]);
+        Assert.Equal("Form text", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
+    public void ImageXObjectObjrNeverInfersText()
+    {
+        var doc = WholeForm(more: (13, ObjPdf.Stream("x", "/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceGray /StructParent 3")));
+        Assert.Equal("", StructuredTextExtractor.Extract(doc));
     }
 
     [Fact]

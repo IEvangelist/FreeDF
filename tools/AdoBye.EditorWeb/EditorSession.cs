@@ -53,9 +53,17 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     public void OpenFile(string path)
     {
         var doc = PdfDocument.Load(File.ReadAllBytes(path));
-        Reset(PdfEditor.Open(doc), !doc.File.IsEncrypted);
+        OpenDocument(doc);
         fileName = Path.GetFileName(path);
         savePath = Path.GetFullPath(path);
+    }
+
+    void OpenDocument(PdfDocument doc)
+    {
+        Reset(PdfEditor.Open(doc), !doc.File.IsEncrypted);
+        pristine = doc;
+        // PdfEditor.Open retains source object numbers until a rewrite is needed.
+        pristineBack = doc.File.Xref.Keys.ToDictionary(number => number, number => number);
     }
 
     void Reset(PdfEditor e, bool allowRecovery = true)
@@ -207,8 +215,14 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     {
         if (baseSnapshot is null)
         {
-            Prepare(originalTextOnly: true);
-            baseSnapshot = PdfDocument.Load(editor.Save());
+            if (!items.Values.Any(page => page.Any(AffectsBase)) &&
+                !objEdits.Values.Any(page => page.Count > 0) && formObjEdits.Count == 0)
+                baseSnapshot = Pristine();
+            else
+            {
+                Prepare(originalTextOnly: true);
+                baseSnapshot = PdfDocument.Load(editor.Save());
+            }
         }
         return baseSnapshot;
     }
@@ -518,7 +532,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             {
                 case "open":
                     var opened = PdfDocument.Load(body ?? throw new ArgumentException("Choose a PDF."));
-                    Reset(PdfEditor.Open(opened), !opened.File.IsEncrypted);
+                    OpenDocument(opened);
                     fileName = uploadName ?? "document.pdf"; return Ok;
                 case "recovery":
                     return AsJson(new { originalForms = RestoreRecovery(Read<RecoveryData>() ?? throw new InvalidDataException("Missing local recovery record."),

@@ -326,23 +326,36 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     // ---------------------------------------------------------------- clipping
 
-    public void Clip(PathData path, Matrix ctm, bool evenOdd)
+    public void Clip(PathData path, Matrix ctm, bool evenOdd) => Clip(path, ctm, evenOdd, null);
+
+    /// <summary>Intersects the clip with the area a stroke of <paramref name="path"/> would paint (used for pattern-painted strokes).</summary>
+    public bool ClipStroke(PathData path, Matrix ctm, StrokeStyle style)
     {
-        if (_preMask is null) { ClipCore(path, ctm, evenOdd); return; }
+        Clip(path, ctm, false, style);
+        return true;
+    }
+
+    void Clip(PathData path, Matrix ctm, bool evenOdd, StrokeStyle? stroke)
+    {
+        if (_preMask is null) { ClipCore(path, ctm, evenOdd, stroke); return; }
         // A soft mask is folded into the clip; keep the mask-free clip in step so it survives clearing the mask.
         var masked = _clip;
         _clip = _preMask;
-        ClipCore(path, ctm, evenOdd);
+        ClipCore(path, ctm, evenOdd, stroke);
         _preMask = _clip;
         _clip = masked;
-        ClipCore(path, ctm, evenOdd);
+        ClipCore(path, ctm, evenOdd, stroke);
     }
 
-    void ClipCore(PathData path, Matrix ctm, bool evenOdd)
+    void ClipCore(PathData path, Matrix ctm, bool evenOdd, StrokeStyle? stroke)
     {
         if (_clip.Empty) return;
-        if (TryRectClip(path, ctm)) return;
-        BeginEdges(); AddPath(path, ctm, 0.1);
+        if (stroke is null)
+        {
+            if (TryRectClip(path, ctm)) return;
+            BeginEdges(); AddPath(path, ctm, 0.1);
+        }
+        else AddStroke(path, ctm, stroke);
         if (!BeginScan(evenOdd, out var bx0, out var by0, out var bx1, out var by1)) { _clip = new ClipMask(); return; }
         var bw = bx1 - bx0;
         var mask = new float[bw * (by1 - by0)];
@@ -400,6 +413,13 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     public void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode)
     {
         if (_clip.Empty) return;
+        AddStroke(path, ctm, style);
+        PaintScan(false, color, alpha, blendMode);
+    }
+
+    /// <summary>Begins a new edge list holding the (non-zero) outline of the stroked path.</summary>
+    void AddStroke(PathData path, Matrix ctm, StrokeStyle style)
+    {
         var scale = Math.Sqrt(Math.Abs(ctm.Det));
         var width = style.Width;
         if (width * scale < 1) width = scale > 0 ? 1 / scale : 1; // hairline: at least one device pixel
@@ -413,10 +433,9 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         }
         BeginEdges();
         foreach (var p in polys) AddPoly(p, ctm);
-        PaintScan(false, color, alpha, blendMode);
     }
 
-    static IEnumerable<(List<(double X, double Y)>, bool)> ApplyDash(List<(double X, double Y)> pts, bool closed, StrokeStyle s)
+    internal static IEnumerable<(List<(double X, double Y)>, bool)> ApplyDash(List<(double X, double Y)> pts, bool closed, StrokeStyle s)
     {
         var dash = s.Dash;
         double sum = 0; var anyNeg = false; var allZero = true;

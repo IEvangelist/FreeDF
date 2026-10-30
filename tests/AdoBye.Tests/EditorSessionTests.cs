@@ -66,6 +66,36 @@ public class EditorSessionTests
     }
 
     [Fact]
+    public void PristineBackgroundTracksDocumentMutationsButExcludesNewOverlays()
+    {
+        var source = AdoBye.Tests.TestPdf.Build("0 0 1 rg 20 30 80 50 re f BT /F1 18 Tf 30 90 Td (Original) Tj ET",
+            "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>");
+        var session = new EditorSession(new FontCatalog());
+        session.Handle("POST", "/api/open", new Dictionary<string, string>(), source, "background.pdf");
+        Call(session, "GET", "/api/state");
+        Call(session, "GET", "/api/page/0/text");
+        var original = Call(session, "GET", "/api/page/0.png", query: [("dpi", "72"), ("bare", "true")]).Data;
+        Assert.Equal(Pdf.RenderPage(PdfDocument.Load(source).Pages[0], 72).ToPng(), original);
+
+        var rectangle = new Item("overlay", "rect", 10, 10, 30, 30, null, null, 0, false, false,
+            null, "#ff0000", "", 0, 1, null, 0, 0);
+        Call(session, "PUT", "/api/page/0/items", new[] { rectangle });
+        Call(session, "POST", "/api/title", query: [("t", "Changed")]);
+        Call(session, "GET", "/api/state");
+        Assert.Equal(original, Call(session, "GET", "/api/page/0.png", query: [("dpi", "72"), ("bare", "true")]).Data);
+        Assert.NotEqual(original, Call(session, "GET", "/api/page/0.png", query: [("dpi", "72")]).Data);
+
+        Call(session, "POST", "/api/rotate/0/90");
+        Call(session, "GET", "/api/state");
+        var rotated = PdfDocument.Load(source);
+        var editor = PdfEditor.Open(rotated);
+        editor.SetRotation(0, 90);
+        var expected = PdfDocument.Load(editor.Save());
+        Assert.Equal(Pdf.RenderPage(expected.Pages[0], 72).ToPng(),
+            Call(session, "GET", "/api/page/0.png", query: [("dpi", "72"), ("bare", "true")]).Data);
+    }
+
+    [Fact]
     public void OverlayOnlyChangesRetainBarePageRasterCache()
     {
         var session = new EditorSession(new FontCatalog());

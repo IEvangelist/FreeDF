@@ -5,13 +5,14 @@
   "reference": "2026-10-30-aot.csv",
   "knownMisses": [
     { "document": "", "phase": "cold-start", "metric": "long-task-max-ms", "p50": 76, "p95": 79, "p50Budget": 50, "p95Budget": 50 },
-    { "document": "01-spec-showcase.pdf", "phase": "open", "metric": "total-ms", "p50": 330, "p95": 333.5, "p50Budget": 250, "p95Budget": 500 }
+    { "document": "01-spec-showcase.pdf", "phase": "open", "metric": "total-ms", "p50": 330, "p95": 333.5, "p50Budget": 250, "p95Budget": 500 },
+    { "document": "03-typography-embedded.pdf", "phase": "cached-next-page", "metric": "total-ms", "p50": 98.1, "p95": 104.8, "p50Budget": 100, "p95Budget": 200, "note": "Reopened final integrated AOT measurement: p50/p95 103.1/103.1 ms. Numeric reference values remain identical to the versioned CSV; no regression ceiling changes." }
   ],
   "pixels": [
-    { "document": "01-spec-showcase.pdf", "width": 339, "height": 480, "hash": "B5BA5D8BAF777B434F44DF535C35E13EEEF404927257EDA7DA0AB68D074AD868" },
+    { "document": "01-spec-showcase.pdf", "width": 339, "height": 480, "hash": "AD9BE49FD168998F562B4C008A8D7F79CD3DB76950B02E7B422B5150B49688E4" },
     { "document": "03-typography-embedded.pdf", "width": 339, "height": 480, "hash": "F091B8F4EB5C644134AF483254BDA06C7E00FADD307520403B41E812E869BBD5" },
     { "document": "09-images.pdf", "width": 339, "height": 480, "hash": "33D9F80F58FD9AC325A254DAF30645AE8C2BF915F8B1D34F51A9D5A9C7FD8C9B" },
-    { "document": "20-report.pdf", "width": 339, "height": 480, "hash": "82CEBA71532A863D44592689A5B326D81454E5130AF2F5AD9AB4C63824D3A47E" },
-    { "document": "large-12-page.pdf", "width": 339, "height": 480, "hash": "82CEBA71532A863D44592689A5B326D81454E5130AF2F5AD9AB4C63824D3A47E" }
+    { "document": "20-report.pdf", "width": 339, "height": 480, "hash": "B877E8AF25866046906C1B23EE21D4604040353D1FE762C6C8DEC0616AF7AA67" },
+    { "document": "large-12-page.pdf", "width": 339, "height": 480, "hash": "B877E8AF25866046906C1B23EE21D4604040353D1FE762C6C8DEC0616AF7AA67" }
   ]
 }

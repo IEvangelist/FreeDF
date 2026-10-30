@@ -250,7 +250,7 @@ public static class PdfWriter
             case PdfBoolean b: W(b.Value ? "true" : "false"); break;
             case PdfInteger i: W(i.Value.ToString(CultureInfo.InvariantCulture)); break;
             case PdfReal r: W(Real(r.Value)); break;
-            case PdfString s: W("<" + Convert.ToHexString(ctx.Dec is not null ? ctx.Dec.SealString(s.Bytes, ctx.Num) : ctx.Enc is null ? s.Bytes : ctx.Enc.Encrypt(s.Bytes, ctx.Num)) + ">"); break;
+            case PdfString s: W("<" + Convert.ToHexString(ctx.Dec is not null ? ctx.Dec.SealString(s.Bytes, ctx.Num) : ctx.Enc is null || ctx.Enc.EmbeddedFilesOnly ? s.Bytes : ctx.Enc.Encrypt(s.Bytes, ctx.Num)) + ">"); break;
             case PdfName n: W(Name(n.Value)); break;
             case PdfRef r: W(ctx.Map is null ? $"{r.Number} 0 R" : ctx.Map.TryGetValue(r.Number, out var nn) ? $"{nn} 0 R" : "null"); break;
             case PdfArray a:
@@ -263,7 +263,7 @@ public static class PdfWriter
                     var data = st.RawData;
                     var addFlate = ctx.Compress && !st.Dict.Entries.ContainsKey("Filter") && data.Length >= 32;
                     if (addFlate) data = Deflate(data);
-                    if (ctx.Enc is not null && !(type == "Metadata" && !ctx.Enc.EncryptMetadata)) data = ctx.Enc.Encrypt(data, ctx.Num);
+                    if (ctx.Enc is not null && !(type == "Metadata" && !ctx.Enc.EncryptMetadata) && (!ctx.Enc.EmbeddedFilesOnly || type == "EmbeddedFile")) data = ctx.Enc.Encrypt(data, ctx.Num);
                     if (ctx.Dec is not null) data = ctx.Dec.SealStream(st, ctx.Num);
                     W("<<");
                     foreach (var (k, v) in st.Dict.Entries)

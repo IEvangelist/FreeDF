@@ -71,11 +71,11 @@ public static class PortableDocument
     }
 
     /// <summary>Text spans plus painted graphics objects, in the same CropBox space as <see cref="ExtractText"/>.</summary>
-    public static (List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects) Analyze(PdfPage page)
+    public static (List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects) Analyze(PdfPage page, bool collectHidden = false)
     {
         var box = page.CropBox;
         using var raster = new SoftwareRasterizer(1, 1);
-        var interp = new ContentInterpreter(page.Document.File, raster) { TextSpans = [], Objects = [], DrawAnnotations = false, DrawGraphics = false };
+        var interp = new ContentInterpreter(page.Document.File, raster) { TextSpans = [], Objects = [], DrawAnnotations = false, DrawGraphics = false, CollectHidden = collectHidden, CaptureInlineImages = collectHidden };
         interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
         return (interp.TextSpans, interp.Objects);
     }

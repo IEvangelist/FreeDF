@@ -116,7 +116,7 @@ zero overhead or of public-network performance.
 | Select existing editable text; add text; typography/colour/alignment/spacing | Selection/focus/cancel does not replace PDF content. Actual text changes reuse supported original embedded glyphs and text transforms; the PDF renderer paints edited originals rather than approximate browser fonts |
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
-| Redaction | Same content-removing redactor, not a painted-cover substitute |
+| Redaction | Same content-removing redactor: arbitrary paths/strokes/clips, rotated content, per-invocation shared/nested Forms, partial inline/stencil image blanking and hidden optional content; not a painted-cover substitute |
 | Forms: text, button and choice fields | Same field-value edits; existing UI represents choice values as text |
 | Page rotate/delete/reorder/duplicate; blank insert; merge/import | Same page editor |
 | Title/document metadata; search/case matching/highlights | Same local session |
@@ -215,6 +215,17 @@ the original unredacted input so edits/undo remain possible. Clear it after
 sensitive work. Browser eviction, private-browsing policies, device failure and
 closing before **Recovery saved** can lose changes; keep downloaded copies.
 
+Redaction downloads require a full rewrite, not an incremental save retaining
+original bytes. Paths are cut after bounded curve flattening (0.05 page-space
+units); unsupported/singular/over-budget geometry is removed whole and
+unsupported clips become empty. Shared Forms are copied only for affected
+invocations, so untouched uses intentionally keep their content. Partial raster/
+inline/stencil images blank covered pixel footprints; hidden optional content
+is included. Redacted Form copies drop Metadata/PieceInfo/LastModified and
+unused replaced resource references are removed. Glyph/outline matching still
+depends on extracted Unicode and geometry; this is not a document-wide search
+for every copy of a secret or a purge of undo/clipboard/recovery storage.
+
 `AdoBye.EditorSmoke --recovery <absolute-published-wwwroot>` checks real embedded-
 font text edits and exact resumed raster pixels, image delete/undo/clipboard
 paste across reload, prompt gating, durable writes/deletes, encrypted-input
@@ -252,8 +263,20 @@ uses bounded row batches rather than another whole-page copy.
 Fresh-render gates additionally require p50/p95 below 1000/1500 ms and managed
 allocation below 200 MB; allocation is not peak browser working set.
 
+The [snapshot-reuse comparison](performance/2026-10-30-aot.md#snapshot-reuse-matched-released-runtime-comparison)
+uses the released runtime as its control, not the historical base64/interpreter
+build. Sharing an unedited background with the pristine document and retaining
+the initial parsed source avoids redundant full-document rewrites. Showcase
+open improves from 330.5/332.7 to 296.9/298.9 ms; large open from 119.8/120.8
+to 105.0/106.4 ms. Original-text/graphics/redaction changes retain the prepared
+snapshot path and existing invalidation. Pixel, cache, allocation and AOT smoke
+gates remain unchanged. That snapshot-only result passed cached typography
+at 97.6/102.0 ms. The final five-branch integration reopens this miss at
+103.1/103.1 ms against 100/200; it is now explicitly recorded alongside
+showcase open (281.2/301.1 ms) and startup long task (71/72 ms).
+
 Hosted CI uses `--profile-ci <raw.json> docs\performance\editor-ci-known-misses.v1.json`.
-Its versioned policy retains the two established known misses and prints
+Its versioned policy records the three current known misses and prints
 `KNOWN MISSES (baseline open work)` plus the full strict-goal miss table in the job summary,
 and uploads both. The historical AOT reference CSV is preserved; fixed goals
 removed from the allowlist will be classified as `NEW GOAL MISS` if they regress.
@@ -264,6 +287,9 @@ budget failures block the job. New strict-goal misses below those relative
 ceilings remain visible as `NEW GOAL MISS`, not claims of goal attainment.
 A runner that meets a known original goal is marked `MET`, not rejected for
 being faster than the reference machine. The versioned baseline remains intact.
+The reopened cached-typography entry retains the CSV's numeric reference
+98.1/104.8 ms and separately records the observed 103.1/103.1 ms in its note.
+Known-miss classification does not raise its timing ceiling or change 100/200.
 Hosted timing decisions require a breach in at least two of three repeats:
 the median of per-repeat p95s is compared with the unchanged tail ceiling,
 while the median ceiling is retained. With only three repeat observations, the

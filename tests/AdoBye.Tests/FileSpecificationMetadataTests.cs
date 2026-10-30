@@ -81,4 +81,32 @@ public class FileSpecificationMetadataTests
         Assert.NotNull(spec.Dictionary);
         Assert.Equal("unicode", Encoding.ASCII.GetString(Assert.Single(doc.GetEmbeddedFiles()).Data));
     }
+
+    static PdfEmbeddedFile LoadParams(string parameters)
+    {
+        var doc = PdfDocument.Load(Encoding.ASCII.GetBytes(
+            "%PDF-2.0\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(a) 3 0 R] >> >> >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Filespec /F (a.txt) /EF << /F 4 0 R >> >>\nendobj\n" +
+            $"4 0 obj\n<< /Type /EmbeddedFile {parameters} /Length 5 >>\nstream\nhello\nendstream\nendobj\n" +
+            "trailer\n<< /Root 1 0 R /Size 5 >>\n%%EOF\n"));
+        return Assert.Single(doc.GetEmbeddedFiles());
+    }
+
+    [Theory]
+    [InlineData("/Params << /Size 5 /CheckSum <5d41402abc4b2a76b9719d911017c592> >>", true, true)]
+    [InlineData("/Params << /Size 6 /CheckSum <5d41402abc4b2a76b9719d911017c592> >>", false, true)]
+    [InlineData("/Params << /Size 5 /CheckSum <5d41402abc4b2a76b9719d911017c593> >>", true, false)]
+    [InlineData("/Params << /CheckSum <5d41> >>", null, false)]
+    [InlineData("/Params << /CheckSum (not a digest) /Size (5) >>", null, false)]
+    [InlineData("/Params << /ModDate (D:20250101000000Z) >>", null, null)]
+    [InlineData("", null, null)]
+    public void Embedded_file_size_and_md5_checksum_are_verified_without_altering_the_payload(string parameters, bool? size, bool? checksum)
+    {
+        var file = LoadParams(parameters);
+        Assert.Equal(size, file.SizeMatches);
+        Assert.Equal(checksum, file.ChecksumMatches);
+        Assert.Equal("hello", Encoding.ASCII.GetString(file.Data));
+    }
 }

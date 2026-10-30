@@ -2,6 +2,9 @@ using PortableDocument.Core;
 
 namespace PortableDocument.Document;
 
+/// <summary>A malformed or inconsistent logical-structure reference found by <see cref="StructureTree.ParseIssues"/> or <see cref="StructureTree.CheckConsistency"/>.</summary>
+public sealed record StructureIssue(string Code, string Message, string Clause, StructElement? Element, int? PageIndex, int? Mcid);
+
 /// <summary>A node of the logical structure tree (ISO 32000-2 14.7): a structure element, a marked-content reference or an object reference.</summary>
 public abstract class StructNode
 {
@@ -113,6 +116,97 @@ public sealed class StructureTree
     /// <summary>True when parsing stopped early because a depth or node limit was hit.</summary>
     public bool Truncated { get; private set; }
 
+    const int MaxIssues = 1000;
+    readonly List<StructureIssue> _parseIssues = [];
+
+    /// <summary>True when more than 1000 structure issues were found and only the first were retained.</summary>
+    public bool IssuesTruncated { get; private set; }
+
+    /// <summary>Malformed or non-local MCR/OBJR/element references encountered while parsing. Such nodes are ignored or kept inert; nothing is inferred from them.</summary>
+    public IReadOnlyList<StructureIssue> ParseIssues => _parseIssues;
+
+    void AddIssue(string code, string message, string clause, StructElement? element, int? page = null, int? mcid = null) =>
+        AddIssue(_parseIssues, code, message, clause, element, page, mcid);
+
+    void AddIssue(List<StructureIssue> issues, string code, string message, string clause, StructElement? element, int? page = null, int? mcid = null)
+    {
+        if (issues.Count >= MaxIssues) { IssuesTruncated = true; return; }
+        issues.Add(new StructureIssue(code, message, clause, element, page ?? element?.PageIndex, mcid));
+    }
+
+    /// <summary>Parse issues plus a bounded cross-check of /P parents, duplicate marked-content claims, and /ParentTree entries against the parsed tree
+    /// (ISO 32000-2 14.7.2, 14.7.5.2-14.7.5.4). Pure inspection: the tree and all raw dictionaries are unchanged.</summary>
+    public IReadOnlyList<StructureIssue> CheckConsistency()
+    {
+        var issues = new List<StructureIssue>(_parseIssues);
+        var hasParentTree = F.Resolve(Root.Get("ParentTree")) is PdfDictionary;
+        var lookups = new Dictionary<int, PdfObject?>();
+        PdfObject? Lookup(int key)
+        {
+            if (!lookups.TryGetValue(key, out var value)) lookups[key] = value = ParentTreeLookup(key);
+            return value;
+        }
+        var pageClaims = new HashSet<(int Page, int Mcid)>();
+        var streamClaims = new HashSet<(PdfStream Stream, int Mcid)>(new StreamClaimComparer());
+        var objects = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        if (!hasParentTree && Elements().Any(e => e.Children.Any(c => c is not StructElement)))
+            AddIssue(issues, "STRUCT-PARENTTREE-MISSING", "structure tree has no /ParentTree number tree", "ISO 32000-2 14.7.5.4", null);
+
+        foreach (var e in Elements())
+        {
+            if (F.Resolve(e.Dict.Get("P")) is PdfDictionary declared)
+            {
+                if (!ReferenceEquals(declared, e.Parent?.Dict ?? Root))
+                    AddIssue(issues, "STRUCT-P-MISMATCH", "element /P does not identify the element or root that lists it in /K", "ISO 32000-2 14.7.2", e);
+            }
+            else AddIssue(issues, "STRUCT-P-MISSING", "element has no /P parent reference", "ISO 32000-2 14.7.2", e);
+
+            foreach (var child in e.Children)
+            {
+                if (child is StructMarkedContent mc)
+                {
+                    var owner = mc.Stream?.Dict;
+                    if (mc.Stream is null && mc.PageIndex is null)
+                    {
+                        AddIssue(issues, "STRUCT-MCR-NOPAGE", "marked-content reference has no /Pg on itself or an ancestor, so its page is ambiguous", "ISO 32000-2 14.7.5.2", e, mcid: mc.Mcid);
+                        continue;
+                    }
+                    var duplicate = mc.Stream is { } stream ? !streamClaims.Add((stream, mc.Mcid)) : !pageClaims.Add((mc.PageIndex!.Value, mc.Mcid));
+                    if (duplicate)
+                        AddIssue(issues, "STRUCT-MCID-DUPLICATE", "marked-content sequence is referenced by more than one structure content item; the first in structure order owns it", "ISO 32000-2 14.7.5.2", e, mc.PageIndex, mc.Mcid);
+                    owner ??= mc.PageIndex is { } p && p < _doc.Pages.Count ? _doc.Pages[p].Dict : null;
+                    if (!hasParentTree || owner is null) continue;
+                    if (NonNegativeInteger(owner.Get("StructParents")) is not { } key)
+                        AddIssue(issues, "STRUCT-PARENTTREE-NOKEY", "content stream or page holding the marked content has no /StructParents key", "ISO 32000-2 14.7.5.4", e, mc.PageIndex, mc.Mcid);
+                    else if (Lookup(key) is not PdfArray array || mc.Mcid >= array.Count || !ReferenceEquals(F.Resolve(array[mc.Mcid]), e.Dict))
+                        AddIssue(issues, "STRUCT-PARENTTREE-MISMATCH", "/ParentTree entry for this MCID does not return the referencing structure element", "ISO 32000-2 14.7.5.4", e, mc.PageIndex, mc.Mcid);
+                }
+                else if (child is StructObjectRef reference && reference.Object is { } obj)
+                {
+                    var target = obj switch { PdfStream s => s.Dict, PdfDictionary d => d, _ => null };
+                    if (target is null) continue;
+                    if (!objects.Add(target))
+                        AddIssue(issues, "STRUCT-OBJR-DUPLICATE", "object is referenced by more than one /OBJR; the first in structure order owns it", "ISO 32000-2 14.7.5.3", e);
+                    if (!hasParentTree) continue;
+                    if (NonNegativeInteger(target.Get("StructParent")) is not { } key
+                        || Lookup(key) is not PdfDictionary parent || !ReferenceEquals(parent, e.Dict))
+                        AddIssue(issues, "STRUCT-OBJR-PARENTTREE", "object /StructParent does not map through /ParentTree to the referencing structure element", "ISO 32000-2 14.7.5.4", e);
+                }
+            }
+        }
+        return issues;
+    }
+
+    sealed class StreamClaimComparer : IEqualityComparer<(PdfStream Stream, int Mcid)>
+    {
+        public bool Equals((PdfStream Stream, int Mcid) x, (PdfStream Stream, int Mcid) y) => x.Mcid == y.Mcid && ReferenceEquals(x.Stream, y.Stream);
+        public int GetHashCode((PdfStream Stream, int Mcid) value) => HashCode.Combine(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value.Stream), value.Mcid);
+    }
+
+    /// <summary>Audits the /ParentTree number tree: ordering, duplicate keys, /Limits, cycles and malformed pairs (ISO 32000-2 7.9.7, Table 37).</summary>
+    public PdfTreeDiagnostics? GetParentTreeDiagnostics() =>
+        F.Resolve(Root.Get("ParentTree")) is PdfDictionary tree ? PdfTreeDiagnostics.Audit(F, tree, numberTree: true) : null;
+
     public static bool IsStandardType(string type) => Standard.Contains(type) || HeadingLevel(type) is not null;
 
     /// <summary>1..n for H1..Hn, 0 for the unnumbered H, null for anything else.</summary>
@@ -192,15 +286,31 @@ public sealed class StructureTree
                 var type = F.Resolve(d.Get("Type")).AsName();
                 if (type == "MCR")
                 {
-                    if (parent is null || NonNegativeInteger(d.Get("MCID")) is not { } mcid) return;
+                    if (parent is null || NonNegativeInteger(d.Get("MCID")) is not { } mcid)
+                    {
+                        AddIssue("STRUCT-MCR-MCID", "marked-content reference has no parent element or no non-negative /MCID and was ignored", "ISO 32000-2 14.7.5.2", parent);
+                        return;
+                    }
                     var stream = F.Resolve(d.Get("Stm")) as PdfStream;
-                    if (d.Get("Stm") is not null && (d.Get("Stm") is not PdfRef || stream is null)) return;
+                    if (d.Get("Stm") is not null && (d.Get("Stm") is not PdfRef || stream is null))
+                    {
+                        AddIssue("STRUCT-MCR-STM-NONLOCAL", "marked-content reference /Stm is not an indirect reference to a stream in this file and was ignored (inert)", "ISO 32000-2 14.7.5.2", parent, mcid: mcid);
+                        return;
+                    }
                     PdfObject? streamOwner = null;
                     if (d.Get("StmOwn") is { } rawOwner)
                     {
-                        if (stream is null || rawOwner is not PdfRef) return;
+                        if (stream is null || rawOwner is not PdfRef)
+                        {
+                            AddIssue("STRUCT-MCR-STMOWN", "marked-content reference /StmOwn requires /Stm and an indirect reference and was ignored", "ISO 32000-2 14.7.5.2", parent, mcid: mcid);
+                            return;
+                        }
                         streamOwner = F.Resolve(rawOwner);
-                        if (streamOwner is null or PdfNull) return;
+                        if (streamOwner is null or PdfNull)
+                        {
+                            AddIssue("STRUCT-MCR-STMOWN", "marked-content reference /StmOwn does not resolve and was ignored", "ISO 32000-2 14.7.5.2", parent, mcid: mcid);
+                            return;
+                        }
                     }
                     node = new StructMarkedContent
                     {
@@ -212,12 +322,23 @@ public sealed class StructureTree
                 }
                 else if (type == "OBJR")
                 {
-                    if (parent is null) return;
-                    node = new StructObjectRef { Object = F.Resolve(d.Get("Obj")), PageIndex = PageOf(d.Get("Pg")) ?? inheritedPage };
+                    if (parent is null)
+                    {
+                        AddIssue("STRUCT-OBJR-ROOT", "object reference has no parent structure element and was ignored", "ISO 32000-2 14.7.5.3", null);
+                        return;
+                    }
+                    var target = F.Resolve(d.Get("Obj"));
+                    if (target is not (PdfDictionary or PdfStream))
+                        AddIssue("STRUCT-OBJR-OBJ", "object reference /Obj does not resolve to a dictionary or stream in this file; no content is inferred", "ISO 32000-2 14.7.5.3", parent);
+                    node = new StructObjectRef { Object = target, PageIndex = PageOf(d.Get("Pg")) ?? inheritedPage };
                 }
                 else
                 {
-                    if (ReferenceEquals(d, Root) || _byDict.ContainsKey(d)) return;
+                    if (ReferenceEquals(d, Root) || _byDict.ContainsKey(d))
+                    {
+                        AddIssue("STRUCT-ELEMENT-REVISITED", "structure element is reachable more than once (cycle or shared child); later occurrences were ignored", "ISO 32000-2 14.7.2", parent);
+                        return;
+                    }
                     var el = BuildElement(d, depth, inheritedPage);
                     _byDict[d] = el;
                     node = el;
@@ -296,37 +417,44 @@ public sealed class StructureTree
         }
     }
 
-    /// <summary>Looks an integer key up in the ParentTree number tree.</summary>
-    public PdfObject? ParentTreeLookup(int key)
+    /// <summary>Looks an integer key up in the ParentTree number tree. The tree is indexed once in a single bounded pass (first occurrence of a key wins).</summary>
+    public PdfObject? ParentTreeLookup(int key) =>
+        key >= 0 && ParentTreeIndex().TryGetValue(key, out var value) ? value : null;
+
+    Dictionary<int, PdfObject?>? _parentTreeIndex;
+
+    /// <summary>True when indexing the /ParentTree stopped at the node, entry or depth bound.</summary>
+    public bool ParentTreeIndexTruncated { get; private set; }
+
+    Dictionary<int, PdfObject?> ParentTreeIndex()
     {
-        if (key < 0 || F.Resolve(Root.Get("ParentTree")) is not PdfDictionary root) return null;
+        if (_parentTreeIndex is not null) return _parentTreeIndex;
+        var index = new Dictionary<int, PdfObject?>();
+        _parentTreeIndex = index;
+        if (F.Resolve(Root.Get("ParentTree")) is not PdfDictionary root) return index;
         var pending = new Stack<(PdfDictionary Node, int Depth)>();
         var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
         pending.Push((root, 0));
-        var visited = 0;
-        while (pending.TryPop(out var entry) && visited++ < MaxNodes)
+        var work = 0;
+        while (pending.TryPop(out var entry))
         {
             var (node, depth) = entry;
-            if (depth >= 32 || !seen.Add(node)) continue;
+            if (!seen.Add(node)) continue;
+            if (depth >= 32 || ++work > MaxNodes) { ParentTreeIndexTruncated = true; continue; }
             if (F.Resolve(node.Get("Nums")) is PdfArray nums)
             {
                 for (var i = 0; i + 1 < nums.Count; i += 2)
-                    if (NonNegativeInteger(nums[i]) == key) return F.Resolve(nums[i + 1]);
+                {
+                    if (++work > MaxNodes) { ParentTreeIndexTruncated = true; break; }
+                    if (NonNegativeInteger(nums[i]) is { } k && !index.ContainsKey(k)) index[k] = F.Resolve(nums[i + 1]);
+                }
                 continue;
             }
             if (F.Resolve(node.Get("Kids")) is not PdfArray kids) continue;
             for (var i = kids.Count - 1; i >= 0; i--)
-            {
-                if (F.Resolve(kids[i]) is not PdfDictionary kd) continue;
-                if (F.Resolve(kd.Get("Limits")) is PdfArray { Count: >= 2 } lim
-                    && F.Resolve(lim[0]).AsNumber() is { } lo && F.Resolve(lim[1]).AsNumber() is { } hi)
-                {
-                    if (key < lo || key > hi) continue;
-                }
-                if (pending.Count < MaxNodes) pending.Push((kd, depth + 1));
-            }
+                if (F.Resolve(kids[i]) is PdfDictionary kd) pending.Push((kd, depth + 1));
         }
-        return null;
+        return index;
     }
 
     /// <summary>The structure element that owns marked-content sequence <paramref name="mcid"/> on a page, via the page's /StructParents and the ParentTree.</summary>

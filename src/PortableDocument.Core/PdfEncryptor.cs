@@ -31,6 +31,9 @@ public sealed class PdfEncryption
     /// <summary>The /P value; bit set = allowed. Default allows everything.</summary>
     public int Permissions { get; init; } = -4;
     public bool EncryptMetadata { get; init; } = true;
+    /// <summary>Encrypt only embedded file streams (/Type /EmbeddedFile): /StmF and /StrF are Identity and /EFF names the crypt filter (ISO 32000-2 7.6.6, Table 20).
+    /// Requires an AES method and no public-key recipients.</summary>
+    public bool EmbeddedFilesOnly { get; init; }
     /// <summary>Cipher and key length (default AES-256).</summary>
     public PdfEncryptionMethod Method { get; init; } = PdfEncryptionMethod.Aes256;
     /// <summary>Certificates that can open the file (public-key handler). Per-recipient permissions override <see cref="Permissions"/>.</summary>
@@ -52,11 +55,15 @@ internal sealed class PdfEncryptor
     readonly Func<int, byte[]> _rng;
     readonly PdfEncryptionMethod _method;
     public bool EncryptMetadata { get; }
+    public bool EmbeddedFilesOnly { get; }
     public PdfDictionary Dict { get; }
 
     public PdfEncryptor(PdfEncryption o, byte[] id)
     {
         _method = o.Method;
+        if (o.EmbeddedFilesOnly && (o.Recipients is { Count: > 0 } || o.Method is PdfEncryptionMethod.Rc4_40 or PdfEncryptionMethod.Rc4_128))
+            throw new NotSupportedException("Embedded-files-only encryption (/EFF) requires an AES method and the standard password handler");
+        EmbeddedFilesOnly = o.EmbeddedFilesOnly;
         _rng = o.RandomBytes is { } custom
             ? n => custom(n) is { } b && b.Length == n ? b : throw new ArgumentException($"PdfEncryption.RandomBytes must return exactly {n} bytes")
             : RandomNumberGenerator.GetBytes;
@@ -99,8 +106,9 @@ internal sealed class PdfEncryptor
         {
             ["Filter"] = new PdfName("Standard"), ["V"] = new PdfInteger(5), ["R"] = new PdfInteger(6), ["Length"] = new PdfInteger(256),
             ["P"] = new PdfInteger(o.Permissions), ["O"] = S(o48), ["U"] = S(u), ["OE"] = S(oe), ["UE"] = S(ue), ["Perms"] = S(permsEnc),
-            ["CF"] = cf, ["StmF"] = new PdfName("StdCF"), ["StrF"] = new PdfName("StdCF"),
+            ["CF"] = cf, ["StmF"] = new PdfName(o.EmbeddedFilesOnly ? "Identity" : "StdCF"), ["StrF"] = new PdfName(o.EmbeddedFilesOnly ? "Identity" : "StdCF"),
         };
+        if (o.EmbeddedFilesOnly) d["EFF"] = new PdfName("StdCF");
         if (!o.EncryptMetadata) d["EncryptMetadata"] = new PdfBoolean(false);
         return new PdfDictionary(d);
     }
@@ -150,7 +158,8 @@ internal sealed class PdfEncryptor
                 ["StdCF"] = new PdfDictionary(new Dictionary<string, PdfObject>
                 { ["CFM"] = new PdfName("AESV2"), ["AuthEvent"] = new PdfName("DocOpen"), ["Length"] = new PdfInteger(16) }),
             });
-            d["StmF"] = new PdfName("StdCF"); d["StrF"] = new PdfName("StdCF");
+            d["StmF"] = new PdfName(o.EmbeddedFilesOnly ? "Identity" : "StdCF"); d["StrF"] = new PdfName(o.EmbeddedFilesOnly ? "Identity" : "StdCF");
+            if (o.EmbeddedFilesOnly) d["EFF"] = new PdfName("StdCF");
             if (!encMeta) d["EncryptMetadata"] = new PdfBoolean(false);
         }
         return (key, new PdfDictionary(d));

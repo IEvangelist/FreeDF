@@ -16,6 +16,13 @@ public sealed record PdfEmbeddedFile(string Name, string? MimeType, long? Size, 
     public byte[]? Checksum { get; init; }
     public PdfDictionary? Parameters { get; init; }
     public PdfStream? Stream { get; init; }
+
+    /// <summary>Whether Params /Size equals the decoded byte count (ISO 32000-2 7.11.4.1, Table 45); null when /Size is absent or not a number.</summary>
+    public bool? SizeMatches { get; init; }
+
+    /// <summary>Whether Params /CheckSum equals the MD5 digest of the decoded bytes (Table 45; RFC 1321, a checksum, not a security control).
+    /// False for a /CheckSum that is not a 16-byte string; null when absent.</summary>
+    public bool? ChecksumMatches { get; init; }
 }
 
 public sealed record PdfFileSpecification(
@@ -59,7 +66,46 @@ public sealed record PdfDocumentCollection(
     public PdfCollectionSort? SortDefinition { get; init; }
     public PdfCollectionView InitialView { get; init; }
     public IReadOnlyList<PdfCollectionField> VisibleFields { get; init; } = [];
+
+    /// <summary>The /Navigator dictionary (Table 160, PDF 2.0), retained raw; present when the collection is presented by a portable-collection navigator.</summary>
+    public PdfCollectionNavigator? Navigator { get; init; }
+
+    /// <summary>Folders reached from /Folders (Table 159, PDF 2.0) in depth-first order, following /Child and /Next with cycle, depth and total-work bounds.</summary>
+    public IReadOnlyList<PdfCollectionFolder> Folders { get; init; } = [];
+
+    /// <summary>True when folder traversal stopped at the node or depth bound.</summary>
+    public bool FoldersTruncated { get; init; }
+
+    /// <summary>Non-fatal folder-structure problems: DuplicateFolderId, DuplicateSiblingName, ParentMismatch, MissingFolderId, Cycle.</summary>
+    public IReadOnlyList<string> FolderIssues { get; init; } = [];
 }
+
+/// <summary>A /Navigator dictionary (ISO 32000-2 12.3.5, Table 160). Layout names are preserved in order, including unknown ones.</summary>
+public sealed record PdfCollectionNavigator(IReadOnlyList<string> Layouts, PdfDictionary Dictionary);
+
+/// <summary>A collection folder dictionary (ISO 32000-2 12.3.5, Table 159). The id appears in the EmbeddedFiles name-tree keys of the folder's files.</summary>
+public sealed record PdfCollectionFolder(
+    long? Id,
+    string? Name,
+    int Depth,
+    long? ParentId,
+    string? Description,
+    string? CreationDate,
+    string? ModificationDate,
+    PdfDictionary? CollectionItem,
+    PdfStream? Thumbnail,
+    PdfDictionary Dictionary);
+
+/// <summary>One typed entry of a collection item dictionary (Tables 46 and 47) interpreted against the collection schema (Table 155).</summary>
+public sealed record PdfCollectionItemValue(
+    string Key,
+    string? FieldSubtype,
+    string? Text,
+    double? Number,
+    string? Date,
+    string? Prefix,
+    bool? MatchesSchema,
+    PdfObject Raw);
 
 public enum PdfCollectionView
 {
@@ -251,6 +297,7 @@ public static class DocumentFeatures
         var schema = f.Resolve(collection.Get("Schema")) as PdfDictionary;
         var sort = f.Resolve(collection.Get("Sort")) as PdfDictionary;
         var schemaFields = ReadCollectionSchemaFields(f, schema);
+        var (folders, foldersTruncated, folderIssues) = ReadCollectionFolders(f, collection.Get("Folders"));
         return new PdfDocumentCollection(
             f.Resolve(collection.Get("View")).AsName(),
             schema,
@@ -269,7 +316,108 @@ public static class DocumentFeatures
                 .Where(field => field.Visible != false)
                 .OrderBy(field => field.Order ?? 0)
                 .ToArray(),
+            Navigator = f.Resolve(collection.Get("Navigator")) is PdfDictionary navigator
+                ? new PdfCollectionNavigator(ReadNavigatorLayouts(f, navigator), navigator)
+                : null,
+            Folders = folders,
+            FoldersTruncated = foldersTruncated,
+            FolderIssues = folderIssues,
         };
+    }
+
+    static IReadOnlyList<string> ReadNavigatorLayouts(PdfFile f, PdfDictionary navigator) => f.Resolve(navigator.Get("Layout")) switch
+    {
+        PdfName name => [name.Value],
+        PdfArray array => array.Items.Select(item => f.Resolve(item).AsName()).Where(name => name is not null).Select(name => name!).ToArray(),
+        _ => [],
+    };
+
+    const int MaxCollectionFolders = 10_000;
+
+    // Iterative depth-first walk over /Child and /Next; the visited set breaks cycles and shared nodes so reuse cannot fan out.
+    static (IReadOnlyList<PdfCollectionFolder> Folders, bool Truncated, IReadOnlyList<string> Issues) ReadCollectionFolders(PdfFile f, PdfObject? rootValue)
+    {
+        if (f.Resolve(rootValue) is not PdfDictionary root) return ([], false, []);
+        var folders = new List<PdfCollectionFolder>();
+        var issues = new List<string>();
+        var truncated = false;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var ids = new HashSet<long>();
+        var siblingNames = new HashSet<(long?, string)>();
+        var stack = new Stack<(PdfDictionary Folder, int Depth, PdfDictionary? Parent, long? ParentId)>();
+        stack.Push((root, 0, null, null));
+        while (stack.TryPop(out var item))
+        {
+            if (!seen.Add(item.Folder)) { issues.Add("Cycle"); continue; }
+            if (folders.Count >= MaxCollectionFolders || item.Depth > MaxDepth) { truncated = true; continue; }
+            var folder = item.Folder;
+            long? id = f.Resolve(folder.Get("ID")) is PdfInteger { Value: >= 0 } folderId ? folderId.Value : null;
+            var name = PdfStringValue(f, folder.Get("Name"));
+            if (id is null) issues.Add("MissingFolderId");
+            else if (!ids.Add(id.Value)) issues.Add($"DuplicateFolderId:{id}");
+            if (name is not null && !siblingNames.Add((item.ParentId ?? -1, name.ToUpperInvariant())))
+                issues.Add($"DuplicateSiblingName:{name}");
+            if (item.Parent is not null && !ReferenceEquals(f.Resolve(folder.Get("Parent")), item.Parent))
+                issues.Add($"ParentMismatch:{id}");
+            folders.Add(new PdfCollectionFolder(
+                id, name, item.Depth, item.ParentId,
+                PdfStringValue(f, folder.Get("Desc")),
+                PdfStringValue(f, folder.Get("CreationDate")),
+                PdfStringValue(f, folder.Get("ModDate")),
+                f.Resolve(folder.Get("CI")) as PdfDictionary,
+                f.Resolve(folder.Get("Thumb")) as PdfStream,
+                folder));
+            if (f.Resolve(folder.Get("Next")) is PdfDictionary next) stack.Push((next, item.Depth, item.Parent, item.ParentId));
+            if (f.Resolve(folder.Get("Child")) is PdfDictionary child) stack.Push((child, item.Depth + 1, folder, id));
+            if (issues.Count > 1000) { truncated = true; break; }
+        }
+        return (folders, truncated, issues);
+    }
+
+    /// <summary>Interprets a file specification's /CI collection item dictionary against the catalog collection schema (ISO 32000-2 Tables 46, 47, 155).
+    /// Entries keep their raw objects; a value whose type disagrees with its schema field is reported through <see cref="PdfCollectionItemValue.MatchesSchema"/> rather than coerced.</summary>
+    public static IReadOnlyList<PdfCollectionItemValue> GetCollectionItemValues(this PdfDocument doc, PdfDictionary? item)
+    {
+        if (item is null) return [];
+        var f = doc.File;
+        var schema = doc.GetCollection()?.SchemaFields.ToDictionary(field => field.Key, StringComparer.Ordinal);
+        var values = new List<PdfCollectionItemValue>();
+        foreach (var (key, raw) in item.Entries)
+        {
+            if (key == "Type") continue;
+            var resolved = f.Resolve(raw);
+            string? prefix = null;
+            if (resolved is PdfDictionary subitem)
+            {
+                prefix = PdfStringValue(f, subitem.Get("P"));
+                resolved = f.Resolve(subitem.Get("D"));
+            }
+            var subtype = schema is not null && schema.TryGetValue(key, out var field) ? field.Subtype : null;
+            string? text = null, date = null;
+            double? number = null;
+            bool? matches = null;
+            switch (subtype)
+            {
+                case "N" or "Size" or "CompressedSize":
+                    number = resolved.AsNumber();
+                    matches = number is not null;
+                    break;
+                case "D" or "ModDate" or "CreationDate":
+                    date = PdfStringValue(f, resolved);
+                    matches = date is not null;
+                    break;
+                case "S" or "F" or "Desc":
+                    text = PdfStringValue(f, resolved);
+                    matches = text is not null;
+                    break;
+                default:
+                    text = PdfStringValue(f, resolved);
+                    number = text is null ? resolved.AsNumber() : null;
+                    break;
+            }
+            values.Add(new PdfCollectionItemValue(key, subtype, text, number, date, prefix, matches, raw));
+        }
+        return values;
     }
 
     static IReadOnlyList<PdfCollectionField> ReadCollectionSchemaFields(PdfFile f, PdfDictionary? schema)
@@ -615,6 +763,16 @@ public static class DocumentFeatures
         if (f.Resolve(f.Catalog.Get("Names")) is PdfDictionary names && f.Resolve(names.Get("EmbeddedFiles")) is PdfDictionary tree)
             CollectFileSpecifications(f, tree, list, 0, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance));
         return list;
+    }
+
+    /// <summary>Audits the Names/EmbeddedFiles name tree for ordering, duplicate keys, wrong or missing /Limits, cycles and malformed pairs
+    /// (ISO 32000-2 7.9.6, Table 36). Lookups and <see cref="GetFileSpecifications"/> keep their tolerant behavior; null when there is no tree.</summary>
+    public static PdfTreeDiagnostics? GetEmbeddedFilesNameTreeDiagnostics(this PdfDocument doc)
+    {
+        var f = doc.File;
+        return f.Resolve(f.Catalog.Get("Names")) is PdfDictionary names && f.Resolve(names.Get("EmbeddedFiles")) is PdfDictionary tree
+            ? PdfTreeDiagnostics.Audit(f, tree, numberTree: false)
+            : null;
     }
 
     /// <summary>Associated file specifications on the catalog, pages, and annotations.</summary>
@@ -1093,17 +1251,23 @@ public static class DocumentFeatures
                 if (!byStream.TryGetValue(stream, out var file))
                 {
                     var parameters = f.Resolve(stream.Dict.Get("Params")) as PdfDictionary;
+                    var data = f.DecodeStream(stream);
+                    var declaredSize = parameters is null ? null : f.Resolve(parameters.Get("Size")).AsNumber();
+                    var declaredChecksum = f.Resolve(parameters?.Get("CheckSum")) as PdfString;
                     file = new PdfEmbeddedFile(
                         name,
                         f.Resolve(stream.Dict.Get("Subtype")).AsName(),
-                        parameters is null ? null : (long?)f.Resolve(parameters.Get("Size")).AsNumber(),
-                        f.DecodeStream(stream))
+                        declaredSize is null ? null : (long?)declaredSize,
+                        data)
                     {
                         CreationDate = PdfStringValue(f, parameters?.Get("CreationDate")),
                         ModificationDate = PdfStringValue(f, parameters?.Get("ModDate")),
-                        Checksum = f.Resolve(parameters?.Get("CheckSum")) is PdfString checksum ? checksum.Bytes : null,
+                        Checksum = declaredChecksum?.Bytes,
                         Parameters = parameters,
                         Stream = stream,
+                        SizeMatches = declaredSize is null ? null : declaredSize == data.Length,
+                        ChecksumMatches = declaredChecksum is null ? null
+                            : declaredChecksum.Bytes.Length == 16 && System.Security.Cryptography.MD5.HashData(data).AsSpan().SequenceEqual(declaredChecksum.Bytes),
                     };
                     byStream.Add(stream, file);
                 }
