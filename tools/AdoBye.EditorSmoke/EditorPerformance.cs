@@ -26,7 +26,8 @@ static class EditorPerformance
         for (const type of ['pointerdown', 'pointermove', 'keydown', 'input']) {
           addEventListener(type, event => {
             const start = event.timeStamp;
-            requestAnimationFrame(() => profilePresentation.push({type, ms:performance.now()-start}));
+            const target = event.target.id || event.target.textContent?.slice(0,40);
+            requestAnimationFrame(() => profilePresentation.push({type, target, start, ms:performance.now()-start}));
           });
         }
         new PerformanceObserver(list => {
@@ -221,17 +222,28 @@ static class EditorPerformance
                         await page.EvaluateAsync("(x)=>profileInteractions.push(x)", new { phase = "undo", ms = visualMs });
                         await Saved(page);
                     });
+                    await Settled(page);
                     var span = page.Locator("#layer .span").First;
                     if (await span.CountAsync() > 0)
                     {
                         await Measure("edit-text", async () =>
                         {
-                            await span.ClickAsync(new() { Force = true });
+                            await span.ClickAsync();
                             var text = page.Locator("#props textarea[data-k=text], #props textarea[data-original-text]");
                             var started = await page.EvaluateAsync<double>("performance.now()");
-                            await text.FillAsync("Measured editor change");
+                            var replacement = $"Measured editor change {repeat}";
+                            await text.FillAsync(replacement);
+                            var edited = await page.EvaluateAsync<JsonElement>("() => { const field=document.querySelector('#props textarea'); return {converted:!!field?.matches('[data-k=text]'), text:field?.value, connected:field?.isConnected}; }");
+                            if (!edited.GetProperty("converted").GetBoolean() || !edited.TryGetProperty("text", out var committedText) || committedText.GetString() != replacement)
+                                throw new Exception($"Text input did not update the selected item: {edited}");
                             await text.PressAsync("Tab");
-                            await page.WaitForFunctionAsync("profileCommands.some(c=>/\\/items$/.test(c.url))");
+                            try { await page.WaitForFunctionAsync("profileCommands.some(c=>/\\/items$/.test(c.url))"); }
+                            catch (TimeoutException)
+                            {
+                                var diagnostic = await page.EvaluateAsync<JsonElement>("() => ({commands:profileCommands, props:document.getElementById('props').innerHTML, field:document.querySelector('#props textarea')?.value, status:document.getElementById('status').textContent})");
+                                await File.WriteAllTextAsync(output + ".edit-timeout.json", diagnostic.ToString());
+                                throw;
+                            }
                             var commitMs = await page.EvaluateAsync<double>(
                               "start => profileCommands.filter(c => /\\/items$/.test(c.url)).reduce((latest, c) => Math.max(latest, c.start + c.ms - start), 0)", started);
                             await page.EvaluateAsync("(x)=>profileInteractions.push(x)", new { phase = "text-edit-commit", ms = commitMs });
