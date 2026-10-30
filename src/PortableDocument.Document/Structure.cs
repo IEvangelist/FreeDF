@@ -149,7 +149,7 @@ public sealed class StructureTree
         var pageClaims = new HashSet<(int Page, int Mcid)>();
         var streamClaims = new HashSet<(PdfStream Stream, int Mcid)>(new StreamClaimComparer());
         var objects = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
-        if (!hasParentTree && Elements().Any())
+        if (!hasParentTree && Elements().Any(e => e.Children.Any(c => c is not StructElement)))
             AddIssue(issues, "STRUCT-PARENTTREE-MISSING", "structure tree has no /ParentTree number tree", "ISO 32000-2 14.7.5.4", null);
 
         foreach (var e in Elements())
@@ -417,37 +417,44 @@ public sealed class StructureTree
         }
     }
 
-    /// <summary>Looks an integer key up in the ParentTree number tree.</summary>
-    public PdfObject? ParentTreeLookup(int key)
+    /// <summary>Looks an integer key up in the ParentTree number tree. The tree is indexed once in a single bounded pass (first occurrence of a key wins).</summary>
+    public PdfObject? ParentTreeLookup(int key) =>
+        key >= 0 && ParentTreeIndex().TryGetValue(key, out var value) ? value : null;
+
+    Dictionary<int, PdfObject?>? _parentTreeIndex;
+
+    /// <summary>True when indexing the /ParentTree stopped at the node, entry or depth bound.</summary>
+    public bool ParentTreeIndexTruncated { get; private set; }
+
+    Dictionary<int, PdfObject?> ParentTreeIndex()
     {
-        if (key < 0 || F.Resolve(Root.Get("ParentTree")) is not PdfDictionary root) return null;
+        if (_parentTreeIndex is not null) return _parentTreeIndex;
+        var index = new Dictionary<int, PdfObject?>();
+        _parentTreeIndex = index;
+        if (F.Resolve(Root.Get("ParentTree")) is not PdfDictionary root) return index;
         var pending = new Stack<(PdfDictionary Node, int Depth)>();
         var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
         pending.Push((root, 0));
-        var visited = 0;
-        while (pending.TryPop(out var entry) && visited++ < MaxNodes)
+        var work = 0;
+        while (pending.TryPop(out var entry))
         {
             var (node, depth) = entry;
-            if (depth >= 32 || !seen.Add(node)) continue;
+            if (!seen.Add(node)) continue;
+            if (depth >= 32 || ++work > MaxNodes) { ParentTreeIndexTruncated = true; continue; }
             if (F.Resolve(node.Get("Nums")) is PdfArray nums)
             {
                 for (var i = 0; i + 1 < nums.Count; i += 2)
-                    if (NonNegativeInteger(nums[i]) == key) return F.Resolve(nums[i + 1]);
+                {
+                    if (++work > MaxNodes) { ParentTreeIndexTruncated = true; break; }
+                    if (NonNegativeInteger(nums[i]) is { } k && !index.ContainsKey(k)) index[k] = F.Resolve(nums[i + 1]);
+                }
                 continue;
             }
             if (F.Resolve(node.Get("Kids")) is not PdfArray kids) continue;
             for (var i = kids.Count - 1; i >= 0; i--)
-            {
-                if (F.Resolve(kids[i]) is not PdfDictionary kd) continue;
-                if (F.Resolve(kd.Get("Limits")) is PdfArray { Count: >= 2 } lim
-                    && F.Resolve(lim[0]).AsNumber() is { } lo && F.Resolve(lim[1]).AsNumber() is { } hi)
-                {
-                    if (key < lo || key > hi) continue;
-                }
-                if (pending.Count < MaxNodes) pending.Push((kd, depth + 1));
-            }
+                if (F.Resolve(kids[i]) is PdfDictionary kd) pending.Push((kd, depth + 1));
         }
-        return null;
+        return index;
     }
 
     /// <summary>The structure element that owns marked-content sequence <paramref name="mcid"/> on a page, via the page's /StructParents and the ParentTree.</summary>

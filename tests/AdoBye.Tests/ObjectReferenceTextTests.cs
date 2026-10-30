@@ -75,6 +75,30 @@ public class ObjectReferenceTextTests
     }
 
     [Fact]
+    public void ManyPagesWithObjrFormsAttributeEachFormToItsOwnPage()
+    {
+        const int pages = 60;
+        var bodies = new List<string>
+        {
+            "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 3 0 R >>",
+            $"<< /Type /Pages /Kids [{string.Concat(Enumerable.Range(0, pages).Select(i => $"{6 + 4 * i} 0 R "))}] /Count {pages} >>",
+            "<< /Type /StructTreeRoot /K 4 0 R /ParentTree 5 0 R >>",
+            $"<< /S /Document /K [{string.Concat(Enumerable.Range(0, pages).Select(i => $"{9 + 4 * i} 0 R "))}] >>",
+            $"<< /Nums [{string.Concat(Enumerable.Range(0, pages).Select(i => $"{i} {9 + 4 * i} 0 R "))}] >>",
+        };
+        for (var i = 0; i < pages; i++)
+        {
+            var b = 6 + 4 * i;
+            bodies.Add($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents {b + 1} 0 R /Resources << /XObject << /Fm {b + 2} 0 R >> >> >>");
+            bodies.Add(ObjPdf.Stream("/Fm Do"));
+            bodies.Add(ObjPdf.Stream($"BT /F1 12 Tf 10 50 Td (T{i}) Tj ET", $"/Type /XObject /Subtype /Form /BBox [0 0 100 100] /StructParent {i} /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>"));
+            bodies.Add($"<< /S /Figure /K << /Type /OBJR /Pg {b} 0 R /Obj {b + 2} 0 R >> >>");
+        }
+        var text = StructuredTextExtractor.Extract(PdfDocument.Load(ObjPdf.Build(bodies.ToArray())));
+        Assert.Equal(Enumerable.Range(0, pages).Select(i => $"T{i}"), text!.Split('\n'));
+    }
+
+    [Fact]
     public void WholeObjectFormXObjectContributesTextWhenStructParentMapsBack()
     {
         var doc = WholeForm();

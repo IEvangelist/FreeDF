@@ -245,6 +245,28 @@ public class StructureConsistencyTests
     }
 
     [Fact]
+    public void OrganizationalTreeWithoutContentItemsNeedsNoParentTree()
+    {
+        var doc = Load("[]", parentTree: "null");
+        Assert.Empty(doc.Structure!.CheckConsistency());
+    }
+
+    [Fact]
+    public void FlatParentTreeLookupsScaleLinearly()
+    {
+        const int count = 20_000;
+        var nums = string.Concat(Enumerable.Range(0, count).Select(k => $"{k} [7 0 R] "));
+        var doc = Load(parentTree: $"<< /Nums [{nums}] >>");
+        var tree = doc.Structure!;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        for (var k = 0; k < count; k++) Assert.IsType<PdfArray>(tree.ParentTreeLookup(k));
+        Assert.Null(tree.ParentTreeLookup(count));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), watch.Elapsed.ToString());
+        Assert.False(tree.ParentTreeIndexTruncated);
+        Assert.Equal(count, tree.GetParentTreeDiagnostics()!.KeyCount);
+    }
+
+    [Fact]
     public void IssueListsAreBounded()
     {
         var doc = Load($"[7 0 R {string.Concat(Enumerable.Repeat("7 0 R ", 1200))}]");

@@ -18,7 +18,7 @@ public sealed class StructuredTextExtractor
     readonly HashSet<(int Page, PdfDictionary Annotation)> _visitedAnnotations = [];
     readonly Dictionary<int, Dictionary<PdfStream, List<PdfStream>>> _objectRoots = [];
     readonly Dictionary<PdfStream, List<PdfStream>> _nestedForms = new(ReferenceEqualityComparer.Instance);
-    List<PdfStream>? _objectReferenceForms;
+    Dictionary<int, List<PdfStream>>? _objectReferenceForms;
     int _nestedWork;
 
     const int MaxNestedFormDepth = 32;
@@ -166,7 +166,7 @@ public sealed class StructuredTextExtractor
         map = new(ReferenceEqualityComparer.Instance);
         _objectRoots[pageIndex] = map;
         var resources = pageIndex >= 0 && pageIndex < _doc.Pages.Count ? _doc.Pages[pageIndex].Resources : null;
-        foreach (var root in AnnotationAppearances(pageIndex).Keys.Concat(ObjectReferenceForms()))
+        foreach (var root in AnnotationAppearances(pageIndex).Keys.Concat(ObjectReferenceForms().GetValueOrDefault(pageIndex) ?? []))
             foreach (var form in NestedForms(root, resources).Prepend(root))
             {
                 if (!map.TryGetValue(form, out var list)) map[form] = list = [];
@@ -175,18 +175,28 @@ public sealed class StructuredTextExtractor
         return map;
     }
 
-    List<PdfStream> ObjectReferenceForms()
+    // Indexed once per document by the OBJR's page, so each page only visits its own roots.
+    Dictionary<int, List<PdfStream>> ObjectReferenceForms()
     {
         if (_objectReferenceForms is not null) return _objectReferenceForms;
-        var forms = new List<PdfStream>();
-        var known = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+        var forms = new Dictionary<int, List<PdfStream>>();
+        var known = new HashSet<(int, PdfStream)>(new PageFormComparer());
         _objectReferenceForms = forms;
         if (_doc.Structure is null) return forms;
         foreach (var element in _doc.Structure.Elements())
             foreach (var reference in element.Children.OfType<StructObjectRef>())
-                if (reference.Object is PdfStream form && IsForm(form) && known.Add(form))
-                    forms.Add(form);
+                if (reference.PageIndex is { } page && reference.Object is PdfStream form && IsForm(form) && known.Add((page, form)))
+                {
+                    if (!forms.TryGetValue(page, out var list)) forms[page] = list = [];
+                    list.Add(form);
+                }
         return forms;
+    }
+
+    sealed class PageFormComparer : IEqualityComparer<(int Page, PdfStream Form)>
+    {
+        public bool Equals((int Page, PdfStream Form) x, (int Page, PdfStream Form) y) => x.Page == y.Page && ReferenceEquals(x.Form, y.Form);
+        public int GetHashCode((int Page, PdfStream Form) value) => HashCode.Combine(value.Page, System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value.Form));
     }
 
     bool IsForm(PdfStream stream) => _doc.File.Resolve(stream.Dict.Get("Subtype")).AsName() == "Form";
