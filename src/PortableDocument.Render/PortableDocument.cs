@@ -49,13 +49,16 @@ public static class PortableDocument
     }
 
     /// <summary>Text-showing operators of the page's own content (not forms), positioned in CropBox space: points, origin top-left, y down, unrotated.</summary>
-    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page)
+    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page) => ExtractText(page, includeAnnotationAppearances: false);
+
+    internal static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page, bool includeAnnotationAppearances)
     {
         var box = page.CropBox;
         using var raster = new SoftwareRasterizer(1, 1);
         var interp = new ContentInterpreter(page.Document.File, raster)
         {
-            TextSpans = [], DrawAnnotations = false, DrawGraphics = false
+            TextSpans = [], DrawAnnotations = includeAnnotationAppearances, DrawGraphics = false,
+            SynthesizeAnnotationAppearances = false, CaptureAnnotationAppearanceText = includeAnnotationAppearances
         };
         interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
         return interp.TextSpans;

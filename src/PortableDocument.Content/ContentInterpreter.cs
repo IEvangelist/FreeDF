@@ -63,6 +63,10 @@ public sealed class ContentInterpreter
     }
 
     public bool DrawAnnotations { get; set; } = true;
+    /// <summary>Allow annotation appearances without /AP /N to use generated fallback appearances.</summary>
+    public bool SynthesizeAnnotationAppearances { get; set; } = true;
+    /// <summary>Associate captured text spans with the selected annotation appearance stream.</summary>
+    public bool CaptureAnnotationAppearanceText { get; set; }
 
     public void Render(PdfPage page, Matrix baseMatrix) => Render(page, baseMatrix, asPageElement: false);
 
@@ -162,9 +166,14 @@ public sealed class ContentInterpreter
             if ((flags & (2 | 32)) != 0 || R(a.Get("Subtype")).AsName() == "Popup") continue;
             if (R(a.Get("Rect")) is not PdfArray ra || ra.Count < 4) continue;
             var ap = R(a.Get("AP")) as PdfDictionary;
-            var n = R(ap?.Get("N"));
-            if (n is PdfDictionary states) n = R(R(a.Get("AS")).AsName() is { } s ? states.Get(s) : null);
-            if (n is not PdfStream xs && (xs = SynthAppearance(a, ra)!) is null) continue;
+            var appearance = ap?.Get("N");
+            var n = R(appearance);
+            if (n is PdfDictionary states)
+            {
+                appearance = R(a.Get("AS")).AsName() is { } s ? states.Get(s) : null;
+                n = R(appearance);
+            }
+            if (n is not PdfStream xs && (!SynthesizeAnnotationAppearances || (xs = SynthAppearance(a, ra)!) is null)) continue;
             var r = ra.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
             double rx0 = Math.Min(r[0], r[2]), ry0 = Math.Min(r[1], r[3]), rw = Math.Abs(r[2] - r[0]), rh = Math.Abs(r[3] - r[1]);
             var bb = R(xs.Dict.Get("BBox")) is PdfArray ba && ba.Count == 4 ? ba.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : [0, 0, rw, rh];
@@ -176,7 +185,8 @@ public sealed class ContentInterpreter
             var amap = new Matrix(sx, 0, 0, sy, rx0 - x0 * sx, ry0 - y0 * sy);
             _gs = new GState { Ctm = amap.Then(baseMatrix) };
             _path = new PathData();
-            DoForm(xs, page.Resources);
+            DoForm(xs, page.Resources, appearance is PdfRef { Number: > 0 } appearanceRef ? appearanceRef.Number : 0,
+                annotationAppearance: CaptureAnnotationAppearanceText);
         }
     }
 
@@ -972,7 +982,7 @@ public sealed class ContentInterpreter
         else if (sub == "Form") DoForm(xs, res, objNum);
     }
 
-    void DoForm(PdfStream xs, PdfDictionary parentRes, int objNum = 0)
+    void DoForm(PdfStream xs, PdfDictionary parentRes, int objNum = 0, bool annotationAppearance = false)
     {
         if (!_activeForms.Add(xs.Dict)) return;
         var saved = _gs; var savedPath = _path; var savedTm = _tm; var savedTlm = _tlm;
@@ -988,7 +998,7 @@ public sealed class ContentInterpreter
         try
         {
             // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
-            if (_runDepth == _collectDepth && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
+            if ((_runDepth == _collectDepth || annotationAppearance && _runDepth == 0) && objNum > 0) { _collectDepth = _runDepth + 1; _curForm = objNum; _spanIndex = 0; }
             else if (_runDepth == _collectDepth) _collectDepth = -1;
             _be.Save();
             _stack.Push(_gs);

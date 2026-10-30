@@ -12,6 +12,7 @@ public sealed class StructuredTextExtractor
 
     readonly PdfDocument _doc;
     readonly Dictionary<int, Dictionary<(int Form, int Mcid), string>> _pageText = [];
+    readonly Dictionary<int, Dictionary<PdfStream, HashSet<PdfDictionary>>> _annotationAppearances = [];
     readonly Dictionary<PdfStream, int> _streamNumbers = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Emit /Alt for elements (typically figures) that carry no text of their own.</summary>
@@ -50,6 +51,46 @@ public sealed class StructuredTextExtractor
         return _streamNumbers.TryGetValue(stream, out var form) && text.TryGetValue((form, mcid), out var t) ? t : null;
     }
 
+    string? GetMarkedContentText(int pageIndex, StructMarkedContent content)
+    {
+        if (content.Stream is { } stream && content.StreamOwner is { } owner
+            && (owner is not PdfDictionary annotation
+                || !AnnotationAppearances(pageIndex).TryGetValue(stream, out var owners)
+                || !owners.Contains(annotation)))
+            return null;
+        return content.Stream is { } form ? GetMarkedContentText(pageIndex, form, content.Mcid) : GetMarkedContentText(pageIndex, content.Mcid);
+    }
+
+    Dictionary<PdfStream, HashSet<PdfDictionary>> AnnotationAppearances(int pageIndex)
+    {
+        if (_annotationAppearances.TryGetValue(pageIndex, out var appearances)) return appearances;
+        appearances = new(ReferenceEqualityComparer.Instance);
+        _annotationAppearances[pageIndex] = appearances;
+        if (pageIndex < 0 || pageIndex >= _doc.Pages.Count) return appearances;
+
+        var file = _doc.File;
+        if (file.Resolve(_doc.Pages[pageIndex].Dict.Get("Annots")) is not PdfArray annots) return appearances;
+        foreach (var item in annots.Items)
+        {
+            if (file.Resolve(item) is not PdfDictionary annotation) continue;
+            var flags = (int)(file.Resolve(annotation.Get("F")).AsNumber() ?? 0);
+            if ((flags & (2 | 32)) != 0 || file.Resolve(annotation.Get("Subtype")).AsName() == "Popup") continue;
+            if (file.Resolve(annotation.Get("Rect")) is not PdfArray { Count: >= 4 }) continue;
+            var ap = file.Resolve(annotation.Get("AP")) as PdfDictionary;
+            var appearance = ap?.Get("N");
+            var normal = file.Resolve(appearance);
+            if (normal is PdfDictionary states)
+            {
+                appearance = file.Resolve(annotation.Get("AS")).AsName() is { } state ? states.Get(state) : null;
+                normal = file.Resolve(appearance);
+            }
+            if (normal is not PdfStream stream) continue;
+            if (!appearances.TryGetValue(stream, out var owners)) appearances[stream] = owners = new(ReferenceEqualityComparer.Instance);
+            owners.Add(annotation);
+        }
+        return appearances;
+    }
+
     Dictionary<(int Form, int Mcid), string> PageText(int pageIndex)
     {
         if (_pageText.TryGetValue(pageIndex, out var d)) return d;
@@ -57,7 +98,7 @@ public sealed class StructuredTextExtractor
         _pageText[pageIndex] = d;
         if (pageIndex < 0 || pageIndex >= _doc.Pages.Count) return d;
         List<global::PortableDocument.Content.ContentInterpreter.TextSpan> spans;
-        try { spans = PortableDocument.ExtractText(_doc.Pages[pageIndex]); }
+        try { spans = PortableDocument.ExtractText(_doc.Pages[pageIndex], includeAnnotationAppearances: true); }
         catch (Exception e) when (e is global::PortableDocument.Core.PdfParseException or InvalidCastException or InvalidDataException) { return d; }
         var sbs = new Dictionary<(int Form, int Mcid), StringBuilder>();
         var last = new Dictionary<(int Form, int Mcid), global::PortableDocument.Content.ContentInterpreter.TextSpan>();
@@ -111,7 +152,7 @@ public sealed class StructuredTextExtractor
                 {
                     case StructElement ce: Walk(ce, sb, depth + 1); break;
                     case StructMarkedContent mc when mc.PageIndex is { } p:
-                        var t = mc.Stream is { } stream ? GetMarkedContentText(p, stream, mc.Mcid) : GetMarkedContentText(p, mc.Mcid);
+                        var t = GetMarkedContentText(p, mc);
                         if (!string.IsNullOrEmpty(t))
                         {
                             if (!first) Space(sb);
