@@ -149,6 +149,7 @@ static class EditorMerge
         await page.Mouse.MoveAsync(box.X + 90, box.Y + 80);
         await page.Mouse.UpAsync();
         await page.WaitForFunctionAsync("async () => (await (await pdfHost.request('/api/page/0/items')).json()).length === 1");
+        await page.WaitForFunctionAsync("document.getElementById('recovery').textContent === 'Recovery saved'");
         var files = new[] { "20-report.pdf", "22-invoice.pdf", "17-encrypted-user-password.pdf" };
         var encoded = await Task.WhenAll(files.Select(async name => Convert.ToBase64String(await File.ReadAllBytesAsync(Sample(name)))));
         Check(await page.EvaluateAsync<bool>("""
