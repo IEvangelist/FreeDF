@@ -80,6 +80,15 @@ public class FormStructureTests
     }
 
     [Fact]
+    public void NonAppearanceFormOwnerDoesNotSuppressStreamText()
+    {
+        var doc = Load(
+            (8, "<< /S /P /K << /Type /MCR /Stm 11 0 R /StmOwn 3 0 R /MCID 0 >> >>"),
+            (9, "<< /S /P /K << /Type /MCR /Stm 12 0 R /StmOwn 11 0 R /MCID 0 >> >>"));
+        Assert.Equal("Inner\nOuter\nPage", StructuredTextExtractor.Extract(doc));
+    }
+
+    [Fact]
     public void MultipleTextOperatorsInOneFormSequenceAreNotDeduplicated()
     {
         var doc = Load((12, ObjPdf.Stream(

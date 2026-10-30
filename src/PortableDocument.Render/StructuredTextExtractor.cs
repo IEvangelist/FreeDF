@@ -54,8 +54,8 @@ public sealed class StructuredTextExtractor
     string? GetMarkedContentText(int pageIndex, StructMarkedContent content)
     {
         if (content.Stream is { } stream && content.StreamOwner is { } owner
+            && AnnotationAppearances(pageIndex).TryGetValue(stream, out var owners)
             && (owner is not PdfDictionary annotation
-                || !AnnotationAppearances(pageIndex).TryGetValue(stream, out var owners)
                 || !owners.Contains(annotation)))
             return null;
         return content.Stream is { } form ? GetMarkedContentText(pageIndex, form, content.Mcid) : GetMarkedContentText(pageIndex, content.Mcid);
