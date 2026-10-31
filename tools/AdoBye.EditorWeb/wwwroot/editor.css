@@ -218,9 +218,10 @@ button:disabled { opacity: .4; cursor: default; }
 .hit { position: absolute; background: #ffd54a55; outline: 1px solid #ffd54a99; border-radius: 2px; pointer-events: none; }
 .hit.cur { background: #ff9f1aaa; outline: 2px solid #ff9f1a; }
 .mdl { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; background: #0008; backdrop-filter: blur(2px); }
-.dlg { width: min(400px, 92vw); background: var(--raised); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 24px 60px #000c; overflow: hidden; }
-.dlg h3 { margin: 0; padding: 16px 20px 4px; font-size: 15px; }
-.dbody { padding: 10px 20px 4px; display: flex; flex-direction: column; gap: 10px; }
+.dlg { width: min(400px, 92vw); max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); display: flex; flex-direction: column; background: var(--raised); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 24px 60px #000c; overflow: hidden; }
+.dlg h3 { margin: 0; padding: 16px 20px 4px; font-size: 15px; flex: none; }
+.dbody { padding: 10px 20px 4px; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
+.dbody > * { flex: none; }
 .dbody label { display: flex; flex-direction: column; gap: 4px; color: var(--fg-2); font-size: 12px; }
 .dbody input, .dbody select { height: 32px; padding: 0 9px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
 .dbody input:focus, .dbody select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-bg); }
@@ -231,7 +232,7 @@ button:disabled { opacity: .4; cursor: default; }
 .mrow .mr, .mrow .merr { grid-column: 1 / -1; }
 .mrow .merr { color: var(--danger); font-size: 12px; }
 #mg { max-height: 240px; overflow: auto; }
-.dfoot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 16px; }
+.dfoot { display: flex; flex: none; justify-content: flex-end; gap: 8px; padding: 14px 20px 16px; }
 .dfoot button { border: 1px solid var(--line-2); padding: 0 16px; }
 .dfoot button.primary { border-color: transparent; }
 @media (max-width: 760px) {
