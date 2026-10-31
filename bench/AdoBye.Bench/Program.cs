@@ -17,6 +17,27 @@ if (args is ["--profile-text", var file, var count])
     return;
 }
 
+if (Environment.GetEnvironmentVariable("ADOBYE_SEQ") == "1") AppContext.SetSwitch("PortableDocument.Render.DisableThreads", true);
+
+if (args is ["--raster-micro"])
+{
+    RasterBench.Micro();
+    return;
+}
+
+if (args is ["--raster-phases", var pdpi, var piter, ..var prest])
+{
+    RasterBench.Phases(prest.Length > 0 ? prest[0] : null!, double.Parse(pdpi, System.Globalization.CultureInfo.InvariantCulture), int.Parse(piter, System.Globalization.CultureInfo.InvariantCulture));
+    return;
+}
+
+if (args is ["--raster-bench", var rdpi, var riter, ..var rrest])
+{
+    RasterBench.Run(double.Parse(rdpi, System.Globalization.CultureInfo.InvariantCulture), int.Parse(riter, System.Globalization.CultureInfo.InvariantCulture),
+        rrest.Length > 0 && rrest[0] != "-" ? rrest[0] : null, rrest.Length > 1 ? rrest[1] : null);
+    return;
+}
+
 if (args.Contains("--preflight"))
 {
     Console.WriteLine($"Accepted documents: {string.Join(", ", ComparisonCorpus.ValidatedFiles)}");

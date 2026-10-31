@@ -201,30 +201,32 @@ public static class PdfFilters
         }
         var rows = data.Length / (rowBytes + 1) + (data.Length % (rowBytes + 1) > 1 ? 1 : 0);
         var res = new byte[rows * rowBytes];
-        var prev = new byte[rowBytes];
-        var cur = new byte[rowBytes];
+        var zeros = new byte[rowBytes];
         for (var y = 0; y < rows; y++)
         {
             var off = y * (rowBytes + 1);
             if (off >= data.Length) break;
             var ft = data[off];
             var avail = Math.Min(rowBytes, data.Length - off - 1);
-            Array.Clear(cur);
-            Array.Copy(data, off + 1, cur, 0, avail);
-            for (var i = 0; i < rowBytes; i++)
+            var cur = res.AsSpan(y * rowBytes, rowBytes);
+            data.AsSpan(off + 1, avail).CopyTo(cur);
+            var prev = y == 0 ? zeros : res.AsSpan((y - 1) * rowBytes, rowBytes);
+            switch (ft)
             {
-                int a = i >= bpp ? cur[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
-                cur[i] = ft switch
-                {
-                    1 => (byte)(cur[i] + a),
-                    2 => (byte)(cur[i] + b),
-                    3 => (byte)(cur[i] + (a + b) / 2),
-                    4 => (byte)(cur[i] + Paeth(a, b, c)),
-                    _ => cur[i]
-                };
+                case 1:
+                    for (var i = bpp; i < cur.Length; i++) cur[i] += cur[i - bpp];
+                    break;
+                case 2:
+                    for (var i = 0; i < cur.Length; i++) cur[i] += prev[i];
+                    break;
+                case 3:
+                    for (var i = 0; i < cur.Length; i++) cur[i] += (byte)(((i >= bpp ? cur[i - bpp] : 0) + prev[i]) / 2);
+                    break;
+                case 4:
+                    for (var i = 0; i < cur.Length; i++)
+                        cur[i] += (byte)Paeth(i >= bpp ? cur[i - bpp] : 0, prev[i], i >= bpp ? prev[i - bpp] : 0);
+                    break;
             }
-            Array.Copy(cur, 0, res, y * rowBytes, rowBytes);
-            (prev, cur) = (cur, prev);
         }
         return res;
     }

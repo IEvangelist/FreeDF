@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using PortableDocument.Content;
+using Edge = PortableDocument.Render.RasterEdge;
 
 namespace PortableDocument.Render;
 
@@ -12,8 +14,6 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 {
     const int SubY = 4;
     const float Weight = 1f / SubY;
-
-    struct Edge { public double Y0, Y1, X0, Slope; public int Dir; }
 
     /// <summary>Clip region: a bounding box plus optional coverage (null = fully covered). Immutable; crops share the coverage array.</summary>
     sealed class ClipMask
@@ -43,17 +43,60 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     Edge[] _edges = new Edge[512]; int _en;
     double _minX, _minY, _maxX, _maxY; bool _bad;
-    int[] _active = new int[64]; int _an;
-    double[] _xs = new double[64]; int[] _xd = new int[64];
-    readonly float[] _cov;
-    int _next, _y, _by1, _bx0, _bx1, _tmin, _tmax; bool _eo;
+    EdgeScanner _sc; // primary scanner
+    readonly System.Collections.Concurrent.ConcurrentBag<EdgeScanner> _scanPool = new(); // extra scanners for band-parallel flushes
+    // Deferred solid Normal-blend fills/strokes. They are recorded (edges copied) and replayed band by band in submission order, which keeps every
+    // pixel's operation order - so output is identical - while the working set of a band stays cache resident and bands can run on separate threads.
+    struct PaintCmd { public int EdgeStart, EdgeEnd, Bx0, Bx1, By0, By1; public bool Eo; public float R, G, B, Al; public ClipMask Clip; }
+    PaintCmd[] _cmds = []; int _nc;
+    Edge[] _qEdges = []; int _qCount;
+    bool _dirtyWhite; // the page buffer has not been initialised to white yet (first write or read of the page layer does it)
+    int[]? _rmin, _rmax; // per-row touched extent of a lazily initialised group layer (layer coordinates); null = layer is fully initialised
 
-    static readonly Comparison<Edge> ByY0 = static (a, b) => a.Y0.CompareTo(b.Y0);
+    void EnsureWhite()
+    {
+        if (!_dirtyWhite) return;
+        _dirtyWhite = false;
+        _px.AsSpan(0, _w * _h * 3).Fill(1f);
+    }
+
+    /// <summary>Makes layer pixels [xa,xb) of device row <paramref name="y"/> valid (zero colour, zero alpha) before they are read or composited into.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    void Touch(int y, int xa, int xb)
+    {
+        var rmin = _rmin;
+        if (rmin is null) return;
+        TouchSlow(rmin, y - _oy, xa - _ox, xb - _ox);
+    }
+
+    void TouchSlow(int[] rmin, int ly, int a, int b)
+    {
+        var rmax = _rmax!;
+        var lo = rmin[ly]; var hi = rmax[ly];
+        if (lo > hi) { ClearLayer(ly, a, b); rmin[ly] = a; rmax[ly] = b; return; }
+        if (a < lo) { ClearLayer(ly, a, lo); rmin[ly] = a; }
+        if (b > hi) { ClearLayer(ly, hi, b); rmax[ly] = b; }
+    }
+
+    void ClearLayer(int ly, int a, int b)
+    {
+        if (b <= a) return;
+        var o = ly * _lw + a;
+        _px.AsSpan(o * 3, (b - a) * 3).Clear();
+        _a!.AsSpan(o, b - a).Clear();
+    }
+
+    double[] _keys = new double[512];
+    int _scanY0, _scanY1, _scanX0, _scanX1; bool _scanEo;
 
     public int Width => _w;
     public int Height => _h;
 
     public const int MaxDimension = 1 << 16;
+
+    /// <summary>Row-parallel paths are used on hosts with threads; browsers stay sequential, and the "PortableDocument.Render.DisableThreads" AppContext switch forces sequential everywhere (single-thread profiling).</summary>
+    static readonly bool UseThreads = !OperatingSystem.IsBrowser() && Environment.ProcessorCount > 1
+        && !(AppContext.TryGetSwitch("PortableDocument.Render.DisableThreads", out var disabled) && disabled);
     public const long MaxPixels = 100_000_000;
 
     public SoftwareRasterizer(int width, int height)
@@ -61,21 +104,29 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         if (width < 1 || height < 1 || width > MaxDimension || height > MaxDimension || (long)width * height > MaxPixels)
             throw new global::PortableDocument.Core.PdfParseException($"Invalid raster size {width}x{height}");
         _w = width; _h = height; _lw = width; _lh = height;
-        _px = System.Buffers.ArrayPool<float>.Shared.Rent(width * height * 3);
-        _px.AsSpan(0, width * height * 3).Fill(1f);
-        _cov = new float[width + 2];
+        _px = BufferPool.Rent(width * height * 3);
+        _dirtyWhite = true;
+        _sc = new EdgeScanner(width);
         _clip = new ClipMask { X0 = 0, Y0 = 0, X1 = width, Y1 = height };
     }
 
     /// <summary>Returns the pixel buffer to the pool; the rasterizer must not be used afterwards.</summary>
     public void Dispose()
     {
+        if (_cmds.Length > 0)
+        {
+            System.Buffers.ArrayPool<PaintCmd>.Shared.Return(_cmds, clearArray: true);
+            System.Buffers.ArrayPool<Edge>.Shared.Return(_qEdges);
+            _cmds = []; _qEdges = []; _nc = 0; _qCount = 0;
+        }
         var p = _px; _px = [];
-        if (p.Length > 0) System.Buffers.ArrayPool<float>.Shared.Return(p);
+        if (p.Length > 0) BufferPool.Return(p);
     }
 
     public byte[] ToRgba()
     {
+        Flush();
+        EnsureWhite();
         var o = GC.AllocateUninitializedArray<byte>(_w * _h * 4);
         var px = _px;
         var w = _w;
@@ -85,13 +136,33 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             {
                 var s = px.AsSpan(y * w * 3, w * 3);
                 var d = o.AsSpan(y * w * 4, w * 4);
-                for (int i = 0, j = 0, k = 0; i < w; i++, j += 3, k += 4)
+                var i = 0;
+                if (Vector128.IsHardwareAccelerated && w >= 8)
+                {
+                    var scale = Vector128.Create(255f); var half = Vector128.Create(0.5f);
+                    var zero = Vector128<int>.Zero; var max = Vector128.Create(255);
+                    var pick = Vector128.Create((byte)0, 1, 2, 255, 3, 4, 5, 255, 6, 7, 8, 255, 9, 10, 11, 255);
+                    var alpha = Vector128.Create((byte)0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255);
+                    ref var sr = ref MemoryMarshal.GetReference(s); ref var dr = ref MemoryMarshal.GetReference(d);
+                    for (; i + 4 <= w; i += 4)
+                    {
+                        var p = (nuint)(i * 3);
+                        var q0 = Vector128.Min(Vector128.Max(Vector128.ConvertToInt32(Vector128.LoadUnsafe(ref sr, p) * scale + half), zero), max);
+                        var q1 = Vector128.Min(Vector128.Max(Vector128.ConvertToInt32(Vector128.LoadUnsafe(ref sr, p + 4) * scale + half), zero), max);
+                        var q2 = Vector128.Min(Vector128.Max(Vector128.ConvertToInt32(Vector128.LoadUnsafe(ref sr, p + 8) * scale + half), zero), max);
+                        var h0 = Vector128.Narrow(q0.AsUInt32(), q1.AsUInt32());
+                        var h1 = Vector128.Narrow(q2.AsUInt32(), q2.AsUInt32());
+                        var bytes = Vector128.Narrow(h0, h1);
+                        (Vector128.Shuffle(bytes, pick) | alpha).StoreUnsafe(ref dr, (nuint)(i * 4));
+                    }
+                }
+                for (int j = i * 3, k = i * 4; i < w; i++, j += 3, k += 4)
                 {
                     d[k] = ToByte(s[j]); d[k + 1] = ToByte(s[j + 1]); d[k + 2] = ToByte(s[j + 2]); d[k + 3] = 255;
                 }
             }
         }
-        if (!OperatingSystem.IsBrowser() && (long)_w * _h > 100_000)
+        if (UseThreads && (long)_w * _h > 100_000)
         {
             const int Band = 32;
             Parallel.For(0, (_h + Band - 1) / Band, b => Rows(b * Band, Math.Min(_h, b * Band + Band)));
@@ -112,12 +183,15 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     void FillBackground(RgbColor c) 
     {
+        _dirtyWhite = false;
         var s = _px.AsSpan(0, _w * _h * 3);
         for (var i = 0; i < s.Length; i += 3) { s[i] = (float)c.R; s[i + 1] = (float)c.G; s[i + 2] = (float)c.B; }
     }
 
     float[] Luminosity()
     {
+        Flush();
+        EnsureWhite();
         var m = new float[_w * _h];
         var p = _px;
         for (var i = 0; i < m.Length; i++) m[i] = 0.3f * p[i * 3] + 0.59f * p[i * 3 + 1] + 0.11f * p[i * 3 + 2];
@@ -128,6 +202,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     public void SetSoftMask(Action<IRenderBackend>? draw, bool luminosity, RgbColor backdrop, Func<double, double>? transfer)
     {
+        Flush();
         if (draw is null) { if (_preMask is not null) { _clip = _preMask; _preMask = null; } return; }
         float[] m;
         if (luminosity)
@@ -242,6 +317,21 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     // ---------------------------------------------------------------- scan conversion
 
+    void SortEdges()
+    {
+        if (_keys.Length < _en) _keys = new double[_edges.Length];
+        var keys = _keys; var edges = _edges;
+        var sorted = true;
+        double prev = double.MinValue;
+        for (var i = 0; i < _en; i++)
+        {
+            var y = edges[i].Y0; keys[i] = y;
+            if (y < prev) sorted = false;
+            prev = y;
+        }
+        if (!sorted) Array.Sort(keys, edges, 0, _en);
+    }
+
     bool BeginScan(bool evenOdd, out int bx0, out int by0, out int bx1, out int by1)
     {
         bx0 = by0 = bx1 = by1 = 0;
@@ -251,78 +341,13 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         by0 = Math.Max(_clip.Y0, (int)Math.Floor(Math.Max(_minY, -1)));
         by1 = Math.Min(_clip.Y1, (int)Math.Ceiling(Math.Min(_maxY, _h + 1)) + 1);
         if (bx0 >= bx1 || by0 >= by1) return false;
-        _edges.AsSpan(0, _en).Sort(ByY0);
-        _next = 0; _an = 0; _eo = evenOdd; _y = by0; _by1 = by1; _bx0 = bx0; _bx1 = bx1;
-        _tmin = int.MaxValue; _tmax = -1;
+        SortEdges();
+        _scanEo = evenOdd; _scanY0 = by0; _scanY1 = by1; _scanX0 = bx0; _scanX1 = bx1;
+        _sc.Begin(_edges, 0, _en, evenOdd, by0, by1, bx0, bx1);
         return true;
     }
 
-    bool NextRow(out int y, out int xa, out int xb)
-    {
-        if (_tmax >= _tmin) Array.Clear(_cov, _tmin, _tmax - _tmin + 1);
-        _tmin = int.MaxValue; _tmax = -1;
-        y = xa = xb = 0;
-        while (_y < _by1)
-        {
-            var cy = _y;
-            if (_an == 0)
-            {
-                if (_next >= _en) return false;
-                var ny = (int)Math.Floor(_edges[_next].Y0);
-                if (ny > cy) { _y = ny; continue; }
-            }
-            _y++;
-            for (var s = 0; s < SubY; s++)
-            {
-                var sy = cy + (s + 0.5) / SubY;
-                while (_next < _en && _edges[_next].Y0 <= sy)
-                {
-                    if (_an == _active.Length) Array.Resize(ref _active, _an * 2);
-                    _active[_an++] = _next++;
-                }
-                if (_an > _xs.Length) { Array.Resize(ref _xs, _an * 2); Array.Resize(ref _xd, _an * 2); }
-                int keep = 0, cnt = 0;
-                for (var i = 0; i < _an; i++)
-                {
-                    var idx = _active[i];
-                    ref var e = ref _edges[idx];
-                    if (e.Y1 <= sy) continue;
-                    _active[keep++] = idx;
-                    var x = e.X0 + (sy - e.Y0) * e.Slope;
-                    var j = cnt++;
-                    while (j > 0 && _xs[j - 1] > x) { _xs[j] = _xs[j - 1]; _xd[j] = _xd[j - 1]; j--; }
-                    _xs[j] = x; _xd[j] = e.Dir;
-                }
-                _an = keep;
-                var wind = 0;
-                for (var k = 0; k + 1 < cnt; k++)
-                {
-                    wind += _xd[k];
-                    if (_eo ? (k & 1) != 0 : wind == 0) continue;
-                    AddSpan(_xs[k], _xs[k + 1]);
-                }
-            }
-            if (_tmax >= _tmin) { y = cy; xa = _tmin; xb = _tmax + 1; return true; }
-        }
-        return false;
-    }
-
-    void AddSpan(double xa, double xb)
-    {
-        if (xb <= _bx0 || xa >= _bx1) return;
-        if (xa < _bx0) xa = _bx0;
-        if (xb > _bx1) xb = _bx1;
-        if (xb <= xa) return;
-        var ia = (int)xa; var ib = (int)xb;
-        var cov = _cov;
-        var last = ib < _bx1 ? ib : _bx1 - 1;
-        if (ia < _tmin) _tmin = ia;
-        if (last > _tmax) _tmax = last;
-        if (ia == ib) { cov[ia] += (float)(xb - xa) * Weight; return; }
-        cov[ia] += (float)(ia + 1 - xa) * Weight;
-        for (var i = ia + 1; i < ib; i++) cov[i] += Weight;
-        if (ib < _bx1) cov[ib] += (float)(xb - ib) * Weight;
-    }
+    bool NextRow(out int y, out int xa, out int xb) => _sc.NextRow(out y, out xa, out xb);
 
     // ---------------------------------------------------------------- clipping
 
@@ -366,7 +391,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             var row = y - by0;
             for (var x = xa; x < xb; x++)
             {
-                var c = _cov[x]; if (c > 1f) c = 1f;
+                var c = _sc.Cov[x]; if (c > 1f) c = 1f;
                 if (old.Cov is not null) c *= old.At(x, y);
                 mask[row * bw + (x - bx0)] = c;
             }
@@ -512,10 +537,17 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     void PaintScan(bool evenOdd, RgbColor c, double alpha, string blendMode)
     {
         if (!BeginScan(evenOdd, out _, out _, out _, out _)) return;
+        if (_a is null) EnsureWhite();
         float r = (float)c.R, g = (float)c.G, b = (float)c.B, al = (float)alpha;
         var mode = ParseBlend(blendMode);
         var clip = _clip;
         var px = _px;
+        if (_op is null && mode == Blend.Normal && !_conv && !_ko)
+        {
+            Enqueue(r, g, b, al);
+            return;
+        }
+        Flush();
         if (_op is { } op)
         {
             if (op.Spot) { if (mode == Blend.Normal) mode = Blend.Multiply; }
@@ -524,10 +556,11 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 var layerAlpha = _a;
                 while (NextRow(out var y, out var xa, out var xb))
                 {
+                    Touch(y, xa, xb);
                     var rowBase = (y - _oy) * _lw - _ox;
                     for (var x = xa; x < xb; x++)
                     {
-                        var a = _cov[x];
+                        var a = _sc.Cov[x];
                         if (a <= 0f) continue;
                         if (a > 1f) a = 1f;
                         if (clip.Cov is not null) a *= clip.At(x, y);
@@ -542,18 +575,246 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 return;
             }
         }
+        if (mode == Blend.Normal && !_conv)
+        {
+            PaintRowsNormalCore(_sc, clip, r, g, b, al);
+            return;
+        }
         while (NextRow(out var y, out var xa, out var xb))
         {
+            Touch(y, xa, xb);
             var rowBase = (y - _oy) * _lw - _ox;
             for (var x = xa; x < xb; x++)
             {
-                var a = _cov[x];
+                var a = _sc.Cov[x];
                 if (a <= 0f) continue;
                 if (a > 1f) a = 1f;
                 if (clip.Cov is not null) a *= clip.At(x, y);
                 if (a * al <= 0f) continue;
                 Put(rowBase + x, r, g, b, a, al, mode);
             }
+        }
+    }
+
+    void Enqueue(float r, float g, float b, float al)
+    {
+        if (!UseThreads) { PaintRowsNormalCore(_sc, _clip, r, g, b, al); return; }
+        if (_cmds.Length == 0) { _cmds = System.Buffers.ArrayPool<PaintCmd>.Shared.Rent(8192); _qEdges = System.Buffers.ArrayPool<Edge>.Shared.Rent(1 << 17); }
+        if (_nc == _cmds.Length || _qCount + _en > _qEdges.Length) Flush();
+        if (_en > _qEdges.Length)
+        {
+            System.Buffers.ArrayPool<Edge>.Shared.Return(_qEdges);
+            _qEdges = System.Buffers.ArrayPool<Edge>.Shared.Rent(_en);
+        }
+        Array.Copy(_edges, 0, _qEdges, _qCount, _en);
+        _cmds[_nc++] = new PaintCmd
+        {
+            EdgeStart = _qCount, EdgeEnd = _qCount + _en, Eo = _scanEo, Bx0 = _scanX0, Bx1 = _scanX1, By0 = _scanY0, By1 = _scanY1,
+            R = r, G = g, B = b, Al = al, Clip = _clip,
+        };
+        _qCount += _en;
+        if (_qCount >= 98_304) Flush();
+    }
+
+    EdgeScanner? _flushScanner;
+
+    /// <summary>Paints every deferred fill/stroke into the current layer. Must run before anything else reads or writes layer pixels or switches layers.</summary>
+    void Flush()
+    {
+        var n = _nc;
+        if (n == 0) return;
+        _nc = 0; _qCount = 0;
+        if (_a is null) EnsureWhite();
+        int minY = int.MaxValue, maxY = int.MinValue;
+        long area = 0;
+        for (var i = 0; i < n; i++)
+        {
+            ref var c = ref _cmds[i];
+            if (c.By0 < minY) minY = c.By0;
+            if (c.By1 > maxY) maxY = c.By1;
+            area += (long)(c.By1 - c.By0) * (c.Bx1 - c.Bx0);
+        }
+        // Bands sized so that a band of the layer (16 bytes per pixel) fits in L2.
+        var bandRows = Math.Clamp((1 << 20) / (16 * Math.Max(_lw, 1)), 8, 128);
+        var bands = (maxY - minY + bandRows - 1) / bandRows;
+        if (bands <= 0) return;
+        void Band(EdgeScanner sc, int band)
+        {
+            int y0 = minY + band * bandRows, y1 = Math.Min(maxY, y0 + bandRows);
+            for (var i = 0; i < n; i++)
+            {
+                ref var c = ref _cmds[i];
+                if (c.By1 <= y0 || c.By0 >= y1) continue;
+                sc.Begin(_qEdges, c.EdgeStart, c.EdgeEnd, c.Eo, Math.Max(c.By0, y0), Math.Min(c.By1, y1), c.Bx0, c.Bx1);
+                PaintRowsNormalCore(sc, c.Clip, c.R, c.G, c.B, c.Al);
+            }
+        }
+        if (UseThreads && bands >= 2 && (n >= 64 || area >= 150_000))
+        {
+            Parallel.For(0, bands,
+                () => _scanPool.TryTake(out var s) ? s : new EdgeScanner(_w),
+                (band, _, sc) => { Band(sc, band); return sc; },
+                sc => _scanPool.Add(sc));
+        }
+        else
+        {
+            var sc = _flushScanner ??= new EdgeScanner(_w);
+            for (var band = 0; band < bands; band++) Band(sc, band);
+        }
+    }
+
+    void PaintRowsNormalCore(EdgeScanner sc, ClipMask clip, float r, float g, float b, float al)
+    {
+        var cc = clip.Cov; var px = _px; var la = _a; var ga = _ag; var cov = sc.Cov;
+        var ko = _ko;
+        var runs = cc is null && (la is null || (al == 1f && !ko && ga is null));
+        while (sc.NextRow(out var y, out var xa, out var xb))
+        {
+            Touch(y, xa, xb);
+            var rowBase = (y - _oy) * _lw - _ox;
+            for (var x = xa; x < xb; x++)
+            {
+                var a = cov[x];
+                if (runs && a >= 1f)
+                {
+                    var e = RunEnd(cov, x + 1, xb);
+                    FillOpaqueRun(px, la, rowBase + x, e - x, r, g, b, al);
+                    x = e - 1;
+                    continue;
+                }
+                if (a <= 0f) continue;
+                if (a > 1f) a = 1f;
+                if (cc is not null) a *= clip.At(x, y);
+                if (a * al <= 0f) continue;
+                var o = rowBase + x; var o3 = o * 3;
+                if (la is null)
+                {
+                    var s = a * al;
+                    if (s >= 0.9999f) { px[o3] = r; px[o3 + 1] = g; px[o3 + 2] = b; }
+                    else { px[o3] += (r - px[o3]) * s; px[o3 + 1] += (g - px[o3 + 1]) * s; px[o3 + 2] += (b - px[o3 + 2]) * s; }
+                }
+                else if (!ko)
+                {
+                    var s = a * al;
+                    var ab = la[o];
+                    if (ab == 0f)
+                    {
+                        // Empty backdrop pixel (colour is zero by invariant): oa == s and k == 1, so the blend reduces to the source colour.
+                        px[o3] = r; px[o3 + 1] = g; px[o3 + 2] = b; la[o] = s;
+                    }
+                    else if (s == 1f && ab == 1f)
+                    {
+                        px[o3] += r - px[o3]; px[o3 + 1] += g - px[o3 + 1]; px[o3 + 2] += b - px[o3 + 2];
+                    }
+                    else
+                    {
+                        var oa = ab + s - ab * s;
+                        if (oa <= 0f) { px[o3] = px[o3 + 1] = px[o3 + 2] = 0; la[o] = oa; }
+                        else
+                        {
+                            var k = s / oa;
+                            px[o3] += (r - px[o3]) * k; px[o3 + 1] += (g - px[o3 + 1]) * k; px[o3 + 2] += (b - px[o3 + 2]) * k;
+                            la[o] = oa;
+                        }
+                    }
+                    if (ga is not null) ga[o] += s - ga[o] * s;
+                }
+                else PutLayer(o, r, g, b, a, al, Blend.Normal);
+            }
+        }
+    }
+    /// <summary>First index in [from, to) whose coverage is below 1 (or <paramref name="to"/>).</summary>
+    static int RunEnd(float[] cov, int from, int to)
+    {
+        var e = from;
+        if (Vector256.IsHardwareAccelerated)
+        {
+            var one = Vector256.Create(1f);
+            ref var c = ref cov[0];
+            while (e + 8 <= to && Vector256.GreaterThanOrEqualAll(Vector256.LoadUnsafe(ref c, (nuint)e), one)) e += 8;
+        }
+        else if (Vector128.IsHardwareAccelerated)
+        {
+            var one = Vector128.Create(1f);
+            ref var c = ref cov[0];
+            while (e + 4 <= to && Vector128.GreaterThanOrEqualAll(Vector128.LoadUnsafe(ref c, (nuint)e), one)) e += 4;
+        }
+        while (e < to && cov[e] >= 1f) e++;
+        return e;
+    }
+
+    /// <summary>
+    /// Source-over of a colour with full coverage (shape 1) and constant opacity <paramref name="s"/> onto <paramref name="n"/> consecutive pixels, using exactly the
+    /// arithmetic of the general paths. Page pixels (<paramref name="la"/> null) are overwritten when s is opaque and lerped otherwise; layer pixels (s == 1 only) with
+    /// zero alpha take the colour and opaque layer pixels get <c>px += r - px</c> (k == 1).
+    /// </summary>
+    static void FillOpaqueRun(float[] px, float[]? la, int o, int n, float r, float g, float b, float s)
+    {
+        var i = 0;
+        if (Vector128.IsHardwareAccelerated)
+        {
+            var c0 = Vector128.Create(r, g, b, r); var c1 = Vector128.Create(g, b, r, g); var c2 = Vector128.Create(b, r, g, b);
+            ref var p = ref px[o * 3];
+            if (la is null)
+            {
+                if (s >= 0.9999f)
+                {
+                    for (; i <= n - 4; i += 4)
+                    {
+                        var q = (nuint)(i * 3);
+                        c0.StoreUnsafe(ref p, q); c1.StoreUnsafe(ref p, q + 4); c2.StoreUnsafe(ref p, q + 8);
+                    }
+                }
+                else
+                {
+                    var sv = Vector128.Create(s);
+                    for (; i <= n - 4; i += 4)
+                    {
+                        var q = (nuint)(i * 3);
+                        var p0 = Vector128.LoadUnsafe(ref p, q); var p1 = Vector128.LoadUnsafe(ref p, q + 4); var p2 = Vector128.LoadUnsafe(ref p, q + 8);
+                        (p0 + (c0 - p0) * sv).StoreUnsafe(ref p, q); (p1 + (c1 - p1) * sv).StoreUnsafe(ref p, q + 4); (p2 + (c2 - p2) * sv).StoreUnsafe(ref p, q + 8);
+                    }
+                }
+            }
+            else
+            {
+                ref var a0 = ref la[o];
+                var one = Vector128.Create(1f);
+                for (; i <= n - 4; i += 4)
+                {
+                    if (!Vector128.EqualsAll(Vector128.LoadUnsafe(ref a0, (nuint)i), Vector128<float>.Zero))
+                    {
+                        for (var j = i; j < i + 4; j++) OpaquePixel(px, la, o + j, r, g, b, s);
+                        continue;
+                    }
+                    var q = (nuint)(i * 3);
+                    c0.StoreUnsafe(ref p, q); c1.StoreUnsafe(ref p, q + 4); c2.StoreUnsafe(ref p, q + 8);
+                    one.StoreUnsafe(ref a0, (nuint)i);
+                }
+            }
+        }
+        for (; i < n; i++) OpaquePixel(px, la, o + i, r, g, b, s);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    static void OpaquePixel(float[] px, float[]? la, int oi, float r, float g, float b, float s)
+    {
+        var o3 = oi * 3;
+        if (la is null)
+        {
+            if (s >= 0.9999f) { px[o3] = r; px[o3 + 1] = g; px[o3 + 2] = b; }
+            else { px[o3] += (r - px[o3]) * s; px[o3 + 1] += (g - px[o3 + 1]) * s; px[o3 + 2] += (b - px[o3 + 2]) * s; }
+            return;
+        }
+        var ab = la[oi];
+        if (ab == 0f) { px[o3] = r; px[o3 + 1] = g; px[o3 + 2] = b; la[oi] = 1f; }
+        else if (ab == 1f) { px[o3] += r - px[o3]; px[o3 + 1] += g - px[o3 + 1]; px[o3 + 2] += b - px[o3 + 2]; }
+        else
+        {
+            var oa = ab + 1f - ab * 1f;
+            var k = 1f / oa;
+            px[o3] += (r - px[o3]) * k; px[o3 + 1] += (g - px[o3 + 1]) * k; px[o3 + 2] += (b - px[o3 + 2]) * k;
+            la[oi] = oa;
         }
     }
 
@@ -612,7 +873,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         // Classic device conversion (10.4.2.2), before compositing rather than after flattening.
         if (_conv) Project(ref r, ref g, ref b);
         var a = _a;
-        if (a is null) { BlendOpaque(_px, o * 3, r, g, b, shape * q, mode); return; }
+        if (a is null) { if (_dirtyWhite) EnsureWhite(); BlendOpaque(_px, o * 3, r, g, b, shape * q, mode); return; }
         PutLayer(o, r, g, b, shape, q, mode);
     }
 
@@ -725,6 +986,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     public void DrawImage(ImageData img, Matrix ctm, double alpha, RgbColor maskColor, string blendMode)
     {
+        Flush();
         if (_clip.Empty) return;
         // Image space (u,v in px, v down) -> unit square (x = u/w, y = 1 - v/h) -> device.
         var inv = new Matrix(1.0 / img.Width, 0, 0, -1.0 / img.Height, 0, 1).Then(ctm).Invert();
@@ -734,6 +996,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         var y0 = Math.Max(_clip.Y0, (int)Math.Floor(Math.Min(Math.Min(c0y, c1y), Math.Min(c2y, c3y))));
         var y1 = Math.Min(_clip.Y1, (int)Math.Ceiling(Math.Max(Math.Max(c0y, c1y), Math.Max(c2y, c3y))));
         if (x0 >= x1 || y0 >= y1) return;
+        if (_a is null) EnsureWhite();
         // Box-filter when downsampling.
         var sx = Math.Sqrt(inv.A * inv.A + inv.B * inv.B); var sy = Math.Sqrt(inv.C * inv.C + inv.D * inv.D);
         var rx = Math.Clamp((int)Math.Round(sx), 1, 8); var ry = Math.Clamp((int)Math.Round(sy), 1, 8);
@@ -750,13 +1013,17 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         var src = img.Rgba; int iw = img.Width, ih = img.Height; var isMask = img.IsMask;
         var clip = _clip; var px = _px; var wpx = _w;
         var invNs = 1f / ns;
+        double invA = inv.A, invB = inv.B;
+        var hasCov = clip.Cov is not null;
 
         void Row(int y)
         {
             var u = inv.A * x0 + inv.C * y + inv.E; var v = inv.B * x0 + inv.D * y + inv.F;
-            for (var x = x0; x < x1; x++, u += inv.A, v += inv.B)
+            var rowBase = (y - _oy) * _lw - _ox;
+            Touch(y, x0, x1);
+            for (var x = x0; x < x1; x++, u += invA, v += invB)
             {
-                long sr = 0, sg = 0, sb = 0, sa = 0;
+                int sr = 0, sg = 0, sb = 0, sa = 0;
                 for (var k = 0; k < ns; k++)
                 {
                     var uu = u + ou[k]; var vv = v + ov[k];
@@ -772,24 +1039,28 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 }
                 if (sa == 0) continue;
                 var cov = sa * (1f / 255f) * invNs;
-                if (clip.Cov is not null) cov *= clip.At(x, y);
+                if (hasCov) cov *= clip.At(x, y);
                 if (cov * al <= 0f) continue;
                 float r, g, b;
                 if (isMask) { r = mr; g = mg; b = mb; }
                 else { var k = 255f / sa; r = sr * k * (1f / 255f); g = sg * k * (1f / 255f); b = sb * k * (1f / 255f); }
-                Put((y - _oy) * _lw + (x - _ox), r, g, b, cov, al, mode);
+                Put(rowBase + x, r, g, b, cov, al, mode);
             }
         }
-        if (!OperatingSystem.IsBrowser() && (long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
+        if (UseThreads && (long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
         else for (var y = y0; y < y1; y++) Row(y);
     }
 
     public void PaintShader(Func<double, double, RgbColor?> shader, double alpha, string blendMode)
     {
+        Flush();
         var clip = _clip;
         if (clip.Empty) return;
         var mode = ParseBlend(blendMode); var al = (float)alpha;
+        if (_a is null) EnsureWhite();
         for (var y = clip.Y0; y < clip.Y1; y++)
+        {
+            Touch(y, clip.X0, clip.X1);
             for (var x = clip.X0; x < clip.X1; x++)
             {
                 var cl = clip.At(x, y);
@@ -798,6 +1069,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 if (c is null) continue;
                 Put((y - _oy) * _lw + (x - _ox), (float)c.Value.R, (float)c.Value.G, (float)c.Value.B, cl, al, mode);
             }
+        }
     }
 
     // ---------------------------------------------------------------- transparency groups (ISO 32000-2 11.4)
@@ -805,6 +1077,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     sealed class Group
     {
         public float[] Px = [], PPx = []; public float[]? A, Ag, Ip, Ia, PA, PAg, PIp, PIa;
+        public int[]? Rmin, Rmax, PRmin, PRmax;
         public int Ox, Oy, Lw, Lh, POx, POy, PLw, PLh;
         public bool Ko, PKo, PGray, Isolated, Pooled;
         public GroupBlendSpace? PBs;
@@ -814,18 +1087,62 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     static float[] Rent(int n, bool clear)
     {
-        var a = System.Buffers.ArrayPool<float>.Shared.Rent(Math.Max(n, 1));
+        var a = BufferPool.Rent(Math.Max(n, 1));
         if (clear) a.AsSpan(0, n).Clear();
         return a;
     }
 
-    static void Return(float[]? a) { if (a is not null && a.Length > 0) System.Buffers.ArrayPool<float>.Shared.Return(a); }
+    static void Return(float[]? a) { if (a is not null && a.Length > 0) BufferPool.Return(a); }
+
+    /// <summary>
+    /// ArrayPool.Shared never retains arrays above 1M elements, so every large page/group layer used to be a fresh, GC-zeroed allocation
+    /// (dozens of MB per render). Large buffers are kept in a small capped free list instead; renters initialise what they read.
+    /// </summary>
+    static class BufferPool
+    {
+        const int SharedLimit = 1 << 20;
+        const long RetainedBytesCap = 256L << 20;
+        static readonly List<float[]> Free = [];
+        static long _freeBytes;
+
+        public static float[] Rent(int n)
+        {
+            if (n <= SharedLimit) return System.Buffers.ArrayPool<float>.Shared.Rent(n);
+            lock (Free)
+            {
+                var best = -1;
+                for (var i = 0; i < Free.Count; i++)
+                {
+                    var len = Free[i].Length;
+                    if (len >= n && len <= n + (n >> 3) && (best < 0 || len < Free[best].Length)) best = i;
+                }
+                if (best >= 0)
+                {
+                    var a = Free[best]; Free.RemoveAt(best); _freeBytes -= (long)a.Length * sizeof(float);
+                    return a;
+                }
+            }
+            return GC.AllocateUninitializedArray<float>(n);
+        }
+
+        public static void Return(float[] a)
+        {
+            if (a.Length <= SharedLimit) { System.Buffers.ArrayPool<float>.Shared.Return(a); return; }
+            var bytes = (long)a.Length * sizeof(float);
+            lock (Free)
+            {
+                if (_freeBytes + bytes > RetainedBytesCap) return;
+                Free.Add(a); _freeBytes += bytes;
+            }
+        }
+    }
 
     public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode) =>
         BeginGroup(isolated, knockout, alpha, blendMode, null);
 
     public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode, PdfColorSpace? colorSpace)
     {
+        Flush();
         bool gray; GroupBlendSpace? bs;
         if (colorSpace is null) { gray = _gray; bs = _bs; }
         else if (colorSpace == PdfColorSpace.Gray) { gray = true; bs = null; }
@@ -837,7 +1154,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         var c = _clip;
         var g = new Group
         {
-            PPx = _px, PA = _a, PAg = _ag, PIp = _ip, PIa = _ia, POx = _ox, POy = _oy, PLw = _lw, PLh = _lh, PKo = _ko,
+            PPx = _px, PA = _a, PAg = _ag, PIp = _ip, PIa = _ia, POx = _ox, POy = _oy, PLw = _lw, PLh = _lh, PKo = _ko, PRmin = _rmin, PRmax = _rmax,
             Ko = knockout, PGray = _gray, PBs = _bs, Isolated = isolated, Outer = c, OuterPre = _preMask, Alpha = (float)alpha, Mode = ParseBlend(blendMode),
         };
         _groups.Push(g);
@@ -850,9 +1167,17 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         }
         int w = c.X1 - c.X0, h = c.Y1 - c.Y0, n = w * h;
         g.Ox = c.X0; g.Oy = c.Y0; g.Lw = w; g.Lh = h; g.Pooled = true;
-        g.Px = Rent(n * 3, isolated); g.A = Rent(n, isolated);
-        if (!isolated)
+        g.Px = Rent(n * 3, false); g.A = Rent(n, false);
+        if (isolated)
         {
+            // Lazily initialised: only the touched span of each row is cleared (see Touch), so sparse pages never pay for the whole layer.
+            g.Rmin = new int[h]; g.Rmax = new int[h];
+            Array.Fill(g.Rmin, int.MaxValue); Array.Fill(g.Rmax, int.MinValue);
+        }
+        else
+        {
+            if (_a is null) EnsureWhite();
+            for (var y = c.Y0; y < c.Y1; y++) Touch(y, c.X0, c.X1);
             g.Ag = Rent(n, true); g.Ip = Rent(n * 3, false); g.Ia = Rent(n, false);
             for (var y = 0; y < h; y++)
             {
@@ -864,22 +1189,55 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             Array.Copy(g.Px, g.Ip, n * 3); Array.Copy(g.A, g.Ia, n);
         }
         _px = g.Px; _a = g.A; _ag = g.Ag; _ip = g.Ip; _ia = g.Ia; _ox = g.Ox; _oy = g.Oy; _lw = w; _lh = h; _ko = knockout; _gray = gray;
+        _rmin = g.Rmin; _rmax = g.Rmax;
         _bs = bs; _conv = gray || (bs?.Lossy ?? false);
         _clip = new ClipMask { X0 = c.X0, Y0 = c.Y0, X1 = c.X1, Y1 = c.Y1 };
     }
 
     public void EndGroup()
     {
+        Flush();
         if (_groups.Count == 0) return;
         var g = _groups.Pop();
         _px = g.PPx; _a = g.PA; _ag = g.PAg; _ip = g.PIp; _ia = g.PIa; _ox = g.POx; _oy = g.POy; _lw = g.PLw; _lh = g.PLh; _ko = g.PKo; _gray = g.PGray;
         _bs = g.PBs; _conv = _gray || (_bs?.Lossy ?? false);
+        _rmin = g.PRmin; _rmax = g.PRmax;
         _clip = g.Outer; _preMask = g.OuterPre;
         if (!g.Pooled) return;
+        if (_a is null) EnsureWhite();
         var c = g.Outer;
+        var opaqueNormal = _a is null && g.Mode == Blend.Normal && !_conv && g.Isolated;
+        var rpx = _px; var ccov = c.Cov; var galpha = g.Alpha; var gA = g.A; var gPx = g.Px;
         void Row(int y)
         {
-            for (var x = c.X0; x < c.X1; x++)
+            int xs = c.X0, xe = c.X1;
+            if (g.Rmin is { } gmin)
+            {
+                var ly = y - g.Oy;
+                xs = Math.Max(xs, gmin[ly] + g.Ox); xe = Math.Min(xe, g.Rmax![ly] + g.Ox);
+                if (xs >= xe) return;
+            }
+            Touch(y, xs, xe);
+            if (opaqueNormal)
+            {
+                var rowBase = (y - _oy) * _lw - _ox;
+                var lrow = (y - g.Oy) * g.Lw - g.Ox;
+                for (var x = xs; x < xe; x++)
+                {
+                    var cov = ccov is null ? 1f : c.At(x, y);
+                    if (cov <= 0f) continue;
+                    var li = lrow + x;
+                    var ag = gA![li];
+                    if (ag <= 0f) continue;
+                    var l3 = li * 3; var o3 = (rowBase + x) * 3;
+                    float r = gPx[l3], gg = gPx[l3 + 1], b = gPx[l3 + 2];
+                    var s = cov * (ag * galpha);
+                    if (s >= 0.9999f) { rpx[o3] = r; rpx[o3 + 1] = gg; rpx[o3 + 2] = b; }
+                    else { rpx[o3] += (r - rpx[o3]) * s; rpx[o3 + 1] += (gg - rpx[o3 + 1]) * s; rpx[o3 + 2] += (b - rpx[o3 + 2]) * s; }
+                }
+                return;
+            }
+            for (var x = xs; x < xe; x++)
             {
                 var cov = c.At(x, y);
                 if (cov <= 0f) continue;
@@ -897,7 +1255,8 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 Put((y - _oy) * _lw + (x - _ox), r, gg, b, cov, ag * g.Alpha, g.Mode);
             }
         }
-        for (var y = c.Y0; y < c.Y1; y++) Row(y);
+        if (UseThreads && (long)(c.X1 - c.X0) * (c.Y1 - c.Y0) > 100_000) Parallel.For(c.Y0, c.Y1, Row);
+        else for (var y = c.Y0; y < c.Y1; y++) Row(y);
         Return(g.Px); Return(g.A); Return(g.Ag); Return(g.Ip); Return(g.Ia);
     }
 }
