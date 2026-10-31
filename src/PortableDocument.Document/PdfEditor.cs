@@ -319,8 +319,12 @@ public sealed partial class PdfEditor
     /// single-line appearance; buttons get /V and /AS (checked state name or Off). NeedAppearances is set so viewers refresh.
     /// Returns false if no such field exists.
     /// </summary>
-    public bool SetFieldValue(string name, string value)
+    public bool SetFieldValue(string name, string value) => SetFieldValues(name, [value]);
+
+    /// <summary>Sets a field to one or more values: several values make a multi-select choice field's /V array and matching /I indices.</summary>
+    public bool SetFieldValues(string name, IReadOnlyList<string> values)
     {
+        var value = values.Count > 0 ? values[0] : "";
         if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || Res(form.Get("Fields")) is not PdfArray fields) return false;
         var done = false;
         void Walk(PdfObject? o, string prefix, string? ft, int depth)
@@ -340,23 +344,40 @@ public sealed partial class PdfEditor
                 var on = value is not ("" or "Off");
                 e["V"] = new PdfName(on ? value : "Off");
                 _objs[r.Number] = new PdfDictionary(e);
-                foreach (var w in kids is null ? [r] : kids.Items)
-                    if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd)
+                var ffBtn = (int)(Res(d.Get("Ff")).AsNumber() ?? 0);
+                var targets = (kids is null ? [r] : kids.Items).ToList();
+                for (var wi = 0; wi < targets.Count; wi++)
+                    if (targets[wi] is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd)
                     {
-                        var states = Res(wd.Get("AP")) is PdfDictionary ap && Res(ap.Get("N")) is PdfDictionary n ? n.Entries.Keys : (IEnumerable<string>)[];
-                        var we = new Dictionary<string, PdfObject>(wd.Entries) { ["AS"] = new PdfName(on && states.Contains(value) ? value : "Off") };
+                        var states = Res(wd.Get("AP")) is PdfDictionary ap && Res(ap.Get("N")) is PdfDictionary n ? n.Entries.Keys.ToList() : [];
+                        // Without appearance states the on-state is the /Opt export (or index) for radios and the chosen name for check boxes.
+                        var kidOn = states.FirstOrDefault(k => k != "Off") ?? ((ffBtn & 32768) != 0
+                            ? (Res(d.Get("Opt")) is PdfArray opts && wi < opts.Count && Res(opts[wi]) is PdfString os ? os.Text : wi.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                            : value);
+                        var we = new Dictionary<string, PdfObject>(wd.Entries) { ["AS"] = new PdfName(on && kidOn == value ? value : "Off") };
                         _objs[wr.Number] = new PdfDictionary(we);
                     }
                 return;
             }
-            e["V"] = new PdfString(EncodeText(value));
+            if (ft == "Ch" && values.Count > 1) e["V"] = new PdfArray(values.Select(v => (PdfObject)new PdfString(EncodeText(v))).ToList());
+            else e["V"] = new PdfString(EncodeText(value));
+            if (ft == "Ch")
+            {
+                var chosen = new List<int>();
+                if (Res(d.Get("Opt")) is PdfArray options)
+                    foreach (var v in values)
+                        for (var oi = 0; oi < options.Count; oi++)
+                            if ((Res(options[oi]) is PdfString es && es.Text == v) || (Res(options[oi]) is PdfArray pr && pr.Count >= 1 && Res(pr[0]) is PdfString ex && ex.Text == v)) { chosen.Add(oi); break; }
+                if (chosen.Count > 0 && chosen.Count == values.Count) e["I"] = new PdfArray(chosen.Order().Select(i => (PdfObject)new PdfInteger(i)).ToList());
+                else e.Remove("I");
+            }
             _objs[r.Number] = new PdfDictionary(e);
             if (ft is "Tx" or "Ch")
                 foreach (var w in kids is null ? [r] : kids.Items)
                     if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd && Res(wd.Get("Rect")) is PdfArray ra && ra.Count >= 4)
                     {
                         double N(int i) => Res(ra[i]).AsNumber() ?? 0;
-                        var xo = BuildTextAppearance(d, wd, Math.Abs(N(2) - N(0)), Math.Abs(N(3) - N(1)), DisplayText(d, value), ft == "Ch");
+                        var xo = BuildTextAppearance(d, wd, Math.Abs(N(2) - N(0)), Math.Abs(N(3) - N(1)), string.Join(", ", values.DefaultIfEmpty("").Select(v => DisplayText(d, v))), ft == "Ch");
                         var we = new Dictionary<string, PdfObject>(wd.Entries)
                         { ["AP"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["N"] = xo }) };
                         _objs[wr.Number] = new PdfDictionary(we);

@@ -6,7 +6,7 @@ using Pdf = PortableDocument.Render.PortableDocument;
 /// <summary>Fills every AcroForm field type through the real Select-mode UI, in a lone form and in a merged 50-page-style collection.</summary>
 static class EditorForms
 {
-    sealed record Widget(string Name, string Kind, double X0, double Y0, double X1, double Y1, string Value, string? On, bool Checked, bool ReadOnly, int MaxLen, bool Comb, bool Multiline, List<Opt>? Options);
+    sealed record Widget(string Name, string Kind, double X0, double Y0, double X1, double Y1, string Value, string? On, bool Checked, bool ReadOnly, int MaxLen, bool Comb, bool Multiline, List<Opt>? Options, bool Multi, bool Edit, List<string>? Values);
     sealed record Opt(string Value, string Label);
 
     public static async Task Run(IPage page)
@@ -22,8 +22,93 @@ static class EditorForms
         }
         await Fill(page, "11-acroform.pdf", lone, lone);
         await Fill(page, "27-full-collection.pdf", merged.Save(), lone);
-        Console.WriteLine("PASS: Select-mode form filling (text/email/comb/multiline/combo/list/check/radio) in a lone form and a merged collection; widgets win over page groups, push buttons inert, Tab/Space keyboard, save/reopen values and appearance.");
+        await Synthetic(page);
+        Console.WriteLine("PASS: Select-mode form filling (text/email/comb/multiline/combo/list/check/radio) in a lone form and a merged collection; widgets win over page groups, push buttons inert, Tab/Space keyboard, save/reopen values and appearance; rotated CropBox-offset NeedAppearances form with Opt radios, multi-select list, editable combo, undo and keyboard/Alt page-content selection.");
     }
+
+    static byte[] SyntheticForm()
+    {
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /AcroForm 6 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /CropBox [20 30 320 430] /Rotate 90 /Resources << >> /Contents 4 0 R /Annots [7 0 R 8 0 R 9 0 R 10 0 R 11 0 R 12 0 R 13 0 R] >>",
+            "<< /Length 25 >>\nstream\n0.95 g 0 0 400 500 re f\nendstream",
+            "<< >>",
+            "<< /Fields [7 0 R 8 0 R 15 0 R 12 0 R 13 0 R] /NeedAppearances true /DA (/Helv 12 Tf 0 g) >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Tx /T (Name) /F 4 /P 3 0 R /Rect [40 400 200 420] >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Btn /T (Agree) /F 4 /P 3 0 R /Rect [40 360 60 380] >>",
+            "<< /Type /Annot /Subtype /Widget /Parent 15 0 R /F 4 /P 3 0 R /Rect [40 320 60 340] >>",
+            "<< /Type /Annot /Subtype /Widget /Parent 15 0 R /F 4 /P 3 0 R /Rect [70 320 90 340] >>",
+            "<< /Type /Annot /Subtype /Widget /Parent 15 0 R /F 4 /P 3 0 R /Rect [100 320 120 340] >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 2097152 /T (Tags) /Opt [(a) (b) (c)] /V [(a) (c)] /F 4 /P 3 0 R /Rect [40 220 160 300] >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 393216 /T (City) /Opt [[(sf) (San Francisco)] [(ny) (New York)]] /F 4 /P 3 0 R /Rect [40 180 200 200] >>",
+            "<< >>",
+            "<< /FT /Btn /Ff 49152 /T (Size) /Opt [(S) (M) (L)] /Kids [9 0 R 10 0 R 11 0 R] >>"
+        };
+        var sb = new System.Text.StringBuilder("%PDF-1.7\n");
+        var offsets = new List<int>();
+        for (var i = 0; i < objects.Length; i++)
+        {
+            offsets.Add(sb.Length);
+            sb.Append($"{i + 1} 0 obj\n{objects[i]}\nendobj\n");
+        }
+        var xref = sb.Length;
+        sb.Append($"xref\n0 {objects.Length + 1}\n0000000000 65535 f \n");
+        foreach (var o in offsets) sb.Append($"{o:D10} 00000 n \n");
+        sb.Append($"trailer\n<< /Size {objects.Length + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
+        return System.Text.Encoding.Latin1.GetBytes(sb.ToString());
+    }
+
+    static async Task Synthetic(IPage page)
+    {
+        const string name = "synthetic-form.pdf";
+        var bytes = SyntheticForm();
+        await Open(page, name, bytes, 0);
+        var widgets = await Widgets(page, 0);
+        Check(widgets.Where(w => w.Kind == "radio").Select(w => w.On).SequenceEqual(["S", "M", "L"]), name + ": radios without /AP use /Opt exports");
+        Check(widgets.Single(w => w.Kind == "check").On == "Yes", name + ": check box without /AP falls back to Yes");
+        var tags = widgets.Single(w => w.Name == "Tags");
+        Check(tags.Multi && tags.Values!.SequenceEqual(["a", "c"]), name + ": multi-select list exposes every selected value");
+        Check(widgets.Single(w => w.Name == "City").Edit, name + ": editable combo exposes the Edit flag");
+        Check(await page.Locator("#layer select.wgt.list[multiple]").CountAsync() == 1 && await page.Locator("#layer input.wgt.combo[list]").CountAsync() == 1, name + ": multi list is <select multiple> and editable combo is input+datalist");
+
+        // Page-sized background: plain click passes through with a hint, Alt+click and Tab+Enter select it.
+        var big = page.Locator("#layer .obj[tabindex]").First;
+        Check((await big.GetAttributeAsync("title"))!.Contains("Alt+click"), name + ": page-sized object tooltip explains how to select it");
+        var spot = await page.EvaluateAsync<double[]>("() => { const b = document.getElementById('layer').getBoundingClientRect(); for (let fy = .05; fy < 1; fy += .1) for (let fx = .05; fx < 1; fx += .1) { const x = b.left + b.width * fx, y = b.top + b.height * fy; if (document.elementFromPoint(x, y)?.matches('.obj[tabindex]')) return [x, y]; } return null; }");
+        Check(spot is not null, name + ": some point of the page reaches the page-sized object");
+        await page.Mouse.ClickAsync((float)spot![0], (float)spot[1]);
+        Check(await WholePage(page) == 0 && (await page.Locator("#status").TextContentAsync())!.Contains("Alt+click"), name + ": plain click shows the hint without selecting: " + await WholePage(page) + " / " + await page.Locator("#status").TextContentAsync());
+        await big.FocusAsync(); await page.Keyboard.PressAsync("Enter");
+        Check(await WholePage(page) == 1, name + ": keyboard Enter selects the page-sized object");
+        await page.Keyboard.PressAsync("Escape");
+
+        await page.Locator("#layer .wgt.text").FillAsync("Ada"); await page.Keyboard.PressAsync("Tab");
+        await page.Locator("#layer .wgt.check").CheckAsync();
+        await page.Locator("#layer .wgt.radio").Nth(1).CheckAsync();
+        await page.Locator("#layer .wgt.list").SelectOptionAsync(["b", "c"]);
+        await page.Locator("#layer .wgt.combo").FillAsync("Zurich"); await page.Keyboard.PressAsync("Tab");
+        var expected = new Dictionary<string, string> { ["Name"] = "Ada", ["Agree"] = "Yes", ["Size"] = "M", ["City"] = "Zurich" };
+        await Poll(async () => { var values = await Values(page); return expected.All(kv => FieldValue(JsonDocument.Parse(values).RootElement, kv.Key) == kv.Value); }, name + ": UI edits reach the document");
+
+        await page.Locator("body").PressAsync("Control+z");
+        await Poll(async () => FieldValue(JsonDocument.Parse(await Values(page)).RootElement, "City") == "", name + ": undo restores the previous combo value");
+
+        await page.Locator("#dl").ClickAsync();
+        var download = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
+        await page.Locator(".mdl").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        var saved = PdfDocument.Load(await File.ReadAllBytesAsync((await download.PathAsync())!));
+        var byName = saved.GetFormFields().ToDictionary(f => f.FullName);
+        Check(byName["Name"].Value == "Ada" && byName["Agree"].Value == "Yes" && byName["Size"].Value == "M", name + ": saved text/check/radio values");
+        var savedTags = ((PortableDocument.Core.PdfArray)saved.File.Resolve(byName["Tags"].Dict.Get("V"))!).Items.Select(v => ((PortableDocument.Core.PdfString)saved.File.Resolve(v)!).Text).ToList();
+        Check(savedTags.SequenceEqual(["b", "c"]) && saved.File.Resolve(byName["Tags"].Dict.Get("I")) is PortableDocument.Core.PdfArray { Count: 2 }, name + ": saved multi-select /V array and /I indices: " + string.Join(",", savedTags));
+        var radioStates = saved.Pages[0].GetAnnotations().Where(a => a.Subtype == "Widget" && a.Dict.Get("Parent") is not null).Select(a => saved.File.Resolve(a.Dict.Get("AS")) is PortableDocument.Core.PdfName asName ? asName.Value : null).ToList();
+        Check(radioStates.SequenceEqual(["Off", "M", "Off"]), name + ": only the chosen radio is on: " + string.Join(",", radioStates));
+    }
+
+    static string? FieldValue(JsonElement fields, string name) =>
+        fields.EnumerateArray().Where(f => f.GetProperty("name").GetString() == name).Select(f => f.GetProperty("value").GetString()).FirstOrDefault();
 
     static async Task Fill(IPage page, string name, byte[] bytes, byte[] _)
     {
@@ -66,6 +151,8 @@ static class EditorForms
                     if (w.MaxLen > 0 && !w.Comb && text.Length > w.MaxLen) text = text[..w.MaxLen];
                     await el.FillAsync(text); await el.PressAsync("Tab");
                     expected[w.Name] = text; break;
+                case "combo" when w.Edit:
+                    await el.FillAsync("Custom"); await el.PressAsync("Tab"); expected[w.Name] = "Custom"; break;
                 case "combo": case "list":
                     var pick = w.Options!.Select(o => o.Value).First(v => v != w.Value);
                     await el.SelectOptionAsync(pick); expected[w.Name] = pick; break;

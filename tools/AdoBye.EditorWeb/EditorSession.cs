@@ -122,7 +122,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
 
     sealed record WidgetOption(string Value, string Label);
     sealed record WidgetDetails(string Name, string Kind, double X0, double Y0, double X1, double Y1, string Value, string? On, bool Checked,
-        bool ReadOnly, bool Multiline, bool Password, bool Comb, int MaxLen, int Align, double Size, List<WidgetOption>? Options);
+        bool ReadOnly, bool Multiline, bool Password, bool Comb, int MaxLen, int Align, double Size, List<WidgetOption>? Options, bool Multi, bool Edit, List<string>? Values);
 
     /// <summary>Fillable AcroForm widgets on page <paramref name="i"/> in the same CropBox space as objects and text; push buttons are listed but never executed.</summary>
     List<WidgetDetails> WidgetDetailsFor(int i)
@@ -138,12 +138,12 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             if (file.Resolve(annot) is not PdfDictionary d || file.Resolve(d.Get("Subtype")).AsName() != "Widget") continue;
             if (((int)(file.Resolve(d.Get("F")).AsNumber() ?? 0) & (2 | 32)) != 0) continue;
             var parts = new List<string>();
-            PdfObject? opt = null, maxLen = null, q = null, da = null;
+            PdfObject? opt = null, maxLen = null, q = null, da = null, rawValue = null; PdfDictionary? parent = null;
             var node = d; var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
             for (var depth = 0; node is not null && depth < 32 && seen.Add(node); depth++)
             {
                 if (file.Resolve(node.Get("T")) is PdfString t) parts.Insert(0, t.Text);
-                opt ??= node.Get("Opt"); maxLen ??= node.Get("MaxLen"); q ??= node.Get("Q"); da ??= node.Get("DA");
+                rawValue ??= node.Get("V"); if (node == d) parent = file.Resolve(node.Get("Parent")) as PdfDictionary; opt ??= node.Get("Opt"); maxLen ??= node.Get("MaxLen"); q ??= node.Get("Q"); da ??= node.Get("DA");
                 node = file.Resolve(node.Get("Parent")) as PdfDictionary;
             }
             if (!fields.TryGetValue(string.Join(".", parts), out var field) || field.FieldType is not ("Tx" or "Btn" or "Ch")) continue;
@@ -155,9 +155,17 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             if (field.FieldType == "Btn")
             {
                 kind = (ff & 65536) != 0 ? "push" : (ff & 32768) != 0 ? "radio" : "check";
+                var hasStates = false;
                 if (file.Resolve(d.Get("AP")) is PdfDictionary ap && file.Resolve(ap.Get("N")) is PdfDictionary states)
-                    on = states.Entries.Keys.FirstOrDefault(k => k != "Off");
-                isChecked = on is not null && file.Resolve(d.Get("AS")).AsName() == on;
+                { hasStates = states.Entries.Count > 0; on = states.Entries.Keys.FirstOrDefault(k => k != "Off"); }
+                if (on is null)
+                {
+                    // Forms without appearance streams (NeedAppearances): radios use the /Opt export or kid index, check boxes use Yes.
+                    var index = parent is not null && file.Resolve(parent.Get("Kids")) is PdfArray siblings ? siblings.Items.ToList().FindIndex(k => ReferenceEquals(file.Resolve(k), d)) : 0;
+                    on = kind == "radio" ? (file.Resolve(opt) is PdfArray ro && index >= 0 && index < ro.Count && file.Resolve(ro[index]) is PdfString rs ? rs.Text : Math.Max(index, 0).ToString(CultureInfo.InvariantCulture)) : "Yes";
+                }
+                var stateName = file.Resolve(d.Get("AS")).AsName();
+                isChecked = stateName is not null ? stateName == on : !hasStates && field.Value == on;
             }
             else
             {
@@ -175,7 +183,9 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             var comb = kind == "text" && (ff & (1 << 24)) != 0 && file.Resolve(maxLen).AsNumber() is > 0;
             list.Add(new(field.FullName, kind, x0, y0, x1, y1, field.Value ?? "", on, isChecked,
                 (ff & 1) != 0, kind == "text" && (ff & 4096) != 0, kind == "text" && (ff & 8192) != 0, comb,
-                (int)(file.Resolve(maxLen).AsNumber() ?? 0), (int)(file.Resolve(q).AsNumber() ?? 0), size, options));
+                (int)(file.Resolve(maxLen).AsNumber() ?? 0), (int)(file.Resolve(q).AsNumber() ?? 0), size, options,
+                kind == "list" && (ff & 0x200000) != 0, kind == "combo" && (ff & 0x40000) != 0,
+                kind is "combo" or "list" ? (file.Resolve(rawValue) is PdfArray va ? va.Items.Select(v => file.Resolve(v) is PdfString vs ? vs.Text : "").ToList() : field.Value is { } fv ? [fv] : []) : null));
         }
         return list;
     }
@@ -813,7 +823,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     editor.SetRotation(i, ((Snap().Pages[i].Rotate + int.Parse(p[3], CultureInfo.InvariantCulture)) % 360 + 360) % 360); break;
                 case "title": editor.SetInfo("Title", Q("t") ?? ""); break;
                 case "field":
-                    if (!editor.SetFieldValue(Q("n") ?? "", Q("v") ?? "")) throw new ArgumentException("Form field not found.");
+                    if (!(Q("m") == "1" ? editor.SetFieldValues(Q("n") ?? "", JsonSerializer.Deserialize<List<string>>(Q("v") ?? "[]", Json) ?? []) : editor.SetFieldValue(Q("n") ?? "", Q("v") ?? ""))) throw new ArgumentException("Form field not found.");
                     break;
                 case "info":
                     var info = Read<Dictionary<string, string>>() ?? [];
