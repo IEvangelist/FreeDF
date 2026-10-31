@@ -2,6 +2,15 @@
 
 Entries are grouped per component; each section is self-contained.
 
+## OpenJPEG 2.5.4 (test-only reference fixtures)
+
+`tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
+reference samples generated with the official OpenJPEG 2.5.4 Windows tools.
+Their manifests record tool hashes and fixture provenance; no OpenJPEG source
+or executable is shipped in the libraries or editor. The complete BSD-2-Clause
+copyright notice, conditions and disclaimer for these fixtures are retained in
+[OpenJPEG test-reference notices](docs/third-party-notices-openjpeg.fragment.md).
+
 ## Fallback fonts and CJK glyph data (PortableDocument.FallbackFonts, PortableDocument.Content)
 
 Full texts live in `src/PortableDocument.FallbackFonts/fallback-fonts/licenses/` and are described by `licenses/manifest.json`.

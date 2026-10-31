@@ -160,6 +160,16 @@ CMS-envelope randomness; public-key output is not byte-reproducible.
 
 ## Parser (`PortableDocument.Core`, `PortableDocument.Document`)
 
+Latest codec integration supersedes the older 12-AT/colour implementation
+limitation below: JBIG2 extended templates decode with an explicit unverified
+warning, and colour-extension regions expose monochrome ink only, not colour
+playback. Their hand-derived fixtures are deliberately named `unverified-*`;
+striped unknown-height pages have separate reference coverage. Broader external
+verification remains a gap. JPX adds manifest-provenanced OpenJPEG reference
+matrices, packed multi-component references, strict container fallback/depth
+checks and `SMaskInData=2` coverage. The combined JBIG2/JPX/image focus passes
+392 tests. Neither addition promotes the overall codec row to Done.
+
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
 | 7.2-7.3 | Lexical conventions, all object types | Done | Names `#xx`, literal/hex strings, tolerant numbers |

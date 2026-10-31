@@ -1,6 +1,6 @@
-# THIRD-PARTY-NOTICES fragment: OpenJPEG test references
+# OpenJPEG test-reference notices
 
-Fragment for integrators to merge into `THIRD-PARTY-NOTICES.md`. Test-only: not shipped in any library or app output.
+Referenced by `THIRD-PARTY-NOTICES.md`. Test-only: not shipped in any library or app output.
 
 ## OpenJPEG 2.5.4 (test fixtures and reference decoder output)
 
