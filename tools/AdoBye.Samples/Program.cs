@@ -6,6 +6,7 @@ using PortableDocument.Render;
 // Usage:
 //   AdoBye.Samples generate <out-dir> [name-fragment]   author the samples (and the merged 27-full-collection) with this repo's own writer/editor
 //   AdoBye.Samples validate <samples-dir> [--out dir]   open + render every page of every sample, fail on exceptions or renderer warnings
+//   AdoBye.Samples publish-assets <samples-dir> <out-dir>  copy the samples + manifest.json (names, sizes, pages, sha256) for the browser editor's lazy "Open sample"
 //   AdoBye.Samples repack <in.pdf> <out.pdf>            rewrite a sample with PdfEditor/PdfWriter (compressed streams + object/xref streams)
 // Passwords for the encrypted samples are listed in samples/README.md.
 
@@ -18,6 +19,13 @@ var passwords = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 if (args.Length >= 2 && args[0] == "generate")
 {
     foreach (var name in AdoBye.Samples.SampleGenerator.Generate(args[1], args.Length > 2 ? args[2] : "")) Console.WriteLine("built " + name);
+    return 0;
+}
+
+if (args.Length == 3 && args[0] == "publish-assets")
+{
+    var entries = AdoBye.Samples.SampleManifest.Publish(args[1], args[2]);
+    Console.WriteLine($"published {entries.Count} samples ({entries.Sum(e => e.Size)} bytes) and manifest.json to {args[2]}");
     return 0;
 }
 

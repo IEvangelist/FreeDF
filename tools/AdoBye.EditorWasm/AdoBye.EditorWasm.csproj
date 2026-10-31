@@ -20,6 +20,10 @@
     <Content Include="..\..\samples\_gen\fonts\bitstream-vera-license.txt" Link="wwwroot\bitstream-vera-license.txt" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.FallbackFonts\PortableDocument.FallbackFonts.csproj" />
+    <!-- Served same-origin and fetched on first use; nothing from this folder is part of the startup payload. -->
+    <Content Include="..\..\src\PortableDocument.FallbackFonts\fallback-fonts\**" Link="wwwroot\fallback-fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <TrimmerRootAssembly Include="PortableDocument.FallbackFonts" Condition="'$(RunAOTCompilation)' == 'true'" />
     <Compile Include="..\AdoBye.EditorWeb\EditorSession.cs" Link="EditorSession.cs" />
     <Compile Include="..\AdoBye.EditorWeb\FormObjectEditPolicy.cs" Link="FormObjectEditPolicy.cs" />
     <Compile Include="..\AdoBye.EditorWeb\OverlayBuilder.cs" Link="OverlayBuilder.cs" />
@@ -27,5 +31,6 @@
     <Content Include="..\AdoBye.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.css" Link="wwwroot\editor.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.js" Link="wwwroot\editor.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\samples.js" Link="wwwroot\samples.js" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

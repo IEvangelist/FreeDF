@@ -47,12 +47,12 @@ export async function start() {
     }
   };
   await ready;
-  const command = (url, method = 'GET', body = null, fileName = null, image = false) => {
+  const command = (url, method = 'GET', body = null, fileName = null, image = false, password = null) => {
     if (failed) return Promise.reject(failed);
     const id = ++nextId;
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject, url, started: performance.now() });
-      try { worker.postMessage({ id, url, method, body, fileName, image }); }
+      try { worker.postMessage({ id, url, method, body, fileName, image, password }); }
       catch (error) { pending.delete(id); reject(error); }
     });
   };
@@ -74,7 +74,7 @@ export async function start() {
         } else if (options.body != null) {
           body = options.body;
         }
-        const reply = await command(url, options.method, body, fileName);
+        const reply = await command(url, options.method, body, fileName, false, options.headers?.['X-Pdf-Password'] ?? null);
         return new Response(reply.bytes, {
           headers: { 'Content-Type': reply.contentType, ...(reply.fileName ? { 'X-File-Name': reply.fileName } : {}) },
         });

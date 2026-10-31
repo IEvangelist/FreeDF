@@ -11,6 +11,7 @@
     <Project Path="src/PortableDocument.Content/PortableDocument.Content.csproj" />
     <Project Path="src/PortableDocument.Core/PortableDocument.Core.csproj" />
     <Project Path="src/PortableDocument.Document/PortableDocument.Document.csproj" />
+    <Project Path="src/PortableDocument.FallbackFonts/PortableDocument.FallbackFonts.csproj" />
     <Project Path="src/PortableDocument.Render/PortableDocument.Render.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -22,5 +23,6 @@
     <Project Path="tools/AdoBye.EditorSmoke/AdoBye.EditorSmoke.csproj" />
     <Project Path="tools/AdoBye.AotSmoke/AdoBye.AotSmoke.csproj" />
     <Project Path="tools/AdoBye.RenderCompare/AdoBye.RenderCompare.csproj" />
+    <Project Path="tools/AdoBye.FontPack/AdoBye.FontPack.csproj" />
   </Folder>
 </Solution>

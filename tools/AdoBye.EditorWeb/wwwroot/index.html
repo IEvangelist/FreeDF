@@ -5,6 +5,7 @@
 <title>AdoBye - PDF Editor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="editor.css">
+<script>window.pdfEditorCapabilities = { openEncrypted: true };</script>
 <script src="editor.js" defer></script>
 </head>
 <body>
@@ -47,6 +48,8 @@
   <symbol id="i-sidel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
   <symbol id="i-sider" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9-9.2C1.8 7.6 3.700 4.500 6.800 4.500c2 0 3.500 1.100 5.200 3.100 1.700-2 3.200-3.100 5.200-3.100 3.100 0 5 3.100 3.800 6.300C19 15.600 12 20 12 20z"/></symbol>
+  <!-- GitHub mark: Octicons mark-github, MIT, (c) GitHub Inc. See THIRD-PARTY-NOTICES.md -->
+  <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
 </defs></svg>
 <header>
   <button id="tl" class="icon toggle on" title="Toggle pages panel ([)" aria-pressed="true"><svg class="i"><use href="#i-sidel"/></svg></button>
@@ -71,6 +74,7 @@
     <a id="sponsor" class="sponsor" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg></a>
   </div>
   <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg><span class="lbl">Download</span></button>
+  <a id="ghLink" class="gh" href="https://github.com/IEvangelist/csharp-pdf" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
   <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
 </header>
 <main>
@@ -113,15 +117,15 @@
   </div>
   <aside id="props"></aside>
 </main>
-<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><button id="recovery" hidden disabled aria-live="polite">No local recovery</button><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span><a id="sponsorBadge" class="sponsor-badge" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg>Sponsor</a></footer>
+<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><button id="recovery" hidden disabled aria-live="polite">No local recovery</button><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span><a id="sponsorBadge" class="sponsor-badge" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg>Sponsor</a><a id="ghFooter" class="gh gh-foot" href="https://github.com/IEvangelist/csharp-pdf" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a></footer>
 <script>
 addEventListener('editor-ready', () => {
 const host = window.pdfHost;
-let recovery = null;
+let recovery = null, samples = null;
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
-  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery'].includes(url.split('?')[0])) {
+  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery', '/api/unlock'].includes(url.split('?')[0])) {
     selectionEpoch++; buildEpoch++; clearTimeout(baseRenderTimer); shownPage = -1;
     clip = null; pendingUploads.clear(); assetImages.clear();
   }
@@ -730,7 +734,7 @@ function setTool(t) {
 
 function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null) })); if (undo.length > 100) undo.shift(); }
 async function doUndo() {
-  if (!undo.length) return;
+  if (!undo.length) return pageHistoryStep('undo');
   const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null; curSpan = null;
   const changed = [];
   objs.forEach((o, k) => { if (JSON.stringify(o.edit ?? null) !== JSON.stringify(s.ed[k])) { o.edit = s.ed[k]; changed.push(o); } });
@@ -738,6 +742,12 @@ async function doUndo() {
   for (const o of changed) await saveObj(o);
 }
 
+function pageHistoryStep(kind) {
+  if (!(kind === 'undo' ? state.pageUndo : state.pageRedo)) { status(kind === 'undo' ? 'Nothing to undo.' : 'Nothing to redo.'); return; }
+  let label = null;
+  return act(async () => { label = (await (await post(`/api/page-${kind}`)).json()).label; }, e => { reportError(e); })
+    .then(() => { if (label !== null) status(`${kind === 'undo' ? 'Undid' : 'Redid'} ${label} page change.`); });
+}
 const oBox = o => {
   const e = o.edit; if (!e) return [o.x0, o.y0, o.x1, o.y1];
   const xs = [e.sx * o.x0 + e.tx, e.sx * o.x1 + e.tx], ys = [e.sy * o.y0 + e.ty, e.sy * o.y1 + e.ty];
@@ -938,8 +948,78 @@ async function act(fn, onError = reportError) {
   } catch (e) { onError(e); }
 }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
+// Passwords live only in these closures: they are sent once with the open request and never stored, logged or kept for recovery.
+const passwordHeader = pw => ({ 'X-Pdf-Password': btoa(String.fromCharCode(...new TextEncoder().encode(pw))) });
+async function unlockDialog() {
+  if (!state.protection || state.protection.owner || !confirmDiscard()) return;
+  modal('Unlock with owner password', `<p class="dnote">Re-opens this PDF with the owner password so editing, printing, copying and Remove protection become available. Unsaved edits are discarded. The password is used once and never saved.</p><label>Owner password<input id="ow" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="owe"></label><p id="owe" data-error role="alert"></p>`, 'Unlock', async o => {
+    const input = o.querySelector('#ow'), value = input.value, fail = m => { o.querySelector('[data-error]').textContent = m; return false; };
+    if (!value) return fail('Enter the owner password.');
+    try { await request('/api/unlock', { method: 'POST', headers: passwordHeader(value) }); }
+    catch (e) { return fail(e.message.replace(/^password-\w+: /, '')); }
+    finally { input.value = ''; }
+    await refresh(); announceProtection();
+  }).querySelector('.dlg').setAttribute('aria-modal', 'true');
+}
+const askPassword = (name, wrong) => new Promise(resolve => {
+  const o = modal('Password required', `<p class="dnote">${esc(name)} is password-protected. The password is used once to open it and is never saved or logged.</p><label>Password<input id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="pwe"></label><p id="pwe" data-error role="alert">${wrong ? 'That password is not correct. Try again.' : ''}</p>`, 'Open', o => {
+    const input = o.querySelector('#pw'), value = input.value; if (!value) { o.querySelector('[data-error]').textContent = 'Enter the password.'; return false; }
+    input.value = ''; resolve(value);
+  });
+  o.querySelector('.dlg').setAttribute('aria-modal', 'true');
+  new MutationObserver((_, observer) => { if (!o.isConnected) { observer.disconnect(); resolve(null); } }).observe(document.body, { childList: true });
+});
+async function openPdf(file) {
+  let password = '';
+  for (;;) {
+    try { return await request('/api/open', { method: 'POST', body: formOf(file), headers: password ? passwordHeader(password) : undefined }); }
+    catch (e) {
+      const code = /^password-(required|incorrect):/.exec(e.message)?.[1]; if (!code) throw e;
+      password = await askPassword(file.name, code === 'incorrect');
+      if (password === null) { status('Open cancelled.'); return; }
+    }
+  }
+}
+const announceProtection = () => {
+  const p = state.protection; if (!p) return;
+  const denied = [['print', 'print'], ['copy', 'copy'], ['modify', 'modify'], ['annotate', 'annotate'], ['fillForms', 'fill forms'], ['assemble', 'reorganize pages']].filter(([k]) => !p[k]).map(([, l]) => l);
+  status(p.owner ? 'Opened with the owner password: all actions are allowed. Use Save as to keep or remove protection.' : denied.length ? 'Protected PDF. Not allowed: ' + denied.join(', ') + '. Open with the owner password to lift restrictions.' : 'Protected PDF opened. Use Save as to keep it protected.');
+};
+function protectDialog(markSaved) {
+  if (!state.pageCount) return;
+  const p = state.protection, locked = p && !p.owner;
+  const perms = [['print', 'Printing', 'print'], ['copy', 'Copying text and images', 'copy'], ['modify', 'Changing the document', 'modify'], ['annotate', 'Comments and annotations', 'annotate'], ['fill', 'Filling in forms', 'fillForms'], ['assemble', 'Inserting, deleting and rotating pages', 'assemble']];
+  const box = ([id, label, key]) => { const can = !p || p[key]; return `<label class="chk"><input type="checkbox" data-perm="${id}" ${can ? 'checked' : 'disabled'}> ${label}</label>`; };
+  const field = (id, label) => `<label>${label}<input id="${id}" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>`;
+  const o = modal(p ? 'Save protected PDF' : 'Protect PDF', `<label>File name<input id="pn" value="${esc(state.fileName.replace(/^(edited|protected)-/, ''))}"></label>
+    ${p?.owner ? '<label class="chk"><input type="checkbox" id="prm"> Remove protection (save an unprotected copy)</label>' : ''}
+    <div id="pf">${field('pu', 'Open password')}${field('pc', 'Confirm open password')}${field('po', 'Owner password (needed to enforce permissions)')}
+    <fieldset><legend>Allow</legend>${perms.map(box).join('')}</fieldset></div>
+    <p class="dnote">AES-256 encryption. ${locked ? 'You opened this PDF without the owner password, so permissions can only be kept or tightened. ' : ''}Passwords are used once to create the file and are never saved; keep the owner password safe.</p><p data-error role="alert"></p>`, 'Save', async o => {
+    const v = id => o.querySelector('#' + id), err = m => { o.querySelector('[data-error]').textContent = m; return false; };
+    let n = v('pn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
+    let q = 'name=' + encodeURIComponent(n);
+    if (v('prm')?.checked) q += '&remove=1';
+    else {
+      const user = v('pu').value, owner = v('po').value;
+      if (user !== v('pc').value) return err('The open passwords do not match.');
+      if (!user && !owner && p) return err('Enter a password to keep this PDF protected, or choose Remove protection.');
+      if (user || owner) {
+        const granted = [...o.querySelectorAll('[data-perm]')].filter(c => c.checked).map(c => c.dataset.perm);
+        if (granted.length < perms.length && !owner) return err('Enter an owner password so the restrictions can be enforced.');
+        q += '&user=' + encodeURIComponent(user) + '&owner=' + encodeURIComponent(owner);
+        if (granted.length < perms.length) q += '&perms=' + (granted.includes('print') ? granted.concat('highprint') : granted).concat('access').join(',');
+      }
+    }
+    await dlUrl('/api/export/secure?' + q);
+    for (const i of o.querySelectorAll('input[type=password]')) i.value = '';
+    if (markSaved) { await post('/api/saved?name=' + encodeURIComponent(n)); await refreshDirty(); }
+  });
+  o.querySelector('.dlg').setAttribute('aria-modal', 'true');
+  const toggle = o.querySelector('#prm'); if (toggle) toggle.onchange = () => { o.querySelector('#pf').hidden = toggle.checked; };
+}
 
-$('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.target.files[0]));
+$('open').onchange = e => e.target.files[0] && act(() => openPdf(e.target.files[0])).then(announceProtection);
 $('merge').onchange = e => { const files = [...e.target.files]; if (files.length) mergeDialog?.isConnected ? mergeDialog.addFiles(files) : mergePdfs(files); };
 $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/270`));
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
@@ -1049,7 +1129,9 @@ $('fq').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { e.preve
 
 // Print: renders every page at 150 dpi into a hidden frame and invokes the browser print dialog.
 async function printDoc() {
-  if (!state.pageCount) return; await flush();
+  if (!state.pageCount) return;
+  if (state.protection && !state.protection.print) return status('This PDF\'s permissions do not allow printing. Open it with the owner password to print.');
+  await flush();
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
   const imgs = (await Promise.all(state.pages.map(async (p, i) => {
     const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
@@ -1204,6 +1286,7 @@ async function saveDoc() {
 }
 function saveAs() {
   if (!state.pageCount) return;
+  if (state.protection) return protectDialog(true);
   flush().then(() => modal('Save as', `<label>File name<input id="sn" value="${esc(state.fileName.replace(/^edited-/, ''))}"></label><p class="dnote">The PDF is downloaded to your browser's download folder.</p>`, 'Save', async o => {
     let n = o.querySelector('#sn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
     await dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refreshDirty();
@@ -1222,13 +1305,7 @@ function exportImages() {
   }));
 }
 const exportText = () => state.pageCount && flush().then(() => dlUrl('/api/export/text'));
-const exportSecure = () => {
-  if (!state.pageCount) return;
-  if (host) return flush().then(() => dlUrl('/api/export/secure'));
-  const u = prompt('Open password (leave empty for compressed, unprotected copy)', ''); if (u === null) return;
-  const o = u ? prompt('Owner password (blank = same as open password)', '') : ''; if (o === null) return;
-  flush().then(() => dlUrl('/api/export/secure?user=' + encodeURIComponent(u) + '&owner=' + encodeURIComponent(o)));
-};
+const exportSecure = () => state.pageCount && flush().then(() => protectDialog(false));
 async function closeDoc() { if (!confirmDiscard()) return; await act(() => post('/api/close')); }
 const pickFile = id => { const i = $(id); i.value = ''; i.click(); };
 function openFileMenu() {
@@ -1236,6 +1313,7 @@ function openFileMenu() {
   openMenuAt(buildMenu([
     { label: 'New…', key: 'Alt+N', run: newDoc },
     { label: 'Open…', key: mod + 'O', run: () => confirmDiscard() && pickFile('open') },
+    samples && { label: 'Open sample', sub: samples.menuEntries() },
     '-',
     { label: 'Save', key: mod + 'S', disabled: !has, run: saveDoc },
     { label: 'Save as…', key: mod + 'Shift+S', disabled: !has, run: saveAs },
@@ -1246,11 +1324,12 @@ function openFileMenu() {
       { label: 'Duplicate current page', run: () => act(() => post(`/api/duplicate/${sel}`)).then(() => goPage(sel + 1)) }, '-',
       { label: 'Pages from another PDF…', run: () => pickFile('merge') }] },
     { label: 'Export', disabled: !has, sub: [
-      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }, { label: host ? 'Compressed PDF (no password)' : 'Compressed / password-protected PDF…', run: exportSecure }] },
+      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }, { label: 'Compressed / password-protected PDF…', run: exportSecure }] },
     '-',
     { label: 'Print…', key: mod + 'P', disabled: !has, run: printDoc },
     { label: 'Document properties…', disabled: !has, run: docProps },
     '-',
+    { label: 'Unlock with owner password…', disabled: !(state.protection && !state.protection.owner), run: unlockDialog },
     { label: 'Close document', disabled: !has, run: closeDoc },
   ]), r.left, r.bottom + 4);
 }
@@ -1297,7 +1376,7 @@ addEventListener('drop', e => {
   const files = [...e.dataTransfer.files];
   if (mergeDialog?.isConnected) mergeDialog.addFiles(files);
   else if (state.pageCount) mergePdfs(files);
-  else act(() => upload('/api/open', files[0])).then(() => files.length > 1 && state.pageCount && mergePdfs(files.slice(1)));
+  else act(() => openPdf(files[0])).then(() => { announceProtection(); return files.length > 1 && state.pageCount && !state.protection && mergePdfs(files.slice(1)); });
 });
 function setPanel(side, open, user) {
   const m = document.querySelector('main'), b = $(side === 'l' ? 'tl' : 'tr');
@@ -1504,6 +1583,7 @@ addEventListener('keydown', e => {
   if (e.key === '[' && !e.ctrlKey) { $('tl').click(); return; }
   if (e.key === ']' && !e.ctrlKey) { $('tr').click(); return; }
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); doUndo(); return; }
+  if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); pageHistoryStep('redo'); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'd' && cur) {
     e.preventDefault(); pushUndo();
     const c = { ...cur, id: crypto.randomUUID(), x: cur.x + 12, y: cur.y + 12, orig: null };
@@ -1534,7 +1614,12 @@ async function startEditor() {
     await refresh(retainedUndo);
     document.querySelector('main').inert = false;
     document.querySelector('header').inert = false;
-    status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
+    status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password-protected PDFs open and save here too; passwords are never stored.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
+    // Samples are fetched only on demand; a missing samples.js (older publish) just leaves the feature off.
+    if (!samples) import(new URL('samples.js', document.baseURI)).then(m => {
+      samples = m.createSamples({ open: file => act(() => openPdf(file), e => { throw e; }).then(announceProtection), isDirty: () => state.dirty, confirmReplace: confirmDiscard, status });
+      return samples.deepLink();
+    }).catch(e => console.warn('Sample loader unavailable:', e));
   };
   if (!host) return ready();
   let retained, validateUi;

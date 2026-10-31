@@ -66,7 +66,7 @@ internal sealed class PdfEncryptor
         EmbeddedFilesOnly = o.EmbeddedFilesOnly;
         _rng = o.RandomBytes is { } custom
             ? n => custom(n) is { } b && b.Length == n ? b : throw new ArgumentException($"PdfEncryption.RandomBytes must return exactly {n} bytes")
-            : RandomNumberGenerator.GetBytes;
+            : PdfCrypto.RandomBytes;
         EncryptMetadata = o.EncryptMetadata;
         if (o.Recipients is { Count: > 0 } rc) { (_key, Dict) = PubSec(o, rc); return; }
         if (o.Method == PdfEncryptionMethod.Aes256) { _key = _rng(32); Dict = Aes256Dict(o); return; }
@@ -93,9 +93,7 @@ internal sealed class PdfEncryptor
         perms[8] = (byte)(o.EncryptMetadata ? 'T' : 'F');
         "adb"u8.CopyTo(perms.AsSpan(9));
         _rng(4).CopyTo(perms, 12);
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        var permsEnc = aes.EncryptEcb(perms, PaddingMode.None);
+        var permsEnc = PdfCrypto.AesEcbEncrypt(_key, perms);
 
         var cf = new PdfDictionary(new Dictionary<string, PdfObject>
         {
@@ -124,8 +122,8 @@ internal sealed class PdfEncryptor
         var userPad = Padded(o.UserPassword);
         var ownerPad = Padded(o.OwnerPassword.Length > 0 ? o.OwnerPassword : o.UserPassword);
 
-        var h = MD5.HashData(ownerPad);
-        if (r >= 3) for (var i = 0; i < 50; i++) h = MD5.HashData(h);
+        var h = PdfCrypto.Md5(ownerPad);
+        if (r >= 3) for (var i = 0; i < 50; i++) h = PdfCrypto.Md5(h);
         var ownerKey = h.Take(n).ToArray();
         var ov = PdfDecryptor.Rc4(ownerKey, userPad);
         if (r >= 3) for (var i = 1; i <= 19; i++) ov = PdfDecryptor.Rc4(ownerKey.Select(b => (byte)(b ^ i)).ToArray(), ov);
@@ -133,15 +131,15 @@ internal sealed class PdfEncryptor
         var ms = new List<byte>(userPad);
         ms.AddRange(ov); ms.AddRange(BitConverter.GetBytes(o.Permissions)); ms.AddRange(id);
         if (r >= 4 && !encMeta) ms.AddRange([0xFF, 0xFF, 0xFF, 0xFF]);
-        var kh = MD5.HashData(ms.ToArray());
-        if (r >= 3) for (var i = 0; i < 50; i++) kh = MD5.HashData(kh.AsSpan(0, n));
+        var kh = PdfCrypto.Md5(ms.ToArray());
+        if (r >= 3) for (var i = 0; i < 50; i++) kh = PdfCrypto.Md5(kh.AsSpan(0, n));
         var key = kh.Take(n).ToArray();
 
         byte[] u;
         if (r == 2) u = PdfDecryptor.Rc4(key, Pad);
         else
         {
-            u = PdfDecryptor.Rc4(key, MD5.HashData([.. Pad, .. id]));
+            u = PdfDecryptor.Rc4(key, PdfCrypto.Md5([.. Pad, .. id]));
             for (var i = 1; i <= 19; i++) u = PdfDecryptor.Rc4(key.Select(b => (byte)(b ^ i)).ToArray(), u);
             u = [.. u, .. new byte[16]];
         }
@@ -186,7 +184,7 @@ internal sealed class PdfEncryptor
         foreach (var b in blobs) input.AddRange(b);
         if (!o.EncryptMetadata) input.AddRange([0xFF, 0xFF, 0xFF, 0xFF]);
         var aes256 = m == PdfEncryptionMethod.Aes256;
-        var key = (aes256 ? SHA256.HashData(input.ToArray()) : SHA1.HashData(input.ToArray())).Take(aes256 ? 32 : 16).ToArray();
+        var key = (aes256 ? PdfCrypto.Sha256(input.ToArray()) : PdfCrypto.Sha1(input.ToArray())).Take(aes256 ? 32 : 16).ToArray();
         var recips = new PdfArray(blobs.Select(b => (PdfObject)S(b)).ToList());
         var cfm = m switch { PdfEncryptionMethod.Aes256 => "AESV3", PdfEncryptionMethod.Aes128 => "AESV2", _ => "V2" };
         var bits = aes256 ? 256 : 128;
@@ -211,16 +209,14 @@ internal sealed class PdfEncryptor
 
     byte[] AesNoPad(byte[] key, byte[] data)
     {
-        using var aes = Aes.Create();
-        aes.Key = key;
-        return aes.EncryptCbc(data, new byte[16], PaddingMode.None);
+        return PdfCrypto.AesCbcEncrypt(key, new byte[16], data, false);
     }
 
     byte[] ObjKey(int num, int gen)
     {
         var b = new List<byte>(_key) { (byte)num, (byte)(num >> 8), (byte)(num >> 16), (byte)gen, (byte)(gen >> 8) };
         if (_method == PdfEncryptionMethod.Aes128) b.AddRange("sAlT"u8.ToArray());
-        return MD5.HashData(b.ToArray()).Take(Math.Min(_key.Length + 5, 16)).ToArray();
+        return PdfCrypto.Md5(b.ToArray()).Take(Math.Min(_key.Length + 5, 16)).ToArray();
     }
 
     /// <summary>Encrypts a string/stream belonging to indirect object <paramref name="num"/>: AES-CBC with random IV prepended and PKCS#7 padding, or RC4.</summary>
@@ -228,16 +224,12 @@ internal sealed class PdfEncryptor
     {
         if (_method == PdfEncryptionMethod.Aes256)
         {
-            using var a = Aes.Create();
-            a.Key = _key;
             var iv0 = _rng(16);
-            return [.. iv0, .. a.EncryptCbc(data, iv0, PaddingMode.PKCS7)];
+            return [.. iv0, .. PdfCrypto.AesCbcEncrypt(_key, iv0, data, true)];
         }
         var key = ObjKey(num, gen);
         if (_method is PdfEncryptionMethod.Rc4_40 or PdfEncryptionMethod.Rc4_128) return PdfDecryptor.Rc4(key, data);
-        using var aes = Aes.Create();
-        aes.Key = key;
         var iv = _rng(16);
-        return [.. iv, .. aes.EncryptCbc(data, iv, PaddingMode.PKCS7)];
+        return [.. iv, .. PdfCrypto.AesCbcEncrypt(key, iv, data, true)];
     }
 }

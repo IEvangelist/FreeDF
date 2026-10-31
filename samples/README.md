@@ -43,9 +43,21 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 | `17-encrypted-user-password.pdf` | `user123` | `owner-user123` |
 | `18-encrypted-owner-restricted.pdf` | *(none — opens freely)* | `owner123` |
 
+**Try them in the browser editor.** Open `17` and the editor asks for the password (use `user123`; `owner-user123` opens it with owner rights, which unlocks "Remove protection" under Save as). Open `18` and it opens immediately but print, copy, modify and annotate actions are refused with a message; supply `owner123` through `PdfDocument.Load(bytes, "owner123")` or the server editor to lift that. Save as on a protected document writes an AES-256 (R6) copy with the passwords and permission checkboxes you choose. Passwords are used once and never stored, and encrypted documents never write recovery copies. See [docs/browser-encryption.md](../docs/browser-encryption.md).
+
 ## The full collection
 
-`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26, and `.gitignore` excludes it); `tools/Validate-Samples.ps1` or `AdoBye.Samples generate samples 27-` creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
+**Where is it?** Three places, all the same bytes (generation is deterministic):
+
+* **Public site:** the browser editor loads it with one click: the **Open the full sample collection** button on the empty state, **File > Open sample > Full sample collection**, or the deep link `#sample=27-full-collection` / `?sample=27` (for example `https://ievangelist.github.io/csharp-pdf/#sample=27-full-collection`). The Pages publish (`tools/Publish-EditorPages.ps1`) generates it and ships `samples/27-full-collection.pdf`, `samples/01-…26-….pdf` and `samples/manifest.json` (name, title, description, size, pages, sha256) as static files. They are fetched only on demand (never at startup, not precached), same-origin, and the loader verifies size and sha256 against the manifest before opening. Publish with `-SkipSamples` to omit them; the editor then works as before and the button reports that the collection is not published.
+* **Local HTTP host:** `dotnet run --project tools/AdoBye.EditorWeb` serves the same `/samples/manifest.json` and `/samples/*.pdf` from this folder (generate 27 first, below).
+* **On disk:** it is not committed (`.gitignore`). Generate it into this folder with
+
+  ```powershell
+  dotnet run --project tools/AdoBye.Samples -c Release -- generate samples 27-
+  ```
+
+`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26); `tools/Validate-Samples.ps1` or the command above creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
 
 * **Navigation:** one collapsed bookmark per sample (`NN  Title`) that lands on the sample's first page and nests that sample's own bookmarks (`12` and `20`/`26` have them); page labels read `NN · label` (sample `12` keeps its roman / decimal / `A-` labels under the prefix); `PageMode UseOutlines`.
 * **Links:** the `GoToR` tiles of `01` are rewritten to plain `GoTo` destinations so they jump inside the merged file.
@@ -93,3 +105,5 @@ Known differences and notes:
 * `13`: Edge page 1 is offset in the harness crop (white TrimBox edge confuses the page locator); visual inspection shows identical output.
 * Our renderer draws the Symbol/ZapfDingbats standard fonts as Latin text, so the form checkbox tick is vector-drawn in `11`; and a `PatternType 2` shading used as a stroke colour (tile 11 of `06`) renders dark rather than as the gradient. Both are renderer gaps, not file defects.
 * The compare harness was extended to size the viewport to the page and to stop the crop at the gap between pages, so A4/A3 and multi-page samples compare correctly.
+
+**Encrypted samples in the browser editor:** `17` (password `user123`) and `18` (owner-restricted, opens freely) are offered in File > Open sample and via `#sample=17` / `#sample=18`; they open through the same password dialog as any local file. See [browser-encryption.md](../docs/browser-encryption.md).

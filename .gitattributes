@@ -2,3 +2,7 @@
 *.png binary
 src/PortableDocument.Content/Resources/glyphlist.txt text eol=lf
 src/PortableDocument.Content/Resources/zapfdingbats.txt text eol=lf
+
+src/PortableDocument.FallbackFonts/fallback-fonts/** -text
+src/PortableDocument.Content/Resources/std14-widths.bin binary
+tests/fixtures/fonts-nonembedded/*.pdf -text

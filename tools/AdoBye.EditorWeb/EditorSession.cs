@@ -14,6 +14,8 @@ using AdoBye.EditorWeb;
 public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallback = null, TimeProvider? timeProvider = null)
 {
     public sealed record Reply(byte[] Data, string ContentType = "application/json", string? FileName = null);
+    /// <summary>How the opened source was protected; the password itself is never kept.</summary>
+    sealed record ProtectionInfo(bool Owner, PdfEncryptionMethod Method, PdfPermissions Permissions, bool PublicKey);
     public sealed record RenderMetrics(double SnapshotMs, double RasterMs, double PngEncodeMs, double TotalMs,
         long AllocatedBytes, int Gen0Collections, bool CacheHit);
     public RenderMetrics? LastRenderMetrics { get; private set; }
@@ -26,6 +28,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     string? savePath;
     bool prepared;
     bool recoverySupported = true;
+    ProtectionInfo? protection;
+    byte[]? encryptedSource;
     readonly Dictionary<int, List<Item>> items = [];
     readonly Dictionary<string, Asset> assets = [];
     readonly Dictionary<string, DateTimeOffset> unclaimedAssets = [];
@@ -38,6 +42,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     int renderCacheBytes;
     OverlayBuilder? overlayBuilder;
     readonly Dictionary<int, (byte[] Content, List<ContentInterpreter.TextSpan> Spans, List<ContentInterpreter.PageObject> Objects)> texts = [];
+    readonly Dictionary<int, Reply> selectionReplies = [];
     readonly Dictionary<int, Dictionary<int, ObjEdit>> objEdits = [];
     readonly Dictionary<(int Form, int Start, int End), ObjEdit> formObjEdits = [];
     HashSet<int>? sharedFormReferences;
@@ -61,6 +66,11 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     void OpenDocument(PdfDocument doc)
     {
         Reset(PdfEditor.Open(doc), !doc.File.IsEncrypted);
+        if (doc.File.Decryptor is { } d)
+        {
+            protection = new(d.IsOwner, d.EncryptionMethod, d.PermissionFlags, d.IsPublicKey);
+            editor.EnforcePermissions = true;
+        }
         pristine = doc;
         // PdfEditor.Open retains source object numbers until a rewrite is needed.
         pristineBack = doc.File.Xref.Keys.ToDictionary(number => number, number => number);
@@ -69,7 +79,9 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     void Reset(PdfEditor e, bool allowRecovery = true)
     {
         editor = e;
+        protection = null; encryptedSource = null;
         recoverySupported = allowRecovery;
+        pageUndo.Clear(); pageRedo.Clear();
         items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear(); unclaimedAssets.Clear(); historyAssets.Clear(); clipboardAssets.Clear();
         overlayBuilder = new(editor, assets, catalog);
         Changed(); savePath = null; savedVersion = version;
@@ -168,6 +180,30 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         return list;
     }
 
+    sealed record TextDetails(long Index, string Text, double X, double Y, double Width, double Size, string Font, string Color, double Spacing);
+    sealed record ObjectDetails(int Index, string Kind, bool InForm, double X0, double Y0, double X1, double Y1,
+        bool HasFill, bool HasStroke, double LineWidth, string? Fill, string? Stroke, bool FormContentsShared, ObjEdit? Edit);
+
+    IEnumerable<TextDetails> TextDetailsFor(int i) =>
+        EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
+            .Select(s => new TextDetails(SpanKey(s), s.Text, s.X, s.Y, s.Width, s.Size, s.FontName, Hex(s.Color), s.CharacterSpacing));
+
+    IEnumerable<ObjectDetails> ObjectDetailsFor(int i)
+    {
+        objEdits.TryGetValue(editor.PageId(i), out var edits);
+        var objects = PageText(i).Objects;
+        var ambiguous = objects.Any(o => o.Form != 0) ? AmbiguousFormObjects(i) : [];
+        foreach (var o in objects.Where(o => FormObjectEditPolicy.IsEditable(o, ambiguous) && (o.Form == 0 || pristineBack.ContainsKey(o.Form))))
+        {
+            ObjEdit? edit = null;
+            if (o.Form == 0) edits?.TryGetValue(o.Index, out edit);
+            else if (pristineBack.TryGetValue(o.Form, out var form)) formObjEdits.TryGetValue((form, o.Start, o.End), out edit);
+            yield return new(o.Index, o.Kind, o.Form != 0, o.X0, o.Y0, o.X1, o.Y1, o.HasFill, o.HasStroke, o.LineWidth,
+                o.HasFill ? Hex(o.Fill) : null, o.HasStroke ? Hex(o.Stroke) : null,
+                o.Kind == "form" && (SharedFormReferences().Contains(o.Ref) || ambiguous.Any(range => range.Form == o.Ref)), edit);
+        }
+    }
+
     HashSet<FormObjectRange> AmbiguousFormObjects(int i) =>
         FormObjectEditPolicy.FindAmbiguous(PageText(i).Objects, SharedFormReferences());
     HashSet<int> SharedFormReferences() => sharedFormReferences ??= FormObjectEditPolicy.FindSharedForms(Pristine());
@@ -187,7 +223,17 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         objEdits.TryGetValue(editor.PageId(page), out var edits) &&
         edits.Keys.Any(index => PageText(page).Objects[index].Kind == "form"));
 
+    // Clearing overrides on an untouched protected document is bookkeeping, not an edit, so it must not need Modify.
     void Prepare(bool originalTextOnly = false)
+    {
+        var untouched = protection is not null && !items.Values.Any(l => l.Count > 0) && !objEdits.Values.Any(e => e.Count > 0) && formObjEdits.Count == 0;
+        var enforce = editor.EnforcePermissions;
+        if (untouched) editor.EnforcePermissions = false;
+        try { PrepareCore(originalTextOnly); }
+        finally { editor.EnforcePermissions = enforce; }
+    }
+
+    void PrepareCore(bool originalTextOnly)
     {
         if (prepared && !originalTextOnly) return;
         overlayBuilder ??= new(editor, assets, catalog);
@@ -288,6 +334,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     }
     void Changed(bool baseChanged = true, int? changedPage = null)
     {
+        selectionReplies.Clear();
         version++; snapshot = null; snapshotBytes = null; prepared = false; findCache = null; findVersion = -1;
         if (baseChanged)
         {
@@ -321,6 +368,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         var doc = bare ? BaseSnap() : Snap();
         var snapshotMs = snapshot.Elapsed.TotalMilliseconds;
         var png = RenderProfiled(doc.Pages[index], dpi, snapshotMs, total, allocated, collections);
+        // Glyph data still being fetched (browser): this render is provisional and the host will ask again.
+        if (fontFallback is IFontAssetPending { HasPending: true }) return png;
         if (png.Length <= RenderCacheLimit)
         {
             while (renderCacheBytes + png.Length > RenderCacheLimit)
@@ -343,6 +392,11 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         var referenced = items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>().ToHashSet();
         referenced.UnionWith(historyAssets.Values.SelectMany(ids => ids));
         referenced.UnionWith(clipboardAssets);
+        foreach (var entry in pageUndo.Concat(pageRedo))
+        {
+            referenced.UnionWith(entry.Items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>());
+            referenced.UnionWith(entry.History.Values.SelectMany(ids => ids));
+        }
         foreach (var id in unclaimedAssets.Keys.Where(id => referenced.Contains(id) || clock.GetUtcNow() - unclaimedAssets[id] >= TimeSpan.FromMinutes(10)).ToArray())
             unclaimedAssets.Remove(id);
         foreach (var id in assets.Keys.Where(id => !referenced.Contains(id) && !unclaimedAssets.ContainsKey(id)).ToArray()) assets.Remove(id);
@@ -462,8 +516,113 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         return originalForms;
     }
 
+    sealed record PageHistoryEntry(string Label, PdfEditor.State Editor, Dictionary<int, List<Item>> Items,
+        Dictionary<int, Dictionary<int, ObjEdit>> Objects, Dictionary<int, HashSet<string>> History);
+    const int PageHistoryLimit = 50;
+    static readonly HashSet<string> PageOperations = ["delete", "move", "rotate", "blank", "duplicate", "import", "import-batch"];
+    readonly List<PageHistoryEntry> pageUndo = [], pageRedo = [];
+
+    PageHistoryEntry CapturePageHistory(string label) => new(label, editor.Capture(),
+        items.ToDictionary(kv => kv.Key, kv => kv.Value.ToList()),
+        objEdits.ToDictionary(kv => kv.Key, kv => new Dictionary<int, ObjEdit>(kv.Value)),
+        historyAssets.ToDictionary(kv => kv.Key, kv => new HashSet<string>(kv.Value)));
+
+    void ApplyPageHistory(PageHistoryEntry entry)
+    {
+        editor.Restore(entry.Editor);
+        items.Clear(); foreach (var kv in entry.Items) items[kv.Key] = kv.Value.ToList();
+        objEdits.Clear(); foreach (var kv in entry.Objects) objEdits[kv.Key] = new(kv.Value);
+        historyAssets.Clear(); foreach (var kv in entry.History) historyAssets[kv.Key] = new(kv.Value);
+        PruneAssets(); Changed();
+    }
+
+    Reply StepPageHistory(bool undo)
+    {
+        CheckPageMutation();
+        var from = undo ? pageUndo : pageRedo;
+        var to = undo ? pageRedo : pageUndo;
+        if (from.Count == 0) throw new EditorConflictException(undo ? "Nothing to undo." : "Nothing to redo.");
+        var entry = from[^1];
+        var current = CapturePageHistory(entry.Label);
+        // Registered before applying so PruneAssets keeps assets used only by the state being left.
+        to.Add(current);
+        try { ApplyPageHistory(entry); }
+        catch { to.Remove(current); throw; }
+        from.RemoveAt(from.Count - 1);
+        PruneAssets();
+        return AsJson(new { label = entry.Label, undo = pageUndo.Count, redo = pageRedo.Count });
+    }
+
     /// <summary>Dispatches a local command. Neither this method nor the WASM host performs network I/O.</summary>
+    /// <summary>Passwords arrive out of band, never in a URL: hosts put the base64(UTF-8) value of the X-Pdf-Password header under this key.</summary>
+    public const string PasswordKey = "x-pdf-password";
+
+    static string Password(IReadOnlyDictionary<string, string> query)
+    {
+        if (!query.TryGetValue(PasswordKey, out var encoded) || encoded.Length == 0) return "";
+        try { return Encoding.UTF8.GetString(Convert.FromBase64String(encoded)); }
+        catch (FormatException) { throw new ArgumentException("Malformed password header."); }
+    }
+
+    object? ProtectionState() => protection is not { } p ? null : new
+    {
+        owner = p.Owner, method = p.Method.ToString(), publicKey = p.PublicKey,
+        print = Allowed(PdfPermissions.Print), copy = Allowed(PdfPermissions.Copy), modify = Allowed(PdfPermissions.Modify),
+        annotate = Allowed(PdfPermissions.Annotate), fillForms = Allowed(PdfPermissions.FillForms), assemble = Allowed(PdfPermissions.Assemble),
+    };
+
+    bool Allowed(PdfPermissions flag) => protection is not { } p || p.Owner || (p.Permissions & flag) == flag;
+
+    void RequireAllowed(PdfPermissions flag, string what)
+    {
+        if (!Allowed(flag)) throw new NotSupportedException($"This PDF's permissions do not allow you to {what}. Open it with the owner password to lift the restriction.");
+    }
+
+    static readonly (string Name, PdfPermissions Flag)[] PermissionNames =
+    [
+        ("print", PdfPermissions.Print), ("highprint", PdfPermissions.PrintHighQuality), ("modify", PdfPermissions.Modify), ("copy", PdfPermissions.Copy),
+        ("annotate", PdfPermissions.Annotate), ("fill", PdfPermissions.FillForms), ("access", PdfPermissions.ExtractAccessibility), ("assemble", PdfPermissions.Assemble),
+    ];
+
+    static string Describe(PdfPermissions flag) => flag switch
+    {
+        PdfPermissions.Modify => "change this document",
+        PdfPermissions.Annotate => "add or change annotations and comments",
+        PdfPermissions.Assemble => "insert, delete, rotate or reorder pages",
+        PdfPermissions.FillForms => "fill in form fields",
+        PdfPermissions.Copy => "copy or extract content",
+        PdfPermissions.Print or PdfPermissions.PrintHighQuality => "print",
+        _ => "do this",
+    };
+
     public Reply Handle(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body = null, string? uploadName = null)
+    {
+        var segments = path.Trim('/').Split('/');
+        var pending = method == "POST" && segments.Length > 1 && PageOperations.Contains(segments[1]) && editor.PageCount > 0
+            ? CapturePageHistory(segments[1]) : null;
+        if (pending is null) return HandleGuarded(method, path, query, body, uploadName);
+        // Registered first so PruneAssets inside the operation keeps the assets that undo needs.
+        var droppedRedo = pageRedo.ToArray();
+        pageUndo.Add(pending); pageRedo.Clear();
+        try { return HandleGuarded(method, path, query, body, uploadName); }
+        catch
+        {
+            pageUndo.Remove(pending); pageRedo.AddRange(droppedRedo);
+            throw;
+        }
+        finally { if (pageUndo.Count > PageHistoryLimit) { pageUndo.RemoveAt(0); PruneAssets(); } }
+    }
+
+    Reply HandleGuarded(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body, string? uploadName)
+    {
+        try { return HandleCore(method, path, query, body, uploadName); }
+        catch (PdfPermissionException e)
+        {
+            throw new NotSupportedException($"This PDF's permissions do not allow you to {Describe(e.Required)}. Open it with the owner password to lift the restriction.", e);
+        }
+    }
+
+    Reply HandleCore(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body, string? uploadName)
     {
         LastRenderMetrics = null;
         PruneAssets();
@@ -482,7 +641,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "state":
                     var doc = editor.PageCount == 0 ? null : BaseSnap();
                     var pages = doc?.Pages.Select((pg, i) => new { index = i, id = editor.PageId(i), rotation = pg.Rotate, x0 = pg.CropBox.Left, top = pg.CropBox.Top, width = pg.CropBox.Width, height = pg.CropBox.Height }) ?? [];
-                    return AsJson(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null, recoverySupported });
+                    return AsJson(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null, recoverySupported, pageUndo = pageUndo.Count, pageRedo = pageRedo.Count, protection = ProtectionState() });
                 case "recovery": return CaptureRecovery();
                 case "fonts": return AsJson(catalog.List());
                 case "fields": return AsJson(editor.PageCount == 0 ? [] : Pristine().GetFormFields().Where(f => f.FieldType is "Tx" or "Btn" or "Ch").Select(f => new { name = f.FullName, type = f.FieldType, value = f.Value ?? "" }));
@@ -535,31 +694,17 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                         PruneAssets(); Changed(baseChanged, id); return Ok;
                     }
                     break;
-                case "text" when method == "GET":
-                    return AsJson(EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
-                        .Select(s => new { index = SpanKey(s), text = s.Text, x = s.X, y = s.Y, width = s.Width, size = s.Size, font = s.FontName, color = Hex(s.Color), spacing = s.CharacterSpacing }));
                 case "widgets" when method == "GET":
                     return AsJson(WidgetDetailsFor(i));
+                case "text" when method == "GET":
+                    return AsJson(TextDetailsFor(i));
+                case "selection" when method == "GET":
+                    if (!selectionReplies.TryGetValue(id, out var selection))
+                        selectionReplies[id] = selection = AsJson(new { spans = TextDetailsFor(i), objects = ObjectDetailsFor(i) });
+                    return selection;
                 case "objects":
-                    objEdits.TryGetValue(id, out var oe);
                     if (method == "GET")
-                    {
-                        var ambiguous = AmbiguousFormObjects(i);
-                        return AsJson(PageText(i).Objects.Where(o => FormObjectEditPolicy.IsEditable(o, ambiguous) && (o.Form == 0 || pristineBack.ContainsKey(o.Form))).Select(o =>
-                        {
-                            ObjEdit? edit = null;
-                            if (o.Form == 0) oe?.TryGetValue(o.Index, out edit);
-                            else if (pristineBack.TryGetValue(o.Form, out var formNum)) formObjEdits.TryGetValue((formNum, o.Start, o.End), out edit);
-                            return new
-                            {
-                                index = o.Index, kind = o.Kind, inForm = o.Form != 0, x0 = o.X0, y0 = o.Y0, x1 = o.X1, y1 = o.Y1,
-                                hasFill = o.HasFill, hasStroke = o.HasStroke, lineWidth = o.LineWidth,
-                                fill = o.HasFill ? Hex(o.Fill) : null, stroke = o.HasStroke ? Hex(o.Stroke) : null,
-                                formContentsShared = o.Kind == "form" && (SharedFormReferences().Contains(o.Ref) || ambiguous.Any(range => range.Form == o.Ref)),
-                                edit,
-                            };
-                        }));
-                    }
+                        return AsJson(ObjectDetailsFor(i));
                     if (method == "PUT")
                     {
                         var n = int.Parse(p[4], CultureInfo.InvariantCulture);
@@ -593,14 +738,16 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             switch (action)
             {
                 case "open":
-                    var opened = PdfDocument.Load(body ?? throw new ArgumentException("Choose a PDF."));
+                    var opened = LoadProtected(body ?? throw new ArgumentException("Choose a PDF."), Password(query));
                     OpenDocument(opened);
+                    if (opened.File.IsEncrypted) encryptedSource = body;
                     fileName = uploadName ?? "document.pdf"; return Ok;
                 case "recovery":
                     return AsJson(new { originalForms = RestoreRecovery(Read<RecoveryData>() ?? throw new InvalidDataException("Missing local recovery record."),
                         Q("forms") is { } historyForms ? JsonSerializer.Deserialize<List<int>>(historyForms) : null) });
                 case "import":
                     CheckPageMutation();
+                    RequireAllowed(PdfPermissions.Assemble, "insert pages");
                     var imported = LoadImport(body ?? throw new ArgumentException("Choose a PDF."), uploadName ?? "PDF");
                     var chosen = ImportRange(Q("pages"), imported.Pages.Count, uploadName ?? "PDF");
                     var firstNew = ImportPosition(Q("at"));
@@ -655,6 +802,9 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     unclaimedAssets.Remove(cancelled); PruneAssets(); return Ok;
                 case "asset-history":
                     historyAssets.Clear(); PruneAssets(); return Ok;
+                case "page-history-clear": pageUndo.Clear(); pageRedo.Clear(); PruneAssets(); return Ok;
+                case "page-undo": return StepPageHistory(true);
+                case "page-redo": return StepPageHistory(false);
                 case "delete": CheckPageMutation(); editor.DeletePage(int.Parse(p[2], CultureInfo.InvariantCulture)); PruneAssets(); break;
                 case "move": CheckPageMutation(); editor.MovePage(int.Parse(p[2], CultureInfo.InvariantCulture), int.Parse(p[3], CultureInfo.InvariantCulture)); break;
                 case "rotate":
@@ -669,6 +819,14 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     var info = Read<Dictionary<string, string>>() ?? [];
                     foreach (var k in InfoKeys) if (info.TryGetValue(k.ToLowerInvariant(), out var v)) editor.SetInfo(k, v);
                     break;
+                case "unlock":
+                    {
+                        var source = encryptedSource ?? throw new ArgumentException("This document is not password-protected.");
+                        var unlocked = LoadProtected(source, Password(query));
+                        if (unlocked.File.Decryptor is not { IsOwner: true }) throw new ArgumentException("password-incorrect: That is not the owner password.");
+                        OpenDocument(unlocked); encryptedSource = source;
+                        return Ok;
+                    }
                 case "close": Reset(PdfEditor.Create()); fileName = "document.pdf"; return Ok;
                 case "new":
                     Reset(PdfEditor.Open(Blank(Number("w") ?? 595.276, Number("h") ?? 841.89)));
@@ -686,6 +844,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "save":
                     RequirePages();
                     if (savePath is null) return AsJson(new { saved = false });
+                    if (protection is not null) throw new NotSupportedException("This PDF is protected; saving over it would drop its protection. Use Save as.");
                     Snap(); File.WriteAllBytes(savePath, snapshotBytes!); savedVersion = version;
                     return AsJson(new { saved = true, path = savePath });
                 case "saved":
@@ -704,12 +863,30 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         if (editor.PageCount == 0) throw new ArgumentException("Open or create a PDF first.");
     }
 
+    /// <summary>Opens a document, turning password failures into stable <c>password-required</c> / <c>password-incorrect</c> messages the UI keys on.</summary>
+    static PdfDocument LoadProtected(byte[] bytes, string password)
+    {
+        try { return PdfDocument.Load(bytes, password); }
+        catch (PdfPasswordException e) when (e.Message.StartsWith("Public-key", StringComparison.Ordinal) || e.Message.StartsWith("The certificate", StringComparison.Ordinal))
+        {
+            throw new NotSupportedException("This PDF uses certificate (public-key) encryption, which the editor cannot open. Passwords and certificates are never requested or stored.", e);
+        }
+        catch (PdfPasswordException e)
+        {
+            throw new ArgumentException(password.Length == 0 ? "password-required: This PDF is password-protected." : "password-incorrect: That password is not correct.", e);
+        }
+        catch (Exception e) when (e is System.Security.Cryptography.CryptographicException or PlatformNotSupportedException)
+        {
+            throw new NotSupportedException("This PDF uses encryption this editor cannot open. Passwords are never stored.", e);
+        }
+    }
+
     static PdfDocument LoadImport(byte[] bytes, string label)
     {
         try { return PdfDocument.Load(bytes); }
-        catch (Exception e) when (e is System.Security.Cryptography.CryptographicException or PlatformNotSupportedException)
+        catch (Exception e) when (e is PdfPasswordException or System.Security.Cryptography.CryptographicException or PlatformNotSupportedException)
         {
-            throw new NotSupportedException($"{label} is password-protected or uses encryption this editor cannot open. Passwords are never requested or stored.", e);
+            throw new NotSupportedException($"{label} is password-protected or uses encryption this editor cannot open here. Open it on its own with its password, remove its protection, then merge the copy. Passwords are never stored.", e);
         }
         catch (Exception e) when (e is not ArgumentException)
         {
@@ -783,21 +960,40 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 Prepare();
                 var user = Q("user"); var owner = Q("owner");
                 var protect = !string.IsNullOrEmpty(user) || !string.IsNullOrEmpty(owner);
-                if (protect && OperatingSystem.IsBrowser()) throw new NotSupportedException("Password-protected export requires the desktop/server editor; browser .NET does not support the required cryptography. Unprotected compressed export is available.");
+                var remove = Q("remove") == "1";
+                if (remove)
+                {
+                    if (protection is { Owner: false }) throw new NotSupportedException("Only the owner password can remove protection from this PDF.");
+                    if (protect) throw new ArgumentException("Removing protection cannot be combined with new passwords.");
+                }
+                else if (protection is not null && !protect) throw new ArgumentException("This PDF is protected. Enter a password to keep it protected, or remove protection with the owner password.");
+                var granted = PdfPermissions.All;
+                if (Q("perms") is { } permissionList)
+                {
+                    granted = PdfPermissions.None;
+                    foreach (var permName in permissionList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        granted |= PermissionNames.FirstOrDefault(n => n.Name == permName.ToLowerInvariant()).Flag is var flag && flag != 0 ? flag : throw new ArgumentException($"Unknown permission '{permName}'.");
+                }
+                if (protection is { Owner: false } restricted) granted &= restricted.Permissions;
+                if (protect && granted != PdfPermissions.All && string.IsNullOrEmpty(owner)) throw new ArgumentException("Set an owner password to enforce permission restrictions.");
                 var enc = !protect ? null : new PdfEncryption
                 {
+                    Permissions = PdfPermissionHelper.ToP(granted),
                     UserPassword = user ?? "", OwnerPassword = string.IsNullOrEmpty(owner) ? user ?? "" : owner,
                     Method = Q("method")?.ToLowerInvariant() switch { "aes128" => PdfEncryptionMethod.Aes128, "rc4128" => PdfEncryptionMethod.Rc4_128, "rc440" => PdfEncryptionMethod.Rc4_40, _ => PdfEncryptionMethod.Aes256 },
                 };
                 return new(editor.Save(options: new PdfWriteOptions { Compress = true, ObjectStreams = true, Encryption = enc }), "application/pdf", Q("name") ?? (protect ? "protected-" : "compressed-") + fileName);
             case "pdf":
+                if (protection is not null) throw new NotSupportedException("This PDF is protected. Use Save as to keep it protected or to remove protection with the owner password.");
                 var doc = Snap(); var idx = ParseRange(Q("pages"), editor.PageCount);
                 if (idx.Count == 0) throw new ArgumentException("No pages in range.");
                 return new(idx.SequenceEqual(Enumerable.Range(0, editor.PageCount)) ? snapshotBytes! : PdfEditor.Extract(doc, idx).Save(), "application/pdf", Q("name") ?? "export-" + fileName);
             case "png":
+                RequireAllowed(PdfPermissions.Copy, "export page images");
                 var page = int.Parse(Q("page") ?? "0", CultureInfo.InvariantCulture);
                 return new(Render(Snap().Pages[page], dpi), "image/png", $"{name}-{page + 1}.png");
             case "zip":
+                RequireAllowed(PdfPermissions.Copy, "export page images");
                 var pages = Snap(); using (var ms = new MemoryStream())
                 {
                     using (var z = new ZipArchive(ms, ZipArchiveMode.Create, true))
@@ -809,6 +1005,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     return new(ms.ToArray(), "application/zip", name + "-pages.zip");
                 }
             case "text":
+                RequireAllowed(PdfPermissions.Copy, "copy or extract text");
                 var textDoc = Snap(); var sb = new StringBuilder();
                 for (var i = 0; i < editor.PageCount; i++)
                 {

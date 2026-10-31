@@ -191,6 +191,16 @@ public sealed class ContentInterpreter
         throw new NotSupportedException($"Page transparency group colour space /{kind ?? "invalid"} is not supported; only DeviceGray, DeviceRGB, DeviceCMYK, CalGray, CalRGB and ICCBased blending are implemented.");
     }
 
+    /// <summary>
+    /// Blending colour space of an isolated nested group (11.4.7, 11.7.5.3). Unlike the page group, an unsupported or malformed /CS
+    /// (DeviceN, Lab, Separation, unparsable ICC) silently keeps the inherited blending space instead of failing the page.
+    /// </summary>
+    PdfColorSpace? FormGroupColorSpace(PdfDictionary group, PdfDictionary resources)
+    {
+        try { return PageGroupColorSpace(group.Get("CS"), resources); }
+        catch (Exception e) when (e is NotSupportedException or PdfParseException) { return null; }
+    }
+
     static readonly PdfColorSpace CmykGroupSpace = new GroupBlendColorSpace(GroupBlendSpace.Cmyk);
 
     double[]? GroupNumbers(PdfObject? o, int n)
@@ -1319,7 +1329,7 @@ public sealed class ContentInterpreter
                 var alpha = _gs.FillAlpha; var bm = _gs.BlendMode;
                 if (knockout || alpha < 1 || bm != "Normal" || _gs.SoftMaskActive || (isolated && TransparencyScan.UsesBlendMode(_f, res)))
                 {
-                    _be.BeginGroup(isolated, knockout, alpha, bm);
+                    _be.BeginGroup(isolated, knockout, alpha, bm, isolated ? FormGroupColorSpace(grp, res) : null);
                     _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
                     _gs.AlphaIsShape = false; _be.SetAlphaIsShape(false); // 11.6.6: a group starts with alpha-is-shape false (restored by the enclosing Save/Restore)
                     grouped = true;

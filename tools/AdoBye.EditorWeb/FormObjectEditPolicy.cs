@@ -32,6 +32,10 @@ internal static class FormObjectEditPolicy
 
         void CountInvocations(byte[] content, PdfDictionary resources)
         {
+            if (document.File.Resolve(resources.Get("XObject")) is not PdfDictionary candidates ||
+                !candidates.Entries.Values.Any(value => value is PdfRef &&
+                    document.File.Resolve(value) is PdfStream stream &&
+                    document.File.Resolve(stream.Dict.Get("Subtype")).AsName() == "Form")) return;
             var lexer = new PdfLexer(content);
             PdfObject? operand = null;
             while (lexer.ReadObject(false) is { } token)
