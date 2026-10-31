@@ -77,8 +77,31 @@ static class EditorFileAccess
     public static Task Install(IPage page) => page.AddInitScriptAsync(Stubs);
 
     static Task<string> Status(IPage page) => page.EvaluateAsync<string>("document.getElementById('status').textContent");
-    static Task WaitStatus(IPage page, string text) => page.WaitForFunctionAsync("t => document.getElementById('status').textContent.includes(t)", text);
+    static async Task WaitStatus(IPage page, string text)
+    {
+        try { await page.WaitForFunctionAsync("t => document.getElementById('status').textContent.includes(t)", text, new() { Timeout = 10000 }); }
+        catch (TimeoutException)
+        {
+            var state = await page.EvaluateAsync<string>("""
+                async () => JSON.stringify({ status: document.getElementById('status').textContent,
+                  saveCalls: window.__fa.saveCalls, stored: await window.__fa.stored(),
+                  state: await (await pdfHost.request('/api/state')).json() })
+                """);
+            throw new Exception("FileAccess: Expected status '" + text + "': " + state);
+        }
+    }
     static Task<T> Fa<T>(IPage page, string expression) => page.EvaluateAsync<T>("() => " + expression.Replace("$fa", "window.__fa"));
+    static Task<System.Text.Json.JsonElement> Stored(IPage page, string name) => page.EvaluateAsync<System.Text.Json.JsonElement>("""
+        async name => {
+          const deadline = performance.now() + 10000;
+          do {
+            const record = await window.__fa.stored();
+            if (record?.name === name) return record;
+            await new Promise(resolve => setTimeout(resolve, 25));
+          } while (performance.now() < deadline);
+          throw new Error('File handle was not persisted for ' + name);
+        }
+        """, name);
     static async Task Settled(IPage page)
     {
         await page.WaitForFunctionAsync("document.getElementById('base')?.dataset.loadedUrl === document.getElementById('base')?.dataset.targetUrl");
@@ -97,7 +120,7 @@ static class EditorFileAccess
     static async Task Menu(IPage page, string item)
     {
         await page.Locator("#fileBtn").ClickAsync();
-        await page.GetByRole(AriaRole.Menuitem, new() { Name = item }).ClickAsync();
+        await page.GetByRole(AriaRole.Menuitem, new() { NameRegex = new("^" + System.Text.RegularExpressions.Regex.Escape(item) + "(?:\\u2026|$)") }).ClickAsync();
     }
 
     static async Task<bool> Same(IPage page, string file) =>
@@ -113,7 +136,7 @@ static class EditorFileAccess
             await Menu(page, "Open");
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'opened.pdf' && document.getElementById('base')?.naturalWidth > 0");
             Check(await Fa<int>(page, "$fa.openCalls") == 1, "File > Open uses showOpenFilePicker.");
-            var stored = await Fa<System.Text.Json.JsonElement>(page, "$fa.stored()");
+            var stored = await Stored(page, "opened.pdf");
             Check(stored.GetProperty("isHandle").GetBoolean() && stored.GetProperty("keys").GetString() == "handle,name" && stored.GetProperty("name").GetString() == "opened.pdf", "Only a FileSystemFileHandle and its name are stored.");
             await EditorHeader.State(page, false);
 
@@ -133,7 +156,7 @@ static class EditorFileAccess
             Check(await Fa<string>(page, "$fa.read('opened.pdf')") == good, "Denied permission leaves the original file untouched.");
             await WaitStatus(page, "original not updated");
             await EditorHeader.State(page, true);
-            var kept = await Fa<System.Text.Json.JsonElement>(page, "$fa.stored()");
+            var kept = await Stored(page, "opened.pdf");
             Check(kept.GetProperty("name").GetString() == "opened.pdf", "The handle is retained after a denied save.");
             Check(await page.EvaluateAsync<string>("document.getElementById('name').textContent") == "opened.pdf", "The document name is unchanged.");
             Check(await Fa<int>(page, "$fa.requests") == 1, "Permission is re-requested on the Save gesture.");
@@ -170,7 +193,7 @@ static class EditorFileAccess
             await WaitStatus(page, "Saved to copy.pdf");
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'copy.pdf'");
             Check(await Same(page, "copy.pdf"), "Save as writes the picked file.");
-            Check((await Fa<System.Text.Json.JsonElement>(page, "$fa.stored()")).GetProperty("name").GetString() == "copy.pdf", "The new handle replaces the stored one.");
+            Check((await Stored(page, "copy.pdf")).GetProperty("name").GetString() == "copy.pdf", "The new handle replaces the stored one.");
             await Mutate(page);
             await page.Keyboard.PressAsync("Control+s");
             await WaitStatus(page, "Saved to copy.pdf");
@@ -181,7 +204,7 @@ static class EditorFileAccess
             await page.ReloadAsync();
             var prompt = page.GetByRole(AriaRole.Dialog, new() { Name = "Resume previous edit", Exact = true });
             await prompt.WaitForAsync();
-            Check((await Fa<System.Text.Json.JsonElement>(page, "$fa.stored()")).GetProperty("name").GetString() == "copy.pdf", "The handle survives a reload while a recovery record exists.");
+            Check((await Stored(page, "copy.pdf")).GetProperty("name").GetString() == "copy.pdf", "The handle survives a reload while a recovery record exists.");
             await prompt.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true }).ClickAsync();
             await prompt.WaitForAsync(new() { State = WaitForSelectorState.Detached });
             await Ready(page);
@@ -213,7 +236,7 @@ static class EditorFileAccess
             await Fa<object?>(page, "$fa.seed('dropped.pdf', '" + Sample + "')");
             await Fa<object?>(page, "$fa.drop('file', 'dropped.pdf')");
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'dropped.pdf' && document.getElementById('base')?.naturalWidth > 0");
-            Check((await Fa<System.Text.Json.JsonElement>(page, "$fa.stored()")).GetProperty("name").GetString() == "dropped.pdf", "A dropped file handle is adopted for Save.");
+            Check((await Stored(page, "dropped.pdf")).GetProperty("name").GetString() == "dropped.pdf", "A dropped file handle is adopted for Save.");
             await Settled(page); await Menu(page, "Close document");
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'No document'");
             await Fa<object?>(page, "$fa.seed('folder/b.pdf', '" + Sample + "')");

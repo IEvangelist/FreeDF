@@ -143,6 +143,7 @@
 addEventListener('editor-ready', () => {
 const host = window.pdfHost;
 let recovery = null, samples = null, fa = null, localFonts = null, documentEpoch = 0;
+let fileStatusEpoch = 0;
 const usedFonts = new Set();
 const request = async (url, options) => {
   const replacesDocument = options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery', '/api/unlock'].includes(url.split('?')[0]);
@@ -1087,11 +1088,12 @@ function updateBase() {
   if (state.pageCount) return build(true).catch(reportError);
 }
 async function act(fn, onError = reportError) {
+  const statusEpoch = fileStatusEpoch;
   status(host ? 'Processing locally in WebAssembly...' : 'Processing...');
   try {
     await new Promise(resolve => setTimeout(resolve, 0));
     await flush(); await fn(); await refresh();
-    status(host ? 'Ready. PDFs stay on this device. Save downloads a copy.' : 'Ready.');
+    if (statusEpoch === fileStatusEpoch) status(host ? 'Ready. PDFs stay on this device. Save downloads a copy.' : 'Ready.');
   } catch (e) { onError(e); }
 }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
@@ -1852,7 +1854,7 @@ async function initFileAccess() {
     const enc = encodeURIComponent, pdfName = n => /\.pdf$/i.test(n) ? n : n + '.pdf';
     const markSaved = async (name, version) => { await post(`/api/saved?name=${enc(name)}&version=${version}`); await refreshDirty(); };
     fa = files.createFileAccess({
-      status, error: reportError, suggestedName: () => pdfName(state.fileName.replace(/^edited-/, '')),
+      status: text => { fileStatusEpoch++; status(text); }, error: error => { fileStatusEpoch++; reportError(error); }, suggestedName: () => pdfName(state.fileName.replace(/^edited-/, '')),
       prepare: async () => {
         await flush();
         const { version, fileName } = await (await request('/api/state')).json();

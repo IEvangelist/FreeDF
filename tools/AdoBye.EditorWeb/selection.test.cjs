@@ -72,3 +72,28 @@ test('thumbnail document epochs stop obsolete requests without blocking ordinary
   assert.equal(asset.src, 'asset');
   assert.deepEqual(calls, ['/api/page/0.png?v=2', '/api/asset/a']);
 });
+
+test('an older refresh cannot overwrite a newer local-file save status', async () => {
+  const start = html.indexOf('async function act(');
+  const act = html.slice(start, html.indexOf('const upload =', start));
+  const hook = html.match(/status: (text => \{ fileStatusEpoch\+\+; status\(text\); \}), error:/)[1];
+  for (const message of [null, 'Saved to fresh.pdf', 'Downloaded a copy - original not updated']) {
+    let entered, finish;
+    const refreshing = new Promise(resolve => { entered = resolve; });
+    const refreshed = new Promise(resolve => { finish = resolve; });
+    const context = vm.createContext({
+      setTimeout, host: true, flush: async () => {}, refresh: () => { entered(); return refreshed; },
+      reportError: error => { throw error; },
+    });
+    vm.runInContext(`let fileStatusEpoch = 0;
+      const status = text => globalThis.message = text;
+      ${act}
+      globalThis.run = act; globalThis.fileStatus = ${hook};`, context);
+    const running = context.run(async () => {});
+    await refreshing;
+    if (message) context.fileStatus(message);
+    finish();
+    await running;
+    assert.equal(context.message, message ?? 'Ready. PDFs stay on this device. Save downloads a copy.');
+  }
+});
