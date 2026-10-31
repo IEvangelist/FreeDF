@@ -32,7 +32,8 @@ public class JpxConformanceTests
         var meta = File.ReadAllText(Path.Combine(Dir, name + ".meta")).Split(' ');
         string mode = meta[0];
         int w = int.Parse(meta[1]), h = int.Parse(meta[2]), tol = int.Parse(meta[3]);
-        Assert.Contains(meta[4], new[] { "openjpeg", "derived" });
+        Assert.Contains(meta[4], new[] { "openjpeg", "openjpeg-samples+rule", "derived" });
+        Assert.True(meta[4] == "openjpeg" || meta.Length > 5, name + ": non-openjpeg provenance needs a recorded reason");
         var expected = File.ReadAllBytes(Path.Combine(Dir, name + ".bin"));
 
         var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(Dir, name + ".pdf")));

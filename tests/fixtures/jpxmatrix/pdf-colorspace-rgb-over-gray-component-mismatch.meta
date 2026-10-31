@@ -1,1 +1,1 @@
-L 40 30 0 derived
+L 40 30 0 derived PDF /ColorSpace DeviceRGB on a one-component JPX is a component-count mismatch; this decoder falls back to gray (undefined by OpenJPEG); underlying samples confirmed by opj_decompress

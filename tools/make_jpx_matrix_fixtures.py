@@ -1,20 +1,28 @@
 """Generates the JPEG 2000 conformance-matrix fixtures under tests/fixtures/jpxmatrix.
 
-Each case writes name.pdf (one /Im0 JPXDecode image), name.bin (expected 8-bit interleaved RGBA-compare
-pixels) and name.meta ("MODE width height tolerance PROVENANCE"). MODE is L, RGB or RGBA (channels compared
-against the decoder's RGBA output). PROVENANCE is:
+Each case writes name.pdf (one /Im0 JPXDecode image), name.bin (expected 8-bit interleaved pixels) and name.meta
+("MODE width height tolerance PROVENANCE REASON..."). MODE is L, RGB or RGBA (channels compared against the decoder's
+RGBA output). Reference pixels come from `opj_decompress` (OpenJPEG 2.5.4 official release, set OPJ_DIR), never from
+this repository's decoder; encoders (Pillow/imagecodecs) only produce the codestreams. PROVENANCE is:
 
-  openjpeg  expected pixels come from OpenJPEG (via Pillow/imagecodecs) decoding the exact fixture bytes, or
-            from a source image that OpenJPEG round-tripped losslessly.
-  derived   expected pixels come from the formula in the case's docstring/comment (T.800 / ISO 32000-2 rule
-            implemented here, NOT by OpenJPEG). Used where OpenJPEG defines no behaviour or disagrees with PDF.
+  openjpeg               pixels are opj_decompress output for the exact fixture bytes.
+  openjpeg-samples+rule  native-depth samples from opj_decompress, then the decoder's documented 8-bit scaling rule.
+  derived                PDF-level semantics OpenJPEG does not implement (alpha un-premultiply, /Decode, /ColorSpace,
+                         /Mask, /Indexed); the underlying samples are still confirmed with opj_decompress. REASON says why.
 
-Container (JP2 box) cases decode through OpenJPEG as well; when OpenJPEG's output differs from the hand-derived
-model the fixture is stored as "derived" and the disagreement is printed. Lossy (9/7) cases use tolerance 2.
+JP2-container cases (emit_jp2) must agree with opj_decompress within the tolerance or the generator fails, unless the
+fixture is listed in FALLBACK_ALLOW (currently empty). manifest.json records tool versions and hashes.
+Lossy (9/7) cases use tolerance 2.
 """
+import hashlib
 import io
+import json
 import os
+import re
+import shutil
 import struct
+import subprocess
+import tempfile
 import numpy as np
 from pikepdf import Pdf, Stream, Name, Dictionary, Array
 from PIL import Image
@@ -50,11 +58,23 @@ def make_pdf(path, w, h, data, extra=None):
     pdf.save(path)
 
 
-def write_case(name, data, mode, expected, tol, prov, extra=None):
+OPJ_DIR = os.environ.get("OPJ_DIR") or os.path.dirname(shutil.which("opj_decompress") or "")
+EXE = ".exe" if os.name == "nt" else ""
+DECOMPRESS = os.path.join(OPJ_DIR, "opj_decompress" + EXE)
+MANIFEST = {"cases": {}}
+# fixtures whose expected pixels are NOT confirmed by opj_decompress even though the model could be compared:
+# name -> why. The generator fails if any other fixture falls back to the model.
+FALLBACK_ALLOW = {}
+
+
+def write_case(name, data, mode, expected, tol, prov, extra=None, reason=None):
+    if prov != "openjpeg" and not reason:
+        raise ValueError(f"{name}: provenance {prov} requires a reason")
     h, w = expected.shape[:2]
     make_pdf(os.path.join(OUT, name + ".pdf"), w, h, data, extra)
     open(os.path.join(OUT, name + ".bin"), "wb").write(np.ascontiguousarray(expected.astype(np.uint8)).tobytes())
-    open(os.path.join(OUT, name + ".meta"), "w").write(f"{mode} {w} {h} {tol} {prov}")
+    open(os.path.join(OUT, name + ".meta"), "w").write(f"{mode} {w} {h} {tol} {prov} {reason or 'pixels decoded by opj_decompress'}")
+    MANIFEST["cases"][name] = {"mode": mode, "tolerance": tol, "provenance": prov, "reason": reason or "pixels decoded by opj_decompress"}
     print("wrote", name, mode, w, h, tol, prov, len(data), "bytes")
 
 
@@ -64,22 +84,43 @@ def j2k(arr, **kw):
     return buf.getvalue()
 
 
-def opj_decode(data):
-    im = Image.open(io.BytesIO(data))
-    im.load()
-    return np.asarray(im)
+def opj_channels(data):
+    """Decodes with opj_decompress to per-channel PGX at native depth (pclr/cmap/cdef/sYCC applied by OpenJPEG).
+    Returns (array HxWxC int64, [precision], [signed])."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "in." + ("jp2" if data[4:8] == b"jP  " else "j2k"))
+        open(src, "wb").write(data)
+        r = subprocess.run([DECOMPRESS, "-i", src, "-o", os.path.join(tmp, "o.pgx")], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError("opj_decompress failed: " + (r.stdout + r.stderr).strip()[-200:])
+        files = sorted(f for f in os.listdir(tmp) if f.startswith("o") and f.endswith(".pgx"))
+        if len(files) > 1:
+            files.sort(key=lambda f: int(re.search(r"_(\d+)\.pgx", f).group(1)))
+        chans, precs, sgn = [], [], []
+        for f in files:
+            raw = open(os.path.join(tmp, f), "rb").read()
+            nl = raw.index(b"\n")
+            p = raw[:nl].decode().split()
+            s, prec, w, h = p[2] == "-", int(p[3]), int(p[4]), int(p[5])
+            size = 1 if prec <= 8 else 2 if prec <= 16 else 4
+            dt = (">i" if s else ">u") + str(size)
+            chans.append(np.frombuffer(raw[nl + 1:], dtype=dt)[:w * h].reshape(h, w).astype(np.int64))
+            precs.append(prec)
+            sgn.append(s)
+        return np.stack(chans, -1), precs, sgn
 
 
-def imagecodecs_decode(data):
-    import imagecodecs
-    return imagecodecs.jpeg2k_decode(data)
+def scale8(x, prec):
+    mx = (1 << prec) - 1
+    return (x.astype(np.int64) * 255 + mx // 2) // mx
 
 
-def to8(arr):
-    if arr.dtype == np.uint16:
-        return ((arr.astype(np.uint32) * 255 + 32767) // 65535).astype(np.uint8)
-    return arr
-
+def require_opj(name, data, expected, tol=0):
+    """Fails the generator unless opj_decompress output equals `expected` (channel-last array)."""
+    got, _, _ = opj_channels(data)
+    got = got.reshape(expected.shape) if got.shape != expected.shape and got.shape[-1] == 1 else got
+    if got.shape != expected.shape or int(np.abs(got - expected.astype(np.int64)).max()) > tol:
+        raise ValueError(f"{name}: opj_decompress output differs from the expected samples (shape {got.shape} vs {expected.shape})")
 
 # ---- Part 1 matrix: progression x precinct x tiles/offsets x layers x transform -------------------------------
 
@@ -92,7 +133,7 @@ def matrix():
                       tile_offset=(3, 4), offset=(5, 7), quality_mode="rates", quality_layers=[8, 3, 1],
                       irreversible=irrev)
             data = j2k(im, **kw)
-            ref = opj_decode(data)
+            ref = opj_channels(data)[0]
             write_case(name, data, "RGB", ref, 2 if irrev else 0, "openjpeg")
 
 
@@ -100,44 +141,39 @@ def matrix():
 
 def depths():
     import imagecodecs
+    rule = "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
     for bits in (1, 2, 3, 5, 7, 9, 11, 13, 15):
         rng = np.random.default_rng(bits)
         mx = (1 << bits) - 1
         x = rng.integers(0, mx + 1, (24, 40)).astype(np.uint8 if bits <= 8 else np.uint16)
         x[0, :4] = (0, mx, min(1, mx), max(mx - 1, 0))
         data = imagecodecs.jpeg2k_encode(x, reversible=True, mct=False, bitspersample=bits, codecformat=imagecodecs.JPEG2K.CODEC.J2K)
-        if not np.array_equal(imagecodecs.jpeg2k_decode(data), x):
-            raise ValueError(f"{bits}-bit OpenJPEG round trip differs")
-        v = (x.astype(np.int64) * 255 + mx // 2) // mx
-        write_case(f"mx-depth{bits}-lossless", data, "L", v, 0, "openjpeg")
-    # signed 12-bit: OpenJPEG round-trips the signed samples; PDF has no signed samples, so the displayed value is
-    # the DC-level-shifted unsigned sample (x + 2^(b-1)) scaled exactly like unsigned data (hand-derived).
+        native, precs, sgn = opj_channels(data)
+        if precs != [bits] or sgn != [False] or not np.array_equal(native[..., 0], x):
+            raise ValueError(f"{bits}-bit: opj_decompress native samples differ from the input")
+        write_case(f"mx-depth{bits}-lossless", data, "L", scale8(native[..., 0], bits), 0, "openjpeg-samples+rule", reason=rule)
+    # signed 12-bit: PDF has no signed samples; the display value is the DC-shifted unsigned sample (x + 2^(b-1)).
     rng = np.random.default_rng(99)
     s = rng.integers(-2048, 2048, (24, 40)).astype(np.int16)
     s[0, :4] = (-2048, 2047, 0, -1)
-    try:
-        data = imagecodecs.jpeg2k_encode(s, reversible=True, mct=False, bitspersample=12, codecformat=imagecodecs.JPEG2K.CODEC.J2K)
-        if not np.array_equal(imagecodecs.jpeg2k_decode(data), s):
-            raise ValueError("signed round trip differs")
-        u = s.astype(np.int64) + 2048
-        write_case("mx-signed12-lossless", data, "L", (u * 255 + 2047) // 4095, 0, "derived")
-    except Exception as e:  # pragma: no cover - encoder-version dependent
-        print("skip signed12:", e)
-    # >16 bits: the decoder keeps the top 16 bits (hand-derived: v16 = x >> (b - 16), then 16 -> 8 bit scaling).
+    data = imagecodecs.jpeg2k_encode(s, reversible=True, mct=False, bitspersample=12, codecformat=imagecodecs.JPEG2K.CODEC.J2K)
+    native, precs, sgn = opj_channels(data)
+    if precs != [12] or sgn != [True] or not np.array_equal(native[..., 0], s):
+        raise ValueError("signed12: opj_decompress native samples differ from the input")
+    write_case("mx-signed12-lossless", data, "L", scale8(native[..., 0] + 2048, 12), 0, "openjpeg-samples+rule",
+               reason="signed native samples from opj_decompress; PDF has no signed samples so the decoder displays x+2^(b-1) (DC level shift), then " + rule.split("scaled to ")[1])
+    # >16 bits: the decoder keeps the top 16 bits before scaling to 8 bit.
     for bits in (20, 24):
         rng = np.random.default_rng(bits)
         mx = (1 << bits) - 1
         x = rng.integers(0, mx + 1, (16, 24)).astype(np.uint32)
         x[0, :4] = (0, mx, 1, mx - 1)
-        try:
-            data = imagecodecs.jpeg2k_encode(x, reversible=True, mct=False, bitspersample=bits, codecformat=imagecodecs.JPEG2K.CODEC.J2K)
-            if not np.array_equal(imagecodecs.jpeg2k_decode(data), x):
-                raise ValueError("round trip differs")
-            v16 = x.astype(np.int64) >> (bits - 16)
-            write_case(f"mx-depth{bits}-lossless", data, "L", (v16 * 255 + 32767) // 65535, 1, "derived")
-        except Exception as e:  # pragma: no cover
-            print(f"skip depth{bits}:", e)
-
+        data = imagecodecs.jpeg2k_encode(x, reversible=True, mct=False, bitspersample=bits, codecformat=imagecodecs.JPEG2K.CODEC.J2K)
+        native, precs, sgn = opj_channels(data)
+        if precs != [bits] or not np.array_equal(native[..., 0], x):
+            raise ValueError(f"{bits}-bit: opj_decompress native samples differ from the input")
+        write_case(f"mx-depth{bits}-lossless", data, "L", scale8(native[..., 0] >> (bits - 16), 16), 1, "openjpeg-samples+rule",
+                   reason=f"native {bits}-bit samples from opj_decompress; decoder keeps the top 16 bits (x >> {bits - 16}) then scales to 8 bit; tolerance 1 for float precision")
 
 # ---- JP2 box helpers -------------------------------------------------------------------------------------------
 
@@ -164,25 +200,32 @@ def jp2(boxes_header, cs, before=b"", after=b"", xl=False, to_eof=False):
 
 
 def emit_jp2(name, data, derived, mode="RGB", tol=0, extra=None):
-    """Stores OpenJPEG's output when it agrees with the hand-derived model, otherwise the model."""
-    prov, exp = "derived", derived
-    candidates = []
-    for label, fn in (("pillow", opj_decode), ("imagecodecs", imagecodecs_decode)):
-        try:
-            ref = to8(fn(data))
-        except Exception as e:
-            print(f"  NOTE {name}: {label} could not decode ({e})")
-            continue
-        if mode == "RGB" and ref.ndim == 3 and ref.shape[2] == 4:
+    """Stores opj_decompress output (channels after pclr/cmap/cdef/sYCC handling). The model must agree within tol;
+    a disagreement fails the generator unless the case is explicitly listed in FALLBACK_ALLOW."""
+    try:
+        ref, precs, _ = opj_channels(data)
+        ref = np.stack([ref[..., c] if precs[c] == 8 else scale8(ref[..., c], precs[c]) for c in range(ref.shape[-1])], -1)
+        if mode == "L" and ref.ndim == 3 and ref.shape[2] == 1:
+            ref = ref[..., 0]
+        if mode == "RGB" and ref.shape[-1] == 4:
             ref = ref[..., :3]
-        if ref.shape == derived.shape and int(np.abs(ref.astype(int) - derived.astype(int)).max()) <= tol:
-            prov = "openjpeg"
-            break
-        candidates.append(f"{label} shape {ref.shape}")
-    if prov == "derived":
-        print(f"  NOTE {name}: OpenJPEG ({'; '.join(candidates)}) disagrees with the derived model; storing derived")
-    write_case(name, data, mode, exp, tol, prov, extra)
+        problem = None if ref.shape == derived.shape and int(np.abs(ref - derived.astype(np.int64)).max()) <= tol else f"opj shape {ref.shape} vs model {derived.shape}"
+    except Exception as e:
+        ref, problem = None, f"opj_decompress failed: {e}"
+    if problem is None:
+        write_case(name, data, mode, ref, tol, "openjpeg", extra)
+    elif name in FALLBACK_ALLOW:
+        write_case(name, data, mode, derived, tol, "derived", extra, reason=f"FALLBACK ({problem}): {FALLBACK_ALLOW[name]}")
+    else:
+        raise ValueError(f"{name}: OpenJPEG disagrees with the model ({problem}); investigate or add an explicit FALLBACK_ALLOW entry")
 
+
+def pdf_case(name, data, mode, expected, reason, extra=None, tol=0, opj_samples=None):
+    """PDF-semantics fixture: the underlying decoded samples are confirmed with opj_decompress (opj_samples, channel-last),
+    the PDF-level rule (alpha, /Decode, /ColorSpace, /Mask, /Indexed) has no OpenJPEG counterpart and is derived."""
+    if opj_samples is not None:
+        require_opj(name, data, opj_samples)
+    write_case(name, data, mode, expected, tol, "derived", extra, reason=reason + ("; underlying samples confirmed by opj_decompress" if opj_samples is not None else ""))
 
 def unpremultiply(rgb, a):
     out = rgb.astype(np.int64).copy()
@@ -226,21 +269,26 @@ def containers():
     pre = np.dstack([pre_rgb, a]).astype(np.uint8)
     cs_pre = j2k(pre)
     exp_pre = np.dstack([unpremultiply(pre[..., :3], a), a])
-    write_case("ct-alpha-premultiplied-cdef", jp2(ihdr(w, h, 4) + colr_enum(16) + cdef_a(2), cs_pre), "RGBA", exp_pre, 0, "derived", {"SMaskInData": 1})
-    write_case("ct-alpha-ignored-smaskindata0", jp2(ihdr(w, h, 4) + colr_enum(16) + cdef_a(1), cs_rgba), "RGBA",
-               np.dstack([rgb, np.full((h, w), 255, np.uint8)]), 0, "derived", {"SMaskInData": 0})
+    unpre = "premultiplied opacity (cdef type 2 / SMaskInData 2) is un-premultiplied with c = min(255, (c*255 + a/2) // a) for 0 < a < 255; OpenJPEG does not un-premultiply"
+    opaque = np.dstack([rgb, np.full((h, w), 255, np.uint8)])
+    pdf_case("ct-alpha-premultiplied-cdef", jp2(ihdr(w, h, 4) + colr_enum(16) + cdef_a(2), cs_pre), "RGBA", exp_pre, unpre, {"SMaskInData": 1}, opj_samples=pre)
+    pdf_case("ct-alpha-ignored-smaskindata0", jp2(ihdr(w, h, 4) + colr_enum(16) + cdef_a(1), cs_rgba), "RGBA", opaque,
+             "/SMaskInData 0: the embedded opacity channel is ignored (alpha 255)", {"SMaskInData": 0}, opj_samples=straight)
     # no cdef at all: SMaskInData 1 = first extra channel is straight opacity, 2 = premultiplied (ISO 32000-2 Table 89)
-    write_case("pdf-smaskindata1-nocdef", cs_rgba, "RGBA", straight, 0, "derived", {"SMaskInData": 1})
-    write_case("pdf-smaskindata2-nocdef", cs_pre, "RGBA", exp_pre, 0, "derived", {"SMaskInData": 2})
-    write_case("pdf-smaskindata2-overrides-cdef-straight", jp2(ihdr(w, h, 4) + colr_enum(16) + cdef_a(1), cs_pre), "RGBA", exp_pre, 0, "derived", {"SMaskInData": 2})
-    write_case("pdf-smaskindata0-nocdef", jp2(ihdr(w, h, 4) + colr_enum(16), cs_rgba), "RGBA", np.dstack([rgb, np.full((h, w), 255, np.uint8)]), 0, "derived", {"SMaskInData": 0})
+    pdf_case("pdf-smaskindata1-nocdef", cs_rgba, "RGBA", straight, "/SMaskInData 1 without cdef: the fourth channel is straight opacity", {"SMaskInData": 1}, opj_samples=straight)
+    pdf_case("pdf-smaskindata2-nocdef", cs_pre, "RGBA", exp_pre, "/SMaskInData 2 without cdef: " + unpre, {"SMaskInData": 2}, opj_samples=pre)
+    pdf_case("pdf-smaskindata2-overrides-cdef-straight", jp2(ihdr(w, h, 4) + colr_enum(16) + cdef_a(1), cs_pre), "RGBA", exp_pre,
+             "/SMaskInData 2 overrides a cdef that declares straight opacity: " + unpre, {"SMaskInData": 2}, opj_samples=pre)
+    pdf_case("pdf-smaskindata0-nocdef", jp2(ihdr(w, h, 4) + colr_enum(16), cs_rgba), "RGBA", opaque,
+             "/SMaskInData 0 with colr enumerated RGB and an unassociated fourth channel: alpha ignored", {"SMaskInData": 0}, opj_samples=straight)
     # colour-key /Mask combined with embedded opacity: masked pixels become fully transparent, others keep the channel
     key = rgb[5, 5].astype(int)
     keyed = np.all(rgb == rgb[5, 5], axis=-1)
     exp = straight.copy()
     exp[keyed, 3] = 0
-    write_case("pdf-mask-colorkey-with-smaskindata", cs_rgba, "RGBA", exp, 0, "derived",
-               {"SMaskInData": 1, "Mask": Array([int(key[0]), int(key[0]), int(key[1]), int(key[1]), int(key[2]), int(key[2])])})
+    pdf_case("pdf-mask-colorkey-with-smaskindata", cs_rgba, "RGBA", exp,
+             "colour-key /Mask zeroes alpha of matching pixels, other pixels keep the SMaskInData 1 opacity", 
+             {"SMaskInData": 1, "Mask": Array([int(key[0]), int(key[0]), int(key[1]), int(key[1]), int(key[2]), int(key[2])])}, opj_samples=straight)
 
     # palettes: 3 columns from a single index component, plus a 4th (alpha) column
     idx = (np.random.default_rng(5).integers(0, 200, (h, w))).astype(np.uint8)
@@ -262,8 +310,9 @@ def containers():
     # PDF /Indexed supplies its own palette: the JP2 pclr must be ignored (indices are samples)
     lookup = bytes((i * 7 + k * 31) & 255 for i in range(256) for k in range(3))
     lut = np.frombuffer(lookup, np.uint8).reshape(256, 3)
-    write_case("pdf-indexed-ignores-pclr", jp2(ihdr(w, h, 1) + colr_enum(16) + pclr3 + cmap3, cs_idx), "RGB", lut[idx], 0, "derived",
-               {"ColorSpace": Array([Name.Indexed, Name.DeviceRGB, 255, lookup])})
+    pdf_case("pdf-indexed-ignores-pclr", jp2(ihdr(w, h, 1) + colr_enum(16) + pclr3 + cmap3, cs_idx), "RGB", lut[idx],
+             "PDF /Indexed supplies the palette; the JP2 pclr is ignored and the codestream samples are the indices",
+             {"ColorSpace": Array([Name.Indexed, Name.DeviceRGB, 255, lookup])}, opj_samples=pal[idx][..., :3])
 
     # enumerated colour spaces
     ycc = Image.fromarray(rgb).convert("YCbCr")
@@ -280,25 +329,43 @@ def containers():
     emit_jp2("ct-colr-greyscale", jp2(ihdr(w, h, 1) + colr_enum(17), j2k(gray)), gray, "L")
     # PDF /ColorSpace overrides the JP2 colour specification (a gray colr on RGB data is ignored; first channel kept
     # when the PDF names fewer components -- hand-derived, undefined by OpenJPEG).
-    write_case("pdf-colorspace-gray-over-rgb", jp2(ihdr(w, h, 3) + colr_enum(16), cs_rgb), "L", rgb[..., 0], 0, "derived", {"ColorSpace": Name.DeviceGray})
-    write_case("pdf-colorspace-rgb-over-gray-component-mismatch", jp2(ihdr(w, h, 1) + colr_enum(17), j2k(gray)), "L", gray, 0, "derived", {"ColorSpace": Name.DeviceRGB})
-    write_case("pdf-decode-inverted-rgb", cs_rgb, "RGB", 255 - rgb, 0, "derived", {"Decode": Array([1, 0, 1, 0, 1, 0])})
-    write_case("pdf-decode-subrange-gray", j2k(gray), "L", np.round((0.25 + gray / 255.0 * 0.5) * 255).astype(np.uint8), 1, "derived",
-               {"ColorSpace": Name.DeviceGray, "Decode": Array([0.25, 0.75])})
+    pdf_case("pdf-colorspace-gray-over-rgb", jp2(ihdr(w, h, 3) + colr_enum(16), cs_rgb), "L", rgb[..., 0],
+             "PDF /ColorSpace DeviceGray names fewer components than the JPX has: the first channel is used (undefined by OpenJPEG)", {"ColorSpace": Name.DeviceGray}, opj_samples=rgb)
+    pdf_case("pdf-colorspace-rgb-over-gray-component-mismatch", jp2(ihdr(w, h, 1) + colr_enum(17), j2k(gray)), "L", gray,
+             "PDF /ColorSpace DeviceRGB on a one-component JPX is a component-count mismatch; this decoder falls back to gray (undefined by OpenJPEG)", {"ColorSpace": Name.DeviceRGB}, opj_samples=gray[..., None])
+    pdf_case("pdf-decode-inverted-rgb", cs_rgb, "RGB", 255 - rgb, "/Decode [1 0 1 0 1 0] inverts samples: 255 - x", {"Decode": Array([1, 0, 1, 0, 1, 0])}, opj_samples=rgb)
+    pdf_case("pdf-decode-subrange-gray", j2k(gray), "L", np.round((0.25 + gray / 255.0 * 0.5) * 255).astype(np.uint8),
+             "/Decode [0.25 0.75]: round((0.25 + x/255*0.5)*255); tolerance 1 for float rounding", {"ColorSpace": Name.DeviceGray, "Decode": Array([0.25, 0.75])},
+             tol=1, opj_samples=gray[..., None])
 
     # CMYK (enumerated CS 12): raw four-channel samples are kept untouched (not a PDF case; read by a direct test)
     cmyk = np.dstack([rgb, gray])
     cs_cmyk = j2k(cmyk)
     cmyk_jp2 = jp2(ihdr(w, h, 4) + colr_enum(12), cs_cmyk)
+    # opj_decompress converts enumerated CMYK to RGB on output, so the raw four-channel samples are confirmed on the bare codestream
+    ref_cmyk = opj_channels(cs_cmyk)[0]
+    if not np.array_equal(ref_cmyk, cmyk):
+        raise ValueError("CMYK: opj_decompress output differs from the input")
     open(os.path.join(OUT, "raw-ct-colr-cmyk.jp2"), "wb").write(cmyk_jp2)
-    open(os.path.join(OUT, "raw-ct-colr-cmyk.bin"), "wb").write(np.ascontiguousarray(cmyk).tobytes())
-    print("wrote raw-ct-colr-cmyk (", "openjpeg" if np.array_equal(opj_decode(cs_cmyk), cmyk) else "derived", ")")
+    open(os.path.join(OUT, "raw-ct-colr-cmyk.bin"), "wb").write(np.ascontiguousarray(ref_cmyk.astype(np.uint8)).tobytes())
+    print("wrote raw-ct-colr-cmyk (openjpeg)")
 
 
 def main():
+    for fn in os.listdir(OUT):
+        os.remove(os.path.join(OUT, fn))
+    import PIL
+    import imagecodecs
+    from PIL import features
+    r = subprocess.run([DECOMPRESS, "-h"], capture_output=True, text=True)
+    MANIFEST["openjpeg_decoder"] = {"version": re.search(r"openjp2 library v([0-9.]+)", r.stdout + r.stderr).group(1),
+                                    "opj_decompress_sha256": hashlib.sha256(open(DECOMPRESS, "rb").read()).hexdigest(),
+                                    "command": "opj_decompress -i <fixture codestream/jp2> -o o.pgx (reference channels at native depth)"}
+    MANIFEST["encoders"] = {"pillow": PIL.__version__, "pillow_openjpeg": features.version("jpg_2000"), "imagecodecs": imagecodecs.__version__}
     matrix()
     depths()
     containers()
+    json.dump(MANIFEST, open(os.path.join(OUT, "manifest.json"), "w"), indent=1)
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-L 40 24 0 openjpeg
+L 40 24 0 openjpeg-samples+rule native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)

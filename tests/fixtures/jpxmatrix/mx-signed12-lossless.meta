@@ -1,1 +1,1 @@
-L 40 24 0 derived
+L 40 24 0 openjpeg-samples+rule signed native samples from opj_decompress; PDF has no signed samples so the decoder displays x+2^(b-1) (DC level shift), then 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)

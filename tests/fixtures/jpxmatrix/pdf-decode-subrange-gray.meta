@@ -1,1 +1,1 @@
-L 40 30 1 derived
+L 40 30 1 derived /Decode [0.25 0.75]: round((0.25 + x/255*0.5)*255); tolerance 1 for float rounding; underlying samples confirmed by opj_decompress

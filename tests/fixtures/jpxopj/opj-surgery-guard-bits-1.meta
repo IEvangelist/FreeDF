@@ -1,0 +1,16 @@
+{
+ "tolerance": 0,
+ "components": 3,
+ "commands": [
+  "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -n 3",
+  "marker surgery: guard_bits_-1",
+  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+ ],
+ "depth": 8,
+ "signed": false,
+ "lossless": false,
+ "expect": "decode",
+ "opjEqualsEncoderInput": false,
+ "reference": "opj_decompress",
+ "note": "guard-bit field rewritten after encoding (changes Mb); output is whatever OpenJPEG decodes"
+}

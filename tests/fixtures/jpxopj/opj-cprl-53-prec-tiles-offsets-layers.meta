@@ -1,0 +1,14 @@
+{
+ "tolerance": 0,
+ "components": 3,
+ "commands": [
+  "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p CPRL -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1",
+  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+ ],
+ "depth": 8,
+ "signed": false,
+ "lossless": false,
+ "expect": "decode",
+ "opjEqualsEncoderInput": true,
+ "reference": "opj_decompress"
+}

@@ -1,1 +1,1 @@
-RGBA 40 30 0 derived
+RGBA 40 30 0 derived colour-key /Mask zeroes alpha of matching pixels, other pixels keep the SMaskInData 1 opacity; underlying samples confirmed by opj_decompress

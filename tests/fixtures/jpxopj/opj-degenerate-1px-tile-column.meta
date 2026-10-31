@@ -1,0 +1,15 @@
+{
+ "tolerance": 2,
+ "components": 3,
+ "commands": [
+  "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u -o <tmp>\\case.j2k -n 5 -t 33,29",
+  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+ ],
+ "depth": 8,
+ "signed": false,
+ "lossless": false,
+ "expect": "decode",
+ "opjEqualsEncoderInput": false,
+ "reference": "opj_decompress",
+ "note": "Degenerate geometry: OpenJPEG 2.5.4 does not reproduce its own lossless input at x=66 (opjEqualsEncoderInput=false); both decoders agree within 2 there, so the tolerance is 2 and the reference is still opj_decompress"
+}
