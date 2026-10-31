@@ -307,6 +307,8 @@ static class EditorPerformance
                             await Settled(page);
                         });
                     }
+                    const string imageState = "() => { const image = document.getElementById('base'); return { loaded: image.dataset.loadedUrl, target: image.dataset.targetUrl, width: image.naturalWidth, height: image.naturalHeight, complete: image.complete, bounds: image.getBoundingClientRect().toJSON(), page: document.getElementById('pn').value, zoom: document.getElementById('zv').textContent, inert: document.getElementById('view').inert }; }";
+                    var bareState = await page.EvaluateAsync<JsonElement>(imageState);
                     var bareHash = await EditorTextSelection.BasePixelHash(page);
                     await Measure("overlay-cache", async () =>
                     {
@@ -315,8 +317,16 @@ static class EditorPerformance
                         await page.Mouse.MoveAsync(box.X + 20, box.Y + 20);
                         await page.Mouse.DownAsync(); await page.Mouse.MoveAsync(box.X + 50, box.Y + 50); await page.Mouse.UpAsync();
                         await Saved(page); await Settled(page);
-                        if (await EditorTextSelection.BasePixelHash(page) != bareHash)
+                        var afterHash = await EditorTextSelection.BasePixelHash(page);
+                        if (afterHash != bareHash)
+                        {
+                            var afterState = await page.EvaluateAsync<JsonElement>(imageState);
+                            var stages = await page.EvaluateAsync<JsonElement>("({commands: profileCommands, workers: profileWorkerStages, renders: profileRenderStages})");
+                            await File.WriteAllTextAsync(output + ".overlay-pixels.json",
+                                JsonSerializer.Serialize(new { repeat, document = name, bareHash, afterHash, before = bareState, after = afterState, stages },
+                                    new JsonSerializerOptions { WriteIndented = true }));
                             throw new Exception($"{name}: overlay-only edit changed the bare page pixels.");
+                        }
                     });
                     if (await page.Locator(".thumb").CountAsync() > 1)
                     {

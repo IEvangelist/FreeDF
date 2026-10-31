@@ -58,9 +58,9 @@ forms, protection, merge, pool, page-image and boot browser smokes.
 | Large 240 dpi primary render | Pre-raster control p50 / p95 | Integrated p50 / p95 |
 | --- | ---: | ---: |
 | Allocated bytes | 195,179,120 / 195,179,120 | 150,197,848 / 150,197,848 |
-| Raster ms | 572.8 / 572.9 | 589.6 / 642.4 |
-| PNG ms | 58.3 / 59.7 | 71.8 / 72.7 |
-| Engine total ms | 630.7 / 632.6 | 657.0 / 714.7 |
+| Raster ms | 572.8 / 572.9 | 589.6 / 648.3 |
+| PNG ms | 58.3 / 59.9 | 71.8 / 72.8 |
+| Engine total ms | 630.7 / 632.8 | 657.0 / 721.1 |
 
 These are three-repeat browser measurements, not the desktop best-of table.
 The control predates main's UI modernization, so this is not an isolated
@@ -69,3 +69,20 @@ does not meet the 150 ms target. The full profile still fails unchanged UI
 timing gates: cached zoom medians are 181-183 ms, and Save event-frame medians
 are 52.9-61.1 ms against the 50 ms ceiling. Those failures block main delivery;
 they are not waived by the passing allocation/pixel checks.
+
+An isolated UI control then kept the same published AOT engine, host and pool
+and substituted only the archived `6100d68a` index and editor CSS. This control
+passes all 535 metric groups, 15 pixel hashes and ten CI-policy controls with
+the unchanged reference. Allocation remains 150,197,848 bytes. The comparison
+isolates the UI regression rather than attributing it to the renderer:
+
+| Document | Previous UI cached zoom p50 / p95 | Modern UI cached zoom p50 / p95 | Previous UI Save frame p50 / p95 | Modern UI Save frame p50 / p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Showcase | 99.9 / 100.8 | 181.8 / 182.7 | 14.1 / 14.9 | 55.8 / 57.6 |
+| Typography | 99.7 / 101.5 | 182.2 / 199.5 | 14.6 / 14.9 | 54.4 / 63.1 |
+| Images | 99.4 / 100.9 | 182.8 / 183.1 | 14.4 / 14.9 | 52.9 / 53.6 |
+| Report | 99.4 / 100.7 | 182.7 / 199.6 | 13.9 / 14.5 | 56.9 / 64.2 |
+| Large 12-page | 99.4 / 100.2 | 181.9 / 197.4 | 14.5 / 14.7 | 61.1 / 65.0 |
+
+All timings are milliseconds. The previous UI still misses the requested
+uniform 12 ms Save target; a passing 50 ms regression gate is not that target.
