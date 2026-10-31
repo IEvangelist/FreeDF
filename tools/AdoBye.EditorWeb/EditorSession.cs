@@ -70,7 +70,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     {
         editor = e;
         recoverySupported = allowRecovery;
-        pageUndo.Clear(); pageRedo.Clear();
+        pageUndo.Clear(); pageRedo.Clear(); requiredFonts.Clear();
         items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear(); unclaimedAssets.Clear(); historyAssets.Clear(); clipboardAssets.Clear();
         overlayBuilder = new(editor, assets, catalog);
         Changed(); savePath = null; savedVersion = version;
@@ -127,6 +127,17 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     bool HasGraphicGroupEdits() => Enumerable.Range(0, editor.PageCount).Any(page =>
         objEdits.TryGetValue(editor.PageId(page), out var edits) &&
         edits.Keys.Any(index => PageText(page).Objects[index].Kind == "form"));
+
+    readonly HashSet<string> requiredFonts = [];
+
+    IEnumerable<string> MissingRequiredFonts() => requiredFonts.Where(f => !catalog.Has(f) && items.Values.Any(l => l.Any(i => i.Font == f))).Order().ToList();
+
+    /// <summary>Blocks writing a PDF whose text would silently change typeface because a browser-supplied font is not loaded.</summary>
+    void RequireFontsLoaded()
+    {
+        var missing = MissingRequiredFonts().ToList();
+        if (missing.Count > 0) throw new EditorConflictException($"The local font(s) {string.Join(", ", missing)} are not loaded in this session. Reload installed fonts or switch those items to a standard font before saving.");
+    }
 
     void Prepare(bool originalTextOnly = false)
     {
@@ -497,7 +508,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     info["pages"] = editor.PageCount.ToString(); info["file"] = fileName;
                     return AsJson(info);
                 case "download":
-                    RequirePages(); Snap(); return Pdf(snapshotBytes!, "edited-" + fileName);
+                    RequirePages(); RequireFontsLoaded(); Snap(); return Pdf(snapshotBytes!, "edited-" + fileName);
                 case "find": return Find(Q("q") ?? "", Q("cs") == "true");
                 case "export": return Export(p[2], query);
             }
@@ -686,7 +697,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     var index = int.Parse(p[2], CultureInfo.InvariantCulture);
                     editor.ImportPages(Snap(), [index], index + 1); break;
                 case "save":
-                    RequirePages();
+                    RequirePages(); RequireFontsLoaded();
                     if (savePath is null) return AsJson(new { saved = false });
                     Snap(); File.WriteAllBytes(savePath, snapshotBytes!); savedVersion = version;
                     return AsJson(new { saved = true, path = savePath });
@@ -695,6 +706,20 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     savedVersion = int.TryParse(Q("version"), out var exportedVersion) && exportedVersion < version ? exportedVersion : version;
                     if (!string.IsNullOrWhiteSpace(Q("name"))) fileName = Q("name")!;
                     return Ok;
+                case "require-fonts":
+                    requiredFonts.Clear();
+                    foreach (var family in Read<List<string>>() ?? []) requiredFonts.Add(family);
+                    return AsJson(new { missing = MissingRequiredFonts() });
+                case "replace-font":
+                    {
+                        var from = Q("from") ?? throw new ArgumentException("Missing font."); var to = Q("to") ?? "Helvetica";
+                        if (!FontCatalog.Standard.Contains(to) && !catalog.Has(to)) throw new ArgumentException("Unknown replacement font.");
+                        var changed = 0;
+                        foreach (var pageId in items.Keys.ToArray())
+                            items[pageId] = items[pageId].Select(i => { if (i.Font != from) return i; changed++; return i with { Font = to, OStyle = null }; }).ToList();
+                        if (changed > 0) Changed(baseChanged: false);
+                        return AsJson(new { changed, missing = MissingRequiredFonts() });
+                    }
                 case "font":
                     var registered = catalog.Register(body ?? throw new ArgumentException("Choose a font."), Q("ps"));
                     return AsJson(new { accepted = registered.Accepted, family = registered.Family, bold = registered.Bold, italic = registered.Italic, reason = registered.Reason, substitute = registered.Substitute });
@@ -783,6 +808,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         string? Q(string k) => query.GetValueOrDefault(k);
         var name = Path.GetFileNameWithoutExtension(fileName);
         var dpi = Math.Clamp(int.TryParse(Q("dpi"), out var resolution) ? resolution : 150, 16, 600);
+        if (kind is "pdf" or "secure") RequireFontsLoaded();
         switch (kind)
         {
             case "secure":

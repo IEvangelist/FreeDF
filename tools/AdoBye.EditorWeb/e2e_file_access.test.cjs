@@ -93,7 +93,8 @@ test('denied permission downloads a copy, never writes, and keeps the handle for
   assert.equal(await access.save(), true);
   assert.deepEqual(handle.writes, []);
   assert.deepEqual(log.downloads, [['denied.pdf', 7]]);
-  assert.match(log.status.at(-1), /downloaded instead/);
+  assert.deepEqual(log.saved, []);
+  assert.match(log.status.at(-1), /Downloaded a copy — original not updated/);
   assert.equal(access.handle, handle);
 });
 
@@ -244,4 +245,19 @@ test('without the Local Font Access API the controller reports unsupported', asy
   const { createLocalFonts, supportsLocalFonts } = await load('localfonts.js');
   assert.equal(supportsLocalFonts({}), false);
   assert.equal(createLocalFonts({ upload() {}, win: {} }).supported, false);
+});
+
+test('reload re-registers named families and reports the ones that are gone', async () => {
+  const { createLocalFonts } = await load('localfonts.js');
+  const win = {
+    indexedDB: fakeIndexedDb(),
+    async queryLocalFonts(options) {
+      const all = [{ family: 'Here', postscriptName: 'Here-Regular', style: 'Regular' }];
+      return all.filter(f => !options?.postscriptNames || options.postscriptNames.includes(f.postscriptName)).map(f => ({ ...f, blob: async () => new Blob(['x']) }));
+    },
+  };
+  const controller = createLocalFonts({ win, upload: async () => ({ accepted: true, family: 'Here', bold: false, italic: false }) });
+  const result = await controller.reload(['Here', 'Gone']);
+  assert.deepEqual(result.restored, ['Here']);
+  assert.equal(result.failed[0].family, 'Gone');
 });

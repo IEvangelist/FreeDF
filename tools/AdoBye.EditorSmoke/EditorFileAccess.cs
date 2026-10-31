@@ -72,13 +72,18 @@ static class EditorFileAccess
     static byte[] FontBytes => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tests", "fixtures", "fonts", "SourceCodePro-Regular.otf"));
 
     public static bool ExpectedError(string error) =>
-        error.Contains("Could not write") || error.Contains("was revoked") || error.Contains("Permission to read installed fonts");
+        error.Contains("Could not write") || error.Contains("was revoked") || error.Contains("are not loaded in this session") || error.TrimStart().StartsWith("at ", StringComparison.Ordinal) || error.Contains("Permission to read installed fonts");
 
     public static Task Install(IPage page) => page.AddInitScriptAsync(Stubs);
 
     static Task<string> Status(IPage page) => page.EvaluateAsync<string>("document.getElementById('status').textContent");
     static Task WaitStatus(IPage page, string text) => page.WaitForFunctionAsync("t => document.getElementById('status').textContent.includes(t)", text);
     static Task<T> Fa<T>(IPage page, string expression) => page.EvaluateAsync<T>("() => " + expression.Replace("$fa", "window.__fa"));
+    static async Task Settled(IPage page)
+    {
+        await page.WaitForFunctionAsync("document.getElementById('base')?.dataset.loadedUrl === document.getElementById('base')?.dataset.targetUrl");
+        await page.WaitForTimeoutAsync(1000);
+    }
     static Task Ready(IPage page) => page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
 
     static async Task Mutate(IPage page)
@@ -126,8 +131,18 @@ static class EditorFileAccess
             var download = await page.RunAndWaitForDownloadAsync(() => page.Keyboard.PressAsync("Control+s"));
             Check(download.SuggestedFilename == "opened.pdf", "Denied permission falls back to a download.");
             Check(await Fa<string>(page, "$fa.read('opened.pdf')") == good, "Denied permission leaves the original file untouched.");
-            await WaitStatus(page, "downloaded instead");
+            await WaitStatus(page, "original not updated");
+            await EditorHeader.State(page, true);
+            var kept = await Fa<System.Text.Json.JsonElement>(page, "$fa.stored()");
+            Check(kept.GetProperty("name").GetString() == "opened.pdf", "The handle is retained after a denied save.");
+            Check(await page.EvaluateAsync<string>("document.getElementById('name').textContent") == "opened.pdf", "The document name is unchanged.");
             Check(await Fa<int>(page, "$fa.requests") == 1, "Permission is re-requested on the Save gesture.");
+            await Fa<object?>(page, "($fa.permission = 'prompt', $fa.request = 'granted', 0)");
+            await page.Keyboard.PressAsync("Control+s");
+            await WaitStatus(page, "Saved to opened.pdf");
+            await EditorHeader.State(page, false);
+            Check(await Fa<int>(page, "$fa.requests") == 2 && await Same(page, "opened.pdf"), "Retry re-prompts, writes the original and only then reports Saved.");
+            good = await Fa<string>(page, "$fa.read('opened.pdf')");
 
             await Fa<object?>(page, "($fa.permission = 'granted', $fa.request = 'granted', 0)");
             await Mutate(page);
@@ -191,7 +206,7 @@ static class EditorFileAccess
             await page.Keyboard.PressAsync("Control+s");
             await WaitStatus(page, "Saved to fresh.pdf");
             Check(await Fa<int>(page, "$fa.saveCalls") == 1 && await Same(page, "fresh.pdf"), "Saving a handle-less document picks a file.");
-            await Menu(page, "Close document");
+            await Settled(page); await Menu(page, "Close document");
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'No document'");
             Check(await Fa<object?>(page, "$fa.stored()") is null, "Closing the document clears the handle.");
 
@@ -199,7 +214,7 @@ static class EditorFileAccess
             await Fa<object?>(page, "$fa.drop('file', 'dropped.pdf')");
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'dropped.pdf' && document.getElementById('base')?.naturalWidth > 0");
             Check((await Fa<System.Text.Json.JsonElement>(page, "$fa.stored()")).GetProperty("name").GetString() == "dropped.pdf", "A dropped file handle is adopted for Save.");
-            await Menu(page, "Close document");
+            await Settled(page); await Menu(page, "Close document");
             await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'No document'");
             await Fa<object?>(page, "$fa.seed('folder/b.pdf', '" + Sample + "')");
             await Fa<object?>(page, "$fa.seed('folder/a.pdf', '" + Sample + "')");
@@ -241,6 +256,9 @@ static class EditorFileAccess
         throw new InvalidDataException("No OS/2 table.");
     }
 
+    static Task SetFonts(IPage page, byte[] good, string restricted, string mode) =>
+        Fa<object?>(page, "($fa.fonts = [{ family: 'Restricted Demo', fullName: 'Restricted Demo Regular', postscriptName: 'Restricted-Regular', style: 'Regular', data: '" + restricted + "' }, { family: 'Source Code Pro', fullName: 'Source Code Pro Regular', postscriptName: 'SourceCodePro-Regular', style: 'Regular', data: '" + Convert.ToBase64String(good) + "' }], $fa.fontMode = '" + mode + "', 0)");
+
     public static async Task RunFonts(IPage page)
     {
         EventHandler<IDialog> accept = async (_, dialog) => await dialog.AcceptAsync();
@@ -253,7 +271,7 @@ static class EditorFileAccess
             try { await discard.WaitForAsync(new() { Timeout = 5000 }); await discard.ClickAsync(); } catch (TimeoutException) { }
             await Ready(page);
             var restricted = Convert.ToBase64String(WithFsType(good, FontLicense2.Restricted));
-            await Fa<object?>(page, "($fa.fonts = [{ family: 'Restricted Demo', fullName: 'Restricted Demo Regular', postscriptName: 'Restricted-Regular', style: 'Regular', data: '" + restricted + "' }, { family: 'Source Code Pro', fullName: 'Source Code Pro Regular', postscriptName: 'SourceCodePro-Regular', style: 'Regular', data: '" + Convert.ToBase64String(good) + "' }], $fa.fontMode = 'denied', 0)");
+            await SetFonts(page, good, restricted, "denied");
             await Menu(page, "New");
             await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
             await page.Locator("#base").WaitForAsync();
@@ -312,6 +330,40 @@ static class EditorFileAccess
             var exported = await page.EvaluateAsync<string>("async () => { const b = new Uint8Array(await (await pdfHost.request('/api/export/pdf?name=x.pdf')).arrayBuffer()); let t = ''; for (const x of b) t += String.fromCharCode(x); return t; }");
             Check(exported.Contains("SourceCodePro") && exported.Contains("/FontFile3"), $"The chosen local font is embedded ({await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())")} :: {exported.Replace("\0", "")}).");
             Check(exported.Length < good.Length, "It is embedded as a subset, not the full font file.");
+
+            const string ItemsFont = "async () => (await (await pdfHost.request('/api/page/0/items')).json()).map(i => i.font).join()";
+            const string TryExport = "async () => { try { await pdfHost.request('/api/export/pdf?name=x.pdf'); return 'ok'; } catch (e) { return e.message; } }";
+            async Task ReloadAndResume()
+            {
+                await page.WaitForTimeoutAsync(2500);
+                await page.WaitForFunctionAsync("document.getElementById('recovery').textContent === 'Recovery saved'");
+                await page.ReloadAsync();
+                var resumePrompt = page.GetByRole(AriaRole.Dialog, new() { Name = "Resume previous edit", Exact = true });
+                await resumePrompt.WaitForAsync();
+                await SetFonts(page, good, restricted, "granted");
+                await resumePrompt.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true }).ClickAsync();
+            }
+            var reload = page.GetByRole(AriaRole.Dialog, new() { Name = "Reload installed fonts", Exact = true });
+            await ReloadAndResume();
+            await reload.WaitForAsync();
+            Check((await Status(page)).Contains("Saving is blocked"), "A resumed document with an unloaded local font warns visibly.");
+            Check((await page.EvaluateAsync<string>(TryExport)).Contains("not loaded"), "Saving is blocked instead of silently changing the typeface.");
+            Check(await page.EvaluateAsync<string>(ItemsFont) == "Source Code Pro", "The recovered text keeps its local font name.");
+            await Fa<object?>(page, "($fa.fontMode = 'denied', 0)");
+            await reload.GetByRole(AriaRole.Button, new() { Name = "Reload fonts" }).ClickAsync();
+            await reload.Locator("[data-error]").Filter(new() { HasTextString = "Permission to read installed fonts" }).WaitForAsync();
+            Check((await page.EvaluateAsync<string>(TryExport)).Contains("not loaded"), "A denied reload keeps saving blocked.");
+            await Fa<object?>(page, "($fa.fontMode = 'granted', 0)");
+            await reload.GetByRole(AriaRole.Button, new() { Name = "Reload fonts" }).ClickAsync();
+            await reload.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            Check(await page.EvaluateAsync<string>(TryExport) == "ok" && await page.EvaluateAsync<string>(ItemsFont) == "Source Code Pro", "Reloading re-registers the font and saving works with the original typeface.");
+
+            await ReloadAndResume();
+            await reload.WaitForAsync();
+            await reload.GetByRole(AriaRole.Button, new() { Name = "Use Helvetica instead" }).ClickAsync();
+            await reload.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            Check(await page.EvaluateAsync<string>(ItemsFont) == "Helvetica" && await page.EvaluateAsync<string>(TryExport) == "ok", "Switching to a standard font happens only on the explicit choice.");
+            await Fa<object?>(page, "($fa.fonts = [], 0)");
 
             await page.EvaluateAsync("sessionStorage.setItem('fa-unsupported', '1')");
             await page.ReloadAsync();

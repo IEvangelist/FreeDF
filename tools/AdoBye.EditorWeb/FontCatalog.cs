@@ -238,12 +238,13 @@ public static class FontLicense
         return off < 0 || FontSubsetter.TableLength(sfnt, "OS/2") < 10 || off + 10 > sfnt.Length ? 0 : BinaryPrimitives.ReadUInt16BigEndian(sfnt.AsSpan(off + 8));
     }
 
-    /// <summary>Installable, preview/print and editable embedding are allowed; restricted licenses, bitmap-only embedding and no-subsetting fonts are refused because the editor embeds subsets.</summary>
+    /// <summary>Installable and editable embedding are allowed. Restricted, preview/print-only (the output PDF is editable), bitmap-only and no-subsetting fonts are refused because the editor embeds editable subsets.</summary>
     public static FontLicenseResult Check(byte[] sfnt)
     {
         var fs = FsType(sfnt);
         if ((fs & Restricted) != 0) return new(false, fs, "Its license (OS/2 fsType) restricts embedding.");
         if ((fs & BitmapOnly) != 0) return new(false, fs, "Its license (OS/2 fsType) only permits embedding bitmaps.");
+        if ((fs & PreviewPrint) != 0 && (fs & Editable) == 0) return new(false, fs, "Its license (OS/2 fsType) allows preview and print embedding only, and the edited PDF stays editable.");
         if ((fs & NoSubsetting) != 0) return new(false, fs, "Its license (OS/2 fsType) forbids subsetting, and the editor embeds only the glyphs in use.");
         return new(true, fs, null);
     }
