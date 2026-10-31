@@ -52,7 +52,7 @@ public sealed class ContentInterpreter
     PathData? _textClip;
     List<string> _hiddenStack = [];
     List<int> _mcidStack = [];
-    readonly List<(string? Text, bool Used)> _actualText = [];
+    List<(string? Text, bool Used)> _actualText = [];
     /// <summary>When set, text shown inside a marked-content sequence with /ActualText is reported once as that replacement text (ISO 32000-2 14.9.4).</summary>
     public bool HonorActualText { get; set; }
     int _hiddenDepth;
@@ -495,7 +495,7 @@ public sealed class ContentInterpreter
                         else Warn("invalid marked-content MCID");
                     }
                     _mcidStack.Add(mcid);
-                    _actualText.Add((HonorActualText && a.Count >= 2 && (a[1] is PdfName apn && R(res.Get("Properties")) is PdfDictionary apd ? R(apd.Get(apn.Value)) : a[1]) is PdfDictionary adict && R(adict.Get("ActualText")) is PdfString ats ? DecodeTextString(ats.Bytes) : null, false));
+                    _actualText.Add((HonorActualText && a.Count >= 2 && (a[1] is PdfName apn && R(res.Get("Properties")) is PdfDictionary apd ? R(apd.Get(apn.Value)) : a[1]) is PdfDictionary adict && R(adict.Get("ActualText")) is PdfString ats ? ats.Text : null, false));
                     if (a.Count >= 2 && a[0].AsName() == "OC")
                     {
                         PdfObject? prop = a[1] is PdfName pn && R(res.Get("Properties")) is PdfDictionary pd ? R(pd.Get(pn.Value)) : a[1];
@@ -1041,9 +1041,6 @@ public sealed class ContentInterpreter
     public bool DrawGraphics { get; set; } = true;
     int _runDepth, _spanIndex, _collectDepth = 1, _curForm;
 
-    static string DecodeTextString(byte[] b) =>
-        b.Length >= 2 && b[0] == 0xFE && b[1] == 0xFF ? System.Text.Encoding.BigEndianUnicode.GetString(b, 2, b.Length - 2) : System.Text.Encoding.Latin1.GetString(b);
-
     string SpanText(string shown)
     {
         for (var i = _actualText.Count - 1; i >= 0; i--)
@@ -1220,13 +1217,14 @@ public sealed class ContentInterpreter
         var saved = _gs; var savedPath = _path; var savedTm = _tm; var savedTlm = _tlm;
         var sCollect = _collectDepth; var sForm = _curForm; var sIdx = _spanIndex; var sInv = _curInv;
         var savedHidden = _hiddenStack; var savedMcids = _mcidStack;
+        var savedActualText = _actualText;
         var savedHiddenDepth = _hiddenDepth; var savedPageMcid = _pageMcid;
         var stackDepth = _stack.Count;
         var grouped = false;
         // MCIDs belong to the stream declaring them, never to a descendant form.
         // Preserve only the explicit page-owned Do association for legacy page extraction.
         _pageMcid = _runDepth == 1 ? CurrentMcid() : CurrentMcid() >= 0 ? -1 : _pageMcid;
-        _hiddenStack = []; _mcidStack = [];
+        _hiddenStack = []; _mcidStack = []; _actualText = [];
         try
         {
             // Text and objects of a form are recorded only when the form is an indirect object (so it can be rewritten) reached from a recorded stream.
@@ -1269,6 +1267,7 @@ public sealed class ContentInterpreter
         {
             if (_mcidStack.Count > 0) Warn("unclosed marked content in form");
             _hiddenStack = savedHidden; _mcidStack = savedMcids;
+            _actualText = savedActualText;
             _hiddenDepth = savedHiddenDepth; _pageMcid = savedPageMcid;
             _collectDepth = sCollect; _curForm = sForm; _spanIndex = sIdx; _curInv = sInv;
             _activeForms.Remove(xs.Dict);

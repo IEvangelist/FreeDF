@@ -326,4 +326,28 @@ public class FormStructureTests
         var warnings = DocumentRenderer.RenderPage(doc.Pages[0], 10).Warnings;
         Assert.Contains(malformed == "EMC" ? "unmatched EMC" : "unclosed marked content in form", warnings);
     }
+
+    [Theory]
+    [InlineData("EMC", "Child")]
+    [InlineData("/Span <</ActualText (Form replacement)>> BDC", "Form replacement")]
+    public void FormActualTextStateCannotConsumeOrLeakIntoTheParent(string marked, string expectedChild)
+    {
+        var doc = Load(
+            (4, ObjPdf.Stream($"/P <</ActualText (Page replacement)>> BDC /Outer Do {Text("Parent")} EMC {Text("Tail")}")),
+            (11, ObjPdf.Stream(marked + " " + Text("Child"), $"{Form} /Resources << {Font} >>")));
+        var spans = DocumentRenderer.ExtractText(doc.Pages[0], false, true);
+        Assert.Equal("Page replacementTail", string.Concat(spans.Where(s => s.Form == 0).Select(s => s.Text)));
+        Assert.Equal(expectedChild, Assert.Single(spans, s => s.Form == 11).Text);
+    }
+
+    [Theory]
+    [InlineData("FEFF03A9")]
+    [InlineData("FFFEA903")]
+    [InlineData("EFBBBFCEA9")]
+    public void ActualTextUsesTheSharedPdfStringDecoder(string encoded)
+    {
+        var doc = Load((4, ObjPdf.Stream($"/Span <</ActualText <{encoded}>>> BDC {Text("Glyph")} EMC")));
+        Assert.Equal("\u03a9", Assert.Single(DocumentRenderer.ExtractText(doc.Pages[0], false, true)).Text);
+        Assert.Equal("Glyph", Assert.Single(DocumentRenderer.ExtractText(doc.Pages[0])).Text);
+    }
 }

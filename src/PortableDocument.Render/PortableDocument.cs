@@ -59,23 +59,20 @@ public static class PortableDocument
     /// <summary>Text-showing operators of the page's own content (not forms), positioned in CropBox space: points, origin top-left, y down, unrotated.</summary>
     public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page) => ExtractText(page, includeAnnotationAppearances: false);
 
-    /// <summary>As <see cref="ExtractText(PdfPage)"/>, but text inside marked content carrying /ActualText is reported as that replacement text (shaped ligatures, right-to-left runs, reordered Indic clusters).</summary>
-    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page, bool includeAnnotationAppearances, bool honorActualText) =>
-        ExtractText(page, includeAnnotationAppearances, honorActualText, 0);
-
     internal static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page, bool includeAnnotationAppearances) =>
-        ExtractText(page, includeAnnotationAppearances, false, 0);
+        ExtractText(page, includeAnnotationAppearances, false);
 
-    static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page, bool includeAnnotationAppearances, bool honorActualText, int _)
+    /// <summary>As <see cref="ExtractText(PdfPage)"/>, but text inside marked content carrying /ActualText is reported as that replacement text (shaped ligatures, right-to-left runs, reordered Indic clusters).</summary>
+    public static List<ContentInterpreter.TextSpan> ExtractText(PdfPage page, bool includeAnnotationAppearances, bool honorActualText)
     {
         var box = page.CropBox;
         using var raster = new SoftwareRasterizer(1, 1);
         var interp = new ContentInterpreter(page.Document.File, raster)
         {
             TextSpans = [], DrawAnnotations = includeAnnotationAppearances, DrawGraphics = false,
-            SynthesizeAnnotationAppearances = false,             CaptureAnnotationAppearanceText = includeAnnotationAppearances,
-                        HonorActualText = honorActualText
-                    };
+            SynthesizeAnnotationAppearances = false, CaptureAnnotationAppearanceText = includeAnnotationAppearances,
+            HonorActualText = honorActualText
+        };
         interp.Render(page, new Matrix(1, 0, 0, -1, -box.Left, box.Top));
         return interp.TextSpans;
     }

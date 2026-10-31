@@ -75,7 +75,7 @@ public class EditorObjectBreadthTests
     public void StrokeWidthAndDashAreAbsoluteEvenWhenTheObjectIsScaled()
     {
         var session = Open("1 0 0 RG 2 w 20 20 30 30 re S");
-        var stroked = Objects(session).Single(o => o!["hasStroke"]!.GetValue<bool>())["index"]!.GetValue<int>();
+        var stroked = Assert.Single(Objects(session), o => o!["hasStroke"]!.GetValue<bool>())!["index"]!.GetValue<int>();
         Edit(session, stroked, new { sx = 2, sy = 2, ty = -200, width = 6, dash = new[] { 8.0, 4.0 } });
         var saved = Download(session);
         Assert.Contains("[", Content(saved));

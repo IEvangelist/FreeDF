@@ -13,7 +13,7 @@ namespace PortableDocument.Signing.Http;
 /// <see cref="PdfEditor.AddDocumentTimeStamp(byte[], ITimestampProvider, HashAlgorithmName?, string, int, string)"/>; nothing in the library contacts a network on its own and the browser editor never uses it.
 /// The returned token's message imprint and nonce are checked; the TSA's signature and trust are not (use <see cref="PdfSignatureTrust"/> on the result).
 /// </summary>
-public sealed class Rfc3161TimestampClient : ITimestampProvider
+public sealed class Rfc3161TimestampClient : ITimestampProvider, IDisposable
 {
     readonly Uri _url;
     readonly HttpClient _http;
@@ -27,6 +27,11 @@ public sealed class Rfc3161TimestampClient : ITimestampProvider
         _ownsClient = httpClient is null;
         _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 1 << 20 };
         _policyOid = policyOid;
+    }
+
+    public void Dispose()
+    {
+        if (_ownsClient) _http.Dispose();
     }
 
     public byte[] GetTimestampToken(HashAlgorithmName hash, byte[] digest)

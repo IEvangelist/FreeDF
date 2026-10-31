@@ -329,7 +329,7 @@ public class ShapingTests
         Assert.Equal([2], Breaks("a\nb"));
         Assert.Equal([4], Breaks("foo (bar)"));
         Assert.Equal(LineBreakKind.Mandatory, LineBreaker.FindBreaks("a\nb")[2]);
-        Assert.Empty(Breaks("(a b)").Where(x => x == 1));
+        Assert.DoesNotContain(1, Breaks("(a b)"));
         Assert.Equal(LineBreakKind.Mandatory, LineBreaker.FindBreaks("abc")[3]);
     }
 

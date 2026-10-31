@@ -1,15 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import vm from 'node:vm';
 
 const script = new URL('./bundle-editor-site.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const fixtures = [];
+test.afterEach(() => {
+  for (const dir of fixtures.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function fixture(extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bundle-test-'));
+  fixtures.push(dir);
   const files = {
     'index.html': '<!doctype html><html><head>\n<link rel="icon" href="favicon.svg" type="image/svg+xml">\n<link rel="icon" href="favicon-32.png" type="image/png">\n<link rel="alternate icon" href="favicon.ico">\n<link rel="apple-touch-icon" href="apple-touch-icon.png">\n<link rel="manifest" href="site.webmanifest">\n<link rel="stylesheet" href="editor.css">\n<link rel="stylesheet" href="theme.css">\n<script src="editor.js" defer></script>\n<script src="ui.js" defer></script>\n</head><body><script>\nasync function later() { const m = await import(new URL(\'panel.mjs\', document.baseURI)); return m.render(); }\n</script></body></html>',
     'editor.css': 'body{margin:0}', 'theme.css': ':root{--a:1}',
@@ -54,4 +59,16 @@ test('fails the publish instead of shipping a partial bundle', () => {
   assert.throws(() => bundle(fixture({ 'map.mjs': 'await Promise.resolve();\nexport const project = 1;' })), /top-level await/);
   assert.throws(() => bundle(fixture({ 'theme.css': "a{background:url('x.png')}" })), /url\(\)/);
   assert.throws(() => bundle(fixture({ 'panel.mjs': "import { project } from './missing.mjs';\nexport const render = project;" })), /not part of the published site/);
+});
+
+test('discovers document-relative dynamic imports inside a bundled member', async () => {
+  const dir = fixture({
+    'map.mjs': "export async function project(n) { const m = await import(new URL('nested.mjs', document.baseURI)); return m.multiply(n); }",
+    'nested.mjs': 'export const multiply = n => n * 21;',
+  });
+  assert.match(bundle(dir), /host\.js \(5 modules\)/);
+  assert.equal(existsSync(join(dir, 'nested.mjs')), false);
+  const window = { __editorModulesReady() {} };
+  vm.runInNewContext(readFileSync(join(dir, 'host.js'), 'utf8'), { window, Promise, Error });
+  assert.equal(await window.__editorModules('panel.mjs').render(), 42);
 });

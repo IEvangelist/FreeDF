@@ -196,7 +196,7 @@
   }
   function landmarks() {
     const set = (s, a) => { const e = q(s); if (e) for (const k in a) if (e.getAttribute(k) !== a[k]) e.setAttribute(k, a[k]); };
-    set('#thumbs', { role: 'region', 'aria-label': 'Pages' });
+    set('#left', { role: 'region', 'aria-label': 'Pages and contents' });
     set('#props', { 'aria-label': 'Properties' });
     set('#tools', { role: 'toolbar', 'aria-label': 'Editor tools' });
     set('#view', { role: 'region', 'aria-label': 'Page canvas', tabindex: '0' });

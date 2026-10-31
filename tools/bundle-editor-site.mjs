@@ -67,6 +67,7 @@ while (queue.length) {
   const source = read(name);
   for (const match of source.matchAll(staticImport)) queue.push(match[3]);
   for (const match of source.matchAll(siblingDynamic)) queue.push(match[1]);
+  for (const match of source.matchAll(dynamicRef)) queue.push(match[1]);
 }
 const transform = (name, source) => {
   const exported = [];

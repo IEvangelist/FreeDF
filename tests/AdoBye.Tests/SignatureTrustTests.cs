@@ -753,4 +753,19 @@ public class SignatureTrustTests
         Assert.Throws<InvalidOperationException>(() => Rfc3161TimestampClient.ParseResponse(resp.Encode(), "2.16.840.1.101.3.4.2.1", digest, 5));
         Assert.Throws<InvalidOperationException>(() => Rfc3161TimestampClient.ParseResponse([1, 2, 3], "2.16.840.1.101.3.4.2.1", digest, 5));
     }
+
+    [Fact]
+    public async Task Disposing_timestamp_client_does_not_dispose_supplied_http_client()
+    {
+        using var http = new HttpClient(new TimestampHttpHandler());
+        new Rfc3161TimestampClient(new Uri("https://invalid.example/tsa"), http).Dispose();
+        using var response = await http.GetAsync("https://invalid.example/check");
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+    }
+
+    sealed class TimestampHttpHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+    }
 }
