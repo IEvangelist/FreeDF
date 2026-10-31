@@ -676,7 +676,7 @@ function setTool(t) {
 
 function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null) })); if (undo.length > 100) undo.shift(); }
 async function doUndo() {
-  if (!undo.length) return;
+  if (!undo.length) return pageHistoryStep('undo');
   const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null; curSpan = null;
   const changed = [];
   objs.forEach((o, k) => { if (JSON.stringify(o.edit ?? null) !== JSON.stringify(s.ed[k])) { o.edit = s.ed[k]; changed.push(o); } });
@@ -684,6 +684,13 @@ async function doUndo() {
   for (const o of changed) await saveObj(o);
 }
 
+function pageHistoryStep(kind) {
+  if (!(kind === 'undo' ? state.pageUndo : state.pageRedo)) { status(kind === 'undo' ? 'Nothing to undo.' : 'Nothing to redo.'); return; }
+  return act(async () => {
+    const r = await (await post(`/api/page-${kind}`)).json();
+    status(`${kind === 'undo' ? 'Undid' : 'Redid'} ${r.label} page change.`);
+  }, e => { reportError(e); });
+}
 const oBox = o => {
   const e = o.edit; if (!e) return [o.x0, o.y0, o.x1, o.y1];
   const xs = [e.sx * o.x0 + e.tx, e.sx * o.x1 + e.tx], ys = [e.sy * o.y0 + e.ty, e.sy * o.y1 + e.ty];
@@ -1450,6 +1457,7 @@ addEventListener('keydown', e => {
   if (e.key === '[' && !e.ctrlKey) { $('tl').click(); return; }
   if (e.key === ']' && !e.ctrlKey) { $('tr').click(); return; }
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); doUndo(); return; }
+  if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); pageHistoryStep('redo'); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'd' && cur) {
     e.preventDefault(); pushUndo();
     const c = { ...cur, id: crypto.randomUUID(), x: cur.x + 12, y: cur.y + 12, orig: null };

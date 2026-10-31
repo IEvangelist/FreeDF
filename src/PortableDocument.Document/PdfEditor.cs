@@ -662,6 +662,43 @@ public sealed partial class PdfEditor
     PdfFile? _src;
     bool _requiresFullRewrite;
 
+    /// <summary>An opaque, immutable-by-convention capture of the structural state of one <see cref="PdfEditor"/>, used for undo and redo.</summary>
+    public sealed class State
+    {
+        internal PdfEditor Owner = null!;
+        internal Dictionary<int, PdfObject> Objs = null!;
+        internal HashSet<int> Deleted = null!, Reserved = null!;
+        internal List<int> Pages = null!;
+        internal int Info, Next;
+        internal string Version = "";
+        internal Dictionary<int, Overlay> Overlays = null!;
+        internal Dictionary<int, byte[]> ContentOverrides = null!;
+        internal bool RequiresFullRewrite;
+    }
+
+    /// <summary>Captures page order, objects and per-page edits. Objects are replaced (never mutated in place), so a shallow capture is exact.</summary>
+    public State Capture() => new()
+    {
+        Owner = this, Objs = new(_objs), Deleted = [.. _deleted], Reserved = [.. _reserved], Pages = [.. _pages], Info = _info, Next = _next,
+        Version = _version, Overlays = new(_overlays), ContentOverrides = new(_contentOverrides), RequiresFullRewrite = _requiresFullRewrite,
+    };
+
+    /// <summary>Returns the editor to a state taken by <see cref="Capture"/> on this same instance.</summary>
+    public void Restore(State state)
+    {
+        if (!ReferenceEquals(state.Owner, this)) throw new ArgumentException("The state belongs to a different editor.", nameof(state));
+        Require(PdfPermissions.Assemble);
+        _objs.Clear(); foreach (var kv in state.Objs) _objs[kv.Key] = kv.Value;
+        _deleted.Clear(); _deleted.UnionWith(state.Deleted);
+        _reserved.Clear(); _reserved.UnionWith(state.Reserved);
+        _pages.Clear(); _pages.AddRange(state.Pages);
+        _info = state.Info; _next = state.Next; _version = state.Version;
+        _overlays.Clear(); foreach (var kv in state.Overlays) _overlays[kv.Key] = kv.Value;
+        _contentOverrides.Clear(); foreach (var kv in state.ContentOverrides) _contentOverrides[kv.Key] = kv.Value;
+        _requiresFullRewrite = state.RequiresFullRewrite;
+        _importMaps.Clear();
+    }
+
     /// <summary>True when the editor was opened from an intact, unencrypted file, so <see cref="SaveIncremental"/> can append an update.</summary>
     public bool CanSaveIncremental => !_requiresFullRewrite && _src is { IsEncrypted: false, Repaired: false };
 

@@ -200,6 +200,7 @@ public class EditorSessionTests
         using var items = JsonDocument.Parse(Call(session, "GET", "/api/page/0/items").Data);
         Assert.Equal("c", Assert.Single(items.RootElement.EnumerateArray()).GetProperty("id").GetString());
         Call(session, "POST", "/api/delete/0");
+        Call(session, "POST", "/api/page-history-clear");
         Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
     }
 
@@ -215,6 +216,7 @@ public class EditorSessionTests
         session.Handle("POST", "/api/import", new Dictionary<string, string>(), original);
         using var items = JsonDocument.Parse(Call(session, "GET", "/api/page/0/items").Data);
         Assert.Empty(items.RootElement.EnumerateArray());
+        Call(session, "POST", "/api/page-history-clear");
         Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
     }
 
@@ -314,6 +316,7 @@ public class EditorSessionTests
         Call(session, "POST", "/api/asset-clipboard", Array.Empty<string>());
         Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
         Call(session, "PUT", "/api/page/0/items", new ItemUpdate([], []));
+        Call(session, "POST", "/api/page-history-clear");
         Assert.Throws<KeyNotFoundException>(() => Call(session, "GET", "/api/asset/" + asset));
     }
 

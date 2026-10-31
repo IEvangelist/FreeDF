@@ -70,6 +70,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     {
         editor = e;
         recoverySupported = allowRecovery;
+        pageUndo.Clear(); pageRedo.Clear();
         items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear(); unclaimedAssets.Clear(); historyAssets.Clear(); clipboardAssets.Clear();
         overlayBuilder = new(editor, assets, catalog);
         Changed(); savePath = null; savedVersion = version;
@@ -283,6 +284,11 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         var referenced = items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>().ToHashSet();
         referenced.UnionWith(historyAssets.Values.SelectMany(ids => ids));
         referenced.UnionWith(clipboardAssets);
+        foreach (var entry in pageUndo.Concat(pageRedo))
+        {
+            referenced.UnionWith(entry.Items.Values.SelectMany(page => page).Select(item => item.Asset).OfType<string>());
+            referenced.UnionWith(entry.History.Values.SelectMany(ids => ids));
+        }
         foreach (var id in unclaimedAssets.Keys.Where(id => referenced.Contains(id) || clock.GetUtcNow() - unclaimedAssets[id] >= TimeSpan.FromMinutes(10)).ToArray())
             unclaimedAssets.Remove(id);
         foreach (var id in assets.Keys.Where(id => !referenced.Contains(id) && !unclaimedAssets.ContainsKey(id)).ToArray()) assets.Remove(id);
@@ -402,8 +408,60 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         return originalForms;
     }
 
+    sealed record PageHistoryEntry(string Label, PdfEditor.State Editor, Dictionary<int, List<Item>> Items,
+        Dictionary<int, Dictionary<int, ObjEdit>> Objects, Dictionary<int, HashSet<string>> History);
+    const int PageHistoryLimit = 50;
+    static readonly HashSet<string> PageOperations = ["delete", "move", "rotate", "blank", "duplicate", "import", "import-batch"];
+    readonly List<PageHistoryEntry> pageUndo = [], pageRedo = [];
+
+    PageHistoryEntry CapturePageHistory(string label) => new(label, editor.Capture(),
+        items.ToDictionary(kv => kv.Key, kv => kv.Value.ToList()),
+        objEdits.ToDictionary(kv => kv.Key, kv => new Dictionary<int, ObjEdit>(kv.Value)),
+        historyAssets.ToDictionary(kv => kv.Key, kv => new HashSet<string>(kv.Value)));
+
+    void ApplyPageHistory(PageHistoryEntry entry)
+    {
+        editor.Restore(entry.Editor);
+        items.Clear(); foreach (var kv in entry.Items) items[kv.Key] = kv.Value.ToList();
+        objEdits.Clear(); foreach (var kv in entry.Objects) objEdits[kv.Key] = new(kv.Value);
+        historyAssets.Clear(); foreach (var kv in entry.History) historyAssets[kv.Key] = new(kv.Value);
+        PruneAssets(); Changed();
+    }
+
+    Reply StepPageHistory(bool undo)
+    {
+        CheckPageMutation();
+        var from = undo ? pageUndo : pageRedo;
+        var to = undo ? pageRedo : pageUndo;
+        if (from.Count == 0) throw new EditorConflictException(undo ? "Nothing to undo." : "Nothing to redo.");
+        var entry = from[^1];
+        var current = CapturePageHistory(entry.Label);
+        ApplyPageHistory(entry);
+        from.RemoveAt(from.Count - 1);
+        to.Add(current);
+        return AsJson(new { label = entry.Label, undo = pageUndo.Count, redo = pageRedo.Count });
+    }
+
     /// <summary>Dispatches a local command. Neither this method nor the WASM host performs network I/O.</summary>
     public Reply Handle(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body = null, string? uploadName = null)
+    {
+        var segments = path.Trim('/').Split('/');
+        var pending = method == "POST" && segments.Length > 1 && PageOperations.Contains(segments[1]) && editor.PageCount > 0
+            ? CapturePageHistory(segments[1]) : null;
+        if (pending is null) return HandleCore(method, path, query, body, uploadName);
+        // Registered first so PruneAssets inside the operation keeps the assets that undo needs.
+        var droppedRedo = pageRedo.ToArray();
+        pageUndo.Add(pending); pageRedo.Clear();
+        try { return HandleCore(method, path, query, body, uploadName); }
+        catch
+        {
+            pageUndo.Remove(pending); pageRedo.AddRange(droppedRedo);
+            throw;
+        }
+        finally { if (pageUndo.Count > PageHistoryLimit) { pageUndo.RemoveAt(0); PruneAssets(); } }
+    }
+
+    Reply HandleCore(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body = null, string? uploadName = null)
     {
         LastRenderMetrics = null;
         PruneAssets();
@@ -422,7 +480,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "state":
                     var doc = editor.PageCount == 0 ? null : BaseSnap();
                     var pages = doc?.Pages.Select((pg, i) => new { index = i, id = editor.PageId(i), rotation = pg.Rotate, x0 = pg.CropBox.Left, top = pg.CropBox.Top, width = pg.CropBox.Width, height = pg.CropBox.Height }) ?? [];
-                    return AsJson(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null, recoverySupported });
+                    return AsJson(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null, recoverySupported, pageUndo = pageUndo.Count, pageRedo = pageRedo.Count });
                 case "recovery": return CaptureRecovery();
                 case "fonts": return AsJson(catalog.List());
                 case "fields": return AsJson(editor.PageCount == 0 ? [] : Pristine().GetFormFields().Where(f => f.FieldType is "Tx" or "Btn" or "Ch").Select(f => new { name = f.FullName, type = f.FieldType, value = f.Value ?? "" }));
@@ -593,6 +651,9 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     unclaimedAssets.Remove(cancelled); PruneAssets(); return Ok;
                 case "asset-history":
                     historyAssets.Clear(); PruneAssets(); return Ok;
+                case "page-history-clear": pageUndo.Clear(); pageRedo.Clear(); PruneAssets(); return Ok;
+                case "page-undo": return StepPageHistory(true);
+                case "page-redo": return StepPageHistory(false);
                 case "delete": CheckPageMutation(); editor.DeletePage(int.Parse(p[2], CultureInfo.InvariantCulture)); PruneAssets(); break;
                 case "move": CheckPageMutation(); editor.MovePage(int.Parse(p[2], CultureInfo.InvariantCulture), int.Parse(p[3], CultureInfo.InvariantCulture)); break;
                 case "rotate":
