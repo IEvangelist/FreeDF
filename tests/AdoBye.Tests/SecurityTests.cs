@@ -41,7 +41,7 @@ public class SecurityTests
         Assert.Throws<PdfPasswordException>(() => PdfDocument.Load(bytes, "wrong"));
         var user = PdfDocument.Load(bytes, "u");
         Assert.Equal("Secret Title", user.Info("Title"));
-        Assert.Equal(1, user.Pages.Count);
+        Assert.Single(user.Pages);
         var dec = user.File.Decryptor!;
         Assert.Equal(method, dec.EncryptionMethod);
         Assert.False(dec.IsOwner);

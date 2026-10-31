@@ -272,8 +272,6 @@ public class DocMdpTests
 
     // --- RFC 3161 document timestamps (offline TSA) ---
 
-    static readonly string Sha256Oid = "2.16.840.1.101.3.4.2.1";
-
     static byte[] Token(X509Certificate2 tsa, byte[] digest, DateTimeOffset time, string alg = "2.16.840.1.101.3.4.2.1")
     {
         var w = new AsnWriter(AsnEncodingRules.DER);

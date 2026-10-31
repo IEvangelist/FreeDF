@@ -21,7 +21,7 @@ public class FontCmapTests
     public void Type1_outlines_flex_seac_subrs_and_div_render(string file)
     {
         var p = Render(file);
-        Assert.Empty(p.Warnings.Where(w => w.Contains("font", StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(p.Warnings, w => w.Contains("font", StringComparison.OrdinalIgnoreCase));
         // A: 300x400 box at x 50..350
         Assert.True(Dark(p, 40, 70), "A body");
         Assert.False(Dark(p, 60, 70), "gap after A");

@@ -104,7 +104,6 @@ internal sealed class JpxCodestream
     {
         public MemoryStream Data = new();
         public readonly List<TilePartData> Parts = [];
-        public bool HeaderDone;
         public bool HasPpt;
         public int PartCount;
         public int Prog = -1, Layers, Mct;
