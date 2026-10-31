@@ -775,7 +775,7 @@ public sealed class ContentInterpreter
     static readonly HashSet<string> KnownBlends = ["Normal", "Compatible", "Multiply", "Screen", "Overlay", "Darken", "Lighten", "ColorDodge", "ColorBurn", "HardLight", "SoftLight", "Difference", "Exclusion", "Hue", "Saturation", "Color", "Luminosity"];
 
     // /BM may be an array: the first name the consumer recognises wins (11.6.3).
-    string? FirstKnownBlend(PdfObject v)
+    string? FirstKnownBlend(PdfObject? v)
     {
         var names = new List<string?>();
         if (v is PdfArray a) { for (var i = 0; i < a.Count; i++) names.Add(R(a[i]).AsName()); } else names.Add(v.AsName());

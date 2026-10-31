@@ -722,7 +722,7 @@ public class TransparencyTests
         // 12-bit coordinates and 4-bit components: a vertex is 12+12+12 = 36 bits, padded to 40.
         static string Vtx(int x, int y, int r, int g, int b)
         {
-            ulong bits = ((ulong)x << 24) | ((ulong)y << 12) | (ulong)(r << 8 | g << 4 | b);
+            ulong bits = ((ulong)x << 24) | ((ulong)y << 12) | (ulong)(uint)(r << 8 | g << 4 | b);
             bits <<= 4;
             var sb = new StringBuilder();
             for (var i = 4; i >= 0; i--) sb.Append((char)((bits >> (i * 8)) & 0xFF));

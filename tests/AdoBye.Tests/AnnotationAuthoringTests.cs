@@ -125,7 +125,7 @@ public class AnnotationAuthoringTests
         e.TransformAnnotation(0, r.Number, 2, 2, 10, 5, Now.AddHours(2));
         var info = Reload(e).ListAnnotations(0).Single();
         Assert.Equal([50, 45, 170, 125], info.Spec.Rect!.Select(v => Math.Round(v)).ToArray());
-        Assert.Equal([0, 0, 1], info.Spec.Color);
+        Assert.Equal([0, 0, 1], info.Spec.Color!);
         Assert.Equal(3, info.Spec.BorderWidth);
         Assert.Equal(Now.AddHours(2), info.Spec.Modified);
         var doc = PdfDocument.Load(e.Save());

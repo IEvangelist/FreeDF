@@ -79,6 +79,7 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
 
 /* Dialogs, palette: scrim blur, clip-path reveal */
 .mdl, .pal-scrim { animation: fade-in var(--dur-2) var(--ease-in-out) both; }
+.mdl, .pal-scrim { backdrop-filter: none; background: light-dark(#09090bcc, #000d); animation: fade-in var(--dur-3) var(--ease-in-out) both; }
 .dlg, .pal { background: linear-gradient(180deg, var(--hi), var(--raised)); box-shadow: var(--e3), inset 0 1px 0 var(--edge); animation: reveal-dlg var(--dur-3) var(--ease-out) backwards; }
 @keyframes reveal-dlg { from { opacity: 0; } }
 .dlg h3 { background: linear-gradient(180deg, var(--accent-bg), transparent); padding-bottom: 10px; }
