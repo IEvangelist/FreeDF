@@ -97,3 +97,22 @@ test('an older refresh cannot overwrite a newer local-file save status', async (
     assert.equal(context.message, message ?? 'Ready. PDFs stay on this device. Save downloads a copy.');
   }
 });
+
+test('protected saves retain the protection dialog instead of entering the file picker', async () => {
+  const start = html.indexOf('async function saveDoc()');
+  const saves = html.slice(start, html.indexOf('function saveAs()', start));
+  for (const protectedDocument of [false, true]) {
+    let fileSaves = 0, dialogs = 0;
+    const context = vm.createContext({
+      state: { pageCount: 1, protection: protectedDocument ? { owner: true } : null },
+      fa: { supported: true, save: async () => { fileSaves++; return true; }, saveAs: async () => { fileSaves++; return true; } },
+      flush: async () => {}, request: async () => ({ json: async () => ({ saved: false }) }),
+      saveAs: () => { dialogs++; }, reportError: error => { throw error; },
+    });
+    vm.runInContext(`${saves}\nglobalThis.save = saveDoc; globalThis.saveCopy = saveAsFile;`, context);
+    await context.save();
+    await context.saveCopy();
+    assert.equal(fileSaves, protectedDocument ? 0 : 2);
+    assert.equal(dialogs, protectedDocument ? 2 : 0);
+  }
+});

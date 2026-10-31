@@ -1475,12 +1475,12 @@ const dlUrl = async u => {
 };
 async function saveDoc() {
   if (!state.pageCount) return;
-  if (fa?.supported && await fa.save()) return;
+  if (fa?.supported && !state.protection && await fa.save()) return;
   await flush();
   const r = await (await request('/api/save', { method: 'POST' })).json();
   if (r.saved) { await refreshDirty(); status('Saved to ' + r.path); } else saveAs();
 }
-const saveAsFile = () => state.pageCount && (fa?.supported ? fa.saveAs().then(done => done || saveAs()).catch(reportError) : saveAs());
+const saveAsFile = () => state.pageCount && (fa?.supported && !state.protection ? fa.saveAs().then(done => done || saveAs()).catch(reportError) : saveAs());
 function saveAs() {
   if (!state.pageCount) return;
   if (state.protection) return protectDialog(true);
