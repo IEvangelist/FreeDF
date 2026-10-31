@@ -21,7 +21,7 @@ public static class ImageDecoder
         if (w <= 0 || h <= 0 || (long)w * h > 200_000_000) return null;
         var data = f.DecodeStream(xs, out var codec, out var parms);
         var bpc = isMask ? 1 : (int)(R(d.Get("BitsPerComponent")).AsNumber() ?? 8);
-        PdfColorSpace cs = isMask ? PdfColorSpace.Gray : PdfColorSpace.Parse(f, d.Get("ColorSpace"), res);
+        PdfColorSpace cs = isMask ? PdfColorSpace.Gray : PdfColorSpace.ParseWithDefaults(f, d.Get("ColorSpace"), res);
         double[]? decode = R(d.Get("Decode")) is PdfArray da ? da.Items.Select(x => R(x).AsNumber() ?? 0).ToArray() : null;
 
         JpxImage? jpxAlpha = null;

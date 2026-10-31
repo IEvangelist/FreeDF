@@ -465,16 +465,16 @@ public sealed class ContentInterpreter
             case "T*": NextLine(); break;
             case "Tj": case "'": case "\"": case "TJ": ShowOp(op, a, res); break;
 
-            case "CS": _gs.StrokeCs = PdfColorSpace.Parse(_f, a[0], res); _gs.StrokeColor = _gs.StrokeCs.InitialColor; _gs.StrokePattern = null; break;
-            case "cs": _gs.FillCs = PdfColorSpace.Parse(_f, a[0], res); _gs.FillColor = _gs.FillCs.InitialColor; _gs.FillPattern = null; break;
+            case "CS": _gs.StrokeCs = PdfColorSpace.ParseWithDefaults(_f, a[0], res); _gs.StrokeColor = _gs.StrokeCs.InitialColor; _gs.StrokePattern = null; break;
+            case "cs": _gs.FillCs = PdfColorSpace.ParseWithDefaults(_f, a[0], res); _gs.FillColor = _gs.FillCs.InitialColor; _gs.FillPattern = null; break;
             case "SC": case "SCN": SetColor(a, res, true); break;
             case "sc": case "scn": SetColor(a, res, false); break;
-            case "G": _gs.StrokeCs = PdfColorSpace.Gray; _gs.StrokeColor = [N(a, 0)]; _gs.StrokePattern = null; break;
-            case "g": _gs.FillCs = PdfColorSpace.Gray; _gs.FillColor = [N(a, 0)]; _gs.FillPattern = null; break;
-            case "RG": _gs.StrokeCs = PdfColorSpace.Rgb; _gs.StrokeColor = [N(a, 0), N(a, 1), N(a, 2)]; _gs.StrokePattern = null; break;
-            case "rg": _gs.FillCs = PdfColorSpace.Rgb; _gs.FillColor = [N(a, 0), N(a, 1), N(a, 2)]; _gs.FillPattern = null; break;
-            case "K": _gs.StrokeCs = PdfColorSpace.Cmyk; _gs.StrokeColor = [N(a, 0), N(a, 1), N(a, 2), N(a, 3)]; _gs.StrokePattern = null; break;
-            case "k": _gs.FillCs = PdfColorSpace.Cmyk; _gs.FillColor = [N(a, 0), N(a, 1), N(a, 2), N(a, 3)]; _gs.FillPattern = null; break;
+            case "G": _gs.StrokeCs = PdfColorSpace.WithDefault(_f, PdfColorSpace.Gray, res); _gs.StrokeColor = [N(a, 0)]; _gs.StrokePattern = null; break;
+            case "g": _gs.FillCs = PdfColorSpace.WithDefault(_f, PdfColorSpace.Gray, res); _gs.FillColor = [N(a, 0)]; _gs.FillPattern = null; break;
+            case "RG": _gs.StrokeCs = PdfColorSpace.WithDefault(_f, PdfColorSpace.Rgb, res); _gs.StrokeColor = [N(a, 0), N(a, 1), N(a, 2)]; _gs.StrokePattern = null; break;
+            case "rg": _gs.FillCs = PdfColorSpace.WithDefault(_f, PdfColorSpace.Rgb, res); _gs.FillColor = [N(a, 0), N(a, 1), N(a, 2)]; _gs.FillPattern = null; break;
+            case "K": _gs.StrokeCs = PdfColorSpace.WithDefault(_f, PdfColorSpace.Cmyk, res); _gs.StrokeColor = [N(a, 0), N(a, 1), N(a, 2), N(a, 3)]; _gs.StrokePattern = null; break;
+            case "k": _gs.FillCs = PdfColorSpace.WithDefault(_f, PdfColorSpace.Cmyk, res); _gs.FillColor = [N(a, 0), N(a, 1), N(a, 2), N(a, 3)]; _gs.FillPattern = null; break;
 
             case "sh": if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName sn && R(res.Get("Shading")) is PdfDictionary shd) Shade(R(shd.Get(sn.Value)), res, null); break;
             case "Do": if (a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd) DoXObject(R(xd.Get(xn.Value)), res, xd.Get(xn.Value) is PdfRef xrf ? xrf.Number : 0); break;
@@ -1270,7 +1270,7 @@ public sealed class ContentInterpreter
         var blackPointCompensation = _gs.BlackPointCompensation;
         var inv = m.Invert();
         var type = (int)(R(d.Get("ShadingType")).AsNumber() ?? 0);
-        var cs = PdfColorSpace.Parse(_f, d.Get("ColorSpace"), res);
+        var cs = PdfColorSpace.ParseWithDefaults(_f, d.Get("ColorSpace"), res);
         RgbColor? background = null;
         if (asPattern && R(d.Get("Background")) is PdfArray bga && bga.Count >= cs.Components && cs.Components > 0)
             background = cs.ToRgb(bga.Items.Take(cs.Components).Select(x => R(x).AsNumber() ?? 0).ToArray(), intent, blackPointCompensation);
