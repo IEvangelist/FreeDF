@@ -7,7 +7,7 @@
 //   out: { ready: true } once booted, { startupError } if boot failed, { id, error } per failed request.
 try {
   const { dotnet } = await import(new URL('./_framework/dotnet.js', import.meta.url).href);
-  const runtime = await dotnet.withConfig({ enableDownloadRetry: true }).create();
+  const runtime = await dotnet.withConfig({ enableDownloadRetry: true, applicationCulture: 'en-US' }).create();
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
   const replica = exports.BrowserReplica;
   // Fallback fonts / CJK chunks: same files, manifest and lazy fetch protocol as worker.js (cached by the HTTP cache, nothing fetched at startup).

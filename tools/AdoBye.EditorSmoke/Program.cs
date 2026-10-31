@@ -39,6 +39,18 @@ if (args.Length >= 4 && args[0] == "--pool")
     return;
 }
 
+if (args.Length == 2 && args[0] == "--culture")
+{
+    await EditorCulture.Run(args[1]);
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--service-worker")
+{
+    await EditorServiceWorker.Run(args[1], args[2]);
+    return;
+}
+
 if (args.Length >= 4 && args[0] == "--profile")
 {
     await EditorPerformance.Run(args[1], args[2], args[3..]);
@@ -94,7 +106,7 @@ try
     var address = publicSite ? publicUri!.GetLeftPart(UriPartial.Authority) : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var pw = await Playwright.CreateAsync();
     await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"], IgnoreDefaultArgs = viewportOnly || responsiveOnly ? ["--hide-scrollbars"] : null });
-    await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
+    await using var context = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
     var page = await context.NewPageAsync();
     page.SetDefaultTimeout(60000);
     var errors = new ConcurrentQueue<string>();

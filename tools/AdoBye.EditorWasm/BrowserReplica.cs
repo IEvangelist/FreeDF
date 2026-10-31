@@ -15,6 +15,7 @@ using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 [SupportedOSPlatform("browser")]
 public static partial class BrowserReplica
 {
+    static readonly System.Globalization.CultureInfo Culture = BrowserCulture.UseInvariant();
     static PdfDocument? document;
     // Same lazy fallback-font/CJK asset path as the primary engine (verified against the same manifest digests); assets are fetched by replica-worker.js on first use.
     static readonly ProvidedAssetSource FontAssets = new();

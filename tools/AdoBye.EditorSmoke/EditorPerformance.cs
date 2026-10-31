@@ -117,7 +117,7 @@ static class EditorPerformance
             await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
             for (var repeat = 0; repeat < 3; repeat++)
             {
-                await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 }, DeviceScaleFactor = 1 });
+                await using var context = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 }, DeviceScaleFactor = 1 });
                 var startupRequests = new ConcurrentQueue<string>();
                 context.Request += (_, request) =>
                 {

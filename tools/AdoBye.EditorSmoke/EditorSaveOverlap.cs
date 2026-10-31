@@ -9,7 +9,7 @@ static class EditorSaveOverlap
     {
         await using var context = await browser.NewContextAsync(new()
         {
-            AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 },
+            ServiceWorkers = ServiceWorkerPolicy.Block, AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 },
         });
         var network = new System.Collections.Concurrent.ConcurrentQueue<string>();
         context.Request += (_, request) =>

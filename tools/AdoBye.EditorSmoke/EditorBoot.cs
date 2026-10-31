@@ -32,7 +32,7 @@ static class EditorBoot
         var coldStarts = new List<double>();
         foreach (var scenario in baseline ? new[] { "cold", "cold", "cold" } : ["cold", "cold", "cold", "transient", "permanent", "missing", "integrity", "module", "stalled-worker"])
         {
-            await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 1000 }, DeviceScaleFactor = 1 });
+            await using var context = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, ViewportSize = new() { Width = 1440, Height = 1000 }, DeviceScaleFactor = 1 });
             var unexpected = new ConcurrentQueue<string>();
             context.Request += (_, request) =>
             {

@@ -4,7 +4,8 @@ The Pages build runs the **same editor UI and C# PDF engine** as
 `tools/AdoBye.EditorWeb`, entirely in browser WebAssembly. There is no PDF API
 server. Opening a PDF reads a local `File`; parsing, rendering, edits and exports
 stay in a dedicated local browser worker. Downloads use local blobs. There is no telemetry,
-external font request, PDF upload, or service worker. The browser now retains
+external font request or PDF upload. A same-origin service worker caches
+verified application assets for offline reuse. The browser now retains
 the previous editable session locally in IndexedDB and asks before resuming it;
 download important documents rather than relying on browser storage.
 The host still makes ordinary GET requests for its static app/runtime assets.
@@ -178,6 +179,30 @@ The local publish script defaults to untrimmed/non-AOT and needs no `wasm-tools`
 reflection roots for shared editor JSON payloads. The Pages workflow selects
 AOT by default after the measured comparison; no threads or reduced final
 render quality are introduced.
+
+The WebAssembly runtime boots in an engine worker while the document is being
+parsed; replica workers use the same fixed `en-US` runtime/ICU selection. The
+PDF engine itself uses invariant culture, with ICU retained for Unicode
+normalization. Browser language does not change decimal formatting or casing
+in PDF operations.
+
+The offline cache registers only after the editor becomes interactive. Asset
+digests cover the shell, runtime, sample collection and fallback fonts; samples
+and fallback fonts are fetched and verified on demand, not precached. Each
+client, including a still-booting tab and its engine worker, stays pinned to the
+build that served its first request. Activating an update preserves those
+clients' caches until they close. An asset absent from an older pinned cache
+returns 503 instead of fetching a different build; an older tab can therefore
+need a reload before using a previously uncached sample or fallback font.
+Unsaved edits, inline edits and in-flight requests defer update reloads.
+`Publish-EditorPages.ps1 -KillServiceWorker` publishes a rollback that removes
+the editor cache and client pins without discarding unsaved edits.
+
+`Test-EditorPayload.ps1` checks the published startup files against
+`performance/editor-startup-budget.v1.json`, separately reporting the genuinely
+deferred samples and fonts. Those numeric ceilings are unchanged. The integrated
+AOT candidate currently exceeds the startup ceilings; successful publishing or
+non-AOT browser smokes alone do not make it release-ready.
 
 The shared session preserves unique indirect Form-child editing. Shared,
 repeated, hidden, nested or ambiguous children remain withheld. Graphic-group

@@ -1,6 +1,8 @@
 export async function start() {
-  const worker = new Worker(new URL('worker.js', import.meta.url), { type: 'module', name: 'PDF engine' });
-  let nextId = 0, failed = null, bootRetries = 0, sequence = Promise.resolve();
+  // The published shell starts the engine worker from <head> so it boots while the UI parses and paints.
+  const early = window.pdfEngine;
+  const worker = early?.worker ?? new Worker(new URL('worker.js', import.meta.url), { type: 'module', name: 'PDF engine' });
+  let nextId = 0, failed = null, bootRetries = 0, bootTimings = null, sequence = Promise.resolve();
   const pending = new Map();
   const imageCache = new Map();
   const imagePending = new Map();
@@ -36,7 +38,7 @@ export async function start() {
   worker.onmessageerror = () => fail(new Error('The PDF worker returned an unreadable response. Reload the editor.'));
   worker.onmessage = ({ data }) => {
     if (data.startupError) { fail(new Error(data.startupError)); return; }
-    if (data.ready) { bootRetries = data.bootRetries; clearTimeout(startupTimeout); readyResolve(); return; }
+    if (data.ready) { bootRetries = data.bootRetries; bootTimings = data.boot; clearTimeout(startupTimeout); readyResolve(); return; }
     const request = pending.get(data.id);
     if (!request) return;
     pending.delete(data.id);
@@ -47,7 +49,11 @@ export async function start() {
       request.resolve(data.reply);
     }
   };
+  for (const [handler, event] of early?.events ?? []) worker[handler]?.(event);
   await ready;
+  const idle = () => import('./sw-client.js').then(m => m.registerServiceWorker())
+    .catch(error => console.warn('Offline cache registration failed.', error));
+  if (window.requestIdleCallback) window.requestIdleCallback(idle, { timeout: 3000 }); else setTimeout(idle, 1000);
   const command = (url, method = 'GET', body = null, fileName = null, image = false, password = null) => {
     if (failed) return Promise.reject(failed);
     const id = ++nextId;
@@ -128,6 +134,7 @@ export async function start() {
     execution: 'worker',
     bootRetries,
     get renderPool() { return renderPool; },
+    bootTimings,
     request(url, options = {}) {
       return enqueue(async () => {
         let body = null, fileName = null;

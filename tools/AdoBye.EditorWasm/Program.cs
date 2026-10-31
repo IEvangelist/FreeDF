@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text;
 using System.Runtime.InteropServices.JavaScript;
@@ -10,6 +11,7 @@ return;
 [SupportedOSPlatform("browser")]
 public static partial class BrowserEditor
 {
+    static readonly CultureInfo Culture = BrowserCulture.UseInvariant();
     // Fallback fonts and CJK glyph chunks are fetched by the host on first use (see worker.js) and handed over through ProvideFontAsset.
     static readonly ProvidedAssetSource FontAssets = new();
     static readonly EditorSession Session = new(new FontCatalog(), new BundledFontFallback(FontAssets, new BrowserFontFallback()));
@@ -60,7 +62,9 @@ public static partial class BrowserEditor
         {
             c = new(method, path, JsonSerializer.Deserialize<Dictionary<string, string>>(query, Json) ?? [], null, fileName);
             var bytes = body is null ? metadata.GetPropertyAsByteArray("bytes") : Encoding.UTF8.GetBytes(body);
-            var reply = Session.Handle(method, path, c.Query, bytes, fileName);
+            var reply = path == "/api/_diagnostics"
+                ? new EditorSession.Reply(Encoding.UTF8.GetBytes(Diagnostics()), "application/json")
+                : Session.Handle(method, path, c.Query, bytes, fileName);
             metadata.SetProperty("contentType", reply.ContentType);
             metadata.SetProperty("fileName", reply.FileName);
             if (Session.LastRenderMetrics is { } metrics)
@@ -95,13 +99,26 @@ public static partial class BrowserEditor
         }
     }
 
+    static string Diagnostics() => JsonSerializer.Serialize(new
+    {
+        culture = CultureInfo.CurrentCulture.Name,
+        decimalFormat = 1234.5.ToString("0.##"),
+        normalizesDecomposed = "e\u0301".Normalize(NormalizationForm.FormC) == "\u00e9",
+        decomposes = "\u00e9".Normalize(NormalizationForm.FormD) == "e\u0301",
+        upper = "i".ToUpper(),
+        invariantGlobalization = AppContext.TryGetSwitch("System.Globalization.Invariant", out var invariant) && invariant,
+    }, Json);
+
     static string Execute(Command c, byte[]? body)
     {
         try
         {
-            var reply = Session.Handle(c.Method, c.Path, c.Query, body, c.FileName);
+            var reply = c.Path == "/api/_diagnostics"
+                ? new EditorSession.Reply(Encoding.UTF8.GetBytes(Diagnostics()), "application/json")
+                : Session.Handle(c.Method, c.Path, c.Query, body, c.FileName);
             return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName, performance = Session.LastRenderMetrics }, Json);
         }
+
         catch (Exception e)
         {
             return Error(c, e);
@@ -119,6 +136,19 @@ public static partial class BrowserEditor
         if (e is ArgumentException && e.Message.StartsWith("password-", StringComparison.Ordinal)) return JsonSerializer.Serialize(new { error = e.Message }, Json);
         Console.Error.WriteLine(e is NotSupportedException ? e.Message : e);
         return JsonSerializer.Serialize(new { error = e.Message }, Json);
+    }
+}
+
+static class BrowserCulture
+{
+    public static CultureInfo UseInvariant()
+    {
+        var culture = CultureInfo.InvariantCulture;
+        CultureInfo.DefaultThreadCurrentCulture = culture;
+        CultureInfo.DefaultThreadCurrentUICulture = culture;
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        return culture;
     }
 }
 

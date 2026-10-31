@@ -52,8 +52,11 @@ jobs:
         run: |
           node --test tools/AdoBye.EditorWasm/tests/*.test.mjs
           node --test tools/AdoBye.EditorWasm/host.test.cjs tools/AdoBye.EditorWasm/worker.test.cjs tools/AdoBye.EditorWeb/selection.test.cjs
+      - name: Enforce startup payload budget
+        shell: pwsh
+        run: ./tools/Test-EditorPayload.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Aot:($env:EDITOR_AOT -eq 'true') -Report '${{ runner.temp }}/editor-payload.json'
       - name: Test shared editor and browser-compatible rendering
-        run: dotnet test tests/AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx|FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests"
+        run: dotnet test tests/AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~CultureInvariance|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx|FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests"
       - name: Build browser smoke runner
         run: dotnet build tools/AdoBye.EditorSmoke -c Release
       - name: Install Chromium
@@ -80,6 +83,10 @@ jobs:
         env:
           EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-viewport
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --viewport "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf"
+      - name: Exercise service worker precache, offline, update and rollback
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --service-worker "${{ runner.temp }}/editor-pages/wwwroot" "${{ runner.temp }}/editor-service-worker"
+      - name: Exercise browser-locale independence
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --culture "${{ runner.temp }}/editor-pages/wwwroot"
       - name: Exercise page-image continuity
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --page-image "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf" "${{ runner.temp }}/editor-page-image"
       - name: Install accessibility test tooling (axe-core; test-only, never published)
@@ -120,6 +127,8 @@ jobs:
           path: |
             ${{ runner.temp }}/editor-pages/wwwroot
             ${{ runner.temp }}/editor-boot
+            ${{ runner.temp }}/editor-payload.json
+            ${{ runner.temp }}/editor-service-worker/service-worker.json
             ${{ runner.temp }}/editor-page-image
             ${{ runner.temp }}/editor-save-overlap
             ${{ runner.temp }}/editor-a11y

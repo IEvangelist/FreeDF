@@ -414,7 +414,7 @@ public sealed partial class PdfEditor
     {
         if (a is null) return "";
         var v = a.Items.Select(x => x.AsNumber() ?? 0).ToArray();
-        return v.Length switch { 1 => $"{v[0]:0.###} ", 3 => $"{v[0]:0.###} {v[1]:0.###} {v[2]:0.###} ", 4 => $"{v[0]:0.###} {v[1]:0.###} {v[2]:0.###} {v[3]:0.###} ", _ => "" };
+        return v.Length switch { 1 => FormattableString.Invariant($"{v[0]:0.###} "), 3 => FormattableString.Invariant($"{v[0]:0.###} {v[1]:0.###} {v[2]:0.###} "), 4 => FormattableString.Invariant($"{v[0]:0.###} {v[1]:0.###} {v[2]:0.###} {v[3]:0.###} "), _ => "" };
     }
 
     /// <summary>Builds a form-field appearance stream (12.7.4.3): MK background/border, single-line, multiline (wrapped) or comb text, and list/combo display.</summary>
@@ -430,9 +430,9 @@ public sealed partial class PdfEditor
         var bc = Rgb(Res(mk?.Get("BC")) as PdfArray);
         var bw = 1.0;
         if (Res(widget.Get("BS")) is PdfDictionary bs && Res(bs.Get("W")).AsNumber() is { } w0) bw = w0;
-        if (bg.Length > 0) sb.Append($"q {bg}{(bg.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length switch { 1 => "g", 3 => "rg", _ => "k" })} 0 0 {width:0.##} {height:0.##} re f Q\n");
+        if (bg.Length > 0) sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"q {bg}{(bg.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length switch { 1 => "g", 3 => "rg", _ => "k" })} 0 0 {width:0.##} {height:0.##} re f Q\n");
         if (bc.Length > 0 && bw > 0)
-            sb.Append($"q {bc}{(bc.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length switch { 1 => "G", 3 => "RG", _ => "K" })} {bw:0.##} w {bw / 2:0.##} {bw / 2:0.##} {width - bw:0.##} {height - bw:0.##} re S Q\n");
+            sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"q {bc}{(bc.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length switch { 1 => "G", 3 => "RG", _ => "K" })} {bw:0.##} w {bw / 2:0.##} {bw / 2:0.##} {width - bw:0.##} {height - bw:0.##} re S Q\n");
         var pad = Math.Max(2, bw + 1);
         var size = multiline ? 12.0 : Math.Clamp(height - 2 * pad, 6, 12);
         var lineH = size * 1.15;
@@ -450,7 +450,7 @@ public sealed partial class PdfEditor
                 lines.Add(cur);
             }
         else lines.Add(text.Replace("\r", " ").Replace("\n", " "));
-        sb.Append($"/Tx BMC q {pad:0.##} {pad:0.##} {inner:0.##} {Math.Max(1, height - 2 * pad):0.##} re W n BT /Helv {size:0.##} Tf 0 g\n");
+        sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"/Tx BMC q {pad:0.##} {pad:0.##} {inner:0.##} {Math.Max(1, height - 2 * pad):0.##} re W n BT /Helv {size:0.##} Tf 0 g\n");
         if (comb)
         {
             var max = (int)Res(field.Get("MaxLen")).AsNumber()!;
@@ -458,7 +458,7 @@ public sealed partial class PdfEditor
             var shown = text.Length > max ? text[..max] : text;
             var start = q == 1 ? (max - shown.Length) / 2 : q == 2 ? max - shown.Length : 0;
             for (var i = 0; i < shown.Length; i++)
-                sb.Append($"1 0 0 1 {(start + i) * cell + cell / 2 - size * 0.25:0.##} {(height - size) / 2 + size * 0.22:0.##} Tm ({PdfEsc(shown[i].ToString())}) Tj\n");
+                sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"1 0 0 1 {(start + i) * cell + cell / 2 - size * 0.25:0.##} {(height - size) / 2 + size * 0.22:0.##} Tm ({PdfEsc(shown[i].ToString())}) Tj\n");
         }
         else
         {
@@ -467,7 +467,7 @@ public sealed partial class PdfEditor
             {
                 var tw = ln.Length * size * 0.5;
                 var x = q == 1 ? Math.Max(pad, (width - tw) / 2) : q == 2 ? Math.Max(pad, width - pad - tw) : pad;
-                sb.Append($"1 0 0 1 {x:0.##} {y:0.##} Tm ({PdfEsc(ln)}) Tj\n");
+                sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"1 0 0 1 {x:0.##} {y:0.##} Tm ({PdfEsc(ln)}) Tj\n");
                 y -= lineH;
             }
         }

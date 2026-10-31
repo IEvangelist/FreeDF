@@ -114,13 +114,13 @@ static class RasterBench
     {
         foreach (var (name, bytes) in Corpus(filter))
         {
-            double interp = double.MaxValue, full = double.MaxValue, ctor = double.MaxValue, rgba = double.MaxValue, load = double.MaxValue;
+            double interp = double.MaxValue, full = double.MaxValue, ctor = double.MaxValue, load = double.MaxValue;
             for (var i = 0; i < iterations + 1; i++)
             {
                 var sw = Stopwatch.StartNew();
                 var doc = PdfDocument.Load(bytes);
                 var tLoad = sw.Elapsed.TotalMilliseconds;
-                double tInterp = 0, tFull = 0, tCtor = 0, tRgba = 0;
+                double tInterp = 0, tFull = 0, tCtor = 0;
                 foreach (var p in doc.Pages)
                 {
                     var m = DocumentRenderer.PageMatrix(p, dpi / 72.0 * p.UserUnit, out var w, out var h);

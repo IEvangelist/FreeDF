@@ -1,0 +1,5 @@
+{
+  "$comment": "Ceilings for the published Pages site (all files, gzip level Optimal). Real AOT (wasm-tools 10.0.14, local publish): 59 files / 31.9 MB raw / 10.4 MB gzip with every assembly AOT-compiled; 59 files / 25.7 MB raw / 8.65 MB gzip / 16.1 MB native module with EditorAotInterpret=bcl (the default) and the unused ICU bundles removed. The public site before these changes: 56 files / ~10.6 MB gzip; non-AOT measured 193 files / 29.0 MB raw / 11.2 MB gzip (decimal MB). Lower these when a build proves a smaller payload; never raise without a measured reason.",
+  "aot": { "maxFiles": 62, "maxRawBytes": 27000000, "maxGzipBytes": 9100000, "maxLargestFileBytes": 17000000 },
+  "nonAot": { "maxFiles": 200, "maxRawBytes": 30500000, "maxGzipBytes": 11800000, "maxLargestFileBytes": 5200000 }
+}
