@@ -323,6 +323,7 @@ public sealed partial class PdfEditor
     {
         if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || Res(form.Get("Fields")) is not PdfArray fields) return false;
         var done = false;
+        var legacyAppearance = false;
         void Walk(PdfObject? o, string prefix, string? ft, int depth)
         {
             if (depth > 32 || o is not PdfRef r || !_objs.TryGetValue(r.Number, out var po) || po is not PdfDictionary d) return;
@@ -343,6 +344,7 @@ public sealed partial class PdfEditor
                 foreach (var w in kids is null ? [r] : kids.Items)
                     if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd)
                     {
+                        if (Res(wd.Get("AP")) is not PdfDictionary) legacyAppearance = true;
                         var states = Res(wd.Get("AP")) is PdfDictionary ap && Res(ap.Get("N")) is PdfDictionary n ? n.Entries.Keys : (IEnumerable<string>)[];
                         var we = new Dictionary<string, PdfObject>(wd.Entries) { ["AS"] = new PdfName(on && states.Contains(value) ? value : "Off") };
                         _objs[wr.Number] = new PdfDictionary(we);
@@ -355,6 +357,8 @@ public sealed partial class PdfEditor
                 foreach (var w in kids is null ? [r] : kids.Items)
                     if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd && Res(wd.Get("Rect")) is PdfArray ra && ra.Count >= 4)
                     {
+                        if (RebuildAppearance(wr)) continue;
+                        legacyAppearance = true;
                         double N(int i) => Res(ra[i]).AsNumber() ?? 0;
                         var xo = BuildTextAppearance(d, wd, Math.Abs(N(2) - N(0)), Math.Abs(N(3) - N(1)), DisplayText(d, value), ft == "Ch");
                         var we = new Dictionary<string, PdfObject>(wd.Entries)
@@ -363,7 +367,7 @@ public sealed partial class PdfEditor
                     }
         }
         foreach (var f in fields.Items) Walk(f, "", null, 0);
-        if (done)
+        if (done && legacyAppearance)
         {
             var af = ((PdfDictionary)_objs[_catalog]).Get("AcroForm");
             var fe = new Dictionary<string, PdfObject>(form.Entries) { ["NeedAppearances"] = new PdfBoolean(true) };
