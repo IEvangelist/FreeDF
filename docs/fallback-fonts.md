@@ -12,7 +12,7 @@ Non-embedded fonts (ISO 32000-2 9.6.2.2, 9.7.4.2, 9.8) are drawn from bundled, p
 | `licenses/` | licence texts, authors and `manifest.json` (licence manifest, embedded in the assembly too) | |
 | `manifest.json` | every asset with size and SHA-256; hosts may precache the small files, everything is lazy by design | |
 
-Glyph widths come from the Adobe Core 14 AFM numbers (`PortableDocument.Content/Resources/std14-widths.txt`, which also carries the built-in Symbol and ZapfDingbats encodings). Rebuild everything with `tools/AdoBye.FontPack`.
+Glyph widths come from the Adobe Core 14 AFM numbers (`PortableDocument.Content/Resources/std14-widths.bin`, which also carries the built-in Symbol and ZapfDingbats encodings). The Adobe permission paragraph and per-file copyright years ship with the table (`std14-notice.txt`) and were checked verbatim against the published Core 14 AFM files; the widths were re-derived from those AFMs and match the embedded table exactly. Rebuild everything with `tools/AdoBye.FontPack`.
 
 Size: Latin 4.9 MB, CJK 8.5 MB (438 chunks, 64-250 glyphs each, 1.5-3.5 MB per ordering; legacy GB2312, JIS X 0208/CP932, Big5 and KS X 1001 repertoires). The data lives in a separate project, `PortableDocument.FallbackFonts` (the assembly itself is a few KB; fonts are content files), so consumers that do not reference it keep today's size.
 
