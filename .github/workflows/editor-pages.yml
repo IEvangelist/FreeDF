@@ -80,6 +80,16 @@ jobs:
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --viewport "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf"
       - name: Exercise page-image continuity
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --page-image "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf" "${{ runner.temp }}/editor-page-image"
+      - name: Install accessibility test tooling (axe-core; test-only, never published)
+        run: npm ci --prefix tools/AdoBye.EditorSmoke/a11y
+      - name: Exercise accessibility (axe-core, keyboard, focus, targets)
+        env:
+          EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-a11y
+        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --a11y "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
+      - name: Exercise responsive layout matrix
+        env:
+          EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-responsive
+        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --responsive "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
       - name: Measure strict end-to-end performance goals
         id: profile
         env:
@@ -110,6 +120,8 @@ jobs:
             ${{ runner.temp }}/editor-boot
             ${{ runner.temp }}/editor-page-image
             ${{ runner.temp }}/editor-save-overlap
+            ${{ runner.temp }}/editor-a11y
+            ${{ runner.temp }}/editor-responsive
             ${{ runner.temp }}/editor-profile.json*
             ${{ runner.temp }}/editor-profile-ci-tests
       - uses: actions/upload-pages-artifact@v3

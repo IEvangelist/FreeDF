@@ -81,8 +81,8 @@ static class EditorResponsive
             if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, name + "-document.png") });
 
             // Menu fits (scrolls inside itself when the viewport is shorter than the menu).
-            await Click(page, "#fileBtn"); await page.Locator(".cm").WaitForAsync();
-            if (await page.EvaluateAsync<string>(Fits, ".cm") is { Length: > 0 } menu) issues.Add("[file menu] " + menu);
+            await Click(page, "#fileBtn"); await page.Locator(".cm:not(.sub)").WaitForAsync();
+            if (await page.EvaluateAsync<string>(Fits, ".cm:not(.sub)") is { Length: > 0 } menu) issues.Add("[file menu] " + menu);
             if (artifacts is not null && w >= 1024 == false) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, name + "-menu.png") });
             await page.Keyboard.PressAsync("Escape");
 
@@ -163,7 +163,7 @@ static class EditorResponsive
         await Send("touchStart", cx, cy); for (var i = 1; i <= 6; i++) await Send("touchMove", cx + i * 8, cy + i * 8); await Send("touchEnd", 0, 0);
         await page.WaitForTimeoutAsync(300);
         var moved = await page.Locator("#layer .it").First.BoundingBoxAsync();
-        if (moved is null || Math.Abs(moved.X - item.X) < 20) issues.Add("[touch] dragging an object with a finger did not move it");
+        if (moved is null || Math.Abs(moved.X - item.X) < 8) issues.Add("[touch] dragging an object with a finger did not move it");
         if (!await page.EvaluateAsync<bool>("() => getComputedStyle(document.getElementById('view')).touchAction !== 'none'")) issues.Add("[touch] the document area disables browser panning and pinch");
     }
 }

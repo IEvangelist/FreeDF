@@ -249,7 +249,7 @@
   }
   document.addEventListener('keydown', e => {
     const p = e.target.closest?.('#layer > .it, #layer > .obj, #layer > .span'); if (!p || e.ctrlKey || e.metaKey) return;
-    if (e.key === 'Enter' || e.key === ' ') { if (p.isContentEditable) return; e.preventDefault(); e.stopPropagation(); activate(p); return; }
+    if (e.key === 'Enter' || e.key === ' ') { if (p.isContentEditable || p.onkeydown) return; e.preventDefault(); e.stopPropagation(); activate(p); return; }
     const all = parts(), i = all.indexOf(p), d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
     const to = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : d ? i + d : -1;
     if (to < 0 || to >= all.length || e.altKey || e.shiftKey) { if (d) { e.preventDefault(); e.stopPropagation(); } return; }
@@ -281,8 +281,8 @@
   const cancelPress = () => { clearTimeout(pressTimer); pressAt = null; };
   document.addEventListener('pointerdown', e => {
     if (e.pointerType !== 'touch' || !e.target.closest?.('#layer')) return;
-    const t = e.target, x = e.clientX, y = e.clientY; pressAt = [x, y]; clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => { if (t.isConnected && pressAt) t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y })); }, 650);
+    const x = e.clientX, y = e.clientY; pressAt = [x, y]; clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { const t = pressAt && document.elementFromPoint(x, y); if (t?.closest('#layer')) t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y })); }, 650);
   }, true);
   document.addEventListener('pointermove', e => { if (pressAt && Math.hypot(e.clientX - pressAt[0], e.clientY - pressAt[1]) > 8) cancelPress(); }, true);
   for (const type of ['pointerup', 'pointercancel', 'contextmenu']) document.addEventListener(type, cancelPress, true);

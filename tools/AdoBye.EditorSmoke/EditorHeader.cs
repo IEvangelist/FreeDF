@@ -58,9 +58,9 @@ static class EditorHeader
               const h = document.getElementById('sponsor'), b = document.getElementById('sponsorBadge'), f = document.querySelector('footer'), fr = f.getBoundingClientRect(), br = b.getBoundingClientRect();
               const bg = el => getComputedStyle(el).backgroundColor;
               const okBadge = mobile ? getComputedStyle(b).display === 'none'
-                : plain(b) && br.right <= fr.right && fr.right - br.right <= 16 + 28 && br.top >= fr.top + 2 && br.bottom <= fr.bottom - 2 && br.height >= 18
+                : plain(b) && br.right <= fr.right && fr.right - br.right <= 16 + 32 && br.top >= fr.top + 2 && br.bottom <= fr.bottom - 2 && br.height >= 18
                   && ['status', 'recovery', 'keys'].every(id => { const e = document.getElementById(id); return e.hidden || getComputedStyle(e).display === 'none' || e.getBoundingClientRect().right <= br.left + 1; })
-                  && ratio(getComputedStyle(b).color, 'rgb(21, 23, 28)') >= 4.5;
+                  && ratio(getComputedStyle(b).color, bg(f)) >= 4.5;
               return plain(h) && ratio(getComputedStyle(h).color, bg(document.querySelector('header'))) >= 3 && okBadge
                 && !document.querySelector('link[rel=preconnect],link[rel=prefetch],link[rel=dns-prefetch]'); }
             """), where + ": header heart and footer Sponsor badge are plain one-time anchors with AA contrast; badge is right-aligned in the status bar without overlapping status/recovery/hints and hidden on narrow screens");

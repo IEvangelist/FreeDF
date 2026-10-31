@@ -605,6 +605,19 @@ complete the outstanding latency/benchmark pass.
 
 ## Build and smoke coverage
 
+### Design system, accessibility and responsive modes
+
+`theme.css` and `ui.js` add a token-based light/dark theme, motion with
+reduced-motion support, and an accessibility layer; see
+[accessibility.md](accessibility.md). Two smoke modes guard them:
+
+- `--a11y <site> <sample.pdf>`: axe-core on every screen/theme/viewport plus
+  keyboard, focus, target-size and text-spacing assertions. Install the test-only
+  dependency first: `npm ci --prefix tools/AdoBye.EditorSmoke/a11y`.
+- `--responsive <site> <sample.pdf>`: overflow, clipping, dialogs, menus, sheets
+  and touch gestures across 10 viewports x DPR 1/2 x orientation x browser zoom
+  100-400 %. Set `EDITOR_SMOKE_ARTIFACTS` to keep the screenshot matrix.
+
 ### Public release acceptance
 
 Publish each reviewed, green integration batch independently rather than waiting
