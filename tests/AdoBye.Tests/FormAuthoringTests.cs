@@ -293,6 +293,68 @@ public class FormAuthoringTests
     }
 
     [Fact]
+    public void Batch_flatten_prunes_emptied_ancestors_and_keeps_siblings()
+    {
+        var e = Blank();
+        e.AddFormField(new(PdfFormFieldKind.Text, "a.b.c", 0, Box(10, 350, 100, 20)) { Value = "1" });
+        e.AddFormField(new(PdfFormFieldKind.Text, "a.b.d", 0, Box(10, 320, 100, 20)) { Value = "2" });
+        e.AddFormField(new(PdfFormFieldKind.Text, "a.keep", 0, Box(10, 290, 100, 20)) { Value = "3" });
+        e.AddFormField(new(PdfFormFieldKind.Text, "z", 0, Box(10, 260, 100, 20)) { Value = "4" });
+        Assert.Equal(new PdfFlattenResult(2, 2), e.FlattenForm(new(PdfFlattenScope.Selected, ["a.b.c", "a.b.d"])));
+        var d = Reload(e);
+        Assert.Equal(["a.keep", "z"], d.GetFormFields().Select(f => f.FullName).Order());
+        var a = ((PdfArray)R(d, AcroForm(d).Get("Fields"))!).Items.Select(x => (PdfDictionary)R(d, x)!).First(x => R(d, x.Get("T")) is PdfString { Text: "a" });
+        Assert.Single(((PdfArray)R(d, a.Get("Kids"))!).Items);
+        Assert.Equal(2, Widgets(d).Count());
+    }
+
+    [Fact]
+    public void Large_forms_create_flatten_and_import_in_linear_walks()
+    {
+        const int count = 5000;
+        var e = Blank();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < count; i++)
+            e.AddFormField(new(i % 10 == 0 ? PdfFormFieldKind.Checkbox : PdfFormFieldKind.Text, $"g{i / 50}.f{i}", 0, Box(5 + i % 20 * 15, 5 + i / 20 % 380, 12, 8)) { Value = i % 10 == 0 ? "Off" : "v" + i });
+        Assert.True(e.FormTreeWalkCount <= 2, $"creating {count} fields walked the tree {e.FormTreeWalkCount} times");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(120), $"create took {sw.Elapsed}");
+
+        var xfdf = new StringBuilder("<?xml version=\"1.0\"?><xfdf xmlns=\"http://ns.adobe.com/xfdf/\"><fields>");
+        for (var i = 1; i < count; i += 10) xfdf.Append($"<field name=\"g{i / 50}\"><field name=\"f{i}\"><value>w{i}</value></field></field>");
+        xfdf.Append("<field name=\"missing\"><value>x</value></field></fields></xfdf>");
+        var walks = e.FormTreeWalkCount; sw.Restart();
+        var imported = e.ImportFormData(Encoding.UTF8.GetBytes(xfdf.ToString()));
+        Assert.Equal(count / 10, imported.Applied);
+        Assert.Single(imported.Skipped);
+        Assert.True(e.FormTreeWalkCount - walks <= 1, "import walked the tree per entry");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(60), $"import took {sw.Elapsed}");
+        Assert.Contains("w1", e.ExportFormData(PdfFormDataFormat.Xfdf));
+
+        walks = e.FormTreeWalkCount; sw.Restart();
+        var result = e.FlattenForm();
+        Assert.Equal(count, result.Flattened);
+        Assert.True(e.FormTreeWalkCount - walks <= 3, $"flatten walked the tree {e.FormTreeWalkCount - walks} times");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(60), $"flatten took {sw.Elapsed}");
+        var d = Reload(e);
+        Assert.Empty(d.GetFormFields());
+        Assert.Empty(Widgets(d));
+    }
+
+    [Fact]
+    public void Import_is_capped_and_reports_truncation()
+    {
+        var e = Blank();
+        e.AddFormField(new(PdfFormFieldKind.Text, "one", 0, Box(10, 350, 100, 20)));
+        var xfdf = new StringBuilder("<xfdf xmlns=\"http://ns.adobe.com/xfdf/\"><fields>");
+        for (var i = 0; i < 50_010; i++) xfdf.Append("<field name=\"nope").Append(i).Append("\"><value>x</value></field>");
+        xfdf.Append("</fields></xfdf>");
+        var result = e.ImportFormData(Encoding.UTF8.GetBytes(xfdf.ToString()));
+        Assert.True(result.Truncated);
+        Assert.Equal(0, result.Applied);
+        Assert.True(result.Skipped.Count <= 1002);
+    }
+
+    [Fact]
     public void Writes_external_validation_sample_when_requested()
     {
         if (Environment.GetEnvironmentVariable("FORM_AUTHORING_OUT") is not { Length: > 0 } dir) return;

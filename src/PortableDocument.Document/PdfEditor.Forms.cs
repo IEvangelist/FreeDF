@@ -39,15 +39,45 @@ public sealed partial class PdfEditor
         return w * size / 1000 * (fontResource.StartsWith("Ti", StringComparison.Ordinal) ? 0.93 : 1);
     }
 
-    sealed record FormNode(PdfRef Ref, PdfDictionary Dict, PdfRef? ParentRef, string FullName, bool Terminal);
+    /// <summary>A node of the field tree. <see cref="Dict"/> is read live so edits that replace the dictionary never leave the cached index stale.</summary>
+    sealed class FormNode(PdfEditor owner, PdfRef reference, PdfRef? parent, string fullName, bool terminal)
+    {
+        public PdfRef Ref { get; } = reference;
+        public PdfRef? ParentRef { get; } = parent;
+        public string FullName { get; } = fullName;
+        public bool Terminal { get; } = terminal;
+        public PdfDictionary Dict => (PdfDictionary)owner._objs[Ref.Number];
+    }
+
+    sealed class FormIndex
+    {
+        public readonly List<FormNode> All = [];
+        public readonly Dictionary<string, FormNode> ByName = new(StringComparer.Ordinal);
+        public readonly Dictionary<int, FormNode> ByRef = [];
+        public PdfDictionary? Form;
+        public void Add(FormNode n) { All.Add(n); ByName.TryAdd(n.FullName, n); ByRef[n.Ref.Number] = n; }
+    }
+
     sealed record DaInfo(string Font, double Size, double[] Color);
+
+    FormIndex? _formIndex;
+
+    /// <summary>Number of times the whole field tree was walked; a diagnostic that stays linear in the number of operations, not fields.</summary>
+    public int FormTreeWalkCount { get; private set; }
 
     PdfDictionary? AcroFormDict => Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) as PdfDictionary;
 
-    List<FormNode> FormNodes()
+    void InvalidateFormIndex() => _formIndex = null;
+
+    /// <summary>The field tree index, rebuilt only when /AcroForm was replaced behind its back or a structural edit invalidated it.</summary>
+    FormIndex Index()
     {
-        var result = new List<FormNode>();
-        if (AcroFormDict is not { } form || Res(form.Get("Fields")) is not PdfArray roots) return result;
+        var form = AcroFormDict;
+        if (_formIndex is { } cached && ReferenceEquals(cached.Form, form)) return cached;
+        FormTreeWalkCount++;
+        var index = new FormIndex { Form = form };
+        _formIndex = index;
+        if (form is null || Res(form.Get("Fields")) is not PdfArray roots) return index;
         var seen = new HashSet<int>();
         void Walk(PdfObject? o, PdfRef? parent, string prefix, int depth)
         {
@@ -55,13 +85,18 @@ public sealed partial class PdfEditor
             var t = Res(d.Get("T")) is PdfString s ? s.Text : null;
             var full = t is null ? prefix : prefix.Length == 0 ? t : prefix + "." + t;
             var kids = Res(d.Get("Kids")) as PdfArray;
-            var terminal = kids is null || !kids.Items.Any(k => Res(k) is PdfDictionary kd && (kd.Get("T") is not null || kd.Get("Kids") is not null));
-            result.Add(new FormNode(r, d, parent, full, terminal));
+            var terminal = true;
+            if (kids is not null)
+                foreach (var k in kids.Items)
+                    if (Res(k) is PdfDictionary kd && (kd.Get("T") is not null || kd.Get("Kids") is not null)) { terminal = false; break; }
+            index.Add(new FormNode(this, r, parent, full, terminal));
             if (!terminal) foreach (var k in kids!.Items) Walk(k, r, full, depth + 1);
         }
         foreach (var f in roots.Items) Walk(f, null, "", 0);
-        return result;
+        return index;
     }
+
+    List<FormNode> FormNodes() => Index().All;
 
     List<PdfRef> WidgetRefs(FormNode n)
     {
@@ -113,11 +148,15 @@ public sealed partial class PdfEditor
     {
         var cat = (PdfDictionary)_objs[_catalog];
         var raw = cat.Get("AcroForm");
-        var e = Res(raw) is PdfDictionary d ? new Dictionary<string, PdfObject>(d.Entries) : [];
+        var current = Res(raw) as PdfDictionary;
+        var indexIsCurrent = _formIndex is { } ix && ReferenceEquals(ix.Form, current);
+        var e = current is not null ? new Dictionary<string, PdfObject>(current.Entries) : [];
         mutate(e);
         var nd = new PdfDictionary(e);
         if (raw is PdfRef r && _objs.ContainsKey(r.Number)) _objs[r.Number] = nd;
         else _objs[_catalog] = With(cat, "AcroForm", nd);
+        // Structural edits made through the form helpers keep the index in step; anything else forces a rebuild.
+        if (indexIsCurrent) _formIndex!.Form = nd;
     }
 
     void EnsureAcroForm()
@@ -341,12 +380,11 @@ public sealed partial class PdfEditor
     PdfRef? EnsureParents(string[] parts)
     {
         PdfRef? parent = null;
-        var nodes = FormNodes();
+        var index = Index();
         for (var i = 0; i < parts.Length - 1; i++)
         {
             var prefix = string.Join('.', parts.Take(i + 1));
-            var node = nodes.FirstOrDefault(n => n.FullName == prefix);
-            if (node is not null)
+            if (index.ByName.TryGetValue(prefix, out var node))
             {
                 if (node.Terminal) throw new ArgumentException($"'{prefix}' is already a field and cannot contain other fields.");
                 parent = node.Ref;
@@ -356,7 +394,7 @@ public sealed partial class PdfEditor
             if (parent is not null) d["Parent"] = parent;
             var r = AddObject(new PdfDictionary(d));
             AttachChild(parent, r);
-            nodes.Add(new FormNode(r, (PdfDictionary)_objs[r.Number], parent, prefix, false));
+            index.Add(new FormNode(this, r, parent, prefix, false));
             parent = r;
         }
         return parent;
@@ -370,9 +408,10 @@ public sealed partial class PdfEditor
         Check(spec.Page);
         ValidateSpec(spec);
         var parts = SplitFieldName(spec.Name);
-        var existing = FormNodes();
-        var clash = existing.FirstOrDefault(n => n.FullName == spec.Name);
+        var index = Index();
+        index.ByName.TryGetValue(spec.Name, out var clash);
         PdfRef widget, field;
+        var widgetIndex = 0;
         if (clash is not null)
         {
             if (spec.Kind != PdfFormFieldKind.Radio || clash.Terminal is false || Inherited(clash.Dict, "FT") is not PdfName { Value: "Btn" }
@@ -385,11 +424,12 @@ public sealed partial class PdfEditor
             widget = AddObject(new PdfDictionary(kid));
             SetEntries(field.Number, e => e["Kids"] = EditArray(e.GetValueOrDefault("Kids"), l => { l.Add(widget); return l; }));
             if (spec.Value == spec.ExportValue) SetEntries(field.Number, e => e["V"] = new PdfName(spec.ExportValue));
+            widgetIndex = (Res(((PdfDictionary)_objs[field.Number]).Get("Kids")) as PdfArray)?.Count - 1 ?? 0;
         }
         else
         {
             for (var i = 1; i < parts.Length; i++)
-                if (existing.FirstOrDefault(n => n.FullName == string.Join('.', parts.Take(i))) is { Terminal: true })
+                if (index.ByName.TryGetValue(string.Join('.', parts.Take(i)), out var prior) && prior.Terminal)
                     throw new ArgumentException($"'{string.Join('.', parts.Take(i))}' is already a field and cannot contain other fields.");
             EnsureAcroForm();
             var parent = EnsureParents(parts);
@@ -415,12 +455,13 @@ public sealed partial class PdfEditor
                 field = widget = AddObject(new PdfDictionary(leaf));
             }
             AttachChild(parent, field);
+            index.Add(new FormNode(this, field, parent, spec.Name, true));
         }
         AppendAnnot(spec.Page, widget);
         FormFont(spec.FontName, spec.FontObject);
         RebuildAppearance(widget, spec.ExportValue);
-        if (spec.Kind == PdfFormFieldKind.Radio) foreach (var k in WidgetRefs(FormNodes().First(n => n.Ref.Number == field.Number))) RebuildAppearance(k);
-        return new PdfFormFieldHandle(spec.Name, field, widget);
+        if (spec.Kind == PdfFormFieldKind.Radio)         foreach (var k in WidgetRefs(index.ByRef[field.Number])) RebuildAppearance(k);
+                return new PdfFormFieldHandle(spec.Name, field, widget, widgetIndex);
     }
 
     HashSet<string> RadioExports(FormNode group)
@@ -533,7 +574,7 @@ public sealed partial class PdfEditor
     }
 
     FormNode FindTerminal(string fullName) =>
-        FormNodes().FirstOrDefault(n => n.Terminal && n.FullName == fullName) ?? throw new ArgumentException($"No form field named '{fullName}'.");
+        Index().ByName.TryGetValue(fullName, out var n) && n.Terminal ? n : throw new ArgumentException($"No form field named '{fullName}'.");
 
     /// <summary>Applies a full spec to an existing widget (renaming, moving between pages and regenerating appearances). Check boxes, push buttons and text kinds may change kind among themselves; radio kids cannot change to or from other kinds.</summary>
     public void UpdateFormField(string fullName, PdfFormFieldSpec spec, int widgetIndex = 0)
@@ -547,8 +588,8 @@ public sealed partial class PdfEditor
         if ((uint)widgetIndex >= (uint)widgets.Count) throw new ArgumentOutOfRangeException(nameof(widgetIndex));
         var wref = widgets[widgetIndex];
         var w = (PdfDictionary)_objs[wref.Number];
-        var pages = WidgetPages();
-        var currentPage = pages.TryGetValue(wref.Number, out var cp) ? cp : -1;
+        var currentPage = w.Get("P") is PdfRef pageRef ? _pages.IndexOf(pageRef.Number) : -1;
+        if (currentPage < 0) currentPage = WidgetPages().TryGetValue(wref.Number, out var cp) ? cp : -1;
         var current = ReadFormSpec(node, wref, w, Math.Max(currentPage, 0)) ?? throw new ArgumentException("This field type cannot be edited.");
         var radio = current.Kind == PdfFormFieldKind.Radio;
         if (radio != (spec.Kind == PdfFormFieldKind.Radio)) throw new ArgumentException("A field cannot be converted to or from a radio button.");
@@ -593,21 +634,23 @@ public sealed partial class PdfEditor
         Require(PdfPermissions.Modify);
         if (fullName == newName) return;
         var parts = SplitFieldName(newName);
-        var nodes = FormNodes();
-        var node = nodes.FirstOrDefault(n => n.FullName == fullName) ?? throw new ArgumentException($"No form field named '{fullName}'.");
-        if (nodes.Any(n => n.FullName == newName)) throw new ArgumentException($"A form field named '{newName}' already exists.");
+        var index = Index();
+        var node = index.ByName.TryGetValue(fullName, out var found) ? found : throw new ArgumentException($"No form field named '{fullName}'.");
+        if (index.ByName.ContainsKey(newName)) throw new ArgumentException($"A form field named '{newName}' already exists.");
         for (var i = 1; i < parts.Length; i++)
-            if (nodes.FirstOrDefault(n => n.FullName == string.Join('.', parts.Take(i))) is { Terminal: true } t && t.Ref.Number != node.Ref.Number)
+            if (index.ByName.TryGetValue(string.Join('.', parts.Take(i)), out var t) && t.Terminal && t.Ref.Number != node.Ref.Number)
                 throw new ArgumentException($"'{t.FullName}' is already a field and cannot contain other fields.");
         var oldPrefix = fullName.Contains('.') ? fullName[..fullName.LastIndexOf('.')] : "";
         var newPrefix = newName.Contains('.') ? newName[..newName.LastIndexOf('.')] : "";
-        if (oldPrefix == newPrefix) { SetEntries(node.Ref.Number, e => e["T"] = Text(parts[^1])); return; }
+        if (oldPrefix == newPrefix) { SetEntries(node.Ref.Number, e => e["T"] = Text(parts[^1])); InvalidateFormIndex(); return; }
         if (!node.Terminal) throw new NotSupportedException("Only the last name part of a field group can be renamed.");
         DetachChild(node.ParentRef, node.Ref);
         PruneEmptyAncestors(node.ParentRef);
+        InvalidateFormIndex();
         var parent = EnsureParents(parts);
         SetEntries(node.Ref.Number, e => { e["T"] = Text(parts[^1]); if (parent is null) e.Remove("Parent"); else e["Parent"] = parent; });
         AttachChild(parent, node.Ref);
+        InvalidateFormIndex();
     }
 
     void PruneEmptyAncestors(PdfRef? parent)
@@ -627,30 +670,74 @@ public sealed partial class PdfEditor
     public bool RemoveFormField(string fullName, int widgetIndex = -1)
     {
         Require(PdfPermissions.Modify);
-        var nodes = FormNodes();
-        var targets = nodes.Where(n => n.Terminal && (n.FullName == fullName || n.FullName.StartsWith(fullName + ".", StringComparison.Ordinal))).ToList();
-        if (targets.Count == 0) return false;
-        var gone = new HashSet<int>();
-        foreach (var t in targets)
+        var index = Index();
+        List<FormNode> targets;
+        if (index.ByName.TryGetValue(fullName, out var exact) && exact.Terminal) targets = [exact];
+        else
         {
+            var prefix = fullName + ".";
+            targets = index.All.Where(n => n.Terminal && n.FullName.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        }
+        if (targets.Count == 0) return false;
+        if (widgetIndex >= 0 && targets.Count == 1 && targets[0].FullName == fullName)
+        {
+            var t = targets[0];
             var widgets = WidgetRefs(t);
-            if (widgetIndex >= 0 && t.FullName == fullName && widgets.Count > 1 && widgets[0].Number != t.Ref.Number)
+            if (widgets.Count > 1 && widgets[0].Number != t.Ref.Number)
             {
                 if (widgetIndex >= widgets.Count) throw new ArgumentOutOfRangeException(nameof(widgetIndex));
                 var victim = widgets[widgetIndex];
-                gone.Add(victim.Number); _deleted.Add(victim.Number);
+                _deleted.Add(victim.Number);
                 SetEntries(t.Ref.Number, e => e["Kids"] = EditArray(e.GetValueOrDefault("Kids"), l => l.Where(x => !(x is PdfRef r && r.Number == victim.Number)).ToList()));
-                if (widgets.Count > 1) continue;
+                RemoveAnnots(new HashSet<int> { victim.Number });
+                InvalidateFormIndex();
+                return true;
             }
-            foreach (var wr in widgets) { gone.Add(wr.Number); _deleted.Add(wr.Number); }
-            gone.Add(t.Ref.Number); _deleted.Add(t.Ref.Number);
-            DetachChild(t.ParentRef, t.Ref);
-            PruneEmptyAncestors(t.ParentRef);
         }
+        RemoveTerminalNodes(targets);
+        return true;
+    }
+
+    /// <summary>
+    /// Removes terminal fields in one pass: every field is detached from its parent once, emptied ancestors are pruned deepest-first,
+    /// and the page /Annots arrays and /CO are rewritten once, so the cost is linear in the number of removed fields.
+    /// </summary>
+    void RemoveTerminalNodes(IReadOnlyCollection<FormNode> targets)
+    {
+        var index = Index();
+        var gone = new HashSet<int>();
+        var removedKids = new Dictionary<int, HashSet<int>>();
+        var queue = new PriorityQueue<int, int>();
+        void Mark(PdfRef? parent, PdfRef child)
+        {
+            var key = parent?.Number ?? 0;
+            if (!removedKids.TryGetValue(key, out var set))
+            {
+                removedKids[key] = set = [];
+                if (key != 0) queue.Enqueue(key, -index.ByRef[key].FullName.Count(c => c == '.'));
+            }
+            set.Add(child.Number);
+        }
+        foreach (var t in targets)
+        {
+            foreach (var wr in WidgetRefs(t)) gone.Add(wr.Number);
+            gone.Add(t.Ref.Number);
+            Mark(t.ParentRef, t.Ref);
+        }
+        while (queue.Count > 0)
+        {
+            var p = queue.Dequeue();
+            var set = removedKids[p];
+            SetEntries(p, e => e["Kids"] = EditArray(e.GetValueOrDefault("Kids"), l => l.Where(x => !(x is PdfRef r && set.Contains(r.Number))).ToList()));
+            if (Res(((PdfDictionary)_objs[p]).Get("Kids")) is PdfArray { Count: 0 } && gone.Add(p)) Mark(index.ByRef[p].ParentRef, new PdfRef(p, 0));
+        }
+        if (removedKids.TryGetValue(0, out var roots))
+            EditAcroForm(e => e["Fields"] = EditArray(e.GetValueOrDefault("Fields"), l => l.Where(x => !(x is PdfRef r && roots.Contains(r.Number))).ToList()));
+        _deleted.UnionWith(gone);
         RemoveAnnots(gone);
         if (AcroFormDict is { } f && Res(f.Get("CO")) is PdfArray)
             EditAcroForm(e => e["CO"] = EditArray(e.GetValueOrDefault("CO"), l => l.Where(x => !(x is PdfRef r && gone.Contains(r.Number))).ToList()));
-        return true;
+        InvalidateFormIndex();
     }
 
     /// <summary>Sets /Tabs on a page (row, column or structure order; Unspecified removes it).</summary>
@@ -670,16 +757,18 @@ public sealed partial class PdfEditor
     {
         Require(PdfPermissions.Modify);
         Check(page);
-        var nodes = FormNodes().Where(n => n.Terminal).ToList();
+        var index = Index();
         var pageNumber = _pages[page];
         var pageDict = (PdfDictionary)_objs[pageNumber];
         if (Res(pageDict.Get("Annots")) is not PdfArray annots) return;
+        var onPage = new HashSet<int>(annots.Items.OfType<PdfRef>().Select(r => r.Number));
         var ordered = new List<PdfRef>();
+        var chosen = new HashSet<int>();
         foreach (var name in orderedNames)
-            foreach (var n in nodes.Where(n => n.FullName == name))
+            if (index.ByName.TryGetValue(name, out var n) && n.Terminal)
                 foreach (var wr in WidgetRefs(n))
-                    if (annots.Items.Any(x => x is PdfRef r && r.Number == wr.Number) && ordered.All(o => o.Number != wr.Number)) ordered.Add(wr);
-        var slots = annots.Items.Select((x, i) => (x, i)).Where(t => t.x is PdfRef r && ordered.Any(o => o.Number == r.Number)).Select(t => t.i).ToList();
+                    if (onPage.Contains(wr.Number) && chosen.Add(wr.Number)) ordered.Add(wr);
+        var slots = annots.Items.Select((x, i) => (x, i)).Where(t => t.x is PdfRef r && chosen.Contains(r.Number)).Select(t => t.i).ToList();
         var items = new List<PdfObject>(annots.Items);
         for (var i = 0; i < slots.Count; i++) items[slots[i]] = ordered[i];
         _objs[pageNumber] = With(pageDict, "Annots", EditArray(pageDict.Get("Annots"), _ => items));

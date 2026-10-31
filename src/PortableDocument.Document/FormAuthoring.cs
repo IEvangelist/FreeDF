@@ -20,9 +20,9 @@ public sealed record PdfFlattenResult(int Flattened, int Kept);
 
 public enum PdfFormDataFormat { Xfdf, Fdf }
 
-public sealed record PdfFormImportResult(int Applied, IReadOnlyList<string> Skipped);
+public sealed record PdfFormImportResult(int Applied, IReadOnlyList<string> Skipped, bool Truncated = false);
 
-public sealed record PdfFormFieldHandle(string FullName, PdfRef Field, PdfRef Widget);
+public sealed record PdfFormFieldHandle(string FullName, PdfRef Field, PdfRef Widget, int WidgetIndex = 0);
 
 /// <summary>Everything the editor needs to describe, create or update one widget. Colours are 1 (gray), 3 (RGB) or 4 (CMYK) components in 0..1.</summary>
 public sealed record PdfFormFieldSpec(PdfFormFieldKind Kind, string Name, int Page, PdfRect Rect)
