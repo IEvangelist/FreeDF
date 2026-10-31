@@ -156,9 +156,10 @@ input[type=radio]:not(.wgt):checked { background-color: var(--primary); border-c
 .dfoot { border-top: 1px solid var(--line); margin-top: 8px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
 .dbody { overflow-wrap: anywhere; }
 .mrow { border-bottom-color: var(--line); }
-@keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+/* Entrances fade only: moving boxes make automation (and impatient users' pointer targeting) wait for the element to settle. */
+@keyframes pop-in { from { opacity: 0; } }
 @keyframes fade-in { from { opacity: 0; } }
-@keyframes dlg-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+@keyframes dlg-in { from { opacity: 0; } }
 @keyframes slide-l { from { opacity: 0; transform: translateX(-12px); } }
 @keyframes slide-r { from { opacity: 0; transform: translateX(12px); } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
@@ -195,13 +196,9 @@ main { transition: none; }
 .rz:focus-visible { outline: none; }
 main.hide-l .rz.l, main.hide-r .rz.r { display: none; }
 #empty { max-width: 28rem; padding: 32px 24px; gap: 8px; }
-#empty .welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; }
-#empty .welcome-actions button { box-shadow: var(--shadow-sm); }
-#empty .welcome-note { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: var(--text-sm); }
+#empty .welcome-note { margin-top: 12px; font-size: var(--text-sm); line-height: 1.8; }
 #empty > span { max-width: 36ch; }
-#empty .welcome-actions { order: 1; } #empty #sampleOpen { order: 2; } #empty .sample-hint { order: 3; } #empty .welcome-note { order: 4; }
-#empty #sampleOpen { height: var(--h); font-size: var(--text-base); background: var(--input-bg); color: var(--fg); border: 1px solid var(--input-border); box-shadow: var(--shadow-sm); }
-#empty #sampleOpen:hover { background: var(--hover); }
+#empty #sampleOpen { box-shadow: var(--shadow-sm); }
 #view:focus-visible { outline-offset: -3px; }
 #drop #empty { border-color: var(--accent); }
 
@@ -219,7 +216,7 @@ main.hide-l .rz.l, main.hide-r .rz.r { display: none; }
 /* Header buttons never shrink; narrow screens move secondary actions into the overflow menu. */
 header button, header a, header .group { flex-shrink: 0; }
 #more { display: none; }
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   header .hdr2 { display: none; }
   #more { display: inline-flex; }
   header { overflow-x: visible; }
@@ -227,6 +224,13 @@ header button, header a, header .group { flex-shrink: 0; }
   #name { max-width: none; }
 }
 @media (max-width: 400px) { #fileBtn > svg.i:last-child { display: none; } #fileBtn { padding: 0 8px; } }
+@media (max-width: 380px) {
+  :root { --h: 40px; }
+  header { gap: 0; padding-left: 2px; padding-right: 2px; }
+  #tools .seg { flex-wrap: wrap; overflow: visible; }
+  #tools .seg button, #tools .seg label.btn { height: 40px; }
+  #tools .seg button.icon, #tools .seg label.btn.icon { width: 36px; min-width: 36px; }
+}
 /* Status bar targets meet the 24px WCAG 2.2 minimum. */
 body { grid-template-rows: 48px minmax(0, 1fr) 30px; }
 a.sponsor-badge { height: 24px; border-radius: 12px; }

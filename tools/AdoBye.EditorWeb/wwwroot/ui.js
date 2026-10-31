@@ -28,14 +28,15 @@
   window.editorUi = { toast, say, setTheme, setMotion };
 
   // Focus handling shared by the palette and About dialogs.
-  const inertState = new Map();
+  // Only elements this layer made inert are released again; the editor's own inert states (startup, recovery gating) are never overwritten.
+  const inertMine = new Set();
   function modalOn(container) {
-    for (const e of qa('body > header, body > main, body > footer')) { if (!inertState.has(e)) inertState.set(e, e.inert); e.inert = true; }
+    for (const e of qa('body > header, body > main, body > footer')) if (!e.inert) { e.inert = true; inertMine.add(e); }
     container.dataset.uiModal = '';
   }
   function modalOff() {
     if (q('.mdl, [data-ui-modal]')) return;
-    for (const [e, was] of inertState) e.inert = was; inertState.clear();
+    for (const e of inertMine) e.inert = false; inertMine.clear();
   }
   function trapTab(root, e) {
     if (e.key !== 'Tab') return;
@@ -225,13 +226,11 @@
     const title = has ? `${name} - AdoBye` : 'AdoBye - PDF Editor'; if (document.title !== title) document.title = title;
   }
   const welcome = () => {
-    const e = $('empty'); if (!e || e.dataset.ui) return; e.dataset.ui = '1';
-    const act = (label, cls, run) => el('button', { type: 'button', className: cls, textContent: label, onclick: run });
-    const openFile = () => { const i = $('open'); i.value = ''; i.click(); };
-    e.append(el('div', { className: 'welcome-actions' }, act('Open PDF\u2026', 'primary', openFile), act('Commands', 'btn-outline', palette)),
-      el('span', { className: 'welcome-note', textContent: 'Files stay on this device.' }));
-    e.querySelector('strong')?.setAttribute('role', 'heading'); e.querySelector('strong')?.setAttribute('aria-level', '2');
-  };
+      const e = $('empty'); if (!e || e.dataset.ui) return; e.dataset.ui = '1';
+      const note = el('span', { className: 'welcome-note' }, 'Open with ', el('kbd', { textContent: mod + 'O' }), ', or press ', el('kbd', { textContent: mod + 'K' }), ' for commands. Files stay on this device.');
+      e.append(note);
+      e.querySelector('strong')?.setAttribute('role', 'heading'); e.querySelector('strong')?.setAttribute('aria-level', '2');
+    };
 
   // Keyboard access to page objects: one tab stop for the group, arrow keys within it, Enter selects.
   const parts = () => qa('#layer > .it, #layer > .obj, #layer > .span');

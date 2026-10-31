@@ -30,17 +30,20 @@ Tokens: `--dur-1/2/3` = 100/160/240 ms; `--ease` and `--ease-in-out`. Only
 
 | Where | Motion |
 |---|---|
-| Menus, submenus, popovers | fade + 4 px rise + 2 % scale, 160 ms |
-| Dialogs, palette, scrims | fade; dialog also rises 8 px, 240 ms |
+| Menus, submenus, popovers | fade, 160 ms |
+| Dialogs, palette, scrims | fade, 160-240 ms |
 | Toasts | rise + fade in; fade out 160 ms |
 | Side panels | slide 12 px + fade when opened (the old animated `grid-template-columns` transition, which re-laid out the page, was removed) |
 | Thumbnails | opacity fade as each image decodes |
 | Buttons | colour/background 100 ms; 0.97 scale on press |
 
 Rules that keep motion safe: nothing is animated on exit (so removal is never
-delayed and the Save-confirmation presentation hand-off is unchanged); the main
-page image is never animated; selection handles and the object layer, which are
-rebuilt on every pointer move, are not animated.
+delayed and the Save-confirmation presentation hand-off is unchanged); menus and
+dialogs fade in without moving or scaling (a first version that also rose 8 px
+measurably delayed `save-download` in the `--profile` smoke, because Playwright
+waits for a moving button to settle; opacity-only entrances removed that cost);
+the main page image is never animated; selection handles and the object layer,
+which are rebuilt on every pointer move, are not animated.
 
 Reduced motion: `prefers-reduced-motion: reduce` removes all animation and
 transitions. **Appearance > Reduce motion** (or the palette) does the same

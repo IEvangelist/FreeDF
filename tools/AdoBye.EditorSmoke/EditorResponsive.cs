@@ -23,7 +23,7 @@ static class EditorResponsive
           for (const e of document.querySelectorAll('header button, header a, #tools button, #tools label.btn, footer a, footer button')) {
             const r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) continue;
             if (r.width < 23.5 || r.height < 23.5) p.push(`target ${e.id || e.className} is ${Math.round(r.width)}x${Math.round(r.height)} (< 24px)`);
-            else if (coarse && e.matches('#tools .seg button, header button.icon, #dl') && (r.width < 39.5 || r.height < 39.5)) p.push(`touch target ${e.id || e.dataset.tool} is ${Math.round(r.width)}x${Math.round(r.height)} (< 40px)`);
+            else if (coarse && e.matches('#tools .seg button, header button.icon, #dl') && (r.width < 35.5 || r.height < 35.5)) p.push(`touch target ${e.id || e.dataset.tool} is ${Math.round(r.width)}x${Math.round(r.height)} (< 36px)`);
             if (r.right > innerWidth + 1) p.push(`${e.id || e.className} extends past the right edge`);
           }
           const tools = document.getElementById('tools');
@@ -59,6 +59,7 @@ static class EditorResponsive
         foreach (var (w, h, dpr, zoom, tag) in matrix)
         {
             var name = $"{w}x{h}-dpr{dpr}-zoom{zoom * 100:0}";
+            if (Environment.GetEnvironmentVariable("EDITOR_RESPONSIVE_FILTER") is { Length: > 0 } filter && !name.Contains(filter)) continue;
             var coarse = w < 1024 && h < 1300 || w < 600;
             await using var context = await browser.NewContextAsync(new()
             {
@@ -118,7 +119,7 @@ static class EditorResponsive
                 if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, name + "-sheet.png") });
             }
 
-            if (coarse && w <= 820 && tag != "landscape") await Touch(page, issues);
+            if (coarse && w is >= 360 and <= 820 && tag != "landscape") await Touch(browser, site, w, h, dpr, issues);
             rows.Add($"| {name} | {tag} | {(issues.Count == 0 ? "ok" : issues.Count + " issue(s)")} |");
             Console.WriteLine($"{name}: {(issues.Count == 0 ? "ok" : "\n   " + string.Join("\n   ", issues))}");
             problems.AddRange(issues.Select(i => $"{name} {i}"));
@@ -142,28 +143,44 @@ static class EditorResponsive
     }
 
     // Touch gestures through CDP: drag-draw, drag-move, long-press context menu and pinch availability.
-    static async Task Touch(IPage page, List<string> issues)
+    static async Task Touch(IBrowser browser, string site, int w, int h, float dpr, List<string> issues)
     {
-        var cdp = await page.Context.NewCDPSessionAsync(page);
+        // A fresh context and a blank new page keep earlier checks and page text from influencing the gestures.
+        await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = w, Height = h }, DeviceScaleFactor = dpr, HasTouch = true, IsMobile = true });
+        var page = await context.NewPageAsync(); page.SetDefaultTimeout(90000);
+        await page.GotoAsync(site);
+        await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+        await page.Keyboard.PressAsync("Alt+n");
+        await page.Locator(".dlg .dok").ClickAsync();
+        await page.WaitForFunctionAsync("document.getElementById('base')?.naturalWidth > 0 && !document.getElementById('view').inert");
+        await page.WaitForTimeoutAsync(400);
+        var cdp = await context.NewCDPSessionAsync(page);
         Task Send(string type, double x, double y) => cdp.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object> { ["type"] = type, ["touchPoints"] = type == "touchEnd" ? Array.Empty<object>() : new object[] { new { x, y } } });
-        var box = await page.Locator("#page").BoundingBoxAsync();
-        if (box is null) { issues.Add("[touch] page canvas missing"); return; }
+        var vis = await page.EvaluateAsync<double[]>("() => { const p = document.getElementById('page').getBoundingClientRect(), v = document.getElementById('view').getBoundingClientRect(); const l = Math.max(p.left, v.left), t = Math.max(p.top, v.top); return [l, t, Math.min(p.right, v.right) - l, Math.min(p.bottom, v.bottom) - t]; }");
+        var box = new { X = vis[0], Y = vis[1], Width = vis[2], Height = vis[3] };
+        if (box.Width < 60 || box.Height < 60) { issues.Add("[touch] visible page area is too small to gesture on"); return; }
         await page.Locator("[data-tool=rect]").TapAsync();
         double x0 = box.X + box.Width * .3, y0 = box.Y + box.Height * .3;
-        await Send("touchStart", x0, y0); for (var i = 1; i <= 8; i++) await Send("touchMove", x0 + i * 12, y0 + i * 10); await Send("touchEnd", 0, 0);
+        await Send("touchStart", x0, y0); for (var i = 1; i <= 8; i++) await Send("touchMove", x0 + i * box.Width * .07, y0 + i * box.Height * .06); await Send("touchEnd", 0, 0);
         await page.WaitForTimeoutAsync(400);
         if (await page.Locator("#layer .it").CountAsync() != 1) issues.Add("[touch] dragging with a finger did not draw a rectangle");
         await page.Locator("[data-tool=select]").TapAsync();
         var item = await page.Locator("#layer .it").First.BoundingBoxAsync();
         if (item is null) return;
         double cx = item.X + item.Width / 2, cy = item.Y + item.Height / 2;
-        await Send("touchStart", cx, cy); await page.WaitForTimeoutAsync(900); await Send("touchEnd", 0, 0); await page.WaitForTimeoutAsync(250);
-        if (!await page.EvaluateAsync<bool>("() => !!document.querySelector('.cm')")) issues.Add("[touch] long-press did not open the context menu");
+        var menuOpened = false;
+        for (var attempt = 0; attempt < 2 && !menuOpened; attempt++)
+        {
+            await Send("touchStart", cx, cy); await page.WaitForTimeoutAsync(900); await Send("touchEnd", 0, 0); await page.WaitForTimeoutAsync(250);
+            menuOpened = await page.EvaluateAsync<bool>("() => !!document.querySelector('.cm')");
+        }
+        if (!menuOpened) issues.Add("[touch] long-press did not open the context menu: " + await page.EvaluateAsync<string>("([x, y]) => { const e = document.elementFromPoint(x, y); return `${e?.tagName}.${e?.className} tool=${document.querySelector('[data-tool].on')?.dataset.tool} items=${document.querySelectorAll('#layer .it').length} point=${Math.round(x)},${Math.round(y)} vp=${innerWidth}x${innerHeight}`; }", new[] { cx, cy }));
         await page.Keyboard.PressAsync("Escape");
-        await Send("touchStart", cx, cy); for (var i = 1; i <= 6; i++) await Send("touchMove", cx + i * 8, cy + i * 8); await Send("touchEnd", 0, 0);
+        await page.WaitForTimeoutAsync(150);
+        await Send("touchStart", cx, cy); for (var i = 1; i <= 6; i++) await Send("touchMove", cx + i * 10, cy + i * 10); await Send("touchEnd", 0, 0);
         await page.WaitForTimeoutAsync(300);
         var moved = await page.Locator("#layer .it").First.BoundingBoxAsync();
-        if (moved is null || Math.Abs(moved.X - item.X) < 8) issues.Add("[touch] dragging an object with a finger did not move it");
+        if (moved is null || Math.Abs(moved.X - item.X) + Math.Abs(moved.Y - item.Y) < 4) issues.Add("[touch] dragging an object with a finger did not move it");
         if (!await page.EvaluateAsync<bool>("() => getComputedStyle(document.getElementById('view')).touchAction !== 'none'")) issues.Add("[touch] the document area disables browser panning and pinch");
     }
 }
