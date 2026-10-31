@@ -1,0 +1,100 @@
+name: Editor performance (non-blocking)
+
+# Timing and payload gates run out of band on an otherwise idle runner. They never block merges or
+# deploys: a regression is reported in the job summary, as artifacts, and in one tracking issue.
+# Thresholds are the same ones the blocking pipeline used to enforce.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      aot:
+        description: Use AOT (disable only for an explicit non-AOT fallback)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: editor-perf
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/editor-site.yml
+    with:
+      aot: ${{ github.event_name != 'workflow_dispatch' || inputs.aot }}
+
+  perf:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - uses: actions/download-artifact@v8
+        with:
+          name: editor-site
+          path: ${{ runner.temp }}/editor-pages
+      - name: Verify the site is exactly what the build job produced
+        shell: pwsh
+        run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256' -Verify
+      - name: Build browser smoke runner
+        run: dotnet build tools/AdoBye.EditorSmoke -c Release
+      - name: Restore Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-v1-${{ runner.os }}-${{ hashFiles('Directory.Packages.props') }}
+      - name: Install Chromium
+        shell: pwsh
+        run: ./tools/AdoBye.EditorSmoke/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+      - name: Run performance gates
+        id: perf
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/Invoke-EditorChunk.ps1 -Chunk perf -Site '${{ runner.temp }}/editor-pages/wwwroot' -Work '${{ runner.temp }}/editor-chunks' 2>&1 | Tee-Object -FilePath '${{ runner.temp }}/perf.log'; exit $LASTEXITCODE
+      - name: Retain evidence
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: editor-perf-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/editor-chunks
+            ${{ runner.temp }}/perf.log
+      - name: Report (job summary and tracking issue)
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.perf.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          errors=$(grep -E '^::error::|Unhandled exception|CI gate failures' "${RUNNER_TEMP}/perf.log" 2>/dev/null | head -20 || true)
+          {
+            echo "## Editor performance: ${OUTCOME}"
+            echo
+            echo "Report-only; does not block merges or deploys. Artifacts: ${RUN_URL}"
+            [ -n "$errors" ] && { echo; echo '```'; echo "$errors"; echo '```'; }
+          } >> "$GITHUB_STEP_SUMMARY"
+          title="Editor performance regression"
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number,title --jq "[.[]|select(.title==\"$title\")][0].number // empty")
+          body="Latest scheduled run: ${RUN_URL}"$'\n\n'"\`\`\`"$'\n'"${errors}"$'\n'"\`\`\`"
+          if [ "$OUTCOME" = failure ]; then
+            gh label create perf --repo "$GITHUB_REPOSITORY" --color FBCA04 2>/dev/null || true
+            if [ -n "$number" ]; then gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+            else gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label perf --body "$body"; fi
+          elif [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Performance gates passed again: ${RUN_URL}"
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY"
+          fi

@@ -256,6 +256,13 @@ static class EditorA11y
         expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.theme === 'dark' && !document.querySelector('header').inert && localStorage.getItem('editor.theme') === 'dark'"), "keyboard: palette switches theme, persists it and restores the background");
         await page.EvaluateAsync("() => window.editorUi.setTheme('system')");
 
+        expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.accent === undefined && getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() === '#be185d' && document.querySelector('meta[name=theme-color]').content === '#db2777'"), "accent: the default is pink");
+        await page.EvaluateAsync("() => window.editorUi.setAccent('teal')");
+        await page.ReloadAsync(); await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+        expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.accent === 'teal' && getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() === '#0f766e' && localStorage.getItem('editor.accent') === 'teal'"), "accent: the selection persists across reloads and drives --primary before first paint");
+        await page.EvaluateAsync("() => window.editorUi.setAccent('pink')");
+        expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.accent === undefined && localStorage.getItem('editor.accent') === null"), "accent: choosing pink returns to the default");
+
         await open(page, pdf, "keys.pdf");
         await page.Locator("#fileBtn").FocusAsync(); await page.Keyboard.PressAsync("Enter");
         await page.Keyboard.PressAsync("ArrowDown"); await page.Keyboard.PressAsync("ArrowDown");

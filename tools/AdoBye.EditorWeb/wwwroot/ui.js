@@ -27,7 +27,14 @@
     toasts.append(t);
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, kind === 'error' ? 6000 : 3500);
   }
-  window.editorUi = { toast, say, setTheme, setMotion, setFullMotion };
+  const ACCENTS = [['pink', 'Pink', '#db2777'], ['blue', 'Blue', '#2563eb'], ['violet', 'Violet', '#7c3aed'], ['green', 'Green', '#16a34a'], ['orange', 'Orange', '#ea580c'], ['red', 'Red', '#dc2626'], ['teal', 'Teal', '#0d9488']];
+  const accent = () => { const a = store.get('editor.accent'); return ACCENTS.some(x => x[0] === a) ? a : 'pink'; };
+  const setAccent = v => {
+    if (!ACCENTS.some(x => x[0] === v)) v = 'pink';
+    store.set('editor.accent', v === 'pink' ? null : v); v === 'pink' ? delete doc.dataset.accent : doc.dataset.accent = v;
+    const meta = q('meta[name="theme-color"]'); if (meta) meta.content = ACCENTS.find(x => x[0] === v)[2];
+  };
+  window.editorUi = { toast, say, setTheme, setMotion, setFullMotion, setAccent, accent };
 
   // Focus handling shared by the palette and About dialogs.
   // Only elements this layer made inert are released again; the editor's own inert states (startup, recovery gating) are never overwritten.
@@ -120,15 +127,21 @@
   // Appearance menu reuses the editor's .cm menu styling and keyboard handling.
   function appearanceMenu(anchor) {
     q('.cm')?.remove();
-    const m = el('div', { className: 'cm' }); m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'Appearance');
+    const m = el('div', { className: 'cm has-check' }); m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'Appearance');
     const item = (role, label, checked, run, disabled) => {
       const b = el('button', { type: 'button', className: 'cm-i', disabled: !!disabled }, el('span', { textContent: label })); b.setAttribute('role', role); if (role !== 'menuitem') b.setAttribute('aria-checked', !!checked);
       b.onclick = () => { m.remove(); run(); anchor.focus(); }; return b;
     };
     const t = theme();
-    m.append(...[['system', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => item('menuitemradio', l, t === v, () => setTheme(v))), el('div', { className: 'cm-sep' }),
+    const sw = el('div', { className: 'cm-sw' }); sw.setAttribute('role', 'group'); sw.setAttribute('aria-label', 'Accent colour'); const cur = accent();
+    for (const [v, label, hex] of ACCENTS) {
+      const b = el('button', { type: 'button', title: label }); b.setAttribute('role', 'menuitemradio'); b.setAttribute('aria-checked', v === cur); b.setAttribute('aria-label', label); b.style.setProperty('--sw', hex);
+      b.onclick = () => { setAccent(v); for (const o of qa('button', sw)) o.setAttribute('aria-checked', o === b); };
+      sw.append(b);
+    }
+    m.append(el('div', { className: 'cm-h', textContent: 'Theme' }), ...[['system', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => item('menuitemradio', l, t === v, () => setTheme(v))), el('div', { className: 'cm-sep' }),
       osReduced.matches ? item('menuitemcheckbox', 'Allow animations (system asks to reduce)', doc.dataset.motion === 'full', () => setFullMotion(doc.dataset.motion !== 'full')) : item('menuitemcheckbox', 'Reduce motion', doc.dataset.motion === 'reduce', () => setMotion(doc.dataset.motion !== 'reduce')),
-      el('div', { className: 'cm-sep' }), item('menuitem', 'Commands\u2026', false, palette), item('menuitem', 'Keyboard shortcuts and about\u2026', false, about));
+      el('div', { className: 'cm-sep' }), el('div', { className: 'cm-h', textContent: 'Accent colour' }), sw, el('div', { className: 'cm-sep' }), item('menuitem', 'Commands\u2026', false, palette), item('menuitem', 'Keyboard shortcuts and about\u2026', false, about));
     document.body.append(m); const r = anchor.getBoundingClientRect();
     m.style.left = Math.max(4, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 4)) + 'px'; m.style.top = r.bottom + 4 + 'px';
     (q('[aria-checked="true"]', m) || q('.cm-i', m)).focus();
@@ -139,13 +152,17 @@
   let lastOutside = null;
   document.addEventListener('focusin', e => { if (!e.target.closest?.('.cm, .mdl, .pal-scrim, .tip')) lastOutside = e.target; });
   const restoreFocus = () => { if ((!document.activeElement || document.activeElement === document.body) && lastOutside?.isConnected) lastOutside.focus(); };
-  const items = menu => qa(':scope > .cm-i:not(:disabled)', menu);
+  // A swatch row is one stop in the vertical order (its checked swatch); Left/Right move within it.
+  const items = menu => qa(':scope > .cm-i:not(:disabled), :scope > .cm-sw > button[aria-checked="true"]', menu);
   const closeMenus = () => qa('.cm').forEach(m => m.remove());
   addEventListener('keydown', e => {
     const open = q('.cm'); if (!open || e.ctrlKey || e.metaKey || e.altKey) return;
     const cur = document.activeElement?.closest?.('.cm'), menu = cur || open, k = e.key, list = items(menu), i = list.indexOf(document.activeElement);
+    const sw = document.activeElement?.closest?.('.cm-sw');
+    if (sw && (k === 'ArrowLeft' || k === 'ArrowRight')) { e.preventDefault(); e.stopImmediatePropagation(); const b = qa('button', sw), j = b.indexOf(document.activeElement); b[(j + (k === 'ArrowRight' ? 1 : -1) + b.length) % b.length].focus(); return; }
+    const rep = sw ? q('button[aria-checked="true"]', sw) : null, at = rep ? list.indexOf(rep) : i;
     const go = n => { e.preventDefault(); e.stopImmediatePropagation(); for (const o of qa('[data-open]', menu)) { delete o.dataset.open; } list[(n + list.length) % list.length]?.focus(); };
-    if (k === 'ArrowDown') go(i + 1); else if (k === 'ArrowUp') go(i < 0 ? list.length - 1 : i - 1); else if (k === 'Home') go(0); else if (k === 'End') go(list.length - 1);
+    if (k === 'ArrowDown') go(at + 1); else if (k === 'ArrowUp') go(at < 0 ? list.length - 1 : at - 1); else if (k === 'Home') go(0); else if (k === 'End') go(list.length - 1);
     else if (k === 'Tab') closeMenus();
     else if ((k === 'ArrowRight' || k === 'Enter' || k === ' ') && document.activeElement?.classList.contains('has-sub')) {
       e.preventDefault(); e.stopImmediatePropagation(); const s = q(':scope > .cm.sub', document.activeElement);
@@ -385,6 +402,7 @@
   const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(sweep); } };
 
   function init() {
+    setAccent(accent());
     document.body.append(live, toasts);
     const skip = el('a', { className: 'skip', href: '#view', textContent: 'Skip to document' }); skip.onclick = e => { e.preventDefault(); $('view')?.focus(); };
     document.body.prepend(skip);
