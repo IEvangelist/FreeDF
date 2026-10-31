@@ -9,3 +9,4 @@ tests/fixtures/fonts-nonembedded/*.pdf -text
 *.j2k binary
 *.jp2 binary
 tests/fixtures/jpxmatrix/*.bin binary
+tests/fixtures/jpxopj/*.ref binary
