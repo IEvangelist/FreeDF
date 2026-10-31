@@ -149,4 +149,54 @@ public class PdfEditorStructureTests
         Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
         Assert.False(report.Has("PDFUA-ANNOT-OBJR"));
     }
+
+    const string Untagged = "q 1 0 0 1 0 0 cm 0 0 40 40 re f Q BT /F1 12 Tf 10 50 Td (hello) Tj ET 0 80 m 100 80 l S BT 10 20 Td (again) Tj ET /Fm0 Do BI /W 1 /H 1 /CS /G /BPC 8 ID \0 EI";
+
+    static PdfEditor OpenUntagged(string content)
+    {
+        var bodies = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /Lang (en) >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Fm0 6 0 R >> >> >>",
+            ObjPdf.Stream(content),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            ObjPdf.Stream("0 0 1 rg 60 60 20 20 re f", "/Type /XObject /Subtype /Form /BBox [0 0 100 100]"),
+        };
+        return PdfEditor.Open(PdfDocument.Load(ObjPdf.Build(bodies)));
+    }
+
+    [Fact]
+    public void AutoTagMarksTextAsParagraphsAndEverythingElseAsArtifacts()
+    {
+        var e = OpenUntagged(Untagged);
+        var before = PortableDocument.Render.PortableDocument.RenderPage(PdfDocument.Load(e.Save()).Pages[0], 72).ToPng();
+        var result = e.AutoTagUntagged();
+        Assert.Equal(new PdfEditor.AutoTagResult(1, 0, 2, 4), result);
+
+        var doc = Reload(e);
+        // Tagging must not change what is drawn.
+        Assert.Equal(before, PortableDocument.Render.PortableDocument.RenderPage(doc.Pages[0], 72).ToPng());
+        var tree = doc.Structure!;
+        NoIssues(tree);
+        Assert.Equal(["Document", "P", "P"], tree.Elements().Select(x => x.Type));
+        Assert.Equal(new[] { 0, 1 }, tree.Elements().Skip(1).Select(x => x.MarkedContent.Single().Mcid));
+        var report = PdfValidator.ValidatePdfUA(doc, 1);
+        Assert.False(report.Has("PDFUA-CONTENT-UNTAGGED"));
+        Assert.False(report.Has("PDFUA-MCID-UNMAPPED"));
+        Assert.False(report.Has("PDFUA-MCID-MISSING"));
+        Assert.True(report.Has("PDFUA-TITLE") || report.Has("PDFUA-XMP-MISSING"), "auto-tagging does not claim PDF/UA conformance");
+    }
+
+    [Fact]
+    public void AutoTagLeavesMarkedPagesAndTaggedDocumentsAlone()
+    {
+        var marked = OpenUntagged("/Span <</Lang (en)>> BDC BT 10 50 Td (x) Tj ET EMC");
+        Assert.Equal(new PdfEditor.AutoTagResult(0, 1, 0, 0), marked.AutoTagUntagged());
+        Assert.Null(marked.StructureRoot);
+
+        var tagged = OpenUntagged(Untagged);
+        tagged.AutoTagUntagged();
+        Assert.Throws<InvalidOperationException>(() => tagged.AutoTagUntagged());
+    }
 }

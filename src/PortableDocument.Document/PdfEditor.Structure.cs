@@ -13,6 +13,56 @@ public sealed record StructureRebuildResult(int Elements, int ParentTreeEntries,
 
 public sealed partial class PdfEditor
 {
+    /// <param name="PagesTagged">Pages whose content was rewritten.</param>
+    /// <param name="PagesSkipped">Pages left alone because their content already contains marked content or could not be decoded.</param>
+    public sealed record AutoTagResult(int PagesTagged, int PagesSkipped, int TextBlocks, int ArtifactBlocks);
+
+    byte[] PageContentBytes(int index)
+    {
+        var page = _pages[index];
+        if (_contentOverrides.TryGetValue(page, out var overridden)) return overridden;
+        var ms = new MemoryStream();
+        void Add(PdfObject? o)
+        {
+            if (Res(o) is not PdfStream s) return;
+            ms.Write(_src is not null ? _src.DecodeStream(s) : s.RawData);
+            ms.WriteByte((byte)'\n');
+        }
+        if (Res(((PdfDictionary)_objs[page]).Get("Contents")) is PdfArray arr) foreach (var o in arr.Items) Add(o); else Add(((PdfDictionary)_objs[page]).Get("Contents"));
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Conservatively tags an untagged document: each text object becomes a P (MCID) under a single Document element in content order, and all other painted
+    /// content is marked as an Artifact. Nothing is inferred about headings, lists, tables or figures and no alternate text is invented, so the result is
+    /// structurally consistent but not accessible until reviewed. Pages that already contain marked content are left untouched; documents with a structure tree throw.
+    /// </summary>
+    public AutoTagResult AutoTagUntagged()
+    {
+        Require(PdfPermissions.Modify);
+        if (StructureRoot is not null) throw new InvalidOperationException("the document already has a structure tree");
+        var tagged = new List<(int Page, ContentAutoTagger.Result Result)>();
+        var skipped = 0;
+        for (var i = 0; i < PageCount; i++)
+        {
+            ContentAutoTagger.Result r;
+            try { r = ContentAutoTagger.Tag(PageContentBytes(i)); }
+            catch (Exception e) when (e is PdfParseException or NotSupportedException or InvalidDataException or InvalidOperationException) { skipped++; continue; }
+            if (r.AlreadyMarked) { skipped++; continue; }
+            if (r.TextBlocks + r.ArtifactBlocks > 0) tagged.Add((i, r));
+        }
+        if (tagged.Count == 0) return new AutoTagResult(0, skipped, 0, 0);
+
+        var document = AddStructureElement(EnsureStructureRoot(), "Document");
+        foreach (var (page, r) in tagged)
+        {
+            SetContentOverride(page, r.Content);
+            for (var m = 0; m < r.TextBlocks; m++) AddStructureMarkedContent(AddStructureElement(document, "P"), page, m);
+        }
+        RebuildParentTree();
+        return new AutoTagResult(tagged.Count, skipped, tagged.Sum(t => t.Result.TextBlocks), tagged.Sum(t => t.Result.ArtifactBlocks));
+    }
+
     /// <summary>The indirect reference to the catalog's /StructTreeRoot, or null for an untagged document.</summary>
     public PdfRef? StructureRoot => ((PdfDictionary)_objs[_catalog]).Get("StructTreeRoot") is PdfRef r && _objs.GetValueOrDefault(r.Number) is PdfDictionary ? r : null;
 
