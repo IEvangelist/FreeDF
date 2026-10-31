@@ -45,9 +45,25 @@ internal static class PdfAChecks
 
     internal static string Clause(ValidationContext c, string a1, string a2, string a3) => c.Part switch { 1 => $"ISO 19005-1 {a1}", 2 => $"ISO 19005-2 {a2}", _ => $"ISO 19005-3 {a3}" };
 
+    static void Header(ValidationContext c)
+    {
+        var d = c.F.Data;
+        var p = 0;
+        while (p + 5 <= d.Length && !(d[p] == '%' && d[p + 1] == 'P' && d[p + 2] == 'D' && d[p + 3] == 'F' && d[p + 4] == '-')) p++;
+        if (p != 0)
+            c.Add("PDFA-HEADER-OFFSET", ValidationSeverity.Error, "the %PDF- header does not start at byte 0", Clause(c, "6.1.2", "6.1.2", "6.1.2"));
+        while (p < d.Length && d[p] != '\r' && d[p] != '\n') p++;
+        if (p < d.Length && d[p] == '\r') p++;
+        if (p < d.Length && d[p] == '\n') p++;
+        var binary = p + 5 <= d.Length && d[p] == '%' && d[p + 1] > 127 && d[p + 2] > 127 && d[p + 3] > 127 && d[p + 4] > 127;
+        if (!binary)
+            c.Add("PDFA-HEADER-BINARY", ValidationSeverity.Error, "the header line must be followed by a comment of at least four bytes with values above 127", Clause(c, "6.1.2", "6.1.2", "6.1.2"));
+    }
+
     static void FileStructure(ValidationContext c)
     {
         var f = c.F;
+        Header(c);
         if (f.Trailer.Get("Encrypt") is not null || f.IsEncrypted)
             c.Add("PDFA-ENCRYPT", ValidationSeverity.Error, "encryption is not permitted", Clause(c, "6.1.3", "6.1.4", "6.1.4"));
         if (f.Trailer.Get("ID") is null)
@@ -104,7 +120,7 @@ internal static class PdfAChecks
         if (intents is null || intents.Count == 0)
         {
             if (c.UsesDeviceColor)
-                c.Add("PDFA-OUTPUTINTENT-MISSING", ValidationSeverity.Error, "device-dependent colour is used but the catalog has no /OutputIntents (device colour use is detected heuristically)", Clause(c, "6.2.2", "6.2.3", "6.2.3"));
+                c.Add("PDFA-OUTPUTINTENT-MISSING", ValidationSeverity.Error, "device-dependent colour is used but the catalog has no /OutputIntents (device colour use is detected heuristically)", Clause(c, "6.2.3.3", "6.2.4.3", "6.2.4.3"));
             return;
         }
         PdfStream? profile = null;

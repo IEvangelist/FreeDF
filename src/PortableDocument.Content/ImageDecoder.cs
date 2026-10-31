@@ -169,15 +169,24 @@ public static class ImageDecoder
         if (depth == 0)
         {
             if (R(d.Get("SMask")) is PdfStream sm && Decode(f, sm, res, out _, out _, intent, blackPointCompensation, depth + 1) is { } smi)
-                ApplyAlpha(rgba, w, h, smi, true);
+            {
+                byte[]? matte = null;
+                if (R(sm.Dict.Get("Matte")) is PdfArray ma && ma.Count == nc)
+                {
+                    var mc = ma.Items.Select(x => R(x).AsNumber() ?? 0).ToArray();
+                    var mcol = cs.ToRgb(mc, imageIntent, blackPointCompensation);
+                    matte = [(byte)Math.Round(mcol.R * 255), (byte)Math.Round(mcol.G * 255), (byte)Math.Round(mcol.B * 255)];
+                }
+                ApplyAlpha(rgba, w, h, smi, true, matte: matte);
+            }
             else if (R(d.Get("Mask")) is PdfStream mk && Decode(f, mk, res, out var mkMask, out _, intent, blackPointCompensation, depth + 1) is { } mki)
                 ApplyAlpha(rgba, w, h, mki, !mkMask);
         }
         return new ImageData(w, h, rgba);
     }
 
-    /// <summary>Applies a soft mask (gray luminosity) or stencil mask (alpha channel) scaled to the image size.</summary>
-    static void ApplyAlpha(byte[] rgba, int w, int h, ImageData mask, bool useLuma, bool invertStencil = false)
+    /// <summary>Applies a soft mask (gray luminosity) or stencil mask (alpha channel) scaled to the image size. A <paramref name="matte"/> colour un-premultiplies the image (ISO 32000-2 11.6.5.3).</summary>
+    static void ApplyAlpha(byte[] rgba, int w, int h, ImageData mask, bool useLuma, bool invertStencil = false, byte[]? matte = null)
     {
         for (var y = 0; y < h; y++)
         {
@@ -189,7 +198,10 @@ public static class ImageDecoder
                 int a;
                 if (useLuma) a = mask.Rgba[mp];
                 else a = invertStencil ? 255 - mask.Rgba[mp + 3] : mask.Rgba[mp + 3];
-                rgba[(y * w + x) * 4 + 3] = (byte)(rgba[(y * w + x) * 4 + 3] * a / 255);
+                var p = (y * w + x) * 4;
+                if (matte is not null && a > 0)
+                    for (var k = 0; k < 3; k++) rgba[p + k] = (byte)Math.Clamp(matte[k] + ((rgba[p + k] - matte[k]) * 255 + a / 2) / a, 0, 255);
+                rgba[p + 3] = (byte)(rgba[p + 3] * a / 255);
             }
         }
     }

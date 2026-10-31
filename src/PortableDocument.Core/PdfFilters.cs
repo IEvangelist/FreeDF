@@ -194,9 +194,8 @@ public static class PdfFilters
         var rowBytes = (colors * bpc * columns + 7) / 8;
         if (pred == 2)
         {
-            if (bpc != 8) return data;
-            for (var row = 0; row + rowBytes <= data.Length; row += rowBytes)
-                for (var i = bpp; i < rowBytes; i++) data[row + i] += data[row + i - bpp];
+            if (rowBytes == 0) return data;
+            for (var row = 0; row + rowBytes <= data.Length; row += rowBytes) TiffRow(data, row, colors, bpc, columns, bpp);
             return data;
         }
         var rows = data.Length / (rowBytes + 1) + (data.Length % (rowBytes + 1) > 1 ? 1 : 0);
@@ -227,6 +226,44 @@ public static class PdfFilters
             (prev, cur) = (cur, prev);
         }
         return res;
+    }
+
+    /// <summary>Undoes the TIFF horizontal differencing predictor (ISO 32000-2 7.4.4.4) for one row of 1, 2, 4, 8 or 16 bits per component.</summary>
+    static void TiffRow(byte[] data, int row, int colors, int bpc, int columns, int bpp)
+    {
+        var rowBytes = (colors * bpc * columns + 7) / 8;
+        switch (bpc)
+        {
+            case 8:
+                for (var i = bpp; i < rowBytes; i++) data[row + i] += data[row + i - bpp];
+                break;
+            case 16:
+                for (var i = colors * 2; i + 1 < rowBytes; i += 2)
+                {
+                    var v = ((data[row + i] << 8) | data[row + i + 1]) + ((data[row + i - colors * 2] << 8) | data[row + i - colors * 2 + 1]);
+                    data[row + i] = (byte)(v >> 8); data[row + i + 1] = (byte)v;
+                }
+                break;
+            case 1 or 2 or 4:
+                {
+                    var mask = (1 << bpc) - 1;
+                    var count = Math.Min(colors * columns, rowBytes * 8 / bpc);
+                    var samples = new int[count];
+                    for (var s = 0; s < count; s++)
+                    {
+                        var bit = s * bpc;
+                        samples[s] = (data[row + (bit >> 3)] >> (8 - bpc - (bit & 7))) & mask;
+                    }
+                    for (var s = colors; s < count; s++) samples[s] = (samples[s] + samples[s - colors]) & mask;
+                    for (var s = 0; s < count; s++)
+                    {
+                        var bit = s * bpc; var shift = 8 - bpc - (bit & 7);
+                        ref var b = ref data[row + (bit >> 3)];
+                        b = (byte)((b & ~(mask << shift)) | (samples[s] << shift));
+                    }
+                    break;
+                }
+        }
     }
 
     static int Paeth(int a, int b, int c)
