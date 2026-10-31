@@ -1,5 +1,4 @@
 using System.Text;
-using GregsEx;
 
 namespace PortableDocument.Core;
 
@@ -14,7 +13,7 @@ public sealed class PdfFile
     public string Version { get; private set; } = "1.0";
     public bool Repaired { get; private set; }
     readonly Dictionary<int, PdfObject> _cache = [];
-    readonly Dictionary<int, Dictionary<int, PdfObject>> _objStmCache = [];
+    readonly Dictionary<int, ObjStmIndex> _objStmCache = [];
 
     PdfFile(byte[] data) { Data = data; }
 
@@ -114,6 +113,19 @@ public sealed class PdfFile
         return obj is PdfKeyword ? PdfNull.Instance : obj;
     }
 
+    /// <summary>Returns the dictionary of the stream object at <paramref name="offset"/> without copying its data, or null for non-stream or malformed objects.</summary>
+    PdfDictionary? PeekStreamDict(long offset, int expectNum)
+    {
+        if (offset < 0 || offset >= Data.Length) return null;
+        try
+        {
+            var lx = new PdfLexer(Data, (int)offset);
+            if (lx.ReadObject(false) is not PdfInteger n || lx.ReadObject(false) is not PdfInteger || lx.ReadObject(false) is not PdfKeyword { Value: "obj" } || n.Value != expectNum) return null;
+            return lx.ReadObject() is PdfDictionary d && lx.ReadObject() is PdfKeyword { Value: "stream" } ? d : null;
+        }
+        catch (PdfParseException) { return null; }
+    }
+
     PdfStream ReadStream(PdfDictionary d, PdfLexer lx)
     {
         var p = lx.Pos;
@@ -148,26 +160,33 @@ public sealed class PdfFile
     {
         if (!_objStmCache.TryGetValue(stmNum, out var map))
         {
-            map = [];
             if (GetObject(stmNum) is not PdfStream s) throw new PdfParseException("bad object stream");
             var data = DecodeStream(s);
             var n = (int)(Resolve(s.Dict.Get("N")).AsNumber() ?? 0);
             var first = (int)(Resolve(s.Dict.Get("First")).AsNumber() ?? 0);
             var lx = new PdfLexer(data);
-            var pairs = new List<(int, int)>();
+            map = new ObjStmIndex(data, first);
             for (var i = 0; i < n; i++)
             {
                 if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off) break;
-                pairs.Add(((int)on.Value, (int)off.Value));
-            }
-            foreach (var (on, off) in pairs)
-            {
-                var ol = new PdfLexer(data, first + off);
-                map[on] = ol.ReadObject() ?? PdfNull.Instance;
+                map.Offsets[(int)on.Value] = (int)off.Value;
             }
             _objStmCache[stmNum] = map;
         }
-        return map.GetValueOrDefault(objNum) ?? PdfNull.Instance;
+        if (map.Parsed.TryGetValue(objNum, out var hit)) return hit;
+        if (!map.Offsets.TryGetValue(objNum, out var o)) return PdfNull.Instance;
+        // Objects are parsed on demand; a malformed member only affects requests for that member.
+        var parsed = new PdfLexer(map.Data, map.First + o).ReadObject() ?? PdfNull.Instance;
+        map.Parsed[objNum] = parsed;
+        return parsed;
+    }
+
+    sealed class ObjStmIndex(byte[] data, int first)
+    {
+        public readonly byte[] Data = data;
+        public readonly int First = first;
+        public readonly Dictionary<int, int> Offsets = [];
+        public readonly Dictionary<int, PdfObject> Parsed = [];
     }
 
     public byte[] DecodeStream(PdfStream s) => DecodeStream(s, out _, out _);
@@ -200,6 +219,20 @@ public sealed class PdfFile
         }
     }
 
+    bool TryFixedXrefEntry(int p, out long offset, out int gen, out bool inUse)
+    {
+        offset = 0; gen = 0; inUse = false;
+        if (p + 19 > Data.Length || Data[p + 10] != ' ' || Data[p + 16] != ' ') return false;
+        var kind = Data[p + 17];
+        if ((kind != 'n' && kind != 'f') || Data[p + 18] is not (32 or 10 or 13)) return false;
+        long o = 0;
+        for (var k = 0; k < 10; k++) { var c = Data[p + k] - '0'; if ((uint)c > 9) return false; o = o * 10 + c; }
+        var g = 0;
+        for (var k = 11; k < 16; k++) { var c = Data[p + k] - '0'; if ((uint)c > 9) return false; g = g * 10 + c; }
+        offset = o; gen = g; inUse = kind == 'n';
+        return true;
+    }
+
     PdfDictionary ReadXrefSection(long pos)
     {
         if (pos < 0 || pos >= Data.Length) throw new PdfParseException("xref offset out of range");
@@ -216,6 +249,14 @@ public sealed class PdfFile
                 if (a is not PdfInteger start || lx.ReadObject(false) is not PdfInteger count) { lx.Pos = save; throw new PdfParseException("bad xref subsection"); }
                 for (var i = 0; i < count.Value; i++)
                 {
+                    lx.SkipWhite();
+                    if (TryFixedXrefEntry(lx.Pos, out var foff, out var fgen, out var fuse))
+                    {
+                        lx.Pos += 18;
+                        var fnum = (int)(start.Value + i);
+                        if (!Xref.ContainsKey(fnum)) Xref[fnum] = new XrefEntry(fuse, false, foff, fgen);
+                        continue;
+                    }
                     if (lx.ReadObject(false) is not PdfInteger off || lx.ReadObject(false) is not PdfInteger gen || lx.ReadObject(false) is not PdfKeyword k)
                         throw new PdfParseException("bad xref entry");
                     var num = (int)(start.Value + i);
@@ -231,6 +272,8 @@ public sealed class PdfFile
         var size = (int)xs.Dict.Get("Size").AsNumber()!.Value;
         var index = xs.Dict.Get("Index") is PdfArray ia ? ia.Items.Select(x => (int)x.AsNumber()!.Value).ToArray() : [0, size];
         var rowLen = w.Sum();
+        var woff = new int[w.Length];
+        for (var wi = 1; wi < w.Length; wi++) woff[wi] = woff[wi - 1] + w[wi - 1];
         var p = 0;
         for (var s = 0; s + 1 < index.Length; s += 2)
             for (var i = 0; i < index[s + 1]; i++, p += rowLen)
@@ -239,7 +282,7 @@ public sealed class PdfFile
                 long Field(int idx2, long def)
                 {
                     if (w[idx2] == 0) return def;
-                    var off = p + w.Take(idx2).Sum();
+                    var off = p + woff[idx2];
                     long v = 0;
                     for (var k = 0; k < w[idx2]; k++) v = (v << 8) | data[off + k];
                     return v;
@@ -258,26 +301,44 @@ public sealed class PdfFile
         return xs.Dict;
     }
 
-    /// <summary>Rebuilds the xref by scanning raw bytes for "N G obj" using a GregsEx PCRE2 byte pattern.</summary>
+    /// <summary>Rebuilds the xref by scanning raw bytes for "N G obj".</summary>
     void Repair()
     {
         Repaired = true;
         Xref.Clear(); _cache.Clear(); _objStmCache.Clear();
-        var objPat = RegexPattern.Parse(@"(?<![0-9])([0-9]{1,10})[ \t\r\n]+([0-9]{1,5})[ \t\r\n]+obj(?![a-zA-Z])", RegexProfiles.Pcre2Raw8, new RegexCompileOptions(RegexInputKind.Bytes));
-        using var ws = objPat.CreateWorkspace();
-        var caps = new RegexCapture[objPat.GroupCount];
         var at = 0;
-        ReadOnlySpan<byte> span = Data;
-        while (at < Data.Length && ws.FindCaptures(span, at, caps, out var range) == RegexSearchStatus.Match)
+        var from = 0;
+        while (from < Data.Length)
         {
-            if (!int.TryParse(Encoding.ASCII.GetString(Data, caps[1].Index, caps[1].Length), out var num)
-                || !int.TryParse(Encoding.ASCII.GetString(Data, caps[2].Index, caps[2].Length), out var gen))
+            var rel = Data.AsSpan(from).IndexOf("obj"u8);
+            if (rel < 0) break;
+            var objAt = from + rel;
+            from = objAt + 3;
+            if (objAt + 3 < Data.Length && char.IsAsciiLetter((char)Data[objAt + 3])) continue;
+            var q = objAt;
+            var wsEnd = q;
+            while (q > at && Data[q - 1] is 32 or 9 or 13 or 10) q--;
+            if (q == wsEnd) continue;
+            var genEnd = q;
+            while (q > at && char.IsAsciiDigit((char)Data[q - 1])) q--;
+            var genLen = genEnd - q;
+            if (genLen is < 1 or > 5) continue;
+            var genStart = q;
+            var ws2End = q;
+            while (q > at && Data[q - 1] is 32 or 9 or 13 or 10) q--;
+            if (q == ws2End) continue;
+            var numEnd = q;
+            while (q > at && char.IsAsciiDigit((char)Data[q - 1])) q--;
+            var numLen = numEnd - q;
+            if (numLen is < 1 or > 10 || (q > 0 && char.IsAsciiDigit((char)Data[q - 1]))) continue;
+            if (!int.TryParse(Encoding.ASCII.GetString(Data, q, numLen), out var num)
+                || !int.TryParse(Encoding.ASCII.GetString(Data, genStart, genLen), out var gen))
             {
-                at = Math.Max(range.Index + range.Length, at + 1);
+                at = objAt + 3;
                 continue;
             }
-            Xref[num] = new XrefEntry(true, false, range.Index, gen);
-            at = Math.Max(range.Index + range.Length, at + 1);
+            Xref[num] = new XrefEntry(true, false, q, gen);
+            at = objAt + 3;
         }
 
         var trailers = new List<PdfDictionary>();
@@ -294,14 +355,13 @@ public sealed class PdfFile
         // XRef streams first (they are never encrypted) so /Encrypt is known before object streams are read.
         foreach (var num in Xref.Keys.ToList())
         {
-            PdfObject o;
-            try { o = LoadAt(Xref[num].OffsetOrStream, num); } catch (PdfParseException) { continue; }
-            if (o is PdfStream { } xs && xs.Dict.Get("Type").AsName() == "XRef") foreach (var kv in xs.Dict.Entries) merged.Entries.TryAdd(kv.Key, kv.Value);
+            if (PeekStreamDict(Xref[num].OffsetOrStream, num) is { } xd && xd.Get("Type").AsName() == "XRef") foreach (var kv in xd.Entries) merged.Entries.TryAdd(kv.Key, kv.Value);
         }
         Trailer = merged;
         SetupEncryption(_password);
         foreach (var num in Xref.Keys.ToList())
         {
+            if (PeekStreamDict(Xref[num].OffsetOrStream, num)?.Get("Type").AsName() != "ObjStm") continue;
             PdfObject o;
             try { o = LoadAt(Xref[num].OffsetOrStream, num); } catch (PdfParseException) { continue; }
             if (o is not PdfStream st) continue;
