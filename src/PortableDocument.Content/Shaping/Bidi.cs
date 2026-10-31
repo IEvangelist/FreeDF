@@ -14,7 +14,9 @@ public sealed class BidiResult
     public int ParagraphLevel { get; }
     /// <summary>Resolved embedding level for every UTF-16 unit of the text (rule L1 applied, X9-removed characters take the preceding level).</summary>
     public byte[] Levels { get; }
-    internal BidiResult(int level, byte[] levels) { ParagraphLevel = level; Levels = levels; }
+    /// <summary>Characters removed by rule X9 (explicit embedding/override controls and BN); their level is only a placeholder.</summary>
+    public bool[] Removed { get; }
+    internal BidiResult(int level, byte[] levels, bool[] removed) { ParagraphLevel = level; Levels = levels; Removed = removed; }
 
     public bool IsMixed
     {
@@ -56,7 +58,40 @@ public static class Bidi
 {
     const int MaxDepth = 125;
 
+    /// <summary>Paragraph ranges (rule P1): each ends after a paragraph separator (B); CR LF counts as one separator.</summary>
+    public static List<(int Start, int Length)> SplitParagraphs(string text)
+    {
+        var list = new List<(int, int)>();
+        var start = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            var end = c == '\r' ? (i + 1 < text.Length && text[i + 1] == '\n' ? i + 2 : i + 1) : c is '\n' or '\u0085' or '\u2029' or '\u001C' or '\u001D' or '\u001E' ? i + 1 : -1;
+            if (end < 0) continue;
+            list.Add((start, end - start)); start = end; i = end - 1;
+        }
+        if (start < text.Length || list.Count == 0) list.Add((start, text.Length - start));
+        return list;
+    }
+
+    /// <summary>Resolves embedding levels. Text containing several paragraphs is resolved paragraph by paragraph (each with its own base level when <paramref name="direction"/> is Auto); <see cref="BidiResult.ParagraphLevel"/> is that of the first.</summary>
     public static BidiResult Resolve(string text, BidiDirection direction = BidiDirection.Auto)
+    {
+        var paras = SplitParagraphs(text);
+        if (paras.Count <= 1) return ResolveParagraph(text, direction);
+        var levels = new byte[text.Length]; var removed = new bool[text.Length];
+        var first = 0;
+        for (var p = 0; p < paras.Count; p++)
+        {
+            var (s, len) = paras[p];
+            var r = ResolveParagraph(text.Substring(s, len), direction);
+            if (p == 0) first = r.ParagraphLevel;
+            r.Levels.CopyTo(levels, s); r.Removed.CopyTo(removed, s);
+        }
+        return new BidiResult(first, levels, removed);
+    }
+
+    static BidiResult ResolveParagraph(string text, BidiDirection direction)
     {
         var cps = new List<int>(text.Length); var starts = new List<int>(text.Length);
         for (var i = 0; i < text.Length;)
@@ -210,13 +245,13 @@ public static class Bidi
         // X9 removed characters take the level of the previous character.
         for (var i = 0; i < n; i++)
             if (removed[i]) levels[i] = i == 0 ? (byte)paraLevel : levels[i - 1];
-        var outLevels = new byte[text.Length];
+        var outLevels = new byte[text.Length]; var outRemoved = new bool[text.Length];
         for (var i = 0; i < n; i++)
         {
-            outLevels[starts[i]] = levels[i];
-            if (cps[i] > 0xFFFF) outLevels[starts[i] + 1] = levels[i];
+            outLevels[starts[i]] = levels[i]; outRemoved[starts[i]] = removed[i];
+            if (cps[i] > 0xFFFF) { outLevels[starts[i] + 1] = levels[i]; outRemoved[starts[i] + 1] = removed[i]; }
         }
-        return new BidiResult(paraLevel, outLevels);
+        return new BidiResult(paraLevel, outLevels, outRemoved);
     }
 
     /// <summary>Rule L2 over a sequence of items with resolved levels: the logical indices in visual left-to-right order.</summary>
