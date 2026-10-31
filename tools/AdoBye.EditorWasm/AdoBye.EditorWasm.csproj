@@ -32,6 +32,13 @@
     <Content Include="..\AdoBye.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.css" Link="wwwroot\editor.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\theme.css" Link="wwwroot\theme.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\favicon.svg" Link="wwwroot\favicon.svg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\favicon-32.png" Link="wwwroot\favicon-32.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\favicon.ico" Link="wwwroot\favicon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\apple-touch-icon.png" Link="wwwroot\apple-touch-icon.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\icon-192.png" Link="wwwroot\icon-192.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\icon-512.png" Link="wwwroot\icon-512.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\site.webmanifest" Link="wwwroot\site.webmanifest" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\surface.css" Link="wwwroot\surface.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\ui.js" Link="wwwroot\ui.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.js" Link="wwwroot\editor.js" CopyToOutputDirectory="PreserveNewest" />

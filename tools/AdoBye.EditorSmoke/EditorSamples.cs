@@ -170,7 +170,8 @@ static class EditorSamples
 
         await page.UnrouteAsync("**/csharp-pdf/samples/" + Full);
         Check(network.IsEmpty, "No uploads or external requests: " + string.Join(", ", network));
-        Check(requests.All(r => r.Url.StartsWith(address + "/")), "Every request stays on the editor's origin.");
+        bool SameOrigin(string url) => url.StartsWith(address + "/") || url.StartsWith("blob:" + address + "/");
+        Check(requests.All(r => SameOrigin(r.Url)), "Every request stays on the editor's origin (same-origin blob: image URLs are local): " + string.Join(", ", requests.Where(r => !SameOrigin(r.Url)).Select(r => r.Url[..Math.Min(r.Url.Length, 80)]).Distinct()));
         Check(requests.Where(r => r.Url.Contains("/samples/")).All(r => r.Method == "GET"), "Samples are only read, never sent.");
     }
 
