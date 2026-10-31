@@ -19,6 +19,8 @@ if (args is ["--profile-text", var file, var count])
 
 if (Environment.GetEnvironmentVariable("ADOBYE_SEQ") == "1") AppContext.SetSwitch("PortableDocument.Render.DisableThreads", true);
 
+if (args is ["--codec-bench"]) { RasterBench.Codecs(); return; }
+
 if (args is ["--raster-micro"])
 {
     RasterBench.Micro();

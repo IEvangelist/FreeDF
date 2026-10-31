@@ -44,6 +44,30 @@ static class RasterBench
         return null;
     }
 
+    public static void Codecs()
+    {
+        var fx = Path.Combine(AppContext.BaseDirectory, "fixtures");
+        double Best(Action a, int n) { a(); var b = double.MaxValue; for (var i = 0; i < n; i++) { var sw = Stopwatch.StartNew(); a(); b = Math.Min(b, sw.Elapsed.TotalMilliseconds); } return b; }
+        foreach (var f in new[] { "photo.jpg", "photo-prog.jpg" })
+        {
+            var d = File.ReadAllBytes(Path.Combine(fx, f)); int w = 0, h = 0, c = 0;
+            var ms = Best(() => PortableDocument.Content.JpegDecoder.Decode(d, out w, out h, out c), 10);
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{f}\t{w}x{h}x{c}\t{ms:F1} ms\t{w * h / 1000.0 / ms:F1} Mpx/s"));
+        }
+        var repo = FindRepo()!;
+        foreach (var rel in new[] { "jbig2/annexh-p1.pdf", "ccitt/g4.pdf", "ccitt/g3-1d.pdf", "jpx/cblk-small.pdf", "jpx/cblk-style-all.pdf" })
+        {
+            var b = File.ReadAllBytes(Path.Combine(repo, "tests", "fixtures", rel));
+            var ms = Best(() => { var doc = PdfDocument.Load(b); foreach (var p in doc.Pages) DocumentRenderer.RenderPage(p, 72); }, 10);
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{rel}\tload+render72\t{ms:F2} ms"));
+        }
+        var big = new byte[8 << 20]; new Random(1).NextBytes(big);
+        for (var i = 0; i < big.Length; i++) big[i] &= 0x0F;
+        var z = PortableDocument.Core.PdfFilters.DeflateEncode(big);
+        var fl = Best(() => PortableDocument.Core.PdfFilters.Flate(z), 10);
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"flate 8MB out ({z.Length} in)\t{fl:F1} ms\t{big.Length / 1048576.0 / fl * 1000:F0} MB/s"));
+    }
+
     public static void Micro()
     {
         using var r = new PortableDocument.Render.SoftwareRasterizer(2040, 2640);
