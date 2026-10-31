@@ -16,7 +16,9 @@ the new raster hashes then establish exact sequential/threaded regressions for
 those previously absent pages. No existing hash is replaced or tolerated.
 Hierarchical and arithmetic-lossless references are spec-derived, not evidence
 of external-decoder certification. The integrated CCITT/filter/JPEG/raster
-focus passes 364 tests; this does not establish a new browser speedup.
+focus passes 364 tests; the subsequent full Release suite passes 2,540 tests,
+including the 317-page sequential/threaded golden checks. This does not
+establish a new browser speedup.
 
 Measured with `bench/AdoBye.Bench` (`--raster-bench 240 <iterations> <baseline.tsv>`; `ADOBYE_SEQ=1` forces the single-threaded paths that the browser uses),
 .NET 10 Release, one benchmark at a time under the shared validation lock. Every row's RGBA SHA-256 matched the pre-change baseline (`same`), i.e. output is bit-identical.
