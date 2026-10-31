@@ -38,14 +38,42 @@ public sealed partial class PdfEditor
 
     static PdfArray Numbers(IEnumerable<double> v) => new([.. v.Select(x => (PdfObject)new PdfReal(Math.Round(x, 4)))]);
 
+    HashSet<string>? _batchNames;
+    Dictionary<int, List<PdfObject>>? _batchItems;
+
+    sealed class AnnotationBatch(PdfEditor owner) : IDisposable
+    {
+        public void Dispose() => owner.EndAnnotationBatch();
+    }
+
+    /// <summary>Caches the used /NM set and each page's /Annots list so bulk creation is linear; the page arrays are written when the batch is disposed.</summary>
+    internal IDisposable BeginAnnotationBatch()
+    {
+        _batchNames = UsedAnnotationNames();
+        _batchItems = [];
+        return new AnnotationBatch(this);
+    }
+
+    void EndAnnotationBatch()
+    {
+        var pending = _batchItems; _batchItems = null; _batchNames = null;
+        if (pending is not null) foreach (var (page, items) in pending) if (page < PageCount) SetPageAnnotItems(page, items);
+    }
+
     List<PdfObject> PageAnnotItems(int page)
     {
         Check(page);
-        return Res(((PdfDictionary)_objs[_pages[page]]).Get("Annots")) is PdfArray arr ? [.. arr.Items] : [];
+        if (_batchItems is null) return LoadAnnotItems(page);
+        if (!_batchItems.TryGetValue(page, out var cached)) _batchItems[page] = cached = LoadAnnotItems(page);
+        return cached;
     }
+
+    List<PdfObject> LoadAnnotItems(int page) =>
+        Res(((PdfDictionary)_objs[_pages[page]]).Get("Annots")) is PdfArray arr ? [.. arr.Items] : [];
 
     void SetPageAnnotItems(int page, List<PdfObject> items)
     {
+        if (_batchItems is not null) { _batchItems[page] = items; return; }
         var pd = (PdfDictionary)_objs[_pages[page]];
         if (pd.Get("Annots") is PdfRef ar) { _objs[ar.Number] = new PdfArray(items); return; }
         var e = new Dictionary<string, PdfObject>(pd.Entries);
@@ -60,12 +88,18 @@ public sealed partial class PdfEditor
 
     string NewAnnotationName(string? wanted)
     {
-        var used = UsedAnnotationNames();
-        if (!string.IsNullOrEmpty(wanted) && !used.Contains(wanted)) return wanted;
-        var n = used.Count + 1;
-        var baseName = string.IsNullOrEmpty(wanted) ? "annot" : wanted;
-        while (used.Contains($"{baseName}-{n}")) n++;
-        return $"{baseName}-{n}";
+        var used = _batchNames ?? UsedAnnotationNames();
+        string name;
+        if (!string.IsNullOrEmpty(wanted) && !used.Contains(wanted)) name = wanted;
+        else
+        {
+            var n = used.Count + 1;
+            var baseName = string.IsNullOrEmpty(wanted) ? "annot" : wanted;
+            while (used.Contains($"{baseName}-{n}")) n++;
+            name = $"{baseName}-{n}";
+        }
+        _batchNames?.Add(name);
+        return name;
     }
 
     double[] PageBox(int page)
@@ -241,14 +275,18 @@ public sealed partial class PdfEditor
         });
     }
 
+    /// <summary>Largest file a FileAttachment annotation may embed.</summary>
+    public const int MaxAttachmentBytes = 25 * 1024 * 1024;
+
     PdfObject AddFileSpec(PdfAnnotationAttachment att)
     {
+        if (att.Data.Length > MaxAttachmentBytes) throw new ArgumentException($"Attachments are limited to {MaxAttachmentBytes / (1024 * 1024)} MB.", nameof(att));
         var data = AnnotationAppearance.Deflate(att.Data);
         var ef = AddObject(new PdfStream(new PdfDictionary(new Dictionary<string, PdfObject>
         {
             ["Type"] = new PdfName("EmbeddedFile"), ["Filter"] = new PdfName("FlateDecode"), ["Length"] = new PdfInteger(data.Length),
             ["Params"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["Size"] = new PdfInteger(att.Data.Length) }),
-            ["Subtype"] = new PdfName(att.MimeType is { Length: > 0 } mt ? mt.Replace("/", "#2F") : "application#2Foctet-stream"),
+            ["Subtype"] = new PdfName(att.MimeType is { Length: > 0 } mt ? mt : "application/octet-stream"),
         }), data));
         return new PdfDictionary(new Dictionary<string, PdfObject>
         {
@@ -332,24 +370,36 @@ public sealed partial class PdfEditor
     }
 
     /// <summary>Removes an annotation together with its popup, its replies (recursively) and their appearance objects.</summary>
-    public int DeleteAnnotation(int page, int number) => DeleteAnnotation(page, number, true);
+    public int DeleteAnnotation(int page, int number) => DeleteAnnotations(page, [number], true);
 
-    int DeleteAnnotation(int page, int number, bool dropAppearance)
+    /// <summary>Single-pass removal of several annotations (and their popups and replies) from one page.</summary>
+    int DeleteAnnotations(int page, IReadOnlyCollection<int> roots, bool dropAppearance)
     {
         Require(PdfPermissions.Annotate);
         Check(page);
         var items = PageAnnotItems(page);
-        var dicts = items.Where(i => i is PdfRef).Select(i => (Ref: (PdfRef)i, Dict: AnnotDict(i))).Where(x => x.Dict is not null).ToList();
-        if (dicts.All(x => x.Ref.Number != number)) return 0;
-        var doomed = new HashSet<int> { number };
-        for (var grew = true; grew;)
+        var present = new HashSet<int>();
+        var replies = new Dictionary<int, List<int>>();
+        foreach (var item in items)
         {
-            grew = false;
-            foreach (var (r, dict) in dicts)
-                if (!doomed.Contains(r.Number) && dict!.Get("IRT") is PdfRef irt && doomed.Contains(irt.Number)) { doomed.Add(r.Number); grew = true; }
+            if (item is not PdfRef r || AnnotDict(item) is not { } dict) continue;
+            present.Add(r.Number);
+            if (dict.Get("IRT") is PdfRef irt)
+            {
+                if (!replies.TryGetValue(irt.Number, out var l)) replies[irt.Number] = l = [];
+                l.Add(r.Number);
+            }
         }
-        foreach (var n in doomed.ToArray())
+        var doomed = new HashSet<int>();
+        var stack = new Stack<int>(roots.Where(present.Contains));
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            if (!doomed.Add(n)) continue;
             if (_objs.GetValueOrDefault(n) is PdfDictionary dd && dd.Get("Popup") is PdfRef pu) doomed.Add(pu.Number);
+            if (replies.TryGetValue(n, out var kids)) foreach (var k in kids) stack.Push(k);
+        }
+        if (doomed.Count == 0) return 0;
         foreach (var n in doomed)
         {
             if (dropAppearance && _objs.GetValueOrDefault(n) is PdfDictionary dd) DeleteAppearanceObjects(dd);
@@ -504,7 +554,7 @@ public sealed partial class PdfEditor
         newContents.Add(Stream(content.ToString()));
         var pe = new Dictionary<string, PdfObject>(pd.Entries) { ["Resources"] = new PdfDictionary(resources), ["Contents"] = new PdfArray(newContents) };
         _objs[pageNumber] = new PdfDictionary(pe);
-        foreach (var (info, _, _, _) in flat) DeleteAnnotation(page, info.Number, false);
+        DeleteAnnotations(page, flat.Select(f => f.Info.Number).ToList(), false);
         return flat.Count;
     }
 

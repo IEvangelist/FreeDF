@@ -239,6 +239,41 @@ public class AnnotationAuthoringTests
     }
 
     [Fact]
+    public void AttachmentMimeTypeSurvivesSaveAndOversizeIsRejected()
+    {
+        var (e, _) = Add(new() { Subtype = "FileAttachment", Rect = [150, 10, 170, 30], Attachment = new("a.txt", "hello"u8.ToArray(), "text/plain") });
+        e.AddAnnotation(0, new() { Subtype = "FileAttachment", Rect = [100, 10, 120, 30], Attachment = new("b.bin", [1, 2, 3]) }, Now);
+        var doc = PdfDocument.Load(e.Save());
+        var f = doc.File;
+        var types = ((PdfArray)f.Resolve(doc.Pages[0].Dict.Get("Annots"))!).Items.Select(f.Resolve).OfType<PdfDictionary>()
+            .Where(d => f.Resolve(d.Get("Subtype")).AsName() == "FileAttachment")
+            .Select(d => f.Resolve(((PdfDictionary)f.Resolve(((PdfDictionary)f.Resolve(d.Get("FS"))!).Get("EF"))!).Get("F")) as PdfStream)
+            .Select(s => f.Resolve(s!.Dict.Get("Subtype")).AsName()).ToList();
+        Assert.Contains("text/plain", types);
+        Assert.Contains("application/octet-stream", types);
+        Assert.Throws<ArgumentException>(() => TextPage().AddAnnotation(0, new() { Subtype = "FileAttachment", Rect = [1, 1, 21, 21],
+            Attachment = new("big.bin", new byte[PdfEditor.MaxAttachmentBytes + 1]) }, Now));
+    }
+
+    [Fact]
+    public void LargeXfdfImportAndFlattenAreLinear()
+    {
+        const int count = 20000;
+        var sb = new System.Text.StringBuilder("<xfdf xmlns=\"http://ns.adobe.com/xfdf/\"><annots>");
+        for (var i = 0; i < count; i++) sb.Append($"<square page=\"0\" name=\"n{i % 5000}\" rect=\"{i % 150},{i % 150},{i % 150 + 10},{i % 150 + 10}\"/>");
+        sb.Append("</annots></xfdf>");
+        var e = TextPage();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Equal(count, PdfXfdf.Import(e, sb.ToString(), now: Now));
+        var list = e.ListAnnotations(0);
+        Assert.Equal(count, list.Count);
+        Assert.Equal(count, list.Select(i => i.Spec.Name).Distinct().Count());
+        Assert.Equal(count, e.FlattenAnnotations(0));
+        Assert.Empty(e.ListAnnotations(0));
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(60), $"took {sw.Elapsed}");
+    }
+
+    [Fact]
     public void ReplaceTextCreatesStrikeOutAndGroupedCaret()
     {
         var e = TextPage();
