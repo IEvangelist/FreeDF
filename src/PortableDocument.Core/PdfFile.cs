@@ -164,11 +164,16 @@ public sealed class PdfFile
             var data = DecodeStream(s);
             var n = (int)(Resolve(s.Dict.Get("N")).AsNumber() ?? 0);
             var first = (int)(Resolve(s.Dict.Get("First")).AsNumber() ?? 0);
+            if (n < 0 || first < 0 || first > data.Length || n > first / 4)
+                throw new PdfParseException("bad object stream header");
             var lx = new PdfLexer(data);
             map = new ObjStmIndex(data, first);
             for (var i = 0; i < n; i++)
             {
-                if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off) break;
+                if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off ||
+                    lx.Pos > first || on.Value < 0 || on.Value > int.MaxValue ||
+                    off.Value < 0 || off.Value >= data.Length - first)
+                    throw new PdfParseException("bad object stream member offset");
                 map.Offsets[(int)on.Value] = (int)off.Value;
             }
             _objStmCache[stmNum] = map;
@@ -247,7 +252,8 @@ public sealed class PdfFile
                 var a = lx.ReadObject(false);
                 if (a is PdfKeyword { Value: "trailer" }) break;
                 if (a is not PdfInteger start || lx.ReadObject(false) is not PdfInteger count) { lx.Pos = save; throw new PdfParseException("bad xref subsection"); }
-                if (count.Value is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + (int)count.Value);
+                if (count.Value is > 0 and < 8_000_000)
+                    Xref.EnsureCapacity(Xref.Count + (int)Math.Min(count.Value, (Data.Length - lx.Pos) / 6));
                 for (var i = 0; i < count.Value; i++)
                 {
                     lx.SkipWhite();
