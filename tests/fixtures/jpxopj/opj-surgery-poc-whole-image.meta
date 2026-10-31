@@ -2,14 +2,15 @@
  "tolerance": 0,
  "components": 3,
  "commands": [
-  "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -n 3 -r 6,2,1 -PLT",
+  "opj_compress -i <tmp>/in.raw -F 64,48,3,8,u -o <tmp>/case.j2k -n 3 -r 6,2,1 -PLT",
   "marker surgery: add_poc",
-  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+  "opj_decompress -i <tmp>/case.j2k -o <tmp>/ref.pgx"
  ],
  "depth": 8,
  "signed": false,
  "lossless": false,
  "expect": "decode",
+ "exemptColumnsX": [],
  "opjEqualsEncoderInput": true,
  "reference": "opj_decompress"
 }

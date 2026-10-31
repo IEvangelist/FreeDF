@@ -4,7 +4,7 @@ Every codestream is produced by `opj_compress` (OpenJPEG 2.5.4 official Windows 
 samples, or by marker surgery on such a codestream (COC/QCC/CRG/derived quantization/guard bits/PPM/PPT/POC; the
 surgery helpers are shared with make_jpx_fixtures.py). Reference samples are ALWAYS produced by `opj_decompress`
 (PGX, one file per component at native bit depth, signed data kept signed) -- never by this repository's decoder.
-Lossless cases are additionally checked here against the encoder input.
+Irreversible (9/7) tolerances are the measured maximum difference to opj_decompress (1; 2 for 16-bit) - see JPX_REPORT_MAX in JpxOpjMatrixTests. Lossless cases are additionally checked here against the encoder input.
 
 Per case writes:  name.j2k  name.cN.pgx (reference planes)  name.meta (JSON: tolerance, command lines)
 Plus manifest.json: OpenJPEG version, binary SHA-256, every command line, and out-of-scope notes.
@@ -32,7 +32,13 @@ OPJ_DIR = os.environ.get("OPJ_DIR") or os.path.dirname(shutil.which("opj_compres
 EXE = ".exe" if os.name == "nt" else ""
 COMPRESS = os.path.join(OPJ_DIR, "opj_compress" + EXE)
 DECOMPRESS = os.path.join(OPJ_DIR, "opj_decompress" + EXE)
-manifest = {"cases": {}, "outOfScope": {}, "skipped": {}}
+manifest = {"cases": {}, "outOfScope": {}}
+
+
+def portable(cmd, tmp):
+    """Command line without platform-specific executable suffix or temp directory."""
+    parts = [os.path.splitext(os.path.basename(cmd[0]))[0]] + [c.replace(tmp, "<tmp>").replace("\\", "/") for c in cmd[1:]]
+    return " ".join(parts)
 
 
 def run(cmd):
@@ -105,8 +111,12 @@ def decode_ref(codestream, tmp, nc):
 def store(name, codestream_bytes, comps, tol, extra):
     with open(os.path.join(OUT, name + ".j2k"), "wb") as f:
         f.write(codestream_bytes)
-    for i, (arr, prec, signed, tmpfile) in enumerate(comps):
-        shutil.copy(os.path.join(extra["_tmp"], tmpfile), os.path.join(OUT, f"{name}.c{i}.pgx"))
+    # one packed reference file per case: u32 count, then per component u32 length + PGX bytes
+    with open(os.path.join(OUT, name + ".ref"), "wb") as f:
+        f.write(struct.pack(">I", len(comps)))
+        for arr, prec, signed, tmpfile in comps:
+            pgx = open(os.path.join(extra["_tmp"], tmpfile), "rb").read()
+            f.write(struct.pack(">I", len(pgx)) + pgx)
     meta = {"tolerance": tol, "components": len(comps), **{k: v for k, v in extra.items() if not k.startswith("_")}}
     json.dump(meta, open(os.path.join(OUT, name + ".meta"), "w"), indent=1)
     manifest["cases"][name] = meta
@@ -114,7 +124,7 @@ def store(name, codestream_bytes, comps, tol, extra):
 
 
 def encode_case(name, w, h, nc=3, depth=8, signed=False, subs=None, args=(), tol=0, lossless=True, seed=1, surgery=None, note=None,
-                expect="decode"):
+                expect="decode", exempt_x=None):
     subs = subs or [(1, 1)] * nc
     planes = source_planes(w, h, nc, depth, signed, subs, seed)
     with tempfile.TemporaryDirectory() as tmp:
@@ -126,26 +136,20 @@ def encode_case(name, w, h, nc=3, depth=8, signed=False, subs=None, args=(), tol
         enc = [COMPRESS, "-i", raw, "-F", fmt, "-o", j2k, *args]
         rc, log = run(enc)
         if rc != 0 or not os.path.exists(j2k):
-            manifest["skipped"][name] = "opj_compress failed: " + log.strip().splitlines()[-1][:160] if log.strip() else "opj_compress failed"
-            print("SKIP", name, manifest["skipped"][name])
-            return None
+            raise RuntimeError(f"{name}: opj_compress failed: {log.strip()[-200:]}")
         data = open(j2k, "rb").read()
-        cmds = [" ".join(os.path.basename(c) if i == 0 else c for i, c in enumerate(enc)).replace(tmp, "<tmp>")]
+        cmds = [portable(enc, tmp)]
         if surgery:
             try:
                 data = surgery(data)
             except (ValueError, AssertionError, IndexError) as e:
-                manifest["skipped"][name] = f"marker surgery {surgery.__name__} not applicable: {e}"
-                print("SKIP", name, manifest["skipped"][name])
-                return None
+                raise RuntimeError(f"{name}: marker surgery {surgery.__name__} not applicable: {e}")
             cmds.append("marker surgery: " + surgery.__name__)
             open(j2k, "wb").write(data)
         ref, dec, log = decode_ref(j2k, tmp, nc)
         if ref is None:
-            manifest["skipped"][name] = "opj_decompress failed: " + log.strip()[-160:]
-            print("SKIP", name, manifest["skipped"][name])
-            return None
-        cmds.append(" ".join(os.path.basename(c) if i == 0 else c for i, c in enumerate(dec)).replace(tmp, "<tmp>"))
+            raise RuntimeError(f"{name}: opj_decompress failed: {log.strip()[-200:]}")
+        cmds.append(portable(dec, tmp))
         if lossless:
             if len(ref) != nc:
                 raise ValueError(f"{name}: expected {nc} output channels, got {len(ref)}")
@@ -155,7 +159,7 @@ def encode_case(name, w, h, nc=3, depth=8, signed=False, subs=None, args=(), tol
                         note = (note or "") + " Input-equality not asserted: OpenJPEG decoded plane dims/values differ from the generator model for subsampled raw input; the reference is opj_decompress output."
                         break
                     raise ValueError(f"{name}: OpenJPEG lossless round trip differs on component {i} (input assumptions wrong)")
-        extra = {"_tmp": tmp, "commands": cmds, "depth": depth, "signed": signed, "lossless": lossless, "expect": expect,
+        extra = {"_tmp": tmp, "commands": cmds, "depth": depth, "signed": signed, "lossless": lossless, "expect": expect, "exemptColumnsX": exempt_x or [],
                  "opjEqualsEncoderInput": bool(len(ref) == nc and all(a.shape == p.shape and np.array_equal(a, p) for (a, _, _, _), p in zip(ref, planes)))}
         extra["reference"] = "opj_decompress"
         if note:
@@ -266,21 +270,21 @@ def main():
             if irrev:
                 args += ["-I"]
             encode_case(f"opj-{prog.lower()}-{'97' if irrev else '53'}-prec-tiles-offsets-layers", 70, 50, args=args,
-                        tol=2 if irrev else 0, lossless=False)
+                        tol=1 if irrev else 0, lossless=False)
     # lossless layered with varying precinct sizes per resolution, odd tile grid
     for prog in ("LRCP", "RLCP", "RPCL", "PCRL", "CPRL"):
         encode_case(f"opj-{prog.lower()}-lossless-precincts", 67, 45,
                     args=["-p", prog, "-n", "5", "-c", "[64,64],[32,16],[16,32],[8,8]", "-t", "34,30", "-r", "20,5,1"], lossless=False)
 
     # degenerate geometry: a 1-pixel-wide tile column (67 = 33 + 33 + 1) with 5 decomposition levels. OpenJPEG 2.5.4 does
-    # not even reproduce its own lossless input there, OpenJPEG output is the reference with tolerance 2 (single-sample odd-parity rounding differs).
-    encode_case("opj-degenerate-1px-tile-column", 67, 45, args=["-n", "5", "-t", "33,29"], tol=2, lossless=False,
-                note="Degenerate geometry: OpenJPEG 2.5.4 does not reproduce its own lossless input at x=66 (opjEqualsEncoderInput=false); both decoders agree within 2 there, so the tolerance is 2 and the reference is still opj_decompress")
+    # not even reproduce its own lossless input there, the x=66 column is exempt from comparison and all other samples are exact.
+    encode_case("opj-degenerate-1px-tile-column", 67, 45, args=["-n", "5", "-t", "33,29"], tol=0, exempt_x=[66], lossless=False,
+                note="Degenerate geometry: OpenJPEG 2.5.4 does not reproduce its own lossless input at x=66 (opjEqualsEncoderInput=false); the 1-pixel tile column (exemptColumnsX) is excluded from the comparison; every other sample must match opj_decompress exactly")
 
     # code-block styles (-M bit mask: 1 bypass, 2 reset, 4 termall, 8 vcausal, 16 pterm, 32 segsym)
     for mode in (1, 2, 4, 8, 16, 32, 3, 5, 9, 17, 33, 6, 12, 38, 13, 21, 63):
         encode_case(f"opj-cblk-style-{mode}", 64, 48, nc=1, args=["-M", str(mode), "-n", "4"], seed=mode)
-        encode_case(f"opj-cblk-style-{mode}-lossy97-layers", 64, 48, nc=3, args=["-M", str(mode), "-I", "-r", "10,4,1", "-n", "4"], tol=2, lossless=False, seed=mode + 100)
+        encode_case(f"opj-cblk-style-{mode}-lossy97-layers", 64, 48, nc=3, args=["-M", str(mode), "-I", "-r", "10,4,1", "-n", "4"], tol=1, lossless=False, seed=mode + 100)
     for cb in ("4,64", "64,4", "8,32", "16,16", "32,128", "128,32"):
         encode_case(f"opj-cblk-size-{cb.replace(',', 'x')}", 64, 48, nc=1, args=["-b", cb] if cb in ("4,64", "64,4", "8,32", "16,16") else ["-b", "32,32"])
 
@@ -292,14 +296,14 @@ def main():
         encode_case(f"opj-tileparts-{tp}-rpcl-sop-eph", 70, 50, args=["-t", "40,32", "-n", "4", "-p", "RPCL", "-TP", tp, "-SOP", "-EPH"])
     # POC written by opj_compress
     encode_case("opj-poc-two-ranges", 64, 48, args=["-n", "4", "-POC", "T0=0,0,1,2,3,RLCP/T0=2,0,1,4,3,CPRL"])
-    encode_case("opj-poc-tiled", 70, 50, args=["-n", "4", "-t", "40,32", "-POC", "T0=0,0,1,2,3,RLCP/T0=2,0,1,4,3,CPRL/T1=0,0,1,4,3,LRCP"], lossless=False, expect="reject",
-                note="opj_compress keeps only the first tile POC (res 0-2 of 4): the stream omits packets. OpenJPEG decodes it leniently; this decoder rejects POC ranges that do not cover every packet (T.800 B.12.2)")
+    encode_case("opj-poc-tiled", 70, 50, args=["-n", "4", "-t", "40,32", "-POC", "T0=0,0,1,2,3,RLCP/T0=2,0,1,4,3,CPRL/T1=0,0,1,4,3,LRCP"], lossless=False, expect="reject-policy",
+                note="opj_compress keeps only the first tile POC (res 0-2 of 4): the stream omits packets. OpenJPEG decodes it leniently, so this is NOT an OpenJPEG-validated expectation: this decoder deliberately rejects POC ranges that leave packets uncovered (policy, no normative sentence is cited; tests/fixtures/jpx poc-malformed-* depend on it)")
     # ROI (max-shift upshift of a component via RGN)
     for up in (3, 9, 20):
         encode_case(f"opj-roi-c1-u{up}", 64, 48, args=["-ROI", f"c=1,U={up}", "-n", "4"])
     # transforms and MCT
-    encode_case("opj-97-mct", 70, 50, args=["-I", "-r", "12"], tol=2, lossless=False)
-    encode_case("opj-97-nomct-3comp", 70, 50, args=["-I", "-mct", "0", "-r", "12"], tol=2, lossless=False)
+    encode_case("opj-97-mct", 70, 50, args=["-I", "-r", "12"], tol=1, lossless=False)
+    encode_case("opj-97-nomct-3comp", 70, 50, args=["-I", "-mct", "0", "-r", "12"], tol=1, lossless=False)
     encode_case("opj-53-nomct", 70, 50, args=["-mct", "0"])
     encode_case("opj-53-rct", 70, 50, args=["-mct", "1"])
     # comments, offsets without tiles
@@ -317,7 +321,7 @@ def main():
     for depth in (10, 12, 16):
         for signed in (False, True):
             encode_case(f"opj-depth{depth}{'s' if signed else 'u'}-97", 40, 24, nc=1, depth=depth, signed=signed, args=["-I", "-r", "6", "-n", "4"],
-                        tol=max(2, 1 << (depth - 8)), lossless=False, seed=depth)
+                        tol=2 if depth == 16 else 1, lossless=False, seed=depth)
     encode_case("opj-depth12s-rgb-rct", 40, 24, nc=3, depth=12, signed=True, args=["-mct", "1", "-n", "4"])
     manifest["outOfScope"]["depth>16"] = "opj_compress RAW input is limited to 16 bits per sample; a >16-bit PGX writer would be needed (no OpenJPEG-produced >16-bit codestream is available here), so >16-bit handling is covered only by hand-built codestreams in JpxConformanceTests."
 
@@ -337,19 +341,18 @@ def main():
 
     # marker surgery on OpenJPEG codestreams; references again from opj_decompress
     encode_case("opj-surgery-coc-qcc-identity", 64, 48, args=["-n", "4"], surgery=add_coc_qcc_identity, note="COC/QCC repeat COD/QCD for every component")
-    encode_case("opj-surgery-coc-qcc-identity-97", 64, 48, args=["-I", "-r", "10"], surgery=add_coc_qcc_identity, tol=2, lossless=False)
+    encode_case("opj-surgery-coc-qcc-identity-97", 64, 48, args=["-I", "-r", "10"], surgery=add_coc_qcc_identity, tol=1, lossless=False)
     encode_case("opj-surgery-coc-qcc-identity-300comps", 8, 6, nc=300, args=["-mct", "0", "-n", "2"], surgery=add_coc_qcc_identity)
     encode_case("opj-surgery-crg", 64, 48, nc=4, subs=[(1, 1), (2, 2), (2, 2), (1, 1)], args=["-mct", "0", "-n", "3"], surgery=add_crg)
-    encode_case("opj-surgery-derived-quant", 64, 48, args=["-I", "-r", "10", "-n", "3"], surgery=derived_quant, tol=2, lossless=False,
+    encode_case("opj-surgery-derived-quant", 64, 48, args=["-I", "-r", "10", "-n", "3"], surgery=derived_quant, tol=1, lossless=False,
                 note="syntactically valid scalar-derived QCD over a stream coded with expounded steps (step sizes and Mb change); output is whatever OpenJPEG decodes")
     for d in (1, -1):
         encode_case(f"opj-surgery-guard-bits{d:+d}", 64, 48, args=["-n", "3"], surgery=guard_bits(d), lossless=False,
                     note="guard-bit field rewritten after encoding (changes Mb); output is whatever OpenJPEG decodes")
-    encode_case("opj-surgery-ppm", 8, 8, nc=3, args=["-n", "1", "-mct", "0"], surgery=packed(0xFF60, "ppm"), lossless=False)
-    encode_case("opj-surgery-ppt", 8, 8, nc=3, args=["-n", "1", "-mct", "0"], surgery=packed(0xFF61, "ppt"), lossless=False)
     encode_case("opj-surgery-poc-whole-image", 64, 48, args=["-n", "3", "-r", "6,2,1", "-PLT"], surgery=poc_whole(3, 3, 3), lossless=False)
 
     manifest["outOfScope"].update({
+        "PPM/PPT single-tile via surgery": "make_jpx_fixtures.pack_packet_headers only handles one-code-block packets, so opj_compress streams cannot be repackaged.",
         "PLM": "no OpenJPEG encoder option; decoders ignore it. Covered by tests/fixtures/jpx (see make_jpx_fixtures.py).",
         "PPM/PPT multi-tile/multi-part": "covered by tests/fixtures/jpx fixtures (decoded by OpenJPEG through Pillow); only the single-tile forms are regenerated here.",
         "fewer layers/resolutions decode": "the decoder API always decodes every layer/resolution (PDF requires it); opj_decompress -l/-r references would have no counterpart.",
@@ -357,7 +360,7 @@ def main():
         "scalar-derived/guard-bits as encoder output": "opj_compress always writes none (5/3) or expounded (9/7) with 2 guard bits; the derived/guard variants are marker surgery whose pixels are still decoded by opj_decompress.",
     })
     json.dump(manifest, open(os.path.join(OUT, "manifest.json"), "w"), indent=1)
-    print("skipped:", json.dumps(manifest["skipped"], indent=1))
+    
 
 
 if __name__ == "__main__":

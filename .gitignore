@@ -11,3 +11,5 @@ samples/_gen/cmp/
 samples/_gen/__pycache__/
 tools/__pycache__/
 samples/27-full-collection.pdf
+__pycache__/
+*.pyc
