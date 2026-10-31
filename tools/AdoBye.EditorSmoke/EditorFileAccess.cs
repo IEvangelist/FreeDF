@@ -401,6 +401,13 @@ static class EditorFileAccess
             await page.WaitForFunctionAsync("document.querySelector('#fpb b')?.textContent === 'Source Code Pro'");
             await Durable();
             Check(await page.EvaluateAsync<string>(RecordFonts) == "[\"Source Code Pro\"]", "The recovery record lists the local font in use.");
+            await page.AddInitScriptAsync("""
+                { let loader;
+                  Object.defineProperty(window, '__editorImport', { configurable: true, get: () => loader,
+                    set: value => { loader = name => name === 'localfonts.js' && sessionStorage.getItem('fa-missing-font-module') === '1'
+                      ? Promise.reject(new TypeError('localfonts.js is unavailable (injected)')) : value(name); } }); }
+                """);
+            await page.EvaluateAsync("sessionStorage.setItem('fa-missing-font-module', '1')");
             await page.RouteAsync("**/localfonts.js", route => route.AbortAsync());
             await ReloadAndResume();
             await reload.WaitForAsync();
@@ -409,6 +416,7 @@ static class EditorFileAccess
             await reload.GetByRole(AriaRole.Button, new() { Name = "Use Helvetica instead" }).ClickAsync();
             await reload.WaitForAsync(new() { State = WaitForSelectorState.Detached });
             await page.UnrouteAsync("**/localfonts.js");
+            await page.EvaluateAsync("sessionStorage.removeItem('fa-missing-font-module')");
             await Durable();
             Check(await page.EvaluateAsync<string>(RecordFonts) == "[]", "No font names remain after the switch.");
             await Menu(page, "New");
