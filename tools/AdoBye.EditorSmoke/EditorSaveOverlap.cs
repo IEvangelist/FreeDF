@@ -87,16 +87,20 @@ static class EditorSaveOverlap
                       };
                       for (const type of ['pointermove','pointerdown','pointerup','click'])
                         addEventListener(type, state.onInput, true);
-                      const originalImage = pdfHost.image.bind(pdfHost);
-                      state.image = pdfHost.image;
-                      pdfHost.image = async url => {
-                        const result = await originalImage(url);
-                        if (url.includes('/api/page/') && !state.released) {
-                          if (url.includes('bare=')) state.ready = true;
-                          await state.gate;
-                        }
-                        return result;
-                      };
+                      state.images = {};
+                      for (const method of ['image', 'imageBlob']) {
+                        if (!pdfHost[method]) continue;
+                        const originalImage = pdfHost[method].bind(pdfHost);
+                        state.images[method] = pdfHost[method];
+                        pdfHost[method] = async url => {
+                          const result = await originalImage(url);
+                          if (url.includes('/api/page/') && !state.released) {
+                            if (url.includes('bare=')) state.ready = true;
+                            await state.gate;
+                          }
+                          return result;
+                        };
+                      }
                     }
                     """);
                 await page.Locator("#layer .span").First.ClickAsync(new() { Force = true });
@@ -122,7 +126,8 @@ static class EditorSaveOverlap
                 var result = await page.EvaluateAsync<JsonElement>("""
                     overlap => {
                       const s = saveOverlap;
-                      s.watching = false; s.observe.disconnect(); pdfHost.image = s.image;
+                      s.watching = false; s.observe.disconnect();
+                      for (const [method, image] of Object.entries(s.images)) pdfHost[method] = image;
                       for (const type of ['pointermove','pointerdown','pointerup','click'])
                         removeEventListener(type, s.onInput, true);
                       return {...overlap, blank:s.blank, events:s.events,

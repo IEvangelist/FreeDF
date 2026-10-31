@@ -88,14 +88,16 @@ static class EditorPageImage
             {
                 await page.EvaluateAsync("""
                     () => {
-                      const original=window.pdfHost.image.bind(window.pdfHost);
+                      const method=window.pdfHost.imageBlob?'imageBlob':'image';
+                      window.__pageImageMethod=method;
+                      const original=window.pdfHost[method].bind(window.pdfHost);
                       let failed=false,calls=0;
                       window.__originalPageImage=original;
                       window.__imageRetryState=()=>({failed,calls});
-                      window.pdfHost.image=async url=>{
+                      window.pdfHost[method]=async url=>{
                         if(url.includes('/api/page/')) {
                           calls++;
-                          if(!failed) { failed=true; return 'data:image/png;base64,AA=='; }
+                          if(!failed) { failed=true; return method==='imageBlob'?new Blob([new Uint8Array([0])],{type:'image/png'}):'data:image/png;base64,AA=='; }
                         }
                         return original(url);
                       };
@@ -120,8 +122,9 @@ static class EditorPageImage
                 await page.EvaluateAsync("""
                     () => {
                       const original=window.__originalPageImage;
-                      window.pdfHost.image=async url=>url.includes('/api/page/')
-                        ? 'data:image/png;base64,AA=='
+                      const method=window.__pageImageMethod;
+                      window.pdfHost[method]=async url=>url.includes('/api/page/')
+                        ? method==='imageBlob'?new Blob([new Uint8Array([0])],{type:'image/png'}):'data:image/png;base64,AA=='
                         : original(url);
                     }
                     """);
@@ -133,7 +136,7 @@ static class EditorPageImage
                     throw new Exception($"Exhausted image retries were not shown to the user: {failureStatus}");
                 records.Add(new { type = "exhausted-image-retry", message = failureStatus });
 
-                await page.EvaluateAsync("() => { window.pdfHost.image=window.__originalPageImage; }");
+                await page.EvaluateAsync("() => { window.pdfHost[window.__pageImageMethod]=window.__originalPageImage; }");
                 await page.Locator("#zo").ClickAsync();
                 await AssertPage("image-recovers-after-render-error", waitForTarget: true);
             }

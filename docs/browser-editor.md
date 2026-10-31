@@ -368,13 +368,32 @@ next-page navigation improved from 115.5/116.6, 116.2/116.8 and 115.5/116.4 ms
 (p50/p95) to 98.0/98.2, 97.8/98.8 and 98.3/98.3 ms. These are local,
 three-sample results; first-open showcase and startup remain open work.
 
-### Binary file uploads
+### Binary editor transport
 
-PDF/image `Blob` request bodies travel from the UI worker as a `Uint8Array` via
-the `RequestBinary` JS export instead of base64-expanded JSON. The runtime still
-copies the bytes into one managed array; this is not zero-copy. Ordinary JSON
-commands and response payloads retain their existing transport. The trimmed
-JSON smoke verifies the actual worker route and exact uploaded byte count.
+The additive `RequestBytes(method, path, queryJson, bodyText, exchange, fileName)`
+JS export accepts raw JSON text or `exchange.bytes` for PDF/image uploads. It
+returns a `Uint8Array`; `exchange` receives `contentType`, `fileName`, optional
+JSON `performance`, or a logged JSON `error`. The worker transfers the response
+buffer to the UI rather than serializing/base64-encoding the payload. The runtime
+still copies bytes across managed/JavaScript memory; this is not zero-copy.
+The older `Request`/`RequestBinary` exports remain compatible.
+
+`imageBlob(url)` shares concurrent versioned page requests and caches up to
+8 MiB of compressed image bytes. `image(url)` retains its data-URL contract for
+assets, printing, thumbnails and older clients. Main-page replacements decode
+temporary Blob URLs, retain the previous visible image until the replacement is
+decoded and presentation is permitted, and revoke each temporary URL afterwards.
+Retry/error injection and Save-overlap checks exercise this same Blob path.
+
+The combined `/api/page/{i}/selection` response preserves the legacy text/object
+endpoint shapes, caches serialized metadata until a document mutation, and avoids
+shared-Form content scans when a page has no Form children. The UI presents the
+first preview before requesting metadata, but remains inert until editable
+metadata is ready. Its eight-page metadata cache and field cache are invalidated
+on mutations; failed requests can be retried. Neighbor prefetch includes metadata
+only while its page/version/input epoch remains current. Discrete zoom buttons
+request exact refinement without the continuous-wheel 180-ms debounce; final
+resolution, stale-response guards and Save presentation barriers are unchanged.
 
 ### Input responsiveness during fresh PDF work
 

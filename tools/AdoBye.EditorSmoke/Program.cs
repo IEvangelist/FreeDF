@@ -95,6 +95,7 @@ try
     };
     page.Request += (_, request) =>
     {
+        if (request.Method == "GET" && request.Url.StartsWith("blob:" + address + "/", StringComparison.Ordinal)) return;
         if (!request.Url.StartsWith(address + "/csharp-pdf/", StringComparison.Ordinal) || request.Method != "GET" || new Uri(request.Url).AbsolutePath.Contains("/api/"))
             network.Enqueue(request.Method + " " + request.Url);
     };
@@ -195,7 +196,7 @@ try
     await EditorHeader.State(page, true);
     await page.Locator("#prev").ClickAsync();
     await page.WaitForFunctionAsync("document.getElementById('prev').classList.contains('on') && document.getElementById('base').dataset.url.includes('bare=false') && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url && document.getElementById('base').naturalWidth > 0");
-    Check(await page.EvaluateAsync<bool>("document.getElementById('base').src.startsWith('data:image/png;base64,')"), "Local rendered preview");
+    Check(await page.EvaluateAsync<bool>("['data:image/png;base64,', 'blob:'].some(prefix => document.getElementById('base').src.startsWith(prefix))"), "Local rendered preview");
     Check(await page.EvaluateAsync<bool>("""
         () => {
           const img = document.getElementById('base'), canvas = document.createElement('canvas');
@@ -278,11 +279,14 @@ try
     await page.EvaluateAsync("""
         () => {
           window.saveRenders = [];
-          const image = window.pdfHost.image.bind(window.pdfHost);
-          window.pdfHost.image = url => {
-            if (/\/api\/page\/.*\.png/.test(url)) window.saveRenders.push({url, stack:new Error().stack});
-            return image(url);
-          };
+          for (const method of ['image', 'imageBlob']) {
+            if (!window.pdfHost[method]) continue;
+            const image = window.pdfHost[method].bind(window.pdfHost);
+            window.pdfHost[method] = url => {
+              if (/\/api\/page\/.*\.png/.test(url)) window.saveRenders.push({url, stack:new Error().stack});
+              return image(url);
+            };
+          }
         }
         """);
     var savedAgain = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
@@ -315,7 +319,18 @@ try
     await page.Locator(".thumb").First.ClickAsync();
     await page.EvaluateAsync("async () => { await window.renderProbe; }");
     await page.WaitForFunctionAsync("!document.getElementById('view').inert && document.getElementById('pn').value === '1' && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url");
-    Check(await page.EvaluateAsync<bool>("async () => { const img = document.getElementById('base'); return img.src === await pdfHost.image(img.dataset.url); }"),
+    Check(await page.EvaluateAsync<bool>("""
+        async () => {
+          const img = document.getElementById('base'), expected = new Image();
+          expected.src = await pdfHost.image(img.dataset.url); await expected.decode();
+          const pixels = image => {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+            canvas.getContext('2d').drawImage(image, 0, 0); return canvas.toDataURL();
+          };
+          return pixels(img) === pixels(expected);
+        }
+        """),
         "Queued obsolete zoom/navigation renders cannot replace the final selected page");
     await EditorRecovery.Run(page);
     Check(errors.All(ExpectedRecoveryError), "No unexpected browser errors during recovery: " + string.Join("\n", errors));
