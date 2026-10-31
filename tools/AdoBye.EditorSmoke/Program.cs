@@ -51,7 +51,8 @@ var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
 var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history] <published-wwwroot>");
+var objectBreadthOnly = args.Length == 2 && args[0] == "--object-breadth";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly && !objectBreadthOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history|--object-breadth] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -149,6 +150,12 @@ try
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
     Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
+    if (objectBreadthOnly)
+    {
+        await EditorObjectBreadth.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound traffic or browser errors during object editing.");
+        return;
+    }
     if (pageHistoryOnly)
     {
         await EditorPageHistory.Run(page, address + "/csharp-pdf/");

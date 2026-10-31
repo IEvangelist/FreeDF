@@ -705,7 +705,7 @@ function setEdit(o, [x0, y0, x1, y1]) {
 let objectSave = Promise.resolve();
 const objectSaveErrors = new Map();
 function saveObj(o) {
-  const e = o.edit; const empty = !e || (!e.delete && e.sx === 1 && e.sy === 1 && e.tx === 0 && e.ty === 0 && !e.fill && !e.stroke);
+  const e = o.edit; const empty = !e || (!e.delete && e.sx === 1 && e.sy === 1 && e.tx === 0 && e.ty === 0 && !e.fill && !e.stroke && !e.rot && !e.skx && e.width == null && !e.dash && !e.z);
   if (empty) o.edit = null;
   const page = sel, url = `/api/page/${page}/objects/${o.index}`, body = JSON.stringify(o.edit ?? null);
   objectSave = objectSave.then(async () => {
@@ -757,6 +757,9 @@ function objProps() {
     ${o.formContentsShared ? '<section><p class="hint">This form is shared, repeated, or cannot be proven unique, so individual painted objects are not editable here; transform the group instead.</p></section>' : ''}
     <section><h3>Position</h3><div class="row">${num('x', 'X', b[0])}${num('y', 'Y', b[1])}</div><div class="row">${num('w', 'Width', b[2] - b[0])}${num('h', 'Height', b[3] - b[1])}</div></section>
     ${o.kind === 'path' && (o.hasFill || o.hasStroke) ? `<section><h3>Appearance</h3>${o.hasFill ? colour('fill', 'Fill', o.fill) : ''}${o.hasStroke ? colour('stroke', 'Stroke', o.stroke) : ''}</section>` : ''}
+    <section><h3>Transform</h3><div class="row"><label class="fld"><span>Rotate °</span><input type="number" step="1" data-ox="rot" value="${o.edit?.rot ?? 0}"${locked ? ' disabled' : ''}></label><label class="fld"><span>Skew °</span><input type="number" step="1" min="-80" max="80" data-ox="skx" value="${o.edit?.skx ?? 0}"${locked ? ' disabled' : ''}></label></div>
+      ${o.kind === 'path' && o.hasStroke ? `<div class="row"><label class="fld"><span>Line width</span><input type="number" step="0.5" min="0" data-ox="width" value="${o.edit?.width ?? +(o.lineWidth ?? 1).toFixed(2)}"${locked ? ' disabled' : ''}></label><label class="fld"><span>Dash</span><input type="text" data-ox="dash" placeholder="e.g. 4 2" value="${(o.edit?.dash ?? []).join(' ')}"${locked ? ' disabled' : ''}></label></div>` : ''}
+      ${o.inForm ? '' : `<div class="row"><button data-oz="front" title="Bring to front of its drawing scope">Bring to front</button><button data-oz="back" title="Send to back of its drawing scope">Send to back</button></div>`}</section>
     <section class="acts2"><button data-oact="reset" title="Restore the original">${ic('rotl')}Reset</button><button class="danger" data-oact="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;
   p.querySelectorAll('[data-o]').forEach(el => {
     el.onfocus = () => pushUndo();
@@ -770,6 +773,16 @@ function objProps() {
     el.oninput = () => { el.parentElement.querySelector('code').textContent = el.value.toUpperCase(); };
     el.onchange = () => { o.edit = { ...(o.edit ?? { sx: 1, sy: 1, tx: 0, ty: 0, delete: false }), [el.dataset.oc]: el.value }; saveObj(o); };
   });
+  const objectEdit = patch => { o.edit = { ...(o.edit ?? { sx: 1, sy: 1, tx: 0, ty: 0, delete: false }), ...patch }; paint(); saveObj(o); };
+  p.querySelectorAll('[data-ox]').forEach(el => {
+    el.onfocus = () => pushUndo();
+    el.onchange = () => {
+      const k = el.dataset.ox;
+      if (k === 'dash') { const d = el.value.split(/[\s,]+/).filter(Boolean).map(Number); objectEdit({ dash: d.length && d.every(Number.isFinite) ? d : null }); }
+      else objectEdit({ [k]: el.value === '' ? null : +el.value });
+    };
+  });
+  p.querySelectorAll('[data-oz]').forEach(el => el.onclick = () => { pushUndo(); objectEdit({ z: el.dataset.oz }); status(el.dataset.oz === 'front' ? 'Brought to front where its drawing state allows.' : 'Sent to back where its drawing state allows.'); });
   p.querySelector('[data-oact=del]').onclick = () => deleteObj(o);
   p.querySelector('[data-oact=reset]').onclick = () => { pushUndo(); o.edit = null; paint(); props(); saveObj(o); };
 }
@@ -943,6 +956,25 @@ async function goPage(i) {
   await flush(); sel = i; await select();
 }
 function zoomBy(f) { fitMode = null; zoom = Math.max(0.1, Math.min(8, zoom * f)); state.pageCount && build(); }
+function stepObject(step) {
+  const list = objs.filter(o => !o.edit?.delete);
+  if (!list.length) { status('No editable objects on this page.'); return; }
+  const at = list.indexOf(curObj), next = list[((at < 0 ? (step > 0 ? -1 : 0) : at) + step + list.length) % list.length];
+  selectObj(next);
+  const kinds = { path: 'Shape', image: 'Image', form: 'Graphic group' };
+  status(`${kinds[next.kind] ?? next.kind} ${list.indexOf(next) + 1} of ${list.length} selected. Arrow keys move it, Delete removes it, Z zooms to it.`);
+}
+async function zoomToSelection() {
+  const b = curObj ? oBox(curObj) : [cur.x, cur.y, cur.x + Math.max(cur.w, 1), cur.y + Math.max(cur.h, 1)];
+  const v = $('view'), bw = Math.max(b[2] - b[0], 8), bh = Math.max(b[3] - b[1], 8);
+  const pt = Math.min(Math.max(Math.min(v.clientWidth / bw, v.clientHeight / bh) * .8, .25), 8);
+  fitMode = null; zoom = pt / fitP0;
+  await build();
+  const r = $('page').getBoundingClientRect(), vr = v.getBoundingClientRect();
+  v.scrollLeft += r.left - vr.left + (b[0] + b[2]) / 2 * S - v.clientWidth / 2;
+  v.scrollTop += r.top - vr.top + (b[1] + b[3]) / 2 * S - v.clientHeight / 2;
+  status('Zoomed to the selection.');
+}
 function zoomTo(pct) { fitMode = null; zoom = (pct / 100 * 96 / 72) / fitP0; state.pageCount && build(); }
 function fitPage() { fitMode = 'page'; zoom = 1; state.pageCount && build(); }
 function fitWidth() { fitMode = 'width'; state.pageCount && build(); }
@@ -1225,6 +1257,10 @@ addEventListener('keydown', e => {
   if (m && k === '1') { e.preventDefault(); zoomTo(100); return; }
   if (m && (k === '=' || k === '+')) { e.preventDefault(); zoomBy(1.25); return; }
   if (m && k === '-') { e.preventDefault(); zoomBy(1 / 1.25); return; }
+  if (!typing && !m && !e.altKey && state.pageCount) {
+    if (k === 'n') { e.preventDefault(); stepObject(e.shiftKey ? -1 : 1); return; }
+    if (k === 'z' && (curObj || cur)) { e.preventDefault(); zoomToSelection(); return; }
+  }
   if (e.key === 'F3' || (m && k === 'g')) { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); return; }
   if (typing || cur || curObj) return;
   if (e.key === 'PageDown' || e.key === 'ArrowRight') { e.preventDefault(); goPage(sel + 1); }
