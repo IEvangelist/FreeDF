@@ -12,9 +12,14 @@ on:
         type: boolean
         default: true
       deploy:
-        description: Deploy after all validation gates pass
+        description: Deploy after all validation gates pass (requires chunk=all)
         type: boolean
         default: false
+      chunk:
+        description: "Run one validation chunk only (see docs/ci.md). Partial runs never package or deploy."
+        type: choice
+        default: all
+        options: [all, node, dotnet-editor, dotnet-codecs, dotnet-render, default, forms, authoring, boot, viewport, a11y, responsive, profile]
 
 permissions:
   contents: read
@@ -25,18 +30,31 @@ concurrency:
 
 env:
   EDITOR_AOT: ${{ github.event_name != 'workflow_dispatch' || inputs.aot }}
+  EDITOR_CHUNK: ${{ github.event_name == 'workflow_dispatch' && inputs.chunk || 'all' }}
   # Bump to invalidate every content-addressed cache below.
   CACHE_VERSION: v1
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      unit: ${{ steps.plan.outputs.unit }}
+      smoke: ${{ steps.plan.outputs.smoke }}
+    steps:
+      - id: plan
+        shell: bash
+        run: |
+          pick() { if [ "$EDITOR_CHUNK" = all ]; then printf '%s\n' "$@"; else for c in "$@"; do [ "$c" = "$EDITOR_CHUNK" ] && echo "$c"; done; fi; }
+          echo "unit=$(pick node dotnet-editor dotnet-codecs dotnet-render | jq -Rnc '[inputs]')" >> "$GITHUB_OUTPUT"
+          echo "smoke=$(pick default forms authoring boot viewport a11y responsive profile | jq -Rnc '[inputs]')" >> "$GITHUB_OUTPUT"
+
   # Publishes the site once. The result is cached by a hash of every input that can change it
-  # (an exact hit skips the AOT publish) and handed to the validation jobs as one artifact.
+  # (an exact hit skips the AOT publish) and handed to the smoke jobs as one artifact.
   build:
+    needs: plan
+    if: needs.plan.outputs.smoke != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    outputs:
-      aot: ${{ env.EDITOR_AOT }}
-      site-cache-hit: ${{ steps.site-cache.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v4
       - name: Compute input hashes
@@ -95,8 +113,14 @@ jobs:
 
   # Source-level suites; independent of the published site so they run alongside the build.
   unit:
+    needs: plan
+    if: needs.plan.outputs.unit != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJSON(needs.plan.outputs.unit) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -104,24 +128,21 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: Directory.Packages.props
-      - name: Verify worker cache and scheduling invariants
-        run: node --test tools/AdoBye.EditorWasm/tests/*.test.mjs
-      - name: Verify sample loader integrity checks
-        run: node --test tools/AdoBye.EditorWeb/samples.test.mjs
-      - name: Test shared editor and browser-compatible rendering
-        run: dotnet test tests/AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx|FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests"
+      - name: Run ${{ matrix.chunk }}
+        shell: pwsh
+        run: ./tools/Invoke-EditorChunk.ps1 -Chunk '${{ matrix.chunk }}'
 
+  # One job per browser smoke chunk so timing-sensitive ones (profile, save-overlap) never share a runner.
   smoke:
-    needs: build
+    needs: [plan, build]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        group: [core, boot-viewport, quality, profile]
+        chunk: ${{ fromJSON(needs.plan.outputs.smoke) }}
     steps:
       - uses: actions/checkout@v4
-      - run: echo "SITE=${{ runner.temp }}/editor-pages/wwwroot" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -133,7 +154,7 @@ jobs:
           path: ${{ runner.temp }}/editor-pages
       - name: Verify the site is exactly what the build job produced
         shell: pwsh
-        run: ./tools/Site-Manifest.ps1 -Site "$env:SITE" -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256' -Verify
+        run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256' -Verify
       - name: Build browser smoke runner
         run: dotnet build tools/AdoBye.EditorSmoke -c Release
       - name: Restore Playwright browsers
@@ -144,103 +165,37 @@ jobs:
       - name: Install Chromium
         shell: pwsh
         run: ./tools/AdoBye.EditorSmoke/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
-
-      - name: Exercise local editor and trim-safe JSON round trips
-        if: matrix.group == 'core'
-        env:
-          EDITOR_SMOKE_TRANSIENT_BOOT: '1'
-          EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-save-overlap
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "$SITE"
-      - name: Exercise on-page form filling and field authoring
-        if: matrix.group == 'core'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --forms "$SITE"
-      - name: Exercise local Merge PDFs flow
-        if: matrix.group == 'core'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --merge "$SITE"
-      - name: Exercise one-click sample collection
-        if: matrix.group == 'core'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --samples "$SITE"
-      - name: Exercise annotation authoring
-        if: matrix.group == 'core'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --annotations "$SITE"
-
-      - name: Exercise cold boot and injected resource failures
-        if: matrix.group == 'boot-viewport'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --boot "$SITE" "${{ runner.temp }}/editor-boot"
-      - name: Exercise viewport fit and window scrolling
-        if: matrix.group == 'boot-viewport'
-        env:
-          EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-viewport
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --viewport "$SITE" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf"
-      - name: Exercise page-image continuity
-        if: matrix.group == 'boot-viewport'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --page-image "$SITE" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf" "${{ runner.temp }}/editor-page-image"
-
-      - name: Install accessibility test tooling (axe-core; test-only, never published)
-        if: matrix.group == 'quality'
-        run: npm ci --prefix tools/AdoBye.EditorSmoke/a11y
-      - name: Exercise accessibility (axe-core, keyboard, focus, targets)
-        if: matrix.group == 'quality'
-        env:
-          EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-a11y
-        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --a11y "$SITE" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
-      - name: Exercise responsive layout matrix
-        if: matrix.group == 'quality'
-        env:
-          EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-responsive
-        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --responsive "$SITE" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
-
-      - name: Measure strict end-to-end performance goals
-        if: matrix.group == 'profile'
-        id: profile
-        env:
-          EDITOR_PROFILE_REPORT_ONLY: '1'
-        run: >-
-          dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke --
-          --profile "$SITE"
-          "${{ runner.temp }}/editor-profile.json"
-          "${{ github.workspace }}/samples/01-spec-showcase.pdf"
-          "${{ github.workspace }}/samples/03-typography-embedded.pdf"
-          "${{ github.workspace }}/samples/09-images.pdf"
-          "${{ github.workspace }}/samples/20-report.pdf"
-      - name: Enforce CI regressions and report open performance goals
-        if: matrix.group == 'profile' && always() && steps.profile.outcome != 'skipped'
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --profile-ci "${{ runner.temp }}/editor-profile.json" "${{ github.workspace }}/docs/performance/editor-ci-known-misses.v1.json"
-      - name: Verify performance gates reject synthetic regressions
-        if: matrix.group == 'profile'
+      - name: Run ${{ matrix.chunk }}
         shell: pwsh
-        run: ./tools/Test-EditorProfileCi.ps1 -Profile '${{ runner.temp }}/editor-profile.json' -Output '${{ runner.temp }}/editor-profile-ci-tests'
-
+        run: ./tools/Invoke-EditorChunk.ps1 -Chunk '${{ matrix.chunk }}' -Site '${{ runner.temp }}/editor-pages/wwwroot' -Work '${{ runner.temp }}/editor-chunks'
       - name: Retain validation evidence
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: editor-validation-${{ needs.build.outputs.aot == 'true' && 'aot' || 'non-aot' }}-${{ matrix.group }}
+          name: editor-validation-${{ matrix.chunk }}
           retention-days: 7
           if-no-files-found: ignore
-          path: |
-            ${{ runner.temp }}/editor-boot
-            ${{ runner.temp }}/editor-viewport
-            ${{ runner.temp }}/editor-page-image
-            ${{ runner.temp }}/editor-save-overlap
-            ${{ runner.temp }}/editor-a11y
-            ${{ runner.temp }}/editor-responsive
-            ${{ runner.temp }}/editor-profile.json*
-            ${{ runner.temp }}/editor-profile-ci-tests
+          path: ${{ runner.temp }}/editor-chunks
 
-  # Single required gate: nothing is packaged or deployed unless every validation job passed.
+  # Single required gate: nothing is packaged or deployed unless every planned job passed.
   validated:
-    needs: [build, unit, smoke]
+    needs: [plan, build, unit, smoke]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require every validation job to succeed
+      - name: Require every planned validation job to succeed
+        shell: bash
         run: |
-          echo "build=${{ needs.build.result }} unit=${{ needs.unit.result }} smoke=${{ needs.smoke.result }}"
-          [ "${{ needs.build.result }}" = success ] && [ "${{ needs.unit.result }}" = success ] && [ "${{ needs.smoke.result }}" = success ]
+          echo "plan=${{ needs.plan.result }} build=${{ needs.build.result }} unit=${{ needs.unit.result }} smoke=${{ needs.smoke.result }} chunk=$EDITOR_CHUNK"
+          [ "${{ needs.plan.result }}" = success ] || exit 1
+          # A job may only be skipped when the plan left it with nothing to run.
+          ok() { [ "$1" = success ] || { [ "$1" = skipped ] && [ "$2" = '[]' ]; }; }
+          ok "${{ needs.unit.result }}" '${{ needs.plan.outputs.unit }}'
+          ok "${{ needs.smoke.result }}" '${{ needs.plan.outputs.smoke }}'
+          ok "${{ needs.build.result }}" '${{ needs.plan.outputs.smoke }}'
 
   package:
-    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.deploy)
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
     needs: validated
     runs-on: ubuntu-latest
     steps:
@@ -257,7 +212,7 @@ jobs:
           path: ${{ runner.temp }}/editor-pages/wwwroot
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && (github.event_name != 'workflow_dispatch' || inputs.deploy)
+    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
     needs: package
     runs-on: ubuntu-latest
     permissions:
