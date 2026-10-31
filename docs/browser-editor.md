@@ -572,6 +572,42 @@ complete the outstanding latency/benchmark pass.
 
 ## Build and smoke coverage
 
+### Public release acceptance
+
+Publish each reviewed, green integration batch independently rather than waiting
+for a larger release. After the gated Pages deployment succeeds, run:
+
+```powershell
+.\tools\Test-EditorPublic.ps1 -TargetCommit <deployed-main-sha> `
+  -ValidationLock 'E:\GitHub\copilot-worktrees\.validation-slot'
+```
+
+The command finds the successful deployment for that exact commit (or accepts
+`-RunId`), downloads `editor-validation-aot`, and compares the public native WASM
+**and UI entry assets** with it before and after acceptance. It rejects a site
+at or above 1,000,000,000 bytes. It builds the existing smoke runner once, then
+runs full editor/JSON/recovery/Save-overlap, merge, sample26 page-image and boot
+injection checks in default-transport Chromium against the public URL.
+Context-wide request monitors reject uploads, API calls and external requests.
+Use `-Url` for another host serving `/csharp-pdf/`, and `-Output` for a fresh
+evidence directory; logs and `acceptance.json` retain the commit, run, checksums,
+payload size and result. The supplied shared validation lock is acquired
+atomically, waited for without interrupting its owner, and released only by its
+own exact owner token. Missing SDK/browser prerequisites fail visibly; install
+them using the setup commands below.
+
+Run from a checkout with the target runtime/source; harness-only changes are
+allowed. `-FeatureSmoke` accepts dedicated `--selector` modes supported by the
+checked-out runner and rejects unknown modes. Each receives the public URL;
+`--viewport` additionally receives sample26. `EDITOR_SMOKE_SITE_ROOT` points
+public-only fixture checks at the downloaded publish tree, not at a local site.
+Review changed pixels when rendering changes, and repeat spot timing comparisons
+only when performance code changes; neither expensive sweep is part of the lean
+default command. A failed acceptance blocks promotion of further batches until
+the regression is understood or the deployment is safely reverted.
+
+### Local publish and smoke
+
 Use the SDK declared in root `global.json`:
 
 ```powershell
@@ -584,7 +620,9 @@ dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- $site
 dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --merge $site
 ```
 
-The publish script checks required static assets and WASM magic bytes. Override
+The publish script checks required static assets and WASM magic bytes, rejects
+sites at or above the 1 GB Pages limit, and reports total bytes/files and elapsed
+publish time (including generated sample assets when present). Override
 `-Output` to publish elsewhere and `-BasePath` for another repository path or `/`.
 Always pass an absolute publish directory to the smoke runner (`dotnet run`
 starts in its project directory).

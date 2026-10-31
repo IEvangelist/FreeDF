@@ -50,9 +50,12 @@ var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap] <published-wwwroot>");
-var root = Path.GetFullPath(args[^1]);
-if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap] <published-wwwroot-or-url>");
+var publicSite = Uri.TryCreate(args[^1], UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
+if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
+    throw new ArgumentException("The public editor URL must end in /csharp-pdf/.");
+var root = publicSite ? Path.GetFullPath(Environment.GetEnvironmentVariable("EDITOR_SMOKE_SITE_ROOT") ?? AppContext.BaseDirectory) : Path.GetFullPath(args[^1]);
+if (!publicSite && !File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -71,7 +74,7 @@ app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProv
 await app.StartAsync();
 try
 {
-    var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+    var address = publicSite ? publicUri!.GetLeftPart(UriPartial.Authority) : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var pw = await Playwright.CreateAsync();
     await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
     await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
@@ -93,8 +96,9 @@ try
         else errors.Enqueue(message.Text);
         Console.Error.WriteLine(message.Text);
     };
-    page.Request += (_, request) =>
+    context.Request += (_, request) =>
     {
+        if (!request.Url.StartsWith("http:", StringComparison.Ordinal) && !request.Url.StartsWith("https:", StringComparison.Ordinal)) return;
         if (!request.Url.StartsWith(address + "/csharp-pdf/", StringComparison.Ordinal) || request.Method != "GET" || new Uri(request.Url).AbsolutePath.Contains("/api/"))
             network.Enqueue(request.Method + " " + request.Url);
     };

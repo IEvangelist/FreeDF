@@ -5,6 +5,7 @@ param(
     [string] $ArtifactsPath
 )
 $ErrorActionPreference = 'Stop'
+$elapsed = [Diagnostics.Stopwatch]::StartNew()
 if ($BasePath -notmatch '^/([A-Za-z0-9._-]+/)*$') { throw 'BasePath must start and end with / and contain only path segments.' }
 $project = Join-Path $PSScriptRoot 'AdoBye.EditorWasm\AdoBye.EditorWasm.csproj'
 $publishArgs = @('publish', $project, '-c', 'Release', '-o', $Output, '--nologo')
@@ -31,4 +32,7 @@ foreach ($file in $wasm) {
         }
     } finally { $stream.Dispose() }
 }
-Write-Host "Pages site: $site ($($wasm.Count) valid WASM artifacts; base $BasePath)"
+$assets = @(Get-ChildItem $site -Recurse -File)
+$bytes = ($assets | Measure-Object -Property Length -Sum).Sum
+if ($bytes -ge 1000000000) { throw "Pages site exceeds the 1 GB limit: $bytes bytes." }
+Write-Host ("Pages site: {0} ({1} valid WASM artifacts; base {2}; {3} files, {4:N0} bytes; publish {5:N1}s)" -f $site, $wasm.Count, $BasePath, $assets.Count, $bytes, $elapsed.Elapsed.TotalSeconds)
