@@ -77,17 +77,18 @@ static class EditorOutline
         await page.EvaluateAsync("window.__scroll = [document.scrollingElement.scrollTop, document.scrollingElement.scrollLeft]");
     }
 
-    public static async Task Run(IPage page, string shots)
+    public static async Task Run(IPage page, string shots, string siteRoot)
     {
         Directory.CreateDirectory(shots);
+        var collection = Path.Combine(siteRoot, "samples", "27-full-collection.pdf");
         foreach (var (viewport, mobile) in new[] { ((1440, 1000), false), ((390, 800), true) })
         {
             await page.SetViewportSizeAsync(viewport.Item1, viewport.Item2);
             var label = mobile ? "mobile" : "desktop";
             foreach (var (file, name) in new[] { ("12-navigation.pdf", "12-navigation.pdf"), ("27-full-collection.pdf", "27-full-collection.pdf") })
             {
-                var path = Sample(file);
-                if (!File.Exists(path)) throw new FileNotFoundException("Generate it first: dotnet run --project tools/AdoBye.Samples -- generate samples 27-", path);
+                var path = file == "27-full-collection.pdf" ? collection : Sample(file);
+                if (!File.Exists(path)) throw new FileNotFoundException("Required outline fixture is missing from the published site or repository.", path);
                 var doc = PdfDocument.Open(path);
                 var items = Flatten(doc.GetOutlines());
                 Check(items.Count > 0, file + " has an outline");
@@ -160,7 +161,7 @@ static class EditorOutline
         }
 
         await page.SetViewportSizeAsync(1440, 1000);
-        await Load(page, Sample("27-full-collection.pdf"), "27-full-collection.pdf");
+        await Load(page, collection, "27-full-collection.pdf");
         await OpenContents(page, false);
         await Large(page);
         await Empty(page);

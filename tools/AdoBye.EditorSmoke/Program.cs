@@ -246,7 +246,7 @@ try
     if (outlineOnly)
     {
         var shots = Environment.GetEnvironmentVariable("EDITOR_SMOKE_SHOTS") ?? Path.Combine(Path.GetTempPath(), "editor-outline-shots");
-        await EditorOutline.Run(page, shots);
+        await EditorOutline.Run(page, shots, root);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: Contents tab highlights/expands/reveals the active page's outline entry (keyboard, Go to page, thumbnails, outline click), 10k outline windowed, empty state, no document scroll or focus theft. Screenshots: " + shots);
         return;
