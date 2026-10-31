@@ -7,7 +7,7 @@ namespace AdoBye.Tests;
 /// <summary>ISO 32000-2 8.6.5.6 DefaultGray/DefaultRGB/DefaultCMYK remapping of Device spaces.</summary>
 public class DefaultColorSpaceTests
 {
-    const string Lab = "[/Lab << /WhitePoint [0.9642 1 0.8249] /Range [-128 127 -128 127] >>]";
+    const string LinearRgb = "[/CalRGB << /WhitePoint [0.9505 1 1.089] /Gamma [1 1 1] /Matrix [0.4124 0.2126 0.0193 0.3576 0.7152 0.1192 0.1805 0.0722 0.9505] >>]";
     const string CalGray = "[/CalGray << /WhitePoint [0.9505 1 1.089] /Gamma 2.2 >>]";
 
     static int[] Render(string content, string res, string objects = "")
@@ -23,12 +23,12 @@ public class DefaultColorSpaceTests
     [Fact]
     public void OperatorsAndNamesUseTheDefaultSpace()
     {
-        var res = $"/ColorSpace << /DefaultGray {CalGray} /DefaultRGB {Lab} /C /DeviceRGB >>";
+        var res = $"/ColorSpace << /DefaultGray {CalGray} /DefaultRGB {LinearRgb} /C /DeviceRGB >>";
         Assert.InRange(Render("0.1 g" + Fill, res)[0], 17, 21);
         Assert.Equal(Render("0.1 g" + Fill, res), Render("/CS0 cs 0.1 sc" + Fill, res.Replace("/C /DeviceRGB", "/CS0 /DeviceGray")));
-        Assert.InRange(Render("50 0 0 rg" + Fill, res)[0], 117, 121);
-        Assert.InRange(Render("/C cs 50 0 0 sc" + Fill, res)[0], 117, 121);
-        Assert.InRange(Render("50 0 0 RG 40 w 0 100 m 200 100 l S", res)[0], 117, 121);
+        Assert.InRange(Render("0.5 0.5 0.5 rg" + Fill, res)[0], 186, 190);
+        Assert.InRange(Render("/C cs 0.5 0.5 0.5 sc" + Fill, res)[0], 186, 190);
+        Assert.InRange(Render("0.5 0.5 0.5 RG 40 w 0 100 m 200 100 l S", res)[0], 186, 190);
     }
 
     [Fact]
@@ -38,10 +38,11 @@ public class DefaultColorSpaceTests
     [Theory]
     [InlineData("/DefaultGray [/Lab << /WhitePoint [0.9642 1 0.8249] >>]")] // wrong component count
     [InlineData("/DefaultGray /Pattern")]
+    [InlineData("/DefaultRGB [/Lab << /WhitePoint [0.9642 1 0.8249] >>]")]
     [InlineData("/DefaultGray [/Indexed /DeviceRGB 0 <FF0000>]")]
     [InlineData("/DefaultGray 7 0 R")]
     public void UnusableDefaultsAreIgnored(string entry)
-        => Assert.Equal([26, 26, 26], Render("0.1 g" + Fill, $"/ColorSpace << {entry} >>"));
+        => Assert.Equal(entry.Contains("DefaultRGB") ? [128, 128, 128] : [26, 26, 26], Render(entry.Contains("DefaultRGB") ? "0.5 0.5 0.5 rg" + Fill : "0.1 g" + Fill, $"/ColorSpace << {entry} >>"));
 
     [Fact]
     public void DeviceSpaceNestedInAnotherSpaceIsNotRemapped()

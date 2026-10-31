@@ -273,7 +273,7 @@ public abstract class PdfColorSpace
     /// <summary>
     /// <see cref="Parse"/> plus ISO 32000-2 8.6.5.6: a Device space set by operator, by name or as an image/shading space is
     /// replaced by the resource /DefaultGray, /DefaultRGB or /DefaultCMYK when that entry is a usable space with the same
-    /// component count (never Pattern, Indexed, Separation or DeviceN). Spaces nested inside other spaces are not remapped.
+    /// component count (never Pattern, Indexed, Lab, Separation or DeviceN; PDFium and MuPDF also ignore Lab defaults). Spaces nested inside other spaces are not remapped.
     /// </summary>
     public static PdfColorSpace ParseWithDefaults(PdfFile f, PdfObject? obj, PdfDictionary? resources)
         => WithDefault(f, Parse(f, obj, resources), resources);
@@ -285,7 +285,7 @@ public abstract class PdfColorSpace
         var key = cs == Gray ? "DefaultGray" : cs == Rgb ? "DefaultRGB" : "DefaultCMYK";
         if (spaces.Get(key) is not { } def) return cs;
         var mapped = TryParse(f, def, resources, 1);
-        return mapped is null or Indexed or Tint or PatternCs || mapped.Components != cs.Components ? cs : mapped;
+        return mapped is null or Indexed or Tint or PatternCs or Lab || mapped.Components != cs.Components ? cs : mapped;
     }
 
     static PdfColorSpace? TryParse(PdfFile f, PdfObject? obj, PdfDictionary? resources, int depth)
