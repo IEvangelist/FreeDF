@@ -45,6 +45,17 @@ public sealed record PdfSignatureInfo
     public IReadOnlyList<string> DocMdpFindings { get; init; } = [];
     /// <summary>The document security store (§12.8.4.3) has a /VRI entry keyed by this signature's /Contents.</summary>
     public bool HasValidationInformation { get; init; }
+    /// <summary>The DER CMS SignedData of /Contents (zero padding removed); null when /Contents could not be read.</summary>
+    public byte[]? Cms { get; init; }
+    /// <summary>
+    /// For a CMS signature that carries an ESS signing-certificate-v2 attribute (RFC 5035, required by PAdES/CAdES baseline): whether its first ESSCertIDv2 hash
+    /// matches the signer certificate. Null when the attribute is absent.
+    /// </summary>
+    public bool? SigningCertificateV2Valid { get; init; }
+    /// <summary>The field-lock action (/All, /Include or /Exclude) declared by a FieldMDP signature reference or the field's /Lock dictionary (§12.8.2.4); null when the signature locks nothing.</summary>
+    public string? FieldLockAction { get; init; }
+    /// <summary>Form fields locked by this signature whose value (/V) differs between the signed revision and the current file.</summary>
+    public IReadOnlyList<string> FieldMdpFindings { get; init; } = [];
 }
 
 /// <summary>Counts of validation material in a /VRI entry (§12.8.4.3).</summary>
@@ -53,22 +64,105 @@ public sealed record PdfValidationRelatedInfo(string Key, int Certificates, int 
 /// <summary>Read-only view of the document security store (/DSS, §12.8.4.3). Contents are not validated or used for trust decisions.</summary>
 public sealed record PdfDocumentSecurityStore(int Certificates, int Crls, int Ocsps, IReadOnlyList<PdfValidationRelatedInfo> Vri);
 
+/// <summary>Options for <see cref="PdfSignatures.ComputeCms(byte[], long[], X509Certificate2, DateTimeOffset, HashAlgorithmName, PdfCmsOptions)"/>.</summary>
+public sealed class PdfCmsOptions
+{
+    /// <summary>Sign RSA keys with RSASSA-PSS (RFC 4056, salt length = digest length) instead of RSASSA-PKCS1-v1_5. ECDSA keys ignore this.</summary>
+    public bool RsaPss { get; init; }
+    /// <summary>Add the CMS signingTime attribute (PAdES forbids it; the signature dictionary /M is used instead).</summary>
+    public bool IncludeSigningTime { get; init; } = true;
+    /// <summary>Add the ESS signing-certificate-v2 attribute (RFC 5035) binding the signer certificate by digest.</summary>
+    public bool SigningCertificateV2 { get; init; }
+    /// <summary>Embeds CRLs and OCSP responses as a signed adbe-revocationInfoArchival attribute.</summary>
+    public PdfValidationData? RevocationInfo { get; init; }
+    /// <summary>Certificates (intermediates, usually) to place in the CMS in addition to those found by building the signer's chain in the machine store.</summary>
+    public IReadOnlyList<X509Certificate2> ExtraCertificates { get; init; } = [];
+    /// <summary>Adds an RFC 3161 token over the signature value as a signature-time-stamp unsigned attribute (CAdES-T). The token must fit in the signature's /Contents.</summary>
+    public Func<HashAlgorithmName, byte[], byte[]>? SignatureTimestamp { get; init; }
+}
+
 /// <summary>Detached CMS (adbe.pkcs7.detached) signature creation helpers and verification, using System.Security.Cryptography.Pkcs.</summary>
 public static class PdfSignatures
 {
     /// <summary>Digest of the byte ranges followed by a CMS/PKCS#7 detached signature over them.</summary>
     public static byte[] ComputeCms(byte[] pdf, long[] byteRange, X509Certificate2 cert, DateTimeOffset signingTime, HashAlgorithmName hash)
+        => ComputeCms(pdf, byteRange, cert, signingTime, hash, new PdfCmsOptions());
+
+    /// <summary>Detached CMS with optional RSASSA-PSS, ESS signing-certificate-v2 (PAdES/CAdES) and adbe-revocationInfoArchival attributes.</summary>
+    public static byte[] ComputeCms(byte[] pdf, long[] byteRange, X509Certificate2 cert, DateTimeOffset signingTime, HashAlgorithmName hash, PdfCmsOptions o)
     {
+        if (hash.Name is not ("SHA256" or "SHA384" or "SHA512")) throw new ArgumentException("Unsupported digest algorithm; use SHA-256, SHA-384 or SHA-512.", nameof(hash));
         var content = Concat(pdf, byteRange);
         var cms = new SignedCms(new ContentInfo(content), true);
-        var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, cert)
-        {
-            DigestAlgorithm = new Oid(hash.Name switch { "SHA384" => "2.16.840.1.101.3.4.2.2", "SHA512" => "2.16.840.1.101.3.4.2.3", _ => "2.16.840.1.101.3.4.2.1" }),
-            IncludeOption = X509IncludeOption.WholeChain,
-        };
-        signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
+        var digestOid = hash.Name switch { "SHA384" => "2.16.840.1.101.3.4.2.2", "SHA512" => "2.16.840.1.101.3.4.2.3", _ => "2.16.840.1.101.3.4.2.1" };
+        var signer = o.RsaPss
+            ? new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, cert, null, RSASignaturePadding.Pss)
+            : new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, cert);
+        signer.DigestAlgorithm = new Oid(digestOid);
+        signer.IncludeOption = X509IncludeOption.WholeChain;
+        foreach (var extra in o.ExtraCertificates) signer.Certificates.Add(extra);
+        if (o.IncludeSigningTime) signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
+        if (o.SigningCertificateV2) signer.SignedAttributes.Add(new AsnEncodedData(new Oid(SigningCertificateV2Oid), SigningCertificateV2(cert, digestOid, o.ExtraCertificates)));
+        if (o.RevocationInfo is { IsEmpty: false } ri && (ri.Crls.Count > 0 || ri.OcspResponses.Count > 0))
+            signer.SignedAttributes.Add(new AsnEncodedData(new Oid("1.2.840.113583.1.1.8"), RevocationInfoArchival(ri)));
         cms.ComputeSignature(signer, silent: true);
+        if (o.SignatureTimestamp is { } stamp)
+        {
+            var si = cms.SignerInfos[0];
+            var token = stamp(HashAlgorithmName.SHA256, SHA256.HashData(si.GetSignature()));
+            si.AddUnsignedAttribute(new AsnEncodedData(new Oid("1.2.840.113549.1.9.16.2.14"), token));
+        }
         return cms.Encode();
+    }
+
+    static byte[] SigningCertificateV2(X509Certificate2 cert, string hashOid, IEnumerable<X509Certificate2> chain)
+    {
+        var w = new System.Formats.Asn1.AsnWriter(System.Formats.Asn1.AsnEncodingRules.DER);
+        using (w.PushSequence())
+        using (w.PushSequence())
+        {
+            using (w.PushSequence())
+            {
+                if (hashOid != "2.16.840.1.101.3.4.2.1") { using (w.PushSequence()) w.WriteObjectIdentifier(hashOid); }
+                w.WriteOctetString(HashOf(hashOid, cert.RawData)!);
+                using (w.PushSequence())
+                {
+                    using (w.PushSequence())
+                    using (w.PushSequence(new System.Formats.Asn1.Asn1Tag(System.Formats.Asn1.TagClass.ContextSpecific, 4)))
+                        w.WriteEncodedValue(cert.IssuerName.RawData);
+                    w.WriteIntegerUnsigned(cert.SerialNumberBytes.Span);
+                }
+            }
+            // CA certificates the signer supplies are bound by digest too, so a verifier can treat them as covered by the signature's timestamp.
+            foreach (var c in chain)
+            {
+                if (c.RawData.AsSpan().SequenceEqual(cert.RawData)) continue;
+                using (w.PushSequence())
+                {
+                    if (hashOid != "2.16.840.1.101.3.4.2.1") { using (w.PushSequence()) w.WriteObjectIdentifier(hashOid); }
+                    w.WriteOctetString(HashOf(hashOid, c.RawData)!);
+                }
+            }
+        }
+        return w.Encode();
+    }
+
+    static byte[] RevocationInfoArchival(PdfValidationData d)
+    {
+        var w = new System.Formats.Asn1.AsnWriter(System.Formats.Asn1.AsnEncodingRules.DER);
+        using (w.PushSequence())
+        {
+            void Part(int tag, List<byte[]> items)
+            {
+                if (items.Count == 0) return;
+                using (w.PushSequence(new System.Formats.Asn1.Asn1Tag(System.Formats.Asn1.TagClass.ContextSpecific, tag)))
+                using (w.PushSequence())
+                    foreach (var i in items) w.WriteEncodedValue(i);
+            }
+            Part(0, d.Crls);
+            Part(1, d.OcspResponses);
+        }
+        return w.Encode();
     }
 
     static byte[] Concat(byte[] pdf, long[] r)
@@ -88,7 +182,7 @@ public static class PdfSignatures
 
     public static IReadOnlyList<PdfSignatureInfo> Verify(PdfFile f)
     {
-        var found = new List<(string Name, PdfDictionary V, int VNum)>();
+        var found = new List<(string Name, PdfDictionary V, int VNum, PdfDictionary Field)>();
         if (f.Resolve(f.Catalog.Get("AcroForm")) is not PdfDictionary form) return [];
         var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
         void Walk(PdfObject? node, string prefix, string? inheritedFt)
@@ -99,7 +193,7 @@ public static class PdfSignatures
             var ft = f.Resolve(d.Get("FT")).AsName() ?? inheritedFt;
             if (f.Resolve(d.Get("Kids")) is PdfArray kids) foreach (var k in kids.Items) Walk(k, full, ft);
             if (ft == "Sig" && f.Resolve(d.Get("V")) is PdfDictionary v && v.Get("ByteRange") is not null)
-                found.Add((full, v, (d.Get("V") as PdfRef)?.Number ?? -1));
+                found.Add((full, v, (d.Get("V") as PdfRef)?.Number ?? -1, d));
         }
         if (f.Resolve(form.Get("Fields")) is PdfArray fields) foreach (var x in fields.Items) Walk(x, "", null);
 
@@ -110,8 +204,59 @@ public static class PdfSignatures
         var docMdpCount = found.Count(s => DocMdpReferences(f, s.V).Count > 0);
         var result = new List<PdfSignatureInfo>();
         for (var i = 0; i < infos.Count; i++)
-            result.Add(EnrichDocMdp(f, infos[i], found[i].V, found[i].VNum, permsDocMdp?.Number, ends[i], ends, docMdpCount, dss));
+            result.Add(EnrichFieldMdp(f, EnrichDocMdp(f, infos[i], found[i].V, found[i].VNum, permsDocMdp?.Number, ends[i], ends, docMdpCount, dss), found[i].Field, found[i].V, ends[i]));
         return result;
+    }
+
+    static PdfSignatureInfo EnrichFieldMdp(PdfFile f, PdfSignatureInfo info, PdfDictionary field, PdfDictionary v, long end)
+    {
+        string? action = null;
+        PdfArray? names = null;
+        var refs = f.Resolve(v.Get("Reference")) is PdfArray ra ? ra.Items.Select(r => f.Resolve(r)).OfType<PdfDictionary>().Where(d => f.Resolve(d.Get("TransformMethod")).AsName() == "FieldMDP").ToList() : [];
+        PdfDictionary? src = refs.Count > 0 ? f.Resolve(refs[0].Get("TransformParams")) as PdfDictionary : f.Resolve(field.Get("Lock")) as PdfDictionary;
+        if (src is null) return info;
+        action = f.Resolve(src.Get("Action")).AsName();
+        names = f.Resolve(src.Get("Fields")) as PdfArray;
+        if (action is not ("All" or "Include" or "Exclude")) return info with { FieldLockAction = action, FieldMdpFindings = [$"Unknown field lock action /{action}"] };
+        var listed = names?.Items.Select(n => (f.Resolve(n) as PdfString)?.Text).OfType<string>().ToList() ?? [];
+        bool Locked(string name)
+        {
+            var hit = listed.Any(l => name == l || name.StartsWith(l + ".", StringComparison.Ordinal));
+            return action == "All" || (action == "Include" ? hit : !hit);
+        }
+        var findings = new List<string>();
+        if (!info.ByteRangeValid || info.CoversWholeDocument) return info with { FieldLockAction = action };
+        PdfFile old;
+        try { old = f.LoadRevision(end); }
+        catch (Exception e) when (e is PdfParseException or ArgumentException or InvalidOperationException) { return info with { FieldLockAction = action, FieldMdpFindings = ["The signed revision could not be re-read, so locked fields were not compared"] }; }
+        var before = FieldValues(old);
+        var after = FieldValues(f);
+        foreach (var (name, value) in before)
+        {
+            if (!Locked(name)) continue;
+            if (!after.TryGetValue(name, out var now)) findings.Add($"Locked field {name} was removed");
+            else if (!PdfObjectEquality.DeepEquals(value, now)) findings.Add($"Locked field {name} changed its value");
+        }
+        foreach (var name in after.Keys)
+            if (!before.ContainsKey(name) && Locked(name)) findings.Add($"A field named {name}, covered by the lock, was added");
+        return info with { FieldLockAction = action, FieldMdpFindings = findings };
+    }
+
+    static Dictionary<string, PdfObject?> FieldValues(PdfFile f)
+    {
+        var map = new Dictionary<string, PdfObject?>(StringComparer.Ordinal);
+        if (f.Resolve(f.Catalog.Get("AcroForm")) is not PdfDictionary form) return map;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        void Walk(PdfObject? node, string prefix, int depth)
+        {
+            if (depth > 64 || map.Count > 100_000 || f.Resolve(node) is not PdfDictionary d || !seen.Add(d)) return;
+            var name = (f.Resolve(d.Get("T")) as PdfString)?.Text;
+            var full = name is null ? prefix : prefix.Length == 0 ? name : prefix + "." + name;
+            if (name is not null) map[full] = f.Resolve(d.Get("V"));
+            if (f.Resolve(d.Get("Kids")) is PdfArray kids) foreach (var k in kids.Items) Walk(k, full, depth + 1);
+        }
+        if (f.Resolve(form.Get("Fields")) is PdfArray fields) foreach (var x in fields.Items) Walk(x, "", 0);
+        return map;
     }
 
     static List<PdfDictionary> DocMdpReferences(PdfFile f, PdfDictionary v)
@@ -180,6 +325,7 @@ public static class PdfSignatures
         var covers = br[2] + br[3] >= end;
         info = info with { ByteRangeValid = true, CoversWholeDocument = covers };
         if (f.Resolve(v.Get("Contents")) is not PdfString contents) return info with { Error = "Missing /Contents" };
+        info = info with { Cms = TrimDer(contents.Bytes) };
         if (info.SubFilter == "ETSI.RFC3161" || info.IsDocumentTimeStamp) return CheckTimeStamp(info, contents, data, br);
         if (info.SubFilter is not ("adbe.pkcs7.detached" or "ETSI.CAdES.detached"))
             return info with { Error = $"Unsupported /SubFilter {info.SubFilter}" };
@@ -216,7 +362,7 @@ public static class PdfSignatures
                     };
                     digestOk = h is not null && h.AsSpan().SequenceEqual(md);
                 }
-            info = info with { DigestValid = digestOk };
+            info = info with { DigestValid = digestOk, SigningCertificateV2Valid = cert is null ? null : EssCertificateMatches(si, cert) };
             try { si.CheckSignature(true); info = info with { SignatureValid = digestOk }; }
             catch (CryptographicException e) { info = info with { Error = e.Message }; }
             if (cert is not null)
@@ -230,6 +376,61 @@ public static class PdfSignatures
             return info;
         }
         catch (CryptographicException e) { return info with { Error = e.Message }; }
+    }
+
+    internal const string SigningCertificateV2Oid = "1.2.840.113549.1.9.16.2.47";
+
+    static bool? EssCertificateMatches(SignerInfo si, X509Certificate2 cert)
+    {
+        foreach (var a in si.SignedAttributes)
+        {
+            if (a.Oid?.Value != SigningCertificateV2Oid || a.Values.Count == 0) continue;
+            try
+            {
+                var certs = new System.Formats.Asn1.AsnReader(a.Values[0].RawData, System.Formats.Asn1.AsnEncodingRules.DER).ReadSequence().ReadSequence();
+                var id = certs.ReadSequence();
+                var oid = "2.16.840.1.101.3.4.2.1";
+                if (id.PeekTag().TagValue == 16) oid = id.ReadSequence().ReadObjectIdentifier();
+                var hash = id.ReadOctetString();
+                var expected = HashOf(oid, cert.RawData);
+                return expected is not null && expected.AsSpan().SequenceEqual(hash);
+            }
+            catch (System.Formats.Asn1.AsnContentException) { return false; }
+        }
+        return null;
+    }
+
+    /// <summary>Reads every certificate, CRL and OCSP response of the /DSS (global arrays and all /VRI entries). Unreadable or oversized entries are skipped.</summary>
+    public static PdfValidationData ReadDssData(PdfFile f)
+    {
+        var data = new PdfValidationData();
+        if (f.Resolve(f.Catalog.Get("DSS")) is not PdfDictionary dss) return data;
+        var total = 0L;
+        IEnumerable<byte[]> Blobs(PdfDictionary d, string key)
+        {
+            if (f.Resolve(d.Get(key)) is not PdfArray arr) yield break;
+            foreach (var item in arr.Items.Take(1024))
+            {
+                if (f.Resolve(item) is not PdfStream s) continue;
+                byte[] b;
+                try { b = f.DecodeStream(s); } catch (Exception) { continue; }
+                if (b.Length == 0 || b.Length > PdfRevocationParser.MaxBlobBytes || (total += b.Length) > 4 * PdfRevocationParser.MaxBlobBytes) continue;
+                yield return b;
+            }
+        }
+        void Read(PdfDictionary d, string certs, string crls, string ocsps)
+        {
+            var part = new PdfValidationData();
+            foreach (var b in Blobs(d, certs)) { try { part.Certificates.Add(X509CertificateLoader.LoadCertificate(b)); } catch (CryptographicException) { } }
+            part.Crls.AddRange(Blobs(d, crls));
+            part.OcspResponses.AddRange(Blobs(d, ocsps));
+            data.Merge(part);
+        }
+        Read(dss, "Certs", "CRLs", "OCSPs");
+        if (f.Resolve(dss.Get("VRI")) is PdfDictionary vri)
+            foreach (var e in vri.Entries.Values.Take(1024))
+                if (f.Resolve(e) is PdfDictionary vd) Read(vd, "Cert", "CRL", "OCSP");
+        return data;
     }
 
     static byte[]? HashOf(string? oid, byte[] data) => oid switch

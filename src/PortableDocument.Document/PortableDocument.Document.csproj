@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PortableDocument.Core\PortableDocument.Core.csproj" />
+    <InternalsVisibleTo Include="AdoBye.Tests" />
   </ItemGroup>
 
   <PropertyGroup>
