@@ -37,7 +37,7 @@ jobs:
   # Change detection: docs/backlog-only changes skip every heavy job; the always-run `validated`
   # gate still reports success. Unknown or unreadable diffs fail safe to "run everything".
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       code: ${{ steps.plan.outputs.code }}
       unit: ${{ steps.plan.outputs.unit }}
@@ -75,7 +75,7 @@ jobs:
   unit:
     needs: plan
     if: needs.plan.outputs.unit != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -95,7 +95,7 @@ jobs:
   # One job per functional browser smoke chunk. Timing gates are non-blocking and live in editor-perf.yml.
   smoke:
     needs: [plan, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -141,7 +141,7 @@ jobs:
   validated:
     needs: [plan, build, unit, smoke]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Require every planned validation job to succeed
         shell: bash
@@ -157,7 +157,7 @@ jobs:
   package:
     if: needs.plan.outputs.code == 'true' && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
     needs: [plan, validated]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -174,7 +174,7 @@ jobs:
   deploy:
     if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
     needs: package
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: write
