@@ -103,6 +103,7 @@ export async function start() {
       }
       const remember = data => {
         const size = data.length * 2;
+        evictImage(url);
         if (key && size <= imageCacheLimit) {
           while (imageCacheSize + size > imageCacheLimit) {
             const [oldKey, old] = imageCache.entries().next().value;

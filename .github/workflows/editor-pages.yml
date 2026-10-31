@@ -48,6 +48,8 @@ jobs:
             Aot = $env:EDITOR_AOT -eq 'true'
           }
           ./tools/Publish-EditorPages.ps1 @options
+      - name: Verify worker cache and scheduling invariants
+        run: node --test tools/AdoBye.EditorWasm/tests/*.test.mjs
       - name: Test shared editor and browser-compatible rendering
         run: dotnet test tests/AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx|FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests"
       - name: Build browser smoke runner
