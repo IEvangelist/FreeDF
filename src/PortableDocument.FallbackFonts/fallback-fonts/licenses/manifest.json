@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "components": [
+    {
+      "name": "Liberation Fonts",
+      "version": "2.1.5",
+      "usage": "Metric-compatible substitutes for Helvetica/Arial (Sans), Times/Times New Roman (Serif) and Courier/Courier New (Mono), regular, bold, italic and bold italic.",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/Liberation-OFL-1.1.txt",
+      "noticeFile": "licenses/Liberation-AUTHORS.txt",
+      "copyright": "Digitized data copyright (c) 2010 Google Corporation with Reserved Font Arimo, Tinos and Cousine; Copyright (c) 2012 Red Hat, Inc. with Reserved Font Name Liberation",
+      "source": "https://github.com/liberationfonts/liberation-fonts/releases/tag/2.1.5",
+      "files": [
+        "latin/LiberationSans-Regular.ttf", "latin/LiberationSans-Bold.ttf", "latin/LiberationSans-Italic.ttf", "latin/LiberationSans-BoldItalic.ttf",
+        "latin/LiberationSerif-Regular.ttf", "latin/LiberationSerif-Bold.ttf", "latin/LiberationSerif-Italic.ttf", "latin/LiberationSerif-BoldItalic.ttf",
+        "latin/LiberationMono-Regular.ttf", "latin/LiberationMono-Bold.ttf", "latin/LiberationMono-Italic.ttf", "latin/LiberationMono-BoldItalic.ttf"
+      ]
+    },
+    {
+      "name": "DejaVu Sans",
+      "version": "2.37",
+      "usage": "Substitute for the Symbol and ZapfDingbats standard fonts (Greek, mathematical operators, arrows and the Dingbats block).",
+      "license": "Bitstream-Vera AND public-domain modifications",
+      "licenseFile": "licenses/DejaVu-LICENSE.txt",
+      "noticeFile": "licenses/DejaVu-AUTHORS.txt",
+      "copyright": "Copyright (c) 2003 Bitstream, Inc.; DejaVu changes are in the public domain",
+      "source": "https://github.com/dejavu-fonts/dejavu-fonts/releases/tag/version_2_37",
+      "files": ["latin/DejaVuSans.ttf"]
+    },
+    {
+      "name": "Noto Sans JP, Noto Sans SC, Noto Sans TC, Noto Sans KR",
+      "version": "google/fonts commit 6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec (default instance of the variable fonts)",
+      "usage": "Outlines for non-embedded Adobe-Japan1, Adobe-GB1, Adobe-CNS1 and Adobe-Korea1 fonts, converted to the compact chunk format described in CjkChunkCodec (glyph outlines only, split per 256-scalar Unicode block).",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/NotoSansCJK-OFL-1.1.txt",
+      "copyright": "Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'",
+      "source": "https://github.com/google/fonts/tree/6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec/ofl",
+      "files": ["cjk/**"],
+      "notes": "Derived data (outlines re-encoded, subset to the legacy GB2312, JIS X 0208/CP932, Big5 and KS X 1001 repertoires) uses no Reserved Font Name and is not distributed as a font."
+    },
+    {
+      "name": "Adobe Core 14 AFM metrics",
+      "version": "4.1",
+      "usage": "Glyph advance widths and the built-in Symbol/ZapfDingbats encodings embedded in PortableDocument.Content (Resources/std14-widths.bin); numeric facts only, no outlines.",
+      "license": "Adobe Core 14 AFM redistribution permission",
+      "licenseFile": "licenses/Adobe-Core14-AFM-NOTICE.txt",
+      "embeddedIn": "PortableDocument.Content (Resources/std14-widths.bin; the notice also ships there as Resources/std14-notice.txt)",
+      "copyright": "Copyright (c) Adobe Systems Incorporated. All Rights Reserved. Years per AFM file: Helvetica 1985, 1987, 1989, 1990, 1997; Times 1985, 1987, 1989, 1990, 1993, 1997; Courier 1989-1993, 1997 (Bold variants omit 1992); Symbol 1985, 1987, 1989, 1990, 1997; ZapfDingbats 1985, 1987, 1988, 1989, 1997.",
+      "source": "https://github.com/apache/pdfbox/tree/trunk/pdfbox/src/main/resources/org/apache/pdfbox/resources/afm (widths verified identical to the published Core 14 AFMs also mirrored at https://github.com/pdf-raku/Font-AFM-raku/tree/master/etc/Core14_AFMs)",
+      "files": []
+    }
+  ]
+}

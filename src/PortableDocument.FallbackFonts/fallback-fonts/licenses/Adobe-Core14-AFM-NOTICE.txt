@@ -1,0 +1,7 @@
+Adobe Core 14 AFM metrics (Helvetica, Times, Courier, Symbol, ZapfDingbats families)
+
+Copyright (c) Adobe Systems Incorporated. All Rights Reserved. The copyright years differ per AFM file (verified against the published Core 14 AFM headers): Helvetica 1985, 1987, 1989, 1990, 1997; Times 1985, 1987, 1989, 1990, 1993, 1997; Courier 1989, 1990, 1991, 1992, 1993, 1997 (Courier-Bold and Courier-BoldOblique omit 1992); Symbol 1985, 1987, 1989, 1990, 1997; ZapfDingbats 1985, 1987, 1988, 1989, 1997.
+
+This file and the 14 PostScript(R) AFM files it accompanies may be used, copied, and distributed for any purpose and without charge, with or without modification, provided that all copyright notices are retained; that the AFM files are not distributed without this file; that all modifications to this file or any of the AFM files are prominently noted in the modified file(s); and that this paragraph is not modified. Adobe Systems has no responsibility or obligation to support the use of the AFM files.
+
+Modification notice: PortableDocument keeps only the glyph names, built-in encoding codes and advance widths of these files, re-encoded in a compact compressed table (std14-widths.bin); bounding boxes, kerning and ligature data are omitted.

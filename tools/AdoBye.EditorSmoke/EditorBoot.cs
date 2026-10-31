@@ -17,14 +17,15 @@ static class EditorBoot
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         await using var app = builder.Build();
-        using var files = new PhysicalFileProvider(Path.GetFullPath(root));
+        var remote = Uri.TryCreate(root, UriKind.Absolute, out var remoteUri) && remoteUri.Scheme is "http" or "https";
+        using var files = new PhysicalFileProvider(remote ? AppContext.BaseDirectory : Path.GetFullPath(root));
         app.UsePathBase("/csharp-pdf");
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".dat"] = "application/octet-stream";
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
-        var url = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/csharp-pdf/";
+        var url = remote ? root : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/csharp-pdf/";
         using var pw = await Playwright.CreateAsync();
         await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
         var results = new List<object>();
@@ -108,7 +109,7 @@ static class EditorBoot
                 await context.UnrouteAllAsync();
                 if (scenario == "stalled-worker") await page.Clock.ResumeAsync();
                 await reload.PressAsync("Enter");
-                await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+                await page.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
             }
             else
             {

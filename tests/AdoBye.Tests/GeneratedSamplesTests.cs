@@ -20,7 +20,10 @@ public sealed class GeneratedSamples : IDisposable
 
     public string Full => Path.Combine(Dir, "27-full-collection.pdf");
 
-    public IEnumerable<string> Sources => Files.Where(f => !f.StartsWith("27-", StringComparison.Ordinal));
+    public IEnumerable<string> Sources => Files.Where(f => string.CompareOrdinal(f[..2], "27") < 0);
+
+    /// <summary>Samples numbered above the collection (28+): committed and published, but not merged into 27.</summary>
+    public IEnumerable<string> Standalone => Files.Where(f => string.CompareOrdinal(f[..2], "27") > 0);
 
     public void Dispose() { try { Directory.Delete(Dir, true); } catch (IOException) { } }
 }
@@ -37,7 +40,8 @@ public class GeneratedSamplesTests(GeneratedSamples gen) : IClassFixture<Generat
     {
         var committed = SamplesTests.SamplesDir()!;
         Assert.Equal(26, gen.Sources.Count());
-        foreach (var f in gen.Sources)
+        Assert.Equal(["28-benchmarks-brand-spec.pdf"], gen.Standalone);
+        foreach (var f in gen.Sources.Concat(gen.Standalone))
             Assert.True(File.ReadAllBytes(Path.Combine(committed, f)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(gen.Dir, f))), $"{f} differs from its generator output (regenerate the samples)");
     }
 

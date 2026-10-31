@@ -33,6 +33,12 @@ if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline")
     return;
 }
 
+if (args.Length >= 4 && args[0] == "--pool")
+{
+    await EditorPool.Run(args[1], args[2], args[3], args.Length > 4 ? int.Parse(args[4]) : 4);
+    return;
+}
+
 if (args.Length >= 4 && args[0] == "--profile")
 {
     await EditorPerformance.Run(args[1], args[2], args[3..]);
@@ -50,9 +56,20 @@ var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap] <published-wwwroot>");
-var root = Path.GetFullPath(args[^1]);
-if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
+var formsOnly = args.Length == 2 && args[0] == "--forms";
+var annotationsOnly = args.Length == 2 && args[0] == "--annotations";
+var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
+var samplesOnly = args.Length == 2 && args[0] == "--samples";
+var protectionOnly = args.Length == 2 && args[0] == "--protection";
+var viewportOnly = args.Length == 3 && args[0] == "--viewport";
+var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
+if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot-or-url> | --viewport <published-wwwroot-or-url> <sample.pdf>");
+var source = viewportOnly ? args[1] : args[^1];
+var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
+if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
+    throw new ArgumentException("The public editor URL must end in /csharp-pdf/.");
+var root = publicSite ? Path.GetFullPath(Environment.GetEnvironmentVariable("EDITOR_SMOKE_SITE_ROOT") ?? AppContext.BaseDirectory) : Path.GetFullPath(source);
+if (!publicSite && !File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -71,9 +88,9 @@ app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProv
 await app.StartAsync();
 try
 {
-    var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+    var address = publicSite ? publicUri!.GetLeftPart(UriPartial.Authority) : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var pw = await Playwright.CreateAsync();
-    await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
+    await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"], IgnoreDefaultArgs = viewportOnly ? ["--hide-scrollbars"] : null });
     await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
     var page = await context.NewPageAsync();
     page.SetDefaultTimeout(60000);
@@ -93,9 +110,10 @@ try
         else errors.Enqueue(message.Text);
         Console.Error.WriteLine(message.Text);
     };
-    page.Request += (_, request) =>
+    context.Request += (_, request) =>
     {
         if (request.Method == "GET" && request.Url.StartsWith("blob:" + address + "/", StringComparison.Ordinal)) return;
+        if (!request.Url.StartsWith("http:", StringComparison.Ordinal) && !request.Url.StartsWith("https:", StringComparison.Ordinal)) return;
         if (!request.Url.StartsWith(address + "/csharp-pdf/", StringComparison.Ordinal) || request.Method != "GET" || new Uri(request.Url).AbsolutePath.Contains("/api/"))
             network.Enqueue(request.Method + " " + request.Url);
     };
@@ -149,6 +167,18 @@ try
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
     Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
+    if (pageHistoryOnly)
+    {
+        await EditorPageHistory.Run(page, address + "/csharp-pdf/");
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound traffic or browser errors during page history.");
+        return;
+    }
+    if (viewportOnly)
+    {
+        await EditorViewport.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
+        Console.WriteLine("PASS: app shell fits the viewport and the window never scrolls across viewport/DPR/zoom/panel/menu configurations.");
+        return;
+    }
     if (saveOverlapOnly)
     {
         await EditorSaveOverlap.Run(browser, address + "/csharp-pdf/");
@@ -158,6 +188,19 @@ try
     {
         await EditorJsonSafety.Run(context, address + "/csharp-pdf/");
         Check(network.IsEmpty && errors.IsEmpty, "No unexpected JSON-safety browser errors or traffic.");
+        return;
+    }
+    if (formsOnly)
+    {
+        await EditorForms.Run(page, root);
+        await EditorFormAuthoring.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
+        return;
+    }
+    if (annotationsOnly)
+    {
+        await EditorAnnotations.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No unexpected annotation errors or outbound traffic.");
         return;
     }
     if (textSelectionOnly)
@@ -171,6 +214,25 @@ try
         await EditorMerge.Run(page);
         Check(network.IsEmpty && EditorMerge.ExpectedErrors(errors, ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + System.Text.Json.JsonSerializer.Serialize(errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: keyboard merge controls/focus/Escape, inline server rejection with retained choices, direct later-frame rejection preserving state/history/assets and undo, multi-file order/range/insertion, render/save/reopen.");
+        return;
+    }
+    if (samplesOnly)
+    {
+        await EditorSamples.Run(page, address, root, network);
+        Check(errors.All(EditorSamples.ExpectedError), "No unexpected browser errors: " + string.Join("\n", errors));
+        Console.WriteLine("PASS: primary showcase (18 tagged pages, distinct nonblank 96dpi renders, save, desktop/mobile welcome), secondary full collection (failure/Retry, 50 pages, outline/labels), showcase-first menu/manifest ordering, replace confirmation, Resume/Discard, #sample=28 and collection deep links, no uploads or external requests.");
+        return;
+    }
+    if (cryptoPerfOnly)
+    {
+        await EditorCryptoPerf.Run(page);
+        return;
+    }
+    if (protectionOnly)
+    {
+        await EditorProtection.Run(page);
+        Check(network.IsEmpty && errors.All(e => EditorProtection.ExpectedError(e) || ExpectedRecoveryError(e)), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
+        Console.WriteLine("PASS: encrypted samples open through the accessible password dialog (cancel, wrong password retry), nothing persisted, permissions enforced, protected save (AES-256) and owner protection removal in WASM.");
         return;
     }
     if (recoveryOnly)

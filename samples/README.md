@@ -1,6 +1,6 @@
 # Sample PDFs
 
-Twenty-six committed example documents (plus a generated 27th) that exercise as much of ISO 32000-2 (PDF 2.0) as possible. Every file is generated from raw PDF operators by this repo's own C# tooling (`tools/AdoBye.Samples`), so the examples are valid, small (about 2.4 MB in total for 01-26) and free of stock images. Open `01-spec-showcase.pdf` first: its tiles link to the other files, or generate `27-full-collection.pdf` for all of them in one file.
+Twenty-seven committed example documents (plus a generated collection numbered 27) that exercise as much of ISO 32000-2 (PDF 2.0) as possible. Every file is generated from raw PDF operators by this repo's own C# tooling (`tools/AdoBye.Samples`), so the examples are valid, small (about 2.4 MB in total for 01-26; `28` adds about 0.37 MB) and free of stock images. Start with **[Open the showcase](https://ievangelist.github.io/csharp-pdf/#sample=28)**: `28-benchmarks-brand-spec.pdf` is the primary one-click browser sample, a tagged 18-page showcase of measured benchmarks, brand exploration and the honest parity map. `01-spec-showcase.pdf` links to the individual fixtures; generate `27-full-collection.pdf` for samples 01-26 in one file. Sample 28 sits beside the collection rather than inside it.
 
 Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro (code), all embedded as OpenType/CFF subsets; an indigo / teal / amber / rose palette on a 54 pt margin grid.
 
@@ -34,7 +34,8 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 | `24-poster.pdf` | A3 poster | Large display type, layered shadings, translucent rings, blend modes (`Screen`), outlined text |
 | `25-dashboard-charts.pdf` | KPI dashboard (A4 landscape) | Bar, smooth line/area (Catmull-Rom Béziers + clipped gradient), donut (arc paths) and sparklines — all path operators |
 | `26-repacked-object-streams.pdf` | Report rewritten by this repo's `PdfEditor`/`PdfWriter` | Compressed object streams and cross-reference streams (PDF 1.5+ file structure) |
-| `27-full-collection.pdf` | *Generated on demand, not committed:* all of the above in one file (50 pages) | Page import/merge, rebuilt outline and page labels, retargeted links, form + layers + attachments + named destinations + structure tree carried over (see below) |
+| `27-full-collection.pdf` | *Generated on demand, not committed:* samples 01-26 in one file (50 pages) | Page import/merge, rebuilt outline and page labels, retargeted links, form + layers + attachments + named destinations + structure tree carried over (see below) |
+| `28-benchmarks-brand-spec.pdf` | Benchmarks, brand directions and spec parity (18 pages) | Vector charts (paired and diverging bars, log-scale dot plots, lollipops, bullet charts, sparklines, donut) from the checked-in 2026-10-30 reports with source/date/hardware/mode on every figure; brand marks, palettes with computed WCAG contrast, type pairings and mock applications (clipped shadings, transparency); ISO 32000-2 Done/Partial tables from `docs/spec-matrix.md`. Tagged: `/StructTreeRoot` with H1/H2/H3, lists, tables with TH scope, figures with `/Alt`, artifacts, outline, `/Lang`, XMP with `pdfuaid:part`; passes this repo's PDF/UA-1 heuristics. Standalone: **not** part of the 27 collection. The brand pages are exploration (the project name is undecided), not decisions |
 
 ## Passwords
 
@@ -43,9 +44,21 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 | `17-encrypted-user-password.pdf` | `user123` | `owner-user123` |
 | `18-encrypted-owner-restricted.pdf` | *(none — opens freely)* | `owner123` |
 
+**Try them in the browser editor.** Open `17` and the editor asks for the password (use `user123`; `owner-user123` opens it with owner rights, which unlocks "Remove protection" under Save as). Open `18` and it opens immediately but print, copy, modify and annotate actions are refused with a message; supply `owner123` through `PdfDocument.Load(bytes, "owner123")` or the server editor to lift that. Save as on a protected document writes an AES-256 (R6) copy with the passwords and permission checkboxes you choose. Passwords are used once and never stored, and encrypted documents never write recovery copies. See [docs/browser-encryption.md](../docs/browser-encryption.md).
+
 ## The full collection
 
-`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26, and `.gitignore` excludes it); `tools/Validate-Samples.ps1` or `AdoBye.Samples generate samples 27-` creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
+**Where is it?** Three places, all the same bytes (generation is deterministic):
+
+* **Public site:** the browser editor loads it with one click: the **Open the full sample collection** button on the empty state, **File > Open sample > Full sample collection**, or the deep link `#sample=27-full-collection` / `?sample=27` (for example `https://ievangelist.github.io/csharp-pdf/#sample=27-full-collection`). The Pages publish (`tools/Publish-EditorPages.ps1`) generates it and ships `samples/27-full-collection.pdf`, `samples/01-…26-….pdf` and `samples/manifest.json` (name, title, description, size, pages, sha256) as static files. They are fetched only on demand (never at startup, not precached), same-origin, and the loader verifies size and sha256 against the manifest before opening. Publish with `-SkipSamples` to omit them; the editor then works as before and the button reports that the collection is not published.
+* **Local HTTP host:** `dotnet run --project tools/AdoBye.EditorWeb` serves the same `/samples/manifest.json` and `/samples/*.pdf` from this folder (generate 27 first, below).
+* **On disk:** it is not committed (`.gitignore`). Generate it into this folder with
+
+  ```powershell
+  dotnet run --project tools/AdoBye.Samples -c Release -- generate samples 27-
+  ```
+
+`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26); `tools/Validate-Samples.ps1` or the command above creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
 
 * **Navigation:** one collapsed bookmark per sample (`NN  Title`) that lands on the sample's first page and nests that sample's own bookmarks (`12` and `20`/`26` have them); page labels read `NN · label` (sample `12` keeps its roman / decimal / `A-` labels under the prefix); `PageMode UseOutlines`.
 * **Links:** the `GoToR` tiles of `01` are rewritten to plain `GoTo` destinations so they jump inside the merged file.
@@ -59,14 +72,17 @@ Everything is authored in C# with this repo's own library: the generators in `to
 
 ```powershell
 dotnet build tools/AdoBye.Samples -c Release
-dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples          # all 27
+dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples          # all 28
+dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples 28-      # sample 28 only
 dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples 12-nav   # a subset (file-name fragment)
 dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll validate samples --out compare-out/samples
 ```
 
 Layout: `Kit/Doc.cs` (document, pages, content streams, form XObjects, resources), `Kit/Fonts.cs` + `Kit/FontFile.cs` (standard 14 metrics and OpenType/TrueType reading, kerning and glyph subsetting), `Kit/Raster.cs` (procedural images, baseline JPEG encoder, sRGB profile), `Kit/Theme.cs` (palette and page furniture), one `Gen/GenNN.cs` per sample (`Gen26` repacks `20` with `PdfEditor`, `Gen27` is the merge). `_gen/fonts/` holds the OFL/Bitstream fonts (see `LICENSES.txt`; also used by the browser editor). Sample-suite authoring no longer requires Python; independent test-fixture generators elsewhere are separate from this migration.
 
-Tests: `SamplesTests` opens every committed sample (with the passwords above) and renders page 1 without warnings. `GeneratedSamplesTests` regenerates all samples into a temp folder and checks that 01-26 equal the committed files byte-for-byte, and that 27 has exactly the pages of the others, bookmarks and labels per sample, 17/18 merged with their text, retargeted and named-destination links, and the same form fields, layers, attachments, structure tree and nested bookmarks as the sources.
+Tests: `SamplesTests` opens every committed sample (with the passwords above) and renders page 1 without warnings. `GeneratedSamplesTests` regenerates all samples into a temp folder and checks that 01-26 and 28 equal the committed files byte-for-byte, and that 27 has exactly the pages of 01-26 (28 is never merged into it), bookmarks and labels per sample, 17/18 merged with their text, retargeted and named-destination links, and the same form fields, layers, attachments, structure tree and nested bookmarks as the sources. `ShowcaseSampleTests` covers sample 28: byte-identical regeneration, 18 A4 pages, title/language/outline, every font embedded as a subset, no URI/launch/script/image/encryption tokens, alt text on every figure, `PdfValidator.ValidatePdfUA` with no errors or warnings, a warning-free render of every page, and parity pills that equal the Done/Partial counts parsed from `docs/spec-matrix.md` (so the document must be regenerated when the matrix changes).
+
+Sample 28 was also compared with the Edge/PDFium viewer one page at a time (each page split into its own file): all 18 pages differ in 0.04-0.32 % of pixels (tolerance 2 %).
 
 Integrated validation on 2026-10-30 passes 38 focused sample/reproducibility
 cases and, after integration review fixes, the 1696-case full Release suite. The editor's separate local
@@ -93,3 +109,5 @@ Known differences and notes:
 * `13`: Edge page 1 is offset in the harness crop (white TrimBox edge confuses the page locator); visual inspection shows identical output.
 * Our renderer draws the Symbol/ZapfDingbats standard fonts as Latin text, so the form checkbox tick is vector-drawn in `11`; and a `PatternType 2` shading used as a stroke colour (tile 11 of `06`) renders dark rather than as the gradient. Both are renderer gaps, not file defects.
 * The compare harness was extended to size the viewport to the page and to stop the crop at the gap between pages, so A4/A3 and multi-page samples compare correctly.
+
+**Encrypted samples in the browser editor:** `17` (password `user123`) and `18` (owner-restricted, opens freely) are offered in File > Open sample and via `#sample=17` / `#sample=18`; they open through the same password dialog as any local file. See [browser-encryption.md](../docs/browser-encryption.md).

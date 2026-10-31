@@ -67,6 +67,8 @@ public sealed class ContentInterpreter
     /// overprint device-dependent and nonzero overprint mode does not apply on a non-CMYK device, so ordinary screen output ignores it.
     /// </summary>
     public bool OverprintSimulation { get; set; }
+    /// <summary>Optional decoded-image cache shared by several renders of one document (band renders re-draw the same images).</summary>
+    public ImageDecodeCache? ImageCache { get; set; }
 
     public ContentInterpreter(PdfFile f, IRenderBackend backend, IFontFallback? fallback = null)
     {
@@ -189,6 +191,16 @@ public sealed class ContentInterpreter
             }
         }
         throw new NotSupportedException($"Page transparency group colour space /{kind ?? "invalid"} is not supported; only DeviceGray, DeviceRGB, DeviceCMYK, CalGray, CalRGB and ICCBased blending are implemented.");
+    }
+
+    /// <summary>
+    /// Blending colour space of an isolated nested group (11.4.7, 11.7.5.3). Unlike the page group, an unsupported or malformed /CS
+    /// (DeviceN, Lab, Separation, unparsable ICC) silently keeps the inherited blending space instead of failing the page.
+    /// </summary>
+    PdfColorSpace? FormGroupColorSpace(PdfDictionary group, PdfDictionary resources)
+    {
+        try { return PageGroupColorSpace(group.Get("CS"), resources); }
+        catch (Exception e) when (e is NotSupportedException or PdfParseException) { return null; }
     }
 
     static readonly PdfColorSpace CmykGroupSpace = new GroupBlendColorSpace(GroupBlendSpace.Cmyk);
@@ -1319,7 +1331,7 @@ public sealed class ContentInterpreter
                 var alpha = _gs.FillAlpha; var bm = _gs.BlendMode;
                 if (knockout || alpha < 1 || bm != "Normal" || _gs.SoftMaskActive || (isolated && TransparencyScan.UsesBlendMode(_f, res)))
                 {
-                    _be.BeginGroup(isolated, knockout, alpha, bm);
+                    _be.BeginGroup(isolated, knockout, alpha, bm, isolated ? FormGroupColorSpace(grp, res) : null);
                     _gs.FillAlpha = _gs.StrokeAlpha = 1; _gs.BlendMode = "Normal"; _gs.SoftMaskActive = false;
                     _gs.AlphaIsShape = false; _be.SetAlphaIsShape(false); // 11.6.6: a group starts with alpha-is-shape false (restored by the enclosing Save/Restore)
                     grouped = true;
@@ -1550,7 +1562,7 @@ public sealed class ContentInterpreter
         if (d.TryGetValue("Filter", out var fv)) d["Filter"] = ExpandNames(fv);
         var stream = new PdfStream(new PdfDictionary(d), raw);
         if (CaptureInlineImages) _lastInline = stream;
-        try { DrawImage(stream, res); } catch (Exception e) when (e is NotSupportedException or IndexOutOfRangeException or ArgumentException) { Warn("inline image: " + e.Message); }
+        try { DrawImage(stream, res, cacheable: false); } catch (Exception e) when (e is NotSupportedException or IndexOutOfRangeException or ArgumentException) { Warn("inline image: " + e.Message); }
     }
 
     static PdfObject ExpandNames(PdfObject o) => o is PdfArray a ? new PdfArray(a.Items.Select(x => x is PdfName n ? new PdfName(ExpandFilter(n.Value)) : x).ToList()) : o is PdfName nn ? new PdfName(ExpandFilter(nn.Value)) : o;
@@ -1575,10 +1587,17 @@ public sealed class ContentInterpreter
         return d.Length;
     }
 
-    void DrawImage(PdfStream xs, PdfDictionary res)
+    void DrawImage(PdfStream xs, PdfDictionary res, bool cacheable = true)
     {
-        if (!DrawGraphics) return;
-        var img = ImageDecoder.Decode(_f, xs, res, out var isMask, out var warn, _gs.Intent, _gs.BlackPointCompensation);
+        if (!DrawGraphics || !_be.MayPaintImage(_gs.Ctm)) return;
+        ImageData? img; bool isMask; string? warn;
+        var cacheKey = new ImageDecodeCache.Key(xs, res, _gs.Intent, _gs.BlackPointCompensation);
+        if (cacheable && ImageCache is not null && ImageCache.TryGet(cacheKey, out img, out isMask, out warn)) { }
+        else
+        {
+            img = ImageDecoder.Decode(_f, xs, res, out isMask, out warn, _gs.Intent, _gs.BlackPointCompensation);
+            if (cacheable) ImageCache?.Add(cacheKey, img, isMask, warn);
+        }
         if (warn is not null) Warn(warn);
         if (img is null) return;
         if (!isMask && _gs.Transfer is { } tr && IsFullyOpaque(false)) img = tr.Apply(img);

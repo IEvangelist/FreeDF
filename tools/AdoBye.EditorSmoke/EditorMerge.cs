@@ -12,6 +12,7 @@ static class EditorMerge
         var entries = errors.ToArray();
         string[][] stack =
         [
+            ["   at EditorSession.HandleCore(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)"],
             ["   at EditorSession.Handle(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)"],
             ["   at BrowserEditor.Execute(Command c, Byte[] body)",
              "   at BrowserEditor.RequestBytes(String method, String path, String query, String body, JSObject exchange, String fileName)"],
@@ -23,7 +24,12 @@ static class EditorMerge
             // AOT may inline ImportRange; the state-boundary frames must still match.
             if (i + 1 < entries.Length && entries[i + 1] == "   at EditorSession.ImportRange(String range, Int32 count, String label)") i++;
             foreach (var frames in stack)
-                if (++i >= entries.Length || !frames.Contains(entries[i])) return false;
+            {
+                if (++i >= entries.Length) return false;
+                // The permission guard wrapper may be inlined by AOT.
+                if (frames.Any(frame => frame.Contains("EditorSession.Handle(")) && entries[i] == "   at EditorSession.HandleGuarded(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)") i++;
+                if (i >= entries.Length || !frames.Contains(entries[i])) return false;
+            }
         }
         return true;
     }

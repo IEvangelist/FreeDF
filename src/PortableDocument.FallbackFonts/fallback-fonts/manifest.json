@@ -1,0 +1,2296 @@
+{
+  "version": 1,
+  "lazy": true,
+  "assets": [
+    {
+      "path": "cjk/CNS1/00.bin",
+      "size": 7492,
+      "sha256": "9b26477bc86b310d579e7cac3f9b0cf27859672e3ab6cb3a7bca91b6eb9fd633"
+    },
+    {
+      "path": "cjk/CNS1/02.bin",
+      "size": 139,
+      "sha256": "1c4bfbdc7c2670780368f3b9e880a6a805a49d0d823a34d714ed1754af97586d"
+    },
+    {
+      "path": "cjk/CNS1/03.bin",
+      "size": 4264,
+      "sha256": "1663b9acfc13eaafc466d25bbe8a780f353c63d97c483c65bfa95b05a2930034"
+    },
+    {
+      "path": "cjk/CNS1/20.bin",
+      "size": 597,
+      "sha256": "a2af99f36f85c65c7ef02d9a3fcbf9028e193f939cf737b0e0f53e6a1d3ff4e5"
+    },
+    {
+      "path": "cjk/CNS1/21.bin",
+      "size": 1346,
+      "sha256": "607e6c8ffcdd08e4dca5713c714e5f00614381055afe1e188dd5f4d0527b9f22"
+    },
+    {
+      "path": "cjk/CNS1/22.bin",
+      "size": 1295,
+      "sha256": "5961f34bc4ecaf3a8a6d3244f1e19c77540a505eb5e1a2dbe003af6fb913ed14"
+    },
+    {
+      "path": "cjk/CNS1/25.bin",
+      "size": 1629,
+      "sha256": "d46005304bbdea59eec315db17f0e64cf543edc0d4c7f7ccfca4ad809f6e30b4"
+    },
+    {
+      "path": "cjk/CNS1/26.bin",
+      "size": 422,
+      "sha256": "52cd1e2e7fa519acdf7a69cd2b905ef5245bdb9ae550fe6494074cbf47304624"
+    },
+    {
+      "path": "cjk/CNS1/30.bin",
+      "size": 1268,
+      "sha256": "af3c13a2697b2c48ee7af36386d049595254033878fb67dc1391fcd5b9a10279"
+    },
+    {
+      "path": "cjk/CNS1/31.bin",
+      "size": 4637,
+      "sha256": "d08334de9a69e6f6a037eb6e818acfecd147e734a5ef9a4e60d804540b384d2f"
+    },
+    {
+      "path": "cjk/CNS1/32.bin",
+      "size": 232,
+      "sha256": "54b68ad80e35ce0471c99097711843d275b292c119c3500df51c8ece4521048c"
+    },
+    {
+      "path": "cjk/CNS1/33.bin",
+      "size": 1516,
+      "sha256": "13f1f5aaf3a03487de222eaa21861620328671af889543e024c6313f36a02a67"
+    },
+    {
+      "path": "cjk/CNS1/4e.bin",
+      "size": 19857,
+      "sha256": "55a2f7d8342ae065a9df83dc6ecf0c0687e3981277bfe493bab4cf298a03dff9"
+    },
+    {
+      "path": "cjk/CNS1/4f.bin",
+      "size": 31252,
+      "sha256": "1a28437481a8712034a3bd3b4a3d1261b5ddb1b515bf5e71393b0fc336eaeba3"
+    },
+    {
+      "path": "cjk/CNS1/50.bin",
+      "size": 42219,
+      "sha256": "eafa4408d7ef22e27ac8dc355f5d7cc0982138acd29353931b58f5389c21a5b6"
+    },
+    {
+      "path": "cjk/CNS1/51.bin",
+      "size": 36004,
+      "sha256": "32a3a9adeac97e6fbb1173f647e203355735f0cbc5949cd141679791829b0384"
+    },
+    {
+      "path": "cjk/CNS1/52.bin",
+      "size": 37562,
+      "sha256": "3dad420d3d4f1867f224c9fc2b4714235579d46620b6a61d121facdd4ae0008d"
+    },
+    {
+      "path": "cjk/CNS1/53.bin",
+      "size": 24899,
+      "sha256": "2628075d68238f6edbe9fe8df127577d5853c60e92e1bd0bb83e26a2467d5500"
+    },
+    {
+      "path": "cjk/CNS1/54.bin",
+      "size": 28081,
+      "sha256": "3b80adf0f12270920c3e47cca5c63dd5532a12df6ca26c1311e1bf910743d28e"
+    },
+    {
+      "path": "cjk/CNS1/55.bin",
+      "size": 37046,
+      "sha256": "5a608cb2175597b635ce0db47c7291f59e6546ea2749d67a73faa3e505870232"
+    },
+    {
+      "path": "cjk/CNS1/56.bin",
+      "size": 42145,
+      "sha256": "c133c4e81aaa578c535e4390722333c1f89c421b49a6209506c719cdb8183e99"
+    },
+    {
+      "path": "cjk/CNS1/57.bin",
+      "size": 27426,
+      "sha256": "924fa8b79129bd327492f0ae58bfa315fa998e185f119d8893a9e7a1833fe4c3"
+    },
+    {
+      "path": "cjk/CNS1/58.bin",
+      "size": 41572,
+      "sha256": "20a78ec2a4448c0190e76fa65c052ab273b92ffa27ed8df8b309535bdcc581b6"
+    },
+    {
+      "path": "cjk/CNS1/59.bin",
+      "size": 38107,
+      "sha256": "4624582b0f3494d01f18169f17e7869730a816c4ff459f5e1b51c1aeca1ffa99"
+    },
+    {
+      "path": "cjk/CNS1/5a.bin",
+      "size": 44946,
+      "sha256": "55148f4410393c9169db03fde4415bad40bfb4913cc1f01a5ba95a4fcfaf89cf"
+    },
+    {
+      "path": "cjk/CNS1/5b.bin",
+      "size": 46022,
+      "sha256": "a9588b2e1c983345f4808bbd3eb6453aae02bf7ee274847df8fdf9b8e6f92aaa"
+    },
+    {
+      "path": "cjk/CNS1/5c.bin",
+      "size": 30522,
+      "sha256": "74966088878245b7b3d8d4820a7ecfcc01543cdc2a7f01a46ac6078b844f53f8"
+    },
+    {
+      "path": "cjk/CNS1/5d.bin",
+      "size": 40578,
+      "sha256": "a2d1e7c04c6c3a9dda8a5684fb70fc72600e517b94164c5a291d4803c7bef8ea"
+    },
+    {
+      "path": "cjk/CNS1/5e.bin",
+      "size": 40193,
+      "sha256": "1927bb22522d85486623ad4300f97874b77d0028ea656047eab6457c7f29d627"
+    },
+    {
+      "path": "cjk/CNS1/5f.bin",
+      "size": 39842,
+      "sha256": "313b7a6ca49338880515a30487b6c48e466c31aee6ee67e2d2a5c3f9439158b0"
+    },
+    {
+      "path": "cjk/CNS1/60.bin",
+      "size": 38360,
+      "sha256": "f788c93e6472a25d67efdfce73b4c4b1e14fe302947edb37f6d7cf289ecbb241"
+    },
+    {
+      "path": "cjk/CNS1/61.bin",
+      "size": 55177,
+      "sha256": "c2f00c6a0611d3cfea4d27dfe117060735925b005f647f1270cff93dd0162d0b"
+    },
+    {
+      "path": "cjk/CNS1/62.bin",
+      "size": 38023,
+      "sha256": "0690057ef3019753eefb5f6f0d296aa62df8e4ec7d3a9997dde194c4794605a8"
+    },
+    {
+      "path": "cjk/CNS1/63.bin",
+      "size": 39893,
+      "sha256": "da6d912fee650c5da78028a82256a77e270d16d58771bb8313627d90f68d8175"
+    },
+    {
+      "path": "cjk/CNS1/64.bin",
+      "size": 53886,
+      "sha256": "6878018b6588c7b76f5abc51e47682c21c40b1b663f4670f78ccc5b9825ec557"
+    },
+    {
+      "path": "cjk/CNS1/65.bin",
+      "size": 51123,
+      "sha256": "bb486c2574312a56b3c0e8d650dee45341de6ea2f532bac73046c945b339b024"
+    },
+    {
+      "path": "cjk/CNS1/66.bin",
+      "size": 37178,
+      "sha256": "4bcaee608f9ea7b97be96cfed365ecf62ff3c338e19c457674e52af5f76e0020"
+    },
+    {
+      "path": "cjk/CNS1/67.bin",
+      "size": 35977,
+      "sha256": "3994cde1a243e513fc4a777fcf10890e089cdba360650d139b4614fb03169b4b"
+    },
+    {
+      "path": "cjk/CNS1/68.bin",
+      "size": 39294,
+      "sha256": "803dcf250915f28520821a107d6407c578e8ef3559f7994d56e7f813bca9344d"
+    },
+    {
+      "path": "cjk/CNS1/69.bin",
+      "size": 45679,
+      "sha256": "ae59cba8cc7f1b23ae556fc07d5180dd8248c47ac7c7276deabea2f741af97da"
+    },
+    {
+      "path": "cjk/CNS1/6a.bin",
+      "size": 52963,
+      "sha256": "6dfd927a462c52bf3672a11a6614d09abdae782fa1761a85947747c38696ab9b"
+    },
+    {
+      "path": "cjk/CNS1/6b.bin",
+      "size": 54201,
+      "sha256": "b3ba84ebd136edfde5a6236f7cb1b4552733b9abc7c8f38f3ba91d7c8329f3fd"
+    },
+    {
+      "path": "cjk/CNS1/6c.bin",
+      "size": 37827,
+      "sha256": "432799ce243fcc035b216b576f5568c10d52f2349bea3697207c6ed828f06cda"
+    },
+    {
+      "path": "cjk/CNS1/6d.bin",
+      "size": 42999,
+      "sha256": "3f94ee5ddd17137cacc816aee8c9cf09e1216eaed82905f0676fd5edc2e87486"
+    },
+    {
+      "path": "cjk/CNS1/6e.bin",
+      "size": 46085,
+      "sha256": "69c1f1b3176a770f782d44afc0ef0d629abd1207d99ab24452c51c0f2202aa7f"
+    },
+    {
+      "path": "cjk/CNS1/6f.bin",
+      "size": 61763,
+      "sha256": "427d60dfd064bf35a7942a4548c95103d889b6f02fa645a78c7345b32273951f"
+    },
+    {
+      "path": "cjk/CNS1/70.bin",
+      "size": 53504,
+      "sha256": "5fca22756214e78afec1098f22c1fcf2357cd07753bc318d31204954da2b013b"
+    },
+    {
+      "path": "cjk/CNS1/71.bin",
+      "size": 48375,
+      "sha256": "16298cf34f9b139700b0e801ae4e3834d9489b4996f0eef8ca04a5b2f2d2d062"
+    },
+    {
+      "path": "cjk/CNS1/72.bin",
+      "size": 44773,
+      "sha256": "e5461d3c607c9e71c4609e2f5a72a29a6599984634696637aa9b1efe6ed5ca9f"
+    },
+    {
+      "path": "cjk/CNS1/73.bin",
+      "size": 46028,
+      "sha256": "5174a3911b4da480b5fb374593d2604430c5e877ab4a879399ab7463daa062ee"
+    },
+    {
+      "path": "cjk/CNS1/74.bin",
+      "size": 49037,
+      "sha256": "c37d553937361c2a2b074b43906cde4cd7d6cfac204ac3210ad50e49891ae97f"
+    },
+    {
+      "path": "cjk/CNS1/75.bin",
+      "size": 38071,
+      "sha256": "a2b7957d429d013acf1405e249fa906e0cb8348bec9821bf70635738113058b3"
+    },
+    {
+      "path": "cjk/CNS1/76.bin",
+      "size": 45976,
+      "sha256": "7626d69259e8159d5bdf226ef5a1c7e2324f2843e97d1afd5debc48cc8ae2bef"
+    },
+    {
+      "path": "cjk/CNS1/77.bin",
+      "size": 40896,
+      "sha256": "a44075925f1866fdbe474fbe41e083e53d8598f4074f75187b40e0169022d78b"
+    },
+    {
+      "path": "cjk/CNS1/78.bin",
+      "size": 36591,
+      "sha256": "e61749a5bb66ce29b9d81a24ebd9f6ad7b352d6a9354920cdbdaaeb5143f6fc8"
+    },
+    {
+      "path": "cjk/CNS1/79.bin",
+      "size": 43498,
+      "sha256": "573988239ce30da736b2c1735b85427dfa00f6d4fb0c3fe1b57eacbabffc049d"
+    },
+    {
+      "path": "cjk/CNS1/7a.bin",
+      "size": 45257,
+      "sha256": "b1f218d5d1c43f2e098c8dc81aabf8bba6a6b61b81168572e835c56fc10fa7f3"
+    },
+    {
+      "path": "cjk/CNS1/7b.bin",
+      "size": 41138,
+      "sha256": "548338236d7340e3db837a5a439efdc1bad4d03c53574094b7ffca508f7025c2"
+    },
+    {
+      "path": "cjk/CNS1/7c.bin",
+      "size": 49977,
+      "sha256": "c1ca484bdaf63c0525b14a562f9ed587a80509d33e3ef9f49c9c2156c2c8670d"
+    },
+    {
+      "path": "cjk/CNS1/7d.bin",
+      "size": 50786,
+      "sha256": "dddce720db18cb934c76e52d9dcaba7aa723e9f606ddf698e68d021958814a7e"
+    },
+    {
+      "path": "cjk/CNS1/7e.bin",
+      "size": 47034,
+      "sha256": "44dc5e5e1d118df6a669fac34065859cfd5180e273d13658232c82072f937895"
+    },
+    {
+      "path": "cjk/CNS1/7f.bin",
+      "size": 42555,
+      "sha256": "99f20e3fae5be93724b3ebcb5458d02b2fa7a3da62667c2d4941c718f7cf3fcc"
+    },
+    {
+      "path": "cjk/CNS1/80.bin",
+      "size": 36158,
+      "sha256": "b377027835131201ecae964d0fd66ca19ae2faab4bf87e70b41d964eed6625b1"
+    },
+    {
+      "path": "cjk/CNS1/81.bin",
+      "size": 48785,
+      "sha256": "3e8c31f92987e24134e4ac318ed9b6b68d45745872cb946fac0898219bad2d06"
+    },
+    {
+      "path": "cjk/CNS1/82.bin",
+      "size": 37667,
+      "sha256": "8ad06dedb82f1c60ac9e62948774570b122ae6a3b7f73f74a6e080625e182ea0"
+    },
+    {
+      "path": "cjk/CNS1/83.bin",
+      "size": 37361,
+      "sha256": "4493616cd78d1b5bba5f6c7d6de4f41c6cd2c87d9b8059f6c329a8cf17e09109"
+    },
+    {
+      "path": "cjk/CNS1/84.bin",
+      "size": 43646,
+      "sha256": "0b7c40bb6d9c4f45ebcd830ccdaa2e429f7d616584a8c953f2175dbab54453c3"
+    },
+    {
+      "path": "cjk/CNS1/85.bin",
+      "size": 62352,
+      "sha256": "1ea0a5a7193dd87032d6fbf1f0ab7ef98e8cbdc9cd54a6cd0b0b3f06a9cdb71d"
+    },
+    {
+      "path": "cjk/CNS1/86.bin",
+      "size": 50637,
+      "sha256": "3d39f985de7178582174ab9ed44cba8bc3fd68e5c71d81470c1972e3ee128dd7"
+    },
+    {
+      "path": "cjk/CNS1/87.bin",
+      "size": 57764,
+      "sha256": "aa29509f1c7e44c55b5a3cda0a5fc9b933b7711a42efbb6a87efad0fddbde109"
+    },
+    {
+      "path": "cjk/CNS1/88.bin",
+      "size": 54420,
+      "sha256": "c6cef972372e466ac5109a496d1ccc1c0f128c8bc2f9fdf0005f43f84eff7903"
+    },
+    {
+      "path": "cjk/CNS1/89.bin",
+      "size": 57374,
+      "sha256": "b484927d7eab5721f4dc3b88ee320ee69b1051c6077e8b5419e89549fd008dac"
+    },
+    {
+      "path": "cjk/CNS1/8a.bin",
+      "size": 35596,
+      "sha256": "7da12e5f35b86ec10245cd5d800a0c3008ed22db363f588000fbf272e60cff7c"
+    },
+    {
+      "path": "cjk/CNS1/8b.bin",
+      "size": 37647,
+      "sha256": "bc80f780c5a27a769815bdeacb90535421812d6899174aa7f4c45f4957456b26"
+    },
+    {
+      "path": "cjk/CNS1/8c.bin",
+      "size": 42508,
+      "sha256": "6b601aae728fe7fbfc5d8389e276881e8a3e9468caaa7c935eff2f7aedb6201f"
+    },
+    {
+      "path": "cjk/CNS1/8d.bin",
+      "size": 32229,
+      "sha256": "81bd996630e10a60b7e9b31f49715fa29d910f1a476100b37ff15225a9f1b82d"
+    },
+    {
+      "path": "cjk/CNS1/8e.bin",
+      "size": 48074,
+      "sha256": "9508d7db5d9d78bf90f99925a48ff17c82330f2cea214c972e66db74221b0d3e"
+    },
+    {
+      "path": "cjk/CNS1/8f.bin",
+      "size": 32699,
+      "sha256": "cf725ca25cc22570219e69fc7fd963de7ad0b49fcbdd4bd5ecf18880c09c8e46"
+    },
+    {
+      "path": "cjk/CNS1/90.bin",
+      "size": 43463,
+      "sha256": "78a42a05d0606fe8992bb461e40f6ee8d5c699ba1fdca830644fb61f770ef951"
+    },
+    {
+      "path": "cjk/CNS1/91.bin",
+      "size": 51264,
+      "sha256": "17b9909fc4afaf515cf97adf7bc100b079e4d1668fec3bc99eaa0fb77c972513"
+    },
+    {
+      "path": "cjk/CNS1/92.bin",
+      "size": 44349,
+      "sha256": "32d5550507ce619192d2ca8840f1080a8ee4e9b541a6288a343ae47304affdd9"
+    },
+    {
+      "path": "cjk/CNS1/93.bin",
+      "size": 54888,
+      "sha256": "62dd429139876856059f3cea15ab23e7e3c09fd579835c4f943b058fada01b37"
+    },
+    {
+      "path": "cjk/CNS1/94.bin",
+      "size": 35663,
+      "sha256": "cd81df84babe387b3a69ec2de9afd848d5a3aa22473eed23460038bb76331340"
+    },
+    {
+      "path": "cjk/CNS1/95.bin",
+      "size": 15591,
+      "sha256": "5e8cf606799220d4fe2619dc319e0a6b386614d6956613dad3943f72ae5993be"
+    },
+    {
+      "path": "cjk/CNS1/96.bin",
+      "size": 37715,
+      "sha256": "ef1f5d94f47f6e3a5a171bd5015f228a79edfb129eac2eb627b42d5a6b0f8699"
+    },
+    {
+      "path": "cjk/CNS1/97.bin",
+      "size": 43213,
+      "sha256": "9d1ff6aa29a8ceaa00cc36f8db26a47512084410c10a771496fbb90b9f7abfde"
+    },
+    {
+      "path": "cjk/CNS1/98.bin",
+      "size": 37271,
+      "sha256": "57c7d54bd16897116e81aaea8d32bc359b7def6d2c3f77f4882af53bfad0617e"
+    },
+    {
+      "path": "cjk/CNS1/99.bin",
+      "size": 42779,
+      "sha256": "9553c22d1ac767a05ed37c4f66e903ef39e61fc52ac37a33910083d8353ed3b4"
+    },
+    {
+      "path": "cjk/CNS1/9a.bin",
+      "size": 44304,
+      "sha256": "89216920404603caa4377b604540e963e546394ed1432f26bf6c723ebca29d4a"
+    },
+    {
+      "path": "cjk/CNS1/9b.bin",
+      "size": 47083,
+      "sha256": "0fe4dd61d07c48337bfb191a45cd50c19a09b1a59edf7564cc3fdf2a339b5e32"
+    },
+    {
+      "path": "cjk/CNS1/9c.bin",
+      "size": 31191,
+      "sha256": "9ead82dbf408bf97a4c5eae0890ee668c795e3f443e8e2439bf088e9f46012d3"
+    },
+    {
+      "path": "cjk/CNS1/9d.bin",
+      "size": 61493,
+      "sha256": "8e67f00af96967b6d1f43c1e8a670bab1f871e82a02a0b70e49fb8eb6407163f"
+    },
+    {
+      "path": "cjk/CNS1/9e.bin",
+      "size": 45090,
+      "sha256": "9a397dba54ce6f819f5588aa250ee6d1993cae51bc4133af255181c4aa2af036"
+    },
+    {
+      "path": "cjk/CNS1/9f.bin",
+      "size": 33135,
+      "sha256": "d75744fcaa92797a34d154bddfa53c67a2f2a0e99c40449ae688cda004f4c511"
+    },
+    {
+      "path": "cjk/CNS1/fa.bin",
+      "size": 527,
+      "sha256": "07ba50c067f51c35285d2cb4e451580c29273c804bd8df0b5845322d284637b7"
+    },
+    {
+      "path": "cjk/CNS1/fe.bin",
+      "size": 3164,
+      "sha256": "9e261554f903bb1ca2b89e715b1686fe19c2f56b66903da36166d60214d4ca37"
+    },
+    {
+      "path": "cjk/CNS1/ff.bin",
+      "size": 7874,
+      "sha256": "4c3fe867d69b62c88c09cedfcc6e08a47d45cc20f303e244000fb52dd75a0b25"
+    },
+    {
+      "path": "cjk/GB1/00.bin",
+      "size": 7859,
+      "sha256": "5d7f640adf5ba4156c78d4cdfc00c39b3ffc91a1bfc87ef781c9cefc5813e0ca"
+    },
+    {
+      "path": "cjk/GB1/01.bin",
+      "size": 884,
+      "sha256": "41901ba47be4e089015293c5255d9d439de7657d44b8b9cdf8a5d46f3b65fb94"
+    },
+    {
+      "path": "cjk/GB1/02.bin",
+      "size": 353,
+      "sha256": "fbccbc612eb6ccb1c0c1af984316d375515e10176bc4bc2dc4ac27bcc0f1e5a7"
+    },
+    {
+      "path": "cjk/GB1/03.bin",
+      "size": 4264,
+      "sha256": "1663b9acfc13eaafc466d25bbe8a780f353c63d97c483c65bfa95b05a2930034"
+    },
+    {
+      "path": "cjk/GB1/04.bin",
+      "size": 5021,
+      "sha256": "475b4f3462bbba402c0e522be9ce2dfcaab6e465a7805160418cb45c86570bcf"
+    },
+    {
+      "path": "cjk/GB1/20.bin",
+      "size": 585,
+      "sha256": "47a73174d636a4547a8657a0b0ee5f4d1f2524f297541cd033285fac359cf7d7"
+    },
+    {
+      "path": "cjk/GB1/21.bin",
+      "size": 1599,
+      "sha256": "4b338929f8748e3190911a880fc55c42c9b1bd8ebd9a8ee229a782f6c827fa00"
+    },
+    {
+      "path": "cjk/GB1/22.bin",
+      "size": 1765,
+      "sha256": "5ff1bf55ade3d27404e68553c8c579cfff07288bc510ab9205df2823d90883e4"
+    },
+    {
+      "path": "cjk/GB1/23.bin",
+      "size": 101,
+      "sha256": "b563a408bfead27fc941f6642ca2ce9be534b2e96cefeaa70ee43f1acff801b3"
+    },
+    {
+      "path": "cjk/GB1/24.bin",
+      "size": 4934,
+      "sha256": "187b7f3f8f71d9faad4047c81c6810b2701db34d661abb93ebb91031b5ef5d93"
+    },
+    {
+      "path": "cjk/GB1/25.bin",
+      "size": 1248,
+      "sha256": "f0286ff96a0a27da6718ca1eb527aba97cd9fc877ca06d6eb5688008f0b262af"
+    },
+    {
+      "path": "cjk/GB1/26.bin",
+      "size": 422,
+      "sha256": "52cd1e2e7fa519acdf7a69cd2b905ef5245bdb9ae550fe6494074cbf47304624"
+    },
+    {
+      "path": "cjk/GB1/30.bin",
+      "size": 27863,
+      "sha256": "d84deb726ec8fecf11129a3bc99419075b73a4e4b14fc033ff0d39a46f7f7777"
+    },
+    {
+      "path": "cjk/GB1/31.bin",
+      "size": 4637,
+      "sha256": "d08334de9a69e6f6a037eb6e818acfecd147e734a5ef9a4e60d804540b384d2f"
+    },
+    {
+      "path": "cjk/GB1/32.bin",
+      "size": 1267,
+      "sha256": "4bb29e59871709f50c7724f3b4882214301e33187ba4778dd600ba346bcd79f3"
+    },
+    {
+      "path": "cjk/GB1/4e.bin",
+      "size": 23634,
+      "sha256": "d29b5167a485dbbe4ab1cc6fadb6a3d22fd23f98d4558d54b0ff7de16e2ff48e"
+    },
+    {
+      "path": "cjk/GB1/4f.bin",
+      "size": 22643,
+      "sha256": "e245a3d56433068d69ba700266f514bd1323596a2ed7193c7ad0b44e1bb74b69"
+    },
+    {
+      "path": "cjk/GB1/50.bin",
+      "size": 14974,
+      "sha256": "1d4a025ea18f2f95e5a28a8d0bc53bf5d3bd5c6b3890d8df326b905339013d86"
+    },
+    {
+      "path": "cjk/GB1/51.bin",
+      "size": 21799,
+      "sha256": "1730f42f1d602fc8e7add374565c485a5117e6ec18abd32067c7d078f35853dc"
+    },
+    {
+      "path": "cjk/GB1/52.bin",
+      "size": 22838,
+      "sha256": "dc1c67be62afeb2a2f7885f6588c55b6eec6d56219e597991e17e35334d40047"
+    },
+    {
+      "path": "cjk/GB1/53.bin",
+      "size": 22365,
+      "sha256": "1d78db7d4fa6a5e956b54530f465e2860b74088456aa36496a388b02307615ba"
+    },
+    {
+      "path": "cjk/GB1/54.bin",
+      "size": 26683,
+      "sha256": "5f87404f7fe9ff60116fdf25f05b79dd346a8ae05c488e1bad65e6f63416803b"
+    },
+    {
+      "path": "cjk/GB1/55.bin",
+      "size": 24626,
+      "sha256": "977d5c38c20fa39b46d3880709ed812440efa97e9b40536ea277b63f3668090a"
+    },
+    {
+      "path": "cjk/GB1/56.bin",
+      "size": 17452,
+      "sha256": "f28ad0b7d08acd65347e24737953efdd20bbe48bfe791b675a990d0543b480dd"
+    },
+    {
+      "path": "cjk/GB1/57.bin",
+      "size": 19090,
+      "sha256": "ea07d3c9efbfe1d5e10c6934ecaac210784c8e0f34a0f429f9c40b0269ef07a0"
+    },
+    {
+      "path": "cjk/GB1/58.bin",
+      "size": 12477,
+      "sha256": "90983359860f72ddbee96079180baf2691163fc32a4b54f1cc2c167859c39c87"
+    },
+    {
+      "path": "cjk/GB1/59.bin",
+      "size": 23999,
+      "sha256": "ab4ab6d58166ac1cefd616e19f56a65c9bb0e2ae6b16a0b661daba78357cb161"
+    },
+    {
+      "path": "cjk/GB1/5a.bin",
+      "size": 18510,
+      "sha256": "3eaabf8806035024cc185a738de8bab5093926ff19379abcc343f9324f80d8f5"
+    },
+    {
+      "path": "cjk/GB1/5b.bin",
+      "size": 22491,
+      "sha256": "ee954ec3cda327f78a4c341626b9292f4622ecf062623033abe0eb1b62a4502d"
+    },
+    {
+      "path": "cjk/GB1/5c.bin",
+      "size": 18974,
+      "sha256": "626c5c5df6fddbb2d008b80757a023797631a4ce71916bfdf1199549d1fca7a2"
+    },
+    {
+      "path": "cjk/GB1/5d.bin",
+      "size": 13378,
+      "sha256": "5cf71a7124f3d87b7c6215048d91ddb494facf023f4d0b8e270c24f2721fce74"
+    },
+    {
+      "path": "cjk/GB1/5e.bin",
+      "size": 19090,
+      "sha256": "f70c68718793a1cdb509e7a8645d04aa2700d71b0009f59126b57d2925686e38"
+    },
+    {
+      "path": "cjk/GB1/5f.bin",
+      "size": 25540,
+      "sha256": "5ad78105639fd17f32b915cd9e8051075a4eae0fa4f4e7c000c26fb2eb7906ce"
+    },
+    {
+      "path": "cjk/GB1/60.bin",
+      "size": 26340,
+      "sha256": "b182db4fd09597aa65570a63a6006ba57aa34bf532215b73b4885e5f44909c54"
+    },
+    {
+      "path": "cjk/GB1/61.bin",
+      "size": 16887,
+      "sha256": "9e35f312b4dcd192abf7f9d3be5dd02871d831aff7d704c340c458268c15c83f"
+    },
+    {
+      "path": "cjk/GB1/62.bin",
+      "size": 28486,
+      "sha256": "f4f7d12940090ecc698e1ec53683e926a803fb1c2acc92b88657520723b02cac"
+    },
+    {
+      "path": "cjk/GB1/63.bin",
+      "size": 24975,
+      "sha256": "208ab0eb2cb702eb5b253c2a5af1b9a699d3d85d92b3e7f539b36eacc7772319"
+    },
+    {
+      "path": "cjk/GB1/64.bin",
+      "size": 22165,
+      "sha256": "90446e0a79b1f68895931756dcaffbe8dd1865b6c938828551e97720d7f329e8"
+    },
+    {
+      "path": "cjk/GB1/65.bin",
+      "size": 23123,
+      "sha256": "125ec2a3490f04262df0d6873f4841d5fdf8777c5ed71e11e83213772549358f"
+    },
+    {
+      "path": "cjk/GB1/66.bin",
+      "size": 16937,
+      "sha256": "096fcc2d9927331c4a395fd1adf46a506326c302d3fdca4c3cf01148cd1f9035"
+    },
+    {
+      "path": "cjk/GB1/67.bin",
+      "size": 23208,
+      "sha256": "e5c8258aeee660060fe4846c673f2edbc3f00a98a0122eaba3c64d35c053aa6b"
+    },
+    {
+      "path": "cjk/GB1/68.bin",
+      "size": 22028,
+      "sha256": "e45b2eae11dab6590b32257ea65422c50eac0d9434bbc9d19f38cdbe87cd51c4"
+    },
+    {
+      "path": "cjk/GB1/69.bin",
+      "size": 17866,
+      "sha256": "3625822be09664e45394734a1a1315a3c3bd159d254414f8c41814d683f61d19"
+    },
+    {
+      "path": "cjk/GB1/6a.bin",
+      "size": 11689,
+      "sha256": "ff6096dc3e6b3d3b805f0e2ecf43aaa3d3331a6cb4b6a5c9eb228eeb057dc2af"
+    },
+    {
+      "path": "cjk/GB1/6b.bin",
+      "size": 20084,
+      "sha256": "14ba278e52abb17772d62ce07de241907ed84107f41a4f582257365d6d65a34f"
+    },
+    {
+      "path": "cjk/GB1/6c.bin",
+      "size": 28533,
+      "sha256": "35de09247221f81cc57f343b58f39601d80e8c40625fd85102aa425b3a89b411"
+    },
+    {
+      "path": "cjk/GB1/6d.bin",
+      "size": 26907,
+      "sha256": "03c85d8eccd4fab33419615d238c058121d28fab8a50dfe271e3e564bc61df22"
+    },
+    {
+      "path": "cjk/GB1/6e.bin",
+      "size": 24205,
+      "sha256": "dc4529ce5222214f234a617493ae7be0a013f38e968a9af2b5798f99495ead1a"
+    },
+    {
+      "path": "cjk/GB1/6f.bin",
+      "size": 18728,
+      "sha256": "25c488e7774580f31fe5351628415c8a3f4db0ce16ff386b3bdf491ebf4723b8"
+    },
+    {
+      "path": "cjk/GB1/70.bin",
+      "size": 17439,
+      "sha256": "e1216b1c314d277105a6a4ad87fadbb1a015dc8f85c25837986ea569b3a4d03e"
+    },
+    {
+      "path": "cjk/GB1/71.bin",
+      "size": 16936,
+      "sha256": "9406483ff4cd985ae263214158ae65bc9197d405e297c5397fafc19267452d47"
+    },
+    {
+      "path": "cjk/GB1/72.bin",
+      "size": 21634,
+      "sha256": "34cbb7f1bd49c965ba8ea7277bfa36f56039ef21eb50e053681cfe98d5aababa"
+    },
+    {
+      "path": "cjk/GB1/73.bin",
+      "size": 18705,
+      "sha256": "c7cab4d5e0b38d68c5b457839c0f8e42442d9adce3508746d1d620ba4b8cb387"
+    },
+    {
+      "path": "cjk/GB1/74.bin",
+      "size": 19136,
+      "sha256": "6a430d0df7ea7c359508abe8828f734d3b327dbbd7d6f11caaa5f4a3bc3cb646"
+    },
+    {
+      "path": "cjk/GB1/75.bin",
+      "size": 24454,
+      "sha256": "3d41b3bc384722e4a8a48d31ceb3c186b96aa3fd9945df4386bc790d4d39d3c4"
+    },
+    {
+      "path": "cjk/GB1/76.bin",
+      "size": 22956,
+      "sha256": "d8aad3737347cd7520364ba975678f26e2c2acaf396ecd11b3a76532fe8846b1"
+    },
+    {
+      "path": "cjk/GB1/77.bin",
+      "size": 18859,
+      "sha256": "ee073c3db9d1c2f05b9b10d0a7970baa73a10cbf2f8f9f1ff97c1d8b41a52330"
+    },
+    {
+      "path": "cjk/GB1/78.bin",
+      "size": 20211,
+      "sha256": "aeec0d7daf5d9eb0812e6c69d0b917dacfc8f8d96c361e1bc4583ec1d9ab4c65"
+    },
+    {
+      "path": "cjk/GB1/79.bin",
+      "size": 17496,
+      "sha256": "84cfbe9554c636942c6de2b5af8a9470f118793e468ea2f6e62cce1048d115f1"
+    },
+    {
+      "path": "cjk/GB1/7a.bin",
+      "size": 19061,
+      "sha256": "e950a6b228281604d7cea7254448963f75eb02cee518b79943382802a0e5e5bf"
+    },
+    {
+      "path": "cjk/GB1/7b.bin",
+      "size": 25423,
+      "sha256": "dbe2e8275286cde2bd5c64231f580f7afce03df4cbdeb91181506952425d2b7b"
+    },
+    {
+      "path": "cjk/GB1/7c.bin",
+      "size": 18911,
+      "sha256": "6b32d6f99d23b95dfa0646966ec335834c3da41475c18b3493cbaaed9da96211"
+    },
+    {
+      "path": "cjk/GB1/7d.bin",
+      "size": 4161,
+      "sha256": "3fb8783c4c1380b2692965694677eaacb2ab3aee3af5db34ec40f2ecbeb7d0b0"
+    },
+    {
+      "path": "cjk/GB1/7e.bin",
+      "size": 26374,
+      "sha256": "a8c1db1b4d75c1a2c126c866416b57f90601a65ab7d78fa3f90128ecf9506406"
+    },
+    {
+      "path": "cjk/GB1/7f.bin",
+      "size": 34627,
+      "sha256": "83750feee722189034c811c7b7ca27325230edc08de9144cb4c2b0f1439df0dc"
+    },
+    {
+      "path": "cjk/GB1/80.bin",
+      "size": 26507,
+      "sha256": "6d6e23606556c00ede33bf3e2f6547936c63b72379a946dc1ffa7e07533b1e2b"
+    },
+    {
+      "path": "cjk/GB1/81.bin",
+      "size": 21202,
+      "sha256": "d1eeb00d77f9f423fed332ace29400ceb1879c3e6c410adf15493d895a9dfd7b"
+    },
+    {
+      "path": "cjk/GB1/82.bin",
+      "size": 24210,
+      "sha256": "3e5b9d0b86107e307ed44a0465343503aea2116539b6c18091bc7d16d9e32b6f"
+    },
+    {
+      "path": "cjk/GB1/83.bin",
+      "size": 25720,
+      "sha256": "6007123cae7600bcfc2d1a46f7c2615d08cd7661d1ae059b0b275577de732fd7"
+    },
+    {
+      "path": "cjk/GB1/84.bin",
+      "size": 19795,
+      "sha256": "0a25891842a4486b4113cdb334f8ebd3dde153d6eac8ae92bb1bd29dd4a1785a"
+    },
+    {
+      "path": "cjk/GB1/85.bin",
+      "size": 17295,
+      "sha256": "42a631a28dc8ee11d87a409258c8ddb774203d8da9126d1edbcaa1ccba963bf9"
+    },
+    {
+      "path": "cjk/GB1/86.bin",
+      "size": 20287,
+      "sha256": "dc7357dc437151bafd66654578b01a29b292609ea177cab828fa77529d8fcd8d"
+    },
+    {
+      "path": "cjk/GB1/87.bin",
+      "size": 22918,
+      "sha256": "5ba38e76a93c7e988ba7708205f796473e4b522d0bbf738b1dde5146c92487a8"
+    },
+    {
+      "path": "cjk/GB1/88.bin",
+      "size": 23290,
+      "sha256": "60e8c947bc56991d70a9976120e48dc8167cbfcec84d352d9d65b4cd8de5f705"
+    },
+    {
+      "path": "cjk/GB1/89.bin",
+      "size": 16413,
+      "sha256": "1c17be908de650de083a4c73519cba483d1a6d70875cef309c937d2b14b6d700"
+    },
+    {
+      "path": "cjk/GB1/8a.bin",
+      "size": 1881,
+      "sha256": "fbe9f49e2778b7a0c4ca0d24c07b157f2880df10c4a4235716e7aa037c1da5e2"
+    },
+    {
+      "path": "cjk/GB1/8b.bin",
+      "size": 20010,
+      "sha256": "4899ddc5ce546d9dac56477858831f15c5799c8ae7a8350857ff4179cebe1da7"
+    },
+    {
+      "path": "cjk/GB1/8c.bin",
+      "size": 24300,
+      "sha256": "432705dea371887b2d15b8b9996da509a53f2f8b55bd368ffd784058200399a7"
+    },
+    {
+      "path": "cjk/GB1/8d.bin",
+      "size": 31191,
+      "sha256": "8af54c8c62a2384d56f6b58c437ef31e811d1734748ac53a2caa2f49d7c0eb7c"
+    },
+    {
+      "path": "cjk/GB1/8e.bin",
+      "size": 16367,
+      "sha256": "9dbe7b16ab8e1ad90a24d02531a00c6599893362c9fb528632b2b82252cf7743"
+    },
+    {
+      "path": "cjk/GB1/8f.bin",
+      "size": 22184,
+      "sha256": "4efd74012c3525a268b1f1f3386599054438edf63c7f0782a5f3e56d62d0204b"
+    },
+    {
+      "path": "cjk/GB1/90.bin",
+      "size": 30132,
+      "sha256": "c3c9aee73a3ba2da98599bb9f8b56442f955f359a1a8bf86088847dea08af9c3"
+    },
+    {
+      "path": "cjk/GB1/91.bin",
+      "size": 17763,
+      "sha256": "e3e28b8aa0d5b7ada4176e055127b4f0f159cc642c1e49824a62be497702403c"
+    },
+    {
+      "path": "cjk/GB1/92.bin",
+      "size": 1479,
+      "sha256": "1895f9d4e98c00908ca667ac6e06f9287bd1be644c61a2fe4967889c974c4a3f"
+    },
+    {
+      "path": "cjk/GB1/93.bin",
+      "size": 2529,
+      "sha256": "79cb67798a730495214a9e86494638a0f76975328d2aae79b0148e8c51814508"
+    },
+    {
+      "path": "cjk/GB1/94.bin",
+      "size": 25231,
+      "sha256": "1bffc702b10db91b003c28717c9958c41a21c86ae62c0a8864263508a358d7da"
+    },
+    {
+      "path": "cjk/GB1/95.bin",
+      "size": 32408,
+      "sha256": "fe82e1ec278a34b3a9cbcccbd2baf7159449ae69a82a80b1d24149c1bf555429"
+    },
+    {
+      "path": "cjk/GB1/96.bin",
+      "size": 26161,
+      "sha256": "13ed77e774ca753ce9f1152e0737839bef877a3696bf65c26f3b71a6524c4492"
+    },
+    {
+      "path": "cjk/GB1/97.bin",
+      "size": 13627,
+      "sha256": "699848312b3dd252ccaaa9b4b85c547d34ce35dfa2b0d8fe988ab406d58ca6d3"
+    },
+    {
+      "path": "cjk/GB1/98.bin",
+      "size": 16648,
+      "sha256": "5265eb527cd1de9a1db71da36bb896fba07794d64f850d8147a3daeac48eb597"
+    },
+    {
+      "path": "cjk/GB1/99.bin",
+      "size": 15261,
+      "sha256": "009edab0c3ef2f940573b8f0d0bc092ffc197764f4baeef97f3fddbc4297570b"
+    },
+    {
+      "path": "cjk/GB1/9a.bin",
+      "size": 20807,
+      "sha256": "549be69c79f7b886054ef3c7c83691e6448381e2f9374194fc5388f6044a33dc"
+    },
+    {
+      "path": "cjk/GB1/9b.bin",
+      "size": 10147,
+      "sha256": "ef67dd0359b67d72e4edffa04e26126062a30467ba56063c3f4364bdaa1af144"
+    },
+    {
+      "path": "cjk/GB1/9c.bin",
+      "size": 17837,
+      "sha256": "3441b632f22c6d90b069285f2ad9ea88eba45ea704fc56d4cae9c06fc369e64c"
+    },
+    {
+      "path": "cjk/GB1/9e.bin",
+      "size": 32219,
+      "sha256": "16c7a61d22222d1f7490e393aa84c639d248b2395668d3c6beff11e4dc5a813b"
+    },
+    {
+      "path": "cjk/GB1/9f.bin",
+      "size": 10576,
+      "sha256": "00e160c68d8e2a86b5adc5884b9d438e8dfc27b595fafb62f51da91a4748b410"
+    },
+    {
+      "path": "cjk/GB1/fe.bin",
+      "size": 1013,
+      "sha256": "d6881bef1445b75ea7e66daf4a814a2524b6dd3419e131f75cc6311d4dc11841"
+    },
+    {
+      "path": "cjk/GB1/ff.bin",
+      "size": 7872,
+      "sha256": "51169f778e0d9b96f0a02c5a784b621c6f8262c91989f3c4eaf2b8c692d5253a"
+    },
+    {
+      "path": "cjk/Japan1/00.bin",
+      "size": 7534,
+      "sha256": "d283b70b473a869c68117858949da4ac23df97b6f04265a5fce2805f9da5cc95"
+    },
+    {
+      "path": "cjk/Japan1/03.bin",
+      "size": 4264,
+      "sha256": "1663b9acfc13eaafc466d25bbe8a780f353c63d97c483c65bfa95b05a2930034"
+    },
+    {
+      "path": "cjk/Japan1/04.bin",
+      "size": 5021,
+      "sha256": "475b4f3462bbba402c0e522be9ce2dfcaab6e465a7805160418cb45c86570bcf"
+    },
+    {
+      "path": "cjk/Japan1/20.bin",
+      "size": 686,
+      "sha256": "52a0fe61e864c1c4d5d57fe18f1cbbb3723912ca56921525c62717b8dce45088"
+    },
+    {
+      "path": "cjk/Japan1/21.bin",
+      "size": 1899,
+      "sha256": "78db2b8dd1f6abbd47caf8b6c23a99f63f5010c3566477d12cc739b95720413d"
+    },
+    {
+      "path": "cjk/Japan1/22.bin",
+      "size": 2083,
+      "sha256": "82b7bf6e07d024d1c0f06e36de94b53156790d5b3b8edd1c058f009fbe8ac62f"
+    },
+    {
+      "path": "cjk/Japan1/23.bin",
+      "size": 101,
+      "sha256": "b563a408bfead27fc941f6642ca2ce9be534b2e96cefeaa70ee43f1acff801b3"
+    },
+    {
+      "path": "cjk/Japan1/24.bin",
+      "size": 2111,
+      "sha256": "00be077bfd50e3bc2f216582ef088a7ff0ca169963f844db087262b35e49f601"
+    },
+    {
+      "path": "cjk/Japan1/25.bin",
+      "size": 1008,
+      "sha256": "243243d744c0132d50ed7ab06d47e15e0a1d946172d513349ae543c1a4a582d8"
+    },
+    {
+      "path": "cjk/Japan1/26.bin",
+      "size": 710,
+      "sha256": "10ead8db5ad99e7cedfb0c7fe8a01448b8e999a23f27bdefec3b88cb4d2a8c38"
+    },
+    {
+      "path": "cjk/Japan1/30.bin",
+      "size": 28557,
+      "sha256": "a7b8952f4c68cf7d86b37c0bec67c9e9bfa6772ef9c3c21560b0aeb01f210b80"
+    },
+    {
+      "path": "cjk/Japan1/32.bin",
+      "size": 1277,
+      "sha256": "0b13bedd51a3c988de8ac75e1408e970b3bb815e19fcd644a4a5ea5f65ce4a19"
+    },
+    {
+      "path": "cjk/Japan1/33.bin",
+      "size": 6669,
+      "sha256": "f4e9f7d431753d4859bc88e476ae87573efe38e67cc48e54ffc7956774f75eff"
+    },
+    {
+      "path": "cjk/Japan1/4e.bin",
+      "size": 17225,
+      "sha256": "d0181d51dcd342a265e19e1c034b61d70bad88a7a7d981f70fcf432b7f1639cf"
+    },
+    {
+      "path": "cjk/Japan1/4f.bin",
+      "size": 18396,
+      "sha256": "4d968257d63ad379fd77f366ede7c202e6b2e2de543ab7958c45e271380081b3"
+    },
+    {
+      "path": "cjk/Japan1/50.bin",
+      "size": 19630,
+      "sha256": "1153523aee24b926302507d8da0ee07e66cafb20e191dd0e9c72dcfb9af0cb29"
+    },
+    {
+      "path": "cjk/Japan1/51.bin",
+      "size": 25096,
+      "sha256": "58bbf38b87d81d8c6e6afad51f8c9c3972a2abfc8c5d1ab6fc663d67df1caf74"
+    },
+    {
+      "path": "cjk/Japan1/52.bin",
+      "size": 26902,
+      "sha256": "9a422cee882c267543a7deea40bda4d24a7bb3fbb1cb5dbfd4f81ce353f145bb"
+    },
+    {
+      "path": "cjk/Japan1/53.bin",
+      "size": 21782,
+      "sha256": "c7f33d148a4d5b858f2a6065803eac71e658db3ef7ee9b0f43a5a2ca6169bb29"
+    },
+    {
+      "path": "cjk/Japan1/54.bin",
+      "size": 16035,
+      "sha256": "9f33d750ecabeec9e8e8c3e7c023600ddcee74d950b9f94cb023157608989777"
+    },
+    {
+      "path": "cjk/Japan1/55.bin",
+      "size": 14831,
+      "sha256": "9d56fa4b6c48a7e153296f457bcab02654a44ec8e21cb8d277b55eecac0ed603"
+    },
+    {
+      "path": "cjk/Japan1/56.bin",
+      "size": 15198,
+      "sha256": "6fff1be6d08eb134bba4bb7532b10d901cb7b01debd73e3ab6796098b0e4cca7"
+    },
+    {
+      "path": "cjk/Japan1/57.bin",
+      "size": 13199,
+      "sha256": "b31da059edaa68973a60ec10fa7bdcb6b0eadc186fad473a1f64d5bddd0b471c"
+    },
+    {
+      "path": "cjk/Japan1/58.bin",
+      "size": 19490,
+      "sha256": "1244833bfe1188588b2f1b958e4b6974831cc74e406027f1eb0e5e687034a000"
+    },
+    {
+      "path": "cjk/Japan1/59.bin",
+      "size": 21351,
+      "sha256": "32eb533b972ff504ac9e5a2f38af353e36fcc3c33ae7bd040742fb81543d5c9a"
+    },
+    {
+      "path": "cjk/Japan1/5a.bin",
+      "size": 11475,
+      "sha256": "ffd6a11055ba2b0ba1ea694adc2f097619a0f7fca85e39e62fbbb7dc080a0a79"
+    },
+    {
+      "path": "cjk/Japan1/5b.bin",
+      "size": 24113,
+      "sha256": "1344d39abf3c3270c9bc82eec866afe8f1b0d03870c5812fecab00e88b86662a"
+    },
+    {
+      "path": "cjk/Japan1/5c.bin",
+      "size": 17839,
+      "sha256": "fd104f8008edf9f48b9418b277c3b80fdfdc6bf47c55a1fb1a88e4e443bc6ef4"
+    },
+    {
+      "path": "cjk/Japan1/5d.bin",
+      "size": 17297,
+      "sha256": "81a9066cebd5ddf733ec73c9d57dcfc59df788f813162054bb55876c5a170aa5"
+    },
+    {
+      "path": "cjk/Japan1/5e.bin",
+      "size": 21499,
+      "sha256": "c0845d6e9187af1f89fc7b1ea7dcba56f4021f1f87ddc84fb5d0b0396854da15"
+    },
+    {
+      "path": "cjk/Japan1/5f.bin",
+      "size": 26924,
+      "sha256": "5382484a066e50fcfbcc42d665ddb417772133525015a6f7cbc6c94c2619e46b"
+    },
+    {
+      "path": "cjk/Japan1/60.bin",
+      "size": 23524,
+      "sha256": "7bf6b477850ad8bb24436d4ee536b0bff54564b6316388fb61e2c4cebc1e8919"
+    },
+    {
+      "path": "cjk/Japan1/61.bin",
+      "size": 30110,
+      "sha256": "dc71af7f1f16fb3c45803813d23928923399a282cd29383716a0f0a72c476033"
+    },
+    {
+      "path": "cjk/Japan1/62.bin",
+      "size": 23617,
+      "sha256": "6621412f3565c7177b911f9ad19ee71135e9810409680d1081b20c0699534b9b"
+    },
+    {
+      "path": "cjk/Japan1/63.bin",
+      "size": 17801,
+      "sha256": "be96ecc00e115866ec40829ec40e35476bd2adbd74361e374ce2d2a74dbe01fb"
+    },
+    {
+      "path": "cjk/Japan1/64.bin",
+      "size": 20553,
+      "sha256": "546e7fedb340d017cb350a7e6d7782b7748528254c7c85fae122a52ffd87e60a"
+    },
+    {
+      "path": "cjk/Japan1/65.bin",
+      "size": 24591,
+      "sha256": "a7cafcaa09e440430c2314ed61e1a525878105386cd0475f6a85f74880b11d16"
+    },
+    {
+      "path": "cjk/Japan1/66.bin",
+      "size": 21770,
+      "sha256": "8cbd5612dbe4e5464829212c604854710f5efaa133c2ce73f2adf57c002b94ea"
+    },
+    {
+      "path": "cjk/Japan1/67.bin",
+      "size": 21467,
+      "sha256": "f199c1f37fae8c3cf0c5551fdbd45009953a72543c566bfa16a4e30df1b4bde1"
+    },
+    {
+      "path": "cjk/Japan1/68.bin",
+      "size": 21120,
+      "sha256": "ca677da0f79f94950eccd369a783a1edd6d00ee12cb3c420f10b5781ef47f291"
+    },
+    {
+      "path": "cjk/Japan1/69.bin",
+      "size": 23999,
+      "sha256": "c6a041542f940ef9c579896fbf0c71cb0248e8d91793244f9eea80791d714a6f"
+    },
+    {
+      "path": "cjk/Japan1/6a.bin",
+      "size": 21683,
+      "sha256": "b1631d06bf6ffc541af3b310157cc09496292f99a05eb7a68a8b38c2330c45ed"
+    },
+    {
+      "path": "cjk/Japan1/6b.bin",
+      "size": 24440,
+      "sha256": "e6dcdee4c49fa78ad7fa54364783e7cc399455c440ee65d0dc348cb23c4045f8"
+    },
+    {
+      "path": "cjk/Japan1/6c.bin",
+      "size": 16171,
+      "sha256": "cb6cb22d0917c68b3bf10db8163e4f0602d55ad0c7511635c917e2f379fd4adb"
+    },
+    {
+      "path": "cjk/Japan1/6d.bin",
+      "size": 19184,
+      "sha256": "fd527c05bd036f7f157f13a9ff68d167da6cdd0e67af1b422ebc44c3b0f0a2f4"
+    },
+    {
+      "path": "cjk/Japan1/6e.bin",
+      "size": 21296,
+      "sha256": "b21e4dfa1854a9c2ccac803fbcfbac78ee0890a1031f2ef7c3fe0d803b7e13e7"
+    },
+    {
+      "path": "cjk/Japan1/6f.bin",
+      "size": 21621,
+      "sha256": "839f4ffc8378721cfaaf0fb340e84ac7a464715803ab3b2d8932ef77cbc56863"
+    },
+    {
+      "path": "cjk/Japan1/70.bin",
+      "size": 17216,
+      "sha256": "9efa290e61d7918a8a7a4fdc4fb3212ed9a2725751d5c3752fc9bbf68dece068"
+    },
+    {
+      "path": "cjk/Japan1/71.bin",
+      "size": 20800,
+      "sha256": "68f856293f1c0f583c54109cbee2b76fd5334787b79d7c6432d9ef2ae485d9a1"
+    },
+    {
+      "path": "cjk/Japan1/72.bin",
+      "size": 18892,
+      "sha256": "f8bf29f3c8b5335f2921e0630810a4d48f1ff4849a0b92a9e8f5bdd4e890f16c"
+    },
+    {
+      "path": "cjk/Japan1/73.bin",
+      "size": 15962,
+      "sha256": "b4391c5bdfa938216b90e5b1abf774b6438f85aa7e41b1397c9850b86bfc6511"
+    },
+    {
+      "path": "cjk/Japan1/74.bin",
+      "size": 17082,
+      "sha256": "7dd49ff802873aec1bc8602ab24eca19bcae0ec10c0b19d359052e10263743ab"
+    },
+    {
+      "path": "cjk/Japan1/75.bin",
+      "size": 23462,
+      "sha256": "adc0cf1ef1999603de5c38fb53e267fd9550a295505c02865a436c50ccc1f222"
+    },
+    {
+      "path": "cjk/Japan1/76.bin",
+      "size": 23223,
+      "sha256": "88143d33a969a52733c2c82cbcafe33a6f31647b177226fd3d52d48421763309"
+    },
+    {
+      "path": "cjk/Japan1/77.bin",
+      "size": 14750,
+      "sha256": "2c4066a07eedca02e139ce68575fe04c29c8434a711bf21639114ccaf7b45e00"
+    },
+    {
+      "path": "cjk/Japan1/78.bin",
+      "size": 14264,
+      "sha256": "2733ff8b086135f6aa12f9f15f6fcce761935f0a96cf8be4a1be8c2daad3870a"
+    },
+    {
+      "path": "cjk/Japan1/79.bin",
+      "size": 17731,
+      "sha256": "448666fdd4552e746ef0752c37edbd081a6e8427bb5b18bb7a07c4d3f3dda56c"
+    },
+    {
+      "path": "cjk/Japan1/7a.bin",
+      "size": 25870,
+      "sha256": "bedc01019ab772438e2c1e484bc5540b1d8c7b9edb9c5d2e42415aa71eeacbf9"
+    },
+    {
+      "path": "cjk/Japan1/7b.bin",
+      "size": 20977,
+      "sha256": "38edffad73faadb26b9ddcf07282442220d96f68f7ad5e26c1528bd9457f2b52"
+    },
+    {
+      "path": "cjk/Japan1/7c.bin",
+      "size": 23660,
+      "sha256": "630d63fb1a2c7f153219548aa63bfcd9ca58308009d3dff27134332227577bc3"
+    },
+    {
+      "path": "cjk/Japan1/7d.bin",
+      "size": 25673,
+      "sha256": "dde1f9c1f82a60f4da9f03a3e63d2d7ae5f9fbccb40de76ec0960578b6f1dbe9"
+    },
+    {
+      "path": "cjk/Japan1/7e.bin",
+      "size": 20689,
+      "sha256": "c6f166a566195393efc81f8bd5291989bf29116a0993467a82165e89bd9f1c5f"
+    },
+    {
+      "path": "cjk/Japan1/7f.bin",
+      "size": 19017,
+      "sha256": "73edf1d76c36c6b2ddf8822dfb7b7fb0f070c934e8c60d8ad73935725337788a"
+    },
+    {
+      "path": "cjk/Japan1/80.bin",
+      "size": 19503,
+      "sha256": "934274a27d9d68a411ab1cbb7bd54dfd2f903e60f2c0d92d0a1424558c886a74"
+    },
+    {
+      "path": "cjk/Japan1/81.bin",
+      "size": 21716,
+      "sha256": "a1d16bfaa67d891456d8278ae5f164d1a932bbbc4ec4c6a83ecb29280fdd1f03"
+    },
+    {
+      "path": "cjk/Japan1/82.bin",
+      "size": 18933,
+      "sha256": "6f0e461e67ba0a7624b9c57864f61d457eadc0a8af7dc750f513e6626d804e83"
+    },
+    {
+      "path": "cjk/Japan1/83.bin",
+      "size": 16540,
+      "sha256": "4b303fbdb272bf1dcc898533f47b41db7ca04ef7df75ea85557bb84673f7db20"
+    },
+    {
+      "path": "cjk/Japan1/84.bin",
+      "size": 18382,
+      "sha256": "7436059a1d87d9b39bd1875341f3dbecb20082a062e195d283c21e7d6d64f20e"
+    },
+    {
+      "path": "cjk/Japan1/85.bin",
+      "size": 23328,
+      "sha256": "03baa776f215c5c6df9ad6325c782715cf969fffdffde691787b5f8f51a295c7"
+    },
+    {
+      "path": "cjk/Japan1/86.bin",
+      "size": 16542,
+      "sha256": "0d1b8a6a012f6e1da96cca30086fbcd3e151a702591562e0b6895fd9ae84819a"
+    },
+    {
+      "path": "cjk/Japan1/87.bin",
+      "size": 18085,
+      "sha256": "a8943d925fa72464043fe51799972ac687e2f7bb5eddf2ae5fccffc832630c13"
+    },
+    {
+      "path": "cjk/Japan1/88.bin",
+      "size": 22138,
+      "sha256": "b080f6ed5184b416228d7bd4d6c2f6809d2c590cf58f6b1e2ffa94d01c41c96d"
+    },
+    {
+      "path": "cjk/Japan1/89.bin",
+      "size": 20567,
+      "sha256": "ccdbcddd687adb21ba24a60e13bc66e9c868f4d327aaa6aacd2893cefaeb8a55"
+    },
+    {
+      "path": "cjk/Japan1/8a.bin",
+      "size": 19282,
+      "sha256": "34c7369a961b8d402c0e5bf1614c0f9391047bc98b96c5416a75cf1476b78462"
+    },
+    {
+      "path": "cjk/Japan1/8b.bin",
+      "size": 15868,
+      "sha256": "ac4afa36f786caeb6efc2804c443852a514f25bfe4c834cb7cef80cca8adf7f3"
+    },
+    {
+      "path": "cjk/Japan1/8c.bin",
+      "size": 19303,
+      "sha256": "eacf2b962d7c5dcef0991f53cefe9f0048d04a944a1bfdda5e69fc73302b3984"
+    },
+    {
+      "path": "cjk/Japan1/8d.bin",
+      "size": 13722,
+      "sha256": "ca372e783d674cfa006a0dd7ede5c47d5e751ef9da3f60c3e63adb95012188f6"
+    },
+    {
+      "path": "cjk/Japan1/8e.bin",
+      "size": 17091,
+      "sha256": "dcf357ba87926bf47b1f689fc862bd284deb0efc7ed343cffa21ab3511179c39"
+    },
+    {
+      "path": "cjk/Japan1/8f.bin",
+      "size": 17011,
+      "sha256": "9745d0b43dd6bd25f39a943b67936e93411f930f2f93bcf64000e080a67d6221"
+    },
+    {
+      "path": "cjk/Japan1/90.bin",
+      "size": 24220,
+      "sha256": "102d5ec6649ad379b5e30c57c1790502bb19a20d48d2b05ed9180372aa3324a1"
+    },
+    {
+      "path": "cjk/Japan1/91.bin",
+      "size": 20340,
+      "sha256": "28a8912adbec467053ce70421fbd763ac1e1d7070de347d8fe466c5da3a034b6"
+    },
+    {
+      "path": "cjk/Japan1/92.bin",
+      "size": 15724,
+      "sha256": "93e07cfc8939fc12aaab0d9ad008c051b1fea83e3a26f29e2b0ec139066c6e15"
+    },
+    {
+      "path": "cjk/Japan1/93.bin",
+      "size": 16425,
+      "sha256": "1ec509f4b0474555f30f783a128a9a2f1e4ee18cc38c08e0f0ac1e67a62cae05"
+    },
+    {
+      "path": "cjk/Japan1/94.bin",
+      "size": 12323,
+      "sha256": "455cd3bb0aa625e0b38522749c19d26308e1c055a782e1c0a6bf374fa6c6dd10"
+    },
+    {
+      "path": "cjk/Japan1/95.bin",
+      "size": 6973,
+      "sha256": "861571c5d71cc6e57aa27ae752d8e8e31e8f169bde9400c5dadcea333ca94ea0"
+    },
+    {
+      "path": "cjk/Japan1/96.bin",
+      "size": 22852,
+      "sha256": "7f458f57c41eabe677b010e67ab19fb41fc7ba4007a9266d35662d89d1668e24"
+    },
+    {
+      "path": "cjk/Japan1/97.bin",
+      "size": 21065,
+      "sha256": "507fb82680459c48df8fab13f9c36abebaee76c40ecebf744565c0130c159192"
+    },
+    {
+      "path": "cjk/Japan1/98.bin",
+      "size": 17765,
+      "sha256": "9841b5bef19dae97fc420f63a9bcc0e7c600ae83b55632a8bdba18e735ce40c6"
+    },
+    {
+      "path": "cjk/Japan1/99.bin",
+      "size": 18160,
+      "sha256": "1faa2e7972e6d46816c9904569924fc702a6b4135c224ad95f84ebbc5bff9dda"
+    },
+    {
+      "path": "cjk/Japan1/9a.bin",
+      "size": 17238,
+      "sha256": "d3fcca1999fdd15563e815090103a454b1a90d312bca293f69cfa93c3e699847"
+    },
+    {
+      "path": "cjk/Japan1/9b.bin",
+      "size": 21352,
+      "sha256": "58705cf6bf58055d4900900b9f04ec38f81458c2838c1384d3f2ea0a3f74c5cb"
+    },
+    {
+      "path": "cjk/Japan1/9c.bin",
+      "size": 13073,
+      "sha256": "9cc33f88d63e0fab143913c5c255f5dffb77c606d2b2680814d873168f77dabc"
+    },
+    {
+      "path": "cjk/Japan1/9d.bin",
+      "size": 18566,
+      "sha256": "0cde440ed3f61be6104beb551645a192387c407dd7ac6d1b428bb466ef9da2b6"
+    },
+    {
+      "path": "cjk/Japan1/9e.bin",
+      "size": 20742,
+      "sha256": "84a97da0562658bc5733c46c9fde0d4c622a5000292e5905fb797acdfd65a885"
+    },
+    {
+      "path": "cjk/Japan1/9f.bin",
+      "size": 10210,
+      "sha256": "a52b0de0f0a2fa97b9362e5e3051b073d5549d85925beeb94701244a4e101ba2"
+    },
+    {
+      "path": "cjk/Japan1/f9.bin",
+      "size": 737,
+      "sha256": "cfbde1fc53bcbe9957f723016cef14758ae5bcbc692d3e0e76ab3df3d757c7c3"
+    },
+    {
+      "path": "cjk/Japan1/fa.bin",
+      "size": 8872,
+      "sha256": "835226d0f2ae6ce34224cc318db6558ecce938e67e334e0f8b6cb48ddde67369"
+    },
+    {
+      "path": "cjk/Japan1/ff.bin",
+      "size": 16770,
+      "sha256": "622b0659e052de2f99a1434038516cfe7ec3f25136ddd28d172122a2b073ebfd"
+    },
+    {
+      "path": "cjk/Korea1/00.bin",
+      "size": 9427,
+      "sha256": "a2c3fb58e3d52f3bcdf12a5392132307218383f3c9f3fb91e5aec98c88868c8e"
+    },
+    {
+      "path": "cjk/Korea1/01.bin",
+      "size": 487,
+      "sha256": "836ca9d061a97d9f75f6f8039a7620918c0ba65407c0fdf9d54ccfc6122585db"
+    },
+    {
+      "path": "cjk/Korea1/02.bin",
+      "size": 82,
+      "sha256": "e3f406a0ab79a65a69e4a6da9943d6a2a4858656b38a5477dc032826a681de0d"
+    },
+    {
+      "path": "cjk/Korea1/03.bin",
+      "size": 4264,
+      "sha256": "1663b9acfc13eaafc466d25bbe8a780f353c63d97c483c65bfa95b05a2930034"
+    },
+    {
+      "path": "cjk/Korea1/04.bin",
+      "size": 5021,
+      "sha256": "475b4f3462bbba402c0e522be9ce2dfcaab6e465a7805160418cb45c86570bcf"
+    },
+    {
+      "path": "cjk/Korea1/20.bin",
+      "size": 866,
+      "sha256": "0a9761cb10503b45cd2c3cb7d56755741e0cb6eb2312e71fcbc1649a261ab0e9"
+    },
+    {
+      "path": "cjk/Korea1/21.bin",
+      "size": 2578,
+      "sha256": "9b50db395626fd674f5609dba860c01da1e124fca6c2f6169e999be21aecb3be"
+    },
+    {
+      "path": "cjk/Korea1/22.bin",
+      "size": 2245,
+      "sha256": "52230ff83d45e31142932ae5ae61ca7f24d901cc7812afa37398d7aec70fe34c"
+    },
+    {
+      "path": "cjk/Korea1/23.bin",
+      "size": 101,
+      "sha256": "b563a408bfead27fc941f6642ca2ce9be534b2e96cefeaa70ee43f1acff801b3"
+    },
+    {
+      "path": "cjk/Korea1/24.bin",
+      "size": 7793,
+      "sha256": "8b95590775c09427279be5bd7b575f79079adfb80042b1dacec0982b2a6430e5"
+    },
+    {
+      "path": "cjk/Korea1/25.bin",
+      "size": 1768,
+      "sha256": "410188ee17a47e35c5ca623fe9a23fa412919c96be53475d362aeda755e486bf"
+    },
+    {
+      "path": "cjk/Korea1/26.bin",
+      "size": 4285,
+      "sha256": "8afc45d5dc4baa48a2c961efe0dc7ca35e5a09d256564aa26091404a70da71b2"
+    },
+    {
+      "path": "cjk/Korea1/30.bin",
+      "size": 27508,
+      "sha256": "7ff6aaaebeaa39eb102685d0ff5d406097c4d85437a4c8ca0e11ff5ca9488d43"
+    },
+    {
+      "path": "cjk/Korea1/31.bin",
+      "size": 5676,
+      "sha256": "58d78b9ae5258478f4f57547bfe2901f2265724857dabb0edb7aefa89d293f80"
+    },
+    {
+      "path": "cjk/Korea1/32.bin",
+      "size": 4641,
+      "sha256": "966d64136c18063ac3d847672e945b7b9856631f69c0199ea217126c038e42a0"
+    },
+    {
+      "path": "cjk/Korea1/33.bin",
+      "size": 7131,
+      "sha256": "10439cd6aeff29d26f2c89ebf895390aab14ae09ec8526b0171a675b3628c737"
+    },
+    {
+      "path": "cjk/Korea1/4e.bin",
+      "size": 13721,
+      "sha256": "4b7d28205aef2a3b08facf51854db40b8ea6ca29e8f658d4befb4ab9ebc695ad"
+    },
+    {
+      "path": "cjk/Korea1/4f.bin",
+      "size": 13888,
+      "sha256": "8685897bd5907355e64ee72b00f71bc792bb92fb05efa683afec0ee8074864fe"
+    },
+    {
+      "path": "cjk/Korea1/50.bin",
+      "size": 14560,
+      "sha256": "ac3e6743ef9c995e49b411a7d80492c2a8bf22f0da7510e1ad367f6ecc0de032"
+    },
+    {
+      "path": "cjk/Korea1/51.bin",
+      "size": 16963,
+      "sha256": "644c54fcec0cddb5b58e925941477daa7900094f73f6200875884810937945a5"
+    },
+    {
+      "path": "cjk/Korea1/52.bin",
+      "size": 20017,
+      "sha256": "6a9c5568efe6344f10fb282e0e3eda0116f4cfa0a2b5bb0228ce907ed2811ef7"
+    },
+    {
+      "path": "cjk/Korea1/53.bin",
+      "size": 14305,
+      "sha256": "8ca77f61c8c729fdf813fa8de9d87a6be700ed8e74aa8aca1f502129a67ee7e0"
+    },
+    {
+      "path": "cjk/Korea1/54.bin",
+      "size": 10427,
+      "sha256": "a27fe3154defa92cef28aa2742bd2e467b9c66ba659ebe5b3ae13b4b91000a15"
+    },
+    {
+      "path": "cjk/Korea1/55.bin",
+      "size": 10594,
+      "sha256": "2bac8bb9efc1a054b19e8e217fefc19a12b9b17f506747ae1cbf6046fcdc1c41"
+    },
+    {
+      "path": "cjk/Korea1/56.bin",
+      "size": 6815,
+      "sha256": "d0d22f5987210111708ada17d179afbc1d26bff296164db2b115ece3177717e8"
+    },
+    {
+      "path": "cjk/Korea1/57.bin",
+      "size": 9324,
+      "sha256": "551e3c58bef6c472c146cffb544d017106be17a60977da285461551213e0faff"
+    },
+    {
+      "path": "cjk/Korea1/58.bin",
+      "size": 16403,
+      "sha256": "36ec6c27696cd26b161bbd3c51608821a1215b148f3ab02ec76cebff1a27c17a"
+    },
+    {
+      "path": "cjk/Korea1/59.bin",
+      "size": 16712,
+      "sha256": "ebe9103a249a71fe8799b523663ece031afefa067877d69df313d1dd122ae36e"
+    },
+    {
+      "path": "cjk/Korea1/5a.bin",
+      "size": 8108,
+      "sha256": "cac75dc20b4d21c5fa56481e550890870af46031f49b6011f55dd560670a1c08"
+    },
+    {
+      "path": "cjk/Korea1/5b.bin",
+      "size": 20146,
+      "sha256": "8b330a97b0a133ea5c4445b9c968610642a3ceaa717b31d2256001a6c1222f93"
+    },
+    {
+      "path": "cjk/Korea1/5c.bin",
+      "size": 12601,
+      "sha256": "7fbe450767e66da1c433cb2b99a1ebb043bd5b73cdafcab41c294afb9f9a8eb4"
+    },
+    {
+      "path": "cjk/Korea1/5d.bin",
+      "size": 10747,
+      "sha256": "09a204bf88e115e5e3033d5489f7911fb2e882322f799d86ec508ae426e97985"
+    },
+    {
+      "path": "cjk/Korea1/5e.bin",
+      "size": 16371,
+      "sha256": "30bf34a607ccc73c92510e7c0be0bd0008cbac1c502c3b6fb75a310b74777bac"
+    },
+    {
+      "path": "cjk/Korea1/5f.bin",
+      "size": 20117,
+      "sha256": "24ed6203419196aa58393f3d5d334415c0ecae32ec7604173add597dbd280157"
+    },
+    {
+      "path": "cjk/Korea1/60.bin",
+      "size": 15793,
+      "sha256": "625b69b506dd077be723ca6eceb1384fb9bd5b1292fd83652bae545ec466bc5f"
+    },
+    {
+      "path": "cjk/Korea1/61.bin",
+      "size": 25297,
+      "sha256": "28255b6cb3e8c9285c08c869dfc16152300651d3a0e16634c88f3f925d3743e5"
+    },
+    {
+      "path": "cjk/Korea1/62.bin",
+      "size": 18032,
+      "sha256": "495febe9026c2a76d7bbb0d23c738b3e76ee407059f5baf46ae6c62a8d7c2219"
+    },
+    {
+      "path": "cjk/Korea1/63.bin",
+      "size": 11550,
+      "sha256": "3be5f244e450aacecb6aed29cae55071d566f5f81ec543353704dfa20a95eaf7"
+    },
+    {
+      "path": "cjk/Korea1/64.bin",
+      "size": 16057,
+      "sha256": "20b8e764dae5dd8eb4434f47bee69aa3737b3c3cd3f92b05e104003986ac34cf"
+    },
+    {
+      "path": "cjk/Korea1/65.bin",
+      "size": 21869,
+      "sha256": "e61a2c6f29f87b4b8eb8117a0a2e19681af1dc3ea0951174c5c5b208a83ea6b2"
+    },
+    {
+      "path": "cjk/Korea1/66.bin",
+      "size": 18532,
+      "sha256": "f4bbca6cecc4aaef091782f7fdb177998fa16d909de0f7004f1838e7c687bc07"
+    },
+    {
+      "path": "cjk/Korea1/67.bin",
+      "size": 16265,
+      "sha256": "f7c6a87ea2442ebc8ff71724cbb4b60a1a72b0f25e15d2548c2a9eef28801d79"
+    },
+    {
+      "path": "cjk/Korea1/68.bin",
+      "size": 14616,
+      "sha256": "3aff732f398ac9f40484a008bcf32b53bbd4feac22c8e064f12a04f30d3529b7"
+    },
+    {
+      "path": "cjk/Korea1/69.bin",
+      "size": 13516,
+      "sha256": "7ca3f7af79e9fa6f5d1f7820ecfe706dbc26d3ff12a44aa1fc08b5a324169960"
+    },
+    {
+      "path": "cjk/Korea1/6a.bin",
+      "size": 12656,
+      "sha256": "7b57006d7b9d780523f9d13fb1ccfde5863a48391b3123316a46e0d7b33f701f"
+    },
+    {
+      "path": "cjk/Korea1/6b.bin",
+      "size": 18000,
+      "sha256": "45ab5dca89463ef10dc9ec00793885a91cb1360ee1f25904c432e31265eb03f1"
+    },
+    {
+      "path": "cjk/Korea1/6c.bin",
+      "size": 14552,
+      "sha256": "2d57d51a2aca41c6a7c88859b9f77be8178269071cfe1fab3df8d1a1a2a6c939"
+    },
+    {
+      "path": "cjk/Korea1/6d.bin",
+      "size": 16477,
+      "sha256": "b54eb27860772bf78151eb0181dbf67e0539bfe2d5c9795af299625d3320fc36"
+    },
+    {
+      "path": "cjk/Korea1/6e.bin",
+      "size": 16677,
+      "sha256": "2e2a87f9c1a969104d9bc1e4eea07a7e285d94c327b38ced3f4a06c69523379a"
+    },
+    {
+      "path": "cjk/Korea1/6f.bin",
+      "size": 19535,
+      "sha256": "4c83928cb9eaaf582b67010390d922a680f815a38cda9160b3f5d58b99e86d55"
+    },
+    {
+      "path": "cjk/Korea1/70.bin",
+      "size": 17719,
+      "sha256": "73e461a2b48979049dfb8c6b56a2f1551544dac2cbe370d6a66bc718b6312ab0"
+    },
+    {
+      "path": "cjk/Korea1/71.bin",
+      "size": 19673,
+      "sha256": "917163112c5bcfcfe07f6b9e496a7a3a10ececac3df148f2012988dd3fc13c73"
+    },
+    {
+      "path": "cjk/Korea1/72.bin",
+      "size": 13313,
+      "sha256": "45700d78c2d1b071c90d1df9de0a5f776af1380095aefdf5bee2522d56c7dc66"
+    },
+    {
+      "path": "cjk/Korea1/73.bin",
+      "size": 15673,
+      "sha256": "56f25e2797f51c73f0e1aa82f49aef27d02c2af07f781b54f86ab12a35e26813"
+    },
+    {
+      "path": "cjk/Korea1/74.bin",
+      "size": 23181,
+      "sha256": "8977d39b0b32b3b921ba21e3507f1324780f7e01b043a2f1e23f154d13434d2a"
+    },
+    {
+      "path": "cjk/Korea1/75.bin",
+      "size": 16188,
+      "sha256": "960976408c1c0c6418d441e1db1829ad21e3633a4b7dd046e0aaf88cdfa880bf"
+    },
+    {
+      "path": "cjk/Korea1/76.bin",
+      "size": 14803,
+      "sha256": "f4d00829cbaa01b6944558bb52265edd728ca4679e3e3b794f272a89512509be"
+    },
+    {
+      "path": "cjk/Korea1/77.bin",
+      "size": 10223,
+      "sha256": "6deb86f6b22004df37bd05e0ebaeac94305ee44c7f7f9af3eb65d5897a0f633a"
+    },
+    {
+      "path": "cjk/Korea1/78.bin",
+      "size": 9930,
+      "sha256": "ebdebf09ad7f07fcde097a4233e3deefb3dc91c84a3170b9ab11d6df8706bb73"
+    },
+    {
+      "path": "cjk/Korea1/79.bin",
+      "size": 12750,
+      "sha256": "21565af0e179cdbb79a3d07cf51c941303c1ef8dfd0f3ae5b8b52a96a262db09"
+    },
+    {
+      "path": "cjk/Korea1/7a.bin",
+      "size": 19506,
+      "sha256": "9e37b954783e67357660d56d2c4fcde2bc90781976044cd52d1871b08d6f977a"
+    },
+    {
+      "path": "cjk/Korea1/7b.bin",
+      "size": 12653,
+      "sha256": "5570203277f2c40c5ac0e2c104fa5524f55d3ce92b972789df1d42cbfae1b9f1"
+    },
+    {
+      "path": "cjk/Korea1/7c.bin",
+      "size": 11557,
+      "sha256": "3761eee05810ff8a8507e3fcd6fbe8ce704d8b81d5ae992cb25808872f03c4a6"
+    },
+    {
+      "path": "cjk/Korea1/7d.bin",
+      "size": 19874,
+      "sha256": "4004d0cb51048a501ea4120fb22977b3087ac0f4d248fb5af19b2a273a97db38"
+    },
+    {
+      "path": "cjk/Korea1/7e.bin",
+      "size": 13454,
+      "sha256": "55562101ceb589bd76cc3d455c8385a302f0a7e0db5ce93d0f17d22dc0ff32e4"
+    },
+    {
+      "path": "cjk/Korea1/7f.bin",
+      "size": 13035,
+      "sha256": "3fc7ab1d58cfb92eb7f56e2ed6cb12a01c1170bda2eea7331c3b1c032bf35204"
+    },
+    {
+      "path": "cjk/Korea1/80.bin",
+      "size": 15392,
+      "sha256": "4e81a29591ad93baa38e62bf411bd3c62296c39cf3c25c9f458a3190c5c0ed57"
+    },
+    {
+      "path": "cjk/Korea1/81.bin",
+      "size": 16495,
+      "sha256": "09e0618d27b152a2201bd83bc004dd1eb409a9c16933b3004e3bc56f9d17cb8f"
+    },
+    {
+      "path": "cjk/Korea1/82.bin",
+      "size": 15007,
+      "sha256": "6285447680f54d84529536e8b0116d5721321124c07b48442f7b7cae454cd0b9"
+    },
+    {
+      "path": "cjk/Korea1/83.bin",
+      "size": 10657,
+      "sha256": "4a1a4449d1a625cc35cd90120a07b192ca07550308438844b4288b9e598333cd"
+    },
+    {
+      "path": "cjk/Korea1/84.bin",
+      "size": 11216,
+      "sha256": "f220f470cb43e68b3a6efbcde3babb079433773cf3cd3958ce473b2694ff3630"
+    },
+    {
+      "path": "cjk/Korea1/85.bin",
+      "size": 16937,
+      "sha256": "0ba76ff500dc90b502f8a543ead7565eb92a7208db1ff0e03a2b516c7c9cc6e1"
+    },
+    {
+      "path": "cjk/Korea1/86.bin",
+      "size": 9874,
+      "sha256": "d2bcb5fa3df7fdea895cbbe7c9fc612fff68041c6ec48ad106e7b41bfbbd3668"
+    },
+    {
+      "path": "cjk/Korea1/87.bin",
+      "size": 8940,
+      "sha256": "5ac9b1672b60a8e37ec4367deb2791c581ea44e5c15c12362606d9908bf1e506"
+    },
+    {
+      "path": "cjk/Korea1/88.bin",
+      "size": 14553,
+      "sha256": "083d3de98b4bed0f564272ea458557e3a97bbcddbbbab2a4b14fa57ec48bf990"
+    },
+    {
+      "path": "cjk/Korea1/89.bin",
+      "size": 11273,
+      "sha256": "2cde366009242dbe144b56b171581666859d5c08ec840b4f220bf07df5bc25b2"
+    },
+    {
+      "path": "cjk/Korea1/8a.bin",
+      "size": 15704,
+      "sha256": "9abb69c29a5e0d40fab9ff377896ef98056199003681460974c21a33fe0ca971"
+    },
+    {
+      "path": "cjk/Korea1/8b.bin",
+      "size": 11043,
+      "sha256": "7b961ad055403218c8ac55e353866b4bd3b430d32a5acdc60cedda3b19e0d8f9"
+    },
+    {
+      "path": "cjk/Korea1/8c.bin",
+      "size": 14194,
+      "sha256": "2b790fcc81e134b38ee257747e712084f679cdaa1053c106e7e2f81253218775"
+    },
+    {
+      "path": "cjk/Korea1/8d.bin",
+      "size": 9298,
+      "sha256": "7136883a53d8e48355ba75c5a4c66aa40bc96b740e29f70f738bcac4b52b7f47"
+    },
+    {
+      "path": "cjk/Korea1/8e.bin",
+      "size": 9100,
+      "sha256": "67799c2f54ee241923f515f1ffe2649877e2eb3428eb8961c98cdddaf35b8d28"
+    },
+    {
+      "path": "cjk/Korea1/8f.bin",
+      "size": 12953,
+      "sha256": "6fb81d373945dd08f6fb7ba990f1a4fa977e7496e4a960d354f65a1b7bc05b9a"
+    },
+    {
+      "path": "cjk/Korea1/90.bin",
+      "size": 21177,
+      "sha256": "217180b2bf8dedb9cc5107f901b622d7b1e6fffbee98ce3693c9e7c472e6dc26"
+    },
+    {
+      "path": "cjk/Korea1/91.bin",
+      "size": 13986,
+      "sha256": "3f2c0d4b4fb5011ebc2dccbdca1b7213a6ddad30fe05829f5b9ff34e3b84db22"
+    },
+    {
+      "path": "cjk/Korea1/92.bin",
+      "size": 8897,
+      "sha256": "6b4531246f8e8fb7124237bdcecab07736f508d20897e8c2ef89b213080b4edf"
+    },
+    {
+      "path": "cjk/Korea1/93.bin",
+      "size": 10346,
+      "sha256": "5a975a1001546e7687c10395f5df749876c5b84f9a4ef25a1caf3d079d093d1a"
+    },
+    {
+      "path": "cjk/Korea1/94.bin",
+      "size": 4265,
+      "sha256": "caa5fd5fa60c57f05c0881805a0b037521345ba6fc56c89d120ac7502f4b9f8f"
+    },
+    {
+      "path": "cjk/Korea1/95.bin",
+      "size": 4840,
+      "sha256": "4d27b4ea780c8e26a31cabfb310b4a3d22f272a01c788b37e4a1588ef832791c"
+    },
+    {
+      "path": "cjk/Korea1/96.bin",
+      "size": 17753,
+      "sha256": "dfa4cbb0aafef4c6e9fd508175071fc5ddac5d8210ccccb0b1924d53d7f6c3e6"
+    },
+    {
+      "path": "cjk/Korea1/97.bin",
+      "size": 10926,
+      "sha256": "93f3ba4c066e976a44fcef09701d3877d09f9127c496e5f8c662830649faa92e"
+    },
+    {
+      "path": "cjk/Korea1/98.bin",
+      "size": 13336,
+      "sha256": "7be1daf3df95dbc9259e6af90cb1fe55af9cf04ccbc09a6a4b80750c0264c42c"
+    },
+    {
+      "path": "cjk/Korea1/99.bin",
+      "size": 12674,
+      "sha256": "84953b701761faacf3dbef206b18a79b9494b23907c271a1c1a33ce65914b1f3"
+    },
+    {
+      "path": "cjk/Korea1/9a.bin",
+      "size": 9838,
+      "sha256": "28672a3d488f98f893e7428c8f64b67407058cb3ef459e47f39f649823798123"
+    },
+    {
+      "path": "cjk/Korea1/9b.bin",
+      "size": 7677,
+      "sha256": "383a67630033fbccef0c862dbafeee4a911417af3e95066270bac5ff94b3b2d1"
+    },
+    {
+      "path": "cjk/Korea1/9c.bin",
+      "size": 5985,
+      "sha256": "24e193662123e6e50c9c1167758d7e360b2058fce8318ed3af9667781efe7773"
+    },
+    {
+      "path": "cjk/Korea1/9d.bin",
+      "size": 7585,
+      "sha256": "08da0da9b03ac604ac57d53c59eea691777f8715fd4de9ac2dc7135d6a722ab7"
+    },
+    {
+      "path": "cjk/Korea1/9e.bin",
+      "size": 10342,
+      "sha256": "0e5bad6e9a63249012867cf98d8e5e3ab666f6e2e28a57d6e5f16d141830df51"
+    },
+    {
+      "path": "cjk/Korea1/9f.bin",
+      "size": 6589,
+      "sha256": "e0eb0cb4a227710f01ebfd23dd7aef39f0e06cffe7b928e3be0f6cd6cea2037d"
+    },
+    {
+      "path": "cjk/Korea1/ac.bin",
+      "size": 7512,
+      "sha256": "823f13da2e560b121741876db5b06eb47147d934213eb88ba2997ff2dddbc1dd"
+    },
+    {
+      "path": "cjk/Korea1/ad.bin",
+      "size": 6239,
+      "sha256": "00ee2c374b5cab97500702febe2877f0d2bf4d18104cd53c04dd72b04f27aafb"
+    },
+    {
+      "path": "cjk/Korea1/ae.bin",
+      "size": 6438,
+      "sha256": "30921c810a6044c2be4a94b41ee723bd176d27b78d51f60d80df3d99d1bcafdd"
+    },
+    {
+      "path": "cjk/Korea1/af.bin",
+      "size": 6366,
+      "sha256": "a1901ca28d6b7a9b2ea667e914545e708ccccc72bb5692eb1d23d683c6f74883"
+    },
+    {
+      "path": "cjk/Korea1/b0.bin",
+      "size": 6186,
+      "sha256": "bff8b8450bf4f3e3bdd0b8c95e54b35b712cfed9dde0a03ff2c28c06e4cec0b1"
+    },
+    {
+      "path": "cjk/Korea1/b1.bin",
+      "size": 4590,
+      "sha256": "df93dbc01e592646cc4165956f44343726e0be62a9e40d75d22e78b4fcdac782"
+    },
+    {
+      "path": "cjk/Korea1/b2.bin",
+      "size": 5028,
+      "sha256": "de155eed57afec6f04462de89f8b01d0dd533837441f548bcea4bb0c4fadf335"
+    },
+    {
+      "path": "cjk/Korea1/b3.bin",
+      "size": 4545,
+      "sha256": "6f1fbc5d2dd5fea49bf1112bb6429f80b543638c90b3f7fdb743e4a58c16bc36"
+    },
+    {
+      "path": "cjk/Korea1/b4.bin",
+      "size": 3343,
+      "sha256": "0b765703a013ac228fc70af429c90682ba007ae3889190178ffcf7d298d2bbff"
+    },
+    {
+      "path": "cjk/Korea1/b5.bin",
+      "size": 4892,
+      "sha256": "7f9b402415a1d50f3e5710eec2cc7d2ee02fb71b1e0ffff8d7b9932d6ae062f1"
+    },
+    {
+      "path": "cjk/Korea1/b6.bin",
+      "size": 2260,
+      "sha256": "4e987f036a1722cee25ba6049d68784c7416ed2d7bb1307d47e30e246b328f48"
+    },
+    {
+      "path": "cjk/Korea1/b7.bin",
+      "size": 4997,
+      "sha256": "c8a98461d1b42a3dc8e1588139d84e5ab6d73d3c247f81c87d24e3b5f2ea2452"
+    },
+    {
+      "path": "cjk/Korea1/b8.bin",
+      "size": 5034,
+      "sha256": "ab25e8c17025f7a9ba050a6cbf2195c69b2ec18b2b5d1fb9f3bfd9b44fa171df"
+    },
+    {
+      "path": "cjk/Korea1/b9.bin",
+      "size": 5257,
+      "sha256": "2e9dad9567a4bd58a82684354d5c4a8bf918e2c224a390fba1b626a394848f7a"
+    },
+    {
+      "path": "cjk/Korea1/ba.bin",
+      "size": 3927,
+      "sha256": "d1f597bf031951125e6cd1905be3fe722550caa6d6da8992bdc47aa2d87bbf4b"
+    },
+    {
+      "path": "cjk/Korea1/bb.bin",
+      "size": 3351,
+      "sha256": "6150f335f363982e9835abff3a3ff401351de0ab5f1c98cc42911ad8dab43968"
+    },
+    {
+      "path": "cjk/Korea1/bc.bin",
+      "size": 4970,
+      "sha256": "a1197c550e2d326e568b4af9dee837eec2880081e1c152ada7293feaf8d00e40"
+    },
+    {
+      "path": "cjk/Korea1/bd.bin",
+      "size": 3629,
+      "sha256": "4b8a3442f66efc6b22f38f48048fde8362747496a861f7f3221be47ac8a3ac8e"
+    },
+    {
+      "path": "cjk/Korea1/be.bin",
+      "size": 4489,
+      "sha256": "6e7e0762ce55eab22dad01542901105740969ae0b644b64b64fa688a39d41d0e"
+    },
+    {
+      "path": "cjk/Korea1/bf.bin",
+      "size": 2314,
+      "sha256": "f9687aa2848dbdb6bc4a5ae75a8d1a5c6bcd073b39e977ff5e0c109e4aef1d28"
+    },
+    {
+      "path": "cjk/Korea1/c0.bin",
+      "size": 4240,
+      "sha256": "1286682f2d4a7622d02b63130d682f6ed15ad4b9fd4e3ba97733fa1426b5eb30"
+    },
+    {
+      "path": "cjk/Korea1/c1.bin",
+      "size": 7951,
+      "sha256": "0eab8a45af28bc648417f1598d0dc7ad5ce3c9a85df0a8031f9e8307f8010f1f"
+    },
+    {
+      "path": "cjk/Korea1/c2.bin",
+      "size": 7342,
+      "sha256": "f6e45335db811a6bd6854828fc0727460c43de5fbeae2886961fce18acb52fc2"
+    },
+    {
+      "path": "cjk/Korea1/c3.bin",
+      "size": 4686,
+      "sha256": "1f9e3d5b2588f56ebaa7b07a1a10507e8b85ca3104af9f46074af8c5c5db4cc6"
+    },
+    {
+      "path": "cjk/Korea1/c4.bin",
+      "size": 4192,
+      "sha256": "9964a2d695a90082a34588209e1f95e8e4e46156a1c20dabee59671d84f46fbb"
+    },
+    {
+      "path": "cjk/Korea1/c5.bin",
+      "size": 8209,
+      "sha256": "e1b80c08305f2823a7340c1478a50b855222832b5c2235990007b67f1e58b948"
+    },
+    {
+      "path": "cjk/Korea1/c6.bin",
+      "size": 10291,
+      "sha256": "24c5d33ef25500eecb1099ec9c4ffe12d04f1c93b08614a554534627208002f5"
+    },
+    {
+      "path": "cjk/Korea1/c7.bin",
+      "size": 9043,
+      "sha256": "ce6c48e785a030305533b4d857761f675f0aed41a869fecfb5a8737914eed496"
+    },
+    {
+      "path": "cjk/Korea1/c8.bin",
+      "size": 7239,
+      "sha256": "8aa84e328d99f82f2411ee7686beccca89c99c294415c8705cc2cdcea284454d"
+    },
+    {
+      "path": "cjk/Korea1/c9.bin",
+      "size": 7049,
+      "sha256": "457a68c660e0b62a3a9a3eb2767e18d6693dbee91408d899451b4a7ff80b98c4"
+    },
+    {
+      "path": "cjk/Korea1/ca.bin",
+      "size": 5594,
+      "sha256": "922d1f76aa90eaf798071a47e7a202127a8e7cd26a8b95bd8b8c0cdb271cbf5a"
+    },
+    {
+      "path": "cjk/Korea1/cb.bin",
+      "size": 3525,
+      "sha256": "9a13cfbd730d97c68801a239ca72d5f22e13f774d4e3d055836ee10440f1c766"
+    },
+    {
+      "path": "cjk/Korea1/cc.bin",
+      "size": 5924,
+      "sha256": "749790259751eb5afd512a7afb6636f6392e93e4774b85cf7c24867d89208130"
+    },
+    {
+      "path": "cjk/Korea1/cd.bin",
+      "size": 4920,
+      "sha256": "1d40faf7f219ac65f678e055fe96b0b04ff4a62dc0c56019bddd6b0629bfd719"
+    },
+    {
+      "path": "cjk/Korea1/ce.bin",
+      "size": 5108,
+      "sha256": "58e888dfa7fc363fa287019fa3c61a17e05818930c494e7a68a7f0bba4eb4bcd"
+    },
+    {
+      "path": "cjk/Korea1/cf.bin",
+      "size": 4664,
+      "sha256": "e27b2f9352ad92a0f3c9ea7bd053f97ff63c7e9a2459c977629c5fbacd490caa"
+    },
+    {
+      "path": "cjk/Korea1/d0.bin",
+      "size": 5153,
+      "sha256": "239017b1a8cdfe977acf70ae0b792438df4c810f40ac778017fe5c580afd9e20"
+    },
+    {
+      "path": "cjk/Korea1/d1.bin",
+      "size": 3372,
+      "sha256": "ab6c670fc7ae02e4504dc53206b3e3b71374a77e83e8a7f0cfb2fa96960a205c"
+    },
+    {
+      "path": "cjk/Korea1/d2.bin",
+      "size": 3327,
+      "sha256": "df7b9e624f7dc60538954e32f4f99e1097520433e433002c7fc3c323bc57eefa"
+    },
+    {
+      "path": "cjk/Korea1/d3.bin",
+      "size": 4841,
+      "sha256": "d4d5a844e53d3a571c377456eb0861c9a73b62da0b1d42207ca4184bf8f69e2a"
+    },
+    {
+      "path": "cjk/Korea1/d4.bin",
+      "size": 2612,
+      "sha256": "3b8ec1bb945732540174c0e5711dc01538e315a0d85be781a982e6f80caa056c"
+    },
+    {
+      "path": "cjk/Korea1/d5.bin",
+      "size": 5279,
+      "sha256": "200c885c419e7767de49ec33377975a80fb3506628755fa2ebef78eaa498ff73"
+    },
+    {
+      "path": "cjk/Korea1/d6.bin",
+      "size": 7711,
+      "sha256": "9e5be4a34d98a632050011f37f02475fb7e3150553d52fa1c33ff304fdef82c4"
+    },
+    {
+      "path": "cjk/Korea1/d7.bin",
+      "size": 5364,
+      "sha256": "ea16f33723a17d3327e0d53e955f23cf5970bec47df6ba717a06593eab6cdbcb"
+    },
+    {
+      "path": "cjk/Korea1/f9.bin",
+      "size": 72430,
+      "sha256": "3f9096fef567c5557df3ecdd58f4974d8b0046f64985b0b42d6d86c361fb8464"
+    },
+    {
+      "path": "cjk/Korea1/fa.bin",
+      "size": 3012,
+      "sha256": "f31dbb58efe60906e795ee44beee09caff2063258e74cbf2ee3a864dfe23ce36"
+    },
+    {
+      "path": "cjk/Korea1/ff.bin",
+      "size": 7954,
+      "sha256": "810ba6b588dfcbf4fde8bee03fd823f730c0087680baebc7b541ccb872e42e48"
+    },
+    {
+      "path": "latin/DejaVuSans.ttf",
+      "size": 757076,
+      "sha256": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954"
+    },
+    {
+      "path": "latin/LiberationMono-Bold.ttf",
+      "size": 307996,
+      "sha256": "bd62a0672d0b9b6710b01df434c80ad54fa5f0835207eb7b17b7a761463067bb"
+    },
+    {
+      "path": "latin/LiberationMono-BoldItalic.ttf",
+      "size": 284068,
+      "sha256": "79451f3c09fe25116098853b7a2ca6e2436220ccc11af022979adbcf195be130"
+    },
+    {
+      "path": "latin/LiberationMono-Italic.ttf",
+      "size": 281536,
+      "sha256": "605c01c711b44480a7508d349dfbf3264e81fa43d69e61cfa7d10b86e764c4d1"
+    },
+    {
+      "path": "latin/LiberationMono-Regular.ttf",
+      "size": 319508,
+      "sha256": "f2b83c763e8afd21709333370bed4774337fae82267937e2b5aea7e2fbd922c1"
+    },
+    {
+      "path": "latin/LiberationSans-Bold.ttf",
+      "size": 414456,
+      "sha256": "788abee4c806d660e8aee46689dd8540cd4bb98da03dcc9d171ce3efd99a9173"
+    },
+    {
+      "path": "latin/LiberationSans-BoldItalic.ttf",
+      "size": 408996,
+      "sha256": "698da70fc191cc5f33ad4d6d3fe830fe4624b898ea2e3169955928b7c491f1ee"
+    },
+    {
+      "path": "latin/LiberationSans-Italic.ttf",
+      "size": 415816,
+      "sha256": "e5bae5c4cde31f22142753855f4f8fb86da6ff39955ed3c0a11248b0d16948b0"
+    },
+    {
+      "path": "latin/LiberationSans-Regular.ttf",
+      "size": 410712,
+      "sha256": "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8"
+    },
+    {
+      "path": "latin/LiberationSerif-Bold.ttf",
+      "size": 370096,
+      "sha256": "d754ba427cfe0bca54ae052384baa8f842da5bd6550ad4da024ac441e7a7d5ce"
+    },
+    {
+      "path": "latin/LiberationSerif-BoldItalic.ttf",
+      "size": 376772,
+      "sha256": "f17db8af71e24d2066b587546021d4f0b296be389512b658dec3c09affeb11a7"
+    },
+    {
+      "path": "latin/LiberationSerif-Italic.ttf",
+      "size": 375632,
+      "sha256": "0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e"
+    },
+    {
+      "path": "latin/LiberationSerif-Regular.ttf",
+      "size": 393576,
+      "sha256": "058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74"
+    },
+    {
+      "path": "licenses/Adobe-Core14-AFM-NOTICE.txt",
+      "size": 1254,
+      "sha256": "05a6a866fdfa199217465d524ad4d05329e67a337c4f5cf290e4a21f3d0768b5"
+    },
+    {
+      "path": "licenses/DejaVu-AUTHORS.txt",
+      "size": 842,
+      "sha256": "915a742f0b242ea43fcbef934b6d24353b51351470f71d8a8d00c751892fad50"
+    },
+    {
+      "path": "licenses/DejaVu-LICENSE.txt",
+      "size": 8816,
+      "sha256": "7a083b136e64d064794c3419751e5c7dd10d2f64c108fe5ba161eae5e5958a93"
+    },
+    {
+      "path": "licenses/Liberation-AUTHORS.txt",
+      "size": 379,
+      "sha256": "b627404917ef824675cb24c32e2facd0b57650627955f3fc3d8a8863c5d0adfc"
+    },
+    {
+      "path": "licenses/Liberation-OFL-1.1.txt",
+      "size": 4414,
+      "sha256": "93fed46019c38bbe566b479d22148e2e8a1e85ada614accb0211c37b2c61c19b"
+    },
+    {
+      "path": "licenses/NotoSansCJK-OFL-1.1.txt",
+      "size": 4388,
+      "sha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9"
+    },
+    {
+      "path": "licenses/manifest.json",
+      "size": 3922,
+      "sha256": "21ac304b1482d8b15287f972d7db93829995c8827562e8973ee84b00f8b6d963"
+    }
+  ]
+}

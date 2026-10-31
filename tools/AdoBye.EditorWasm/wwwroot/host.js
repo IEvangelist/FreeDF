@@ -48,12 +48,12 @@ export async function start() {
     }
   };
   await ready;
-  const command = (url, method = 'GET', body = null, fileName = null, image = false) => {
+  const command = (url, method = 'GET', body = null, fileName = null, image = false, password = null) => {
     if (failed) return Promise.reject(failed);
     const id = ++nextId;
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject, url, started: performance.now() });
-      try { worker.postMessage({ id, url, method, body, fileName, image }); }
+      try { worker.postMessage({ id, url, method, body, fileName, image, password }); }
       catch (error) { pending.delete(id); reject(error); }
     });
   };
@@ -62,6 +62,19 @@ export async function start() {
     sequence = result.catch(() => {});
     return result;
   };
+  let renderPool = null;
+  if (typeof Worker === 'function' && new URLSearchParams(location.search).get('pool') === '1') {
+    try {
+      const { createRenderPool } = await import('./pool.js');
+      renderPool = createRenderPool({
+        snapshot: bare => enqueue(async () => {
+          const reply = await command(`/api/snapshot?bare=${bare}`);
+          return { bytes: reply.bytes, version: Number(/^v(\d+)$/.exec(reply.fileName ?? '')?.[1]) };
+        }),
+      });
+      if (!renderPool.enabled) renderPool = null;
+    } catch (error) { console.warn('Parallel rendering is unavailable; using one PDF engine.', error); }
+  }
   const imageBlob = url => {
     const key = imageKey(url);
     if (key && imageCache.has(key)) {
@@ -70,12 +83,20 @@ export async function start() {
       return Promise.resolve(cached.data);
     }
     if (key && imagePending.has(key)) return imagePending.get(key);
-    const pending = enqueue(async () => {
+    const primary = () => enqueue(async () => {
       const reply = await command(url, 'GET', null, null, true);
-      const data = reply.bytes
+      return reply.bytes
         ? new Blob([reply.bytes], { type: reply.contentType })
         : await (await fetch(`data:${reply.contentType};base64,${reply.data}`)).blob();
+    });
+    // Pool snapshots use the primary queue, so do not hold that queue while awaiting replicas.
+    const pooled = renderPool?.tryRender(url).catch(error => {
+      if (error?.name !== 'AbortError') console.warn('Render pool failed; using the primary PDF engine.', error);
+      return null;
+    });
+    const pending = (pooled ? pooled.then(data => data || primary()) : primary()).then(data => {
       const size = data.size;
+      evictImage(url);
       if (key && size <= imageCacheLimit) {
         while (imageCacheSize + size > imageCacheLimit) {
           const [oldKey, old] = imageCache.entries().next().value;
@@ -94,6 +115,7 @@ export async function start() {
   return {
     execution: 'worker',
     bootRetries,
+    get renderPool() { return renderPool; },
     request(url, options = {}) {
       return enqueue(async () => {
         let body = null, fileName = null;
@@ -104,7 +126,7 @@ export async function start() {
         } else if (options.body != null) {
           body = options.body;
         }
-        const reply = await command(url, options.method, body, fileName);
+        const reply = await command(url, options.method, body, fileName, false, options.headers?.['X-Pdf-Password'] ?? null);
         return new Response(reply.bytes, {
           headers: { 'Content-Type': reply.contentType, ...(reply.fileName ? { 'X-File-Name': reply.fileName } : {}) },
         });

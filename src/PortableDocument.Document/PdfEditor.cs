@@ -124,6 +124,7 @@ public sealed partial class PdfEditor
         ArgumentNullException.ThrowIfNull(value);
         if (key is "Type" or "Pages") throw new ArgumentException($"/{key} is managed by the editor", nameof(key));
         var d = (PdfDictionary)_objs[_catalog];
+        if (key == "AcroForm") InvalidateFormIndex();
         _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { [key] = value });
     }
 
@@ -319,10 +320,15 @@ public sealed partial class PdfEditor
     /// single-line appearance; buttons get /V and /AS (checked state name or Off). NeedAppearances is set so viewers refresh.
     /// Returns false if no such field exists.
     /// </summary>
-    public bool SetFieldValue(string name, string value)
+    public bool SetFieldValue(string name, string value) => SetFieldValues(name, [value]);
+
+    /// <summary>Sets a field to one or more values: several values make a multi-select choice field's /V array and matching /I indices.</summary>
+    public bool SetFieldValues(string name, IReadOnlyList<string> values)
     {
+        var value = values.Count > 0 ? values[0] : "";
         if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || Res(form.Get("Fields")) is not PdfArray fields) return false;
         var done = false;
+        var legacyAppearance = false;
         void Walk(PdfObject? o, string prefix, string? ft, int depth)
         {
             if (depth > 32 || o is not PdfRef r || !_objs.TryGetValue(r.Number, out var po) || po is not PdfDictionary d) return;
@@ -340,30 +346,50 @@ public sealed partial class PdfEditor
                 var on = value is not ("" or "Off");
                 e["V"] = new PdfName(on ? value : "Off");
                 _objs[r.Number] = new PdfDictionary(e);
-                foreach (var w in kids is null ? [r] : kids.Items)
-                    if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd)
+                var ffBtn = (int)(Res(d.Get("Ff")).AsNumber() ?? 0);
+                var targets = (kids is null ? [r] : kids.Items).ToList();
+                for (var wi = 0; wi < targets.Count; wi++)
+                    if (targets[wi] is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd)
                     {
-                        var states = Res(wd.Get("AP")) is PdfDictionary ap && Res(ap.Get("N")) is PdfDictionary n ? n.Entries.Keys : (IEnumerable<string>)[];
-                        var we = new Dictionary<string, PdfObject>(wd.Entries) { ["AS"] = new PdfName(on && states.Contains(value) ? value : "Off") };
+                        if (Res(wd.Get("AP")) is not PdfDictionary) legacyAppearance = true;
+                        var states = Res(wd.Get("AP")) is PdfDictionary ap && Res(ap.Get("N")) is PdfDictionary n ? n.Entries.Keys.ToList() : [];
+                        // Without appearance states the on-state is the /Opt export (or index) for radios and the chosen name for check boxes.
+                        var kidOn = states.FirstOrDefault(k => k != "Off") ?? ((ffBtn & 32768) != 0
+                            ? (Res(d.Get("Opt")) is PdfArray opts && wi < opts.Count && Res(opts[wi]) is PdfString os ? os.Text : wi.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                            : value);
+                        var we = new Dictionary<string, PdfObject>(wd.Entries) { ["AS"] = new PdfName(on && kidOn == value ? value : "Off") };
                         _objs[wr.Number] = new PdfDictionary(we);
                     }
                 return;
             }
-            e["V"] = new PdfString(EncodeText(value));
+            if (ft == "Ch" && values.Count > 1) e["V"] = new PdfArray(values.Select(v => (PdfObject)new PdfString(EncodeText(v))).ToList());
+            else e["V"] = new PdfString(EncodeText(value));
+            if (ft == "Ch")
+            {
+                var chosen = new List<int>();
+                if (Res(d.Get("Opt")) is PdfArray options)
+                    foreach (var v in values)
+                        for (var oi = 0; oi < options.Count; oi++)
+                            if ((Res(options[oi]) is PdfString es && es.Text == v) || (Res(options[oi]) is PdfArray pr && pr.Count >= 1 && Res(pr[0]) is PdfString ex && ex.Text == v)) { chosen.Add(oi); break; }
+                if (chosen.Count > 0 && chosen.Count == values.Count) e["I"] = new PdfArray(chosen.Order().Select(i => (PdfObject)new PdfInteger(i)).ToList());
+                else e.Remove("I");
+            }
             _objs[r.Number] = new PdfDictionary(e);
             if (ft is "Tx" or "Ch")
                 foreach (var w in kids is null ? [r] : kids.Items)
                     if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd && Res(wd.Get("Rect")) is PdfArray ra && ra.Count >= 4)
                     {
+                        if (RebuildAppearance(wr)) continue;
+                        legacyAppearance = true;
                         double N(int i) => Res(ra[i]).AsNumber() ?? 0;
-                        var xo = BuildTextAppearance(d, wd, Math.Abs(N(2) - N(0)), Math.Abs(N(3) - N(1)), DisplayText(d, value), ft == "Ch");
+                        var xo = BuildTextAppearance(d, wd, Math.Abs(N(2) - N(0)), Math.Abs(N(3) - N(1)), string.Join(", ", values.DefaultIfEmpty("").Select(v => DisplayText(d, v))), ft == "Ch");
                         var we = new Dictionary<string, PdfObject>(wd.Entries)
                         { ["AP"] = new PdfDictionary(new Dictionary<string, PdfObject> { ["N"] = xo }) };
                         _objs[wr.Number] = new PdfDictionary(we);
                     }
         }
         foreach (var f in fields.Items) Walk(f, "", null, 0);
-        if (done)
+        if (done && legacyAppearance)
         {
             var af = ((PdfDictionary)_objs[_catalog]).Get("AcroForm");
             var fe = new Dictionary<string, PdfObject>(form.Entries) { ["NeedAppearances"] = new PdfBoolean(true) };
@@ -566,6 +592,7 @@ public sealed partial class PdfEditor
     /// <summary>Drops AcroForm fields whose widgets were all removed (see <see cref="RemoveAnnotations"/>) so field values cannot outlive a redacted widget. Returns the number of field entries removed.</summary>
     public int PruneRemovedFormFields()
     {
+        InvalidateFormIndex();
         if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || form.Get("Fields") is not { } fieldsObj || Res(fieldsObj) is not PdfArray fields) return 0;
         var dropped = 0;
         List<PdfObject> Prune(IEnumerable<PdfObject> items)
@@ -661,6 +688,44 @@ public sealed partial class PdfEditor
 
     PdfFile? _src;
     bool _requiresFullRewrite;
+
+    /// <summary>An opaque, immutable-by-convention capture of the structural state of one <see cref="PdfEditor"/>, used for undo and redo.</summary>
+    public sealed class State
+    {
+        internal PdfEditor Owner = null!;
+        internal Dictionary<int, PdfObject> Objs = null!;
+        internal HashSet<int> Deleted = null!, Reserved = null!;
+        internal List<int> Pages = null!;
+        internal int Info, Next;
+        internal string Version = "";
+        internal Dictionary<int, Overlay> Overlays = null!;
+        internal Dictionary<int, byte[]> ContentOverrides = null!;
+        internal bool RequiresFullRewrite;
+    }
+
+    /// <summary>Captures page order, objects and per-page edits. Objects are replaced (never mutated in place), so a shallow capture is exact.</summary>
+    public State Capture() => new()
+    {
+        Owner = this, Objs = new(_objs), Deleted = [.. _deleted], Reserved = [.. _reserved], Pages = [.. _pages], Info = _info, Next = _next,
+        Version = _version, Overlays = new(_overlays), ContentOverrides = new(_contentOverrides), RequiresFullRewrite = _requiresFullRewrite,
+    };
+
+    /// <summary>Returns the editor to a state taken by <see cref="Capture"/> on this same instance.</summary>
+    public void Restore(State state)
+    {
+        InvalidateFormIndex();
+        if (!ReferenceEquals(state.Owner, this)) throw new ArgumentException("The state belongs to a different editor.", nameof(state));
+        Require(PdfPermissions.Assemble);
+        _objs.Clear(); foreach (var kv in state.Objs) _objs[kv.Key] = kv.Value;
+        _deleted.Clear(); _deleted.UnionWith(state.Deleted);
+        _reserved.Clear(); _reserved.UnionWith(state.Reserved);
+        _pages.Clear(); _pages.AddRange(state.Pages);
+        _info = state.Info; _next = state.Next; _version = state.Version;
+        _overlays.Clear(); foreach (var kv in state.Overlays) _overlays[kv.Key] = kv.Value;
+        _contentOverrides.Clear(); foreach (var kv in state.ContentOverrides) _contentOverrides[kv.Key] = kv.Value;
+        _requiresFullRewrite = state.RequiresFullRewrite;
+        _importMaps.Clear();
+    }
 
     /// <summary>True when the editor was opened from an intact, unencrypted file, so <see cref="SaveIncremental"/> can append an update.</summary>
     public bool CanSaveIncremental => !_requiresFullRewrite && _src is { IsEncrypted: false, Repaired: false };

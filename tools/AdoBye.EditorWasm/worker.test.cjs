@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const source = readFileSync(join(__dirname, 'wwwroot', 'worker.js'), 'utf8');
 const handler = source.slice(source.indexOf('self.onmessage ='), source.indexOf('  self.postMessage({ ready:'));
-function harness(request) {
+function harness(request, withFonts = async (exports, method, run) => run()) {
   const replies = [];
   const self = {
     location: { href: 'https://editor.test/worker.js' },
@@ -14,13 +14,13 @@ function harness(request) {
   };
   vm.runInNewContext(handler, {
     self, exports: { BrowserEditor: { RequestBytes: request } },
-    URL, Blob, Uint8Array, performance,
+    URL, Blob, Uint8Array, performance, withFallbackFonts: withFonts,
     base64: () => { throw new Error('Binary protocol must not base64-encode commands'); },
   });
   return {
     replies,
-    send: (body, method = 'POST') => self.onmessage({
-      data: { id: 7, url: '/api/page/0/items?v=2', method, body, fileName: 'input.pdf' },
+    send: (body, method = 'POST', password = null) => self.onmessage({
+      data: { id: 7, url: '/api/page/0/items?v=2&x-pdf-password=untrusted', method, body, fileName: 'input.pdf', password },
     }),
   };
 }
@@ -38,12 +38,27 @@ test('raw JSON reaches RequestBytes unchanged and response bytes are transferred
     exchange.performance = '{"rasterMs":2}';
     return bytes;
   });
+
   await h.send(body);
   const { reply, transfer } = h.replies[0];
   assert.equal(reply.reply.bytes, bytes);
   assert.equal(reply.reply.performance.rasterMs, 2);
   assert.equal(transfer.length, 1);
   assert.equal(transfer[0], bytes.buffer);
+});
+
+test('password travels only from the explicit command and fallback-font retries use fresh metadata', async () => {
+  let count = 0;
+  const h = harness((method, path, query, body, exchange) => {
+    assert.equal(JSON.parse(query)['x-pdf-password'], 'encoded-password');
+    count++;
+    if (count === 1) exchange.error = '{"error":"font pending"}';
+    else exchange.contentType = 'image/png';
+    return new Uint8Array([count]);
+  }, async (exports, method, run) => { run(); return run(); });
+  await h.send(null, 'GET', 'encoded-password');
+  assert.equal(h.replies[0].reply.reply.error, undefined);
+  assert.equal(h.replies[0].reply.reply.bytes[0], 2);
 });
 
 test('Blob upload travels as exact binary bytes with no base64 command body', async () => {

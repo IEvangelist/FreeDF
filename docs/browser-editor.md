@@ -25,6 +25,15 @@ opening or creating a document clears the clipboard and pending upload files.
 
 ## Publishing
 
+The welcome screen's primary **Open the showcase** button opens the tagged,
+18-page benchmarks, brand and spec showcase (`28-benchmarks-brand-spec.pdf`).
+It also leads **File > Open sample** and the published manifest. Share
+**https://ievangelist.github.io/csharp-pdf/#sample=28** to open it directly.
+**Open the full sample collection** remains a secondary welcome action:
+sample 27 still contains only samples 01-26 (50 pages). Both PDFs and the sample
+manifest are fetched only on demand from this site, never precached; size and
+SHA256 are verified before opening. Nothing is uploaded.
+
 After merging, enable **Settings > Pages > Build and deployment > Source:
 GitHub Actions**. If the `github-pages` environment has branch protection rules,
 allow the repository's default branch (`main`). No secret or personal token is
@@ -108,6 +117,18 @@ zero overhead or of public-network performance.
 
 ## Editor operation inventory
 
+Pages with form fields show a keyboard-accessible **Fill out | Edit** toggle
+above the page. Each opened document starts in **Edit**, for selecting, moving,
+resizing and authoring fields. Choose **Fill out** to type values or operate
+checkboxes and other form controls without moving them. The mode stays selected
+while navigating or saving that document; changing mode does not modify the PDF,
+its dirty state or undo history. `--forms` covers both modes and their toggle.
+Rapid on-page field edits commit in order; editor undo and save wait for queued
+values so undoing one field cannot restore stale values in another.
+`--annotations` checks real note creation, property editing and save/reopen.
+The experimental render-replica pool remains opt-in with `?pool=1`; replicas do
+not yet share lazy fallback-font assets, so it is not the default editor path.
+
 | Existing editor action | Browser host |
 |---|---|
 | New document, paper sizes/orientation; open picker; PDF drop | Local; dropping onto an open document imports its pages, as in EditorWeb |
@@ -117,7 +138,7 @@ zero overhead or of public-network performance.
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
 | Redaction | Same content-removing redactor: arbitrary paths/strokes/clips, rotated content, per-invocation shared/nested Forms, partial inline/stencil image blanking and hidden optional content; not a painted-cover substitute |
-| Forms: text, button and choice fields | Same field-value edits; existing UI represents choice values as text |
+| Forms: text, button and choice fields | The in-page Fill out / Edit toggle defaults to Edit for layout authoring. Fill out in Select mode exposes text/comb/multiline, editable combo/multi-select list, checkbox and radio controls with native Tab/Space interaction and field undo; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
 | Page rotate/delete/reorder/duplicate; blank insert; merge/import | Same page editor |
 | Title/document metadata; search/case matching/highlights | Same local session |
 | Save / Save as / Download; PDF page-range extraction | Downloads a copy; cannot overwrite the original filesystem path |
@@ -140,6 +161,18 @@ The existing PDF engine's format/coverage limitations still apply (see
 `spec-matrix.md`). Complex or large documents and high-DPI multi-page exports
 can take substantial worker time or exhaust browser memory. This host deliberately uses
 single-threaded WASM in a dedicated module worker for Pages compatibility.
+
+On-page form controls sit above content selection. Page-sized backgrounds and
+imported page groups (at least 90% of the page area) require Alt+click or keyboard
+focus followed by Enter/Space to select. Their tooltip, accessible name and
+first-click status explain this; plain clicks no longer select the whole page
+accidentally. Checkbox/radio widgets without appearance streams use their
+declared export values (or the checkbox `Yes` fallback), not a literal `null`.
+Run
+`--forms <published-wwwroot-or-url>` for the focused UI/save/reopen regression
+against the AcroForm sample, a locally merged collection and a rotated,
+CropBox-offset form with missing appearances and multiple/export values. This does not claim
+JavaScript/Submit/Reset action execution or form filling in Preview mode.
 The local publish script defaults to untrimmed/non-AOT and needs no `wasm-tools`;
 `-Aot` and the Pages workflow trim the framework while preserving application
 reflection roots for shared editor JSON payloads. The Pages workflow selects
@@ -591,6 +624,42 @@ complete the outstanding latency/benchmark pass.
 
 ## Build and smoke coverage
 
+### Public release acceptance
+
+Publish each reviewed, green integration batch independently rather than waiting
+for a larger release. After the gated Pages deployment succeeds, run:
+
+```powershell
+.\tools\Test-EditorPublic.ps1 -TargetCommit <deployed-main-sha> `
+  -ValidationLock 'E:\GitHub\copilot-worktrees\.validation-slot'
+```
+
+The command finds the successful deployment for that exact commit (or accepts
+`-RunId`), downloads `editor-validation-aot`, and compares the public native WASM
+**and UI entry assets** with it before and after acceptance. It rejects a site
+at or above 1,000,000,000 bytes. It builds the existing smoke runner once, then
+runs full editor/JSON/recovery/Save-overlap, merge, sample26 page-image and boot
+injection checks in default-transport Chromium against the public URL.
+Context-wide request monitors reject uploads, API calls and external requests.
+Use `-Url` for another host serving `/csharp-pdf/`, and `-Output` for a fresh
+evidence directory; logs and `acceptance.json` retain the commit, run, checksums,
+payload size and result. The supplied shared validation lock is acquired
+atomically, waited for without interrupting its owner, and released only by its
+own exact owner token. Missing SDK/browser prerequisites fail visibly; install
+them using the setup commands below.
+
+Run from a checkout with the target runtime/source; harness-only changes are
+allowed. `-FeatureSmoke` accepts dedicated `--selector` modes supported by the
+checked-out runner and rejects unknown modes. Each receives the public URL;
+`--viewport` additionally receives sample26. `EDITOR_SMOKE_SITE_ROOT` points
+public-only fixture checks at the downloaded publish tree, not at a local site.
+Review changed pixels when rendering changes, and repeat spot timing comparisons
+only when performance code changes; neither expensive sweep is part of the lean
+default command. A failed acceptance blocks promotion of further batches until
+the regression is understood or the deployment is safely reverted.
+
+### Local publish and smoke
+
 Use the SDK declared in root `global.json`:
 
 ```powershell
@@ -603,7 +672,9 @@ dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- $site
 dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --merge $site
 ```
 
-The publish script checks required static assets and WASM magic bytes. Override
+The publish script checks required static assets and WASM magic bytes, rejects
+sites at or above the 1 GB Pages limit, and reports total bytes/files and elapsed
+publish time (including generated sample assets when present). Override
 `-Output` to publish elsewhere and `-BasePath` for another repository path or `/`.
 Always pass an absolute publish directory to the smoke runner (`dotnet run`
 starts in its project directory).
@@ -666,3 +737,24 @@ dotnet run -c Release --project tools\AdoBye.EditorWeb -- file.pdf
 
 It uses the same `EditorSession` under its HTTP adapter, retains installed
 fonts, startup-file saving and protected export, and does not load WebAssembly.
+
+## Integration batch 2 (fonts, CMYK, inert models, editor)
+
+Reviewed branches were cherry-picked in order onto the parity tip `bea1a95`: fallback fonts + lazy CJK data; DeviceCMYK table, nested group blend spaces and DeviceN attributes; inert U3D/PRC/media/RichMedia/XFA/JavaScript models; page-level undo/redo; GitHub repository links (Octicons notice); one-click sample collection; viewport-overflow fix; browser crypto (password dialog, owner unlock, AES-256 protected save, samples 17/18). Release build 0 errors; full suite **2144/2144**; fresh AOT publish 47 valid WASM artifacts (690 files, 74,916,843 bytes: 187 startup-set files / 56,340,200 bytes, 475 lazy `fallback-fonts` files / 13,733,097 bytes, 28 lazy `samples` files / 4,843,546 bytes). The startup request list (58 requests in the profile) contains no `fallback-fonts/` or `samples/` file; fonts, CJK chunks and samples are fetched on first use only. Chromium smokes: full, `--merge`, `--samples`, `--protection`, `--page-history`, `--viewport`, `--boot`, `--page-image` (sample 26) and the samples node tests pass; the 535-group profile CI gate passes. Pixel hashes (real WASM profile) match the checked-in file: only `09-images.pdf` changed (`33D9F80F...` -> `5A3B5223...`, CMYK table); 01, 03, 20 and the 12-page fixture are unchanged, so bundled fonts did not change those renders. Two stale smokes were updated for browser crypto (merge stack frame, samples 17/18 now offered) and sample opening now goes through the password-aware open path.
+
+Caveats kept from the child reports:
+
+* **CMYK table provenance:** values are measured from PDFium (BSD-3-Clause; Foxit-origin data whose upstream source is unverified). Residual risk; the `cmyk-srgb-9x9x9x9.bin` resource is swappable (`tools/make_cmyk_table.py`).
+* **Adobe AFM notice:** the permission paragraph now matches the published Core 14 `MustRead` text verbatim, and the widths were re-derived from the published AFMs and match the embedded table. Copyright years differ per AFM file and are listed per family (the earlier single line was incomplete and was corrected).
+* **U3D/PRC:** fixtures are synthetic; PRC layout and compressed-mode U3D block payloads are not verified against Adobe-produced files. XFA/JavaScript analysis is heuristic and inert.
+* **CJK fallback:** the reference comparison against Edge was unreliable on the development machine (Edge drew mojibake); CJK is covered by fixtures and unit tests, not pixel parity. Serif CJK uses the sans design.
+* **Samples 17/18:** now offered because `window.pdfEditorCapabilities.openEncrypted` is set in `<head>` before the menu renders; verified in `--samples` and `--protection` Chromium smokes.
+* **Not full parity:** every matrix row that was Partial stays Partial (15 Partial / 0 Todo); nothing here is a full ISO 32000-2 parity claim. Startup byte delta versus the pre-batch tree was not re-measured on a control publish; the lazy font/sample bytes above are additive and outside startup.
+
+## Integration batch 3 (worker pool, annotation and form authoring)
+
+Cherry-picked in order on top of batch 2 (`27da5b9`): worker render-replica pool with band rendering and snapshot route (`343c8e2`, `91c9bfd`, `b23c588`); annotation authoring API, editor commands and fixes (`dcdbff0`, `107cd58`, `579b7b7`); AcroForm field authoring, editor UI and indexing (`2f62a3d`, `d7253b0`, `7617a72`). The signature-trust/PAdES-LTV commits (`6b58e96`, `a1464e8`) were **not integrated**: they add an `HttpClient` RFC 3161 client to `PortableDocument.Document`, which fails the guard tests `Document_assembly_has_no_process_or_network_dependency` and `Opening_listing_rendering_and_saving_never_touch_external_targets` (and the assembly is shipped to the browser). That branch needs the network client moved out of the Document assembly (and its pending re-review) before it can land.
+
+Integration fix: form-fill appearance generation registered a standard font in the AcroForm `/DR`, which broke `DocMdpTests.Editor_form_fill_after_certification_is_permitted_by_p2`; appearance fonts are now created without touching `/DR`. Conflicts (publish asset list, smoke flags, `EditorSession` page-history capture for annotation/form operations, undo status text) were merged keeping both sides.
+
+Status stays **Partial** for the annotation, form, action and rendering rows: authoring covers the implemented annotation/field types with generated appearances, not every ISO 32000-2 annotation or widget behaviour; signatures/PAdES-LTV remain as documented before this batch. **The worker pool ships opt-in (`?pool=1`), not on by default:** with it enabled the Chromium recovery smoke ("Resume retains exact original-font/geometry raster fidelity") fails, because render replicas have no fallback-font asset source (batch 2) and so can draw non-embedded text differently from the primary engine. Enabling it by default needs the replicas to receive the same lazy font assets (or a hash parity check) first. Pool speed-ups are measured on a non-AOT build in the child report (`docs/performance/2026-10-30-worker-pool.md`); AOT/SIMD pool timing was not measured there and the pool benchmark (`--pool`) was not rerun here.

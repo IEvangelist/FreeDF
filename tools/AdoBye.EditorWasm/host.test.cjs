@@ -28,8 +28,8 @@ async function harness(reply = () => ({ bytes: new Uint8Array([1, 2, 3]), conten
     }
   }
   const context = vm.createContext({
-    Worker, URL, Blob, Response, FormData, File, FileReader, fetch,
-    performance, setTimeout, clearTimeout, location: { href: 'https://editor.test/' },
+    Worker, URL, URLSearchParams, Blob, Response, FormData, File, FileReader, fetch,
+    performance, setTimeout, clearTimeout, location: { href: 'https://editor.test/', search: '' },
     window: {},
   });
   return { host: await vm.runInContext(`${source}\nstart()`, context), requests };

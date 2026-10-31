@@ -54,6 +54,54 @@ function base64(bytes) {
   return btoa(text);
 }
 
+// Fallback fonts and CJK glyph chunks are same-origin files under fallback-fonts/, fetched on first use (never at startup).
+// Failed or missing files are reported as unavailable so rendering degrades to the built-in fallback instead of retrying.
+let manifestLoaded;
+// The manifest (size and SHA-256 per asset) is fetched lazily with the first font request; C# rejects any asset that does not match it.
+function loadFontManifest(exports) {
+  return manifestLoaded ??= (async () => {
+    try {
+      const response = await fetch(new URL('fallback-fonts/manifest.json', import.meta.url), {
+        credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      exports.BrowserEditor.ProvideFontManifest({ bytes: new Uint8Array(await response.arrayBuffer()) });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+}
+
+async function supplyFallbackFonts(exports) {
+  const paths = JSON.parse(exports.BrowserEditor.TakeFontRequests());
+  if (paths.length === 0) return 0;
+  const verified = await loadFontManifest(exports);
+  await Promise.all(paths.map(async path => {
+    try {
+      if (!verified) throw new Error('font manifest unavailable');
+      const response = await fetch(new URL(`fallback-fonts/${path}`, import.meta.url), {
+        credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      exports.BrowserEditor.ProvideFontAsset(path, { bytes: new Uint8Array(await response.arrayBuffer()) });
+    } catch {
+      exports.BrowserEditor.FontAssetUnavailable(path);
+    }
+  }));
+  return paths.length;
+}
+
+// Page renders are repeatable, so a GET that needed fonts is run again once they arrive; other methods only prefetch.
+async function withFallbackFonts(exports, method, run) {
+  let reply = run();
+  for (let attempt = 0; attempt < 4 && await supplyFallbackFonts(exports) > 0; attempt++) {
+    if (method !== 'GET') break;
+    reply = run();
+  }
+  return reply;
+}
+
 try {
   const dotnet = await loadRuntime();
   const runtime = await dotnet
@@ -63,45 +111,51 @@ try {
       type === 'dotnetjs' ? undefined : loadResource(name, uri, integrity))
     .create();
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
-  self.onmessage = async ({ data: { id, url, method, body, fileName, image } }) => {
+  self.onmessage = async ({ data: { id, url, method, body, fileName, image, password } }) => {
     const start = performance.now();
     try {
       const requestStart = performance.now();
       const u = new URL(url, self.location.href);
+      // The password rides beside the URL query inside the worker call and is never part of a URL.
+      const withPassword = q => { delete q['x-pdf-password']; if (password) q['x-pdf-password'] = password; return q; };
       let uploadEncodeMs = 0, uploadPrepareMs = 0, uploadBytes = 0, binaryUpload = false, reply, dotnetMs;
       if (exports.BrowserEditor.RequestBytes) {
-        const exchange = {};
+        let upload;
         if (body instanceof Blob) {
           fileName = body.name ?? fileName;
-          exchange.bytes = new Uint8Array(await body.arrayBuffer());
-          uploadBytes = exchange.bytes.byteLength;
+          upload = new Uint8Array(await body.arrayBuffer());
+          uploadBytes = upload.byteLength;
           binaryUpload = true;
           body = null;
         }
         uploadPrepareMs = performance.now() - requestStart;
         const dotnetStart = performance.now();
-        const bytes = exports.BrowserEditor.RequestBytes(method, u.pathname, JSON.stringify(Object.fromEntries(u.searchParams)), body, exchange, fileName);
+        const query = JSON.stringify(withPassword(Object.fromEntries(u.searchParams)));
+        reply = await withFallbackFonts(exports, method, () => {
+          const exchange = upload ? { bytes: upload } : {};
+          const bytes = exports.BrowserEditor.RequestBytes(method, u.pathname, query, body, exchange, fileName);
+          return exchange.error ? JSON.parse(exchange.error) : {
+            bytes, contentType: exchange.contentType, fileName: exchange.fileName,
+            performance: exchange.performance ? JSON.parse(exchange.performance) : null,
+          };
+        });
         dotnetMs = performance.now() - dotnetStart;
-        reply = exchange.error ? JSON.parse(exchange.error) : {
-          bytes, contentType: exchange.contentType, fileName: exchange.fileName,
-          performance: exchange.performance ? JSON.parse(exchange.performance) : null,
-        };
       } else if (body instanceof Blob) {
         fileName = body.name ?? fileName;
         const bytes = new Uint8Array(await body.arrayBuffer());
         uploadBytes = bytes.byteLength;
-        const query = JSON.stringify(Object.fromEntries(u.searchParams));
+        const query = JSON.stringify(withPassword(Object.fromEntries(u.searchParams)));
         uploadPrepareMs = performance.now() - requestStart;
         binaryUpload = true;
         const dotnetStart = performance.now();
-        reply = JSON.parse(exports.BrowserEditor.RequestBinary(method, u.pathname, query, { bytes }, fileName));
+        reply = await withFallbackFonts(exports, method, () => JSON.parse(exports.BrowserEditor.RequestBinary(method, u.pathname, query, { bytes }, fileName)));
         dotnetMs = performance.now() - dotnetStart;
       } else {
         if (body != null) body = base64(new TextEncoder().encode(body));
-        const command = JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName });
+        const command = JSON.stringify({ method, path: u.pathname, query: withPassword(Object.fromEntries(u.searchParams)), body, fileName });
         uploadEncodeMs = performance.now() - requestStart;
         const dotnetStart = performance.now();
-        reply = JSON.parse(exports.BrowserEditor.Request(command));
+        reply = await withFallbackFonts(exports, method, () => JSON.parse(exports.BrowserEditor.Request(command)));
         dotnetMs = performance.now() - dotnetStart;
       }
       const timings = { dotnetMs, uploadEncodeMs, uploadPrepareMs, uploadBytes, binaryUpload, workerMs: performance.now() - start };

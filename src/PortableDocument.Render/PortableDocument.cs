@@ -26,6 +26,8 @@ public sealed record PdfRenderOptions
     /// Simulates ExtGState overprint (/OP, /op, /OPM) with an RGB approximation (see <see cref="ContentInterpreter.OverprintSimulation"/>); off by default.
     /// </summary>
     public bool OverprintSimulation { get; init; }
+    /// <summary>Reuses decoded image XObjects across renders of the same document (for example the bands of one page).</summary>
+    public ImageDecodeCache? ImageCache { get; init; }
 }
 
 public static class PortableDocument
@@ -87,11 +89,27 @@ public static class PortableDocument
         PdfPage page,
         PdfRenderOptions options,
         double dpi = 96,
-        IRenderBackendFactory? factory = null)
+        IRenderBackendFactory? factory = null) => RenderBand(page, options, dpi, 0, int.MaxValue);
+
+    /// <summary>Pixel size of the whole-page raster at <paramref name="dpi"/>.</summary>
+    public static (int Width, int Height) RasterSize(PdfPage page, double dpi)
+    {
+        PageMatrix(page, dpi / 72.0 * page.UserUnit, out var w, out var h);
+        return (w, h);
+    }
+
+    /// <summary>
+    /// Renders device rows [<paramref name="y0"/>, <paramref name="y1"/>) of the page raster (clamped to the page). The rows are bit-identical
+    /// to the same rows of <see cref="RenderPage(PdfPage, PdfRenderOptions, double, IRenderBackendFactory?)"/>; only band memory is allocated.
+    /// </summary>
+    public static RenderedPage RenderBand(PdfPage page, PdfRenderOptions options, double dpi, int y0, int y1)
     {
         var scale = dpi / 72.0 * page.UserUnit;
-        var m = PageMatrix(page, scale, out var w, out var h);
-        using var raster = new SoftwareRasterizer(w, h);
+        var m = PageMatrix(page, scale, out var w, out var fullHeight);
+        y0 = Math.Clamp(y0, 0, fullHeight - 1);
+        y1 = Math.Clamp(y1, y0 + 1, fullHeight);
+        var h = y1 - y0;
+        using var raster = new SoftwareRasterizer(w, h, y0, fullHeight);
         var interp = new ContentInterpreter(page.Document.File, raster, options.FontFallback);
         if (options.OptionalContentState is not null && options.OptionalContentConfigurationName is not null)
             throw new ArgumentException("Specify optional-content state or a configuration name, not both.", nameof(options));
@@ -103,6 +121,7 @@ public static class PortableDocument
         interp.OptionalContentZoom = scale;
         interp.OptionalContentContext = options.OptionalContentContext;
         interp.OverprintSimulation = options.OverprintSimulation;
+        interp.ImageCache = options.ImageCache;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }

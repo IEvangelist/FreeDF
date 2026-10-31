@@ -11,7 +11,7 @@
   "pixels": [
     { "document": "01-spec-showcase.pdf", "width": 339, "height": 480, "hash": "AD9BE49FD168998F562B4C008A8D7F79CD3DB76950B02E7B422B5150B49688E4" },
     { "document": "03-typography-embedded.pdf", "width": 339, "height": 480, "hash": "F091B8F4EB5C644134AF483254BDA06C7E00FADD307520403B41E812E869BBD5" },
-    { "document": "09-images.pdf", "width": 339, "height": 480, "hash": "33D9F80F58FD9AC325A254DAF30645AE8C2BF915F8B1D34F51A9D5A9C7FD8C9B" },
+    { "document": "09-images.pdf", "width": 339, "height": 480, "hash": "5A3B522346283BC8CABBF8B144AE3A28CE3EC1ABB0F8F4683A2044F10FD94CEE" },
     { "document": "20-report.pdf", "width": 339, "height": 480, "hash": "B877E8AF25866046906C1B23EE21D4604040353D1FE762C6C8DEC0616AF7AA67" },
     { "document": "large-12-page.pdf", "width": 339, "height": 480, "hash": "B877E8AF25866046906C1B23EE21D4604040353D1FE762C6C8DEC0616AF7AA67" }
   ]

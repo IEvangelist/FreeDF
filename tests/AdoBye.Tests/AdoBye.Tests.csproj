@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.FallbackFonts\PortableDocument.FallbackFonts.csproj" />
     <ProjectReference Include="..\..\tools\AdoBye.Samples\AdoBye.Samples.csproj" />
     <ProjectReference Include="..\..\tools\AdoBye.EditorWeb\AdoBye.EditorWeb.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
@@ -29,6 +30,7 @@
     <Compile Include="..\..\tools\AdoBye.EditorWeb\OverlayBuilder.cs" Link="EditorWeb\OverlayBuilder.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\FormObjectEditPolicy.cs" Link="EditorWeb\FormObjectEditPolicy.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\EditorSession.cs" Link="EditorWeb\EditorSession.cs" />
+    <Compile Include="..\..\tools\AdoBye.EditorWeb\EditorForms.cs" Link="EditorWeb\EditorForms.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
     <ProjectReference Include="..\..\src\PortableDocument.Document\PortableDocument.Document.csproj" />
+    <ProjectReference Include="..\AdoBye.Samples\AdoBye.Samples.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
