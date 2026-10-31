@@ -1,0 +1,5 @@
+{
+  "$comment": "Ceilings for the published Pages site (all files, gzip level Optimal). Baselines: AOT 56 files / ~32 MB raw / ~10.6 MB gzip (as reported for the public site); non-AOT measured 193 files / 29.0 MB raw / 11.2 MB gzip (decimal MB). Lower these when a build proves a smaller payload; never raise without a measured reason.",
+  "aot": { "maxFiles": 60, "maxRawBytes": 35000000, "maxGzipBytes": 11800000, "maxLargestFileBytes": 25500000 },
+  "nonAot": { "maxFiles": 200, "maxRawBytes": 30500000, "maxGzipBytes": 11800000, "maxLargestFileBytes": 5200000 }
+}

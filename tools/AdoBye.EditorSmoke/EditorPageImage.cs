@@ -36,7 +36,7 @@ static class EditorPageImage
             await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
             await using var context = await browser.NewContextAsync(new()
             {
-                AcceptDownloads = true,
+                ServiceWorkers = ServiceWorkerPolicy.Block, AcceptDownloads = true,
                 ViewportSize = new() { Width = 1440, Height = 1000 },
                 DeviceScaleFactor = 1,
             });

@@ -21,19 +21,31 @@ async function loadRuntime() {
   }
 }
 
+// The 15 s limit applies to connecting and receiving headers, and restarts whenever any asset's headers arrive:
+// on a slow or HTTP/1.1 link requests legitimately queue behind other downloads while the page is making progress.
+const waiting = new Map();
+const arm = controller => {
+  clearTimeout(waiting.get(controller));
+  waiting.set(controller, setTimeout(() => controller.abort(new DOMException('Timed out waiting for response headers.', 'TimeoutError')), 15000));
+};
+const progressed = () => { for (const controller of waiting.keys()) arm(controller); };
+
 async function loadResource(name, uri, integrity) {
   let failure;
   for (let attempt = 0; attempt <= backoff.length; attempt++) {
     let response;
+    const controller = new AbortController();
     try {
+      arm(controller);
       response = await fetch(uri, {
         method: 'GET', credentials: 'same-origin', redirect: 'error', integrity,
-        cache: attempt ? 'reload' : 'force-cache', signal: AbortSignal.timeout(15000),
+        cache: attempt ? 'reload' : 'force-cache', signal: controller.signal,
       });
+      progressed();
     } catch (error) {
       if (!(error instanceof TypeError) && error.name !== 'TimeoutError' && error.name !== 'AbortError') throw error;
       failure = error;
-    }
+    } finally { clearTimeout(waiting.get(controller)); waiting.delete(controller); }
     if (response?.ok) return response;
     if (response) {
       failure = new Error(`${name}: HTTP ${response.status}`);
@@ -55,13 +67,16 @@ function base64(bytes) {
 }
 
 try {
+  const t0 = performance.now();
   const dotnet = await loadRuntime();
+  const t1 = performance.now();
   const runtime = await dotnet
     // Own the retry budget instead of multiplying it by the runtime's two immediate retries.
     .withConfig({ enableDownloadRetry: false })
     .withResourceLoader((type, name, uri, integrity) =>
       type === 'dotnetjs' ? undefined : loadResource(name, uri, integrity))
     .create();
+  const t2 = performance.now();
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
   self.onmessage = async ({ data: { id, url, method, body, fileName, image } }) => {
     const start = performance.now();
@@ -103,7 +118,7 @@ try {
       self.postMessage({ id, error: error.message, timings: { workerMs: performance.now() - start } });
     }
   };
-  self.postMessage({ ready: true, bootRetries });
+  self.postMessage({ ready: true, bootRetries, boot: { origin: performance.timeOrigin, startMs: t0, runtimeImportMs: t1 - t0, createMs: t2 - t1, exportsMs: performance.now() - t2 } });
 } catch (error) {
   self.postMessage({ startupError: error.message });
 }

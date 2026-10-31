@@ -28,7 +28,7 @@ static class EditorRasterProfile
             var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
             using var pw = await Playwright.CreateAsync();
             await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
-            await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 1000 } });
+            await using var context = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, ViewportSize = new() { Width = 1440, Height = 1000 } });
             var page = await context.NewPageAsync();
             page.SetDefaultTimeout(180000);
             var main = await context.NewCDPSessionAsync(page);
