@@ -94,6 +94,12 @@ static class Gen19
             var at = s.IndexOf($"/S /{root.Role}", StringComparison.Ordinal) + $"/S /{root.Role}".Length;
             doc.Put(root.Ref, s.Insert(at, $" /P {strRoot} 0 R"));
             doc.Cat.Add($"/StructTreeRoot {strRoot} 0 R /MarkInfo << /Marked true /Suspects false >> /ViewerPreferences << /DisplayDocTitle true >>");
+            // PDF/UA-1 (ISO 14289-1 5, 7.1) identification and dc:title in an uncompressed XMP packet; checked with veraPDF.
+            const string xmp = "<?xpacket begin=\"\uFEFF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+                + "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" pdfuaid:part=\"1\">"
+                + "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Writing accessible PDFs</rdf:li></rdf:Alt></dc:title><dc:language><rdf:Bag><rdf:li>en-US</rdf:li></rdf:Bag></dc:language>"
+                + "</rdf:Description></rdf:RDF></x:xmpmeta>\n<?xpacket end=\"w\"?>";
+            doc.Cat.Add($"/Metadata {doc.Stream("/Type /Metadata /Subtype /XML", System.Text.Encoding.UTF8.GetBytes(xmp), compress: false)} 0 R");
         }
     }
 
