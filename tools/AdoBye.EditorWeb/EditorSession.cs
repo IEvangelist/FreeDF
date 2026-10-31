@@ -29,6 +29,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     bool prepared;
     bool recoverySupported = true;
     ProtectionInfo? protection;
+    byte[]? encryptedSource;
     readonly Dictionary<int, List<Item>> items = [];
     readonly Dictionary<string, Asset> assets = [];
     readonly Dictionary<string, DateTimeOffset> unclaimedAssets = [];
@@ -78,7 +79,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     void Reset(PdfEditor e, bool allowRecovery = true)
     {
         editor = e;
-        protection = null;
+        protection = null; encryptedSource = null;
         recoverySupported = allowRecovery;
         pageUndo.Clear(); pageRedo.Clear();
         items.Clear(); texts.Clear(); objEdits.Clear(); formObjEdits.Clear(); assets.Clear(); unclaimedAssets.Clear(); historyAssets.Clear(); clipboardAssets.Clear();
@@ -493,6 +494,16 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     }
 
     /// <summary>Dispatches a local command. Neither this method nor the WASM host performs network I/O.</summary>
+    /// <summary>Passwords arrive out of band, never in a URL: hosts put the base64(UTF-8) value of the X-Pdf-Password header under this key.</summary>
+    public const string PasswordKey = "x-pdf-password";
+
+    static string Password(IReadOnlyDictionary<string, string> query)
+    {
+        if (!query.TryGetValue(PasswordKey, out var encoded) || encoded.Length == 0) return "";
+        try { return Encoding.UTF8.GetString(Convert.FromBase64String(encoded)); }
+        catch (FormatException) { throw new ArgumentException("Malformed password header."); }
+    }
+
     object? ProtectionState() => protection is not { } p ? null : new
     {
         owner = p.Owner, method = p.Method.ToString(), publicKey = p.PublicKey,
@@ -665,8 +676,9 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             switch (action)
             {
                 case "open":
-                    var opened = LoadProtected(body ?? throw new ArgumentException("Choose a PDF."), Q("password") ?? "");
+                    var opened = LoadProtected(body ?? throw new ArgumentException("Choose a PDF."), Password(query));
                     OpenDocument(opened);
+                    if (opened.File.IsEncrypted) encryptedSource = body;
                     fileName = uploadName ?? "document.pdf"; return Ok;
                 case "recovery":
                     return AsJson(new { originalForms = RestoreRecovery(Read<RecoveryData>() ?? throw new InvalidDataException("Missing local recovery record."),
@@ -745,6 +757,14 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     var info = Read<Dictionary<string, string>>() ?? [];
                     foreach (var k in InfoKeys) if (info.TryGetValue(k.ToLowerInvariant(), out var v)) editor.SetInfo(k, v);
                     break;
+                case "unlock":
+                    {
+                        var source = encryptedSource ?? throw new ArgumentException("This document is not password-protected.");
+                        var unlocked = LoadProtected(source, Password(query));
+                        if (unlocked.File.Decryptor is not { IsOwner: true }) throw new ArgumentException("password-incorrect: That is not the owner password.");
+                        OpenDocument(unlocked); encryptedSource = source;
+                        return Ok;
+                    }
                 case "close": Reset(PdfEditor.Create()); fileName = "document.pdf"; return Ok;
                 case "new":
                     Reset(PdfEditor.Open(Blank(Number("w") ?? 595.276, Number("h") ?? 841.89)));

@@ -53,7 +53,9 @@ app.MapMethods("/api/{**path}", ["GET", "POST", "PUT"], async (HttpRequest reque
     {
         lock (gate)
         {
-            var reply = session.Handle(request.Method, request.Path.Value!, request.Query.ToDictionary(k => k.Key, k => k.Value.ToString()), body, uploadName);
+            var query = request.Query.Where(k => !k.Key.Equals(EditorSession.PasswordKey, StringComparison.OrdinalIgnoreCase)).ToDictionary(k => k.Key, k => k.Value.ToString());
+            if (request.Headers.TryGetValue("X-Pdf-Password", out var passwordHeader)) query[EditorSession.PasswordKey] = passwordHeader.ToString();
+            var reply = session.Handle(request.Method, request.Path.Value!, query, body, uploadName);
             return Results.File(reply.Data, reply.ContentType, reply.FileName);
         }
     }

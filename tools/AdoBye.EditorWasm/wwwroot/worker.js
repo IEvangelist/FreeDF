@@ -111,17 +111,19 @@ try {
       type === 'dotnetjs' ? undefined : loadResource(name, uri, integrity))
     .create();
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
-  self.onmessage = async ({ data: { id, url, method, body, fileName, image } }) => {
+  self.onmessage = async ({ data: { id, url, method, body, fileName, image, password } }) => {
     const start = performance.now();
     try {
       const requestStart = performance.now();
       const u = new URL(url, self.location.href);
+      // The password rides beside the URL query inside the worker call and is never part of a URL.
+      const withPassword = q => { delete q['x-pdf-password']; if (password) q['x-pdf-password'] = password; return q; };
       let uploadEncodeMs = 0, uploadPrepareMs = 0, uploadBytes = 0, binaryUpload = false, reply, dotnetMs;
       if (body instanceof Blob) {
         fileName = body.name ?? fileName;
         const bytes = new Uint8Array(await body.arrayBuffer());
         uploadBytes = bytes.byteLength;
-        const query = JSON.stringify(Object.fromEntries(u.searchParams));
+        const query = JSON.stringify(withPassword(Object.fromEntries(u.searchParams)));
         uploadPrepareMs = performance.now() - requestStart;
         binaryUpload = true;
         const dotnetStart = performance.now();
@@ -129,7 +131,7 @@ try {
         dotnetMs = performance.now() - dotnetStart;
       } else {
         if (body != null) body = base64(new TextEncoder().encode(body));
-        const command = JSON.stringify({ method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, fileName });
+        const command = JSON.stringify({ method, path: u.pathname, query: withPassword(Object.fromEntries(u.searchParams)), body, fileName });
         uploadEncodeMs = performance.now() - requestStart;
         const dotnetStart = performance.now();
         reply = await withFallbackFonts(exports, method, () => JSON.parse(exports.BrowserEditor.Request(command)));

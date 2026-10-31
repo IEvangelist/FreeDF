@@ -54,7 +54,8 @@ var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
 var samplesOnly = args.Length == 2 && args[0] == "--samples";
 var protectionOnly = args.Length == 2 && args[0] == "--protection";
 var viewportOnly = args.Length == 3 && args[0] == "--viewport";
-if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history|--samples|--protection] <published-wwwroot> | --viewport <published-wwwroot> <sample.pdf>");
+var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
+if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot> | --viewport <published-wwwroot> <sample.pdf>");
 var root = Path.GetFullPath(viewportOnly ? args[1] : args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -193,6 +194,11 @@ try
         await EditorSamples.Run(page, address, root, network);
         Check(errors.All(EditorSamples.ExpectedError), "No unexpected browser errors: " + string.Join("\n", errors));
         Console.WriteLine("PASS: one-click full collection (lazy same-origin fetch, failure/Retry, 50 pages, outline/labels, rendered first page), File > Open sample, replace confirmation, Resume/Discard interplay, #sample=/?sample= deep links, no uploads or external requests.");
+        return;
+    }
+    if (cryptoPerfOnly)
+    {
+        await EditorCryptoPerf.Run(page);
         return;
     }
     if (protectionOnly)

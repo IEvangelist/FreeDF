@@ -5,6 +5,7 @@
 <title>AdoBye - PDF Editor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="editor.css">
+<script>window.pdfEditorCapabilities = { openEncrypted: true };</script>
 <script src="editor.js" defer></script>
 </head>
 <body>
@@ -124,7 +125,7 @@ let recovery = null, samples = null;
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
-  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery'].includes(url.split('?')[0])) {
+  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery', '/api/unlock'].includes(url.split('?')[0])) {
     selectionEpoch++; buildEpoch++; clearTimeout(baseRenderTimer); shownPage = -1;
     clip = null; pendingUploads.clear(); assetImages.clear();
   }
@@ -895,6 +896,18 @@ async function act(fn, onError = reportError) {
 }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 // Passwords live only in these closures: they are sent once with the open request and never stored, logged or kept for recovery.
+const passwordHeader = pw => ({ 'X-Pdf-Password': btoa(String.fromCharCode(...new TextEncoder().encode(pw))) });
+async function unlockDialog() {
+  if (!state.protection || state.protection.owner || !confirmDiscard()) return;
+  modal('Unlock with owner password', `<p class="dnote">Re-opens this PDF with the owner password so editing, printing, copying and Remove protection become available. Unsaved edits are discarded. The password is used once and never saved.</p><label>Owner password<input id="ow" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="owe"></label><p id="owe" data-error role="alert"></p>`, 'Unlock', async o => {
+    const input = o.querySelector('#ow'), value = input.value, fail = m => { o.querySelector('[data-error]').textContent = m; return false; };
+    if (!value) return fail('Enter the owner password.');
+    try { await request('/api/unlock', { method: 'POST', headers: passwordHeader(value) }); }
+    catch (e) { return fail(e.message.replace(/^password-\w+: /, '')); }
+    finally { input.value = ''; }
+    await refresh(); announceProtection();
+  }).querySelector('.dlg').setAttribute('aria-modal', 'true');
+}
 const askPassword = (name, wrong) => new Promise(resolve => {
   const o = modal('Password required', `<p class="dnote">${esc(name)} is password-protected. The password is used once to open it and is never saved or logged.</p><label>Password<input id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="pwe"></label><p id="pwe" data-error role="alert">${wrong ? 'That password is not correct. Try again.' : ''}</p>`, 'Open', o => {
     const input = o.querySelector('#pw'), value = input.value; if (!value) { o.querySelector('[data-error]').textContent = 'Enter the password.'; return false; }
@@ -906,7 +919,7 @@ const askPassword = (name, wrong) => new Promise(resolve => {
 async function openPdf(file) {
   let password = '';
   for (;;) {
-    try { return await post('/api/open' + (password ? '?password=' + encodeURIComponent(password) : ''), formOf(file)); }
+    try { return await request('/api/open', { method: 'POST', body: formOf(file), headers: password ? passwordHeader(password) : undefined }); }
     catch (e) {
       const code = /^password-(required|incorrect):/.exec(e.message)?.[1]; if (!code) throw e;
       password = await askPassword(file.name, code === 'incorrect');
@@ -1263,6 +1276,7 @@ function openFileMenu() {
     { label: 'Print…', key: mod + 'P', disabled: !has, run: printDoc },
     { label: 'Document properties…', disabled: !has, run: docProps },
     '-',
+    { label: 'Unlock with owner password…', disabled: !(state.protection && !state.protection.owner), run: unlockDialog },
     { label: 'Close document', disabled: !has, run: closeDoc },
   ]), r.left, r.bottom + 4);
 }
