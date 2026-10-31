@@ -72,7 +72,7 @@ export function createFileAccess(hooks, win = globalThis) {
     const prepared = await hooks.prepare();
     if (!granted) {
       await hooks.download(handle.name, prepared);
-      hooks.status(`Permission to write ${handle.name} was not granted, so a copy was downloaded instead. Save asks again.`);
+      hooks.status(`Downloaded a copy — original not updated: permission to write ${handle.name} was not granted. The document is still unsaved; Save asks again.`);
       return true;
     }
     await commit(handle, prepared);
@@ -88,7 +88,7 @@ export function createFileAccess(hooks, win = globalThis) {
       return false;
     }
     const prepared = await hooks.prepare();
-    if (!await writable(chosen)) { await hooks.download(chosen.name, prepared); hooks.status(`Permission to write ${chosen.name} was not granted, so a copy was downloaded instead.`); return true; }
+    if (!await writable(chosen)) { await hooks.download(chosen.name, prepared); hooks.status(`Downloaded a copy — original not updated: permission to write ${chosen.name} was not granted. The document is still unsaved.`); return true; }
     if (await commit(chosen, prepared)) { handle = chosen; await persist(); }
     return true;
   }

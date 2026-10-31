@@ -18,7 +18,7 @@ public class EditorLocalFontTests
 
     [Theory]
     [InlineData(0, true)]
-    [InlineData(FontLicense.PreviewPrint, true)]
+    [InlineData(FontLicense.PreviewPrint, false)]
     [InlineData(FontLicense.Editable, true)]
     [InlineData(FontLicense.Editable | FontLicense.NoSubsetting, false)]
     [InlineData(FontLicense.Restricted, false)]
@@ -54,7 +54,7 @@ public class EditorLocalFontTests
     public void AcceptedFontIsEmbeddedAsAnInMemorySubset()
     {
         var catalog = new FontCatalog();
-        var result = catalog.Register(Font(FontLicense.PreviewPrint));
+        var result = catalog.Register(Font(FontLicense.Editable));
         Assert.True(result.Accepted);
         Assert.Equal("Source Code Pro", result.Family);
         var face = catalog.Resolve("Source Code Pro", false, false);
@@ -101,6 +101,35 @@ public class EditorLocalFontTests
         Assert.Contains("restricts embedding", refused.GetProperty("reason").GetString());
         var state = JsonDocument.Parse(session.Handle("GET", "/api/state", new Dictionary<string, string>()).Data).RootElement;
         Assert.False(state.GetProperty("dirty").GetBoolean());
+    }
+
+    [Fact]
+    public void MissingLocalFontBlocksSavingUntilReloadedOrReplacedWithConsent()
+    {
+        var session = new EditorSession(new FontCatalog());
+        var empty = new Dictionary<string, string>();
+        session.Handle("POST", "/api/new", empty);
+        var item = new Item("t", "text", 20, 30, 70, 0, "Local text", "Source Code Pro", 12, false, false, "#000000", null, null, 0, 1, null, 0, 0, null);
+        session.Handle("PUT", "/api/page/0/items", empty, JsonSerializer.SerializeToUtf8Bytes(new { items = new[] { item }, historyAssets = Array.Empty<string>() }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        JsonElement Post(string path, byte[]? body = null, params (string, string)[] q) =>
+            JsonDocument.Parse(session.Handle("POST", path, q.ToDictionary(x => x.Item1, x => x.Item2), body).Data).RootElement.Clone();
+        var missing = Post("/api/require-fonts", JsonSerializer.SerializeToUtf8Bytes(new[] { "Source Code Pro" }));
+        Assert.Equal("Source Code Pro", missing.GetProperty("missing")[0].GetString());
+        var error = Assert.Throws<EditorConflictException>(() => session.Handle("GET", "/api/export/pdf", empty));
+        Assert.Contains("Source Code Pro", error.Message);
+        Assert.Throws<EditorConflictException>(() => session.Handle("GET", "/api/download", empty));
+
+        Post("/api/font", Font(FontLicense.Editable), ("ps", "SourceCodePro-Regular"));
+        Assert.True(session.Handle("GET", "/api/export/pdf", empty).Data.Length > 1000);
+
+        var other = new EditorSession(new FontCatalog());
+        other.Handle("POST", "/api/new", empty);
+        other.Handle("PUT", "/api/page/0/items", empty, JsonSerializer.SerializeToUtf8Bytes(new { items = new[] { item }, historyAssets = Array.Empty<string>() }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        other.Handle("POST", "/api/require-fonts", empty, JsonSerializer.SerializeToUtf8Bytes(new[] { "Source Code Pro" }));
+        var replaced = JsonDocument.Parse(other.Handle("POST", "/api/replace-font", new Dictionary<string, string> { ["from"] = "Source Code Pro", ["to"] = "Helvetica" }).Data).RootElement;
+        Assert.Equal(1, replaced.GetProperty("changed").GetInt32());
+        Assert.Empty(replaced.GetProperty("missing").EnumerateArray());
+        Assert.NotEmpty(other.Handle("GET", "/api/export/pdf", empty).Data);
     }
 
     [Fact]

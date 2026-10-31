@@ -70,6 +70,17 @@ export function createLocalFonts({ upload, win = globalThis }) {
       try { await database(win, 'readwrite', s => s.put({ format: FORMAT, savedAt: Date.now(), families }, KEY)); } catch { /* the cache is an optimisation */ }
       return families;
     },
+    /** Re-reads families that were registered before a reload; throws with the reasons when any stay unavailable. */
+    async reload(names) {
+      const families = await this.refresh(), restored = [], failed = [];
+      for (const name of names) {
+        const entry = families.find(f => f.family === name);
+        if (!entry) { failed.push({ family: name, reason: 'It is not installed on this device.' }); continue; }
+        const result = await this.embed(entry);
+        if (result.family) restored.push(name); else failed.push({ family: name, reason: result.refused.reason });
+      }
+      return { restored, failed };
+    },
     /** Reads the chosen family's faces and registers them with the engine. */
     async embed(entry) {
       const wanted = pickVariants(entry);

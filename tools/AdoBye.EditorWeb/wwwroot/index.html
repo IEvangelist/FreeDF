@@ -139,6 +139,7 @@
 addEventListener('editor-ready', () => {
 const host = window.pdfHost;
 let recovery = null, samples = null, fa = null, localFonts = null, documentEpoch = 0;
+const usedFonts = new Set();
 const request = async (url, options) => {
   const replacesDocument = options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery', '/api/unlock'].includes(url.split('?')[0]);
   if (replacesDocument) {
@@ -1819,6 +1820,21 @@ import(new URL('form-fields.js', document.baseURI)).then(m => {
   });
   if (state.pageCount) formUi.load(sel).then(() => paint());
 }).catch(reportError);
+async function reconcileLocalFonts(families) {
+  if (!families?.length || !localFonts) return;
+  families.forEach(f => usedFonts.add(f));
+  const { missing } = await (await post('/api/require-fonts', JSON.stringify(families))).json();
+  if (!missing.length) return;
+  const warning = `Saving is blocked: this document uses installed fonts (${missing.join(', ')}) that are not loaded after the reload.`;
+  status(warning);
+  const dialog = modal('Reload installed fonts', `<p>${esc(warning)}</p><p>Reload them from this device (the browser may ask for permission) or switch those items to Helvetica. Nothing changes unless you choose.</p><p data-error role="alert"></p><button type="button" class="fpl" data-std>Use Helvetica instead</button>`, 'Reload fonts', async () => {
+    await localFonts.reload(missing); await refresh(); status('Installed fonts reloaded.');
+  });
+  dialog.querySelector('[data-std]').onclick = async () => {
+    for (const family of missing) await post(`/api/replace-font?from=${encodeURIComponent(family)}&to=Helvetica`);
+    dialog.remove(); await refreshDirty(); await refresh(); status(`Switched ${missing.join(', ')} to Helvetica.`);
+  };
+}
 async function initFileAccess() {
   try {
     const [files, fonts] = await Promise.all([import(new URL('fileaccess.js', document.baseURI)), import(new URL('localfonts.js', document.baseURI))]);
@@ -1832,12 +1848,22 @@ async function initFileAccess() {
         return { version, blob: await (await request('/api/export/pdf?name=' + enc(fileName))).blob() };
       },
       saved: markSaved,
-      download: async (name, prepared) => { await dlUrl('/api/export/pdf?name=' + enc(pdfName(name))); await markSaved(name, prepared.version); },
+      download: (name, prepared) => dlUrl('/api/export/pdf?name=' + enc(pdfName(name))),
     });
     const controller = fonts.createLocalFonts({
-      upload: async (blob, ps) => (await post('/api/font?ps=' + enc(ps), blob)).json(),
+      upload: async (blob, ps) => {
+        const reply = await (await post('/api/font?ps=' + enc(ps), blob)).json();
+        if (reply.accepted) { usedFonts.add(reply.family); recovery?.uiChanged(); }
+        return reply;
+      },
     });
     localFonts = {
+      reload: async names => {
+        let result;
+        try { result = await controller.reload(names); } catch (error) { throw new Error(fonts.describeFontError(error)); }
+        const { missing } = await (await post('/api/require-fonts', JSON.stringify([...usedFonts]))).json();
+        if (missing.length) throw new Error(`Still not loaded: ${missing.join(', ')}. ${result.failed.map(f => `${f.family}: ${f.reason}`).join(' ')}`.trim());
+      },
       attach: (pop, choose) => fonts.attachPicker(pop, { controller, choose, esc, famCss, refreshFonts: () => request('/api/fonts').then(r => r.json()).then(l => { fontList = l; }) }),
     };
   } catch (error) { console.warn('File access and local fonts are unavailable:', error); fa = null; localFonts = null; }
@@ -1862,7 +1888,7 @@ async function startEditor() {
     validateUi = module.validateUi;
     recovery = await module.createRecovery({
       capture: { state: async () => (await request('/api/state')).json(), document: async () => (await request('/api/recovery')).blob() },
-      ui: () => ({ sel, zoom, fitMode, preview, undo, clip }),
+      ui: () => ({ sel, zoom, fitMode, preview, undo, clip, localFonts: [...usedFonts] }),
       flush, button: $('recovery'), onError: reportError,
     });
     retained = await recovery.load();
@@ -1901,6 +1927,7 @@ async function startEditor() {
         $('prev').classList.toggle('on', preview);
         await ready(restoredUndo);
         await fa?.restore(retained.name);
+        await reconcileLocalFonts(retained.ui.localFonts);
         recovery.start(retained);
       } catch (error) {
         o.querySelector('[data-recovery-error]').textContent = error.message + ' The retained copy has not been deleted.';
