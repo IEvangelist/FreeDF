@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using PortableDocument.Content;
@@ -24,6 +25,29 @@ public static partial class BrowserEditor
         catch (Exception e)
         {
             return Error(c, e);
+        }
+    }
+
+    [JSExport]
+    public static byte[] RequestBytes(string method, string path, string query, string? body, JSObject exchange, string? fileName)
+    {
+        Command? c = null;
+        using var metadata = exchange;
+        try
+        {
+            c = new(method, path, JsonSerializer.Deserialize<Dictionary<string, string>>(query, Json) ?? [], null, fileName);
+            var bytes = body is null ? metadata.GetPropertyAsByteArray("bytes") : Encoding.UTF8.GetBytes(body);
+            var reply = Session.Handle(method, path, c.Query, bytes, fileName);
+            metadata.SetProperty("contentType", reply.ContentType);
+            metadata.SetProperty("fileName", reply.FileName);
+            if (Session.LastRenderMetrics is { } metrics)
+                metadata.SetProperty("performance", JsonSerializer.Serialize(metrics, Json));
+            return reply.Data;
+        }
+        catch (Exception e)
+        {
+            metadata.SetProperty("error", Error(c, e));
+            return [];
         }
     }
 

@@ -69,7 +69,24 @@ try {
       const requestStart = performance.now();
       const u = new URL(url, self.location.href);
       let uploadEncodeMs = 0, uploadPrepareMs = 0, uploadBytes = 0, binaryUpload = false, reply, dotnetMs;
-      if (body instanceof Blob) {
+      if (exports.BrowserEditor.RequestBytes) {
+        const exchange = {};
+        if (body instanceof Blob) {
+          fileName = body.name ?? fileName;
+          exchange.bytes = new Uint8Array(await body.arrayBuffer());
+          uploadBytes = exchange.bytes.byteLength;
+          binaryUpload = true;
+          body = null;
+        }
+        uploadPrepareMs = performance.now() - requestStart;
+        const dotnetStart = performance.now();
+        const bytes = exports.BrowserEditor.RequestBytes(method, u.pathname, JSON.stringify(Object.fromEntries(u.searchParams)), body, exchange, fileName);
+        dotnetMs = performance.now() - dotnetStart;
+        reply = exchange.error ? JSON.parse(exchange.error) : {
+          bytes, contentType: exchange.contentType, fileName: exchange.fileName,
+          performance: exchange.performance ? JSON.parse(exchange.performance) : null,
+        };
+      } else if (body instanceof Blob) {
         fileName = body.name ?? fileName;
         const bytes = new Uint8Array(await body.arrayBuffer());
         uploadBytes = bytes.byteLength;
@@ -88,7 +105,9 @@ try {
         dotnetMs = performance.now() - dotnetStart;
       }
       const timings = { dotnetMs, uploadEncodeMs, uploadPrepareMs, uploadBytes, binaryUpload, workerMs: performance.now() - start };
-      if (reply.error || image) {
+      if (reply.bytes) {
+        self.postMessage({ id, reply, timings }, [reply.bytes.buffer]);
+      } else if (reply.error || image) {
         self.postMessage({ id, reply, timings });
       } else {
         const decodeStart = performance.now();

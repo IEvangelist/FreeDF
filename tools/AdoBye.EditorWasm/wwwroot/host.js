@@ -3,6 +3,7 @@ export async function start() {
   let nextId = 0, failed = null, bootRetries = 0, sequence = Promise.resolve();
   const pending = new Map();
   const imageCache = new Map();
+  const imagePending = new Map();
   const imageCacheLimit = 8 * 1024 * 1024;
   let imageCacheSize = 0;
   const evictImage = url => {
@@ -61,6 +62,35 @@ export async function start() {
     sequence = result.catch(() => {});
     return result;
   };
+  const imageBlob = url => {
+    const key = imageKey(url);
+    if (key && imageCache.has(key)) {
+      const cached = imageCache.get(key);
+      imageCache.delete(key); imageCache.set(key, cached);
+      return Promise.resolve(cached.data);
+    }
+    if (key && imagePending.has(key)) return imagePending.get(key);
+    const pending = enqueue(async () => {
+      const reply = await command(url, 'GET', null, null, true);
+      const data = reply.bytes
+        ? new Blob([reply.bytes], { type: reply.contentType })
+        : await (await fetch(`data:${reply.contentType};base64,${reply.data}`)).blob();
+      const size = data.size;
+      if (key && size <= imageCacheLimit) {
+        while (imageCacheSize + size > imageCacheLimit) {
+          const [oldKey, old] = imageCache.entries().next().value;
+          imageCache.delete(oldKey); imageCacheSize -= old.size;
+        }
+        imageCache.set(key, { data, size }); imageCacheSize += size;
+      }
+      return data;
+    });
+    if (key) {
+      imagePending.set(key, pending);
+      pending.finally(() => { if (imagePending.get(key) === pending) imagePending.delete(key); }).catch(() => {});
+    }
+    return pending;
+  };
   return {
     execution: 'worker',
     bootRetries,
@@ -80,28 +110,17 @@ export async function start() {
         });
       });
     },
-    image(url) {
-      const key = imageKey(url);
-      if (key && imageCache.has(key)) {
-        const cached = imageCache.get(key);
-        imageCache.delete(key); imageCache.set(key, cached);
-        return Promise.resolve(cached.data);
-      }
-      return enqueue(async () => {
-        const reply = await command(url, 'GET', null, null, true);
-        const started = performance.now();
-        const data = `data:${reply.contentType};base64,${reply.data}`;
-        if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });
-        const size = data.length * 2;
-        if (key && size <= imageCacheLimit) {
-          while (imageCacheSize + size > imageCacheLimit) {
-            const [oldKey, old] = imageCache.entries().next().value;
-            imageCache.delete(oldKey); imageCacheSize -= old.size;
-          }
-          imageCache.set(key, { data, size }); imageCacheSize += size;
-        }
-        return data;
+    imageBlob,
+    async image(url) {
+      const blob = await imageBlob(url), started = performance.now();
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
       });
+      if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });
+      return data;
     },
     hasCachedImage(url) { const key = imageKey(url); return key !== null && imageCache.has(key); },
     evictImage,
