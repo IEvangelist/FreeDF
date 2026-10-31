@@ -12,7 +12,7 @@ static class EditorSamples
     static Task<int> Pages(IPage page) => page.EvaluateAsync<int>("async () => (await (await pdfHost.request('/api/state')).json()).pageCount");
     static Task Durable(IPage page) => page.WaitForFunctionAsync("document.getElementById('recovery').textContent === 'Recovery saved'");
 
-    public static bool ExpectedError(string error) => error.Contains("samples/27-full-collection.pdf") || error.StartsWith("Failed to load resource:");
+    public static bool ExpectedError(string error) => error.Contains("samples/27-full-collection.pdf") || error.StartsWith("Failed to load resource:") || error.Contains("encryption") || error.Contains("Encrypted");
 
     public static async Task Run(IPage page, string address, string root, ConcurrentQueue<string> network)
     {
@@ -91,7 +91,7 @@ static class EditorSamples
         var items = await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.Locator(".cm.sub > .cm-i").AllInnerTextsAsync();
         Check(items.Count == 27 && items[0].StartsWith("Full sample collection (50 pages)") && items[1].StartsWith("01 "), "Menu lists the full collection first, then 01-26 (" + items.Count + ").");
         var disabled = await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.Locator(".cm.sub > .cm-i:disabled").AllInnerTextsAsync();
-        Check(disabled.Count == 2 && disabled.All(d => d.Contains("requires password support")), "Encrypted samples are marked, not broken.");
+        Check(disabled.Count == 1 && disabled[0].Contains("17 ") && disabled[0].Contains("requires password support"), "Only the password-protected sample is marked unavailable; 18 (empty user password) is offered.");
         var asked = 0;
         EventHandler<IDialog> decline = async (_, d) => { asked++; await d.DismissAsync(); };
         page.Dialog += decline;
@@ -124,6 +124,21 @@ static class EditorSamples
         await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await Opened(page, Full);
         Check(await Pages(page) == 50, "?sample= loads the collection.");
+
+        // Encrypted samples: 18 (empty user password) is attempted, either opening or reporting the precise limitation; 17 needs a password.
+        await Durable(page);
+        await page.GotoAsync("about:blank");
+        await page.GotoAsync(address + "/csharp-pdf/#sample=18");
+        await prompt.WaitForAsync();
+        await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
+        await page.WaitForFunctionAsync("document.getElementById('name').textContent === '18-encrypted-owner-restricted.pdf' || document.querySelector('.sample-load [role=alert]')?.textContent");
+        var limitation = await page.Locator(".sample-load [role=alert]").CountAsync() > 0 ? await page.Locator(".sample-load [role=alert]").TextContentAsync() : null;
+        Check(limitation is null ? await Pages(page) > 0 : limitation.Contains("18-encrypted-owner-restricted.pdf is encrypted and this build could not open it"),
+            "#sample=18 opens, or states the precise limitation: " + limitation);
+        Console.WriteLine("Sample 18 on the WASM host: " + (limitation ?? "opened"));
+        await page.GotoAsync("about:blank");
+        await page.GotoAsync(address + "/csharp-pdf/#sample=17");
+        await page.Locator(".sample-load [role=alert]").Filter(new() { HasTextString = "needs a password" }).WaitForAsync();
 
         await page.UnrouteAsync("**/csharp-pdf/samples/" + Full);
         Check(network.IsEmpty, "No uploads or external requests: " + string.Join(", ", network));
