@@ -2,3 +2,7 @@
 *.png binary
 src/PortableDocument.Content/Resources/glyphlist.txt text eol=lf
 src/PortableDocument.Content/Resources/zapfdingbats.txt text eol=lf
+*.pgx binary
+*.j2k binary
+*.jp2 binary
+tests/fixtures/jpxmatrix/*.bin binary
