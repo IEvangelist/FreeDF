@@ -62,7 +62,7 @@ export async function start() {
     return result;
   };
   let renderPool = null;
-  if (typeof Worker === 'function' && new URLSearchParams(location.search).get('pool') === '1') {
+  if (typeof Worker === 'function' && new URLSearchParams(location.search).get('pool') !== '0') {
     try {
       const { createRenderPool } = await import('./pool.js');
       renderPool = createRenderPool({

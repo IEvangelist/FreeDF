@@ -1,6 +1,9 @@
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
+using System.Text.Json;
+using PortableDocument.Content;
 using PortableDocument.Document;
+using PortableDocument.FallbackFonts;
 using PortableDocument.Render;
 using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 
@@ -13,7 +16,29 @@ using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 public static partial class BrowserReplica
 {
     static PdfDocument? document;
-    static readonly PdfRenderOptions Options = new() { FontFallback = new BrowserFontFallback(), ImageCache = new PortableDocument.Content.ImageDecodeCache() };
+    // Same lazy fallback-font/CJK asset path as the primary engine (verified against the same manifest digests); assets are fetched by replica-worker.js on first use.
+    static readonly ProvidedAssetSource FontAssets = new();
+    static readonly PdfRenderOptions Options = new() { FontFallback = new BundledFontFallback(FontAssets, new BrowserFontFallback()), ImageCache = new ImageDecodeCache() };
+
+    [JSExport]
+    public static string TakeFontRequests() => JsonSerializer.Serialize(FontAssets.TakeRequests());
+
+    [JSExport]
+    public static void ProvideFontAsset(string path, JSObject body)
+    {
+        using var b = body;
+        FontAssets.Provide(path, b.GetPropertyAsByteArray("bytes"));
+    }
+
+    [JSExport]
+    public static void FontAssetUnavailable(string path) => FontAssets.Provide(path, null);
+
+    [JSExport]
+    public static void ProvideFontManifest(JSObject body)
+    {
+        using var b = body;
+        FontAssets.Manifest = AssetManifest.TryParse(b.GetPropertyAsByteArray("bytes") ?? []);
+    }
 
     [JSExport]
     public static int Load(byte[] pdf)

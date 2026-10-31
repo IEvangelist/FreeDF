@@ -10,7 +10,38 @@ try {
   const runtime = await dotnet.withConfig({ enableDownloadRetry: true }).create();
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
   const replica = exports.BrowserReplica;
-  self.onmessage = ({ data: { id, op, key, pdf, page, dpi, y0, y1 } }) => {
+  // Fallback fonts / CJK chunks: same files, manifest and lazy fetch protocol as worker.js (cached by the HTTP cache, nothing fetched at startup).
+  let manifestLoaded;
+  const fetchOptions = { credentials: 'same-origin', redirect: 'error' };
+  const loadManifest = () => manifestLoaded ??= (async () => {
+    try {
+      const response = await fetch(new URL('fallback-fonts/manifest.json', import.meta.url), { ...fetchOptions, signal: AbortSignal.timeout(20000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      replica.ProvideFontManifest({ bytes: new Uint8Array(await response.arrayBuffer()) });
+      return true;
+    } catch { return false; }
+  })();
+  async function supplyFonts() {
+    const paths = JSON.parse(replica.TakeFontRequests());
+    if (paths.length === 0) return 0;
+    const verified = await loadManifest();
+    await Promise.all(paths.map(async path => {
+      try {
+        if (!verified) throw new Error('font manifest unavailable');
+        const response = await fetch(new URL(`fallback-fonts/${path}`, import.meta.url), { ...fetchOptions, signal: AbortSignal.timeout(20000) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        replica.ProvideFontAsset(path, { bytes: new Uint8Array(await response.arrayBuffer()) });
+      } catch { replica.FontAssetUnavailable(path); }
+    }));
+    return paths.length;
+  }
+  // Renders are repeatable: run again once requested font assets have arrived.
+  async function withFonts(run) {
+    let result = run();
+    for (let attempt = 0; attempt < 4 && await supplyFonts() > 0; attempt++) result = run();
+    return result;
+  }
+  self.onmessage = async ({ data: { id, op, key, pdf, page, dpi, y0, y1 } }) => {
     try {
       const started = performance.now();
       switch (op) {
@@ -25,13 +56,13 @@ try {
           break;
         }
         case 'band': {
-          const rgba = replica.Band(page, dpi, y0, y1);
+          const rgba = await withFonts(() => replica.Band(page, dpi, y0, y1));
           const copy = rgba.slice();
           self.postMessage({ id, rgba: copy.buffer, ms: performance.now() - started }, [copy.buffer]);
           break;
         }
         case 'png': {
-          const copy = replica.Png(page, dpi).slice();
+          const copy = (await withFonts(() => replica.Png(page, dpi))).slice();
           self.postMessage({ id, png: copy.buffer, ms: performance.now() - started }, [copy.buffer]);
           break;
         }
