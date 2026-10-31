@@ -52,6 +52,68 @@ internal static class PdfUADeepChecks
             c.Add("PDFUA-BOOKMARKS", ValidationSeverity.Info, $"document has {c.Doc.Pages.Count} pages and no /Outlines (navigation aid recommended; advisory only, no veraPDF counterpart)");
     }
 
+    static readonly Dictionary<string, string> PredefinedCMapOrdering = BuildPredefinedCMaps();
+
+    static Dictionary<string, string> BuildPredefinedCMaps()
+    {
+        var d = new Dictionary<string, string>(StringComparer.Ordinal);
+        void Add(string ordering, params string[] bases) { foreach (var b in bases) { d[b + "-H"] = ordering; d[b + "-V"] = ordering; } }
+        Add("GB1", "GB-EUC", "GBpc-EUC", "GBK-EUC", "GBKp-EUC", "GBK2K", "UniGB-UCS2", "UniGB-UTF16");
+        Add("CNS1", "B5pc", "HKscs-B5", "ETen-B5", "ETenms-B5", "CNS-EUC", "UniCNS-UCS2", "UniCNS-UTF16");
+        Add("Japan1", "90ms-RKSJ", "90msp-RKSJ", "Add-RKSJ", "EUC", "Ext-RKSJ", "UniJIS-UCS2", "UniJIS-UCS2-HW", "UniJIS-UTF16");
+        d["83pv-RKSJ-H"] = d["90pv-RKSJ-H"] = d["H"] = d["V"] = "Japan1";
+        Add("Korea1", "KSC-EUC", "KSCms-UHC", "KSCms-UHC-HW", "UniKS-UCS2", "UniKS-UTF16");
+        d["KSCpc-EUC-H"] = "Korea1";
+        return d;
+    }
+
+    static (string? Registry, string? Ordering, long Supplement) SystemInfoOf(PdfFile f, PdfDictionary d) =>
+        f.Resolve(d.Get("CIDSystemInfo")) is PdfDictionary si
+            ? ((f.Resolve(si.Get("Registry")) as PdfString)?.Text, (f.Resolve(si.Get("Ordering")) as PdfString)?.Text, (long)(f.Resolve(si.Get("Supplement")).AsNumber() ?? 0))
+            : (null, null, 0);
+
+    /// <summary>ISO 14289-1 7.21.3.1/7.21.3.3 (CMaps and CIDSystemInfo) and 7.21.6 (TrueType encodings); see veraPDF PDFUA-1 7.21.3.1-1, 7.21.3.3-1/2, 7.21.6-2/3.</summary>
+    static void CompositeAndTrueTypeEncoding(ValidationContext c, ValidationContext.FontUse use, PdfDictionary font, string? subtype)
+    {
+        var f = c.F;
+        var name = FontChecks.Name(f, font);
+        if (subtype == "TrueType" && f.Resolve(font.Get("FontDescriptor")) is PdfDictionary desc && f.Resolve(desc.Get("Flags")).AsNumber() is { } flags)
+        {
+            var symbolic = ((int)flags & 4) != 0;
+            var enc = f.Resolve(font.Get("Encoding"));
+            if (symbolic && enc is not null and not PdfNull)
+                c.Add("PDFUA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", Clause(c, "7.21.6", "8.8"), use.Page);
+            else if (!symbolic && !(enc.AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
+                || enc is PdfDictionary ed && f.Resolve(ed.Get("BaseEncoding")).AsName() is "MacRomanEncoding" or "WinAnsiEncoding"))
+                c.Add("PDFUA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding (glyph-name checks of /Differences are not evaluated)", Clause(c, "7.21.6", "8.8"), use.Page);
+        }
+        if (subtype != "Type0" || f.Resolve(font.Get("DescendantFonts")) is not PdfArray { Count: > 0 } df || f.Resolve(df[0]) is not PdfDictionary cid) return;
+        var cidInfo = SystemInfoOf(f, cid);
+        switch (f.Resolve(font.Get("Encoding")))
+        {
+            case PdfName { Value: "Identity-H" or "Identity-V" }:
+                break;
+            case PdfName cmapName:
+                if (!PredefinedCMapOrdering.TryGetValue(cmapName.Value, out var ordering))
+                    c.Add("PDFUA-FONT-CMAP-EMBEDDED", ValidationSeverity.Error, $"CMap /{cmapName.Value} of {name} is not predefined (ISO 32000-1 Table 118) and is not embedded", Clause(c, "7.21.3.3", "8.8"), use.Page);
+                else if (cidInfo.Registry != "Adobe" || cidInfo.Ordering != ordering)
+                    c.Add("PDFUA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"CIDSystemInfo of {name} ({cidInfo.Registry}-{cidInfo.Ordering}) does not match predefined CMap /{cmapName.Value} (Adobe-{ordering})", Clause(c, "7.21.3.1", "8.8"), use.Page);
+                break;
+            case PdfStream cmap:
+                var cmapInfo = SystemInfoOf(f, cmap.Dict);
+                if (cmapInfo.Registry != cidInfo.Registry || cmapInfo.Ordering != cidInfo.Ordering || cidInfo.Supplement > cmapInfo.Supplement)
+                    c.Add("PDFUA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"CIDSystemInfo of {name} and its embedded CMap differ (Registry/Ordering must match; CIDFont Supplement must not exceed the CMap's)", Clause(c, "7.21.3.1", "8.8"), use.Page);
+                if (f.Resolve(cmap.Dict.Get("WMode")).AsNumber() is { } dictWMode)
+                {
+                    var text = System.Text.Encoding.Latin1.GetString(f.DecodeStream(cmap));
+                    var m = System.Text.RegularExpressions.Regex.Match(text, @"/WMode\s+(\d+)\s+def");
+                    if (m.Success && int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) != (int)dictWMode)
+                        c.Add("PDFUA-FONT-CMAP-WMODE", ValidationSeverity.Error, $"WMode of the embedded CMap of {name} differs from the CMap stream dictionary", Clause(c, "7.21.3.3", "8.8"), use.Page);
+                }
+                break;
+        }
+    }
+
     public static void Fonts(ValidationContext c)
     {
         var f = c.F;
@@ -63,6 +125,7 @@ internal static class PdfUADeepChecks
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid
                 && f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2" && cid.Get("CIDToGIDMap") is null && FontChecks.IsEmbedded(f, font))
                 c.Add("PDFUA-FONT-CIDTOGID", ValidationSeverity.Error, $"CIDFontType2 {FontChecks.Name(f, cid)} has no /CIDToGIDMap", Clause(c, "7.21.3.2", "8.8"), u.Page);
+            CompositeAndTrueTypeEncoding(c, u, font, subtype);
             if (f.Resolve(font.Get("ToUnicode")) is PdfStream) continue;
             var name = FontChecks.Name(f, font);
             if (subtype == "Type0")

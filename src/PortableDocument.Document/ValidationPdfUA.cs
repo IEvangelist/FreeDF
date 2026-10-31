@@ -381,12 +381,13 @@ internal static partial class PdfUAChecks
             .Select(p => (p, Scope: f.Resolve(TableAttribute(c, tree, p.Cell, "Scope")).AsName()))
             .Where(h => h.Scope is "Row" or "Column" or "Both")
             .ToList();
+        var sharing = placed.Where(p => p.Cell.StandardType == "TH").ToList();
         foreach (var p in placed.Where(p => p.Cell.StandardType == "TD"))
         {
             if (headerAttributes.GetValueOrDefault(p.Cell) is not null) continue;
-            var connected = headers.Any(h =>
-                (h.p.Col < p.Col + p.ColSpan && p.Col < h.p.Col + h.p.ColSpan)
-                || (h.p.Row < p.Row + p.RowSpan && p.Row < h.p.Row + h.p.RowSpan));
+            // Empirical (veraPDF corpus): every TH sharing a row or column with the TD must carry a valid /Scope, and at least one must exist.
+            var related = sharing.Where(h => (h.Col < p.Col + p.ColSpan && p.Col < h.Col + h.ColSpan) || (h.Row < p.Row + p.RowSpan && p.Row < h.Row + h.RowSpan)).ToList();
+            var connected = related.Count > 0 && related.All(h => headers.Any(s => ReferenceEquals(s.p.Cell, h.Cell)));
             if (!connected)
                 c.Add("PDFUA-TABLE-HEADER-CONNECTION", ValidationSeverity.Error, "TD has neither /Headers nor a TH with a covering /Scope, so its header cells are not determinable (veraPDF PDFUA-1 7.5-1)", "ISO 14289-1 7.5", p.Cell.PageIndex);
         }
