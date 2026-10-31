@@ -89,7 +89,7 @@ header { background: var(--panel); border-bottom-color: var(--line); }
 #dstate[data-dirty="true"] { color: var(--warn); }
 #tools { background: var(--panel); border-bottom-color: var(--line); }
 footer { background: var(--panel); border-top-color: var(--line); color: var(--mut); }
-#thumbs, #props { background: var(--panel); border-color: var(--line); }
+#left, #props { background: var(--panel); border-color: var(--line); }
 #view { background: var(--canvas); }
 #page { box-shadow: var(--page-shadow); }
 .thumb:hover { background: var(--hover); }
@@ -163,7 +163,7 @@ input[type=radio]:not(.wgt):checked { background-color: var(--primary); border-c
 @keyframes slide-l { from { opacity: 0; transform: translateX(-12px); } }
 @keyframes slide-r { from { opacity: 0; transform: translateX(12px); } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
-main:not(.hide-l) #thumbs { animation: slide-l var(--dur-3) var(--ease); }
+main:not(.hide-l) #left { animation: slide-l var(--dur-3) var(--ease); }
 main:not(.hide-r) #props { animation: slide-r var(--dur-3) var(--ease); }
 main { transition: none; }
 
@@ -249,11 +249,11 @@ footer #recovery { height: 24px; }
 /* Narrow screens: panels are sheets over a scrim; dismiss with the scrim, the toggle or Escape. */
 @media (max-width: 760px) {
   main:not(.hide-l)::before, main:not(.hide-r)::before { content: ""; position: absolute; inset: 0; z-index: 15; background: var(--scrim); animation: fade-in var(--dur-2) var(--ease-in-out); }
-  #thumbs, #props { box-shadow: var(--shadow-lg); }
+  #left, #props { box-shadow: var(--shadow-lg); }
   .rz { display: none; }
 }
 @media (max-width: 600px) {
-  main:not(.hide-l) #thumbs, main:not(.hide-r) #props { top: 0; }
+  main:not(.hide-l) #left, main:not(.hide-r) #props { top: 0; }
   .toasts { bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 @supports (padding: max(0px)) {

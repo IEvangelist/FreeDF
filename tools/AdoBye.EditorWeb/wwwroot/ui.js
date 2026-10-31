@@ -421,7 +421,7 @@
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); e.stopImmediatePropagation(); q('.pal-scrim') ? 0 : palette(); }
     else if (e.key === '?' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && !document.activeElement?.isContentEditable && !q('.mdl, .pal-scrim')) { e.preventDefault(); about(); }
     else if (e.key === 'Escape' && matchMedia('(max-width: 760px)').matches && !q('.cm, .mdl, .pal-scrim')) {
-      const m = q('main'); for (const [c, b] of [['hide-l', 'tl'], ['hide-r', 'tr']]) if (!m.classList.contains(c) && document.activeElement?.closest(c === 'hide-l' ? '#thumbs' : '#props')) { e.preventDefault(); $(b).click(); $(b).focus(); }
+      const m = q('main'); for (const [c, b] of [['hide-l', 'tl'], ['hide-r', 'tr']]) if (!m.classList.contains(c) && document.activeElement?.closest(c === 'hide-l' ? '#left' : '#props')) { e.preventDefault(); $(b).click(); $(b).focus(); }
     }
   }, true);
   init();

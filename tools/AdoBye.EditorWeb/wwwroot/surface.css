@@ -19,8 +19,8 @@ body { background: radial-gradient(1200px 500px at 50% -120px, light-dark(#2563e
 header { position: relative; z-index: 12; background: var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--hi), var(--panel)); box-shadow: inset 0 1px 0 var(--edge), 0 1px 0 var(--line), 0 10px 18px -14px light-dark(#0000002e, #000000b3); }
 #tools { position: relative; z-index: 6; background: var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--panel), var(--lo)); box-shadow: 0 1px 0 var(--line), 0 8px 14px -12px light-dark(#00000029, #000000a6); }
 footer { background: var(--grain) 0 0 / 140px, linear-gradient(0deg, var(--lo), var(--panel)); box-shadow: inset 0 1px 0 var(--edge); }
-#thumbs, #props { background: var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--panel), var(--lo)); }
-#thumbs { box-shadow: inset -1px 0 0 var(--edge); }
+#left, #props { background: var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--panel), var(--lo)); }
+#left { box-shadow: inset -1px 0 0 var(--edge); }
 #props { box-shadow: inset 1px 0 0 var(--edge); }
 #props section { background: transparent; }
 #props section.head { background: linear-gradient(180deg, var(--accent-bg), transparent); }
@@ -124,16 +124,16 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
 
 /* Panels and sheets: slide in and out with transitions (works for both directions without JS) */
 @media (max-width: 760px) {
-  main #thumbs, main #props { visibility: visible; transition: transform 280ms var(--ease-out), visibility 0s linear 0s; animation: none; padding-left: 12px; padding-right: 12px; border-width: 0 1px 0 0; }
+  main #left, main #props { visibility: visible; transition: transform 280ms var(--ease-out), visibility 0s linear 0s; animation: none; padding-left: 12px; padding-right: 12px; border-width: 0 1px 0 0; }
   main #props { border-width: 0 0 0 1px; }
-  main.hide-l #thumbs { transform: translateX(-104%); visibility: hidden; transition: transform 240ms var(--ease-in-out), visibility 0s linear 240ms; }
+  main.hide-l #left { transform: translateX(-104%); visibility: hidden; transition: transform 240ms var(--ease-in-out), visibility 0s linear 240ms; }
   main.hide-r #props { transform: translateX(104%); visibility: hidden; transition: transform 240ms var(--ease-in-out), visibility 0s linear 240ms; }
   main::before, main:not(.hide-l)::before, main:not(.hide-r)::before { content: ""; position: absolute; inset: 0; z-index: 15; background: var(--scrim); opacity: 0; pointer-events: none; animation: none; transition: opacity 240ms var(--ease-in-out); }
   main:not(.hide-l)::before, main:not(.hide-r)::before { opacity: 1; pointer-events: auto; }
-  #thumbs, #props { z-index: 20; width: min(300px, 88vw); }
-  main:not(.hide-l) #thumbs, main:not(.hide-r) #props { top: 0; }
+  #left, #props { z-index: 20; width: min(300px, 88vw); }
+  main:not(.hide-l) #left, main:not(.hide-r) #props { top: 0; }
 }
-@media (max-width: 600px) { main #thumbs, main #props { position: absolute; top: 0; bottom: 0; } }
+@media (max-width: 600px) { main #left, main #props { position: absolute; top: 0; bottom: 0; } }
 
 /* Narrow toolbar: three tidy rows, nothing clipped */
 @media (max-width: 760px) {
@@ -153,11 +153,11 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
   :root:not([data-motion="full"]) :is(button:hover:not(:disabled), .thumb:hover, #empty:hover::before) { transform: none !important; }
 }
 :root[data-motion="reduce"] button:hover:not(:disabled), :root[data-motion="reduce"] .thumb:hover, :root[data-motion="reduce"] #empty:hover::before { transform: none !important; }
-:root[data-motion="reduce"] main #thumbs, :root[data-motion="reduce"] main #props, :root[data-motion="reduce"] main::before { transition: none !important; }
+:root[data-motion="reduce"] main #left, :root[data-motion="reduce"] main #props, :root[data-motion="reduce"] main::before { transition: none !important; }
 @media (prefers-reduced-transparency: reduce) { .cm, .fpop, #findbar, .mdl, .pal-scrim, main::before { backdrop-filter: none !important; background-color: var(--raised); } }
 @media (forced-colors: active) {
   #empty { border: 2px dashed CanvasText; background: Canvas; } #empty::before { border: 2px solid CanvasText; background: Canvas; box-shadow: none; }
-  header, #tools, footer, #thumbs, #props, #view { background: Canvas; box-shadow: none; }
+  header, #tools, footer, #left, #props, #view { background: Canvas; box-shadow: none; }
   }
 
 /* Scrollbars: thin, themed gutter that fades into the surface at both ends. Chromium/WebKit use the pseudo-elements
@@ -186,7 +186,7 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
 @media (forced-colors: active) { #pager { border: 1px solid CanvasText; background: Canvas; } }
 
 /* Gradients sit on a solid surface colour so contrast tooling and forced fallbacks see a real background. */
-header, #tools, footer, #thumbs, #props { background-color: var(--panel); }
+header, #tools, footer, #left, #props { background-color: var(--panel); }
 
 /* Perf: nothing over the page canvas blurs or re-rasterises per frame; surfaces are solid. */
 .cm, .fpop, #findbar, #pager { background: var(--raised); }
