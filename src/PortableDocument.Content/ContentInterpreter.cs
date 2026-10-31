@@ -706,7 +706,7 @@ public sealed class ContentInterpreter
             off += run.ByteLength;
             if (DrawGraphics && !hidden)
             {
-                if (font.IsType3) DrawType3(font, run.Code, trm);
+                if (font.IsType3) { if (_gs.RenderMode is not (3 or 7)) DrawType3(font, run.Code, trm); }
                 else if (font.GetGlyph(run.Code) is { } outline)
                 {
                     var m = Matrix.Scale(0.001, 0.001).Then(trm);
