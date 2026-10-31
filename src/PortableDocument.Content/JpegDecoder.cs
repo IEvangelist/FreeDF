@@ -5,14 +5,14 @@ namespace PortableDocument.Content;
 /// <summary>
 /// Huffman JPEG decoder: baseline, extended sequential and progressive (SOF0/1/2), plus arithmetic-coded DCT (SOF9/10, JpegArith.cs)
 /// and lossless Huffman (SOF3, JpegLossless.cs). SOF1/2/9/10 support 8- and 12-bit precision; other DCT modes require 8 bits.
-/// Arithmetic lossless (SOF11), hierarchical and subsampled interleaved lossless JPEG remain unsupported.
+/// Lossless JPEG (SOF3 Huffman, SOF11 arithmetic) including subsampled interleaved scans are decoded; hierarchical JPEG is in JpegHierarchical.cs.
 /// Uses a 64-bit bit buffer, 9-bit Huffman lookahead tables, libjpeg's integer "islow" IDCT and parallel reconstruction.
 /// </summary>
 public static partial class JpegDecoder
 {
     sealed class Comp
     {
-        public int Id, H, V, Tq, Td, Ta, Pred, BW, BH, RealBW, RealBH, CW, CH;
+        public int Id, H, V, Tq, Td, Ta, Pred, BW, BH, RealBW, RealBH, CW, CH, Stride;
         public short[] Coef = [];
         public ushort[]? Raw;
     }
@@ -78,10 +78,10 @@ public static partial class JpegDecoder
                         if (tc == 0) hdc[th] = h; else hac[th] = h;
                     }
                     break;
-                case 0xC0 or 0xC1 or 0xC2 or 0xC3 or 0xC9 or 0xCA:
+                case 0xC0 or 0xC1 or 0xC2 or 0xC3 or 0xC9 or 0xCA or 0xCB:
                     progressive = m is 0xC2 or 0xCA;
-                    arith = m is 0xC9 or 0xCA;
-                    lossless = m == 0xC3;
+                    arith = m is 0xC9 or 0xCA or 0xCB;
+                    lossless = m is 0xC3 or 0xCB;
                     prec = d[seg];
                     if (lossless ? prec is < 2 or > 16 : prec != 8 && !(prec == 12 && m is 0xC1 or 0xC2 or 0xC9 or 0xCA)) return null;
                     height = d[seg + 1] << 8 | d[seg + 2]; width = d[seg + 3] << 8 | d[seg + 4];
@@ -102,12 +102,16 @@ public static partial class JpegDecoder
                         if (lossless)
                         {
                             c.CW = (width * c.H + hmax - 1) / hmax; c.CH = (height * c.V + vmax - 1) / vmax;
-                            c.Raw = new ushort[c.CW * c.CH];
+                            // Interleaved lossless MCUs cover H x V samples per component, so planes are padded to whole MCUs.
+                            c.Stride = (width + hmax - 1) / hmax * c.H;
+                            var rows = (height + vmax - 1) / vmax * c.V;
+                            if ((long)c.Stride * rows > MaxLosslessSamples) return null;
+                            c.Raw = new ushort[c.Stride * rows];
                         }
                         else c.Coef = new short[c.BW * c.BH * 64];
                     }
                     break;
-                case 0xC5 or 0xC6 or 0xC7 or 0xCB or 0xCD or 0xCE or 0xCF: return null;
+                case 0xC5 or 0xC6 or 0xC7 or 0xCD or 0xCE or 0xCF: return null;
                 case 0xCC:
                     for (var q = seg; q + 1 < end; q += 2)
                     {
@@ -132,9 +136,14 @@ public static partial class JpegDecoder
                         var ah = d[seg + 3 + ns * 2] >> 4; var al = d[seg + 3 + ns * 2] & 15;
                         if (lossless)
                         {
-                            var lbr = new BitReader(d, end);
-                            DecodeLosslessScan(lbr, sc, hdc, ss, al, prec, restart); lpt = al;
-                            pos = lbr.Pos; scans++;
+                            lpt = al; scans++;
+                            if (!arith && hmax == 1 && vmax == 1)
+                            {
+                                var lbr = new BitReader(d, end);
+                                DecodeLosslessScan(lbr, sc, hdc, ss, al, prec, restart);
+                                pos = lbr.Pos;
+                            }
+                            else pos = DecodeLosslessGeneral(d, end, arith, sc, hdc, ss, al, prec, restart, hmax, vmax, width, height, dcL, dcU);
                             continue;
                         }
                         if (!progressive) { ss = 0; se = 63; ah = al = 0; }
