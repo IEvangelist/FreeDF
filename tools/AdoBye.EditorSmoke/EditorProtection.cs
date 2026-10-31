@@ -26,6 +26,9 @@ static class EditorProtection
 
     public static async Task Run(IPage page)
     {
+        var urls = new List<string>();
+        page.Request += (_, request) => urls.Add(request.Url);
+        Check(await page.EvaluateAsync<bool>("window.pdfEditorCapabilities?.openEncrypted === true"), "The page advertises openEncrypted before the samples menu renders.");
         var dialog = page.GetByRole(AriaRole.Dialog, new() { Name = "Password required" });
         var password = dialog.Locator("#pw");
 
@@ -88,16 +91,42 @@ static class EditorProtection
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Text (.txt)" }).ClickAsync();
         await page.WaitForFunctionAsync("document.getElementById('status').textContent.includes('permissions do not allow')");
 
-        // Owner password: protection can be removed.
+        // Unlock sample 18 (restricted, opens freely) with its owner password through the UI.
+        var unlock = page.GetByRole(AriaRole.Dialog, new() { Name = "Unlock with owner password" });
+        async Task Unlock(string value)
+        {
+            await page.Locator("#fileBtn").ClickAsync();
+            await page.GetByRole(AriaRole.Menuitem, new() { Name = "Unlock with owner password…" }).ClickAsync();
+            await unlock.Locator("#ow").FillAsync(value);
+            await page.Keyboard.PressAsync("Enter");
+        }
+        await Unlock("not-the-owner");
+        await unlock.Locator("[data-error]:has-text('not correct')").WaitForAsync();
+        await unlock.Locator("#ow").FillAsync("owner123");
+        await page.Keyboard.PressAsync("Enter");
+        await unlock.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await page.WaitForFunctionAsync("document.getElementById('status').textContent.includes('owner password')");
+        Check(await page.EvaluateAsync<bool>("async () => { const p = (await (await pdfHost.request('/api/state')).json()).protection; return p.owner && p.copy && p.modify; }"), "Unlocking restores edit, print and copy permissions.");
+        await page.Locator("#fileBtn").ClickAsync();
+        await page.GetByRole(AriaRole.Menuitem, new() { Name = "Export" }).ClickAsync();
+        var text = await Download(page, () => page.GetByRole(AriaRole.Menuitem, new() { Name = "Text (.txt)" }).ClickAsync());
+        Check(text.Length > 0, "Text export works after unlocking.");
+
+        // Sample 17 opens with the user password, then unlocks with the owner password so protection can be removed.
         await Open(page, "17-encrypted-user-password.pdf");
         await password.WaitForAsync();
-        await password.FillAsync("owner-user123");
+        await password.FillAsync("user123");
         await page.Keyboard.PressAsync("Enter");
+        await page.WaitForFunctionAsync("document.getElementById('status').textContent.includes('Protected PDF')");
+        await Unlock("owner-user123");
+        await unlock.WaitForAsync(new() { State = WaitForSelectorState.Detached });
         await page.WaitForFunctionAsync("document.getElementById('status').textContent.includes('owner password')");
         await page.Locator("#fileBtn").ClickAsync();
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Save as…" }).ClickAsync();
         await save.Locator("#prm").CheckAsync();
         var plain = await Download(page, () => save.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
         Check(!PdfDocument.Load(plain).File.IsEncrypted, "Remove protection yields an unencrypted PDF.");
+        string[] secrets = ["user123", "owner123", "owner-user123", "not-the-password", "not-the-owner", "bm90LXRoZS1w"];
+        Check(!urls.Any(u => secrets.Any(u.Contains)), "No request URL carries a password.");
     }
 }

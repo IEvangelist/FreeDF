@@ -51,7 +51,8 @@ var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
 var protectionOnly = args.Length == 2 && args[0] == "--protection";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !protectionOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--protection] <published-wwwroot>");
+var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--protection|--crypto-perf] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -171,6 +172,11 @@ try
         await EditorMerge.Run(page);
         Check(network.IsEmpty && EditorMerge.ExpectedErrors(errors, ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + System.Text.Json.JsonSerializer.Serialize(errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: keyboard merge controls/focus/Escape, inline server rejection with retained choices, direct later-frame rejection preserving state/history/assets and undo, multi-file order/range/insertion, render/save/reopen.");
+        return;
+    }
+    if (cryptoPerfOnly)
+    {
+        await EditorCryptoPerf.Run(page);
         return;
     }
     if (protectionOnly)

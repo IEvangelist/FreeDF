@@ -15,7 +15,7 @@ public class EditorProtectionTests
     static EditorSession Open(string file, string? password = null)
     {
         var s = new EditorSession(new FontCatalog());
-        s.Handle("POST", "/api/open", password is null ? None : Q(("password", password)), Sample(file), file);
+        s.Handle("POST", "/api/open", password is null ? None : Q((EditorSession.PasswordKey, Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(password)))), Sample(file), file);
         return s;
     }
 
@@ -25,7 +25,7 @@ public class EditorProtectionTests
         var s = new EditorSession(new FontCatalog());
         var missing = Assert.Throws<ArgumentException>(() => s.Handle("POST", "/api/open", None, Sample("17-encrypted-user-password.pdf"), "a.pdf"));
         Assert.StartsWith("password-required:", missing.Message);
-        var wrong = Assert.Throws<ArgumentException>(() => s.Handle("POST", "/api/open", Q(("password", "nope")), Sample("17-encrypted-user-password.pdf"), "a.pdf"));
+        var wrong = Assert.Throws<ArgumentException>(() => s.Handle("POST", "/api/open", Q((EditorSession.PasswordKey, Convert.ToBase64String("nope"u8.ToArray()))), Sample("17-encrypted-user-password.pdf"), "a.pdf"));
         Assert.StartsWith("password-incorrect:", wrong.Message);
         Assert.DoesNotContain("nope", wrong.Message);
         Assert.Equal(0, Json(s.Handle("GET", "/api/state", None)).GetProperty("pageCount").GetInt32());
@@ -99,5 +99,33 @@ public class EditorProtectionTests
         var d = PdfDocument.Load(bytes, "pw").File.Decryptor!;
         Assert.Equal(PdfEncryptionMethod.Aes256, d.EncryptionMethod);
         Assert.False(d.IsOwner);
+    }
+
+    static Dictionary<string, string> Header(string password) => Q((EditorSession.PasswordKey, Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(password))));
+
+    [Fact]
+    public void Restricted_document_unlocks_with_the_owner_password_from_the_header_only()
+    {
+        var s = Open("18-encrypted-owner-restricted.pdf");
+        Assert.Throws<NotSupportedException>(() => s.Handle("GET", "/api/export/text", None));
+        var wrong = Assert.Throws<ArgumentException>(() => s.Handle("POST", "/api/unlock", Header("nope")));
+        Assert.StartsWith("password-incorrect:", wrong.Message);
+        Assert.False(Json(s.Handle("GET", "/api/state", None)).GetProperty("protection").GetProperty("owner").GetBoolean());
+        // A password in the URL query is ignored: only the header key counts.
+        Assert.Throws<ArgumentException>(() => s.Handle("POST", "/api/unlock", Q(("password", "owner123"))));
+        s.Handle("POST", "/api/unlock", Header("owner123"));
+        var p = Json(s.Handle("GET", "/api/state", None)).GetProperty("protection");
+        Assert.True(p.GetProperty("owner").GetBoolean());
+        Assert.True(p.GetProperty("copy").GetBoolean());
+        Assert.NotEmpty(s.Handle("GET", "/api/export/text", None).Data);
+        Assert.Throws<ArgumentException>(() => new EditorSession(new FontCatalog()).Handle("POST", "/api/unlock", Header("owner123")));
+    }
+
+    [Fact]
+    public void User_password_in_the_url_query_does_not_open_a_document()
+    {
+        var s = new EditorSession(new FontCatalog());
+        var ex = Assert.Throws<ArgumentException>(() => s.Handle("POST", "/api/open", Q(("password", "user123")), Sample("17-encrypted-user-password.pdf"), "a.pdf"));
+        Assert.StartsWith("password-required:", ex.Message);
     }
 }
