@@ -88,6 +88,7 @@
         <button data-tool="ellipse" class="icon" title="Ellipse (E)"><svg class="i"><use href="#i-ellipse"/></svg></button>
         <button data-tool="line" class="icon" title="Line (L)"><svg class="i"><use href="#i-line"/></svg></button>
         <button data-tool="redact" class="icon" title="Redact: permanently removes content beneath (X)"><svg class="i"><use href="#i-redact"/></svg></button>
+        <button id="annot" class="icon" title="Annotations and comments (A)" aria-pressed="false" aria-label="Annotations and comments">✎</button>
         <label class="btn icon" title="Insert image" tabindex="0" role="button" aria-label="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
       </div>
       <span class="grow"></span>
@@ -128,6 +129,7 @@ const request = async (url, options) => {
   if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery', '/api/unlock'].includes(url.split('?')[0])) {
     selectionEpoch++; buildEpoch++; clearTimeout(baseRenderTimer); shownPage = -1;
     clip = null; pendingUploads.clear(); assetImages.clear();
+    if (url.split('?')[0] !== '/api/unlock') formUi?.reset();
   }
   recovery?.changed(url, options?.method ?? 'GET');
   return response;
@@ -165,7 +167,7 @@ const famCss = f => FAM[f] ?? `"${String(f).replace(/"/g, '')}", sans-serif`;
 let fontList = [];
 request('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
 const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-let S = 1, pageHint = null, geom = null, spans = [], origKey = '', fields = [], widgets = [], widgetStamp = 0, widgetEl = null, widgetKey = '', objs = [], curObj = null, curSpan = null;
+let S = 1, pageHint = null, geom = null, spans = [], origKey = '', fields = [], widgets = [], widgetStamp = 0, widgetEl = null, widgetKey = '', objs = [], curObj = null, curSpan = null, formUi = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
@@ -315,12 +317,15 @@ async function select(retainedUndo = null) {
     const nextObjects = await (await request(`/api/page/${page}/objects`)).json();
     const nextFields = await (await request('/api/fields')).json();
     const nextWidgets = await (await request(`/api/page/${page}/widgets`)).json();
+    await formUi?.load(page);
     if (epoch !== selectionEpoch || page !== sel) return;
     items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields; widgets = nextWidgets; widgetStamp++;
     origKey = okey();
     cur = null; curObj = null; curSpan = null;
     pruneAssetImages();
     await build();
+    await annot?.reload();
+    annot?.pageChanged();
     recovery?.uiChanged();
     scheduleNeighborPrefetch();
   } finally { if (epoch === selectionEpoch) v.inert = false; }
@@ -538,7 +543,9 @@ function paint() {
     layer.appendChild(e);
     if (it.type === 'image') setImage(e.querySelector('img'), `/api/asset/${it.asset}`).catch(reportError);
   }
-  paintWidgets(layer);
+  formUi?.paint(layer);
+  if (!formUi?.editing()) paintWidgets(layer);
+  annot?.pageChanged();
 }
 
 // Page-sized objects (a background fill or an imported page's content wrapper) are selected with Alt+click so plain clicks reach form widgets and text.
@@ -697,6 +704,7 @@ function startResize(ev, it, k, el) {
 }
 
 function layerDown(ev) {
+  if (formUi?.layerDown(ev)) return;
   if (tool === 'select') { cur = null; curObj = null; curSpan = null; paint(); props(); return; }
   curSpan = null;
   const kind = tool;
@@ -754,6 +762,7 @@ function editText(el, it) {
 }
 
 function setTool(t) {
+  formUi?.cancelArmed();
   tool = t;
   document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   $('layer')?.classList.toggle('draw', t !== 'select');
@@ -776,7 +785,7 @@ function pageHistoryStep(kind) {
   if (!(kind === 'undo' ? state.pageUndo : state.pageRedo)) { status(kind === 'undo' ? 'Nothing to undo.' : 'Nothing to redo.'); return; }
   let label = null;
   return act(async () => { label = (await (await post(`/api/page-${kind}`)).json()).label; }, e => { reportError(e); })
-    .then(() => { if (label !== null) status(`${kind === 'undo' ? 'Undid' : 'Redid'} ${label} page change.`); });
+    .then(() => { if (label !== null) status(`${kind === 'undo' ? 'Undid' : 'Redid'} ${label}${label.startsWith('form field') ? '' : ' page change'}.`); });
 }
 const oBox = o => {
   const e = o.edit; if (!e) return [o.x0, o.y0, o.x1, o.y1];
@@ -908,10 +917,11 @@ async function flush() {
 
 function props() {
   const p = $('props');
+  if (!cur && !curObj && !curSpan && formUi?.props(p)) return;
   if (curSpan) return spanProps();
   if (!cur && curObj) return objProps();
   if (!cur) {
-    p.innerHTML = `<section><h2>Properties</h2><p class="hint">Select an object or existing text to inspect it, or pick a tool and drag on the page.</p></section>`
+    p.innerHTML = `<section><h2>Properties</h2><p class="hint">Select an object or existing text to inspect it, or pick a tool and drag on the page. On forms, use Fill out | Edit above the page to enter values or change field layout. Forms start in Edit.</p></section>`
       + (fields.length ? `<section><h2>Form fields</h2>${fields.map((f, i) => f.type === 'Btn'
         ? `<label class="chk"><span>${esc(f.name)}</span><input type="checkbox" data-f="${i}" ${f.value && f.value !== 'Off' ? 'checked' : ''}></label>`
         : `<label class="fld"><span>${esc(f.name)}</span><input type="text" data-f="${i}" value="${esc(f.value)}"></label>`).join('')}</section>` : '');
@@ -1077,6 +1087,24 @@ $('img').onchange = async e => {
   pushUndo();
   cur = { id: crypto.randomUUID(), type: 'image', x: 40, y: 40, w, h: w * a.h / a.w, text: '', font: 'Helvetica', size: 12, bold: false, italic: false, color: '#000000', fill: '', stroke: '', strokeWidth: 0, opacity: 1, asset: a.id, x2: 0, y2: 0 };
   items.push(cur); paint(); props(); queueSave();
+};
+// ---- Annotation authoring (module loaded on first use) ----
+let annot = null;
+$('annot').onclick = async () => {
+  if (!state.pageCount) return;
+  try {
+    annot ??= (await import(new URL('annotations.js', document.baseURI))).createAnnotations({
+      request, status, state: () => state, page: () => sel, scale: () => S, toLayer,
+      goPage: async i => { await goPage(i); annot?.pageChanged(); },
+      sync: async () => {
+        const s = await (await request('/api/state')).json();
+        Object.assign(state, s); setDocLabel(s);
+        if (sel >= state.pageCount) sel = state.pageCount - 1;
+        await updateBase(); annot?.pageChanged();
+      },
+    });
+    await annot.toggle();
+  } catch (e) { annot = null; reportError(e); }
 };
 // ---- Navigation, zoom, find, print, full screen, file menu ----
 function setDocLabel(s) {
@@ -1639,6 +1667,24 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
+import(new URL('form-fields.js', document.baseURI)).then(m => {
+  formUi = m.createFormFields({
+    request, post, flush, status, esc, ic, modal, buildMenu, openMenuAt, toLayer, locked: () => locked, tool: () => tool, scale: () => S,
+    pageIndex: () => sel, pageCount: () => state.pageCount, pageGeometry: () => state.pages[sel], layer: () => $('layer'),
+    repaint: () => paint(), props: () => props(), otherSelection: () => !!(cur || curObj || curSpan), clearOtherSelection: () => { cur = null; curObj = null; curSpan = null; },
+    download: u => flush().then(() => dlUrl(u)),
+    toolbar: () => { const g = document.createElement('div'); g.className = 'group'; document.querySelector('#tools .seg').after(g); return g; },
+    afterMutation: async () => {
+      const s = await (await request('/api/state')).json();
+      Object.assign(state, { version: s.version, pageUndo: s.pageUndo, pageRedo: s.pageRedo, dirty: s.dirty, canSave: s.canSave, fileName: s.fileName });
+      setDocLabel(s);
+      widgets = await (await request(`/api/page/${sel}/widgets`)).json(); widgetStamp++;
+      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&v=${state.version}`));
+      await updateBase();
+    },
+  });
+  if (state.pageCount) formUi.load(sel).then(() => paint());
+}).catch(reportError);
 async function startEditor() {
   const ready = async retainedUndo => {
     await refresh(retainedUndo);

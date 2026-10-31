@@ -30,6 +30,9 @@ button.primary:hover { background: var(--accent-2); color: #fff; }
 button.on { background: var(--accent-bg); color: var(--accent-2); border-color: #4c8dff44; }
 .sp { width: 1px; height: 18px; background: var(--line-2); margin: 0 6px; flex: none; }
 .group { display: flex; align-items: center; gap: 2px; }
+.form-mode { display: flex; padding: 2px; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.form-mode[hidden] { display: none; }
+.form-mode button { white-space: nowrap; }
 .seg { display: flex; padding: 2px; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
 .seg button, .seg label.btn { height: 26px; }
 

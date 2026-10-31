@@ -33,6 +33,12 @@ if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline")
     return;
 }
 
+if (args.Length >= 4 && args[0] == "--pool")
+{
+    await EditorPool.Run(args[1], args[2], args[3], args.Length > 4 ? int.Parse(args[4]) : 4);
+    return;
+}
+
 if (args.Length >= 4 && args[0] == "--profile")
 {
     await EditorPerformance.Run(args[1], args[2], args[3..]);
@@ -51,12 +57,13 @@ var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
 var formsOnly = args.Length == 2 && args[0] == "--forms";
+var annotationsOnly = args.Length == 2 && args[0] == "--annotations";
 var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
 var samplesOnly = args.Length == 2 && args[0] == "--samples";
 var protectionOnly = args.Length == 2 && args[0] == "--protection";
 var viewportOnly = args.Length == 3 && args[0] == "--viewport";
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot-or-url> | --viewport <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot-or-url> | --viewport <published-wwwroot-or-url> <sample.pdf>");
 var source = viewportOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
@@ -182,16 +189,23 @@ try
         Check(network.IsEmpty && errors.IsEmpty, "No unexpected JSON-safety browser errors or traffic.");
         return;
     }
+    if (formsOnly)
+    {
+        await EditorForms.Run(page, root);
+        await EditorFormAuthoring.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
+        return;
+    }
+    if (annotationsOnly)
+    {
+        await EditorAnnotations.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No unexpected annotation errors or outbound traffic.");
+        return;
+    }
     if (textSelectionOnly)
     {
         await EditorTextSelection.Run(page);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
-        return;
-    }
-    if (formsOnly)
-    {
-        await EditorForms.Run(page);
-        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
     }
     if (mergeOnly)

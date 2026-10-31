@@ -124,6 +124,7 @@ public sealed partial class PdfEditor
         ArgumentNullException.ThrowIfNull(value);
         if (key is "Type" or "Pages") throw new ArgumentException($"/{key} is managed by the editor", nameof(key));
         var d = (PdfDictionary)_objs[_catalog];
+        if (key == "AcroForm") InvalidateFormIndex();
         _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { [key] = value });
     }
 
@@ -327,6 +328,7 @@ public sealed partial class PdfEditor
         var value = values.Count > 0 ? values[0] : "";
         if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || Res(form.Get("Fields")) is not PdfArray fields) return false;
         var done = false;
+        var legacyAppearance = false;
         void Walk(PdfObject? o, string prefix, string? ft, int depth)
         {
             if (depth > 32 || o is not PdfRef r || !_objs.TryGetValue(r.Number, out var po) || po is not PdfDictionary d) return;
@@ -349,6 +351,7 @@ public sealed partial class PdfEditor
                 for (var wi = 0; wi < targets.Count; wi++)
                     if (targets[wi] is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd)
                     {
+                        if (Res(wd.Get("AP")) is not PdfDictionary) legacyAppearance = true;
                         var states = Res(wd.Get("AP")) is PdfDictionary ap && Res(ap.Get("N")) is PdfDictionary n ? n.Entries.Keys.ToList() : [];
                         // Without appearance states the on-state is the /Opt export (or index) for radios and the chosen name for check boxes.
                         var kidOn = states.FirstOrDefault(k => k != "Off") ?? ((ffBtn & 32768) != 0
@@ -376,6 +379,8 @@ public sealed partial class PdfEditor
                 foreach (var w in kids is null ? [r] : kids.Items)
                     if (w is PdfRef wr && _objs.TryGetValue(wr.Number, out var wo) && wo is PdfDictionary wd && Res(wd.Get("Rect")) is PdfArray ra && ra.Count >= 4)
                     {
+                        if (RebuildAppearance(wr)) continue;
+                        legacyAppearance = true;
                         double N(int i) => Res(ra[i]).AsNumber() ?? 0;
                         var xo = BuildTextAppearance(d, wd, Math.Abs(N(2) - N(0)), Math.Abs(N(3) - N(1)), string.Join(", ", values.DefaultIfEmpty("").Select(v => DisplayText(d, v))), ft == "Ch");
                         var we = new Dictionary<string, PdfObject>(wd.Entries)
@@ -384,7 +389,7 @@ public sealed partial class PdfEditor
                     }
         }
         foreach (var f in fields.Items) Walk(f, "", null, 0);
-        if (done)
+        if (done && legacyAppearance)
         {
             var af = ((PdfDictionary)_objs[_catalog]).Get("AcroForm");
             var fe = new Dictionary<string, PdfObject>(form.Entries) { ["NeedAppearances"] = new PdfBoolean(true) };
@@ -587,6 +592,7 @@ public sealed partial class PdfEditor
     /// <summary>Drops AcroForm fields whose widgets were all removed (see <see cref="RemoveAnnotations"/>) so field values cannot outlive a redacted widget. Returns the number of field entries removed.</summary>
     public int PruneRemovedFormFields()
     {
+        InvalidateFormIndex();
         if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || form.Get("Fields") is not { } fieldsObj || Res(fieldsObj) is not PdfArray fields) return 0;
         var dropped = 0;
         List<PdfObject> Prune(IEnumerable<PdfObject> items)
@@ -707,6 +713,7 @@ public sealed partial class PdfEditor
     /// <summary>Returns the editor to a state taken by <see cref="Capture"/> on this same instance.</summary>
     public void Restore(State state)
     {
+        InvalidateFormIndex();
         if (!ReferenceEquals(state.Owner, this)) throw new ArgumentException("The state belongs to a different editor.", nameof(state));
         Require(PdfPermissions.Assemble);
         _objs.Clear(); foreach (var kv in state.Objs) _objs[kv.Key] = kv.Value;

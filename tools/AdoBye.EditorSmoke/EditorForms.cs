@@ -9,7 +9,7 @@ static class EditorForms
     sealed record Widget(string Name, string Kind, double X0, double Y0, double X1, double Y1, string Value, string? On, bool Checked, bool ReadOnly, int MaxLen, bool Comb, bool Multiline, List<Opt>? Options, bool Multi, bool Edit, List<string>? Values);
     sealed record Opt(string Value, string Label);
 
-    public static async Task Run(IPage page)
+    public static async Task Run(IPage page, string siteRoot)
     {
         var samples = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples");
         var lone = await File.ReadAllBytesAsync(Path.Combine(samples, "11-acroform.pdf"));
@@ -21,9 +21,14 @@ static class EditorForms
             merged.ImportPages(source, Enumerable.Range(0, source.Pages.Count).ToList(), merged.PageCount, PdfImportOptions.Merge(Path.GetFileName(file)));
         }
         await Fill(page, "11-acroform.pdf", lone, lone);
-        await Fill(page, "27-full-collection.pdf", merged.Save(), lone);
+        var collection = Path.Combine(siteRoot, "samples", "27-full-collection.pdf");
+        var collectionBytes = await File.ReadAllBytesAsync(collection);
+        var real = PdfDocument.Load(collectionBytes);
+        Check(real.Pages.Count == 50 && real.Pages[13].GetAnnotations().Any(a => a.Subtype == "Widget"), "Published collection has 50 pages and forms on page 14");
+        await Fill(page, "merged-collection.pdf", merged.Save(), lone);
+        await Fill(page, "27-full-collection.pdf", collectionBytes, lone);
         await Synthetic(page);
-        Console.WriteLine("PASS: Select-mode form filling (text/email/comb/multiline/combo/list/check/radio) in a lone form and a merged collection; widgets win over page groups, push buttons inert, Tab/Space keyboard, save/reopen values and appearance; rotated CropBox-offset NeedAppearances form with Opt radios, multi-select list, editable combo, undo and keyboard/Alt page-content selection.");
+        Console.WriteLine("PASS: default Edit and keyboard Fill out/Edit toggle; all field types in lone/merged forms and real published 50-page collection page 14; mode persists across navigation/save without changing dirty/history; widgets win over page groups, push buttons inert, Tab/Space, save/reopen values/appearance; rotated CropBox/no-AP export radios, multi-select, editable combo and undo.");
     }
 
     static byte[] SyntheticForm()
@@ -212,6 +217,11 @@ static class EditorForms
         foreach (var w in reopened)
             if (expected.TryGetValue(w.Name, out var value))
                 Check(w.Kind is "check" or "radio" ? w.Checked == (w.On == value) : w.Value == value, $"{name}: reopened {w.Name} must show {value}");
+        var stateBefore = await page.EvaluateAsync<string>("async () => { const s = await (await pdfHost.request('/api/state')).json(); return JSON.stringify([s.version,s.dirty,s.pageUndo,s.pageRedo]); }");
+        await page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
+        Check(await page.Locator("#layer .ffbox").CountAsync() > 0 && await page.Locator("#layer .wgt").CountAsync() == 0, name + ": Edit restores layout overlays");
+        var stateAfter = await page.EvaluateAsync<string>("async () => { const s = await (await pdfHost.request('/api/state')).json(); return JSON.stringify([s.version,s.dirty,s.pageUndo,s.pageRedo]); }");
+        Check(stateBefore == stateAfter, name + ": mode toggle leaves version, dirty and undo/redo unchanged");
     }
 
     static async Task Open(IPage page, string name, byte[] bytes, int formPage)
@@ -224,7 +234,20 @@ static class EditorForms
             await page.Locator("#pn").FillAsync((formPage + 1).ToString());
             await page.Locator("#pn").PressAsync("Enter");
         }
-        await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && document.getElementById('base')?.naturalWidth > 0 && document.querySelectorAll('#layer .wgt').length > 0", formPage + 1);
+        await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && !document.getElementById('view').inert && document.querySelectorAll('#layer .ffbox').length > 0", formPage + 1);
+        var fill = page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Fill out", Exact = true });
+        Check(await page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).GetAttributeAsync("aria-pressed") == "true", name + ": document defaults to Edit");
+        var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
+        if (name == "27-full-collection.pdf" && artifacts is not null)
+        {
+            Directory.CreateDirectory(artifacts);
+            await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "collection-edit.png") });
+        }
+        await fill.FocusAsync(); await fill.PressAsync("Space");
+        await page.WaitForFunctionAsync("document.querySelectorAll('#layer .wgt').length > 0 && document.querySelectorAll('#layer .ffbox').length === 0");
+        Check(await fill.GetAttributeAsync("aria-pressed") == "true" && (await page.Locator("#status").TextContentAsync())!.StartsWith("Fill out form:"), name + ": keyboard toggle updates pressed state and announces Fill out");
+        if (name == "27-full-collection.pdf" && artifacts is not null)
+            await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "collection-fill.png") });
     }
 
     static async Task<List<Widget>> Widgets(IPage page, int index) =>

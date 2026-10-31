@@ -80,6 +80,9 @@ try {
     $expected = (Get-FileHash $native[0].FullName -Algorithm SHA256).Hash
     $identityAssets = @("_framework/$($native[0].Name)", 'index.html', 'host.js', 'worker.js', 'editor.js', 'editor.css', 'recovery.js')
     if (Test-Path (Join-Path $site 'samples.js')) { $identityAssets += 'samples.js' }
+    foreach ($asset in @('annotations.js', 'form-fields.js', 'pool.js', 'scheduler.js', 'replica-worker.js')) {
+        if (Test-Path (Join-Path $site $asset)) { $identityAssets += $asset }
+    }
     function Assert-LiveAssets([string] $Name) {
         $destination = Join-Path $Output $Name
         New-Item -ItemType Directory -Path $destination | Out-Null

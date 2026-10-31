@@ -61,9 +61,23 @@ export async function start() {
     sequence = result.catch(() => {});
     return result;
   };
+  let renderPool = null;
+  if (typeof Worker === 'function' && new URLSearchParams(location.search).get('pool') === '1') {
+    try {
+      const { createRenderPool } = await import('./pool.js');
+      renderPool = createRenderPool({
+        snapshot: bare => enqueue(async () => {
+          const reply = await command(`/api/snapshot?bare=${bare}`);
+          return { bytes: reply.bytes, version: Number(/^v(\d+)$/.exec(reply.fileName ?? '')?.[1]) };
+        }),
+      });
+      if (!renderPool.enabled) renderPool = null;
+    } catch (error) { console.warn('Parallel rendering is unavailable; using one PDF engine.', error); }
+  }
   return {
     execution: 'worker',
     bootRetries,
+    get renderPool() { return renderPool; },
     request(url, options = {}) {
       return enqueue(async () => {
         let body = null, fileName = null;
@@ -87,11 +101,7 @@ export async function start() {
         imageCache.delete(key); imageCache.set(key, cached);
         return Promise.resolve(cached.data);
       }
-      return enqueue(async () => {
-        const reply = await command(url, 'GET', null, null, true);
-        const started = performance.now();
-        const data = `data:${reply.contentType};base64,${reply.data}`;
-        if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });
+      const remember = data => {
         const size = data.length * 2;
         if (key && size <= imageCacheLimit) {
           while (imageCacheSize + size > imageCacheLimit) {
@@ -101,6 +111,27 @@ export async function start() {
           imageCache.set(key, { data, size }); imageCacheSize += size;
         }
         return data;
+      };
+      const primary = () => enqueue(async () => {
+        const reply = await command(url, 'GET', null, null, true);
+        const started = performance.now();
+        const data = `data:${reply.contentType};base64,${reply.data}`;
+        if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });
+        return remember(data);
+      });
+      // Render replicas (see pool.js) take heavy rasters and thumbnail bursts; any failure falls back to the primary worker.
+      const pooled = renderPool?.tryRender(url).catch(error => { if (error?.name !== 'AbortError') console.warn('Render pool failed; using the primary PDF engine.', error); return null; });
+      if (!pooled) return primary();
+      return pooled.then(async blob => {
+        if (!blob) return primary();
+        const started = performance.now();
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started, pooled: true });
+        return remember(data);
       });
     },
     hasCachedImage(url) { const key = imageKey(url); return key !== null && imageCache.has(key); },

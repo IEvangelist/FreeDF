@@ -108,6 +108,16 @@ zero overhead or of public-network performance.
 
 ## Editor operation inventory
 
+Pages with form fields show a keyboard-accessible **Fill out | Edit** toggle
+above the page. Each opened document starts in **Edit**, for selecting, moving,
+resizing and authoring fields. Choose **Fill out** to type values or operate
+checkboxes and other form controls without moving them. The mode stays selected
+while navigating or saving that document; changing mode does not modify the PDF,
+its dirty state or undo history. `--forms` covers both modes and their toggle.
+`--annotations` checks real note creation, property editing and save/reopen.
+The experimental render-replica pool remains opt-in with `?pool=1`; replicas do
+not yet share lazy fallback-font assets, so it is not the default editor path.
+
 | Existing editor action | Browser host |
 |---|---|
 | New document, paper sizes/orientation; open picker; PDF drop | Local; dropping onto an open document imports its pages, as in EditorWeb |
@@ -117,7 +127,7 @@ zero overhead or of public-network performance.
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
 | Redaction | Same content-removing redactor: arbitrary paths/strokes/clips, rotated content, per-invocation shared/nested Forms, partial inline/stencil image blanking and hidden optional content; not a painted-cover substitute |
-| Forms: text, button and choice fields | Select mode exposes on-page text/comb/multiline, editable combo/multi-select list, checkbox and radio controls with native Tab/Space interaction and field undo; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
+| Forms: text, button and choice fields | The in-page Fill out / Edit toggle defaults to Edit for layout authoring. Fill out in Select mode exposes text/comb/multiline, editable combo/multi-select list, checkbox and radio controls with native Tab/Space interaction and field undo; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
 | Page rotate/delete/reorder/duplicate; blank insert; merge/import | Same page editor |
 | Title/document metadata; search/case matching/highlights | Same local session |
 | Save / Save as / Download; PDF page-range extraction | Downloads a copy; cannot overwrite the original filesystem path |
@@ -710,3 +720,11 @@ Caveats kept from the child reports:
 * **CJK fallback:** the reference comparison against Edge was unreliable on the development machine (Edge drew mojibake); CJK is covered by fixtures and unit tests, not pixel parity. Serif CJK uses the sans design.
 * **Samples 17/18:** now offered because `window.pdfEditorCapabilities.openEncrypted` is set in `<head>` before the menu renders; verified in `--samples` and `--protection` Chromium smokes.
 * **Not full parity:** every matrix row that was Partial stays Partial (15 Partial / 0 Todo); nothing here is a full ISO 32000-2 parity claim. Startup byte delta versus the pre-batch tree was not re-measured on a control publish; the lazy font/sample bytes above are additive and outside startup.
+
+## Integration batch 3 (worker pool, annotation and form authoring)
+
+Cherry-picked in order on top of batch 2 (`27da5b9`): worker render-replica pool with band rendering and snapshot route (`343c8e2`, `91c9bfd`, `b23c588`); annotation authoring API, editor commands and fixes (`dcdbff0`, `107cd58`, `579b7b7`); AcroForm field authoring, editor UI and indexing (`2f62a3d`, `d7253b0`, `7617a72`). The signature-trust/PAdES-LTV commits (`6b58e96`, `a1464e8`) were **not integrated**: they add an `HttpClient` RFC 3161 client to `PortableDocument.Document`, which fails the guard tests `Document_assembly_has_no_process_or_network_dependency` and `Opening_listing_rendering_and_saving_never_touch_external_targets` (and the assembly is shipped to the browser). That branch needs the network client moved out of the Document assembly (and its pending re-review) before it can land.
+
+Integration fix: form-fill appearance generation registered a standard font in the AcroForm `/DR`, which broke `DocMdpTests.Editor_form_fill_after_certification_is_permitted_by_p2`; appearance fonts are now created without touching `/DR`. Conflicts (publish asset list, smoke flags, `EditorSession` page-history capture for annotation/form operations, undo status text) were merged keeping both sides.
+
+Status stays **Partial** for the annotation, form, action and rendering rows: authoring covers the implemented annotation/field types with generated appearances, not every ISO 32000-2 annotation or widget behaviour; signatures/PAdES-LTV remain as documented before this batch. **The worker pool ships opt-in (`?pool=1`), not on by default:** with it enabled the Chromium recovery smoke ("Resume retains exact original-font/geometry raster fidelity") fails, because render replicas have no fallback-font asset source (batch 2) and so can draw non-embedded text differently from the primary engine. Enabling it by default needs the replicas to receive the same lazy font assets (or a hash parity check) first. Pool speed-ups are measured on a non-AOT build in the child report (`docs/performance/2026-10-30-worker-pool.md`); AOT/SIMD pool timing was not measured there and the pool benchmark (`--pool`) was not rerun here.
