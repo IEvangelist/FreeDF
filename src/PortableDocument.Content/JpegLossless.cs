@@ -87,7 +87,8 @@ public static partial class JpegDecoder
                 diff = t == 0 ? 0 : t == 16 ? 32768 : Extend(br.Bits(t), t);
             }
             int pred;
-            if (first[ci]) { pred = initial; first[ci] = false; }
+            if (predictor == 0) { pred = 0; first[ci] = false; } // differential frames code the sample value directly (T.81 J.1.3.2)
+            else if (first[ci]) { pred = initial; first[ci] = false; }
             else if (y == startRow[ci]) pred = raw[o - 1];
             else if (x == 0) pred = raw[o - stride];
             else

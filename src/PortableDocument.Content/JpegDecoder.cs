@@ -13,6 +13,8 @@ public static partial class JpegDecoder
     sealed class Comp
     {
         public int Id, H, V, Tq, Td, Ta, Pred, BW, BH, RealBW, RealBH, CW, CH, Stride;
+        public bool NoPred; // differential DCT frames code DC coefficients without prediction (T.81 J.1.3.1)
+        public int[]? Q; // quantisation table in effect at the component's first scan (hierarchical frames redefine tables)
         public short[] Coef = [];
         public ushort[]? Raw;
     }
@@ -111,6 +113,7 @@ public static partial class JpegDecoder
                         else c.Coef = new short[c.BW * c.BH * 64];
                     }
                     break;
+                case 0xDE: return DecodeHierarchical(d, out width, out height, out ncomp);
                 case 0xC5 or 0xC6 or 0xC7 or 0xCD or 0xCE or 0xCF: return null;
                 case 0xCC:
                     for (var q = seg; q + 1 < end; q += 2)
@@ -310,6 +313,7 @@ public static partial class JpegDecoder
 
     static void Sequential(BitReader br, Comp c, Huff? dc, Huff? ac, Span<short> coef)
     {
+        if (c.NoPred) c.Pred = 0;
         var t = br.Sym(dc);
         if (t != 0) c.Pred += Extend(br.Bits(t), t);
         coef[0] = (short)c.Pred;
@@ -327,6 +331,7 @@ public static partial class JpegDecoder
 
     static void DcFirst(BitReader br, Comp c, Huff? dc, Span<short> coef, int al)
     {
+        if (c.NoPred) c.Pred = 0;
         var t = br.Sym(dc);
         if (t != 0) c.Pred += Extend(br.Bits(t), t);
         coef[0] = (short)(c.Pred << al);
