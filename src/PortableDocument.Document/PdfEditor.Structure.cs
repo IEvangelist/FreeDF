@@ -15,7 +15,67 @@ public sealed partial class PdfEditor
 {
     /// <param name="PagesTagged">Pages whose content was rewritten.</param>
     /// <param name="PagesSkipped">Pages left alone because their content already contains marked content or could not be decoded.</param>
-    public sealed record AutoTagResult(int PagesTagged, int PagesSkipped, int TextBlocks, int ArtifactBlocks);
+    /// <param name="TextBlocks">P elements created (text objects and Form XObjects that paint text).</param>
+    /// <param name="FigureBlocks">Figure elements created for images; they have no alternate text and need an author.</param>
+    /// <param name="ArtifactBlocks">Vector paths and shadings marked as Artifact; real content could be hidden here, so review them.</param>
+    /// <param name="NeedsReview">Always true: the structure is flat and inferred only from content order. The catalog is marked /Suspects true until reviewed.</param>
+    public sealed record AutoTagResult(int PagesTagged, int PagesSkipped, int TextBlocks, int FigureBlocks, int ArtifactBlocks, bool NeedsReview = true);
+
+    /// <summary>Adds many structure elements under <paramref name="parent"/> in one pass (linear, unlike repeated <see cref="AddStructureElement"/> calls on a large parent).</summary>
+    public IReadOnlyList<PdfRef> AddStructureElements(PdfRef parent, IEnumerable<string> types)
+    {
+        Require(PdfPermissions.Modify);
+        var kids = StructKids(StructDict(parent, nameof(parent)));
+        var added = new List<PdfRef>();
+        foreach (var type in types)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(type);
+            var element = AddObject(new PdfDictionary(new Dictionary<string, PdfObject> { ["Type"] = new PdfName("StructElem"), ["S"] = new PdfName(type), ["P"] = parent }));
+            kids.Add(element);
+            added.Add(element);
+        }
+        SetStructKids(parent, kids);
+        return added;
+    }
+
+    bool FormPaintsText(PdfStream form, PdfDictionary? inherited, int depth, HashSet<PdfStream> seen)
+    {
+        if (depth > 8 || !seen.Add(form)) return false;
+        var resources = Res(form.Dict.Get("Resources")) as PdfDictionary ?? inherited;
+        var lex = new PdfLexer(_src is not null ? _src.DecodeStream(form) : form.RawData);
+        string? name = null;
+        for (var tokens = 0; tokens++ < 5_000_000;)
+        {
+            lex.SkipWhite();
+            if (lex.Pos >= lex.Length) break;
+            var before = lex.Pos;
+            PdfObject? o;
+            try { o = lex.ReadObject(false); }
+            catch (PdfParseException) { lex.Pos = before + 1; continue; }
+            if (o is null) break;
+            if (lex.Pos <= before) lex.Pos = before + 1;
+            if (o is PdfName n) { name = n.Value; continue; }
+            if (o is not PdfKeyword kw) continue;
+            if (kw.Value is "Tj" or "TJ" or "'" or "\"") return true;
+            if (kw.Value == "Do" && name is not null
+                && Res((Res(resources?.Get("XObject")) as PdfDictionary)?.Get(name)) is PdfStream inner && Res(inner.Dict.Get("Subtype")).AsName() == "Form"
+                && FormPaintsText(inner, resources, depth + 1, seen)) return true;
+            name = null;
+        }
+        return false;
+    }
+
+    ContentAutoTagger.DoKind ClassifyXObject(int page, string name)
+    {
+        var resources = Res(((PdfDictionary)_objs[page]).Get("Resources")) as PdfDictionary;
+        if (Res((Res(resources?.Get("XObject")) as PdfDictionary)?.Get(name)) is not PdfStream xo) return ContentAutoTagger.DoKind.Artifact;
+        return Res(xo.Dict.Get("Subtype")).AsName() switch
+        {
+            "Image" => ContentAutoTagger.DoKind.Figure,
+            "Form" => FormPaintsText(xo, resources, 0, new HashSet<PdfStream>(ReferenceEqualityComparer.Instance)) ? ContentAutoTagger.DoKind.Text : ContentAutoTagger.DoKind.Artifact,
+            _ => ContentAutoTagger.DoKind.Artifact,
+        };
+    }
 
     byte[] PageContentBytes(int index)
     {
@@ -33,9 +93,10 @@ public sealed partial class PdfEditor
     }
 
     /// <summary>
-    /// Conservatively tags an untagged document: each text object becomes a P (MCID) under a single Document element in content order, and all other painted
-    /// content is marked as an Artifact. Nothing is inferred about headings, lists, tables or figures and no alternate text is invented, so the result is
-    /// structurally consistent but not accessible until reviewed. Pages that already contain marked content are left untouched; documents with a structure tree throw.
+    /// Conservatively tags an untagged document in content order under one Document element: text objects and Form XObjects that paint text become P, images
+    /// become Figure elements without alternate text, and only vector paths and shadings are marked as Artifact. Nothing else is inferred, so the result is
+    /// structurally consistent but not accessible: /MarkInfo /Suspects is set to true until a person reviews it (clear it with <see cref="SetCatalogEntry"/>).
+    /// Pages that already contain marked content are left untouched; documents with a structure tree throw.
     /// </summary>
     public AutoTagResult AutoTagUntagged()
     {
@@ -46,21 +107,34 @@ public sealed partial class PdfEditor
         for (var i = 0; i < PageCount; i++)
         {
             ContentAutoTagger.Result r;
-            try { r = ContentAutoTagger.Tag(PageContentBytes(i)); }
+            try { var page = _pages[i]; r = ContentAutoTagger.Tag(PageContentBytes(i), name => ClassifyXObject(page, name)); }
             catch (Exception e) when (e is PdfParseException or NotSupportedException or InvalidDataException or InvalidOperationException) { skipped++; continue; }
             if (r.AlreadyMarked) { skipped++; continue; }
-            if (r.TextBlocks + r.ArtifactBlocks > 0) tagged.Add((i, r));
+            if (r.Blocks.Count + r.ArtifactBlocks > 0) tagged.Add((i, r));
         }
-        if (tagged.Count == 0) return new AutoTagResult(0, skipped, 0, 0);
+        if (tagged.Count == 0) return new AutoTagResult(0, skipped, 0, 0, 0);
 
         var document = AddStructureElement(EnsureStructureRoot(), "Document");
-        foreach (var (page, r) in tagged)
+        var all = tagged.SelectMany(t => t.Result.Blocks.Select((role, mcid) => (t.Page, mcid, role))).ToList();
+        var elements = AddStructureElements(document, all.Select(a => a.role));
+        for (var i = 0; i < all.Count; i++)
         {
-            SetContentOverride(page, r.Content);
-            for (var m = 0; m < r.TextBlocks; m++) AddStructureMarkedContent(AddStructureElement(document, "P"), page, m);
+            // New elements have no kids yet, so each gets its single MCR directly instead of going through the copy-on-write helpers.
+            var el = elements[i];
+            var d = (PdfDictionary)_objs[el.Number];
+            _objs[el.Number] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries)
+            {
+                ["Pg"] = new PdfRef(_pages[all[i].Page], 0),
+                ["K"] = new PdfInteger(all[i].mcid),
+            });
         }
+        foreach (var (page, r) in tagged) SetContentOverride(page, r.Content);
+        var catalog = (PdfDictionary)_objs[_catalog];
+        var markInfo = Res(catalog.Get("MarkInfo")) is PdfDictionary mi ? new Dictionary<string, PdfObject>(mi.Entries) : [];
+        markInfo["Suspects"] = new PdfBoolean(true);
+        _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(catalog.Entries) { ["MarkInfo"] = new PdfDictionary(markInfo) });
         RebuildParentTree();
-        return new AutoTagResult(tagged.Count, skipped, tagged.Sum(t => t.Result.TextBlocks), tagged.Sum(t => t.Result.ArtifactBlocks));
+        return new AutoTagResult(tagged.Count, skipped, all.Count(a => a.role == "P"), all.Count(a => a.role == "Figure"), tagged.Sum(t => t.Result.ArtifactBlocks));
     }
 
     /// <summary>The indirect reference to the catalog's /StructTreeRoot, or null for an untagged document.</summary>
@@ -220,6 +294,14 @@ public sealed partial class PdfEditor
         SetStructEntry(element, "P", newParent);
     }
 
+    PdfRef? EffectiveStructurePage(PdfRef element)
+    {
+        var guard = 0;
+        for (PdfRef? cur = element; cur is not null && guard++ < StructureTree.MaxDepth * 4 && _objs.GetValueOrDefault(cur.Number) is PdfDictionary cd; cur = cd.Get("P") as PdfRef)
+            if (cd.Get("Pg") is PdfRef pg) return pg;
+        return null;
+    }
+
     /// <summary>Deletes an element and its descendants (or, with <paramref name="keepChildren"/>, re-attaches its children to its parent in its place). Returns the number of elements deleted.</summary>
     public int RemoveStructureElement(PdfRef element, bool keepChildren = false)
     {
@@ -230,11 +312,31 @@ public sealed partial class PdfEditor
         var removed = 0;
         if (keepChildren)
         {
+            // Children inherit /Pg (for bare MCIDs and page-less MCRs) and /Lang from the element being removed, so make both explicit first.
+            var effectivePage = EffectiveStructurePage(element);
+            var inheritedLang = Res(d.Get("Lang")) as PdfString;
             var kids = StructKids(StructDict(parent, "parent"));
             var own = StructKids(d);
-            kids.InsertRange(at, own);
+            var carried = new List<PdfObject>(own.Count);
+            foreach (var k in own)
+            {
+                var kid = Res(k);
+                if (kid is PdfInteger { Value: >= 0 } n && effectivePage is { } ep)
+                    carried.Add(new PdfDictionary(new Dictionary<string, PdfObject> { ["Type"] = new PdfName("MCR"), ["Pg"] = ep, ["MCID"] = n }));
+                else if (kid is PdfDictionary { } md && Res(md.Get("Type")).AsName() == "MCR" && md.Get("Pg") is null && effectivePage is { } ep2)
+                    carried.Add(k is PdfRef ? k : new PdfDictionary(new Dictionary<string, PdfObject>(md.Entries) { ["Pg"] = ep2 }));
+                else carried.Add(k);
+                if (k is PdfRef kr && kid is PdfDictionary kd && Res(kd.Get("Type")).AsName() is not ("MCR" or "OBJR"))
+                {
+                    SetStructEntry(kr, "P", parent);
+                    if (kd.Get("Pg") is null && effectivePage is { } cp) SetStructEntry(kr, "Pg", cp);
+                    if (kd.Get("Lang") is null && inheritedLang is not null) SetStructEntry(kr, "Lang", inheritedLang);
+                }
+                else if (k is PdfRef mr && kid is PdfDictionary mk && Res(mk.Get("Type")).AsName() == "MCR" && mk.Get("Pg") is null && effectivePage is { } ep3)
+                    SetStructEntry(mr, "Pg", ep3);
+            }
+            kids.InsertRange(at, carried);
             SetStructKids(parent, kids);
-            foreach (var k in own) if (k is PdfRef kr && _objs.TryGetValue(kr.Number, out var ko) && ko is PdfDictionary kd && Res(kd.Get("Type")).AsName() is not ("MCR" or "OBJR")) SetStructEntry(kr, "P", parent);
             _objs.Remove(element.Number); _deleted.Add(element.Number);
             return 1;
         }
@@ -266,6 +368,7 @@ public sealed partial class PdfEditor
         var objects = new Dictionary<int, PdfRef>();
         var seen = new HashSet<int>();
         int elements = 0, skipped = 0;
+        var bounded = false;
 
         void Claim(Dictionary<int, SortedDictionary<int, PdfRef>> map, int owner, int mcid, PdfRef element)
         {
@@ -303,7 +406,8 @@ public sealed partial class PdfEditor
         while (work.Count > 0)
         {
             var (cur, depth, inherited) = work.Pop();
-            if (depth > StructureTree.MaxDepth || elements >= StructureTree.MaxNodes || !seen.Add(cur.Number)) { skipped++; continue; }
+            if (depth > StructureTree.MaxDepth || elements >= StructureTree.MaxNodes) { bounded = true; break; }
+            if (!seen.Add(cur.Number)) { skipped++; continue; }
             if (Res(cur) is not PdfDictionary d) { skipped++; continue; }
             elements++;
             var page = (d.Get("Pg") as PdfRef)?.Number ?? inherited;
@@ -313,6 +417,10 @@ public sealed partial class PdfEditor
                 if (kids[i] is PdfRef kr && Res(kr) is PdfDictionary kd && Res(kd.Get("Type")).AsName() is not ("MCR" or "OBJR")) work.Push((kr, depth + 1, page));
                 else if (kids[i] is PdfDictionary direct && Res(direct.Get("Type")).AsName() is not ("MCR" or "OBJR")) skipped++;
         }
+
+        // A partial map would silently drop valid owners, so a bound hit refuses the rebuild before anything is written.
+        if (bounded)
+            throw new InvalidOperationException($"the structure tree exceeds the supported depth ({StructureTree.MaxDepth}) or size ({StructureTree.MaxNodes} elements); the ParentTree was not rebuilt");
 
         var claimed = new HashSet<int>();
         var oldNext = Res(root.Get("ParentTreeNextKey")).AsNumber() is { } nk and >= 0 ? (int)nk : 0;
@@ -384,6 +492,37 @@ public sealed partial class PdfEditor
             {
                 var ne = new Dictionary<string, PdfObject>(dict.Entries) { ["StructParent"] = new PdfInteger(key) };
                 _objs[num] = oo is PdfStream st ? new PdfStream(new PdfDictionary(ne), st.RawData) : new PdfDictionary(ne);
+            }
+        }
+
+        // Owners that are no longer part of the tree must not keep keys that now mean something else (or point into the dropped ParentTree).
+        var pageSet = new HashSet<int>(_pages);
+        foreach (var (num, o) in _objs.ToList())
+        {
+            switch (o)
+            {
+                case PdfDictionary d:
+                    var dropPage = d.Get("StructParents") is not null && pageSet.Contains(num) && !pageMcids.ContainsKey(num);
+                    var dropObj = d.Get("StructParent") is not null && !objects.ContainsKey(num);
+                    if (dropPage || dropObj)
+                    {
+                        var ne = new Dictionary<string, PdfObject>(d.Entries);
+                        if (dropPage) ne.Remove("StructParents");
+                        if (dropObj) ne.Remove("StructParent");
+                        _objs[num] = new PdfDictionary(ne);
+                    }
+                    break;
+                case PdfStream s:
+                    var dropStm = s.Dict.Get("StructParents") is not null && !streamMcids.ContainsKey(num);
+                    var dropStmObj = s.Dict.Get("StructParent") is not null && !objects.ContainsKey(num);
+                    if (dropStm || dropStmObj)
+                    {
+                        var ne = new Dictionary<string, PdfObject>(s.Dict.Entries);
+                        if (dropStm) ne.Remove("StructParents");
+                        if (dropStmObj) ne.Remove("StructParent");
+                        _objs[num] = new PdfStream(new PdfDictionary(ne), s.RawData);
+                    }
+                    break;
             }
         }
 

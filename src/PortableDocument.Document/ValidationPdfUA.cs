@@ -382,14 +382,19 @@ internal static partial class PdfUAChecks
             .Where(h => h.Scope is "Row" or "Column" or "Both")
             .ToList();
         var sharing = placed.Where(p => p.Cell.StandardType == "TH").ToList();
+        var anyScope = headers.Count > 0;
         foreach (var p in placed.Where(p => p.Cell.StandardType == "TD"))
         {
             if (headerAttributes.GetValueOrDefault(p.Cell) is not null) continue;
-            // Empirical (veraPDF corpus): every TH sharing a row or column with the TD must carry a valid /Scope, and at least one must exist.
             var related = sharing.Where(h => (h.Col < p.Col + p.ColSpan && p.Col < h.Col + h.ColSpan) || (h.Row < p.Row + p.RowSpan && p.Row < h.Row + h.RowSpan)).ToList();
-            var connected = related.Count > 0 && related.All(h => headers.Any(s => ReferenceEquals(s.p.Cell, h.Cell)));
-            if (!connected)
-                c.Add("PDFUA-TABLE-HEADER-CONNECTION", ValidationSeverity.Error, "TD has neither /Headers nor a TH with a covering /Scope, so its header cells are not determinable (veraPDF PDFUA-1 7.5-1)", "ISO 14289-1 7.5", p.Cell.PageIndex);
+            var allScoped = related.Count > 0 && related.All(h => headers.Any(s => ReferenceEquals(s.p.Cell, h.Cell)));
+            if (!anyScope)
+            {
+                c.Add("PDFUA-TABLE-HEADER-CONNECTION", ValidationSeverity.Error, "no TD has /Headers and no TH has a valid /Scope, so the table's header cells are not determinable (ISO 14289-1 7.5; veraPDF PDFUA-1 7.5-1)", "ISO 14289-1 7.5", p.Cell.PageIndex);
+                break;
+            }
+            else if (!allScoped)
+                c.Add("PDFUA-TABLE-HEADER-SCOPE-PARTIAL", ValidationSeverity.Warning, "a TD shares a row or column with a TH that has no valid /Scope (veraPDF rejects this in its corpus; the exact veraPDF semantics, including Scope direction, are not reproduced, so this is advisory)", "ISO 14289-1 7.5", p.Cell.PageIndex);
         }
     }
 

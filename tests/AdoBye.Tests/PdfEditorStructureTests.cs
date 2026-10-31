@@ -125,6 +125,67 @@ public class PdfEditorStructureTests
     }
 
     [Fact]
+    public void RebuildRefusesTreesBeyondTheBoundsInsteadOfWritingAPartialMap()
+    {
+        var e = Open();
+        var root = e.EnsureStructureRoot();
+        var parent = e.AddStructureElement(root, "Document");
+        var p = e.AddStructureElement(parent, "P");
+        e.AddStructureMarkedContent(p, 0, 0);
+        e.RebuildParentTree();
+        var before = e.Save();
+
+        for (var i = 0; i < StructureTree.MaxDepth + 5; i++) parent = e.AddStructureElement(parent, "Div");
+        var ex = Assert.Throws<InvalidOperationException>(() => e.RebuildParentTree());
+        Assert.Contains("not rebuilt", ex.Message);
+        // Nothing was written: the ParentTree and keys are exactly as before the failed rebuild.
+        var tree = Reload(e).Structure!;
+        Assert.Equal("P", tree.ElementFromParentTree(0, 0)!.Type);
+        Assert.Equal(1, tree.ParentTreeLookup(0) is PdfArray a ? a.Count : -1);
+        Assert.NotEmpty(before);
+    }
+
+    [Fact]
+    public void RebuildClearsKeysOfOwnersThatLeftTheTree()
+    {
+        var (e, _, p1, p2, link) = Tagged();
+        e.RebuildParentTree();
+        e.RemoveStructureElement(link);
+        e.RemoveStructureElement(p1);
+        e.RemoveStructureElement(p2);
+        var result = e.RebuildParentTree();
+        Assert.Equal(0, result.ParentTreeEntries);
+        var loaded = Reload(e);
+        Assert.Null(FirstAnnotation(loaded).Get("StructParent"));
+        Assert.Null(loaded.Pages[0].Dict.Get("StructParents"));
+    }
+
+    [Fact]
+    public void KeepChildrenPreservesInheritedPageAndLang()
+    {
+        var bodies = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R /MarkInfo << /Marked true >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /StructParents 0 >>",
+            ObjPdf.Stream(Content),
+            "<< /Type /StructTreeRoot /K 6 0 R /ParentTree << /Nums [0 [7 0 R 7 0 R]] >> >>",
+            "<< /Type /StructElem /S /Document /P 5 0 R /K 7 0 R >>",
+            "<< /Type /StructElem /S /Sect /P 6 0 R /Pg 3 0 R /Lang (fr) /K [0 1] /Alt (kept?) >>",
+        };
+        var e = PdfEditor.Open(PdfDocument.Load(ObjPdf.Build(bodies)));
+        Assert.Equal(1, e.RemoveStructureElement(new PdfRef(7, 0), keepChildren: true));
+        e.RebuildParentTree();
+
+        var tree = Reload(e).Structure!;
+        var document = Assert.Single(tree.Children);
+        Assert.Equal([0, 1], document.MarkedContent.Select(m => m.Mcid));
+        Assert.All(document.MarkedContent, m => Assert.Equal(0, m.PageIndex));
+        Assert.Equal("Document", tree.ElementFromParentTree(0, 0)!.Type);
+        Assert.Equal("Document", tree.ElementFromParentTree(0, 1)!.Type);
+    }
+
+    [Fact]
     public void ReportsNoTreeAndSkipsDirectElements()
     {
         Assert.Throws<InvalidOperationException>(() => Open().RebuildParentTree());
@@ -172,27 +233,60 @@ public class PdfEditorStructureTests
         var e = OpenUntagged(Untagged);
         var before = PortableDocument.Render.PortableDocument.RenderPage(PdfDocument.Load(e.Save()).Pages[0], 72).ToPng();
         var result = e.AutoTagUntagged();
-        Assert.Equal(new PdfEditor.AutoTagResult(1, 0, 2, 4), result);
+        Assert.Equal(new PdfEditor.AutoTagResult(1, 0, 2, 1, 3), result);
 
         var doc = Reload(e);
         // Tagging must not change what is drawn.
         Assert.Equal(before, PortableDocument.Render.PortableDocument.RenderPage(doc.Pages[0], 72).ToPng());
         var tree = doc.Structure!;
         NoIssues(tree);
-        Assert.Equal(["Document", "P", "P"], tree.Elements().Select(x => x.Type));
-        Assert.Equal(new[] { 0, 1 }, tree.Elements().Skip(1).Select(x => x.MarkedContent.Single().Mcid));
+        Assert.Equal(["Document", "P", "P", "Figure"], tree.Elements().Select(x => x.Type));
+        Assert.Equal(new[] { 0, 1, 2 }, tree.Elements().Skip(1).Select(x => x.MarkedContent.Single().Mcid));
         var report = PdfValidator.ValidatePdfUA(doc, 1);
         Assert.False(report.Has("PDFUA-CONTENT-UNTAGGED"));
         Assert.False(report.Has("PDFUA-MCID-UNMAPPED"));
         Assert.False(report.Has("PDFUA-MCID-MISSING"));
-        Assert.True(report.Has("PDFUA-TITLE") || report.Has("PDFUA-XMP-MISSING"), "auto-tagging does not claim PDF/UA conformance");
+        // Not an accessibility claim: the catalog is Suspects, images need alt text, and metadata is missing.
+        Assert.True(report.Has("PDFUA-SUSPECTS"));
+        Assert.True(report.Has("PDFUA-ALT-MISSING"));
+        Assert.False(report.IsCompliant);
+    }
+
+    [Fact]
+    public void AutoTagTreatsFormsThatPaintTextAsParagraphs()
+    {
+        var textForm = ObjPdf.Stream("BT /F1 9 Tf 0 0 Td (inner) Tj ET", "/Type /XObject /Subtype /Form /BBox [0 0 100 100] /Resources << /Font << /F1 5 0 R >> >>");
+        var bodies = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /Lang (en) >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Fm0 6 0 R /Fm1 7 0 R >> >> >>",
+            ObjPdf.Stream("/Fm0 Do /Fm1 Do"),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            textForm,
+            ObjPdf.Stream("0 0 5 5 re f", "/Type /XObject /Subtype /Form /BBox [0 0 100 100]"),
+        };
+        var e = PdfEditor.Open(PdfDocument.Load(ObjPdf.Build(bodies)));
+        Assert.Equal(new PdfEditor.AutoTagResult(1, 0, 1, 0, 1), e.AutoTagUntagged());
+        Assert.Equal(["Document", "P"], Reload(e).Structure!.Elements().Select(x => x.Type));
+    }
+
+    [Fact]
+    public void AutoTagScalesLinearlyWithManyTextObjects()
+    {
+        var content = string.Concat(Enumerable.Repeat("BT 0 0 Td (x) Tj ET\n", 20_000));
+        var e = OpenUntagged(content);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = e.AutoTagUntagged();
+        Assert.Equal(20_000, result.TextBlocks);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"took {sw.Elapsed}");
     }
 
     [Fact]
     public void AutoTagLeavesMarkedPagesAndTaggedDocumentsAlone()
     {
         var marked = OpenUntagged("/Span <</Lang (en)>> BDC BT 10 50 Td (x) Tj ET EMC");
-        Assert.Equal(new PdfEditor.AutoTagResult(0, 1, 0, 0), marked.AutoTagUntagged());
+        Assert.Equal(new PdfEditor.AutoTagResult(0, 1, 0, 0, 0), marked.AutoTagUntagged());
         Assert.Null(marked.StructureRoot);
 
         var tagged = OpenUntagged(Untagged);
