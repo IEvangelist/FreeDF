@@ -36,6 +36,7 @@ static class EditorFormAuthoring
             await page.Locator("#dl").ClickAsync();
             await page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync();
         });
+        await page.Locator(".mdl").WaitForAsync(new() { State = WaitForSelectorState.Detached });
         return await download.PathAsync() ?? throw new Exception("No downloaded PDF.");
     }
 
@@ -126,6 +127,17 @@ static class EditorFormAuthoring
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Flatten form" }).HoverAsync();
         await page.Locator(".cm.sub .cm-i").Filter(new() { HasTextString = "All fields" }).ClickAsync();
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .ffbox').length === n", 0);
+        // A completed file download can precede the Save modal closing; undo must wait for the UI, not just the file.
+        await page.EvaluateAsync("""
+            () => {
+              const original = pdfHost.download.bind(pdfHost);
+              pdfHost.download = async (...args) => {
+                pdfHost.download = original;
+                await original(...args);
+                await new Promise(resolve => setTimeout(resolve, 750));
+              };
+            }
+            """);
         var flat = PdfDocument.Open(await Save(page));
         Check(flat.GetFormFields().Count == 0 && flat.File.Catalog.Get("AcroForm") is null, "flattened PDF has no AcroForm");
         Check(!flat.Pages[0].GetAnnotations().Any(a => a.Subtype == "Widget"), "flattened PDF has no widgets");
