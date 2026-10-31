@@ -94,12 +94,12 @@ static class EditorPageImage
                       let failed=false,calls=0;
                       window.__originalPageImage=original;
                       window.__imageRetryState=()=>({failed,calls});
-                      window.pdfHost[method]=async url=>{
+                      window.pdfHost[method]=async (url,options)=>{
                         if(url.includes('/api/page/')) {
                           calls++;
                           if(!failed) { failed=true; return method==='imageBlob'?new Blob([new Uint8Array([0])],{type:'image/png'}):'data:image/png;base64,AA=='; }
                         }
-                        return original(url);
+                        return original(url,options);
                       };
                     }
                     """);
@@ -123,9 +123,9 @@ static class EditorPageImage
                     () => {
                       const original=window.__originalPageImage;
                       const method=window.__pageImageMethod;
-                      window.pdfHost[method]=async url=>url.includes('/api/page/')
+                      window.pdfHost[method]=async (url,options)=>url.includes('/api/page/')
                         ? method==='imageBlob'?new Blob([new Uint8Array([0])],{type:'image/png'}):'data:image/png;base64,AA=='
-                        : original(url);
+                        : original(url,options);
                     }
                     """);
                 await page.Locator("#zi").ClickAsync();

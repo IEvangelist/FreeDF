@@ -122,11 +122,29 @@
 <script>
 addEventListener('editor-ready', () => {
 const host = window.pdfHost;
-let recovery = null, samples = null;
+let recovery = null, samples = null, documentEpoch = 0;
 const request = async (url, options) => {
-  const response = await (host ? host.request(url, options) : fetch(url, options));
-  if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
-  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery', '/api/unlock'].includes(url.split('?')[0])) {
+  const replacesDocument = options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery', '/api/unlock'].includes(url.split('?')[0]);
+  if (replacesDocument) {
+    documentEpoch++; selectionEpoch++; buildEpoch++;
+    clearTimeout(baseRenderTimer); cancelNeighborPrefetch(); thumbnailObserver?.disconnect();
+  }
+  const document = documentEpoch;
+  let response;
+  try {
+    response = await (host ? host.request(url, options) : fetch(url, options));
+    if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
+  } catch (error) {
+    if (replacesDocument && document === documentEpoch) {
+      $('thumbs').querySelectorAll('img').forEach(img => {
+        img.dataset.documentEpoch = documentEpoch;
+        thumbnailObserver?.observe(img);
+      });
+      scheduleNeighborPrefetch();
+    }
+    throw error;
+  }
+  if (replacesDocument) {
     selectionEpoch++; buildEpoch++; clearTimeout(baseRenderTimer); shownPage = -1;
     clip = null; pendingUploads.clear(); assetImages.clear();
     if (url.split('?')[0] !== '/api/unlock') formUi?.reset();
@@ -232,9 +250,10 @@ function spanProps() {
 let thumbnailObserver;
 async function setImage(img, url) {
   img.dataset.url = url;
-  const current = () => img.isConnected && img.dataset.url === url;
+  const current = () => img.isConnected && img.dataset.url === url && (img.dataset.documentEpoch === undefined || Number(img.dataset.documentEpoch) === documentEpoch);
   try {
-    const source = await imageUrl(url);
+    if (!current()) return;
+    const source = host && url.startsWith('/api/page/') ? await host.image(url, { current }) : await imageUrl(url);
     if (!await pagePresentationReady(current)) return;
     img.src = source;
     await img.decode();
@@ -246,7 +265,7 @@ async function setImage(img, url) {
 function queueThumbnail(img, url) {
   img.dataset.url = url;
   setTimeout(() => {
-    if (!img.isConnected || img.dataset.url !== url) return;
+    if (!img.isConnected || img.dataset.url !== url || Number(img.dataset.documentEpoch) !== documentEpoch) return;
     setImage(img, url).catch(reportError);
   }, 0);
 }
@@ -284,7 +303,10 @@ async function refresh(retainedUndo = null) {
       queueThumbnail(entry.target, entry.target.dataset.url);
     }
   }, { root: t });
-  t.querySelectorAll('img').forEach(img => thumbnailObserver.observe(img));
+  t.querySelectorAll('img').forEach(img => {
+    img.dataset.documentEpoch = documentEpoch;
+    thumbnailObserver.observe(img);
+  });
 }
 
 let selectionEpoch = 0;
@@ -314,17 +336,18 @@ addEventListener('pointerdown', cancelNeighborPrefetch, true);
 addEventListener('keydown', cancelNeighborPrefetch, true);
 function scheduleNeighborPrefetch() {
   cancelNeighborPrefetch();
-  const epoch = neighborPrefetchEpoch;
+  const epoch = neighborPrefetchEpoch, document = documentEpoch;
   const page = sel + 1, version = state.version;
   if (!host || page >= state.pageCount) return;
   const url = `/api/page/${page}.png?dpi=40&v=${version}&bare=${!preview}`;
   neighborPrefetchTimer = setTimeout(() => {
     neighborPrefetchTimer = 0;
-    if (state.version !== version || sel + 1 !== page) return;
-    host.image(url).then(() => {
+    const current = () => state.version === version && sel + 1 === page && document === documentEpoch;
+    if (!current() || epoch !== neighborPrefetchEpoch) return;
+    host.image(url, { current }).then(() => {
       if (state.version === version && sel + 1 === page && epoch === neighborPrefetchEpoch)
         return pageSelection(page);
-    }).catch(error => console.warn(`Neighbor page ${page + 1} preview prefetch failed.`, error));
+    }).catch(error => { if (current()) console.warn(`Neighbor page ${page + 1} preview prefetch failed.`, error); });
   }, 250);
 }
 async function select(retainedUndo = null) {
@@ -391,11 +414,11 @@ async function pagePresentationReady(current) {
   return current();
 }
 
-async function decodeBase(url, epoch, retry = 0) {
+async function decodeBase(url, epoch, { pool = true } = {}, retry = 0) {
   let objectUrl;
   try {
     const source = host?.imageBlob
-      ? objectUrl = URL.createObjectURL(await host.imageBlob(url))
+      ? objectUrl = URL.createObjectURL(await host.imageBlob(url, { current: () => epoch === buildEpoch, pool }))
       : await imageUrl(url);
     if (!await pagePresentationReady(() => epoch === buildEpoch)) return false;
     const candidate = new Image();
@@ -414,7 +437,7 @@ async function decodeBase(url, epoch, retry = 0) {
       if (pageImageRetryEpoch === epoch) { reportError(new Error(`Page ${sel + 1} image failed to load after retry.`)); return; }
       pageImageRetryEpoch = epoch;
       host?.evictImage?.(url);
-      decodeBase(url, epoch, 1).catch(reportError);
+      decodeBase(url, epoch, { pool }, 1).catch(reportError);
     };
     if (old) old.replaceWith(candidate);
     else if ($('page')) $('page').prepend(candidate);
@@ -434,7 +457,7 @@ async function decodeBase(url, epoch, retry = 0) {
     if (retry === 0 && pageImageRetryEpoch !== epoch) {
       pageImageRetryEpoch = epoch;
       host?.evictImage?.(url);
-      return decodeBase(url, epoch, 1);
+      return decodeBase(url, epoch, { pool }, 1);
     }
     reportError(new Error(`Unable to render page ${sel + 1}: ${error instanceof Error ? error.message : error}`));
     return false;
@@ -466,7 +489,7 @@ async function build(immediateBase = false, renderDelay = 180) {
   if (current) {
     const previewUrl = `/api/page/${sel}.png?dpi=${Math.min(dpi, 40)}&v=${state.version}&bare=${!preview}`;
     if (immediateBase && !targetCached && $('base').dataset.loadedUrl !== previewUrl) {
-      await decodeBase(previewUrl, epoch);
+      await decodeBase(previewUrl, epoch, { pool: false });
       if (epoch !== buildEpoch) return;
     }
     $('base').dataset.targetUrl = targetUrl;
@@ -478,7 +501,7 @@ async function build(immediateBase = false, renderDelay = 180) {
   }
 
   const firstUrl = targetCached ? targetUrl : `/api/page/${sel}.png?dpi=${Math.min(dpi, 40)}&v=${state.version}&bare=${!preview}`;
-  if (!await decodeBase(firstUrl, epoch)) return;
+  if (!await decodeBase(firstUrl, epoch, { pool: targetCached })) return;
   $('base').dataset.targetUrl = targetUrl;
   applyPageLayout(r, dw, dh, Lw, Lh, fitP);
   if (firstUrl !== targetUrl) scheduleBaseRender(targetUrl, epoch, renderDelay);

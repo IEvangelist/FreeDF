@@ -344,9 +344,9 @@ try
           for (const method of ['image', 'imageBlob']) {
             if (!window.pdfHost[method]) continue;
             const image = window.pdfHost[method].bind(window.pdfHost);
-            window.pdfHost[method] = url => {
+            window.pdfHost[method] = (url, options) => {
               if (/\/api\/page\/.*\.png/.test(url)) window.saveRenders.push({url, stack:new Error().stack});
-              return image(url);
+              return image(url, options);
             };
           }
         }

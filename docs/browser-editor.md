@@ -411,12 +411,23 @@ buffer to the UI rather than serializing/base64-encoding the payload. The runtim
 still copies bytes across managed/JavaScript memory; this is not zero-copy.
 The older `Request`/`RequestBinary` exports remain compatible.
 
-`imageBlob(url)` shares concurrent versioned page requests and caches up to
+`imageBlob(url, { current, pool } = {})` shares concurrent versioned page requests and caches up to
 8 MiB of compressed image bytes. `image(url)` retains its data-URL contract for
 assets, printing, thumbnails and older clients. Main-page replacements decode
 temporary Blob URLs, retain the previous visible image until the replacement is
 decoded and presentation is permitted, and revoke each temporary URL afterwards.
 Retry/error injection and Save-overlap checks exercise this same Blob path.
+
+`current` defaults to always true; visible-page and thumbnail callers provide
+their render/document epoch predicate. Superseded queued primary requests and
+pool fallbacks reject with `AbortError` before dispatch; obsolete results never
+enter the cache. Document replacement cancels old timers/observers before the
+command runs. A failed open re-observes the retained document's thumbnails.
+`pool` defaults to true; uncached low-resolution visible previews use false to
+avoid cold-replica setup. Exact refinement, thumbnails and print remain pooled.
+The reviewed replicas now load the same lazy fallback/CJK fonts as the primary,
+so the pool is default-on (`?pool=0` disables it); earlier opt-in notes below
+describe the pre-fix integration.
 
 The combined `/api/page/{i}/selection` response preserves the legacy text/object
 endpoint shapes, caches serialized metadata until a document mutation, and avoids

@@ -50,3 +50,25 @@ test('selection prefetch remains bounded to eight page replies', async () => {
   await h.page(0);
   assert.equal(count, 10);
 });
+
+test('thumbnail document epochs stop obsolete requests without blocking ordinary image assets', async () => {
+  const calls = [];
+  const context = vm.createContext({
+    host: { image: async url => { calls.push(url); return 'thumbnail'; } },
+    imageUrl: async url => { calls.push(url); return 'asset'; },
+    pagePresentationReady: async current => current(),
+  });
+  const images = html.slice(html.indexOf('let thumbnailObserver'), html.indexOf('function queueThumbnail'));
+  vm.runInContext(`let documentEpoch = 2; ${images}
+    globalThis.load = setImage;`, context);
+  const stale = { isConnected: true, dataset: { documentEpoch: '1' }, decode: async () => {} };
+  await context.load(stale, '/api/page/66.png?v=1');
+  assert.equal(calls.length, 0);
+  const live = { isConnected: true, dataset: { documentEpoch: '2' }, decode: async () => {}, style: {} };
+  await context.load(live, '/api/page/0.png?v=2');
+  assert.equal(live.src, 'thumbnail');
+  const asset = { isConnected: true, dataset: {}, decode: async () => {}, style: {} };
+  await context.load(asset, '/api/asset/a');
+  assert.equal(asset.src, 'asset');
+  assert.deepEqual(calls, ['/api/page/0.png?v=2', '/api/asset/a']);
+});

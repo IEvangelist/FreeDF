@@ -28,7 +28,7 @@ async function harness(reply = () => ({ bytes: new Uint8Array([1, 2, 3]), conten
     }
   }
   const context = vm.createContext({
-    Worker, URL, URLSearchParams, Blob, Response, FormData, File, FileReader, fetch,
+    Worker, URL, URLSearchParams, Blob, Response, FormData, File, FileReader, fetch, DOMException,
     performance, setTimeout, clearTimeout, console,
     createRenderPool: pool,
     location: { href: 'https://editor.test/', search: pool ? '?pool=1' : '?pool=0' },
@@ -126,4 +126,49 @@ test('unavailable pooled renders retain primary bytes and normal caching', async
   assert.equal((await host.imageBlob(url)).size, 3);
   assert.equal((await host.imageBlob(url)).size, 3);
   assert.equal(requests.length, 1);
+});
+
+test('superseded queued images never reach the primary worker or populate its cache', async () => {
+  let release, active = true;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { host, requests } = await harness(async command => {
+    if (command.url === '/api/open') await gate;
+    return { bytes: new Uint8Array([1]), contentType: 'image/png' };
+  });
+  const opening = host.request('/api/open', { method: 'POST' });
+  const url = '/api/page/66.png?dpi=40&v=1';
+  const image = host.imageBlob(url, { current: () => active });
+  const rejected = assert.rejects(image, { name: 'AbortError' });
+  active = false; release();
+  await opening; await rejected;
+  assert.deepEqual(requests.map(x => x.url), ['/api/open']);
+  assert.equal(host.hasCachedImage(url), false);
+});
+
+test('visible first paint uses primary bytes while exact refinement remains pooled', async () => {
+  let pooled = 0;
+  const { host, requests } = await harness(undefined, () => ({
+    enabled: true,
+    async tryRender() { pooled++; return new Blob([new Uint8Array([9])], { type: 'image/png' }); },
+  }));
+  const preview = '/api/page/0.png?v=3&dpi=40&bare=true';
+  assert.equal((await host.imageBlob(preview, { pool: false })).size, 3);
+  assert.equal((await host.imageBlob(preview)).size, 3);
+  assert.equal(pooled, 0);
+  assert.equal((await host.imageBlob('/api/page/0.png?v=3&dpi=240&bare=true')).size, 1);
+  assert.equal(pooled, 1);
+  assert.equal(requests.length, 1);
+});
+
+test('a superseded pooled fallback does not dispatch stale primary work', async () => {
+  let release, active = true;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { host, requests } = await harness(undefined, () => ({
+    enabled: true, tryRender: async () => { await gate; return null; },
+  }));
+  const image = host.imageBlob('/api/page/66.png?v=1', { current: () => active });
+  const rejected = assert.rejects(image, { name: 'AbortError' });
+  active = false; release();
+  await rejected;
+  assert.equal(requests.length, 0);
 });

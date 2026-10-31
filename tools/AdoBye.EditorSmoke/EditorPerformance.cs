@@ -74,11 +74,11 @@ static class EditorPerformance
                   try { return await original(url, options); }
                   finally { profileCommands.push({url, start, ms:performance.now()-start}); }
                 }
-              : url => {
+              : (url, options) => {
                   const start = performance.now();
                   const record = () => profileCommands.push({url, start, ms:performance.now()-start});
                   try {
-                    const value = original(url);
+                    const value = original(url, options);
                     if (value && typeof value.then === 'function') return value.finally(record);
                     record(); return value;
                   } catch (e) { record(); throw e; }

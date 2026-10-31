@@ -75,7 +75,11 @@ export async function start() {
       if (!renderPool.enabled) renderPool = null;
     } catch (error) { console.warn('Parallel rendering is unavailable; using one PDF engine.', error); }
   }
-  const imageBlob = url => {
+  const imageBlob = (url, { current = () => true, pool = true } = {}) => {
+    const checkCurrent = () => {
+      if (!current()) throw new DOMException('Page image request was superseded.', 'AbortError');
+    };
+    checkCurrent();
     const key = imageKey(url);
     if (key && imageCache.has(key)) {
       const cached = imageCache.get(key);
@@ -84,17 +88,19 @@ export async function start() {
     }
     if (key && imagePending.has(key)) return imagePending.get(key);
     const primary = () => enqueue(async () => {
+      checkCurrent();
       const reply = await command(url, 'GET', null, null, true);
       return reply.bytes
         ? new Blob([reply.bytes], { type: reply.contentType })
         : await (await fetch(`data:${reply.contentType};base64,${reply.data}`)).blob();
     });
     // Pool snapshots use the primary queue, so do not hold that queue while awaiting replicas.
-    const pooled = renderPool?.tryRender(url).catch(error => {
+    const pooled = (pool ? renderPool?.tryRender(url) : null)?.catch(error => {
       if (error?.name !== 'AbortError') console.warn('Render pool failed; using the primary PDF engine.', error);
       return null;
     });
     const pending = (pooled ? pooled.then(data => data || primary()) : primary()).then(data => {
+      checkCurrent();
       const size = data.size;
       evictImage(url);
       if (key && size <= imageCacheLimit) {
@@ -133,8 +139,8 @@ export async function start() {
       });
     },
     imageBlob,
-    async image(url) {
-      const blob = await imageBlob(url), started = performance.now();
+    async image(url, options) {
+      const blob = await imageBlob(url, options), started = performance.now();
       const data = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);

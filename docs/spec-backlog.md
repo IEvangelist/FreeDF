@@ -12,14 +12,19 @@ are integrated without changing the coverage counts. Release 2225/2225,
 and the 535-group profile gate pass. See
 [the measured integration checkpoint](performance/2026-10-30-aot.md#current-main-pipeline-and-pool-integration).
 The requested 5x budgets are not achieved. Remaining pipeline work includes
-cold-replica low-resolution preview admission, stale thumbnail requests across
-document replacement, exact zoom latency, navigation wall time, and sample-26
+cold-replica exact-render admission, exact zoom latency, navigation wall time, and sample-26
 performance measurements. Startup long tasks/repeat visits and further raster
 work remain independent workstreams. All three delegated sessions returned;
 none needs recreation. Startup's separate branch now includes per-client cache
 pinning and real mid-boot update validation (`a7c88436`, `ef0a201d`):
 service-worker, recovery, default and boot smokes pass on its trimmed non-AOT
 build. That branch is not integrated here; its final AOT check remains open.
+
+The document-scoped first-paint follow-up stops stale queued thumbnails on
+replacement and uses the primary for low-resolution visible previews.
+Image-open improves 384.0/399.5 -> 133.2/133.5 ms, with unchanged hashes/gates.
+Typography zoom and Save's 12-ms target still need work; see the subsequent
+measurement table rather than treating the active miss allowlist as full success.
 
 ## Latest reviewed five-branch slice
 

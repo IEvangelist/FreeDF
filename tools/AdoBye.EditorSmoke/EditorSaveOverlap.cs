@@ -92,8 +92,8 @@ static class EditorSaveOverlap
                         if (!pdfHost[method]) continue;
                         const originalImage = pdfHost[method].bind(pdfHost);
                         state.images[method] = pdfHost[method];
-                        pdfHost[method] = async url => {
-                          const result = await originalImage(url);
+                        pdfHost[method] = async (url, options) => {
+                          const result = await originalImage(url, options);
                           if (url.includes('/api/page/') && !state.released) {
                             if (url.includes('bare=')) state.ready = true;
                             await state.gate;
