@@ -1,0 +1,15 @@
+lib-cades-p256-sha256.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-cades-t.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-p384-sha384.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-p521-sha512.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-pades-certified-p2.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-pades-dss.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-pades-dss.pdf Signature1 ades_lta_validation subindication=AdESIndeterminate.NO_POE msg=Unable to construct plausible past validation path [AdESIndeterminate.NO_POE]
+lib-pades-lta-flat.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-pades-lta-flat.pdf Signature1 ades_lta_validation subindication=AdESIndeterminate.NO_POE msg=Unable to construct plausible past validation path [AdESIndeterminate.NO_POE]
+lib-pades-lta-flat.pdf DocTimeStamp1 DTS intact=True valid=True trusted=True
+lib-pades-lta.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-pades-lta.pdf Signature1 ades_lta_validation subindication=AdESIndeterminate.NO_POE msg=Unable to construct plausible past validation path [AdESIndeterminate.NO_POE]
+lib-pades-lta.pdf DocTimeStamp1 DTS intact=True valid=True trusted=True
+lib-rsa-pkcs1-sha512.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+lib-rsa-pss-sha384.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True

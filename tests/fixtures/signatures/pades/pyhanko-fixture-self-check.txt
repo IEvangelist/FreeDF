@@ -1,0 +1,7 @@
+pyhanko-pades-b-b.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+pyhanko-pades-b-lt.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+pyhanko-pades-b-lt.pdf Signature1 ades_lta_validation subindication=AdESIndeterminate.NO_POE msg=Unable to construct plausible past validation path [AdESIndeterminate.NO_POE]
+pyhanko-pades-b-lta.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True
+pyhanko-pades-b-lta.pdf Signature1 ades_lta_validation subindication=AdESPassed.OK msg=Past signature validation did not manage to improve current time result. [AdESPassed.OK]
+pyhanko-pades-b-lta.pdf Timestamp-9d778031-f408-4fe5-b3da-bcedae1a94d0 DTS intact=True valid=True trusted=True
+pyhanko-pades-revoked.pdf Signature1 subfilter=/ETSI.CAdES.detached intact=True valid=True trusted=True docmdp_ok=True

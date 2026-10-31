@@ -33,6 +33,34 @@ public sealed class PdfSignOptions
     /// catalog /Perms /DocMDP. It must be the first signature in the document, and a document can have only one.
     /// </summary>
     public PdfDocMdpPermission? Certify { get; init; }
+    /// <summary>Signature encoding: <c>adbe.pkcs7.detached</c> (default) or the PAdES/CAdES <c>ETSI.CAdES.detached</c>, which also embeds the ESS signing-certificate-v2 attribute and omits the CMS signingTime (the dictionary /M carries the time).</summary>
+    public PdfSignatureSubFilter SubFilter { get; init; } = PdfSignatureSubFilter.Pkcs7Detached;
+    /// <summary>Use RSASSA-PSS instead of RSASSA-PKCS1-v1_5 for RSA keys. ECDSA keys (P-256/384/521) are always signed with ECDSA.</summary>
+    public bool RsaPss { get; init; }
+    /// <summary>Add the ESS signing-certificate-v2 attribute even for adbe.pkcs7.detached (always added for ETSI.CAdES.detached).</summary>
+    public bool IncludeSigningCertificateV2 { get; init; }
+    /// <summary>CRLs and OCSP responses to embed in the signature as a signed adbe-revocationInfoArchival attribute (Adobe long-term validation).</summary>
+    public PdfValidationData? EmbeddedRevocationInfo { get; init; }
+    /// <summary>Intermediate certificates to embed in the CMS (needed when the chain is not available from the machine certificate store).</summary>
+    public IReadOnlyList<X509Certificate2> ExtraCertificates { get; init; } = [];
+    /// <summary>Supplies an RFC 3161 token over the signature value (CAdES-T, a prerequisite for PAdES-B-T/B-LT). Increase <see cref="ContentsSize"/> if the token does not fit.</summary>
+    public ITimestampProvider? SignatureTimestamp { get; init; }
+    /// <summary>Form fields this signature locks against later changes (FieldMDP); null locks nothing.</summary>
+    public PdfFieldLock? Lock { get; init; }
+}
+
+public enum PdfSignatureSubFilter { Pkcs7Detached, CadesDetached }
+
+public enum PdfFieldLockAction { All, Include, Exclude }
+
+/// <summary>Locks form fields after signing (§12.8.2.4, FieldMDP): the signature's field gets a /Lock dictionary and the signature a FieldMDP reference.</summary>
+public sealed record PdfFieldLock(PdfFieldLockAction Action, IReadOnlyList<string>? Fields = null);
+
+/// <summary>Supplies an RFC 3161 TimeStampToken for a message imprint. Implement this to plug in any time-stamping authority client.</summary>
+public interface ITimestampProvider
+{
+    /// <summary>Returns the DER TimeStampToken (a CMS SignedData with a TSTInfo) for <paramref name="digest"/>, the <paramref name="hash"/> digest of the data to be timestamped.</summary>
+    byte[] GetTimestampToken(HashAlgorithmName hash, byte[] digest);
 }
 
 public sealed partial class PdfEditor
@@ -131,11 +159,21 @@ public sealed partial class PdfEditor
         return SignCore(f, objs, next, root, (f.Trailer.Get("Info") as PdfRef)?.Number, new HashSet<int>(), leaves[pageIndex], o, ts);
     }
 
+    static PdfDictionary LockParams(PdfFieldLock l, string type, bool withVersion)
+    {
+        var d = new Dictionary<string, PdfObject> { ["Type"] = new PdfName(type), ["Action"] = new PdfName(l.Action.ToString()) };
+        if (l.Action != PdfFieldLockAction.All) d["Fields"] = new PdfArray([.. (l.Fields ?? []).Select(n => (PdfObject)new PdfString(EncodeText(n)))]);
+        if (withVersion) d["V"] = new PdfName("1.2");
+        return new PdfDictionary(d);
+    }
+
     static void Validate(PdfSignOptions o)
     {
         if (!o.Certificate.HasPrivateKey) throw new ArgumentException("The signing certificate needs a private key", nameof(o));
         if (o.ContentsSize < 1024) throw new ArgumentOutOfRangeException(nameof(o), "ContentsSize too small");
         if (o.Certify is { } c && !Enum.IsDefined(c)) throw new ArgumentOutOfRangeException(nameof(o), "Certify");
+        if (o.Hash.Name is not ("SHA256" or "SHA384" or "SHA512")) throw new ArgumentException("Unsupported digest algorithm; use SHA-256, SHA-384 or SHA-512.", nameof(o));
+        if (o.RsaPss && o.Certificate.GetRSAPublicKey() is null) throw new ArgumentException("RsaPss needs an RSA certificate", nameof(o));
     }
 
     static byte[] SignCore(PdfFile f, Dictionary<int, PdfObject> objs, int next, int catalogNum, int? info, ISet<int> deleted, int pageNum, PdfSignOptions? o, TimeStampPlan? ts)
@@ -157,7 +195,8 @@ public sealed partial class PdfEditor
         var signer = o?.Certificate.GetNameInfo(X509NameType.SimpleName, false);
         var sig = new Dictionary<string, PdfObject>
         {
-            ["Type"] = new PdfName(ts is null ? "Sig" : "DocTimeStamp"), ["Filter"] = new PdfName("Adobe.PPKLite"), ["SubFilter"] = new PdfName(ts is null ? "adbe.pkcs7.detached" : "ETSI.RFC3161"),
+            ["Type"] = new PdfName(ts is null ? "Sig" : "DocTimeStamp"), ["Filter"] = new PdfName("Adobe.PPKLite"),
+            ["SubFilter"] = new PdfName(ts is not null ? "ETSI.RFC3161" : o!.SubFilter == PdfSignatureSubFilter.CadesDetached ? "ETSI.CAdES.detached" : "adbe.pkcs7.detached"),
             ["ByteRange"] = new PdfArray([new PdfInteger(1_000_000_000), new PdfInteger(1_000_000_000), new PdfInteger(1_000_000_000), new PdfInteger(1_000_000_000)]),
             ["Contents"] = new PdfString(new byte[contentsSize], true),
         };
@@ -168,15 +207,22 @@ public sealed partial class PdfEditor
             if (o.Reason is not null) sig["Reason"] = new PdfString(EncodeText(o.Reason));
             if (o.Location is not null) sig["Location"] = new PdfString(EncodeText(o.Location));
             if (o.ContactInfo is not null) sig["ContactInfo"] = new PdfString(EncodeText(o.ContactInfo));
+            var refs = new List<PdfObject>();
             if (o.Certify is { } perm)
-                sig["Reference"] = new PdfArray([new PdfDictionary(new Dictionary<string, PdfObject>
+                refs.Add(new PdfDictionary(new Dictionary<string, PdfObject>
                 {
                     ["Type"] = new PdfName("SigRef"), ["TransformMethod"] = new PdfName("DocMDP"),
                     ["TransformParams"] = new PdfDictionary(new Dictionary<string, PdfObject>
                     {
                         ["Type"] = new PdfName("TransformParams"), ["P"] = new PdfInteger((int)perm), ["V"] = new PdfName("1.2"),
                     }),
-                })]);
+                }));
+            if (o.Lock is { } lk)
+                refs.Add(new PdfDictionary(new Dictionary<string, PdfObject>
+                {
+                    ["Type"] = new PdfName("SigRef"), ["TransformMethod"] = new PdfName("FieldMDP"), ["TransformParams"] = LockParams(lk, "TransformParams", true),
+                }));
+            if (refs.Count > 0) sig["Reference"] = new PdfArray(refs);
         }
         objs[sigNum] = new PdfDictionary(sig);
 
@@ -189,6 +235,7 @@ public sealed partial class PdfEditor
             ["Rect"] = r is null ? new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(0), new PdfInteger(0)])
                 : new PdfArray([new PdfReal(r.X), new PdfReal(r.Y), new PdfReal(r.X + r.Width), new PdfReal(r.Y + r.Height)]),
         };
+        if (o?.Lock is { } fieldLock) widget["Lock"] = LockParams(fieldLock, "SigFieldLock", false);
         if (r is not null)
         {
             var apNum = next++;
@@ -226,7 +273,15 @@ public sealed partial class PdfEditor
         objs[catalogNum] = catalog;
 
         var bytes = AppendUpdate(f, objs, next, catalogNum, info, deleted);
-        return Finish(bytes, f.Data.Length, contentsSize, ts?.Token ?? ((b, range) => PdfSignatures.ComputeCms(b, range, o!.Certificate, time, o.Hash)));
+        return Finish(bytes, f.Data.Length, contentsSize, ts?.Token ?? ((b, range) => PdfSignatures.ComputeCms(b, range, o!.Certificate, time, o.Hash, new PdfCmsOptions
+        {
+            RsaPss = o.RsaPss,
+            IncludeSigningTime = o.SubFilter != PdfSignatureSubFilter.CadesDetached,
+            SigningCertificateV2 = o.IncludeSigningCertificateV2 || o.SubFilter == PdfSignatureSubFilter.CadesDetached,
+            RevocationInfo = o.EmbeddedRevocationInfo,
+            ExtraCertificates = o.ExtraCertificates,
+            SignatureTimestamp = o.SignatureTimestamp is { } tp ? tp.GetTimestampToken : null,
+        })));
     }
 
     static byte[] Finish(byte[] bytes, int origLen, int contentsSize, Func<byte[], long[], byte[]> makeContents)
