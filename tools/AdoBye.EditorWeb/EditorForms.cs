@@ -109,7 +109,7 @@ public static class EditorForms
     {
         string? Q(string key) => query.GetValueOrDefault(key);
         int Int(string key, int fallback) => int.TryParse(Q(key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : fallback;
-        var taken = editor.GetFormFieldSpecs().Select(e => e.Spec.Name).ToHashSet(StringComparer.Ordinal);
+        var taken = verb is "add" or "paste" ? editor.GetFormFieldSpecs().Select(e => e.Spec.Name).ToHashSet(StringComparer.Ordinal) : [];
         switch (verb)
         {
             case "add":
@@ -118,8 +118,7 @@ public static class EditorForms
                     var spec = ToSpec(dto, cropOf(dto.Page));
                     if (string.IsNullOrWhiteSpace(spec.Name)) spec = spec with { Name = UniqueName(taken, Prefix(spec.Kind) + "1") };
                     var handle = editor.AddFormField(spec);
-                    var index = editor.GetFormFieldSpecs().First(e => e.Handle.Widget == handle.Widget).WidgetIndex;
-                    return new { name = handle.FullName, widget = index };
+                    return new { name = handle.FullName, widget = handle.WidgetIndex };
                 }
             case "update":
                 {
@@ -140,10 +139,10 @@ public static class EditorForms
             case "move":
                 {
                     var moves = Body<List<FormMoveDto>>(body);
-                    var specs = editor.GetFormFieldSpecs();
+                    var specs = editor.GetFormFieldSpecs().ToDictionary(s => (s.Spec.Name, s.WidgetIndex));
                     foreach (var m in moves)
                     {
-                        var e = specs.FirstOrDefault(s => s.Spec.Name == m.Name && s.WidgetIndex == m.Widget) ?? throw new ArgumentException($"No form field named '{m.Name}'.");
+                        var e = specs.GetValueOrDefault((m.Name, m.Widget)) ?? throw new ArgumentException($"No form field named '{m.Name}'.");
                         var crop = cropOf(e.Spec.Page);
                         var left = crop.Left + m.X; var top = crop.Top - m.Y;
                         editor.UpdateFormField(m.Name, e.Spec with { Rect = new PdfRect(left, top - m.H, left + m.W, top) }, m.Widget);
@@ -165,7 +164,7 @@ public static class EditorForms
                         }
                         var spec = ToSpec(dto with { Name = name }, cropOf(paste.Page));
                         var handle = editor.AddFormField(spec);
-                        created.Add(new { name = handle.FullName, widget = editor.GetFormFieldSpecs().First(e => e.Handle.Widget == handle.Widget).WidgetIndex });
+                        created.Add(new { name = handle.FullName, widget = handle.WidgetIndex });
                     }
                     return new { created };
                 }
@@ -184,7 +183,7 @@ public static class EditorForms
             case "import":
                 {
                     var result = editor.ImportFormData(body ?? throw new ArgumentException("Choose an FDF or XFDF file."));
-                    return new { applied = result.Applied, skipped = result.Skipped };
+                    return new { applied = result.Applied, skipped = result.Skipped, truncated = result.Truncated };
                 }
             default: throw new ArgumentException("Unknown form command.");
         }

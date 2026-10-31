@@ -8,6 +8,8 @@ namespace PortableDocument.Document;
 public sealed partial class PdfEditor
 {
     const int MaxFormDataBytes = 16 * 1024 * 1024;
+    const int MaxFormImportEntries = 50_000;
+    const int MaxFormImportDiagnostics = 1000;
     static readonly XNamespace XfdfNs = "http://ns.adobe.com/xfdf/";
 
     // ---- Flatten ----
@@ -73,7 +75,7 @@ public sealed partial class PdfEditor
             }
 
         foreach (var (pi, slot) in perPage) AppendPageContent(pi, Encoding.Latin1.GetBytes(slot.Ops.ToString()), slot.XObjects);
-        foreach (var n in flatten) RemoveFormField(n.FullName);
+        RemoveTerminalNodes(flatten);
         var kept = FormNodes().Count(n => n.Terminal);
         if (kept == 0 && AcroFormDict is not null)
         {
@@ -127,13 +129,19 @@ public sealed partial class PdfEditor
 
     // ---- Export / import (inert FDF and XFDF) ----
 
-    sealed class FormValueNode(string name) { public string Name = name; public List<string>? Values; public bool IsName; public List<FormValueNode> Children = []; }
+    sealed class FormValueNode(string name)
+    {
+        public string Name = name; public List<string>? Values; public bool IsName; public List<FormValueNode> Children = [];
+        public Dictionary<string, FormValueNode> ByName = new(StringComparer.Ordinal);
+    }
 
     List<FormValueNode> CollectFormValues()
     {
         var roots = new List<FormValueNode>();
-        foreach (var n in FormNodes().Where(n => n.Terminal))
+        var rootIndex = new Dictionary<string, FormValueNode>(StringComparer.Ordinal);
+        foreach (var n in FormNodes())
         {
+            if (!n.Terminal) continue;
             var ft = (Inherited(n.Dict, "FT") as PdfName)?.Value;
             var ff = (long)(Inherited(n.Dict, "Ff").AsNumber() ?? 0);
             if (ft is not ("Tx" or "Ch" or "Btn") || (ft == "Btn" && (ff & FfPushButton) != 0)) continue;
@@ -145,13 +153,12 @@ public sealed partial class PdfEditor
                 _ => null,
             };
             if (values is null) continue;
-            var list = roots;
+            var list = roots; var byName = rootIndex;
             FormValueNode? cur = null;
             foreach (var part in n.FullName.Split('.'))
             {
-                cur = list.FirstOrDefault(x => x.Name == part);
-                if (cur is null) list.Add(cur = new FormValueNode(part));
-                list = cur.Children;
+                if (!byName.TryGetValue(part, out cur)) { cur = new FormValueNode(part); byName[part] = cur; list.Add(cur); }
+                list = cur.Children; byName = cur.ByName;
             }
             if (cur is not null) { cur.Values = values; cur.IsName = Inherited(n.Dict, "V") is PdfName; }
         }
@@ -212,15 +219,20 @@ public sealed partial class PdfEditor
 
         var skipped = new List<string>();
         var applied = 0;
-        var nodes = FormNodes().Where(n => n.Terminal).ToList();
+        var truncated = entries.Count > MaxFormImportEntries;
+        if (truncated) entries.RemoveRange(MaxFormImportEntries, entries.Count - MaxFormImportEntries);
+        var nodes = Index().ByName;
+        var omitted = 0;
+        void Skip(string message) { if (skipped.Count < MaxFormImportDiagnostics) skipped.Add(message); else omitted++; }
         foreach (var (name, values) in entries)
         {
-            var node = nodes.FirstOrDefault(n => n.FullName == name);
-            if (node is null) { skipped.Add($"{name}: no such field"); continue; }
+            if (!nodes.TryGetValue(name, out var node) || !node.Terminal) { Skip($"{name}: no such field"); continue; }
             var reason = ApplyImportedValue(node, values);
-            if (reason is null) applied++; else skipped.Add($"{name}: {reason}");
+            if (reason is null) applied++; else Skip($"{name}: {reason}");
         }
-        return new PdfFormImportResult(applied, skipped);
+        if (omitted > 0) skipped.Add($"{omitted} more entries were skipped.");
+        if (truncated) skipped.Add($"Only the first {MaxFormImportEntries} entries were imported.");
+        return new PdfFormImportResult(applied, skipped, truncated);
     }
 
     string? ApplyImportedValue(FormNode node, List<string> values)

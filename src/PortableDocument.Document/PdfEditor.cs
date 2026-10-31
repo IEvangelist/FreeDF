@@ -124,6 +124,7 @@ public sealed partial class PdfEditor
         ArgumentNullException.ThrowIfNull(value);
         if (key is "Type" or "Pages") throw new ArgumentException($"/{key} is managed by the editor", nameof(key));
         var d = (PdfDictionary)_objs[_catalog];
+        if (key == "AcroForm") InvalidateFormIndex();
         _objs[_catalog] = new PdfDictionary(new Dictionary<string, PdfObject>(d.Entries) { [key] = value });
     }
 
@@ -570,6 +571,7 @@ public sealed partial class PdfEditor
     /// <summary>Drops AcroForm fields whose widgets were all removed (see <see cref="RemoveAnnotations"/>) so field values cannot outlive a redacted widget. Returns the number of field entries removed.</summary>
     public int PruneRemovedFormFields()
     {
+        InvalidateFormIndex();
         if (Res(((PdfDictionary)_objs[_catalog]).Get("AcroForm")) is not PdfDictionary form || form.Get("Fields") is not { } fieldsObj || Res(fieldsObj) is not PdfArray fields) return 0;
         var dropped = 0;
         List<PdfObject> Prune(IEnumerable<PdfObject> items)
@@ -690,6 +692,7 @@ public sealed partial class PdfEditor
     /// <summary>Returns the editor to a state taken by <see cref="Capture"/> on this same instance.</summary>
     public void Restore(State state)
     {
+        InvalidateFormIndex();
         if (!ReferenceEquals(state.Owner, this)) throw new ArgumentException("The state belongs to a different editor.", nameof(state));
         Require(PdfPermissions.Assemble);
         _objs.Clear(); foreach (var kv in state.Objs) _objs[kv.Key] = kv.Value;
