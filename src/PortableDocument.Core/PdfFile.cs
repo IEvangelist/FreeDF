@@ -247,6 +247,7 @@ public sealed class PdfFile
                 var a = lx.ReadObject(false);
                 if (a is PdfKeyword { Value: "trailer" }) break;
                 if (a is not PdfInteger start || lx.ReadObject(false) is not PdfInteger count) { lx.Pos = save; throw new PdfParseException("bad xref subsection"); }
+                if (count.Value is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + (int)count.Value);
                 for (var i = 0; i < count.Value; i++)
                 {
                     lx.SkipWhite();
@@ -272,6 +273,7 @@ public sealed class PdfFile
         var size = (int)xs.Dict.Get("Size").AsNumber()!.Value;
         var index = xs.Dict.Get("Index") is PdfArray ia ? ia.Items.Select(x => (int)x.AsNumber()!.Value).ToArray() : [0, size];
         var rowLen = w.Sum();
+        if (rowLen > 0 && data.Length / rowLen is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + data.Length / rowLen);
         var woff = new int[w.Length];
         for (var wi = 1; wi < w.Length; wi++) woff[wi] = woff[wi - 1] + w[wi - 1];
         var p = 0;
