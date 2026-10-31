@@ -47,3 +47,13 @@ z = zlib.compress(pack(diff))  # libtiff rejects Predictor 2 below 8 bits, so th
 open(os.path.join(out, "pred2-4.bin"), "wb").write(z)
 open(os.path.join(out, "pred2-4.exp"), "wb").write(pack(src))
 print("ok")
+
+# LZW strip from libtiff (EarlyChange 1, table growth to 12 bits and clear-code resets); expectation = source pixels.
+from PIL import TiffImagePlugin
+rng2 = np.random.default_rng(11)
+pix = (rng2.integers(0, 4, (200, 150), dtype=np.uint8) * 60 + (np.arange(150) // 7).astype(np.uint8)[None, :]).astype(np.uint8)
+buf = io.BytesIO(); Image.fromarray(pix).save(buf, format="TIFF", compression="tiff_lzw")
+t = Image.open(io.BytesIO(buf.getvalue())); o = t.tag_v2[273]; c = t.tag_v2[279]
+o = o if isinstance(o, int) else o[0]; c = c if isinstance(c, int) else c[0]
+open(os.path.join(out, "lzw-libtiff.bin"), "wb").write(buf.getvalue()[o:o + c])
+open(os.path.join(out, "lzw-libtiff.exp"), "wb").write(pix.tobytes())
