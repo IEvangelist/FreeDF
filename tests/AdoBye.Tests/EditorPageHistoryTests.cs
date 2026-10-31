@@ -72,6 +72,33 @@ public class EditorPageHistoryTests
     }
 
     [Fact]
+    public void UndoAndRedoKeepImagesUsedOnlyByTheStateBeingLeft()
+    {
+        var session = ThreePages();
+        Call(session, "POST", "/api/rotate/0/90");
+        var asset = Upload(session);
+        var item = new Item("img", "image", 20, 20, 40, 40, null, null, 0, false, false, null, null, null, 0, 1, asset, 0, 0);
+        Call(session, "PUT", "/api/page/0/items", new ItemUpdate([item], []));
+        var pixels = Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data;
+
+        Call(session, "POST", "/api/page-undo");
+        using (var none = JsonDocument.Parse(Call(session, "GET", "/api/page/0/items").Data))
+            Assert.Empty(none.RootElement.EnumerateArray());
+        Assert.NotEmpty(Call(session, "GET", "/api/asset/" + asset).Data);
+
+        Call(session, "POST", "/api/page-redo");
+        using var back = JsonDocument.Parse(Call(session, "GET", "/api/page/0/items").Data);
+        Assert.Equal("img", back.RootElement.EnumerateArray().Single().GetProperty("id").GetString());
+        Assert.Equal(pixels, Call(session, "GET", "/api/page/0.png", query: [("dpi", "40")]).Data);
+
+        var saved = PdfDocument.Load(Call(session, "GET", "/api/download").Data);
+        Assert.Equal(3, saved.Pages.Count);
+        var reopened = new EditorSession(new FontCatalog());
+        reopened.Handle("POST", "/api/open", new Dictionary<string, string>(), Call(session, "GET", "/api/download").Data, "r.pdf");
+        Assert.Equal(3, JsonDocument.Parse(Call(reopened, "GET", "/api/state").Data).RootElement.GetProperty("pageCount").GetInt32());
+    }
+
+    [Fact]
     public void DeletedPageAssetsStayAvailableUntilHistoryIsDropped()
     {
         var session = ThreePages();
