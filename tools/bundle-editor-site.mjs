@@ -44,7 +44,9 @@ for (const match of cssLinks.slice(1)) html = html.replace(match[0], '');
 const classic = [...html.matchAll(/<script src="([^"]+\.js)" defer><\/script>\n?/g)];
 if (classic.map(match => match[1]).join() !== 'editor.js,ui.js') fail('expected deferred classic scripts editor.js then ui.js, found ' + classic.map(match => match[1]).join());
 const dynamicImport = /import\(new URL\('([A-Za-z0-9._-]+\.m?js)', document\.baseURI\)\)/g;
-const viaRegistry = text => text.replace(dynamicImport, (_, name) => `__editorImport('${name}')`);
+const siblingImport = /import\('\.\/([A-Za-z0-9._-]+\.m?js)'\)/g;
+const viaRegistry = text => text.replace(dynamicImport, (_, name) => `__editorImport('${name}')`)
+  .replace(siblingImport, (_, name) => `__editorImport('${name}')`);
 const editorJs = viaRegistry(read('editor.js')) + '\n;\n' + viaRegistry(read('ui.js'));
 rmSync(join(site, 'ui.js'));
 write('editor.js', editorJs);
@@ -58,7 +60,7 @@ const staticImport = new RegExp(`^import\\s+(?:(\\*\\s+as\\s+[A-Za-z_$][\\w$]*)|
 const siblingDynamic = new RegExp(`import\\('\\./(${NAME})'\\)`, 'g');
 const members = [];
 const registryRef = new RegExp(`__editorImport\\('(${NAME})'\\)`, 'g');
-const queue = ['host.js', ...[html, editorJs].flatMap(text => [...text.matchAll(dynamicRef), ...text.matchAll(registryRef)].map(match => match[1]))];
+const queue = ['host.js', ...[html, editorJs].flatMap(text => [...text.matchAll(dynamicRef), ...text.matchAll(siblingDynamic), ...text.matchAll(registryRef)].map(match => match[1]))];
 while (queue.length) {
   const name = queue.shift();
   if (members.includes(name)) continue;

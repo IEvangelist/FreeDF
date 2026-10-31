@@ -72,3 +72,15 @@ test('discovers document-relative dynamic imports inside a bundled member', asyn
   vm.runInNewContext(readFileSync(join(dir, 'host.js'), 'utf8'), { window, Promise, Error });
   assert.equal(await window.__editorModules('panel.mjs').render(), 42);
 });
+
+test('bundles sibling dynamic imports from inline page scripts', () => {
+  const dir = fixture();
+  writeFileSync(join(dir, 'index.html'), readFileSync(join(dir, 'index.html'), 'utf8')
+    .replace("import(new URL('panel.mjs', document.baseURI))", "import('./panel.mjs')"));
+  assert.match(bundle(dir), /host\.js \(4 modules\)/);
+  assert.equal(existsSync(join(dir, 'panel.mjs')), false);
+  assert.equal(existsSync(join(dir, 'map.mjs')), false);
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  assert.match(html, /__editorImport\('panel\.mjs'\)/);
+  assert.doesNotMatch(html, /import\('\.\//);
+});
