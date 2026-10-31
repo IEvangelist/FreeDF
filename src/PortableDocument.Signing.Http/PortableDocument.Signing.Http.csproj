@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Opt-in network assembly: the only place HttpClient is used. Not referenced by the Document/Core libraries, the WASM editor or the guard tests. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PortableDocument.Document\PortableDocument.Document.csproj" />
+    <InternalsVisibleTo Include="AdoBye.Tests" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+</Project>
