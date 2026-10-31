@@ -231,6 +231,30 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         prepared = !originalTextOnly;
     }
 
+    static Reply OutlinesJson(IReadOnlyList<PdfOutlineItem> items)
+    {
+        using var stream = new MemoryStream();
+        using (var w = new Utf8JsonWriter(stream))
+        {
+            void Write(IReadOnlyList<PdfOutlineItem> list)
+            {
+                w.WriteStartArray();
+                foreach (var item in list)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("title", item.Title);
+                    if (item.PageIndex is { } page) w.WriteNumber("page", page);
+                    w.WriteBoolean("open", item.Open);
+                    if (item.Children.Count > 0) { w.WritePropertyName("children"); Write(item.Children); }
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+            }
+            Write(items);
+        }
+        return new(stream.ToArray());
+    }
+
     PdfDocument Snap()
     {
         if (snapshot is null) { Prepare(); snapshotBytes = editor.Save(); snapshot = PdfDocument.Load(snapshotBytes); }
@@ -450,6 +474,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     var pages = doc?.Pages.Select((pg, i) => new { index = i, id = editor.PageId(i), rotation = pg.Rotate, x0 = pg.CropBox.Left, top = pg.CropBox.Top, width = pg.CropBox.Width, height = pg.CropBox.Height }) ?? [];
                     return AsJson(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null, recoverySupported });
                 case "recovery": return CaptureRecovery();
+                case "outlines": return editor.PageCount == 0 ? AsJson(Array.Empty<int>()) : OutlinesJson(BaseSnap().GetOutlines());
                 case "fonts": return AsJson(catalog.List());
                 case "fields": return AsJson(editor.PageCount == 0 ? [] : Pristine().GetFormFields().Where(f => f.FieldType is "Tx" or "Btn" or "Ch").Select(f => new { name = f.FullName, type = f.FieldType, value = f.Value ?? "" }));
                 case "asset":
