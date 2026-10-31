@@ -50,7 +50,8 @@ var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap] <published-wwwroot>");
+var fileAccessOnly = args.Length == 2 && args[0] == "--file-access";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !fileAccessOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--file-access] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -132,6 +133,7 @@ try
             injectedBootFailure = true;
             await route.FulfillAsync(new() { Status = 503, ContentType = "text/plain", Body = "Injected transient delivery failure" });
         });
+    if (fileAccessOnly) await EditorFileAccess.Install(page);
     await page.GotoAsync(address + "/csharp-pdf/");
     try { await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')"); }
     catch (TimeoutException)
@@ -170,6 +172,13 @@ try
         await EditorMerge.Run(page);
         Check(network.IsEmpty && EditorMerge.ExpectedErrors(errors, ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + System.Text.Json.JsonSerializer.Serialize(errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: keyboard merge controls/focus/Escape, inline server rejection with retained choices, direct later-frame rejection preserving state/history/assets and undo, multi-file order/range/insertion, render/save/reopen.");
+        return;
+    }
+    if (fileAccessOnly)
+    {
+        if (Environment.GetEnvironmentVariable("EDITOR_SMOKE_FONTS_ONLY") != "1") await EditorFileAccess.Run(page);
+        await EditorFileAccess.RunFonts(page);
+        Check(network.IsEmpty && errors.All(EditorFileAccess.ExpectedError), "No external requests or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
     }
     if (recoveryOnly)

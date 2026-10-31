@@ -117,10 +117,11 @@
 <script>
 addEventListener('editor-ready', () => {
 const host = window.pdfHost;
-let recovery = null;
+let recovery = null, fa = null, localFonts = null;
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
+  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/close'].includes(url.split('?')[0])) fa?.clear();
   if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery'].includes(url.split('?')[0])) {
     selectionEpoch++; buildEpoch++; clearTimeout(baseRenderTimer); shownPage = -1;
     clip = null; pendingUploads.clear(); assetImages.clear();
@@ -892,7 +893,14 @@ async function act(fn, onError = reportError) {
 }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
 
-$('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.target.files[0]));
+$('open').onchange = e => e.target.files[0] && openWith(e.target.files[0]);
+// A picked or dropped file keeps its handle so Save can overwrite it; opening without one forgets the previous handle.
+async function openWith(file, handle = null) {
+  let opened = false;
+  await act(async () => { await upload('/api/open', file); opened = true; });
+  if (opened) await fa?.adopt(handle);
+}
+const openPicker = () => fa?.supported ? fa.pick().then(r => r && openWith(r.file, r.handle)).catch(reportError) : pickFile('open');
 $('merge').onchange = e => { const files = [...e.target.files]; if (files.length) mergeDialog?.isConnected ? mergeDialog.addFiles(files) : mergePdfs(files); };
 $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/270`));
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
@@ -1151,10 +1159,13 @@ const dlUrl = async u => {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
 };
 async function saveDoc() {
-  if (!state.pageCount) return; await flush();
+  if (!state.pageCount) return;
+  if (fa?.supported && await fa.save()) return;
+  await flush();
   const r = await (await request('/api/save', { method: 'POST' })).json();
   if (r.saved) { await refreshDirty(); status('Saved to ' + r.path); } else saveAs();
 }
+const saveAsFile = () => state.pageCount && (fa?.supported ? fa.saveAs().then(done => done || saveAs()).catch(reportError) : saveAs());
 function saveAs() {
   if (!state.pageCount) return;
   flush().then(() => modal('Save as', `<label>File name<input id="sn" value="${esc(state.fileName.replace(/^edited-/, ''))}"></label><p class="dnote">The PDF is downloaded to your browser's download folder.</p>`, 'Save', async o => {
@@ -1188,10 +1199,10 @@ function openFileMenu() {
   const has = !!state.pageCount, r = $('fileBtn').getBoundingClientRect();
   openMenuAt(buildMenu([
     { label: 'New…', key: 'Alt+N', run: newDoc },
-    { label: 'Open…', key: mod + 'O', run: () => confirmDiscard() && pickFile('open') },
+    { label: 'Open…', key: mod + 'O', run: () => confirmDiscard() && openPicker() },
     '-',
     { label: 'Save', key: mod + 'S', disabled: !has, run: saveDoc },
-    { label: 'Save as…', key: mod + 'Shift+S', disabled: !has, run: saveAs },
+    { label: 'Save as…', key: mod + 'Shift+S', disabled: !has, run: saveAsFile },
     '-',
     { label: 'Merge PDFs…', disabled: !has, run: () => pickFile('merge') },
     { label: 'Insert', disabled: !has, sub: [
@@ -1217,8 +1228,8 @@ addEventListener('keydown', e => {
   const m = e.ctrlKey || e.metaKey;
   if (m && k === 'f') { e.preventDefault(); openFind(); return; }
   if (m && k === 'p') { e.preventDefault(); printDoc(); return; }
-  if (m && k === 's') { e.preventDefault(); e.shiftKey ? saveAs() : saveDoc(); return; }
-  if (m && k === 'o') { e.preventDefault(); confirmDiscard() && pickFile('open'); return; }
+  if (m && k === 's') { e.preventDefault(); e.shiftKey ? saveAsFile() : saveDoc(); return; }
+  if (m && k === 'o') { e.preventDefault(); confirmDiscard() && openPicker(); return; }
   if (e.altKey && k === 'n') { e.preventDefault(); newDoc(); return; }
   if (m && k === '0') { e.preventDefault(); fitPage(); return; }
   if (m && k === '9') { e.preventDefault(); fitWidth(); return; }
@@ -1247,10 +1258,12 @@ addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.id = ''
 addEventListener('drop', e => {
   if (!e.dataTransfer.files.length) return;
   e.preventDefault(); document.body.id = '';
-  const files = [...e.dataTransfer.files];
-  if (mergeDialog?.isConnected) mergeDialog.addFiles(files);
-  else if (state.pageCount) mergePdfs(files);
-  else act(() => upload('/api/open', files[0])).then(() => files.length > 1 && state.pageCount && mergePdfs(files.slice(1)));
+  // Handles must be requested synchronously inside the event.
+  (fa ? fa.resolveDrop(e.dataTransfer) : Promise.resolve({ files: [...e.dataTransfer.files], handle: null })).then(({ files, handle }) => {
+    if (mergeDialog?.isConnected) mergeDialog.addFiles(files);
+    else if (state.pageCount) mergePdfs(files);
+    else openWith(files[0], handle).then(() => files.length > 1 && state.pageCount && mergePdfs(files.slice(1)));
+  }).catch(reportError);
 });
 function setPanel(side, open, user) {
   const m = document.querySelector('main'), b = $(side === 'l' ? 'tl' : 'tr');
@@ -1280,6 +1293,11 @@ function openFontPicker(anchor, it, onPick) {
   const pop = document.createElement('div'); pop.className = 'fpop';
   pop.innerHTML = '<input type="search" placeholder="Search fonts…" aria-label="Search fonts"><div class="fl" role="listbox"></div>';
   const list = pop.querySelector('.fl'), q = pop.querySelector('input');
+  const choose = fam => {
+    if (onPick) { onPick(fam); return; }
+    if (it.font === fam && it.orig == null) return;
+    pushUndo(); it.font = fam; if (it.orig != null) it.oStyle = null; paint(); queueSave(); props();
+  };
   const render = () => {
     const t = q.value.trim().toLowerCase(), f = fontList.filter(x => x.family.toLowerCase().includes(t));
     let html = '', sect = null;
@@ -1289,16 +1307,12 @@ function openFontPicker(anchor, it, onPick) {
       html += `<button type="button" role="option" class="fo${x.family === it.font ? ' on' : ''}" data-f="${esc(x.family)}" style="font-family:${esc(famCss(x.family))}">${esc(x.family)}</button>`;
     }
     list.innerHTML = html || '<div class="fh">No matching fonts</div>';
-    list.querySelectorAll('.fo').forEach(b => b.onclick = () => {
-      pop.remove();
-      if (onPick) { onPick(b.dataset.f); return; }
-      if (it.font === b.dataset.f && it.orig == null) return;
-      pushUndo(); it.font = b.dataset.f; if (it.orig != null) it.oStyle = null; paint(); queueSave(); props();
-    });
+    list.querySelectorAll('.fo').forEach(b => b.onclick = () => { pop.remove(); choose(b.dataset.f); });
     list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
   };
   q.oninput = render; render();
   document.body.appendChild(pop);
+  if (localFonts) localFonts.attach(pop, choose);
   const r = anchor.getBoundingClientRect();
   pop.style.left = Math.max(4, Math.min(r.left, innerWidth - pop.offsetWidth - 4)) + 'px';
   pop.style.top = Math.min(r.bottom + 4, innerHeight - pop.offsetHeight - 4) + 'px';
@@ -1483,6 +1497,29 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
+async function initFileAccess() {
+  try {
+    const [files, fonts] = await Promise.all([import(new URL('fileaccess.js', document.baseURI)), import(new URL('localfonts.js', document.baseURI))]);
+    const enc = encodeURIComponent, pdfName = n => /\.pdf$/i.test(n) ? n : n + '.pdf';
+    const markSaved = async (name, version) => { await post(`/api/saved?name=${enc(name)}&version=${version}`); await refreshDirty(); };
+    fa = files.createFileAccess({
+      status, error: reportError, suggestedName: () => pdfName(state.fileName.replace(/^edited-/, '')),
+      prepare: async () => {
+        await flush();
+        const { version, fileName } = await (await request('/api/state')).json();
+        return { version, blob: await (await request('/api/export/pdf?name=' + enc(fileName))).blob() };
+      },
+      saved: markSaved,
+      download: async (name, prepared) => { await dlUrl('/api/export/pdf?name=' + enc(pdfName(name))); await markSaved(name, prepared.version); },
+    });
+    const controller = fonts.createLocalFonts({
+      upload: async (blob, ps) => (await post('/api/font?ps=' + enc(ps), blob)).json(),
+    });
+    localFonts = {
+      attach: (pop, choose) => fonts.attachPicker(pop, { controller, choose, esc, famCss, refreshFonts: () => request('/api/fonts').then(r => r.json()).then(l => { fontList = l; }) }),
+    };
+  } catch (error) { console.warn('File access and local fonts are unavailable:', error); fa = null; localFonts = null; }
+}
 async function startEditor() {
   const ready = async retainedUndo => {
     await refresh(retainedUndo);
@@ -1491,6 +1528,7 @@ async function startEditor() {
     status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
   };
   if (!host) return ready();
+  await initFileAccess();
   let retained, validateUi;
   try {
     const module = await import(new URL('recovery.js', document.baseURI));
@@ -1502,13 +1540,13 @@ async function startEditor() {
     });
     retained = await recovery.load();
   } catch (error) {
-    recovery = null;
+    recovery = null; fa?.clear();
     $('recovery').hidden = false; $('recovery').textContent = 'Recovery unavailable'; $('recovery').title = error.message;
     await ready();
     reportError(new Error(`Local recovery unavailable: ${error.message}. Editing still works; download a copy before closing this tab.`));
     return;
   }
-  if (!retained) { await ready(); recovery.start(); return; }
+  if (!retained) { fa?.clear(); await ready(); recovery.start(); return; }
   status('Choose whether to resume the previous local edit.');
   const prompt = modal('Resume previous edit',
     '<p>A previous edit is stored on this device. Nothing is opened until you choose Resume. Discard and clear permanently removes the retained copy.</p><p data-recovery-error role="alert"></p>',
@@ -1535,6 +1573,7 @@ async function startEditor() {
         sel = controls.sel; zoom = controls.zoom; fitMode = controls.fitMode; preview = controls.preview; clip = remap(controls.clip);
         $('prev').classList.toggle('on', preview);
         await ready(restoredUndo);
+        await fa?.restore(retained.name);
         recovery.start(retained);
       } catch (error) {
         o.querySelector('[data-recovery-error]').textContent = error.message + ' The retained copy has not been deleted.';
@@ -1543,7 +1582,7 @@ async function startEditor() {
     });
   prompt.querySelector('.dc').textContent = 'Discard and clear';
   prompt.querySelector('.dc').onclick = async () => {
-    try { await recovery.clear(); await ready(); recovery.start(); prompt.remove(); }
+    try { await recovery.clear(); await fa?.clear(); await ready(); recovery.start(); prompt.remove(); }
     catch (error) { prompt.querySelector('[data-recovery-error]').textContent = error.message; }
   };
   const resume = prompt.querySelector('.dok').onclick;
