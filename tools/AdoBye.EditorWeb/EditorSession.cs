@@ -940,9 +940,13 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     Snap(); File.WriteAllBytes(savePath, snapshotBytes!); savedVersion = version;
                     return AsJson(new { saved = true, path = savePath });
                 case "saved":
-                    savedVersion = version;
+                    // The version captured before the bytes were exported keeps edits made during the write unsaved.
+                    savedVersion = int.TryParse(Q("version"), out var exportedVersion) && exportedVersion < version ? exportedVersion : version;
                     if (!string.IsNullOrWhiteSpace(Q("name"))) fileName = Q("name")!;
                     return Ok;
+                case "font":
+                    var registered = catalog.Register(body ?? throw new ArgumentException("Choose a font."), Q("ps"));
+                    return AsJson(new { accepted = registered.Accepted, family = registered.Family, bold = registered.Bold, italic = registered.Italic, reason = registered.Reason, substitute = registered.Substitute });
                 default: throw new ArgumentException("Unknown editor command.");
             }
             Changed(); return Ok;

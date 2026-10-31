@@ -51,6 +51,40 @@ public sealed class FontCatalog
 
     public bool Has(string? family) => family is not null && _families.ContainsKey(family);
 
+    /// <summary>
+    /// Registers font bytes supplied by the browser (Local Font Access) for the lifetime of this catalog. The bytes stay in memory only
+    /// and are refused, with a standard-font substitute, when the OS/2 fsType forbids embedding or subsetting.
+    /// </summary>
+    public FontRegistration Register(byte[] data, string? postScript = null)
+    {
+        if (data.Length < 12) throw new ArgumentException("The font data is empty or truncated.");
+        var sfnt = data;
+        if (BinaryPrimitives.ReadUInt32BigEndian(data) == 0x74746366)
+        {
+            var count = (int)Math.Min(BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(8)), 256u);
+            var faces = Enumerable.Range(0, count).Select(i => ExtractFace(data, i)).ToList();
+            sfnt = faces.FirstOrDefault(f => Parse(f)?.PostScript == postScript) ?? faces.FirstOrDefault() ?? throw new ArgumentException("The font collection is empty.");
+        }
+        var face = Parse(sfnt) ?? throw new ArgumentException("Unsupported font. Only TrueType and OpenType (glyf or CFF) fonts can be embedded.");
+        var license = FontLicense.Check(sfnt);
+        if (!license.Allowed) return new(false, face.Family, face.Bold, face.Italic, license.Reason, FontLicense.Substitute(sfnt));
+        var local = face with { Path = "local:" + face.PostScript };
+        lock (_loaded)
+        {
+            _loaded[local.Key] = (sfnt, null!);
+            if (_families.TryGetValue(local.Family, out var l)) l.RemoveAll(x => x.Bold == local.Bold && x.Italic == local.Italic);
+        }
+        Add(local);
+        lock (_fallback) _fallback.Clear();
+        return new(true, local.Family, local.Bold, local.Italic, null, null);
+    }
+
+    static FontFace? Parse(byte[] sfnt)
+    {
+        try { using var ms = new MemoryStream(sfnt); return ReadFace(ms, 0, "local:", -1); }
+        catch (Exception e) when (e is EndOfStreamException or ArgumentException or IndexOutOfRangeException) { return null; }
+    }
+
     /// <summary>Best face for the request: exact style, then the closest available.</summary>
     public FontFace? Resolve(string? family, bool bold, bool italic)
     {
@@ -144,7 +178,7 @@ public sealed class FontCatalog
         if (ReadFace(fs, 0, path, -1) is { } single) yield return single;
     }
 
-    static FontFace? ReadFace(FileStream fs, long dirOffset, string path, int faceIndex)
+    static FontFace? ReadFace(Stream fs, long dirOffset, string path, int faceIndex)
     {
         fs.Seek(dirOffset, SeekOrigin.Begin);
         Span<byte> hdr = stackalloc byte[12];
@@ -184,6 +218,43 @@ public sealed class FontCatalog
             if (plat == 1) mac ??= Encoding.Latin1.GetString(d, off, len);
         }
         return mac;
+    }
+}
+
+/// <summary>Outcome of <see cref="FontCatalog.Register"/>; <paramref name="Substitute"/> names a standard PDF family when the font was refused.</summary>
+public sealed record FontRegistration(bool Accepted, string Family, bool Bold, bool Italic, string? Reason, string? Substitute);
+
+public readonly record struct FontLicenseResult(bool Allowed, int FsType, string? Reason);
+
+/// <summary>Interprets the OS/2 fsType embedding-permission bits.</summary>
+public static class FontLicense
+{
+    public const int Restricted = 0x0002, PreviewPrint = 0x0004, Editable = 0x0008, NoSubsetting = 0x0100, BitmapOnly = 0x0200;
+
+    public static int FsType(byte[] sfnt)
+    {
+        var off = FontSubsetter.TableOffset(sfnt, "OS/2");
+        // A missing or short OS/2 table carries no restriction.
+        return off < 0 || FontSubsetter.TableLength(sfnt, "OS/2") < 10 || off + 10 > sfnt.Length ? 0 : BinaryPrimitives.ReadUInt16BigEndian(sfnt.AsSpan(off + 8));
+    }
+
+    /// <summary>Installable, preview/print and editable embedding are allowed; restricted licenses, bitmap-only embedding and no-subsetting fonts are refused because the editor embeds subsets.</summary>
+    public static FontLicenseResult Check(byte[] sfnt)
+    {
+        var fs = FsType(sfnt);
+        if ((fs & Restricted) != 0) return new(false, fs, "Its license (OS/2 fsType) restricts embedding.");
+        if ((fs & BitmapOnly) != 0) return new(false, fs, "Its license (OS/2 fsType) only permits embedding bitmaps.");
+        if ((fs & NoSubsetting) != 0) return new(false, fs, "Its license (OS/2 fsType) forbids subsetting, and the editor embeds only the glyphs in use.");
+        return new(true, fs, null);
+    }
+
+    /// <summary>The closest standard PDF family judged from the PANOSE classification, defaulting to Helvetica.</summary>
+    public static string Substitute(byte[] sfnt)
+    {
+        var off = FontSubsetter.TableOffset(sfnt, "OS/2");
+        if (off < 0 || FontSubsetter.TableLength(sfnt, "OS/2") < 42 || off + 42 > sfnt.Length || sfnt[off + 32] != 2) return "Helvetica";
+        if (sfnt[off + 35] == 9) return "Courier";
+        return sfnt[off + 33] is >= 2 and <= 10 ? "Times" : "Helvetica";
     }
 }
 

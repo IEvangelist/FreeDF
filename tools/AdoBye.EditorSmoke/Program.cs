@@ -68,6 +68,7 @@ var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
+var fileAccessOnly = args.Length == 2 && args[0] == "--file-access";
 var formsOnly = args.Length == 2 && args[0] == "--forms";
 var annotationsOnly = args.Length == 2 && args[0] == "--annotations";
 var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
@@ -79,7 +80,7 @@ var a11yOnly = args.Length == 3 && args[0] == "--a11y";
 var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
 var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
 var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
@@ -169,6 +170,7 @@ try
             injectedBootFailure = true;
             await route.FulfillAsync(new() { Status = 503, ContentType = "text/plain", Body = "Injected transient delivery failure" });
         });
+    if (fileAccessOnly) await EditorFileAccess.Install(page);
     await page.GotoAsync(address + "/csharp-pdf/");
     try { await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')"); }
     catch (TimeoutException)
@@ -270,6 +272,13 @@ try
         await EditorProtection.Run(page);
         Check(network.IsEmpty && errors.All(e => EditorProtection.ExpectedError(e) || ExpectedRecoveryError(e)), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: encrypted samples open through the accessible password dialog (cancel, wrong password retry), nothing persisted, permissions enforced, protected save (AES-256) and owner protection removal in WASM.");
+        return;
+    }
+    if (fileAccessOnly)
+    {
+        if (Environment.GetEnvironmentVariable("EDITOR_SMOKE_FONTS_ONLY") != "1") await EditorFileAccess.Run(page);
+        await EditorFileAccess.RunFonts(page);
+        Check(network.IsEmpty && errors.All(EditorFileAccess.ExpectedError), "No external requests or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
     }
     if (recoveryOnly)
