@@ -96,17 +96,29 @@ internal sealed class XmpData
                 var text = string.Concat(el.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
                 if (text.Length == 0) text = string.Concat(el.Descendants().Where(d => !d.HasElements).Select(d => d.Value)).Trim();
                 if (ns.Length > 0) result.Values.TryAdd((ns, el.Name.LocalName), text);
-                if (ns == PdfUAId) result.PdfUAPrefixes.TryAdd(el.Name.LocalName, el.GetPrefixOfNamespace(el.Name.Namespace));
                 foreach (var a in el.Attributes())
-                    if (!a.IsNamespaceDeclaration && a.Name.NamespaceName.Length > 0)
-                    {
-                        result.Values.TryAdd((a.Name.NamespaceName, a.Name.LocalName), a.Value);
-                        if (a.Name.NamespaceName == PdfUAId) result.PdfUAPrefixes.TryAdd(a.Name.LocalName, el.GetPrefixOfNamespace(a.Name.Namespace));
-                    }
+                    if (!a.IsNamespaceDeclaration && a.Name.NamespaceName.Length > 0) result.Values.TryAdd((a.Name.NamespaceName, a.Name.LocalName), a.Value);
             }
+            CollectPdfUaPrefixes(bytes, result);
             return result;
         }
         catch (XmlException) { return data; }
+    }
+
+    /// <summary>XLinq discards prefixes, so the pdfuaid property prefixes (ISO 14289 clause 5) are read with an XmlReader.</summary>
+    static void CollectPdfUaPrefixes(byte[] bytes, XmpData result)
+    {
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersFromEntities = 0 };
+        using var reader = XmlReader.Create(new MemoryStream(bytes), settings);
+        var nodes = 0;
+        while (reader.Read() && nodes++ < 100_000)
+        {
+            if (reader.NodeType != XmlNodeType.Element) continue;
+            if (reader.NamespaceURI == PdfUAId) result.PdfUAPrefixes.TryAdd(reader.LocalName, reader.Prefix);
+            for (var ok = reader.MoveToFirstAttribute(); ok; ok = reader.MoveToNextAttribute())
+                if (reader.NamespaceURI == PdfUAId) result.PdfUAPrefixes.TryAdd(reader.LocalName, reader.Prefix);
+            reader.MoveToElement();
+        }
     }
 }
 

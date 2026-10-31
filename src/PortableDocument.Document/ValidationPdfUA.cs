@@ -25,6 +25,7 @@ internal static partial class PdfUAChecks
         c.Guard("content tagging", () => PdfUADeepChecks.ContentTagging(c, tree));
         c.Guard("structure rules", () => PdfUADeepChecks.StructureRules(c, tree));
         c.Guard("structure types", () => StructureTypes(c, tree));
+        if (c.Part == 2) PdfUA2Checks.Run(c, tree);
         c.Guard("language", () => Language(c, tree));
         c.Guard("figures", () => Figures(c, tree));
         c.Guard("headings", () => Headings(c, tree));
@@ -69,8 +70,10 @@ internal static partial class PdfUAChecks
         if (part is null) c.Add("PDFUA-XMP-ID-MISSING", ValidationSeverity.Error, "XMP has no pdfuaid:part identification", Clause(c, "5", "5"));
         else if (part != c.Part.ToString()) c.Add("PDFUA-XMP-ID-PART", ValidationSeverity.Error, $"pdfuaid:part is '{part}', expected '{c.Part}'", Clause(c, "5", "5"));
         foreach (var (name, prefix) in x.PdfUAPrefixes)
-            if (name is "part" or "amd" or "corr" && prefix != "pdfuaid")
+            if (name is "part" or "amd" or "corr" or "rev" && prefix != "pdfuaid")
                 c.Add("PDFUA-XMP-ID-PREFIX", ValidationSeverity.Error, $"pdfuaid property '{name}' uses namespace prefix '{prefix}', expected 'pdfuaid'", Clause(c, "5", "5"));
+        if (c.Part == 2 && x.Get(XmpData.PdfUAId, "rev") != "2024")
+            c.Add("PDFUA2-XMP-ID-REV", ValidationSeverity.Error, "pdfuaid:rev must be 2024 for PDF/UA-2", "ISO 14289-2 5");
     }
 
     static void Security(ValidationContext c)
@@ -157,17 +160,7 @@ internal static partial class PdfUAChecks
                     c.Add(circular ? "PDFUA-ROLEMAP-CIRCULAR" : "PDFUA-ROLEMAP-MISSING", ValidationSeverity.Error, circular ? $"structure type /{e.Type} has a circular RoleMap mapping" : $"structure type /{e.Type} does not map to a standard type", "ISO 14289-1 7.1");
             }
         }
-        else
-        {
-            foreach (var (k, v) in tree.RoleMap)
-                if (StructureTree.IsStandardType(k) && k != v)
-                    c.Add("PDFUA-ROLEMAP-STANDARD", ValidationSeverity.Error, $"standard type /{k} is remapped to /{v}", Clause(c, "7.1", "8.2"));
-            foreach (var e in tree.Elements())
-                if (!StructureTree.IsStandardType(e.StandardType) && reported.Add(e.Type))
-                    c.Add("PDFUA-ROLEMAP-MISSING", ValidationSeverity.Error, $"structure type /{e.Type} does not map to a standard type", Clause(c, "7.1", "8.2"));
-        }
-        if (c.Part == 2 && (tree.Children.Count != 1 || tree.Children[0].StandardType is not ("Document" or "DocumentFragment")))
-            c.Add("PDFUA2-DOCUMENT-ROOT", ValidationSeverity.Warning, "structure tree root should have a single Document child element", "ISO 14289-2 8.2");
+        // UA-2 role mapping is evaluated per namespace by PdfUA2Checks.
         if (tree.Truncated) c.Add("PDFUA-STRUCT-TRUNCATED", ValidationSeverity.Warning, "structure tree exceeded the parser's limits and was only partially checked");
     }
 
@@ -190,8 +183,14 @@ internal static partial class PdfUAChecks
     static void Figures(ValidationContext c, StructureTree tree)
     {
         foreach (var e in tree.Elements())
-            if (e.StandardType is "Figure" or "Formula" && string.IsNullOrEmpty(e.Alt) && e.ActualText is null && !InsideArtifact(e))
+        {
+            if (e.StandardType is not ("Figure" or "Formula") || InsideArtifact(e)) continue;
+            // UA-1 (7.3-1, 7.7-1): Alt non-empty or ActualText present. UA-2 (8.2.5.28.2-1): Alt or ActualText present; a Formula may use MathML (Math child) instead.
+            var described = c.Part == 1 ? !string.IsNullOrEmpty(e.Alt) || e.ActualText is not null : e.Alt is not null || e.ActualText is not null;
+            if (c.Part == 2 && e.StandardType == "Formula" && e.ChildElements.Any(k => k.StandardType == "Math" || k.Type == "Math")) described = true;
+            if (!described)
                 c.Add("PDFUA-ALT-MISSING", ValidationSeverity.Error, $"{e.StandardType} element has no /Alt text", Clause(c, "7.3", "8.6"), e.PageIndex);
+        }
     }
 
     static bool InsideArtifact(StructElement e)
@@ -264,7 +263,7 @@ internal static partial class PdfUAChecks
             }
             if (!hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
             if (widths.Distinct().Count() > 1)
-                c.Add("PDFUA-TABLE-IRREGULAR", ValidationSeverity.Warning, "table rows have differing column counts", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
+                c.Add("PDFUA-TABLE-IRREGULAR", ValidationSeverity.Error, "table rows have differing column counts (veraPDF PDFUA-1 7.2-42/43, PDFUA-2 8.2.5.26-3/4)", Clause(c, "7.2", "8.2.5.26"), t.PageIndex);
             TableHeaderAssociations(c, tree, rows, idCounts, headerTargets);
         }
         foreach (var cell in tree.Elements().Where(e => e.StandardType is "TH" or "TD" or "TR"))
@@ -421,11 +420,20 @@ internal static partial class PdfUAChecks
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
                 var key = f.Resolve(ad.Get("StructParent"));
                 var exempt = (((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) & 2) != 0 || OutsideCropBox(f, ad, c.Doc.Pages[i].CropBox);
-                if (sub is "Popup") continue;
+                if (sub is "Popup")
+                {
+                    if (c.Part == 2 && key is not null)
+                        c.Add("PDFUA2-ANNOT-POPUP", ValidationSeverity.Error, "Popup annotations must not be present in the structure tree (veraPDF PDFUA-2 8.9.2.4.9-1)", "ISO 14289-2 8.9.2.4.9", i);
+                    continue;
+                }
+                if (c.Part == 2 && sub is "Sound" or "Movie")
+                    c.Add("PDFUA2-ANNOT-DEPRECATED", ValidationSeverity.Error, $"/{sub} annotations cannot be used with PDF/UA-2 (veraPDF PDFUA-2 8.9.2.4.11)", "ISO 14289-2 8.9.2.4.11", i);
+                if (c.Part == 2 && !exempt && key is not null && ((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) is var flags2 && ((flags2 & 1) != 0 || (flags2 & 32) != 0 && (flags2 & 256) == 0))
+                    c.Add("PDFUA2-ANNOT-ARTIFACT", ValidationSeverity.Error, $"/{sub} annotation has the Invisible or NoView flag but is in the structure tree; it must be an artifact (veraPDF PDFUA-2 8.9.2.2)", "ISO 14289-2 8.9.2.2", i);
                 if (sub is "TrapNet" or "PrinterMark")
                 {
-                    if (c.Part == 1 && !exempt && (sub == "TrapNet" || key is not null))
-                        c.Add(sub == "TrapNet" ? "PDFUA-ANNOT-TRAPNET" : "PDFUA-ANNOT-PRINTERMARK", ValidationSeverity.Error, sub == "TrapNet" ? "TrapNet annotations are not permitted (veraPDF PDFUA-1 7.18.2-1)" : "PrinterMark annotation is in the structure tree but must be an incidental artifact (veraPDF PDFUA-1 7.18.8-1)", "ISO 14289-1 7.18", i);
+                    if (sub == "TrapNet" ? c.Part == 2 || !exempt : key is not null && (c.Part == 2 || !exempt))
+                        c.Add(sub == "TrapNet" ? "PDFUA-ANNOT-TRAPNET" : "PDFUA-ANNOT-PRINTERMARK", ValidationSeverity.Error, sub == "TrapNet" ? "TrapNet annotations are not permitted (veraPDF PDFUA-1 7.18.2-1, PDFUA-2 8.9.2.4.15-1)" : "PrinterMark annotation is in the structure tree but must be an artifact (veraPDF PDFUA-1 7.18.8-1, PDFUA-2 8.9.2.4.14-1)", Clause(c, "7.18", "8.9"), i);
                     continue;
                 }
                 StructElement? parent = null;
@@ -453,7 +461,7 @@ internal static partial class PdfUAChecks
                     // UA-1 7.18.5-2 accepts only /Contents; the structure /Alt fallback is kept for UA-2.
                     var hasContents = f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 };
                     if (!hasContents && (c.Part == 1 || parent?.Alt is not { Length: > 0 }))
-                        c.Add("PDFUA-LINK-DESCRIPTION", ValidationSeverity.Error, c.Part == 1 ? "Link annotation has no /Contents" : "Link annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.5", "8.9"), i);
+                        c.Add("PDFUA-LINK-DESCRIPTION", c.Part == 1 ? ValidationSeverity.Error : ValidationSeverity.Warning, c.Part == 1 ? "Link annotation has no /Contents" : "Link annotation has no /Contents and its structure element has no /Alt (advisory: veraPDF's PDFUA-2 profile has no counterpart)", Clause(c, "7.18.5", "8.9"), i);
                     if (parent is not null && parent.StandardType != "Link")
                         c.Add("PDFUA-LINK-STRUCT", ValidationSeverity.Error, $"Link annotation is nested in /{parent.Type}, expected Link", Clause(c, "7.18.5", "8.9"), i);
                 }
