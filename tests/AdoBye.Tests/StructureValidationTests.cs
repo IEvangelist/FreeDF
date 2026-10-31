@@ -11,7 +11,7 @@ static class ObjPdf
 {
     public static byte[] Build(params string[] bodies)
     {
-        var sb = new StringBuilder("%PDF-1.7\n");
+        var sb = new StringBuilder("%PDF-1.7\n%\u00E2\u00E3\u00CF\u00D3\n");
         var offs = new List<int>();
         for (var i = 0; i < bodies.Length; i++)
         {
@@ -22,8 +22,17 @@ static class ObjPdf
         sb.Append($"xref\n0 {offs.Count + 1}\n0000000000 65535 f \n");
         foreach (var o in offs) sb.Append($"{o:D10} 00000 n \n");
         sb.Append($"trailer\n<< /Size {offs.Count + 1} /Root 1 0 R /ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>] >>\nstartxref\n{xref}\n%%EOF\n");
-        return Encoding.Latin1.GetBytes(sb.ToString());
+        var bytes = Encoding.Latin1.GetBytes(sb.ToString());
+        // Set PDF_VALIDATION_DUMP to a directory to export every built fixture for cross-checking with veraPDF/qpdf/pikepdf.
+        if (Environment.GetEnvironmentVariable("PDF_VALIDATION_DUMP") is { Length: > 0 } dir)
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, $"obj-{Interlocked.Increment(ref _dumpCounter):D4}.pdf"), bytes);
+        }
+        return bytes;
     }
+
+    static int _dumpCounter;
 
     public static string Stream(string content, string dict = "") => $"<< /Length {content.Length} {dict} >>\nstream\n{content}\nendstream";
 

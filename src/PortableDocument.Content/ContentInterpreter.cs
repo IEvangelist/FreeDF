@@ -57,7 +57,8 @@ public sealed class ContentInterpreter
     public bool HonorActualText { get; set; }
     int _hiddenDepth;
     int _pageMcid = -1;
-    int _type3Depth;
+    int _type3Depth, _compat;
+    bool _type3Mono;
     public List<string> Warnings { get; } = [];
     public PdfDictionary? OptionalContentConfiguration { get; set; }
     public PdfDictionary? DefaultOptionalContentConfiguration { get; set; }
@@ -405,7 +406,7 @@ public sealed class ContentInterpreter
     void Exec(string op, List<PdfObject> a, PdfDictionary res)
     {
         // 8.7.3.3: an uncoloured tiling pattern's content stream shall not set colours; the colour comes from the pattern's scn operands.
-        if (_uncolored && op is "CS" or "cs" or "SC" or "SCN" or "sc" or "scn" or "G" or "g" or "RG" or "rg" or "K" or "k") return;
+        if ((_uncolored || _type3Mono) && op is "CS" or "cs" or "SC" or "SCN" or "sc" or "scn" or "G" or "g" or "RG" or "rg" or "K" or "k") return;
         if (!DrawGraphics && Objects is null && op is
             "m" or "l" or "c" or "v" or "y" or "h" or "re" or
             "S" or "s" or "f" or "F" or "f*" or "B" or "B*" or "b" or "b*" or "n" or "W" or "W*")
@@ -510,8 +511,18 @@ public sealed class ContentInterpreter
                 if (_actualText.Count > 0) _actualText.RemoveAt(_actualText.Count - 1);
                 if (_hiddenStack.Count > 0) { if (_hiddenStack[^1] == "H") _hiddenDepth--; _hiddenStack.RemoveAt(_hiddenStack.Count - 1); }
                 break;
-            case "d0": case "d1": case "MP": case "DP": case "BX": case "EX": break;
-            default: Warn($"unknown operator {op}"); break;
+            case "d1":
+                // 9.6.5: d1 declares an uncoloured glyph; it is painted in the current fill colour and colour operators are ignored.
+                if (_type3Depth > 0)
+                {
+                    _type3Mono = true;
+                    _gs.StrokeCs = _gs.FillCs; _gs.StrokeColor = _gs.FillColor; _gs.StrokePattern = _gs.FillPattern;
+                }
+                break;
+            case "BX": _compat++; break;
+            case "EX": if (_compat > 0) _compat--; break;
+            case "d0": case "MP": case "DP": break;
+            default: if (_compat == 0) Warn($"unknown operator {op}"); break;
         }
     }
 
@@ -1134,7 +1145,7 @@ public sealed class ContentInterpreter
             off += run.ByteLength;
             if (DrawGraphics && !hidden)
             {
-                if (font.IsType3) { if (_gs.RenderMode is not (3 or 7)) DrawType3(font, run.Code, trm); }
+                if (font.IsType3) { if (_gs.RenderMode is not (3 or 7)) DrawType3(font, run.Code, trm, res); }
                 else
                 {
                     var outline = font.GetGlyph(run.Code, font.ToUnicode(run));
@@ -1171,7 +1182,7 @@ public sealed class ContentInterpreter
         FillBackend(outline, m, false);
     }
 
-    void DrawType3(PdfFont font, int code, Matrix trm)
+    void DrawType3(PdfFont font, int code, Matrix trm, PdfDictionary pageResources)
     {
         if (font.GetCharProc(code) is not { } proc || _type3Depth > 4) return;
         var tm = font.Type3Matrix;
@@ -1183,8 +1194,11 @@ public sealed class ContentInterpreter
         _gs = _gs.Clone();
         _gs.Ctm = fm.Then(trm);
         _type3Depth++;
-        // d1 glyphs inherit the current colour; d0 glyphs set their own, so the fill colour is simply left in place.
-        Run(data, font.Type3Resources ?? new PdfDictionary());
+        var savedMono = _type3Mono; var savedCompat = _compat;
+        _type3Mono = false; _compat = 0;
+        // d1 glyphs inherit the current colour and ignore colour operators; d0 glyphs may set their own.
+        Run(data, font.Type3Resources ?? pageResources);
+        _type3Mono = savedMono; _compat = savedCompat;
         _type3Depth--;
         _gs = _stack.Pop();
         _be.Restore();
@@ -1453,11 +1467,14 @@ public sealed class ContentInterpreter
         var data = lx.Data;
         int end;
         var filter = d.GetValueOrDefault("Filter");
-        if (filter is null)
+        var isMask = d.GetValueOrDefault("ImageMask") is PdfBoolean { Value: true };
+        // ISO 32000-2 8.9.7: /L gives the exact byte length of the data, so no "EI" search is needed.
+        if (d.GetValueOrDefault("L").AsNumber() is { } declared && declared >= 0 && start + (long)declared <= data.Length) end = start + (int)declared;
+        else if (filter is null)
         {
             var w = (int)(d.GetValueOrDefault("Width").AsNumber() ?? 0); var h = (int)(d.GetValueOrDefault("Height").AsNumber() ?? 0);
-            var bpc = d.ContainsKey("ImageMask") ? 1 : (int)(d.GetValueOrDefault("BitsPerComponent").AsNumber() ?? 8);
-            var ncomp = d.ContainsKey("ImageMask") ? 1 : PdfColorSpace.Parse(_f, d.GetValueOrDefault("ColorSpace"), res).Components;
+            var bpc = isMask ? 1 : (int)(d.GetValueOrDefault("BitsPerComponent").AsNumber() ?? 8);
+            var ncomp = isMask ? 1 : PdfColorSpace.Parse(_f, d.GetValueOrDefault("ColorSpace"), res).Components;
             end = Math.Min(data.Length, start + (w * ncomp * bpc + 7) / 8 * h);
         }
         else
