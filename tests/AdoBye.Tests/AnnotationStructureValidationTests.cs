@@ -17,7 +17,7 @@ public class AnnotationStructureValidationTests
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [9 0 R] /Tabs /S >>",
             ObjPdf.Stream(""),
             "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R >>",
-            ObjPdf.Xmp($"<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='{part}'><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>"),
+            ObjPdf.Xmp($"<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='{part}'{(part == 2 ? " pdfuaid:rev='2024'" : "")}><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>"),
             "<< /Type /StructElem /S /Document /P 5 0 R /K 8 0 R >>",
             Element,
             Annotation,
@@ -27,6 +27,13 @@ public class AnnotationStructureValidationTests
             "<< /Type /StructElem /S /Span /P 8 0 R /K 11 0 R >>",
         };
         foreach (var (number, body) in replacements) bodies[number - 1] = body;
+        if (part == 2)
+        {
+            // PDF/UA-2 needs PDF 2.0 and a Document element in the PDF 2.0 structure namespace.
+            bodies[0] = bodies[0].Replace("/Type /Catalog", "/Type /Catalog /Version /2.0");
+            bodies[6] = bodies[6].Replace("/S /Document", "/S /Document /NS 14 0 R");
+            bodies = [.. bodies, "<< /Type /Namespace /NS (http://iso.org/pdf2/ssn) >>"];
+        }
         return PdfDocument.Load(ObjPdf.Build(bodies));
     }
 
@@ -363,10 +370,10 @@ public class AnnotationStructureValidationTests
                 (9, $"<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] /StructParent 1 {contents} >>"));
             var report = Validate(doc, part);
             Assert.DoesNotContain(report.Findings, f => f.RuleId.StartsWith("PDFUA-ANNOT-"));
-            // veraPDF PDFUA-1 7.18.5-2 accepts only /Contents; the mapped structure /Alt fallback is UA-2 only.
+            // veraPDF PDFUA-1 7.18.5-2 accepts only /Contents; UA-2 has no link-description rule in veraPDF, so a missing description is advisory there.
             var expected = described && (part == 2 || contents.Contains("(Link description)"));
             Assert.Equal(!expected, report.Has("PDFUA-LINK-DESCRIPTION"));
-            Assert.Equal(expected, report.IsCompliant);
+            Assert.Equal(expected || part == 2, report.IsCompliant);
         }
     }
 
@@ -409,13 +416,12 @@ public class AnnotationStructureValidationTests
         // Popup is always exempt; TrapNet and untagged PrinterMark are only exempt when hidden/outside (see below).
         var doc = Load(part, (9, "<< /Type /Annot /Subtype /Popup >>"));
         Assert.True(Validate(doc, part).IsCompliant);
-        foreach (var subtype in new[] { "PrinterMark", "TrapNet" })
-        {
-            var hidden = Load(part, (9, $"<< /Type /Annot /Subtype /{subtype} /F 2 /Rect [0 0 10 10] >>"));
-            Assert.True(Validate(hidden, part).IsCompliant);
-        }
+        var hidden = Load(part, (9, "<< /Type /Annot /Subtype /PrinterMark /F 2 /Rect [0 0 10 10] >>"));
+        Assert.True(Validate(hidden, part).IsCompliant);
+        var hiddenTrap = Load(part, (9, "<< /Type /Annot /Subtype /TrapNet /F 2 /Rect [0 0 10 10] >>"));
+        Assert.Equal(part == 1, Validate(hiddenTrap, part).IsCompliant);
         Assert.True(Validate(Load(part, (9, "<< /Type /Annot /Subtype /PrinterMark /Rect [0 0 10 10] >>")), part).IsCompliant);
-        Assert.Equal(part == 2, Validate(Load(part, (9, "<< /Type /Annot /Subtype /TrapNet /Rect [0 0 10 10] >>")), part).IsCompliant);
+        Assert.False(Validate(Load(part, (9, "<< /Type /Annot /Subtype /TrapNet /Rect [0 0 10 10] >>")), part).IsCompliant);
     }
 
     [Theory]

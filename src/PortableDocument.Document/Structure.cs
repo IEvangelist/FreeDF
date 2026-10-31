@@ -44,6 +44,10 @@ public sealed class StructElement : StructNode
     public string? Expansion { get; internal set; }
     /// <summary>/Lang declared on this element itself.</summary>
     public string? Lang { get; internal set; }
+    /// <summary>The namespace URI of the element's /NS namespace dictionary (ISO 32000-2 14.7.4); null when the element has no /NS and so belongs to the default PDF 1.7 namespace.</summary>
+    public string? Namespace { get; internal set; }
+    /// <summary>The /NS namespace dictionary, when present and resolvable.</summary>
+    public PdfDictionary? NamespaceDict { get; internal set; }
     public int Depth { get; internal set; }
     public List<StructNode> Children { get; } = [];
 
@@ -385,9 +389,12 @@ public sealed class StructureTree
     {
         string? Str(string key) => F.Resolve(d.Get(key)) is PdfString s ? s.Text : null;
         var type = F.Resolve(d.Get("S")).AsName() ?? "";
+        var nsDict = F.Resolve(d.Get("NS")) as PdfDictionary;
         return new StructElement
         {
             Dict = d,
+            NamespaceDict = nsDict,
+            Namespace = nsDict is not null && F.Resolve(nsDict.Get("NS")) is PdfString nsUri ? nsUri.Text : null,
             Type = type,
             StandardType = ResolveRole(type),
             Id = F.Resolve(d.Get("ID")) is PdfString id ? id.Text : null,

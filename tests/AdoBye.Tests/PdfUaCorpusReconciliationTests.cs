@@ -118,3 +118,71 @@ public class PdfUaCorpusReconciliationTests
         Assert.True(Validate(Load(1, content: TaggedText, extra: " /Ref << /F (x.pdf) /Page 0 >>")).Has("PDFUA-XOBJECT-REF"));
     }
 }
+
+public class PdfUa2StructureNamespaceTests
+{
+    const string Pdf2 = "http://iso.org/pdf2/ssn";
+
+    // Part 2 fixture: PDF 2.0 version, Document in the PDF 2.0 namespace (object 12), content-free so only structure rules apply.
+    static ValidationReport Validate(string document = "/S /Document /NS 12 0 R", string version = "/Version /2.0", string kids = "")
+    {
+        var bodies = new[]
+        {
+            $"<< /Type /Catalog {version} /Pages 2 0 R /StructTreeRoot 5 0 R /MarkInfo << /Marked true >> /Lang (en) /ViewerPreferences << /DisplayDocTitle true >> /Metadata 6 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+            ObjPdf.Stream(""),
+            "<< /Type /StructTreeRoot /K 7 0 R >>",
+            ObjPdf.Xmp("<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='2' pdfuaid:rev='2024'><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>"),
+            $"<< /Type /StructElem {document} /P 5 0 R {kids} >>",
+            "<< /Type /StructElem /S /P /P 7 0 R /Pg 3 0 R >>",
+            "<< /Type /StructElem /S /Span /P 7 0 R >>",
+            "<< /Type /StructElem /S /Lbl /P 7 0 R >>",
+            "<< /Type /StructElem /S /Caption /P 7 0 R >>",
+            $"<< /Type /Namespace /NS ({Pdf2}) >>",
+            "<< /Type /Namespace /NS (urn:custom) /RoleMapNS << /Widget [/P 12 0 R] /Loop /Gadget /Gadget /Loop >> >>",
+        };
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(ObjPdf.Build(bodies)), 2);
+        Assert.False(report.Has("VALIDATION-INTERNAL"), string.Join("\n", report.Findings));
+        return report;
+    }
+
+    [Fact]
+    public void ConformingSkeletonHasNoStructureErrors()
+    {
+        var report = Validate(kids: "/K 8 0 R");
+        Assert.DoesNotContain(report.Errors, e => e.RuleId.StartsWith("PDFUA2-"));
+    }
+
+    [Fact]
+    public void RequiresPdf20AndDocumentInPdf2Namespace()
+    {
+        Assert.True(Validate(version: "").Has("PDFUA2-VERSION"));
+        Assert.True(Validate(document: "/S /Document", kids: "/K 8 0 R").Has("PDFUA2-DOCUMENT-NS"));
+        Assert.True(Validate(document: "/S /Sect /NS 12 0 R", kids: "/K 8 0 R").Has("PDFUA2-DOCUMENT-ROOT"));
+    }
+
+    [Fact]
+    public void RoleMappingIsEvaluatedPerNamespace()
+    {
+        // Custom-namespace types map to the PDF 1.7/2.0 vocabulary through RoleMapNS; unmapped, circular and same-namespace mappings fail.
+        Assert.False(Validate(kids: "/K [<< /Type /StructElem /S /Widget /NS 13 0 R /P 7 0 R >>]").Has("PDFUA2-ROLEMAP-MISSING"));
+        Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /Unknown /NS 13 0 R /P 7 0 R >>]").Has("PDFUA2-ROLEMAP-MISSING"));
+        var circular = Validate(kids: "/K [<< /Type /StructElem /S /Loop /NS 13 0 R /P 7 0 R >>]");
+        Assert.True(circular.Has("PDFUA2-ROLEMAP-CIRCULAR"));
+        Assert.True(circular.Has("PDFUA2-ROLEMAP-SAME-NS"));
+        Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /Mystery /P 7 0 R >>]").Has("PDFUA2-ROLEMAP-MISSING"));
+    }
+
+    [Fact]
+    public void Pdf2SpecificElementRules()
+    {
+        Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /H /NS 12 0 R /P 7 0 R >>]").Has("PDFUA2-HEADING-H"));
+        Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /Note /P 7 0 R >>]").Has("PDFUA2-NOTE"));
+        Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /Math /NS 12 0 R /P 7 0 R >>]").Has("PDFUA2-MATH-PARENT"));
+        const string list = "<< /Type /StructElem /S /L /NS 12 0 R /P 7 0 R /K [<< /Type /StructElem /S /LI /NS 12 0 R /K [10 0 R] >>] ";
+        Assert.True(Validate(kids: "/K [" + list + ">>]").Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(Validate(kids: "/K [" + list + "/A << /O /List /ListNumbering /Decimal >> >>]").Has("PDFUA2-LIST-NUMBERING"));
+        Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /Div /NS 12 0 R /P 7 0 R /K [8 0 R 11 0 R 9 0 R] >>]").Has("PDFUA2-CAPTION-POSITION"));
+    }
+}
