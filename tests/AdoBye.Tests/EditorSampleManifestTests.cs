@@ -12,7 +12,7 @@ public class EditorSampleManifestTests(GeneratedSamples gen) : IClassFixture<Gen
     public void ManifestLeadsWithTheFullCollectionAndDescribesEveryFile()
     {
         var entries = SampleManifest.Entries(gen.Dir);
-        Assert.Equal(27, entries.Count);
+        Assert.Equal(28, entries.Count);
         Assert.Equal("27-full-collection", entries[0].Name);
         Assert.Equal(50, entries[0].Pages);
         Assert.Equal(entries.Skip(1).Select(e => e.Name).Order(StringComparer.Ordinal), entries.Skip(1).Select(e => e.Name));
@@ -55,7 +55,8 @@ public class EditorSampleManifestTests(GeneratedSamples gen) : IClassFixture<Gen
         Directory.CreateDirectory(other);
         try
         {
-            foreach (var f in gen.Sources) File.Copy(Path.Combine(gen.Dir, f), Path.Combine(other, f));
+            // sample 28 sits beside the sources but must never change the collection
+            foreach (var f in gen.Sources.Concat(gen.Standalone)) File.Copy(Path.Combine(gen.Dir, f), Path.Combine(other, f));
             SampleGenerator.Generate(other, "27-");
             Assert.True(File.ReadAllBytes(gen.Full).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(other, "27-full-collection.pdf"))));
         }

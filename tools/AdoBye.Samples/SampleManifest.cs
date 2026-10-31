@@ -45,6 +45,7 @@ public static class SampleManifest
         ["25"] = ("Dashboard charts", "KPI dashboard with bar, line, donut and sparkline charts."),
         ["26"] = ("Repacked object streams", "The report rewritten with compressed object and cross-reference streams."),
         ["27"] = ("Full sample collection", "All 26 samples merged into one document with outline, page labels and working links."),
+        ["28"] = ("Benchmarks, brand and spec parity", "Tagged 17-page showcase: benchmark charts, brand directions with contrast ratios and the honest ISO 32000-2 parity map."),
     };
 
     public static IReadOnlyList<SampleEntry> Entries(string samplesDir)

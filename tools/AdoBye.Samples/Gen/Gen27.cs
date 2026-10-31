@@ -29,7 +29,7 @@ static class Gen27
         var dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
         var editor = PdfEditor.Create();
         var parts = new List<Part>();
-        var sources = Directory.GetFiles(dir, "*.pdf").Select(f => Path.GetFileName(f)).Where(n => n != Out && Regex.IsMatch(n, @"^\d\d-")).Order(StringComparer.Ordinal).ToList();
+        var sources = Directory.GetFiles(dir, "*.pdf").Select(f => Path.GetFileName(f)).Where(n => n != Out && Regex.IsMatch(n, @"^\d\d-") && string.CompareOrdinal(n[..2], "27") < 0).Order(StringComparer.Ordinal).ToList();
         using var hash = MD5.Create();
         foreach (var name in sources)
         {

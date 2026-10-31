@@ -82,7 +82,7 @@ static class EditorSamples
         await Opened(page, "sample-copy.pdf");
         Check(await Pages(page) == 50, "Resume restores the sample.");
 
-        // File > Open sample: full collection first, then 01-26; encrypted ones are visibly unavailable; replace confirmation when dirty.
+        // File > Open sample: full collection first, then 01-26 and 28; encrypted ones are visibly unavailable; replace confirmation when dirty.
         await page.Locator("#rr").ClickAsync();
         await EditorHeader.State(page, true);
         await page.RunAndWaitForResponseAsync(() => page.Locator("#fileBtn").HoverAsync(), r => r.Url.EndsWith("/samples/manifest.json"));
@@ -90,7 +90,7 @@ static class EditorSamples
         await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.HoverAsync();
         await page.Locator(".cm.sub .cm-i").Filter(new() { HasTextString = "Full sample collection" }).First.WaitForAsync();
         var items = await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.Locator(".cm.sub > .cm-i").AllInnerTextsAsync();
-        Check(items.Count == 27 && items[0].StartsWith("Full sample collection (50 pages)") && items[1].StartsWith("01 "), "Menu lists the full collection first, then 01-26 (" + items.Count + ").");
+        Check(items.Count == 28 && items[0].StartsWith("Full sample collection (50 pages)") && items[1].StartsWith("01 ") && items[^1].StartsWith("28 "), "Menu lists the full collection first, then 01-26 and 28 (" + items.Count + ").");
         var disabled = await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.Locator(".cm.sub > .cm-i:disabled").AllInnerTextsAsync();
         Check(disabled.Count == 0, "openEncrypted is advertised before the menu renders, so 17 and 18 are offered: " + string.Join(", ", disabled));
         var asked = 0;
