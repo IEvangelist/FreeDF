@@ -270,6 +270,24 @@ public abstract class PdfColorSpace
     public static PdfColorSpace Parse(PdfFile f, PdfObject? obj, PdfDictionary? resources = null, int depth = 0)
         => TryParse(f, obj, resources, depth) ?? Gray;
 
+    /// <summary>
+    /// <see cref="Parse"/> plus ISO 32000-2 8.6.5.6: a Device space set by operator, by name or as an image/shading space is
+    /// replaced by the resource /DefaultGray, /DefaultRGB or /DefaultCMYK when that entry is a usable space with the same
+    /// component count (never Pattern, Indexed, Separation or DeviceN). Spaces nested inside other spaces are not remapped.
+    /// </summary>
+    public static PdfColorSpace ParseWithDefaults(PdfFile f, PdfObject? obj, PdfDictionary? resources)
+        => WithDefault(f, Parse(f, obj, resources), resources);
+
+    public static PdfColorSpace WithDefault(PdfFile f, PdfColorSpace cs, PdfDictionary? resources)
+    {
+        if (resources is null || (cs != Gray && cs != Rgb && cs != Cmyk)) return cs;
+        if (f.Resolve(resources.Get("ColorSpace")) is not PdfDictionary spaces) return cs;
+        var key = cs == Gray ? "DefaultGray" : cs == Rgb ? "DefaultRGB" : "DefaultCMYK";
+        if (spaces.Get(key) is not { } def) return cs;
+        var mapped = TryParse(f, def, resources, 1);
+        return mapped is null or Indexed or Tint or PatternCs || mapped.Components != cs.Components ? cs : mapped;
+    }
+
     static PdfColorSpace? TryParse(PdfFile f, PdfObject? obj, PdfDictionary? resources, int depth)
     {
         obj = f.Resolve(obj);

@@ -40,7 +40,7 @@ Accuracy against Chrome (Edge/PDFium via `AdoBye.RenderCompare`, 96 dpi, bad-pix
 08-colour-spaces 0.31% / 4.93 -> 0.26% / 4.60; 09-images 0.26% / 6.30 -> 0.26% / 6.26; 21-brochure and 24-poster unchanged (0.11%, 0.02%).
 The residual difference is dominated by anti-aliasing and text, not colour.
 * Tests: `ColorPrintEdgeTests.DeviceCmyk_*` (14 PDFium reference colours, monotonicity, clamping/NaN).
-* Not implemented: black-point-aware or intent-dependent DeviceCMYK, `DefaultCMYK` overrides remain handled by the resource lookup.
+* Not implemented: black-point-aware or intent-dependent DeviceCMYK, `DefaultCMYK` overrides apply as described below.
 
 ## Colour-space edge cases (8.6.5, 8.6.6)
 
@@ -53,6 +53,13 @@ The residual difference is dominated by anti-aliasing and text, not colour.
   `DeviceN /Attributes` (`Subtype` DeviceN/NChannel, `Process`, `Colorants`, mixing-hint keys) are parsed and exposed as
   `PdfColorSpace.Attributes`. They are hints (8.6.6.5); on-screen conversion always uses the tint transform and the alternate space,
   and mixing hints (solidity, printing order, dot gain) are not simulated.
+
+## Default colour spaces (8.6.5.6)
+
+`/DefaultGray`, `/DefaultRGB` and `/DefaultCMYK` in the resource `/ColorSpace` dictionary now remap a Device space selected by `g/G/rg/RG/k/K`, by `cs`/`CS` with a Device name, or as an
+image or shading `/ColorSpace` (`PdfColorSpace.ParseWithDefaults`, `DefaultColorSpaceTests`). Entries with a different component count, Pattern, Indexed, Separation/DeviceN or unparsable values are ignored.
+Device spaces nested in another space (Indexed base, Separation alternate, ICC alternate) are not remapped. Previously the entries were honoured only for page-group blending spaces and
+never for painting. Not compared against PDFium/MuPDF output; the initial graphics-state colour is not remapped.
 
 ## Transparency group blending spaces (11.4.7, 11.7.5.3)
 
