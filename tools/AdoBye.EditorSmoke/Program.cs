@@ -96,6 +96,8 @@ try
     await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"], IgnoreDefaultArgs = viewportOnly || responsiveOnly ? ["--hide-scrollbars"] : null });
     await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
     var page = await context.NewPageAsync();
+    if (int.TryParse(Environment.GetEnvironmentVariable("EDITOR_SMOKE_CPU_THROTTLE"), out var throttle) && throttle > 1)
+        await (await context.NewCDPSessionAsync(page)).SendAsync("Emulation.setCPUThrottlingRate", new Dictionary<string, object> { ["rate"] = throttle });
     page.SetDefaultTimeout(60000);
     var errors = new ConcurrentQueue<string>();
     var network = new ConcurrentQueue<string>();
@@ -396,7 +398,11 @@ try
     await page.Locator(".thumb").Nth(1).ClickAsync();
     await page.Locator(".thumb").First.ClickAsync();
     await page.EvaluateAsync("async () => { await window.renderProbe; }");
-    await page.WaitForFunctionAsync("!document.getElementById('view').inert && document.getElementById('pn').value === '1' && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url");
+    try { await page.WaitForFunctionAsync("!document.getElementById('view').inert && document.getElementById('pn').value === '1' && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.url"); }
+    catch (TimeoutException)
+    {
+        throw new Exception("Final page never settled after queued zoom/navigation: " + await page.EvaluateAsync<string>("() => { const b = document.getElementById('base'); return JSON.stringify({ inert: document.getElementById('view').inert, pn: document.getElementById('pn').value, url: b?.dataset.url, loadedUrl: b?.dataset.loadedUrl, targetUrl: b?.dataset.targetUrl, status: document.getElementById('status').textContent, modal: !!document.querySelector('.mdl') }); }"));
+    }
     Check(await page.EvaluateAsync<bool>("""
         async () => {
           const img = document.getElementById('base'), expected = new Image();

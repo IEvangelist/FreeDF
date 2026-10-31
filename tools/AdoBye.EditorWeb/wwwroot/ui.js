@@ -238,7 +238,7 @@
   const parts = () => qa('#layer > .it, #layer > .obj, #layer > .span');
   const label = p => (p.textContent || p.title || 'Page item').trim();
   function rove() {
-    if (document.activeElement?.closest?.('#layer')) return;
+    if (document.activeElement?.closest?.('#layer') || q('#layer .wgt')) return; // form widgets own Tab order on form pages
     const all = parts(), first = all.find(p => p.tabIndex === 0) || all[0]; if (!first) return;
     first.tabIndex = 0; if (!first.getAttribute('role')) { first.setAttribute('role', 'button'); first.setAttribute('aria-label', label(first)); }
   }
@@ -397,7 +397,10 @@
     addEventListener('editor-ready', () => setTimeout(panelsOnDocChange, 0), { once: true });
     panelsOnDocChange();
     const mo = new MutationObserver(schedule);
-    for (const id of ['view', 'thumbs', 'props']) if ($(id)) mo.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    // Never observe the object layer's subtree: it is rebuilt on every repaint, and sweeping there taxes zoom and Save.
+    mo.observe($('view'), { childList: true });
+    for (const id of ['thumbs', 'props']) mo.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    $('view').addEventListener('focusin', e => { if (e.target === $('view')) rove(); });
     mo.observe($('zv'), { childList: true, characterData: true, subtree: true });
     mo.observe($('doc') || document.body, { childList: true, subtree: true, characterData: true });
     new MutationObserver(onStatus).observe($('status'), { childList: true, characterData: true, subtree: true });
