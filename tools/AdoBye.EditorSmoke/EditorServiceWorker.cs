@@ -263,7 +263,47 @@ static partial class EditorServiceWorker
         Check(await Version() == manifestA.Version, "a plain reload does not swap versions.");
         Check(!(await page.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("build B", StringComparison.Ordinal), "plain reload still serves one consistent old build.");
         await WaitFor("!!document.getElementById('update-banner')", "update banner after reload");
+
+        // An inline edit in progress (contentEditable) blocks activation even though nothing is unsaved yet.
+        const string checking = "document.querySelector('#update-banner span').textContent = 'checking'";
+        await second.EvaluateAsync("const d = document.createElement('div'); d.id = 'typing'; d.contentEditable = 'plaintext-only'; d.textContent = 'x'; document.body.append(d); d.focus();");
+        await page.EvaluateAsync(checking);
+        await page.Locator("#update-banner button.primary").ClickAsync();
+        await WaitFor("document.getElementById('update-banner')?.textContent.includes('another editor tab')", "block by an inline edit");
+        Check(await second.EvaluateAsync<bool>("window.__stale === true"), "a tab mid-inline-edit was not reloaded.");
+        await second.EvaluateAsync("document.getElementById('typing').remove()");
+        var typing = await context.NewPageAsync();
+        typing.SetDefaultTimeout(90000);
+        await typing.GotoAsync(url);
+        await WaitReady(typing);
+        await typing.SetInputFilesAsync("#open", new FilePayload { Name = "typing.pdf", MimeType = "application/pdf", Buffer = MinimalPdf() });
+        await typing.WaitForFunctionAsync("document.getElementById('dstate') && !document.getElementById('dstate').hidden");
+        await typing.Locator("[data-tool=text]").ClickAsync();
+        await typing.Locator("#page").ClickAsync();
+        await typing.WaitForFunctionAsync("!!document.querySelector('[contenteditable=\"plaintext-only\"]')");
+        await typing.EvaluateAsync("window.__stale = true");
+        await page.EvaluateAsync(checking);
+        await page.Locator("#update-banner button.primary").ClickAsync();
+        await WaitFor("document.getElementById('update-banner')?.textContent.includes('another editor tab')", "block by the real text tool");
+        Check(await typing.EvaluateAsync<bool>("window.__stale === true && !!document.querySelector('[contenteditable=\"plaintext-only\"]')"), "typing in the real text tool was not interrupted.");
+        await typing.CloseAsync();
+
+        // A tab that never answers (older build, frozen, still booting) does not block; it keeps its loaded build and makes no asset requests.
+        var silent = await context.NewPageAsync();
+        silent.SetDefaultTimeout(90000);
+        await silent.AddInitScriptAsync("const add = ServiceWorkerContainer.prototype.addEventListener; ServiceWorkerContainer.prototype.addEventListener = function (type, ...rest) { if (type === 'message' || type === 'controllerchange') return; return add.call(this, type, ...rest); };");
+        var silentAssets = 0;
+        var activated = false;
+        silent.Request += (_, request) => { if (activated && request.Url.Contains("/_framework/", StringComparison.Ordinal)) Interlocked.Increment(ref silentAssets); };
+        await silent.GotoAsync(url);
+        await WaitReady(silent);
+        await silent.EvaluateAsync("window.__stale = true");
+        activated = true;
         await AcceptUpdate();
+        Check(await silent.EvaluateAsync<bool>("window.__stale === true"), "an unresponsive tab does not block the update and is left alone.");
+        Check(await silent.EvaluateAsync<bool>("window.pdfHost.request('/api/state').then(r => r.ok)"), "the unresponsive tab keeps working on its loaded build.");
+        Check(silentAssets == 0, $"the unresponsive tab made {silentAssets} asset requests after activation.");
+        await silent.CloseAsync();
         await WaitFor("!!navigator.serviceWorker.controller", "controller");
         await second.WaitForFunctionAsync("window.__stale === undefined");
         await WaitReady(second);

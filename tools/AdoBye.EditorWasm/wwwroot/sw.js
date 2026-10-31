@@ -58,23 +58,31 @@ self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const client of await self.clients.matchAll({ type: 'window', includeUncontrolled: true })) client.postMessage({ type: 'KILLED' });
 })()));
 
-// Ask every open editor tab whether it has unsaved or not-yet-recovered edits. Silence counts as dirty.
-async function tabsAreClean(except) {
-  const answers = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(client => client.id !== except).map(client => new Promise(resolve => {
-    const channel = new MessageChannel();
-    const timer = setTimeout(() => resolve(false), 2000);
-    channel.port1.onmessage = reply => { clearTimeout(timer); resolve(reply.data?.clean === true); };
-    client.postMessage({ type: 'QUERY_DIRTY' }, [channel.port2]);
-  }));
-  return (await Promise.all(answers)).every(Boolean);
+// Ask every open editor tab whether it has unsaved or in-progress work. Only an explicit "not clean" answer blocks
+// activation; tabs that never answer (older builds, still booting, frozen) get one retry and are then reported as
+// unresponsive. They keep running their already loaded build (it makes no further asset requests) until they close.
+async function tabsStatus(except) {
+  const ask = async clients => {
+    const answers = await Promise.all(clients.map(client => new Promise(resolve => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => resolve({ client, answered: false }), 2000);
+      channel.port1.onmessage = reply => { clearTimeout(timer); resolve({ client, answered: true, clean: reply.data?.clean === true }); };
+      client.postMessage({ type: 'QUERY_DIRTY' }, [channel.port2]);
+    })));
+    return answers;
+  };
+  const open = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(client => client.id !== except);
+  let answers = await ask(open);
+  const silent = answers.filter(answer => !answer.answered).map(answer => answer.client);
+  if (silent.length) answers = answers.filter(answer => answer.answered).concat(await ask(silent));
+  return { dirty: answers.filter(a => a.answered && !a.clean).length, unresponsive: answers.filter(a => !a.answered).length };
 }
-
 self.addEventListener('message', event => {
   if (event.data?.type === 'REQUEST_ACTIVATE') {
     const port = event.ports[0];
-    event.waitUntil(tabsAreClean(event.source?.id).then(clean => {
-      if (clean) self.skipWaiting();
-      port?.postMessage({ type: clean ? 'ACTIVATING' : 'BLOCKED' });
+    event.waitUntil(tabsStatus(event.source?.id).then(status => {
+      if (status.dirty === 0) self.skipWaiting();
+      port?.postMessage({ type: status.dirty === 0 ? 'ACTIVATING' : 'BLOCKED', ...status });
     }));
   }
   else if (event.data?.type === 'GET_VERSION') event.source?.postMessage({ type: 'VERSION', version: MANIFEST?.version ?? null, cache: cacheName });

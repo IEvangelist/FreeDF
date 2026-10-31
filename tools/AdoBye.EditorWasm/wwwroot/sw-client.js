@@ -12,10 +12,34 @@ export async function registerServiceWorker() {
   let registration;
   try { registration = await navigator.serviceWorker.register(url, { scope: new URL('./', url).pathname, updateViaCache: 'none' }); }
   catch (error) { console.warn('[PDF boot] offline cache unavailable:', error.message); return; }
-  // Unsaved edits, or edits whose recovery copy is not written yet, must never be discarded by a version change.
-  const dirty = () => document.getElementById('dstate')?.dataset.dirty === 'true'
-    || document.getElementById('recovery')?.textContent.startsWith('Recovery pending') === true;
-  navigator.serviceWorker.addEventListener('message', event => {
+  // Work that a reload would discard: unsaved edits, an unsaved recovery copy, an inline edit in progress, an open
+  // dialog (it may hold typed input) or a request still running in the engine.
+  let inFlight = 0, instrumented = false;
+  const instrument = () => {
+    const host = window.pdfHost;
+    if (instrumented || !host) return;
+    instrumented = true;
+    for (const name of ['request', 'image', 'download']) {
+      const original = host[name];
+      if (typeof original !== 'function') continue;
+      host[name] = function (...args) {
+        inFlight++;
+        const result = original.apply(this, args);
+        const done = () => { inFlight--; };
+        Promise.resolve(result).then(done, done);
+        return result;
+      };
+    }
+  };
+  instrument();
+  const dirty = () => {
+    instrument();
+    return document.getElementById('dstate')?.dataset.dirty === 'true'
+      || document.getElementById('recovery')?.textContent.startsWith('Recovery pending') === true
+      || document.activeElement?.isContentEditable === true
+      || document.querySelector('[contenteditable]:not([contenteditable="false"]), .mdl') !== null
+      || inFlight > 0;
+  };  navigator.serviceWorker.addEventListener('message', event => {
     if (event.data?.type === 'QUERY_DIRTY') event.ports[0]?.postMessage({ clean: !dirty() });
     else if (event.data?.type === 'KILLED') applyUpdate('The offline cache was turned off.');
   });
@@ -50,15 +74,18 @@ export async function registerServiceWorker() {
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (controlled) applyUpdate('A new version of the editor is ready.'); });
   const offer = worker => {
     if (!navigator.serviceWorker.controller || document.getElementById('update-banner')) return;
+    const later = () => element.remove();
     const ask = () => {
-      if (dirty()) { banner('A new version is ready. Save your changes here, then reload.', [['Reload', ask, true], ['Later', () => element.remove()]]); return; }
+      if (dirty()) { banner('A new version is ready. Finish or save your work in this tab, then reload.', [['Reload', ask, true], ['Later', later]]); return; }
       const channel = new MessageChannel();
+      const timer = setTimeout(() => banner('The update check did not finish. Try Reload again.', [['Reload', ask, true], ['Later', later]]), 10000);
       channel.port1.onmessage = ({ data }) => {
-        if (data.type === 'BLOCKED') banner('A new version is ready, but another editor tab has unsaved changes. Save there, then reload.', [['Reload', ask, true], ['Later', () => element.remove()]]);
+        clearTimeout(timer);
+        if (data.type === 'BLOCKED') banner('A new version is ready, but another editor tab has unsaved or in-progress work. Save it there, then reload.', [['Reload', ask, true], ['Later', later]]);
       };
       worker.postMessage({ type: 'REQUEST_ACTIVATE' }, [channel.port2]);
     };
-    const element = banner('A new version of the editor is ready.', [['Reload', ask, true], ['Later', () => element.remove()]]);
+    const element = banner('A new version of the editor is ready.', [['Reload', ask, true], ['Later', later]]);
   };  const track = worker => worker.addEventListener('statechange', () => { if (worker.state === 'installed') offer(worker); });
   if (registration.waiting) offer(registration.waiting);
   if (registration.installing) track(registration.installing);
