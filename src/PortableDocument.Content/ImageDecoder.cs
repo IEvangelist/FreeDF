@@ -67,6 +67,8 @@ public static class ImageDecoder
             if (jx.Samples16 is not null && !colorKeyMask && (decode is not null || (cs != PdfColorSpace.Gray && cs != PdfColorSpace.Rgb)))
             { data = jx.Samples16; bpc = 16; }
             if (smaskInData > 0) jpxAlpha = jx;
+            // SMaskInData 2 (ISO 32000-2 Table 89) declares premultiplied opacity regardless of the cdef channel type.
+            if (smaskInData == 2) jx.PremultipliedAlpha = true;
         }
         else if (codec is not null)
         {
