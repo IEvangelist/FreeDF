@@ -1,0 +1,79 @@
+name: Build editor site
+
+# Reusable: publishes the static WebAssembly editor once. The result is cached by a hash of every
+# input that can change it (an exact hit skips the AOT publish) and uploaded as the `editor-site`
+# artifact with a SHA-256 manifest so consumers can verify the exact bytes.
+on:
+  workflow_call:
+    inputs:
+      aot:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  EDITOR_AOT: ${{ inputs.aot }}
+  # Bump to invalidate every content-addressed cache below.
+  CACHE_VERSION: v1
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compute input hashes
+        id: hash
+        shell: bash
+        run: |
+          # Everything that can change published bytes, minus tests, build outputs and workflows.
+          echo "site=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/**', 'tools/AdoBye.EditorWasm/**', 'tools/AdoBye.EditorWeb/**', 'tools/AdoBye.Samples/**', 'tools/Publish-EditorPages.ps1', '!**/bin/**', '!**/obj/**', '!tools/AdoBye.EditorWasm/tests/**', '!**/*.test.*', '!tools/AdoBye.EditorWeb/e2e_*') }}" >> "$GITHUB_OUTPUT"
+          # Inputs of the compile/AOT step only; static web assets (html/css/js) are excluded so
+          # an asset-only change reuses the incremental AOT intermediates.
+          echo "compile=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/_gen/fonts/**', 'tools/AdoBye.EditorWasm/*.cs', 'tools/AdoBye.EditorWasm/*.csproj', 'tools/AdoBye.EditorWeb/*.cs', 'tools/AdoBye.EditorWeb/*.csproj', '!**/bin/**', '!**/obj/**') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore published site (exact input match)
+        id: site-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/editor-pages
+          key: site-${{ env.CACHE_VERSION }}-${{ runner.os }}-aot-${{ env.EDITOR_AOT }}-${{ steps.hash.outputs.site }}
+      - uses: actions/setup-dotnet@v6
+        if: steps.site-cache.outputs.cache-hit != 'true'
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - name: Restore incremental publish intermediates
+        if: steps.site-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/editor-publish-build
+          key: obj-${{ env.CACHE_VERSION }}-${{ runner.os }}-aot-${{ env.EDITOR_AOT }}-${{ steps.hash.outputs.compile }}
+          restore-keys: |
+            obj-${{ env.CACHE_VERSION }}-${{ runner.os }}-aot-${{ env.EDITOR_AOT }}-
+      - name: Install pinned SDK WebAssembly toolchain
+        if: steps.site-cache.outputs.cache-hit != 'true' && env.EDITOR_AOT == 'true'
+        run: dotnet workload install wasm-tools --skip-manifest-update --disable-parallel
+      - name: Publish static WebAssembly editor
+        if: steps.site-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $options = @{
+            Output = '${{ runner.temp }}/editor-pages'
+            ArtifactsPath = '${{ runner.temp }}/editor-publish-build'
+            Aot = $env:EDITOR_AOT -eq 'true'
+          }
+          ./tools/Publish-EditorPages.ps1 @options
+      - name: Record site manifest
+        shell: pwsh
+        run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256'
+      - name: Hand the site to validation and deployment
+        uses: actions/upload-artifact@v7
+        with:
+          name: editor-site
+          path: ${{ runner.temp }}/editor-pages
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
