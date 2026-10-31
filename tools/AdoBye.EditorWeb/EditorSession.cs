@@ -449,7 +449,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     public Reply Handle(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body = null, string? uploadName = null)
     {
         var segments = path.Trim('/').Split('/');
-        var pending = method == "POST" && segments.Length > 1 && PageOperations.Contains(segments[1]) && editor.PageCount > 0
+        var pending = method == "POST" && segments.Length > 1 && (PageOperations.Contains(segments[1]) || segments[1].StartsWith("annot-", StringComparison.Ordinal)) && editor.PageCount > 0
             ? CapturePageHistory(segments[1]) : null;
         if (pending is null) return HandleCore(method, path, query, body, uploadName);
         // Registered first so PruneAssets inside the operation keeps the assets that undo needs.
@@ -500,6 +500,9 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     RequirePages(); Snap(); return Pdf(snapshotBytes!, "edited-" + fileName);
                 case "find": return Find(Q("q") ?? "", Q("cs") == "true");
                 case "export": return Export(p[2], query);
+                case "annots": return AnnotationList();
+                case "annot-export": RequirePages(); return new(System.Text.Encoding.UTF8.GetBytes(PdfXfdf.Export(editor)), "application/vnd.adobe.xfdf", Path.GetFileNameWithoutExtension(fileName) + ".xfdf");
+                case "annot-text": return AnnotationText(Int("page", 0), Number("x") ?? 0, Number("y") ?? 0, Number("w") ?? 0, Number("h") ?? 0);
             }
         }
         if (action == "page")
@@ -655,6 +658,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "asset-history":
                     historyAssets.Clear(); PruneAssets(); return Ok;
                 case "page-history-clear": pageUndo.Clear(); pageRedo.Clear(); PruneAssets(); return Ok;
+                case { } cmd when cmd.StartsWith("annot-", StringComparison.Ordinal): return AnnotationCommand(cmd, query, body);
                 case "page-undo": return StepPageHistory(true);
                 case "page-redo": return StepPageHistory(false);
                 case "delete": CheckPageMutation(); editor.DeletePage(int.Parse(p[2], CultureInfo.InvariantCulture)); PruneAssets(); break;
@@ -699,6 +703,78 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             Changed(); return Ok;
         }
         throw new ArgumentException("Unknown editor command.");
+    }
+
+    Reply AnnotationList()
+    {
+        if (editor.PageCount == 0) return AsJson(Array.Empty<object>());
+        return AsJson(Enumerable.Range(0, editor.PageCount).SelectMany(page => editor.ListAnnotations(page)));
+    }
+
+    Reply AnnotationText(int page, double x, double y, double w, double h)
+    {
+        RequirePages();
+        var doc = BaseSnap();
+        var runs = AnnotationTools.SelectText(doc.Pages[page], new Redactor.BoxRect(x, y, w, h));
+        return AsJson(new { runs, quads = AnnotationTools.QuadsFromRuns(doc.Pages[page], runs), text = string.Join(" ", runs.Select(r => r.Text)) });
+    }
+
+    sealed record AnnotationReplyRequest(string? Author, string? Text, string? State, string? StateModel);
+    sealed record AnnotationReplaceRequest(double[] QuadPoints, string? Text, string? Author);
+
+    Reply AnnotationCommand(string command, IReadOnlyDictionary<string, string> query, byte[]? body)
+    {
+        RequirePages();
+        int Int(string key, int fallback) => int.TryParse(query.GetValueOrDefault(key), out var n) ? n : fallback;
+        double Num(string key, double fallback) => double.TryParse(query.GetValueOrDefault(key), CultureInfo.InvariantCulture, out var n) ? n : fallback;
+        T Read<T>() => JsonSerializer.Deserialize<T>(body ?? [], Json) ?? throw new ArgumentException("Missing annotation payload.");
+        var page = Int("page", 0);
+        var now = clock.GetUtcNow();
+        Reply Done(object result) { Changed(); return AsJson(result); }
+        switch (command)
+        {
+            case "annot-add": return Done(new { number = editor.AddAnnotation(page, Read<PdfAnnotationSpec>(), now).Number });
+            case "annot-update": editor.UpdateAnnotation(page, Int("n", 0), Read<PdfAnnotationSpec>(), now); return Done(new { });
+            case "annot-transform": editor.TransformAnnotation(page, Int("n", 0), Num("sx", 1), Num("sy", 1), Num("tx", 0), Num("ty", 0), now); return Done(new { });
+            case "annot-delete": return Done(new { removed = editor.DeleteAnnotation(page, Int("n", 0)) });
+            case "annot-reply":
+                var reply = Read<AnnotationReplyRequest>();
+                return Done(new { number = editor.ReplyToAnnotation(page, Int("n", 0), reply.Author ?? "", reply.Text ?? "", reply.State, reply.StateModel, now).Number });
+            case "annot-replace":
+                var replace = Read<AnnotationReplaceRequest>();
+                var (strike, caret) = editor.AddReplaceText(page, replace.QuadPoints, replace.Text ?? "", replace.Author ?? "", now);
+                return Done(new { strikeOut = strike.Number, caret = caret.Number });
+            case "annot-import": return Done(new { created = PdfXfdf.Import(editor, System.Text.Encoding.UTF8.GetString(body ?? []), null, now) });
+            case "annot-flatten":
+                var pages = page < 0 ? Enumerable.Range(0, editor.PageCount).ToArray() : [page];
+                foreach (var target in pages) RequireNoContentEdits(target);
+                return Done(new { flattened = pages.Sum(target => editor.FlattenAnnotations(target)) });
+            case "annot-redact-apply":
+                // Marks become ordinary redaction items so the existing Redactor pipeline, undo and recovery handle them.
+                var id = editor.PageId(page);
+                var box = BaseSnap().Pages[page].CropBox;
+                var marks = editor.ListAnnotations(page).Where(i => i.Spec.Subtype == "Redact").ToList();
+                var list = items.GetValueOrDefault(id)?.ToList() ?? [];
+                foreach (var mark in marks)
+                {
+                    var q = mark.Spec.QuadPoints;
+                    var rects = q is { Length: >= 8 } ? Enumerable.Range(0, q.Length / 8).Select(k => AnnotationAppearance.Bounds(q.Skip(k * 8).Take(8))).ToList() : [mark.Spec.Rect!];
+                    foreach (var r in rects)
+                        list.Add(new Item(Guid.NewGuid().ToString("N"), "redact", Math.Min(r[0], r[2]) - box.Left, box.Top - Math.Max(r[1], r[3]), Math.Abs(r[2] - r[0]), Math.Abs(r[3] - r[1]),
+                            null, null, 0, false, false, null, null, null, 0, 1, null, 0, 0));
+                    editor.DeleteAnnotation(page, mark.Number);
+                }
+                items[id] = list;
+                return Done(new { applied = marks.Count });
+            default: throw new ArgumentException("Unknown editor command.");
+        }
+    }
+
+    void RequireNoContentEdits(int page)
+    {
+        var id = editor.PageId(page);
+        if (items.GetValueOrDefault(id)?.Any(AffectsBase) == true || objEdits.GetValueOrDefault(id)?.Count > 0 || formObjEdits.Count > 0)
+            throw new EditorConflictException("Save and reopen the document before flattening annotations on a page with pending text, object or redaction edits.");
     }
 
     void RequirePages()

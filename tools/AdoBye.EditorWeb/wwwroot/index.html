@@ -84,6 +84,7 @@
         <button data-tool="ellipse" class="icon" title="Ellipse (E)"><svg class="i"><use href="#i-ellipse"/></svg></button>
         <button data-tool="line" class="icon" title="Line (L)"><svg class="i"><use href="#i-line"/></svg></button>
         <button data-tool="redact" class="icon" title="Redact: permanently removes content beneath (X)"><svg class="i"><use href="#i-redact"/></svg></button>
+        <button id="annot" class="icon" title="Annotations and comments (A)" aria-pressed="false" aria-label="Annotations and comments">✎</button>
         <label class="btn icon" title="Insert image" tabindex="0" role="button" aria-label="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
       </div>
       <span class="grow"></span>
@@ -920,6 +921,24 @@ $('img').onchange = async e => {
   pushUndo();
   cur = { id: crypto.randomUUID(), type: 'image', x: 40, y: 40, w, h: w * a.h / a.w, text: '', font: 'Helvetica', size: 12, bold: false, italic: false, color: '#000000', fill: '', stroke: '', strokeWidth: 0, opacity: 1, asset: a.id, x2: 0, y2: 0 };
   items.push(cur); paint(); props(); queueSave();
+};
+// ---- Annotation authoring (module loaded on first use) ----
+let annot = null;
+$('annot').onclick = async () => {
+  if (!state.pageCount) return;
+  try {
+    annot ??= (await import(new URL('annotations.js', document.baseURI))).createAnnotations({
+      request, status, state: () => state, page: () => sel, scale: () => S, toLayer,
+      goPage: async i => { await goPage(i); annot?.pageChanged(); },
+      sync: async () => {
+        const s = await (await request('/api/state')).json();
+        Object.assign(state, s); setDocLabel(s);
+        if (sel >= state.pageCount) sel = state.pageCount - 1;
+        await updateBase(); annot?.pageChanged();
+      },
+    });
+    await annot.toggle();
+  } catch (e) { annot = null; reportError(e); }
 };
 // ---- Navigation, zoom, find, print, full screen, file menu ----
 function setDocLabel(s) {
