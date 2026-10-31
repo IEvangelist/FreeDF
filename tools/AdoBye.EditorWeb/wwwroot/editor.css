@@ -90,7 +90,7 @@ footer #recovery { height: 22px; min-height: 0; flex: none; }
   header .brand, header .sp { display: none; }
   #view { padding: 16px; }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) :is(*, *::before, *::after) { animation: none !important; transition: none !important; } }
 #thumbs { overflow-y: auto; padding: 12px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px; }
 .thumb { position: relative; padding: 6px; border-radius: var(--r-lg); border: 1px solid transparent; cursor: grab; transition: background .12s; }
 .thumb:hover { background: var(--raised); }

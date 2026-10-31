@@ -50,3 +50,22 @@ untouched rows and transparent holes to white, and returns the shared buffer
 only once. A cold large-group allocation regression and explicit-white
 backdrop comparisons (partial/zero group alpha, Multiply and knockout) cover
 the change; the sequential/threaded golden and band checks remain exact.
+
+Fresh AOT on the integration with main `a7b1b0ed` passes the allocation and
+pixel gates. Native tests pass (2,243), as do 33 Node invariants and the full,
+forms, protection, merge, pool, page-image and boot browser smokes.
+
+| Large 240 dpi primary render | Pre-raster control p50 / p95 | Integrated p50 / p95 |
+| --- | ---: | ---: |
+| Allocated bytes | 195,179,120 / 195,179,120 | 150,197,848 / 150,197,848 |
+| Raster ms | 572.8 / 572.9 | 589.6 / 642.4 |
+| PNG ms | 58.3 / 59.7 | 71.8 / 72.7 |
+| Engine total ms | 630.7 / 632.6 | 657.0 / 714.7 |
+
+These are three-repeat browser measurements, not the desktop best-of table.
+The control predates main's UI modernization, so this is not an isolated
+renderer-speed claim. Allocation improves; the measured render is slower and
+does not meet the 150 ms target. The full profile still fails unchanged UI
+timing gates: cached zoom medians are 181-183 ms, and Save event-frame medians
+are 52.9-61.1 ms against the 50 ms ceiling. Those failures block main delivery;
+they are not waived by the passing allocation/pixel checks.

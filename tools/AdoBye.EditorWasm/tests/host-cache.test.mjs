@@ -9,7 +9,7 @@ test('duplicate in-flight image keys replace their byte accounting before evicti
     constructor() { queueMicrotask(() => this.onmessage({ data: { ready: true, bootRetries: 0 } })); }
     postMessage({ id, url }) {
       renders++;
-      const reply = { contentType: 'image/png', data: 'a'.repeat(url.includes('large') ? 3 * 1024 * 1024 : 1024 * 1024) };
+      const reply = { contentType: 'image/png', data: 'a'.repeat(url.includes('large') ? 10 * 1024 * 1024 : 1024 * 1024) };
       queueMicrotask(() => this.onmessage({ data: { id, reply } }));
     }
     terminate() {}
@@ -24,12 +24,12 @@ test('duplicate in-flight image keys replace their byte accounting before evicti
     const small = '/api/page/0.png?v=1';
     const large = '/api/page/1.png?v=1&large=true';
     await Promise.all([host.image(small), host.image(small), host.image(small)]);
-    assert.equal(renders, 3, 'all three callers entered before the first cached reply');
+    assert.equal(renders, 1, 'concurrent callers for one key share a single in-flight render');
     await host.image(large);
     assert.equal(host.hasCachedImage(small), false, 'the small entry is evicted to fit the large image');
     assert.equal(host.hasCachedImage(large), true);
     await host.image(large);
-    assert.equal(renders, 4, 'a cache hit does not render again');
+    assert.equal(renders, 2, 'a cache hit does not render again');
     host.evictImage(large);
     assert.equal(host.hasCachedImage(large), false);
     await host.image(small);

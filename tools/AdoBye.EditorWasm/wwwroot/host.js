@@ -75,6 +75,12 @@ export async function start() {
       if (!renderPool.enabled) renderPool = null;
     } catch (error) { console.warn('Parallel rendering is unavailable; using one PDF engine.', error); }
   }
+  const blobToDataUrl = async blob => {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+  };
   const imageBlob = (url, { current = () => true, pool = true } = {}) => {
     const checkCurrent = () => {
       if (!current()) throw new DOMException('Page image request was superseded.', 'AbortError');
@@ -141,12 +147,14 @@ export async function start() {
     imageBlob,
     async image(url, options) {
       const blob = await imageBlob(url, options), started = performance.now();
-      const data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      });
+      const data = typeof FileReader === 'function'
+        ? await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        })
+        : await blobToDataUrl(blob);
       if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });
       return data;
     },

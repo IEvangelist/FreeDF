@@ -199,4 +199,21 @@ public class RasterPerformanceTests
         }
         Assert.Equal(Render(true), Render(false));
     }
+
+    [Fact]
+    public void ModifiedPageKeepsItsNonWhiteBackdropUnderAPartialGroup()
+    {
+        byte[] Render(bool grouped)
+        {
+            using var r = new SoftwareRasterizer(31, 23);
+            var background = new PathData(); background.Rect(0, 0, 31, 23);
+            r.Fill(background, Matrix.Identity, false, new RgbColor(0.9, 0.5, 0.1), 1, "Normal");
+            if (grouped) r.BeginGroup(true, false, 0.5, "Normal");
+            var path = new PathData(); path.Rect(2, 3, 7, 8);
+            r.Fill(path, Matrix.Identity, false, new RgbColor(0.2, 0.4, 0.6), grouped ? 1 : 0.5, "Normal");
+            if (grouped) r.EndGroup();
+            return r.ToRgba();
+        }
+        Assert.Equal(Render(false), Render(true));
+    }
 }

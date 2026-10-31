@@ -62,9 +62,12 @@ var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
 var samplesOnly = args.Length == 2 && args[0] == "--samples";
 var protectionOnly = args.Length == 2 && args[0] == "--protection";
 var viewportOnly = args.Length == 3 && args[0] == "--viewport";
+var a11yOnly = args.Length == 3 && args[0] == "--a11y";
+var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
+var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot-or-url> | --viewport <published-wwwroot-or-url> <sample.pdf>");
-var source = viewportOnly ? args[1] : args[^1];
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
     throw new ArgumentException("The public editor URL must end in /csharp-pdf/.");
@@ -90,7 +93,7 @@ try
 {
     var address = publicSite ? publicUri!.GetLeftPart(UriPartial.Authority) : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var pw = await Playwright.CreateAsync();
-    await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"], IgnoreDefaultArgs = viewportOnly ? ["--hide-scrollbars"] : null });
+    await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"], IgnoreDefaultArgs = viewportOnly || responsiveOnly ? ["--hide-scrollbars"] : null });
     await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
     var page = await context.NewPageAsync();
     page.SetDefaultTimeout(60000);
@@ -177,6 +180,19 @@ try
     {
         await EditorViewport.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
         Console.WriteLine("PASS: app shell fits the viewport and the window never scrolls across viewport/DPR/zoom/panel/menu configurations.");
+        return;
+    }
+    if (a11yOnly)
+    {
+        await EditorA11y.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
+        Check(network.IsEmpty, "No outbound traffic during the accessibility sweep: " + string.Join("\n", network));
+        Console.WriteLine("PASS: zero serious/critical axe violations and all keyboard/target/focus/spacing assertions across screens, themes, forced colors, zoom and mobile widths.");
+        return;
+    }
+    if (responsiveOnly)
+    {
+        await EditorResponsive.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
+        Console.WriteLine("PASS: no overflow, clipping or unreachable controls across the responsive matrix.");
         return;
     }
     if (saveOverlapOnly)
