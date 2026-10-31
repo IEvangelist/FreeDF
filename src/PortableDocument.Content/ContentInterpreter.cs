@@ -571,7 +571,9 @@ public sealed class ContentInterpreter
         double xs = R(d.Get("XStep")).AsNumber() ?? (bb[2] - bb[0]), ys = R(d.Get("YStep")).AsNumber() ?? (bb[3] - bb[1]);
         if (xs == 0) xs = bb[2] - bb[0];
         if (ys == 0) ys = bb[3] - bb[1];
-        if (xs == 0 || ys == 0) return;
+        // A negative step selects the same lattice as its magnitude (8.7.3.1).
+        xs = Math.Abs(xs); ys = Math.Abs(ys);
+        if (!double.IsFinite(xs) || !double.IsFinite(ys) || xs < 1e-9 || ys < 1e-9 || bb.Any(v => !double.IsFinite(v))) return;
         var pm = (R(d.Get("Matrix")) is PdfArray ma && ma.Count == 6 ? ToMatrix(ma) : Matrix.Identity).Then(BaseCtm);
         var inv = pm.Invert();
         // Bounds of the filled path in pattern space determine the tile range.
@@ -582,9 +584,10 @@ public sealed class ContentInterpreter
             var (px, py) = inv.Apply(dev.Pts[i], dev.Pts[i + 1]);
             minX = Math.Min(minX, px); maxX = Math.Max(maxX, px); minY = Math.Min(minY, py); maxY = Math.Max(maxY, py);
         }
-        var i0 = (int)Math.Floor((minX - bb[2]) / xs); var i1 = (int)Math.Ceiling((maxX - bb[0]) / xs);
-        var j0 = (int)Math.Floor((minY - bb[3]) / ys); var j1 = (int)Math.Ceiling((maxY - bb[1]) / ys);
-        if ((long)(i1 - i0 + 1) * (j1 - j0 + 1) > 20000) { Warn("tiling pattern with too many tiles skipped"); return; }
+        var di0 = Math.Floor((minX - bb[2]) / xs); var di1 = Math.Ceiling((maxX - bb[0]) / xs);
+        var dj0 = Math.Floor((minY - bb[3]) / ys); var dj1 = Math.Ceiling((maxY - bb[1]) / ys);
+        if (!double.IsFinite(di0 + di1 + dj0 + dj1) || (di1 - di0 + 1) * (dj1 - dj0 + 1) > 20000) { Warn("tiling pattern with too many tiles skipped"); return; }
+        int i0 = (int)di0, i1 = (int)di1, j0 = (int)dj0, j1 = (int)dj1;
         var paintType = (int)(R(d.Get("PaintType")).AsNumber() ?? 1);
         var uncolored = paintType == 2;
         var content = _f.DecodeStream(pat);
