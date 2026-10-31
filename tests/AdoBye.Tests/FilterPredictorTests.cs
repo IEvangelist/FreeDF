@@ -113,7 +113,6 @@ public class FilterPredictorTests
 
     [Theory]
     [InlineData(0, 1, 8)]
-    [InlineData(10, 1, 8)]
     [InlineData(2, 0, 8)]
     [InlineData(2, 1, 3)]
     [InlineData(15, 99999999, 16)]

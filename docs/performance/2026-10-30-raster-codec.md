@@ -9,6 +9,15 @@ all 239 match the merged raster exactly. The golden is updated from that
 control (including 21 newly covered pages), not from a tolerated raster change.
 The editor's 15 fixed pixel hashes are unchanged.
 
+The later codec integration preserves every one of those 239 entries and adds
+78 JPEG fixture pages, bringing the golden corpus to 317. Their decoded image
+samples first pass the committed independent `.bin`/native-precision references;
+the new raster hashes then establish exact sequential/threaded regressions for
+those previously absent pages. No existing hash is replaced or tolerated.
+Hierarchical and arithmetic-lossless references are spec-derived, not evidence
+of external-decoder certification. The integrated CCITT/filter/JPEG/raster
+focus passes 364 tests; this does not establish a new browser speedup.
+
 Measured with `bench/AdoBye.Bench` (`--raster-bench 240 <iterations> <baseline.tsv>`; `ADOBYE_SEQ=1` forces the single-threaded paths that the browser uses),
 .NET 10 Release, one benchmark at a time under the shared validation lock. Every row's RGBA SHA-256 matched the pre-change baseline (`same`), i.e. output is bit-identical.
 Times are best-of-4 wall ms for rendering **all pages** of the file at 240 dpi (warm, hashing excluded).
