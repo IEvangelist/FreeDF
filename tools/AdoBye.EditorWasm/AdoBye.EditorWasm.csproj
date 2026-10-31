@@ -31,6 +31,8 @@
     <Compile Include="..\AdoBye.EditorWeb\FontCatalog.cs" Link="FontCatalog.cs" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.css" Link="wwwroot\editor.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\theme.css" Link="wwwroot\theme.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\ui.js" Link="wwwroot\ui.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.js" Link="wwwroot\editor.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\samples.js" Link="wwwroot\samples.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\form-fields.js" Link="wwwroot\form-fields.js" CopyToOutputDirectory="PreserveNewest" />
