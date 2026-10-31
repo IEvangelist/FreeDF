@@ -26,6 +26,8 @@ internal sealed class XmpData
     public Dictionary<(string Ns, string Local), List<(string? Lang, string Value)>> Items { get; } = [];
     /// <summary>Top-level properties (attributes and child elements of rdf:Description) in document order.</summary>
     public List<(string Ns, string Local)> Properties { get; } = [];
+    /// <summary>Namespace prefix used for each pdfuaid property (part, amd, corr).</summary>
+    public Dictionary<string, string?> PdfUAPrefixes { get; } = new(StringComparer.Ordinal);
     /// <summary>Namespaces and (namespace, name) pairs declared through a pdfaExtension:schemas block.</summary>
     public HashSet<string> DeclaredNamespaces { get; } = new(StringComparer.Ordinal);
     public HashSet<(string Ns, string Name)> DeclaredProperties { get; } = [];
@@ -94,8 +96,13 @@ internal sealed class XmpData
                 var text = string.Concat(el.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
                 if (text.Length == 0) text = string.Concat(el.Descendants().Where(d => !d.HasElements).Select(d => d.Value)).Trim();
                 if (ns.Length > 0) result.Values.TryAdd((ns, el.Name.LocalName), text);
+                if (ns == PdfUAId) result.PdfUAPrefixes.TryAdd(el.Name.LocalName, el.GetPrefixOfNamespace(el.Name.Namespace));
                 foreach (var a in el.Attributes())
-                    if (!a.IsNamespaceDeclaration && a.Name.NamespaceName.Length > 0) result.Values.TryAdd((a.Name.NamespaceName, a.Name.LocalName), a.Value);
+                    if (!a.IsNamespaceDeclaration && a.Name.NamespaceName.Length > 0)
+                    {
+                        result.Values.TryAdd((a.Name.NamespaceName, a.Name.LocalName), a.Value);
+                        if (a.Name.NamespaceName == PdfUAId) result.PdfUAPrefixes.TryAdd(a.Name.LocalName, el.GetPrefixOfNamespace(a.Name.Namespace));
+                    }
             }
             return result;
         }
@@ -109,6 +116,9 @@ internal sealed class ValidationContext
     public PdfFile F => Doc.File;
     public PdfValidationProfile Profile { get; }
     public List<ValidationFinding> Findings { get; } = [];
+
+    /// <summary>(page index, MCID) pairs whose marked content shows text, collected by the PDF/UA content scan.</summary>
+    public HashSet<(int Page, int Mcid)> TextMcids { get; } = [];
 
     public ValidationContext(PdfDocument doc, PdfValidationProfile profile) { Doc = doc; Profile = profile; }
 

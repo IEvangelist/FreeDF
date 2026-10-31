@@ -6,13 +6,15 @@ namespace PortableDocument.Document;
 /// <summary>PDF/UA-1 (ISO 14289-1) and PDF/UA-2 (ISO 14289-2) basic checks.</summary>
 internal static partial class PdfUAChecks
 {
-    [GeneratedRegex(@"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$")]
+    // RFC 3066 shape, as ISO 14289 requires of ISO 32000 14.9.2 language identifiers (veraPDF PDFUA-1 7.2-29 accepts 1-8 letter primary subtags).
+    [GeneratedRegex(@"^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*$")]
     private static partial Regex LangTag();
 
     public static void Run(ValidationContext c)
     {
         c.Guard("document", () => Document(c));
         c.Guard("metadata", () => Metadata(c));
+        c.Guard("language sources", () => LanguageSources(c));
         c.Guard("security", () => Security(c));
         c.Guard("fonts", () => Fonts(c));
         c.Guard("document flags", () => PdfUADeepChecks.DocumentFlags(c));
@@ -45,7 +47,11 @@ internal static partial class PdfUAChecks
             c.Add("PDFUA-STRUCTTREE", ValidationSeverity.Error, "structure tree could not be parsed", Clause(c, "7.1", "8.2"));
         var lang = f.Resolve(f.Catalog.Get("Lang")) is PdfString l ? l.Text : null;
         if (string.IsNullOrWhiteSpace(lang))
-            c.Add("PDFUA-LANG", ValidationSeverity.Error, "catalog /Lang is missing or empty", Clause(c, "7.2", "8.4.2"));
+        {
+            // UA-1 only requires that the language of text be determinable (checked per structure element); UA-2 requires the catalog entry.
+            if (c.Part != 1 || c.Doc.Structure is null)
+                c.Add("PDFUA-LANG", ValidationSeverity.Error, "catalog /Lang is missing or empty", Clause(c, "7.2", "8.4.2"));
+        }
         else if (!LangTag().IsMatch(lang))
             c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"catalog /Lang '{lang}' is not a well-formed language tag", Clause(c, "7.2", "8.4.2"));
         if (f.Resolve(f.Catalog.Get("ViewerPreferences")) is not PdfDictionary vp || f.Resolve(vp.Get("DisplayDocTitle")) is not PdfBoolean { Value: true })
@@ -62,6 +68,9 @@ internal static partial class PdfUAChecks
         var part = x.Get(XmpData.PdfUAId, "part");
         if (part is null) c.Add("PDFUA-XMP-ID-MISSING", ValidationSeverity.Error, "XMP has no pdfuaid:part identification", Clause(c, "5", "5"));
         else if (part != c.Part.ToString()) c.Add("PDFUA-XMP-ID-PART", ValidationSeverity.Error, $"pdfuaid:part is '{part}', expected '{c.Part}'", Clause(c, "5", "5"));
+        foreach (var (name, prefix) in x.PdfUAPrefixes)
+            if (name is "part" or "amd" or "corr" && prefix != "pdfuaid")
+                c.Add("PDFUA-XMP-ID-PREFIX", ValidationSeverity.Error, $"pdfuaid property '{name}' uses namespace prefix '{prefix}', expected 'pdfuaid'", Clause(c, "5", "5"));
     }
 
     static void Security(ValidationContext c)
@@ -93,15 +102,70 @@ internal static partial class PdfUAChecks
         }
     }
 
+    static void LanguageSources(ValidationContext c)
+    {
+        var f = c.F;
+        if (c.Part != 1 || f.Resolve(f.Catalog.Get("Lang")) is PdfString { Bytes.Length: > 0 }) return;
+        const string clause = "ISO 14289-1 7.2";
+        if (f.Resolve(f.Catalog.Get("Outlines")) is PdfDictionary outlines && outlines.Get("First") is not null)
+            c.Add("PDFUA-LANG-OUTLINE", ValidationSeverity.Error, "outline entries exist but the document has no catalog /Lang, so their natural language is not determinable (veraPDF PDFUA-1 7.2-2)", clause);
+        if (c.Xmp.Present && c.Xmp.Items.Values.Any(v => v.Any(i => i.Lang == "x-default") && v.All(i => i.Lang is "x-default" or null)))
+            c.Add("PDFUA-LANG-XMP", ValidationSeverity.Error, "XMP language alternative has only x-default and the document has no catalog /Lang, so its language is not determinable (veraPDF PDFUA-1 7.2-33)", clause);
+        bool contents = false, tooltip = false;
+        var tree = c.Doc.Structure;
+        string? ParentLang(PdfDictionary ad) =>
+            tree is not null && c.F.Resolve(ad.Get("StructParent")) is PdfInteger { Value: >= 0 and <= int.MaxValue } k
+            && AnnotationParentTreeValue(c.F, tree, (int)k.Value) is { } pv && c.F.Resolve(pv) is PdfDictionary pd && tree.ElementFor(pd) is { } pe ? pe.EffectiveLang : null;
+        for (var i = 0; i < c.Doc.Pages.Count && !(contents && tooltip); i++)
+        {
+            if (f.Resolve(c.Doc.Pages[i].Dict.Get("Annots")) is not PdfArray annots) continue;
+            foreach (var a in annots.Items.Take(10_000))
+            {
+                if (f.Resolve(a) is not PdfDictionary ad) continue;
+                if (!contents && f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 } && ad.Get("Lang") is null && string.IsNullOrEmpty(ParentLang(ad)))
+                { contents = true; c.Add("PDFUA-LANG-ANNOT", ValidationSeverity.Error, "an annotation /Contents has no determinable natural language without a catalog /Lang (veraPDF PDFUA-1 7.2-24)", clause, i); }
+                if (!tooltip && HasText(f, ad, "TU") && !HasLang(f, ad) && string.IsNullOrEmpty(ParentLang(ad)))
+                { tooltip = true; c.Add("PDFUA-LANG-TU", ValidationSeverity.Error, "a form field /TU has no determinable natural language without a catalog /Lang (veraPDF PDFUA-1 7.2-25)", clause, i); }
+            }
+        }
+    }
+
+    static bool HasLang(PdfFile f, PdfDictionary? d)
+    {
+        for (var n = 0; d is not null && n < 64; n++, d = f.Resolve(d.Get("Parent")) as PdfDictionary)
+            if (d.Get("Lang") is not null) return true;
+        return false;
+    }
+
     static void StructureTypes(ValidationContext c, StructureTree tree)
     {
         var reported = new HashSet<string>();
-        foreach (var (k, v) in tree.RoleMap)
-            if (StructureTree.IsStandardType(k) && k != v)
-                c.Add("PDFUA-ROLEMAP-STANDARD", ValidationSeverity.Error, $"standard type /{k} is remapped to /{v}", Clause(c, "7.1", "8.2"));
-        foreach (var e in tree.Elements())
-            if (!StructureTree.IsStandardType(e.StandardType) && reported.Add(e.Type))
-                c.Add("PDFUA-ROLEMAP-MISSING", ValidationSeverity.Error, $"structure type /{e.Type} does not map to a standard type", Clause(c, "7.1", "8.2"));
+        if (c.Part == 1)
+        {
+            // ISO 14289-1 7.1: only types actually used by structure elements matter, judged against the ISO 32000-1 vocabulary (veraPDF 7.1-5/6/7).
+            foreach (var e in tree.Elements())
+            {
+                if (!reported.Add(e.Type)) continue;
+                if (StructureTree.IsPdf17StandardType(e.Type))
+                {
+                    if (tree.RoleMap.TryGetValue(e.Type, out var v) && v != e.Type)
+                        c.Add("PDFUA-ROLEMAP-STANDARD", ValidationSeverity.Error, $"standard type /{e.Type} is remapped to /{v}", "ISO 14289-1 7.1");
+                    else if (v == e.Type)
+                        c.Add("PDFUA-ROLEMAP-CIRCULAR", ValidationSeverity.Error, $"standard type /{e.Type} is mapped to itself in the RoleMap (circular mapping)", "ISO 14289-1 7.1");
+                }
+                else if (tree.ResolvePdf17Role(e.Type, out var circular) is null)
+                    c.Add(circular ? "PDFUA-ROLEMAP-CIRCULAR" : "PDFUA-ROLEMAP-MISSING", ValidationSeverity.Error, circular ? $"structure type /{e.Type} has a circular RoleMap mapping" : $"structure type /{e.Type} does not map to a standard type", "ISO 14289-1 7.1");
+            }
+        }
+        else
+        {
+            foreach (var (k, v) in tree.RoleMap)
+                if (StructureTree.IsStandardType(k) && k != v)
+                    c.Add("PDFUA-ROLEMAP-STANDARD", ValidationSeverity.Error, $"standard type /{k} is remapped to /{v}", Clause(c, "7.1", "8.2"));
+            foreach (var e in tree.Elements())
+                if (!StructureTree.IsStandardType(e.StandardType) && reported.Add(e.Type))
+                    c.Add("PDFUA-ROLEMAP-MISSING", ValidationSeverity.Error, $"structure type /{e.Type} does not map to a standard type", Clause(c, "7.1", "8.2"));
+        }
         if (c.Part == 2 && (tree.Children.Count != 1 || tree.Children[0].StandardType is not ("Document" or "DocumentFragment")))
             c.Add("PDFUA2-DOCUMENT-ROOT", ValidationSeverity.Warning, "structure tree root should have a single Document child element", "ISO 14289-2 8.2");
         if (tree.Truncated) c.Add("PDFUA-STRUCT-TRUNCATED", ValidationSeverity.Warning, "structure tree exceeded the parser's limits and was only partially checked");
@@ -109,15 +173,24 @@ internal static partial class PdfUAChecks
 
     static void Language(ValidationContext c, StructureTree tree)
     {
+        var catalogLang = c.F.Resolve(c.F.Catalog.Get("Lang")) is PdfString { Bytes.Length: > 0 };
+        var reported = catalogLang || c.Part != 1;
         foreach (var e in tree.Elements())
+        {
             if (e.Lang is { Length: > 0 } l && !LangTag().IsMatch(l))
                 c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"element /{e.Type} has malformed /Lang '{l}'", Clause(c, "7.2", "8.4.2"), e.PageIndex);
+            if (!reported && string.IsNullOrEmpty(e.EffectiveLang) && e.MarkedContent.Any(m => c.TextMcids.Contains((m.PageIndex ?? e.PageIndex ?? -1, m.Mcid))))
+            {
+                reported = true;
+                c.Add("PDFUA-LANG", ValidationSeverity.Error, $"no catalog /Lang and /{e.Type} content has no inherited /Lang, so its natural language is not determinable (veraPDF PDFUA-1 7.2-34 considers text items)", Clause(c, "7.2", "8.4.2"), e.PageIndex);
+            }
+        }
     }
 
     static void Figures(ValidationContext c, StructureTree tree)
     {
         foreach (var e in tree.Elements())
-            if (e.StandardType is "Figure" or "Formula" && string.IsNullOrWhiteSpace(e.Alt) && string.IsNullOrWhiteSpace(e.ActualText) && !InsideArtifact(e))
+            if (e.StandardType is "Figure" or "Formula" && string.IsNullOrEmpty(e.Alt) && e.ActualText is null && !InsideArtifact(e))
                 c.Add("PDFUA-ALT-MISSING", ValidationSeverity.Error, $"{e.StandardType} element has no /Alt text", Clause(c, "7.3", "8.6"), e.PageIndex);
     }
 
@@ -255,10 +328,12 @@ internal static partial class PdfUAChecks
             if (cell.Id is { Length: > 0 } id && cell.StandardType == "TH" && idCounts.GetValueOrDefault(id) > 1)
                 c.Add("PDFUA-TABLE-HEADER-ID-DUPLICATE", ValidationSeverity.Error, $"TH /ID '{id}' is not unique in the structure tree", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
             if (cellHeaders is null) continue;
+            // veraPDF (PDFUA-1 7.5-1/2) only evaluates /Headers on TD cells; dangling or empty references on TH cells are reported as warnings.
+            var headerSeverity = cell.StandardType == "TD" ? ValidationSeverity.Error : ValidationSeverity.Warning;
 
             if (f.Resolve(cellHeaders) is not PdfArray idArray)
             {
-                c.Add("PDFUA-TABLE-HEADERS-FORMAT", ValidationSeverity.Error, "/Headers must be an array of header-cell ID strings", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+                c.Add("PDFUA-TABLE-HEADERS-FORMAT", headerSeverity, "/Headers must be an array of header-cell ID strings", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
                 continue;
             }
 
@@ -266,18 +341,56 @@ internal static partial class PdfUAChecks
             {
                 if (f.Resolve(rawId) is not PdfString headerId || string.IsNullOrWhiteSpace(headerId.Text))
                 {
-                    c.Add("PDFUA-TABLE-HEADERS-FORMAT", ValidationSeverity.Error, "/Headers entries must be non-empty text strings", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+                    c.Add("PDFUA-TABLE-HEADERS-FORMAT", headerSeverity, "/Headers entries must be non-empty text strings", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
                     continue;
                 }
 
                 if (!headerTargets.TryGetValue(headerId.Text, out var targets) || targets.Length != 1 || idCounts.GetValueOrDefault(headerId.Text) != 1)
-                    c.Add("PDFUA-TABLE-HEADERS-REFERENCE", ValidationSeverity.Error, $"/Headers references '{headerId.Text}', which does not identify a unique TH structure element", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+                    c.Add("PDFUA-TABLE-HEADERS-REFERENCE", headerSeverity, $"/Headers references '{headerId.Text}', which does not identify a unique TH structure element", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
             }
         }
 
+        if (c.Part == 1)
+            TableScopeConnections(c, tree, rows, headerAttributes);
         if (c.Part == 2 && headerAttributes.Values.Any(value => value is not null))
             foreach (var cell in cells.Where(cell => cell.StandardType == "TD" && headerAttributes[cell] is null))
                 c.Add("PDFUA-TABLE-HEADERS-CONSISTENCY", ValidationSeverity.Error, "TD has no /Headers attribute although /Headers is used in this table", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+    }
+
+    /// <summary>ISO 14289-1 7.5 / veraPDF 7.5-1: a TD whose headers are not given by /Headers needs a TH with a /Scope sharing its row or column (the scope direction is not evaluated).</summary>
+    static void TableScopeConnections(ValidationContext c, StructureTree tree, List<StructElement> rows, Dictionary<StructElement, PdfObject?> headerAttributes)
+    {
+        var f = c.F;
+        var carry = new Dictionary<int, int>();
+        var placed = new List<(StructElement Cell, int Row, int Col, int ColSpan, int RowSpan)>();
+        for (var r = 0; r < rows.Count; r++)
+        {
+            var col = 0;
+            foreach (var cell in rows[r].ChildElements.Where(e => e.StandardType is "TH" or "TD"))
+            {
+                while (carry.TryGetValue(col, out var rem) && rem > 0) col++;
+                var cs = Math.Clamp((int)(cell.Attribute(f, "ColSpan").AsNumber() ?? 1), 1, 1000);
+                var rs = Math.Clamp((int)(cell.Attribute(f, "RowSpan").AsNumber() ?? 1), 1, 1000);
+                placed.Add((cell, r, col, cs, rs));
+                for (var k = 0; k < cs; k++) if (rs > 1) carry[col + k] = rs;
+                col += cs;
+            }
+            foreach (var key in carry.Keys.ToList()) if (--carry[key] <= 0) carry.Remove(key);
+        }
+
+        var headers = placed.Where(p => p.Cell.StandardType == "TH")
+            .Select(p => (p, Scope: f.Resolve(TableAttribute(c, tree, p.Cell, "Scope")).AsName()))
+            .Where(h => h.Scope is "Row" or "Column" or "Both")
+            .ToList();
+        foreach (var p in placed.Where(p => p.Cell.StandardType == "TD"))
+        {
+            if (headerAttributes.GetValueOrDefault(p.Cell) is not null) continue;
+            var connected = headers.Any(h =>
+                (h.p.Col < p.Col + p.ColSpan && p.Col < h.p.Col + h.p.ColSpan)
+                || (h.p.Row < p.Row + p.RowSpan && p.Row < h.p.Row + h.p.RowSpan));
+            if (!connected)
+                c.Add("PDFUA-TABLE-HEADER-CONNECTION", ValidationSeverity.Error, "TD has neither /Headers nor a TH with a covering /Scope, so its header cells are not determinable (veraPDF PDFUA-1 7.5-1)", "ISO 14289-1 7.5", p.Cell.PageIndex);
+        }
     }
 
     static void Lists(ValidationContext c, StructureTree tree)
@@ -306,11 +419,20 @@ internal static partial class PdfUAChecks
             {
                 if (f.Resolve(a) is not PdfDictionary ad) continue;
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
-                if (sub is "Popup" or "PrinterMark" or "TrapNet") continue;
                 var key = f.Resolve(ad.Get("StructParent"));
+                var exempt = (((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) & 2) != 0 || OutsideCropBox(f, ad, c.Doc.Pages[i].CropBox);
+                if (sub is "Popup") continue;
+                if (sub is "TrapNet" or "PrinterMark")
+                {
+                    if (c.Part == 1 && !exempt && (sub == "TrapNet" || key is not null))
+                        c.Add(sub == "TrapNet" ? "PDFUA-ANNOT-TRAPNET" : "PDFUA-ANNOT-PRINTERMARK", ValidationSeverity.Error, sub == "TrapNet" ? "TrapNet annotations are not permitted (veraPDF PDFUA-1 7.18.2-1)" : "PrinterMark annotation is in the structure tree but must be an incidental artifact (veraPDF PDFUA-1 7.18.8-1)", "ISO 14289-1 7.18", i);
+                    continue;
+                }
                 StructElement? parent = null;
                 if (key is null)
-                    c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
+                {
+                    if (!exempt) c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
+                }
                 else if (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
                     || AnnotationParentTreeValue(f, tree, (int)number.Value) is not PdfRef reference
                     || !f.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse
@@ -325,22 +447,40 @@ internal static partial class PdfUAChecks
                     if (!objects.Contains(ad))
                         c.Add("PDFUA-ANNOT-OBJR", ValidationSeverity.Error, $"/{sub} annotation's parent structure element has no direct /OBJR child with an indirect /Obj identifying this annotation", "ISO 32000-2 14.7.5.3", i);
                 }
-                if (sub == "Link" && !(f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 }) && parent?.Alt is not { Length: > 0 })
-                    c.Add("PDFUA-LINK-DESCRIPTION", ValidationSeverity.Error, "Link annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.5", "8.9"), i);
-                if ((((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) & 2) != 0) continue;
-                if (sub == "Link" && parent is not null && parent.StandardType != "Link")
-                    c.Add("PDFUA-LINK-STRUCT", ValidationSeverity.Error, $"Link annotation is nested in /{parent.Type}, expected Link", Clause(c, "7.18.5", "8.9"), i);
+                if (exempt) continue;
+                if (sub == "Link")
+                {
+                    // UA-1 7.18.5-2 accepts only /Contents; the structure /Alt fallback is kept for UA-2.
+                    var hasContents = f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 };
+                    if (!hasContents && (c.Part == 1 || parent?.Alt is not { Length: > 0 }))
+                        c.Add("PDFUA-LINK-DESCRIPTION", ValidationSeverity.Error, c.Part == 1 ? "Link annotation has no /Contents" : "Link annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.5", "8.9"), i);
+                    if (parent is not null && parent.StandardType != "Link")
+                        c.Add("PDFUA-LINK-STRUCT", ValidationSeverity.Error, $"Link annotation is nested in /{parent.Type}, expected Link", Clause(c, "7.18.5", "8.9"), i);
+                }
                 else if (sub == "Widget")
                 {
                     if (parent is not null && parent.StandardType != "Form")
                         c.Add("PDFUA-FORM-STRUCT", ValidationSeverity.Error, $"Widget annotation is nested in /{parent.Type}, expected Form", Clause(c, "7.18.4", "8.9"), i);
-                    if (HasFieldType(f, ad) && !HasText(f, ad, "TU") && !HasText(f, ad, "Contents") && parent?.Alt is not { Length: > 0 })
-                        c.Add("PDFUA-FORM-TU", ValidationSeverity.Error, "form field has no /TU tooltip (nor /Contents or structure /Alt)", Clause(c, "7.18.1", "8.9"), i);
+                    if (HasFieldType(f, ad) && !HasText(f, ad, "TU") && (c.Part == 1 || !HasText(f, ad, "Contents")) && parent?.Alt is not { Length: > 0 })
+                        c.Add("PDFUA-FORM-TU", ValidationSeverity.Error, "form field has no /TU tooltip (nor structure /Alt)", Clause(c, "7.18.1", "8.9"), i);
                 }
-                else if (sub != "Link" && !HasText(f, ad, "Contents") && parent?.Alt is not { Length: > 0 })
-                    c.Add("PDFUA-ANNOT-CONTENTS", ValidationSeverity.Error, $"/{sub} annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.1", "8.9"), i);
+                else
+                {
+                    if (c.Part == 1 && parent is not null && parent.StandardType != "Annot")
+                        c.Add("PDFUA-ANNOT-STRUCT", ValidationSeverity.Error, $"/{sub} annotation is nested in /{parent.Type}, expected Annot", "ISO 14289-1 7.18.1", i);
+                    if (!HasText(f, ad, "Contents") && parent?.Alt is not { Length: > 0 })
+                        c.Add("PDFUA-ANNOT-CONTENTS", ValidationSeverity.Error, $"/{sub} annotation has no /Contents and its structure element has no /Alt", Clause(c, "7.18.1", "8.9"), i);
+                }
             }
         }
+    }
+
+    static bool OutsideCropBox(PdfFile f, PdfDictionary annot, PdfRect crop)
+    {
+        if (f.Resolve(annot.Get("Rect")) is not PdfArray { Count: 4 } r) return false;
+        var v = new double[4];
+        for (var k = 0; k < 4; k++) if (f.Resolve(r[k]).AsNumber() is { } n) v[k] = n; else return false;
+        return Math.Max(v[0], v[2]) < crop.Left || Math.Min(v[0], v[2]) > crop.Right || Math.Max(v[1], v[3]) < crop.Bottom || Math.Min(v[1], v[3]) > crop.Top;
     }
 
     static bool HasFieldType(PdfFile f, PdfDictionary? d)
