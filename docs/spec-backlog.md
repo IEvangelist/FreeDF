@@ -4,6 +4,21 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/AdoBye.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## Editor-pipeline recovery and current-main integration
+
+Main `6b474b18`, the binary/Blob pipeline and reviewed default-on worker pool
+are integrated without changing the coverage counts. Release 2225/2225,
+13 Node checks, fresh AOT, full/merge/forms/protection/pool/page-image/boot
+and the 535-group profile gate pass. See
+[the measured integration checkpoint](performance/2026-10-30-aot.md#current-main-pipeline-and-pool-integration).
+The requested 5x budgets are not achieved. Remaining pipeline work includes
+cold-replica low-resolution preview admission, stale thumbnail requests across
+document replacement, exact zoom latency, navigation wall time, and sample-26
+performance measurements. Startup long tasks/repeat visits and further raster
+work remain independent workstreams. All three delegated sessions returned;
+none needs recreation. Startup's per-client cache pinning still awaits its
+browser/mid-boot validation and final AOT check.
+
 ## Latest reviewed five-branch slice
 
 This checkpoint follows the local round-3 snapshot-reuse performance commits.

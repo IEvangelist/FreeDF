@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The editor-pipeline/current-main integration retains **15 Partial / 0 Todo**
+and the limited redaction/signature Done rows. Binary transport, cached
+selection metadata and reviewed pooled rendering improve bounded paths, but
+do not establish full clause coverage or the requested 5x performance targets.
+The [performance checkpoint](performance/2026-10-30-aot.md#current-main-pipeline-and-pool-integration)
+records the exact remaining timing misses and withdrawn first-paint experiment.
+
 ## Latest reviewed integration: five parity branches
 
 The first three reviewed branches add typed inert action subtypes and trigger
