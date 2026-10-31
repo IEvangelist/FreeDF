@@ -3,6 +3,7 @@ param(
     [string] $BasePath = '/csharp-pdf/',
     [switch] $Aot,
     [switch] $SkipSamples,
+    [switch] $NoBundle,
     [switch] $Trim,
     [switch] $KillServiceWorker,
     [string] $ArtifactsPath,
@@ -63,6 +64,15 @@ foreach ($file in $wasm) {
 }
 # Only the ICU data selected by applicationCulture=en-US is ever fetched; do not ship or precache the CJK/other bundles.
 Get-ChildItem (Join-Path $site '_framework') -Filter 'icudt_*' | Where-Object { $_.Name -notlike 'icudt_EFIGS*' } | Remove-Item
+# Fewer, larger startup files: merge stylesheets/scripts/modules and inline favicons (see bundle-editor-site.mjs).
+if (!$NoBundle) {
+    if (!(Test-Path (Join-Path $PSScriptRoot 'node_modules\esbuild'))) {
+        npm ci --prefix $PSScriptRoot --no-audit --no-fund --silent
+        if ($LASTEXITCODE -ne 0) { throw 'Installing the bundling tools (npm ci in tools/) failed.' }
+    }
+    node (Join-Path $PSScriptRoot 'bundle-editor-site.mjs') $site
+    if ($LASTEXITCODE -ne 0) { throw 'Bundling the editor shell failed.' }
+}
 # Versioned precache manifest: exact file set and digests of this build, embedded in the service worker.
 $swPath = Join-Path $site 'sw.js'
 $siteRoot = (Resolve-Path $site).Path.TrimEnd('\') + '\'
