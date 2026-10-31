@@ -91,4 +91,6 @@ export async function registerServiceWorker() {
   if (registration.installing) track(registration.installing);
   registration.addEventListener('updatefound', () => registration.installing && track(registration.installing));
   registration.update().catch(() => {});
+  // Older builds' caches are kept only while a client is pinned to them; ask the worker to drop any that are now unused.
+  navigator.serviceWorker.ready.then(ready => ready.active?.postMessage({ type: 'CLEANUP' }), () => {});
 }

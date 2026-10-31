@@ -76,6 +76,7 @@ static partial class EditorServiceWorker
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories)) File.Copy(file, file.Replace(source, site));
         var manifestA = ReadManifest(site);
         var originalCss = File.ReadAllText(Path.Combine(site, "editor.css"));
+        var originalWorker = File.ReadAllText(Path.Combine(site, "worker.js"));
         var originalSw = File.ReadAllText(Path.Combine(site, "sw.js"));
 
         var builder = WebApplication.CreateBuilder();
@@ -230,6 +231,7 @@ static partial class EditorServiceWorker
 
         // 5. Deploy B: old build keeps serving until the user accepts, never a mix of old and new.
         File.WriteAllText(Path.Combine(site, "editor.css"), originalCss + "\n/* build B */\n");
+        File.WriteAllText(Path.Combine(site, "worker.js"), originalWorker + "\n// build B worker\n");
         Reseal(site, "bbbbbbbbbbbbbbbb");
         await page.EvaluateAsync("navigator.serviceWorker.getRegistration().then(r => r.update())");
         await WaitFor("!!document.getElementById('update-banner')", "update banner");
@@ -288,29 +290,46 @@ static partial class EditorServiceWorker
         Check(await typing.EvaluateAsync<bool>("window.__stale === true && !!document.querySelector('[contenteditable=\"plaintext-only\"]')"), "typing in the real text tool was not interrupted.");
         await typing.CloseAsync();
 
-        // A tab that never answers (older build, frozen, still booting) does not block; it keeps its loaded build and makes no asset requests.
+        // A tab that is still BOOTING when build B activates (its engine worker is held back), and that never answers
+        // update queries, must not block the update and must finish booting from build A, never mixing in build B.
         var silent = await context.NewPageAsync();
         silent.SetDefaultTimeout(90000);
         await silent.AddInitScriptAsync("const add = ServiceWorkerContainer.prototype.addEventListener; ServiceWorkerContainer.prototype.addEventListener = function (type, ...rest) { if (type === 'message' || type === 'controllerchange') return; return add.call(this, type, ...rest); };");
-        var silentAssets = 0;
-        var activated = false;
-        silent.Request += (_, request) => { if (activated && request.Url.Contains("/_framework/", StringComparison.Ordinal)) Interlocked.Increment(ref silentAssets); };
+        await silent.AddInitScriptAsync(@"(() => {
+            const Real = window.Worker; const handlers = ['onmessage', 'onerror', 'onmessageerror'];
+            window.Worker = class { constructor(u, o) { this.u = u; this.o = o; this.q = []; window.__gate = this; }
+              postMessage(...a) { this.real ? this.real.postMessage(...a) : this.q.push(a); }
+              terminate() { this.real?.terminate(); }
+              release() { this.real = new Real(this.u, this.o); for (const h of handlers) this.real[h] = this[h]; for (const a of this.q) this.real.postMessage(...a); } };
+        })();");
+        var bootFailures = new ConcurrentQueue<string>();
+        silent.Response += (_, response) => { if (response.Url.Contains("/_framework/", StringComparison.Ordinal) && response.Status >= 400) bootFailures.Enqueue(response.Status + " " + response.Url); };
         await silent.GotoAsync(url);
-        await WaitReady(silent);
+        await silent.WaitForFunctionAsync("!!window.__gate");
         await silent.EvaluateAsync("window.__stale = true");
-        activated = true;
         await AcceptUpdate();
-        Check(await silent.EvaluateAsync<bool>("window.__stale === true"), "an unresponsive tab does not block the update and is left alone.");
-        Check(await silent.EvaluateAsync<bool>("window.pdfHost.request('/api/state').then(r => r.ok)"), "the unresponsive tab keeps working on its loaded build.");
-        Check(silentAssets == 0, $"the unresponsive tab made {silentAssets} asset requests after activation.");
+        Check(await silent.EvaluateAsync<bool>("window.__stale === true"), "a booting, unresponsive tab does not block the update and is not reloaded.");
+        Check(!(await silent.EvaluateAsync<string>("fetch('worker.js').then(r => r.text())")).Contains("build B worker", StringComparison.Ordinal), "a client pinned to build A is served build A's files after B activated.");
+        Check((await CacheNames()).Length == 2, "the old build's cache is kept while a client is pinned to it.");
+        await silent.EvaluateAsync("window.__gate.release()");
+        await WaitReady(silent);
+        Check(bootFailures.IsEmpty, "the booting tab finished from its own build with no failed asset: " + string.Join(", ", bootFailures));
+        Check(await silent.EvaluateAsync<bool>("window.__stale === true && window.pdfHost.request('/api/state').then(r => r.ok)"), "the tab that booted across the activation works and was never reloaded.");
         await silent.CloseAsync();
-        await WaitFor("!!navigator.serviceWorker.controller", "controller");
+        var fresh = await context.NewPageAsync();
+        fresh.SetDefaultTimeout(90000);
+        await fresh.GotoAsync(url);
+        await WaitReady(fresh);
+        await WaitFor("caches.keys().then(k => k.filter(n => n.startsWith('adobye-editor-')).length === 1)", "old cache cleanup after the pinned client closed");
+        await fresh.CloseAsync();        await WaitFor("!!navigator.serviceWorker.controller", "controller");
         await second.WaitForFunctionAsync("window.__stale === undefined");
         await WaitReady(second);
         Check((await second.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("build B", StringComparison.Ordinal), "the other tab reloaded onto the new build.");
         Check(await second.EvaluateAsync<bool>("navigator.serviceWorker.controller !== null"), "the other tab is controlled by the new worker.");
         await second.CloseAsync();
         Check(await Version() == "bbbbbbbbbbbbbbbb", "accepting activates the new version.");
+        await page.EvaluateAsync("navigator.serviceWorker.ready.then(r => r.active.postMessage({ type: 'CLEANUP' }))");
+        await WaitFor("caches.keys().then(k => k.filter(n => n.startsWith('adobye-editor-')).length === 1)", "old cache removal after activation");
         Check((await CacheNames()).Single() == "adobye-editor-bbbbbbbbbbbbbbbb", "old cache removed after activation.");
         Check((await page.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("build B", StringComparison.Ordinal), "new version serves new assets.");
 
@@ -325,12 +344,15 @@ static partial class EditorServiceWorker
 
         // 7. Rollback to build A uses the same update flow and returns to the original bytes.
         File.WriteAllText(Path.Combine(site, "editor.css"), originalCss);
+        File.WriteAllText(Path.Combine(site, "worker.js"), originalWorker);
         File.WriteAllText(Path.Combine(site, "sw.js"), originalSw);
         await page.EvaluateAsync("navigator.serviceWorker.getRegistration().then(r => r.update())");
         await WaitFor("!!document.getElementById('update-banner')", "rollback banner");
         await AcceptUpdate();
         await WaitFor("!!navigator.serviceWorker.controller", "controller after rollback");
         Check(await Version() == manifestA.Version, "rollback re-activates the original build.");
+        await page.EvaluateAsync("navigator.serviceWorker.ready.then(r => r.active.postMessage({ type: 'CLEANUP' }))");
+        await WaitFor("caches.keys().then(k => k.filter(n => n.startsWith('adobye-editor-')).length === 1)", "old cache removal after rollback");
         Check((await CacheNames()).Single() == "adobye-editor-" + manifestA.Version, "rollback leaves exactly the original cache.");
         Check(!(await page.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("/* build ", StringComparison.Ordinal), "rollback serves the original assets.");
 

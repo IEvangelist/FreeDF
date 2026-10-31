@@ -61,20 +61,33 @@ async function setPin(id, name) {
   pins.set(id, name);
   await (await caches.open(PINS)).put(pinKey(id), new Response(name)).catch(() => {});
 }
+// Only builds this worker has superseded (recorded at activation) are ever removed, so a newer build that is still
+// installing or waiting keeps its cache.
+const metaKey = (kind, name) => new URL(`${kind}/${name}`, scope).href;
+async function retirePrevious() {
+  const store = await caches.open(PINS);
+  const previous = await store.match(metaKey('meta', 'current'));
+  const old = previous ? await previous.text() : null;
+  if (old && old !== cacheName) await store.put(metaKey('superseded', old), new Response(old));
+  if (cacheName) {
+    await store.delete(metaKey('superseded', cacheName));
+    await store.put(metaKey('meta', 'current'), new Response(cacheName));
+  }
+}
 async function dropUnpinnedCaches() {
   const live = new Set((await self.clients.matchAll({ type: 'all', includeUncontrolled: true })).map(client => client.id));
   const store = await caches.open(PINS);
-  const used = new Set(cacheName ? [cacheName] : []);
+  const used = new Set(cacheName ? [cacheName] : []), superseded = [];
   for (const request of await store.keys()) {
-    const id = new URL(request.url).pathname.split('/').pop();
+    const [kind, id] = new URL(request.url).pathname.split('/').slice(-2);
+    if (kind === 'superseded') { superseded.push([request, id]); continue; }
+    if (kind !== 'pin') continue;
     if (!live.has(id)) { await store.delete(request); pins.delete(id); continue; }
-    const name = await (await store.match(request)).text();
-    used.add(name);
+    used.add(await (await store.match(request)).text());
   }
-  for (const name of await caches.keys())
-    if (name.startsWith(PREFIX) && !used.has(name)) await caches.delete(name);
+  for (const [request, name] of superseded)
+    if (!used.has(name)) { await caches.delete(name); await store.delete(request); }
 }
-
 self.addEventListener('install', event => kill ? event.waitUntil(self.skipWaiting()) : event.waitUntil(precache().catch(async error => {
   if (cacheName) await caches.delete(cacheName);
   throw error;
@@ -83,6 +96,7 @@ self.addEventListener('install', event => kill ? event.waitUntil(self.skipWaitin
 // A new worker only activates once every open editor tab reports it is clean (REQUEST_ACTIVATE), and each tab
 // reloads (or defers while dirty) on controllerchange, so no tab keeps an older build under this worker.
 self.addEventListener('activate', event => event.waitUntil((async () => {
+  if (!kill) await retirePrevious();
   await dropUnpinnedCaches();
   if (!kill) return;
   for (const name of await caches.keys()) if (name.startsWith(PREFIX) || name === PINS) await caches.delete(name);
@@ -118,6 +132,7 @@ self.addEventListener('message', event => {
       port?.postMessage({ type: status.dirty === 0 ? 'ACTIVATING' : 'BLOCKED', ...status });
     }));
   }
+  else if (event.data?.type === 'CLEANUP') event.waitUntil(dropUnpinnedCaches());
   else if (event.data?.type === 'GET_VERSION') event.source?.postMessage({ type: 'VERSION', version: MANIFEST?.version ?? null, cache: cacheName });
 });
 
