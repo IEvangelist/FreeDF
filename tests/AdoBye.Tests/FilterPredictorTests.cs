@@ -66,6 +66,45 @@ public class FilterPredictorTests
         Assert.Equal(new byte[] { 9, 8, 7, 7, 7 }, PdfFilters.Decode(enc, [("RunLengthDecode", null)], o => o).Data);
     }
 
+    // Self-encoded (hand-derived): libtiff cannot produce or read these, so the expectation is an independent sample-by-sample
+    // differencing of random data per colour component (ISO 32000-2 §7.4.4.4, TIFF predictor 2).
+    [Theory]
+    [InlineData(3, 4, 5)]
+    [InlineData(3, 2, 7)]
+    [InlineData(4, 1, 9)]
+    [InlineData(3, 16, 5)]
+    [InlineData(2, 4, 3)]
+    [InlineData(4, 16, 2)]
+    public void TiffPredictor2MultiComponentRoundTrip(int colors, int bpc, int columns)
+    {
+        const int rows = 4;
+        var rnd = new Random(colors * 100 + bpc);
+        var max = (1 << bpc) - 1;
+        var rowBytes = (colors * bpc * columns + 7) / 8;
+        var plain = new byte[rows * rowBytes];
+        var diff = new byte[plain.Length];
+        void Put(byte[] buf, int row, int idx, int v)
+        {
+            if (bpc == 16) { buf[row * rowBytes + idx * 2] = (byte)(v >> 8); buf[row * rowBytes + idx * 2 + 1] = (byte)v; return; }
+            var bit = idx * bpc;
+            buf[row * rowBytes + bit / 8] |= (byte)(v << (8 - bpc - bit % 8));
+        }
+        for (var r = 0; r < rows; r++)
+        {
+            var prev = new int[colors];
+            for (var s = 0; s < colors * columns; s++)
+            {
+                var v = rnd.Next(max + 1); var c = s % colors;
+                Put(plain, r, s, v);
+                Put(diff, r, s, (v - prev[c]) & max);
+                prev[c] = v;
+            }
+        }
+        var z = new MemoryStream();
+        using (var zs = new ZLibStream(z, CompressionMode.Compress, true)) zs.Write(diff);
+        Assert.Equal(plain, Run(z.ToArray(), 2, colors, bpc, columns));
+    }
+
     [Theory]
     [InlineData("pred2-16", 16, 9)]
     [InlineData("pred2-4", 4, 7)]
