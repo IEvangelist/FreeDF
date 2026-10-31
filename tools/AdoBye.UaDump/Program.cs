@@ -2,6 +2,15 @@
 using System.Text.Json;
 using PortableDocument.Document;
 
+// autotag <in.pdf> <out.pdf>: conservative auto-tagging (PdfEditor.AutoTagUntagged) for independent checking with veraPDF.
+if (args is ["autotag", var input, var output])
+{
+    var editor = PdfEditor.Open(File.ReadAllBytes(input));
+    Console.WriteLine(editor.AutoTagUntagged());
+    File.WriteAllBytes(output, editor.Save());
+    return;
+}
+
 foreach (var path in args)
 {
     try

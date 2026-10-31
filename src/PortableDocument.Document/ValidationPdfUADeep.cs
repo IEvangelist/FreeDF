@@ -202,7 +202,7 @@ internal static class PdfUADeepChecks
         }
     }
 
-    static void SkipInlineImage(PdfLexer lex)
+    internal static void SkipInlineImage(PdfLexer lex)
     {
         var d = lex.Data;
         for (var p = lex.Pos; p + 1 < d.Length; p++)
