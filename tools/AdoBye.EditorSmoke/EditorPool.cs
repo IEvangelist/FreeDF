@@ -38,14 +38,14 @@ static class EditorPool
             Scenario[] scenarios =
             [
                 new("single-worker", "?pool=0", cores, null),
-                new("pool", "", cores, null),
-                new("pool-boot-failure", "", cores, "bootfail"),
-                new("pool-replica-crash", "", cores, "crash"),
-                new("pool-2-cores", "", 2, null),
-                new("pool-low-memory", "", cores, null, 2),
-                new("pool-2-bands-per-worker", "", cores, null, null, 2),
+                new("pool", "?pool=1", cores, null),
+                new("pool-boot-failure", "?pool=1", cores, "bootfail"),
+                new("pool-replica-crash", "?pool=1", cores, "crash"),
+                new("pool-2-cores", "?pool=1", 2, null),
+                new("pool-low-memory", "?pool=1", cores, null, 2),
+                new("pool-2-bands-per-worker", "?pool=1", cores, null, null, 2),
                 new("single-worker-cpu-4x", "?pool=0", cores, null, null, 1, 4),
-                new("pool-cpu-4x", "", cores, null, null, 1, 4),
+                new("pool-cpu-4x", "?pool=1", cores, null, null, 1, 4),
             ];
             var results = new List<JsonElement>();
             foreach (var s in scenarios)
@@ -87,6 +87,7 @@ static class EditorPool
                 if (!baseline.SequenceEqual(hashes)) throw new Exception($"{r.GetProperty("scenario")}: decoded pixels differ from the single-worker render.");
             }
             string Pool(int i) => results[i].GetProperty("pool").GetString()!;
+            if (Pool(1) == "none" || Pool(1).Contains("completed=0")) throw new Exception("Pool scenario did not dispatch any render to a replica (is ?pool=1 honoured?): " + Pool(1));
             if (!Pool(1).Contains("spawned")) throw new Exception("The pool never spawned a replica: " + Pool(1));
             if (!Pool(1).Contains("cancelled=0")) throw new Exception("Unrelated work was cancelled (print batch must complete): " + Pool(1));
             foreach (var i in new[] { 2, 3 })
