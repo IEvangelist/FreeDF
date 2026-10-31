@@ -146,3 +146,10 @@ screen-reader pass.
   events.
 - Windows high-contrast was emulated with Chromium `forced-colors`, not run on a
   Windows high-contrast theme.
+
+## Update: surface layer, panels, pager
+
+- `surface.css` adds depth (layered gradients, grain, elevation), clip-path/opacity menu and dialog reveals (the box never moves, so input is never delayed), sheets that slide in and out, and thin scrollbars whose gutter fades out at both ends (WebKit pseudo-elements; Firefox gets `scrollbar-width: thin`).
+- Reduced motion: the OS setting still removes all animation. **Appearance > Allow animations** is an explicit in-app override for people whose system asks for reduced motion (`html[data-motion="full"]`); **Reduce motion** applies when the system does not.
+- Side panels start collapsed while no document is open (hidden from tab order and AT; toggles mirror `aria-expanded`/`aria-controls`) and open with the document using the user's saved preference or the width default. Opening while empty is honoured.
+- A floating previous/next pager (`#pager`, 44 px targets on touch, disabled at the first/last page, drives the existing prev/next controls) sits bottom-right of the page viewport above the canvas and below menus and sheets (z-index 8; menus 1000; modals 2000).

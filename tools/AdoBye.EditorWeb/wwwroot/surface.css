@@ -151,7 +151,7 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
 
 /* Reduced motion and transparency */
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) :is(*, *::before, *::after) { animation-duration: .001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; transition-delay: 0s !important; }
+  :root:not([data-motion="full"]) :is(*, *::before, *::after) { animation: none !important; transition: none !important; }
   :root:not([data-motion="full"]) :is(button:hover:not(:disabled), .thumb:hover, #empty:hover::before) { transform: none !important; }
 }
 :root[data-motion="reduce"] button:hover:not(:disabled), :root[data-motion="reduce"] .thumb:hover, :root[data-motion="reduce"] #empty:hover::before { transform: none !important; }
