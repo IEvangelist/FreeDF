@@ -52,8 +52,9 @@ var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
 var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
 var samplesOnly = args.Length == 2 && args[0] == "--samples";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly && !samplesOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history|--samples] <published-wwwroot>");
-var root = Path.GetFullPath(args[^1]);
+var viewportOnly = args.Length == 3 && args[0] == "--viewport";
+if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly && !samplesOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history|--samples] <published-wwwroot> | --viewport <published-wwwroot> <sample.pdf>");
+var root = Path.GetFullPath(viewportOnly ? args[1] : args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -75,7 +76,7 @@ try
 {
     var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var pw = await Playwright.CreateAsync();
-    await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
+    await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"] });
     await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
     var page = await context.NewPageAsync();
     page.SetDefaultTimeout(60000);
@@ -154,6 +155,12 @@ try
     {
         await EditorPageHistory.Run(page, address + "/csharp-pdf/");
         Check(network.IsEmpty && errors.IsEmpty, "No outbound traffic or browser errors during page history.");
+        return;
+    }
+    if (viewportOnly)
+    {
+        await EditorViewport.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
+        Console.WriteLine("PASS: app shell fits the viewport and the window never scrolls across viewport/DPR/zoom/panel/menu configurations.");
         return;
     }
     if (saveOverlapOnly)
