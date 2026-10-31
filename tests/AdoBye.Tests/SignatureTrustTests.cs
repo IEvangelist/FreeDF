@@ -134,7 +134,7 @@ public class SignatureTrustTests
                 w.WriteObjectIdentifier("1.2.3.4.1");
                 using (w.PushSequence())
                 {
-                    using (w.PushSequence()) { w.WriteObjectIdentifier(hash.Name == "SHA256" ? "2.16.840.1.101.3.4.2.1" : "2.16.840.1.101.3.4.2.2"); w.WriteNull(); }
+                    using (w.PushSequence()) { w.WriteObjectIdentifier(hash.Name switch { "SHA1" => "1.3.14.3.2.26", "SHA256" => "2.16.840.1.101.3.4.2.1", _ => "2.16.840.1.101.3.4.2.2" }); w.WriteNull(); }
                     w.WriteOctetString(digest);
                 }
                 w.WriteInteger(42);
@@ -565,6 +565,54 @@ public class SignatureTrustTests
         onlyRoot.Crls.Add(pki.GoodCrls().Crls[0]);
         var r2 = Assert.Single(PdfSignatureTrust.Evaluate(pdf, pki.Policy(supplied: onlyRoot))).Trust;
         Assert.NotEqual(PdfTrustStatus.Valid, r2.Status);
+    }
+
+    [Fact]
+    public void Sha1_timestamp_imprint_is_not_used_for_time_trust()
+    {
+        using var pki = new TestPki();
+        var policy = pki.Policy(supplied: pki.GoodCrls());
+        var sigTs = Sign(pki, Opts(pki, o => new PdfSignOptions { Certificate = o.Certificate, ExtraCertificates = o.ExtraCertificates, SigningTime = o.SigningTime, SubFilter = o.SubFilter, SignatureTimestamp = new Sha1Tsa(pki.Tsa, pki.Now) }));
+        var r1 = Assert.Single(PdfSignatureTrust.Evaluate(sigTs, policy)).Trust;
+        Assert.Equal(PdfValidationTimeSource.Now, r1.ValidationTimeSource);
+        Assert.Contains(r1.Findings, f => f.Code == "TimestampRejected" && f.Message.Contains("weak hash"));
+
+        var docTs = PdfEditor.AddDocumentTimeStamp(Sign(pki, Opts(pki)), new TestTsa(pki.Tsa, pki.Now), HashAlgorithmName.SHA1);
+        var sigs = PdfEditor.VerifySignatures(docTs);
+        Assert.True(sigs[1].IsDocumentTimeStamp && sigs[1].IsIntact);
+        var r2 = PdfSignatureTrust.Evaluate(docTs, policy)[0].Trust;
+        Assert.Equal(PdfValidationTimeSource.Now, r2.ValidationTimeSource);
+        Assert.Contains(r2.Findings, f => f.Code == "TimestampRejected" && f.Message.Contains("weak hash"));
+    }
+
+    sealed class Sha1Tsa(X509Certificate2 tsa, DateTimeOffset time) : ITimestampProvider
+    {
+        public byte[] GetTimestampToken(HashAlgorithmName hash, byte[] digest) => new TestTsa(tsa, time).GetTimestampToken(HashAlgorithmName.SHA1, digest);
+    }
+
+    [Fact]
+    public void Field_lock_detects_a_duplicate_named_field_that_carries_the_original_value()
+    {
+        using var cert = SecurityTests.Cert("Locker2");
+        var signed = PdfEditor.SignFile(DocMdpTests.FormPdf(), new PdfSignOptions { Certificate = cert, Lock = new PdfFieldLock(PdfFieldLockAction.All) });
+        var attack = DocMdpTests.Update(signed, (f, ch) =>
+        {
+            var n = DocMdpTests.Num(f, d => f.Resolve(d.Get("T")) is PdfString { Text: "name" });
+            var original = DocMdpTests.D(f, n);
+            ch[n] = DocMdpTests.With(original, "V", new PdfString(System.Text.Encoding.Latin1.GetBytes("Evil")));
+            var dup = f.Xref.Keys.Max() + 1;
+            ch[dup] = original;
+            var cat = (PdfDictionary)f.Resolve(f.Trailer.Get("Root"))!;
+            var form = (PdfDictionary)f.Resolve(cat.Get("AcroForm"))!;
+            var fields = (PdfArray)f.Resolve(form.Get("Fields"))!;
+            var fieldsNum = (form.Get("Fields") as PdfRef)?.Number;
+            var arr = new PdfArray([.. fields.Items, new PdfRef(dup, 0)]);
+            if (fieldsNum is { } fnum) ch[fnum] = arr;
+            else if (cat.Get("AcroForm") is PdfRef fr) ch[fr.Number] = DocMdpTests.With(form, "Fields", arr);
+            else ch[((PdfRef)f.Trailer.Get("Root")!).Number] = DocMdpTests.With(cat, "AcroForm", DocMdpTests.With(form, "Fields", arr));
+        });
+        var s = Assert.Single(PdfEditor.VerifySignatures(attack));
+        Assert.NotEmpty(s.FieldMdpFindings);
     }
 
     [Fact]
