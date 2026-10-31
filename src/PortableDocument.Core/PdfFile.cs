@@ -219,7 +219,12 @@ public sealed class PdfFile
             var trailer = ReadXrefSection(pos);
             if (first) { Trailer = trailer; first = false; }
             else foreach (var kv in trailer.Entries) Trailer.Entries.TryAdd(kv.Key, kv.Value);
-            if (trailer.Get("XRefStm") is PdfInteger hx && visited.Add(hx.Value)) ReadXrefSection(hx.Value);
+            if (trailer.Get("XRefStm") is PdfInteger hx && visited.Add(hx.Value))
+            {
+                // Hybrid files (7.5.8.4): the table marks compressed objects free; the XRefStm of the same section supplies them.
+                var hidden = _tableFree; _tableFree = null;
+                ReadXrefSection(hx.Value, hidden);
+            }
             pos = trailer.Get("Prev") is { } pv && pv.AsNumber() is { } pn ? (long)pn : -1;
         }
     }
@@ -238,7 +243,9 @@ public sealed class PdfFile
         return true;
     }
 
-    PdfDictionary ReadXrefSection(long pos)
+    HashSet<int>? _tableFree;
+
+    PdfDictionary ReadXrefSection(long pos, HashSet<int>? overridable = null)
     {
         if (pos < 0 || pos >= Data.Length) throw new PdfParseException("xref offset out of range");
         var lx = new PdfLexer(Data, (int)pos);
@@ -246,6 +253,7 @@ public sealed class PdfFile
         if (lx.Pos + 4 <= Data.Length && Data.AsSpan(lx.Pos, 4).SequenceEqual("xref"u8))
         {
             lx.Pos += 4;
+            _tableFree = [];
             while (true)
             {
                 var save = lx.Pos;
@@ -261,13 +269,17 @@ public sealed class PdfFile
                     {
                         lx.Pos += 18;
                         var fnum = (int)(start.Value + i);
-                        if (!Xref.ContainsKey(fnum)) Xref[fnum] = new XrefEntry(fuse, false, foff, fgen);
+                        if (!Xref.ContainsKey(fnum))
+                        {
+                            Xref[fnum] = new XrefEntry(fuse, false, foff, fgen);
+                            if (!fuse) _tableFree.Add(fnum);
+                        }
                         continue;
                     }
                     if (lx.ReadObject(false) is not PdfInteger off || lx.ReadObject(false) is not PdfInteger gen || lx.ReadObject(false) is not PdfKeyword k)
                         throw new PdfParseException("bad xref entry");
                     var num = (int)(start.Value + i);
-                    if (!Xref.ContainsKey(num)) Xref[num] = new XrefEntry(k.Value == "n", false, off.Value, (int)gen.Value);
+                    if (!Xref.ContainsKey(num)) { Xref[num] = new XrefEntry(k.Value == "n", false, off.Value, (int)gen.Value); if (k.Value != "n") _tableFree.Add(num); }
                 }
             }
             return lx.ReadObject() as PdfDictionary ?? throw new PdfParseException("bad trailer");
@@ -278,7 +290,9 @@ public sealed class PdfFile
         var w = ((PdfArray)xs.Dict.Get("W")!).Items.Select(x => (int)x.AsNumber()!.Value).ToArray();
         var size = (int)xs.Dict.Get("Size").AsNumber()!.Value;
         var index = xs.Dict.Get("Index") is PdfArray ia ? ia.Items.Select(x => (int)x.AsNumber()!.Value).ToArray() : [0, size];
+        if (w.Length < 3 || w.Any(x => x is < 0 or > 8) || index.Any(x => x < 0)) throw new PdfParseException("bad xref stream /W or /Index");
         var rowLen = w.Sum();
+        if (rowLen == 0) throw new PdfParseException("empty xref stream rows");
         if (rowLen > 0 && data.Length / rowLen is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + data.Length / rowLen);
         var woff = new int[w.Length];
         for (var wi = 1; wi < w.Length; wi++) woff[wi] = woff[wi - 1] + w[wi - 1];
@@ -297,7 +311,7 @@ public sealed class PdfFile
                 }
                 var type = Field(0, 1);
                 var num = index[s] + i;
-                if (Xref.ContainsKey(num)) continue;
+                if (Xref.ContainsKey(num) && !(overridable?.Contains(num) ?? false)) continue;
                 Xref[num] = type switch
                 {
                     0 => new XrefEntry(false, false, 0, (int)Field(2, 0)),
