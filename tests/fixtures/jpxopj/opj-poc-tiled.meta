@@ -2,14 +2,15 @@
  "tolerance": 0,
  "components": 3,
  "commands": [
-  "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -n 4 -t 40,32 -POC T0=0,0,1,2,3,RLCP/T0=2,0,1,4,3,CPRL/T1=0,0,1,4,3,LRCP",
-  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+  "opj_compress -i <tmp>/in.raw -F 70,50,3,8,u -o <tmp>/case.j2k -n 4 -t 40,32 -POC T0=0,0,1,2,3,RLCP/T0=2,0,1,4,3,CPRL/T1=0,0,1,4,3,LRCP",
+  "opj_decompress -i <tmp>/case.j2k -o <tmp>/ref.pgx"
  ],
  "depth": 8,
  "signed": false,
  "lossless": false,
- "expect": "reject",
+ "expect": "reject-policy",
+ "exemptColumnsX": [],
  "opjEqualsEncoderInput": false,
  "reference": "opj_decompress",
- "note": "opj_compress keeps only the first tile POC (res 0-2 of 4): the stream omits packets. OpenJPEG decodes it leniently; this decoder rejects POC ranges that do not cover every packet (T.800 B.12.2)"
+ "note": "opj_compress keeps only the first tile POC (res 0-2 of 4): the stream omits packets. OpenJPEG decodes it leniently, so this is NOT an OpenJPEG-validated expectation: this decoder deliberately rejects POC ranges that leave packets uncovered (policy, no normative sentence is cited; tests/fixtures/jpx poc-malformed-* depend on it)"
 }

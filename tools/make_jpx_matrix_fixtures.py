@@ -134,7 +134,7 @@ def matrix():
                       irreversible=irrev)
             data = j2k(im, **kw)
             ref = opj_channels(data)[0]
-            write_case(name, data, "RGB", ref, 2 if irrev else 0, "openjpeg")
+            write_case(name, data, "RGB", ref, 1 if irrev else 0, "openjpeg")
 
 
 # ---- bit depths: unsigned 1..16, signed, and >16 ----------------------------------------------------------------

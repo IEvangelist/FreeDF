@@ -2,13 +2,14 @@
  "tolerance": 0,
  "components": 3,
  "commands": [
-  "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u@2x1:3x3:1x5 -o <tmp>\\case.j2k -mct 0 -d 5,3 -T 2,1 -n 3",
-  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+  "opj_compress -i <tmp>/in.raw -F 67,45,3,8,u@2x1:3x3:1x5 -o <tmp>/case.j2k -mct 0 -d 5,3 -T 2,1 -n 3",
+  "opj_decompress -i <tmp>/case.j2k -o <tmp>/ref.pgx"
  ],
  "depth": 8,
  "signed": false,
  "lossless": false,
  "expect": "decode",
+ "exemptColumnsX": [],
  "opjEqualsEncoderInput": false,
  "reference": "opj_decompress"
 }

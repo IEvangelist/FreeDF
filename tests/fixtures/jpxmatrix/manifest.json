@@ -8,7 +8,7 @@
   },
   "mx-lrcp-97-tiles-offsets-layers": {
    "mode": "RGB",
-   "tolerance": 2,
+   "tolerance": 1,
    "provenance": "openjpeg",
    "reason": "pixels decoded by opj_decompress"
   },
@@ -20,7 +20,7 @@
   },
   "mx-rlcp-97-tiles-offsets-layers": {
    "mode": "RGB",
-   "tolerance": 2,
+   "tolerance": 1,
    "provenance": "openjpeg",
    "reason": "pixels decoded by opj_decompress"
   },
@@ -32,7 +32,7 @@
   },
   "mx-rpcl-97-tiles-offsets-layers": {
    "mode": "RGB",
-   "tolerance": 2,
+   "tolerance": 1,
    "provenance": "openjpeg",
    "reason": "pixels decoded by opj_decompress"
   },
@@ -44,7 +44,7 @@
   },
   "mx-pcrl-97-tiles-offsets-layers": {
    "mode": "RGB",
-   "tolerance": 2,
+   "tolerance": 1,
    "provenance": "openjpeg",
    "reason": "pixels decoded by opj_decompress"
   },
@@ -56,7 +56,7 @@
   },
   "mx-cprl-97-tiles-offsets-layers": {
    "mode": "RGB",
-   "tolerance": 2,
+   "tolerance": 1,
    "provenance": "openjpeg",
    "reason": "pixels decoded by opj_decompress"
   },
