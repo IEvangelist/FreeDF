@@ -489,6 +489,83 @@ public class SignatureTrustTests
         Assert.Equal(PdfValidationTimeSource.Now, Assert.Single(PdfSignatureTrust.Evaluate(forged, pki.Policy(supplied: pki.GoodCrls()))).Trust.ValidationTimeSource);
     }
 
+    static byte[] SignWithTs(TestPki pki, ITimestampProvider ts)
+        => Sign(pki, Opts(pki, o => new PdfSignOptions { Certificate = o.Certificate, ExtraCertificates = o.ExtraCertificates, SigningTime = o.SigningTime, SubFilter = o.SubFilter, SignatureTimestamp = ts }));
+
+    [Fact]
+    public void Self_issued_backdated_timestamp_over_an_expired_certificate_is_not_valid()
+    {
+        using var pki = new TestPki(leafNotAfter: DateTimeOffset.UtcNow.AddMinutes(-30));
+        var pdf = SignWithTs(pki, new TestTsa(pki.Leaf, pki.Now.AddDays(-5)));
+        var r = Assert.Single(PdfSignatureTrust.Evaluate(pdf, pki.Policy(supplied: pki.GoodCrls()))).Trust;
+        Assert.NotEqual(PdfTrustStatus.Valid, r.Status);
+        Assert.NotEqual(PdfValidationTimeSource.DocumentTimestamp, r.ValidationTimeSource);
+        Assert.Contains(r.Findings, f => f.Code == "TimestampRejected" && f.Message.Contains("signer's own"));
+    }
+
+    [Fact]
+    public void Self_issued_backdated_timestamp_over_a_later_revoked_certificate_is_not_valid()
+    {
+        using var pki = new TestPki();
+        var pdf = SignWithTs(pki, new TestTsa(pki.Leaf, pki.Now.AddDays(-5)));
+        var r = Assert.Single(PdfSignatureTrust.Evaluate(pdf, pki.Policy(supplied: pki.GoodCrls((pki.Leaf, pki.Now.AddDays(-1)))))).Trust;
+        Assert.Equal(PdfTrustStatus.Invalid, r.Status);
+        Assert.NotEqual(PdfValidationTimeSource.DocumentTimestamp, r.ValidationTimeSource);
+    }
+
+    [Fact]
+    public void Self_issued_document_timestamp_is_not_used()
+    {
+        using var pki = new TestPki();
+        var pdf = Sign(pki, Opts(pki));
+        var stamped = PdfEditor.AddDocumentTimeStamp(pdf, new TestTsa(pki.Leaf, pki.Now.AddDays(-5)));
+        var r = PdfSignatureTrust.Evaluate(stamped, pki.Policy(supplied: pki.GoodCrls((pki.Leaf, pki.Now.AddDays(-1)))))[0].Trust;
+        Assert.NotEqual(PdfValidationTimeSource.DocumentTimestamp, r.ValidationTimeSource);
+        Assert.Equal(PdfTrustStatus.Invalid, r.Status);
+    }
+
+    [Theory]
+    [InlineData("none")]
+    [InlineData("noncritical")]
+    [InlineData("multiple")]
+    [InlineData("wrong")]
+    [InlineData("ok")]
+    public void Tsa_certificate_must_have_a_single_critical_timestamping_eku(string kind)
+    {
+        using var pki = new TestPki();
+        using var tsa = TestPki.Make("CN=Variant TSA", pki.Inter, -1, pki.Now.AddDays(-1), pki.Now.AddYears(1), r =>
+        {
+            r.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+            var ts = new Oid("1.3.6.1.5.5.7.3.8");
+            switch (kind)
+            {
+                case "noncritical": r.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([ts], false)); break;
+                case "multiple": r.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([ts, new Oid("1.3.6.1.5.5.7.3.4")], true)); break;
+                case "wrong": r.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.4")], true)); break;
+                case "ok": r.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([ts], true)); break;
+            }
+        });
+        var data = pki.GoodCrls();
+        var pdf = SignWithTs(pki, new TestTsa(tsa, pki.Now));
+        var r = Assert.Single(PdfSignatureTrust.Evaluate(pdf, pki.Policy(supplied: data))).Trust;
+        Assert.Equal(kind == "ok" ? PdfValidationTimeSource.DocumentTimestamp : PdfValidationTimeSource.Now, r.ValidationTimeSource);
+        if (kind != "ok") Assert.Contains(r.Findings, f => f.Code == "TimestampRejected");
+    }
+
+    [Fact]
+    public void Revoked_tsa_certificate_at_the_timestamp_time_is_not_used()
+    {
+        using var pki = new TestPki();
+        var pdf = SignWithTs(pki, new TestTsa(pki.Tsa, pki.Now));
+        var r = Assert.Single(PdfSignatureTrust.Evaluate(pdf, pki.Policy(supplied: pki.GoodCrls((pki.Tsa, pki.Now.AddDays(-1)))))).Trust;
+        Assert.NotEqual(PdfValidationTimeSource.DocumentTimestamp, r.ValidationTimeSource);
+        // Without revocation evidence for the TSA it is Indeterminate, never silently accepted.
+        var onlyRoot = new PdfValidationData();
+        onlyRoot.Crls.Add(pki.GoodCrls().Crls[0]);
+        var r2 = Assert.Single(PdfSignatureTrust.Evaluate(pdf, pki.Policy(supplied: onlyRoot))).Trust;
+        Assert.NotEqual(PdfTrustStatus.Valid, r2.Status);
+    }
+
     [Fact]
     public void Dss_requires_an_existing_signature_and_data()
     {

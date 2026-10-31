@@ -44,10 +44,10 @@ public static class PdfSignatureTrust
         if (policy.ValidationTime is { } fixedTime) { time = fixedTime; src = PdfValidationTimeSource.Policy; }
         else
         {
-            if (policy.UseDocumentTimestamps && !info.IsDocumentTimeStamp && TrustedTimestampTime(info, all, policy) is { } ts)
+            if (policy.UseDocumentTimestamps && !info.IsDocumentTimeStamp && TrustedTimestampTime(info, all, policy, sources, findings) is { } ts)
             {
                 time = ts; src = PdfValidationTimeSource.DocumentTimestamp;
-                findings.Add(new PdfTrustFinding(PdfTrustSeverity.Info, "DocumentTimestamp", $"Validated as of the trusted document timestamp {ts:u}; the timestamp authority's own revocation status was not checked."));
+                findings.Add(new PdfTrustFinding(PdfTrustSeverity.Info, "DocumentTimestamp", $"Validated as of the trusted document timestamp {ts:u}; the TSA certificate (timeStamping EKU, not the signer) chains to a trust anchor and was checked for revocation as of that time."));
             }
             else if (policy.UseClaimedSigningTime && (info.IsDocumentTimeStamp ? info.TimeStampTime : info.SigningTime) is { } claimed)
             {
@@ -69,17 +69,38 @@ public static class PdfSignatureTrust
         return r with { Status = st, Findings = all2 };
     }
 
-    static DateTimeOffset? TrustedTimestampTime(PdfSignatureInfo info, IReadOnlyList<PdfSignatureInfo> all, PdfTrustPolicy policy)
+    /// <summary>RFC 3161 §2.3 / RFC 5280 §4.2.1.12: a TSA certificate has exactly one EKU, id-kp-timeStamping, marked critical.</summary>
+    internal static string? TsaCertificateProblem(X509Certificate2 tsa, DateTimeOffset genTime)
+    {
+        var eku = tsa.Extensions["2.5.29.37"] as X509EnhancedKeyUsageExtension;
+        if (eku is null) return "the TSA certificate has no extendedKeyUsage extension";
+        if (!eku.Critical) return "the TSA certificate's extendedKeyUsage is not critical";
+        var usages = eku.EnhancedKeyUsages.Cast<Oid>().ToList();
+        if (usages.Count != 1 || usages[0].Value != "1.3.6.1.5.5.7.3.8") return "the TSA certificate's extendedKeyUsage must be exactly id-kp-timeStamping";
+        if (genTime.UtcDateTime < tsa.NotBefore.ToUniversalTime() || genTime.UtcDateTime > tsa.NotAfter.ToUniversalTime()) return "the timestamp time is outside the TSA certificate validity";
+        return null;
+    }
+
+    static DateTimeOffset? TrustedTimestampTime(PdfSignatureInfo info, IReadOnlyList<PdfSignatureInfo> all, PdfTrustPolicy policy, IReadOnlyList<(string, PdfValidationData)> sources, List<PdfTrustFinding> findings)
     {
         if (!info.ByteRangeValid) return null;
         var end = info.ByteRange[2] + info.ByteRange[3];
         DateTimeOffset? best = null;
         void Consider(X509Certificate2 tsa, IEnumerable<X509Certificate2> certs, DateTimeOffset t)
         {
-            var d = new PdfValidationData();
-            d.Certificates.AddRange(certs);
-            var r = PdfCertificateValidator.Validate(tsa, policy, t, PdfValidationTimeSource.DocumentTimestamp, [("Signature", d)], false, false);
-            if (r.Status == PdfTrustStatus.Valid && (best is null || t < best)) best = t;
+            string? why = null;
+            if (info.SignerCertificate is not null && tsa.RawData.AsSpan().SequenceEqual(info.SignerCertificate.RawData)) why = "the timestamp is signed by the signer's own certificate";
+            else why = TsaCertificateProblem(tsa, t);
+            if (why is null)
+            {
+                var d = new PdfValidationData();
+                d.Certificates.AddRange(certs);
+                var src = new List<(string, PdfValidationData)>(sources) { ("Timestamp", d) };
+                var r = PdfCertificateValidator.Validate(tsa, policy, t, PdfValidationTimeSource.DocumentTimestamp, src, true, false);
+                if (r.Status == PdfTrustStatus.Valid) { if (best is null || t < best) best = t; return; }
+                why = "the TSA certificate could not be validated as of the timestamp time: " + string.Join("; ", r.Findings.Where(x => x.Severity != PdfTrustSeverity.Info).Select(x => x.Message));
+            }
+            findings.Add(new PdfTrustFinding(PdfTrustSeverity.Info, "TimestampRejected", "A timestamp was not used as the validation time: " + why));
         }
         if (SignatureTimestamp(info) is { } st) Consider(st.Tsa, st.Certs, st.Time);
         foreach (var ts in all)
@@ -90,7 +111,6 @@ public static class PdfSignatureTrust
         }
         return best;
     }
-
     /// <summary>The RFC 3161 token in a signature's signature-time-stamp unsigned attribute (CAdES-T), when its imprint covers the signature value and its CMS signature verifies.</summary>
     static (DateTimeOffset Time, X509Certificate2 Tsa, List<X509Certificate2> Certs)? SignatureTimestamp(PdfSignatureInfo info)
     {
