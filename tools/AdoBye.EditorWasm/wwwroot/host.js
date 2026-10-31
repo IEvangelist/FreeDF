@@ -3,6 +3,7 @@ export async function start() {
   let nextId = 0, failed = null, bootRetries = 0, sequence = Promise.resolve();
   const pending = new Map();
   const imageCache = new Map();
+  const imagePending = new Map();
   const imageCacheLimit = 8 * 1024 * 1024;
   let imageCacheSize = 0;
   const evictImage = url => {
@@ -62,7 +63,7 @@ export async function start() {
     return result;
   };
   let renderPool = null;
-  if (typeof Worker === 'function' && new URLSearchParams(location.search).get('pool') === '1') {
+  if (typeof Worker === 'function' && new URLSearchParams(location.search).get('pool') !== '0') {
     try {
       const { createRenderPool } = await import('./pool.js');
       renderPool = createRenderPool({
@@ -74,6 +75,43 @@ export async function start() {
       if (!renderPool.enabled) renderPool = null;
     } catch (error) { console.warn('Parallel rendering is unavailable; using one PDF engine.', error); }
   }
+  const imageBlob = url => {
+    const key = imageKey(url);
+    if (key && imageCache.has(key)) {
+      const cached = imageCache.get(key);
+      imageCache.delete(key); imageCache.set(key, cached);
+      return Promise.resolve(cached.data);
+    }
+    if (key && imagePending.has(key)) return imagePending.get(key);
+    const primary = () => enqueue(async () => {
+      const reply = await command(url, 'GET', null, null, true);
+      return reply.bytes
+        ? new Blob([reply.bytes], { type: reply.contentType })
+        : await (await fetch(`data:${reply.contentType};base64,${reply.data}`)).blob();
+    });
+    // Pool snapshots use the primary queue, so do not hold that queue while awaiting replicas.
+    const pooled = renderPool?.tryRender(url).catch(error => {
+      if (error?.name !== 'AbortError') console.warn('Render pool failed; using the primary PDF engine.', error);
+      return null;
+    });
+    const pending = (pooled ? pooled.then(data => data || primary()) : primary()).then(data => {
+      const size = data.size;
+      evictImage(url);
+      if (key && size <= imageCacheLimit) {
+        while (imageCacheSize + size > imageCacheLimit) {
+          const [oldKey, old] = imageCache.entries().next().value;
+          imageCache.delete(oldKey); imageCacheSize -= old.size;
+        }
+        imageCache.set(key, { data, size }); imageCacheSize += size;
+      }
+      return data;
+    });
+    if (key) {
+      imagePending.set(key, pending);
+      pending.finally(() => { if (imagePending.get(key) === pending) imagePending.delete(key); }).catch(() => {});
+    }
+    return pending;
+  };
   return {
     execution: 'worker',
     bootRetries,
@@ -94,46 +132,17 @@ export async function start() {
         });
       });
     },
-    image(url) {
-      const key = imageKey(url);
-      if (key && imageCache.has(key)) {
-        const cached = imageCache.get(key);
-        imageCache.delete(key); imageCache.set(key, cached);
-        return Promise.resolve(cached.data);
-      }
-      const remember = data => {
-        const size = data.length * 2;
-        evictImage(url);
-        if (key && size <= imageCacheLimit) {
-          while (imageCacheSize + size > imageCacheLimit) {
-            const [oldKey, old] = imageCache.entries().next().value;
-            imageCache.delete(oldKey); imageCacheSize -= old.size;
-          }
-          imageCache.set(key, { data, size }); imageCacheSize += size;
-        }
-        return data;
-      };
-      const primary = () => enqueue(async () => {
-        const reply = await command(url, 'GET', null, null, true);
-        const started = performance.now();
-        const data = `data:${reply.contentType};base64,${reply.data}`;
-        if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });
-        return remember(data);
+    imageBlob,
+    async image(url) {
+      const blob = await imageBlob(url), started = performance.now();
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
       });
-      // Render replicas (see pool.js) take heavy rasters and thumbnail bursts; any failure falls back to the primary worker.
-      const pooled = renderPool?.tryRender(url).catch(error => { if (error?.name !== 'AbortError') console.warn('Render pool failed; using the primary PDF engine.', error); return null; });
-      if (!pooled) return primary();
-      return pooled.then(async blob => {
-        if (!blob) return primary();
-        const started = performance.now();
-        const data = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-        if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started, pooled: true });
-        return remember(data);
-      });
+      if (window.profileRenderStages) window.profileRenderStages.push({ stage: 'data-url', url, ms: performance.now() - started });
+      return data;
     },
     hasCachedImage(url) { const key = imageKey(url); return key !== null && imageCache.has(key); },
     evictImage,

@@ -18,6 +18,25 @@ static class EditorPerformance
         window.profileRenderStages = [];
         window.profileInteractions = [];
         window.profilePresentation = [];
+        addEventListener('click', event => {
+          if (event.target.closest('.mdl button')?.textContent.trim() === 'Save')
+            window.profileSaveStarted = performance.now();
+          if (event.target.closest('#zi, #np')) markUiStart();
+        }, true);
+        addEventListener('change', event => { if (event.target.id === 'open') markUiStart(); }, true);
+        function markUiStart() {
+          const start = window.profileUiStarted = performance.now();
+          requestAnimationFrame(() => { if (window.profileUiStarted === start) window.profileUiFrameMs = performance.now()-start; });
+        }
+        new MutationObserver(records => {
+          if (window.profileUiStarted && records.some(record =>
+              record.target.id === 'view' && record.attributeName === 'inert' && !record.target.inert))
+            window.profileUiReadyMs = performance.now()-window.profileUiStarted;
+          if (!window.profileFirstPagePaint && records.some(record =>
+              record.target.id === 'base' && record.attributeName === 'data-loaded-url' ||
+              [...record.addedNodes].some(node => node.id === 'base' || node.querySelector?.('#base[data-loaded-url]'))))
+            requestAnimationFrame(() => { window.profileFirstPagePaint ??= performance.now(); });
+        }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-loaded-url', 'inert'] });
         const heartbeatUrl = URL.createObjectURL(new Blob(['setInterval(()=>postMessage(performance.timeOrigin+performance.now()),16)'], {type:'text/javascript'}));
         const heartbeat = new Worker(heartbeatUrl);
         URL.revokeObjectURL(heartbeatUrl);
@@ -37,7 +56,17 @@ static class EditorPerformance
     const string Instrument = """
         () => {
           const host = window.pdfHost;
-          for (const name of ['request', 'image']) {
+          const download = host.download.bind(host);
+          host.download = async url => {
+            const start = performance.now();
+            await download(url);
+            window.profileSaveTiming = {
+              confirmationToDownloadMs: performance.now() - window.profileSaveStarted,
+              downloadHandlerMs: performance.now() - start
+            };
+          };
+          for (const name of ['request', 'image', 'imageBlob']) {
+            if (typeof host[name] !== 'function') continue;
             const original = host[name].bind(host);
             host[name] = name === 'request'
               ? async (url, options) => {
@@ -299,11 +328,11 @@ static class EditorPerformance
                     await Settled(page);
                     async Task Measure(string phase, Func<Task> action)
                     {
-                        await page.EvaluateAsync("() => { profileCommands=[]; profileLongTasks=[]; profileHeartbeatDelays=[]; profileInputDelays=[]; profileWorkerStages=[]; profileRenderStages=[]; profileInteractions=[]; profilePresentation=[]; window.profileStart=performance.now(); }");
+                        await page.EvaluateAsync("() => { profileCommands=[]; profileLongTasks=[]; profileHeartbeatDelays=[]; profileInputDelays=[]; profileWorkerStages=[]; profileRenderStages=[]; profileInteractions=[]; profilePresentation=[]; window.profileFirstPagePaint=null; window.profileUiStarted=null; window.profileUiFrameMs=null; window.profileUiReadyMs=null; window.profileSaveTiming=null; window.profileStart=performance.now(); }");
                         var before = await cdp.SendAsync("Performance.getMetrics");
                         await action();
                         await Frames(page);
-                        var result = await page.EvaluateAsync<JsonElement>("({ms:performance.now()-profileStart, commands:profileCommands, longTasks:profileLongTasks, heartbeatDelays:profileHeartbeatDelays, inputDelays:profileInputDelays, workerStages:profileWorkerStages, renderStages:profileRenderStages, interactions:profileInteractions, presentation:profilePresentation})");
+                        var result = await page.EvaluateAsync<JsonElement>("({ms:performance.now()-profileStart, commands:profileCommands, longTasks:profileLongTasks, heartbeatDelays:profileHeartbeatDelays, inputDelays:profileInputDelays, workerStages:profileWorkerStages, renderStages:profileRenderStages, interactions:profileInteractions, presentation:profilePresentation, firstPagePaintMs:profileFirstPagePaint ? profileFirstPagePaint-profileStart : null, uiToFirstPagePaintMs:profileFirstPagePaint && profileUiStarted ? profileFirstPagePaint-profileUiStarted : null, uiFrameMs:profileUiFrameMs, uiReadyMs:profileUiReadyMs, saveTiming:profileSaveTiming})");
                         var after = await cdp.SendAsync("Performance.getMetrics");
                         records.Add(new { repeat, document = name, phase, result, inputAckMs = phase == "fresh-render-input" ? inputAckMs : null, before, after });
                         Console.WriteLine($"{repeat} {name} {phase}: {result.GetProperty("ms").GetDouble():F0} ms, {result.GetProperty("commands").GetArrayLength()} commands");

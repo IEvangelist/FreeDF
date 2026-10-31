@@ -10,11 +10,12 @@ static class EditorMerge
     public static bool ExpectedErrors(IEnumerable<string> errors, Func<string, bool> otherExpected)
     {
         var entries = errors.ToArray();
-        string[] stack =
+        string[][] stack =
         [
-            "   at EditorSession.HandleCore(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)",
-            "   at EditorSession.Handle(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)",
-            "   at BrowserEditor.Execute(Command c, Byte[] body)",
+            ["   at EditorSession.HandleCore(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)"],
+            ["   at EditorSession.Handle(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)"],
+            ["   at BrowserEditor.Execute(Command c, Byte[] body)",
+             "   at BrowserEditor.RequestBytes(String method, String path, String query, String body, JSObject exchange, String fileName)"],
         ];
         for (var i = 0; i < entries.Length; i++)
         {
@@ -22,12 +23,12 @@ static class EditorMerge
             if (!entries[i].StartsWith("System.ArgumentException:", StringComparison.Ordinal)) continue;
             // AOT may inline ImportRange; the state-boundary frames must still match.
             if (i + 1 < entries.Length && entries[i + 1] == "   at EditorSession.ImportRange(String range, Int32 count, String label)") i++;
-            foreach (var frame in stack)
+            foreach (var frames in stack)
             {
                 if (++i >= entries.Length) return false;
                 // The permission guard wrapper may be inlined by AOT.
-                if (frame.Contains("EditorSession.Handle(") && entries[i] == "   at EditorSession.HandleGuarded(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)") i++;
-                if (i >= entries.Length || entries[i] != frame) return false;
+                if (frames.Any(frame => frame.Contains("EditorSession.Handle(")) && entries[i] == "   at EditorSession.HandleGuarded(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)") i++;
+                if (i >= entries.Length || !frames.Contains(entries[i])) return false;
             }
         }
         return true;
@@ -95,18 +96,23 @@ static class EditorMerge
         await page.EvaluateAsync("""
             () => {
               window.mergeRequest = pdfHost.request;
-              pdfHost.request = (url, options) => window.mergeRequest(url.startsWith('/api/import-batch?') ? url.replace(/ranges=[^&]*/, 'ranges=1%7C999') : url, options);
+              window.mergeServerRejected = false;
+              pdfHost.request = async (url, options) => {
+                const inject = url.startsWith('/api/import-batch?');
+                try { return await window.mergeRequest(inject ? url.replace(/ranges=[^&]*/, 'ranges=1%7C999') : url, options); }
+                catch (error) { if (inject) window.mergeServerRejected = true; throw error; }
+              };
             }
             """);
         try
         {
             await dialog.GetByRole(AriaRole.Button, new() { Name = "Merge", Exact = true }).ClickAsync();
-            await page.WaitForFunctionAsync("document.querySelector('[data-error]')?.textContent.includes('no pages in range')");
+            await page.WaitForFunctionAsync("window.mergeServerRejected && document.querySelector('[data-error]')?.textContent.includes('no pages in range')");
             Check(await dialog.Locator(".mrow").CountAsync() == 4, "Server rejection preserves ordered files.");
             Check(await dialog.Locator(".mrow").Nth(0).Locator(".mr").InputValueAsync() == "1", "Server rejection preserves page ranges.");
             Check(await dialog.Locator("#mat").InputValueAsync() == "1", "Server rejection preserves insertion position.");
         }
-        finally { await page.EvaluateAsync("pdfHost.request = window.mergeRequest; delete window.mergeRequest"); }
+        finally { await page.EvaluateAsync("pdfHost.request = window.mergeRequest; delete window.mergeRequest; delete window.mergeServerRejected"); }
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Merge", Exact = true }).ClickAsync();
         var expected = baseDoc.Pages.Count + 1 + report.Pages.Count + form.Pages.Count + navigation.Pages.Count;
         try { await page.WaitForFunctionAsync("n => document.getElementById('pages').textContent.startsWith(n + ' ')", expected); }

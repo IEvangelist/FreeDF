@@ -142,6 +142,9 @@ const request = async (url, options) => {
     if (url.split('?')[0] !== '/api/unlock') formUi?.reset();
   }
   recovery?.changed(url, options?.method ?? 'GET');
+  if (options?.method && options.method !== 'GET' && !/^\/api\/(?:asset(?:-|\/|\?|$)|saved(?:\?|$))/.test(url)) {
+    selectionCache.clear(); fieldReply = null;
+  }
   return response;
 };
 const assetImages = new Map();
@@ -295,19 +298,43 @@ async function refresh(retainedUndo = null) {
 }
 
 let selectionEpoch = 0;
-const cancelNeighborPrefetch = () => { clearTimeout(neighborPrefetchTimer); neighborPrefetchTimer = 0; };
+const selectionCache = new Map();
+let fieldReply = null;
+function pageSelection(page) {
+  const key = `${state.version}:${page}`;
+  if (!selectionCache.has(key)) {
+    while (selectionCache.size >= 8) selectionCache.delete(selectionCache.keys().next().value);
+    const pending = request(`/api/page/${page}/selection`).then(r => r.json());
+    selectionCache.set(key, pending);
+    pending.catch(() => { if (selectionCache.get(key) === pending) selectionCache.delete(key); });
+  }
+  return selectionCache.get(key);
+}
+function pageFields() {
+  if (!fieldReply) {
+    const pending = request('/api/fields').then(r => r.json());
+    fieldReply = pending;
+    pending.catch(() => { if (fieldReply === pending) fieldReply = null; });
+  }
+  return fieldReply;
+}
+let neighborPrefetchEpoch = 0;
+const cancelNeighborPrefetch = () => { clearTimeout(neighborPrefetchTimer); neighborPrefetchTimer = 0; neighborPrefetchEpoch++; };
 addEventListener('pointerdown', cancelNeighborPrefetch, true);
 addEventListener('keydown', cancelNeighborPrefetch, true);
 function scheduleNeighborPrefetch() {
-  clearTimeout(neighborPrefetchTimer);
-  neighborPrefetchTimer = 0;
+  cancelNeighborPrefetch();
+  const epoch = neighborPrefetchEpoch;
   const page = sel + 1, version = state.version;
   if (!host || page >= state.pageCount) return;
   const url = `/api/page/${page}.png?dpi=40&v=${version}&bare=${!preview}`;
   neighborPrefetchTimer = setTimeout(() => {
     neighborPrefetchTimer = 0;
     if (state.version !== version || sel + 1 !== page) return;
-    host.image(url).catch(error => console.warn(`Neighbor page ${page + 1} preview prefetch failed.`, error));
+    host.image(url).then(() => {
+      if (state.version === version && sel + 1 === page && epoch === neighborPrefetchEpoch)
+        return pageSelection(page);
+    }).catch(error => console.warn(`Neighbor page ${page + 1} preview prefetch failed.`, error));
   }, 250);
 }
 async function select(retainedUndo = null) {
@@ -323,17 +350,20 @@ async function select(retainedUndo = null) {
     document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
     if (!state.pageCount) { buildEpoch++; shownPage = -1; clearTimeout(baseRenderTimer); v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
     const nextItems = await (await request(`/api/page/${page}/items`)).json();
-    const nextSpans = await (await request(`/api/page/${page}/text`)).json();
-    const nextObjects = await (await request(`/api/page/${page}/objects`)).json();
-    const nextFields = await (await request('/api/fields')).json();
-    const nextWidgets = await (await request(`/api/page/${page}/widgets`)).json();
-    await formUi?.load(page);
     if (epoch !== selectionEpoch || page !== sel) return;
-    items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields; widgets = nextWidgets; widgetStamp++;
+    items = nextItems; spans = []; objs = []; widgets = []; widgetStamp++;
     origKey = okey();
     cur = null; curObj = null; curSpan = null;
     pruneAssetImages();
     await build();
+    if (epoch !== selectionEpoch || page !== sel) return;
+    const details = await pageSelection(page);
+    const nextFields = await pageFields();
+    const nextWidgets = await (await request(`/api/page/${page}/widgets`)).json();
+    await formUi?.load(page);
+    if (epoch !== selectionEpoch || page !== sel) return;
+    spans = details.spans; objs = details.objects; fields = nextFields; widgets = nextWidgets; widgetStamp++;
+    paint(); props();
     await annot?.reload();
     annot?.pageChanged();
     recovery?.uiChanged();
@@ -372,8 +402,11 @@ async function pagePresentationReady(current) {
 }
 
 async function decodeBase(url, epoch, retry = 0) {
+  let objectUrl;
   try {
-    const source = await imageUrl(url);
+    const source = host?.imageBlob
+      ? objectUrl = URL.createObjectURL(await host.imageBlob(url))
+      : await imageUrl(url);
     if (!await pagePresentationReady(() => epoch === buildEpoch)) return false;
     const candidate = new Image();
     candidate.alt = 'Current PDF page';
@@ -415,18 +448,18 @@ async function decodeBase(url, epoch, retry = 0) {
     }
     reportError(new Error(`Unable to render page ${sel + 1}: ${error instanceof Error ? error.message : error}`));
     return false;
-  }
+  } finally { if (objectUrl) URL.revokeObjectURL(objectUrl); }
 }
 
-function scheduleBaseRender(url, epoch) {
+function scheduleBaseRender(url, epoch, delay = 180) {
   clearTimeout(baseRenderTimer);
   baseRenderTimer = setTimeout(() => {
     baseRenderTimer = 0;
     decodeBase(url, epoch).catch(reportError);
-  }, 180);
+  }, delay);
 }
 
-async function build(immediateBase = false) {
+async function build(immediateBase = false, renderDelay = 180) {
   const epoch = ++buildEpoch;
   clearTimeout(baseRenderTimer);
   const p = state.pages[sel], v = $('view'), r = p.rotation;
@@ -450,7 +483,7 @@ async function build(immediateBase = false) {
     applyPageLayout(r, dw, dh, Lw, Lh, fitP);
     if ($('base').dataset.loadedUrl === targetUrl) return;
     if (targetCached) await decodeBase(targetUrl, epoch);
-    else scheduleBaseRender(targetUrl, epoch);
+    else scheduleBaseRender(targetUrl, epoch, renderDelay);
     return;
   }
 
@@ -458,7 +491,7 @@ async function build(immediateBase = false) {
   if (!await decodeBase(firstUrl, epoch)) return;
   $('base').dataset.targetUrl = targetUrl;
   applyPageLayout(r, dw, dh, Lw, Lh, fitP);
-  if (firstUrl !== targetUrl) scheduleBaseRender(targetUrl, epoch);
+  if (firstUrl !== targetUrl) scheduleBaseRender(targetUrl, epoch, renderDelay);
 }
 
 // Client pixel position -> layer pixel position (inverse of the rotation transform).
@@ -1145,10 +1178,10 @@ async function goPage(i) {
   i = Math.max(0, Math.min(state.pageCount - 1, i)); if (i === sel) { navUpdate(); return; }
   await flush(); sel = i; await select();
 }
-function zoomBy(f) { fitMode = null; zoom = Math.max(0.1, Math.min(8, zoom * f)); state.pageCount && build(); }
-function zoomTo(pct) { fitMode = null; zoom = (pct / 100 * 96 / 72) / fitP0; state.pageCount && build(); }
-function fitPage() { fitMode = 'page'; zoom = 1; state.pageCount && build(); }
-function fitWidth() { fitMode = 'width'; state.pageCount && build(); }
+function zoomBy(f, renderDelay = 0) { fitMode = null; zoom = Math.max(0.1, Math.min(8, zoom * f)); state.pageCount && build(false, renderDelay); }
+function zoomTo(pct) { fitMode = null; zoom = (pct / 100 * 96 / 72) / fitP0; state.pageCount && build(false, 0); }
+function fitPage() { fitMode = 'page'; zoom = 1; state.pageCount && build(false, 0); }
+function fitWidth() { fitMode = 'width'; state.pageCount && build(false, 0); }
 $('pp').onclick = () => goPage(sel - 1); $('np').onclick = () => goPage(sel + 1);
 $('pn').onkeydown = e => { if (e.key === 'Enter') { goPage(parseInt($('pn').value) - 1); $('pn').blur(); } e.stopPropagation(); };
 $('pn').onfocus = () => $('pn').select(); $('pn').onblur = navUpdate;
@@ -1164,7 +1197,7 @@ function openMenuAt(m, x, y) {
   m.style.left = Math.max(4, Math.min(x, innerWidth - m.offsetWidth - 4)) + 'px'; m.style.top = Math.max(4, Math.min(y, innerHeight - m.offsetHeight - 4)) + 'px';
   m.querySelector('.cm-i:not(:disabled)')?.focus();
 }
-$('view').addEventListener('wheel', e => { if (e.ctrlKey && state.pageCount) { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); } }, { passive: false });
+$('view').addEventListener('wheel', e => { if (e.ctrlKey && state.pageCount) { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1, 180); } }, { passive: false });
 
 // Full screen
 const toggleFull = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();

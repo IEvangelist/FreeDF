@@ -119,7 +119,28 @@ try {
       // The password rides beside the URL query inside the worker call and is never part of a URL.
       const withPassword = q => { delete q['x-pdf-password']; if (password) q['x-pdf-password'] = password; return q; };
       let uploadEncodeMs = 0, uploadPrepareMs = 0, uploadBytes = 0, binaryUpload = false, reply, dotnetMs;
-      if (body instanceof Blob) {
+      if (exports.BrowserEditor.RequestBytes) {
+        let upload;
+        if (body instanceof Blob) {
+          fileName = body.name ?? fileName;
+          upload = new Uint8Array(await body.arrayBuffer());
+          uploadBytes = upload.byteLength;
+          binaryUpload = true;
+          body = null;
+        }
+        uploadPrepareMs = performance.now() - requestStart;
+        const dotnetStart = performance.now();
+        const query = JSON.stringify(withPassword(Object.fromEntries(u.searchParams)));
+        reply = await withFallbackFonts(exports, method, () => {
+          const exchange = upload ? { bytes: upload } : {};
+          const bytes = exports.BrowserEditor.RequestBytes(method, u.pathname, query, body, exchange, fileName);
+          return exchange.error ? JSON.parse(exchange.error) : {
+            bytes, contentType: exchange.contentType, fileName: exchange.fileName,
+            performance: exchange.performance ? JSON.parse(exchange.performance) : null,
+          };
+        });
+        dotnetMs = performance.now() - dotnetStart;
+      } else if (body instanceof Blob) {
         fileName = body.name ?? fileName;
         const bytes = new Uint8Array(await body.arrayBuffer());
         uploadBytes = bytes.byteLength;
@@ -138,7 +159,9 @@ try {
         dotnetMs = performance.now() - dotnetStart;
       }
       const timings = { dotnetMs, uploadEncodeMs, uploadPrepareMs, uploadBytes, binaryUpload, workerMs: performance.now() - start };
-      if (reply.error || image) {
+      if (reply.bytes) {
+        self.postMessage({ id, reply, timings }, [reply.bytes.buffer]);
+      } else if (reply.error || image) {
         self.postMessage({ id, reply, timings });
       } else {
         const decodeStart = performance.now();
