@@ -171,7 +171,7 @@ public static class TextShaper
     }
 
     // Fonts without GDEF glyph classes: marks are recognised from the Unicode category, as HarfBuzz does.
-    static byte SynthClass(int cp) => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(cp) is System.Globalization.UnicodeCategory.NonSpacingMark or System.Globalization.UnicodeCategory.EnclosingMark ? (byte)3 : (byte)1;
+    static byte SynthClass(int cp) => UnicodeData.GetCategory(cp) is System.Globalization.UnicodeCategory.NonSpacingMark or System.Globalization.UnicodeCategory.EnclosingMark ? (byte)3 : (byte)1;
 
     static StageSpec[] GsubStages(string kind, IReadOnlyDictionary<string, int>? user)
     {
@@ -250,11 +250,12 @@ public static class TextShaper
             if (jt[i] == JoiningType.Transparent) continue;
             var next = -1;
             for (var j = i + 1; j < n; j++) if (jt[j] != JoiningType.Transparent) { next = j; break; }
-            var joinsPrev = prev >= 0 && jt[prev] is JoiningType.Dual or JoiningType.Causing && jt[i] is JoiningType.Dual or JoiningType.Right;
-            var joinsNext = jt[i] == JoiningType.Dual && next >= 0 && jt[next] is JoiningType.Dual or JoiningType.Right or JoiningType.Causing;
+            var joinsPrev = prev >= 0 && jt[prev] is JoiningType.Dual or JoiningType.Causing or JoiningType.Left && jt[i] is JoiningType.Dual or JoiningType.Right;
+            var joinsNext = jt[i] is JoiningType.Dual or JoiningType.Left && next >= 0 && jt[next] is JoiningType.Dual or JoiningType.Right or JoiningType.Causing;
             if (jt[i] is JoiningType.Dual)
                 masks[i] = joinsPrev && joinsNext ? Medi : joinsPrev ? Fina : joinsNext ? Init : Isol;
             else if (jt[i] == JoiningType.Right) masks[i] = joinsPrev ? Fina : Isol;
+            else if (jt[i] == JoiningType.Left) masks[i] = joinsNext ? Init : Isol;
             prev = i;
         }
         return masks;
@@ -386,13 +387,19 @@ public static class TextShaper
     public static List<TextItem> Itemize(string text, BidiDirection direction, out int paragraphLevel)
     {
         var items = new List<TextItem>();
-        var bidi = Bidi.Resolve(text, direction);
-        paragraphLevel = bidi.ParagraphLevel;
-        foreach (var run in bidi.VisualRuns())
+        paragraphLevel = 0;
+        var firstPara = true;
+        foreach (var (ps, plen) in Bidi.SplitParagraphs(text))
         {
-            var local = ItemizeRun(text, run.Start, run.Length, run.RightToLeft);
-            if (run.RightToLeft) local.Reverse();
-            items.AddRange(local);
+            var bidi = Bidi.Resolve(text.Substring(ps, plen), direction);
+            if (firstPara) paragraphLevel = bidi.ParagraphLevel;
+            firstPara = false;
+            foreach (var run in bidi.VisualRuns())
+            {
+                var local = ItemizeRun(text, ps + run.Start, run.Length, run.RightToLeft);
+                if (run.RightToLeft) local.Reverse();
+                items.AddRange(local);
+            }
         }
         return items;
     }

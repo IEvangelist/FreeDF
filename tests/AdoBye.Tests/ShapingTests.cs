@@ -387,7 +387,7 @@ public class ShapingTests
     [Fact]
     public void Editor_emits_ligatures_with_multi_codepoint_tounicode()
     {
-        var pdf = Overlay("office", "Source Sans 3");
+        var pdf = Overlay("office", "Shaping Test Sans");
         Assert.Equal("office", Extract(pdf, false).Replace(" ", ""));
         Assert.Equal("office", Extract(pdf, true).Replace(" ", ""));
     }
@@ -412,7 +412,7 @@ public class ShapingTests
     [Fact]
     public void Editor_uses_fallback_font_for_hebrew_in_latin_text()
     {
-        var pdf = Overlay("Hi \u05e9\u05dc\u05d5\u05dd", "Source Sans 3");
+        var pdf = Overlay("Hi \u05e9\u05dc\u05d5\u05dd", "Shaping Test Sans");
         Assert.Equal("Hi \u05e9\u05dc\u05d5\u05dd", Extract(pdf, true).Replace("  ", " ").Trim());
     }
 }
