@@ -170,6 +170,7 @@ public sealed class IccProfile
         public float[]? Mat; // 3x3 + 3 offsets
         public float[]? PreMat; // lut8/lut16 3x3 applied first when PCS is XYZ (B2A only)
         public Pcs Pcs;
+        public IccMultiProcess? Mpe; // D2Bx/B2Dx float pipeline; PCS is converted to/from the encoded 0..1 form
         int[] _stride = [];
 
         public void Prepare()
@@ -185,6 +186,7 @@ public sealed class IccProfile
         {
             Span<float> x = stackalloc float[4];
             Span<float> y = stackalloc float[4];
+            if (Mpe is not null) { EvalMpe(inp, o3); return; }
             if (Reverse) { EvalReverse(inp, o3, x, y); return; }
             for (var i = 0; i < In; i++)
             {
@@ -202,6 +204,24 @@ public sealed class IccProfile
                 y[2] = Mat[6] * a + Mat[7] * b + Mat[8] * c + Mat[11];
             }
             for (var i = 0; i < 3; i++) o3[i] = B is null ? y[i] : B[i].Eval(Math.Clamp(y[i], 0f, 1f));
+        }
+
+        void EvalMpe(ReadOnlySpan<double> inp, Span<float> o)
+        {
+            Span<double> pcs = stackalloc double[3];
+            Span<float> r = stackalloc float[16];
+            if (Reverse)
+            {
+                for (var i = 0; i < 3; i++) pcs[i] = Math.Clamp(inp[i], 0, 1);
+                if (Pcs == Pcs.Xyz) for (var i = 0; i < 3; i++) pcs[i] *= 65535.0 / 32768.0;
+                else { pcs[0] *= 100; pcs[1] = pcs[1] * 255 - 128; pcs[2] = pcs[2] * 255 - 128; }
+                Mpe!.Eval(pcs, r);
+                for (var i = 0; i < Out; i++) o[i] = Math.Clamp(r[i], 0f, 1f);
+                return;
+            }
+            Mpe!.Eval(inp, r);
+            if (Pcs == Pcs.Xyz) for (var i = 0; i < 3; i++) o[i] = (float)(r[i] * (32768.0 / 65535.0));
+            else { o[0] = r[0] / 100f; o[1] = (r[1] + 128f) / 255f; o[2] = (r[2] + 128f) / 255f; }
         }
 
         void EvalReverse(ReadOnlySpan<double> inp, Span<float> o, Span<float> x, Span<float> y)
@@ -298,12 +318,21 @@ public sealed class IccProfile
         }
         static uint Sig(string s) => (uint)(s[0] << 24 | s[1] << 16 | s[2] << 8 | s[3]);
 
+        Lut? ReadMpe(string name, int nIn, int nOut, bool toDevice)
+        {
+            if (!tags.TryGetValue(Sig(name), out var tag)) return null;
+            var mpe = IccMultiProcess.TryRead(data, tag.Off, tag.Size, nIn, nOut);
+            return mpe is null ? null : new Lut { Reverse = toDevice, In = nIn, Out = nOut, Mpe = mpe, Pcs = pcsLab ? Pcs.LabV4 : Pcs.Xyz };
+        }
+
         // ICC.1:2022 8.10.2: requested A2B table, then A2B0, then matrix/TRC.
         Lut? ReadTag(string name, int nIn, int nOut, bool toDevice = false) => tags.TryGetValue(Sig(name), out var tag)
             ? ReadLut(data, tag.Off, tag.Size, nIn, nOut, pcsLab, major, toDevice) : null;
-        var perceptual = ReadTag("A2B0", n, 3);
-        var relative = ReadTag("A2B1", n, 3) ?? perceptual;
-        var saturation = ReadTag("A2B2", n, 3) ?? perceptual;
+        // ICC.1:2010 D2Bx multiProcessElements tags are preferred over A2Bx; unsupported D2B content falls back to A2Bx.
+        Lut? ReadForward(int intent) => ReadMpe("D2B" + intent, n, 3, false) ?? ReadTag("A2B" + intent, n, 3);
+        var perceptual = ReadForward(0);
+        var relative = ReadForward(1) ?? perceptual;
+        var saturation = ReadForward(2) ?? perceptual;
         IccProfile? Configure(IccProfile p)
         {
             p._major = major; p._class = cls;
@@ -318,7 +347,7 @@ public sealed class IccProfile
             // A corrupt B2A table must disable only destination use / the CMYK black round trip, never the A2B path.
             Lut? SafeB2A(string name)
             {
-                try { return ReadTag(name, 3, n, true); } catch (Exception) { return null; }
+                try { return ReadMpe("B2D" + name[3], 3, n, true) ?? ReadTag(name, 3, n, true); } catch (Exception) { return null; }
             }
             Lut? b2a0 = null;
             if (includeDestination || (cls == OutputClass && n == 4 && perceptual is not null && tags.ContainsKey(Sig("B2A0"))))
