@@ -32,7 +32,8 @@ export function validateUi(ui) {
         if (typeof entry !== 'string') return true;
         const snapshot = JSON.parse(entry);
         return !Array.isArray(snapshot.items) || !Array.isArray(snapshot.ed);
-      }) || (ui.clip !== null && (typeof ui.clip !== 'object' || typeof ui.clip.type !== 'string')))
+      }) || (ui.clip !== null && (typeof ui.clip !== 'object' || typeof ui.clip.type !== 'string')) ||
+      (ui.localFonts !== undefined && (!Array.isArray(ui.localFonts) || ui.localFonts.length > 64 || ui.localFonts.some(f => typeof f !== 'string' || !f || f.length > 256))))
     throw new Error('The retained editor controls/history are corrupt. Discard and clear the record, or keep it and download your current document.');
 }
 

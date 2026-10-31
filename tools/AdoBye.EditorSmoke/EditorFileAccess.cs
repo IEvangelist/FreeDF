@@ -72,7 +72,7 @@ static class EditorFileAccess
     static byte[] FontBytes => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tests", "fixtures", "fonts", "SourceCodePro-Regular.otf"));
 
     public static bool ExpectedError(string error) =>
-        error.Contains("Could not write") || error.Contains("was revoked") || error.Contains("are not loaded in this session") || error.TrimStart().StartsWith("at ", StringComparison.Ordinal) || error.Contains("Permission to read installed fonts");
+        error.Contains("Could not write") || error.Contains("was revoked") || error.Contains("are not loaded in this session") || error.TrimStart().StartsWith("at ", StringComparison.Ordinal) || error.Contains("localfonts.js") || error.StartsWith("Failed to load resource", StringComparison.Ordinal) || error.Contains("Permission to read installed fonts");
 
     public static Task Install(IPage page) => page.AddInitScriptAsync(Stubs);
 
@@ -363,7 +363,36 @@ static class EditorFileAccess
             await reload.GetByRole(AriaRole.Button, new() { Name = "Use Helvetica instead" }).ClickAsync();
             await reload.WaitForAsync(new() { State = WaitForSelectorState.Detached });
             Check(await page.EvaluateAsync<string>(ItemsFont) == "Helvetica" && await page.EvaluateAsync<string>(TryExport) == "ok", "Switching to a standard font happens only on the explicit choice.");
-            await Fa<object?>(page, "($fa.fonts = [], 0)");
+            const string RecordFonts = "async () => { const db = await new Promise(r => { const q = indexedDB.open('adobye-editor', 1); q.onsuccess = () => r(q.result); }); const v = await new Promise(r => { const tx = db.transaction('recovery'), g = tx.objectStore('recovery').get('current'); tx.oncomplete = () => r(g.result); }); db.close(); return JSON.stringify(v?.ui?.localFonts ?? null); }";
+            async Task Durable()
+            {
+                await page.WaitForTimeoutAsync(2500);
+                await page.WaitForFunctionAsync("document.getElementById('recovery').textContent === 'Recovery saved'");
+            }
+            await Durable();
+            Check(await page.EvaluateAsync<string>(RecordFonts) == "[]", "Replacing a font removes its name from the recovery record.");
+
+            await page.Locator("#layer .it").First.ClickAsync();
+            await page.Locator("#fpb").ClickAsync();
+            await page.Locator(".fpop .flo[data-local='Source Code Pro']").ClickAsync();
+            await page.WaitForFunctionAsync("document.querySelector('#fpb b')?.textContent === 'Source Code Pro'");
+            await Durable();
+            Check(await page.EvaluateAsync<string>(RecordFonts) == "[\"Source Code Pro\"]", "The recovery record lists the local font in use.");
+            await page.RouteAsync("**/localfonts.js", route => route.AbortAsync());
+            await ReloadAndResume();
+            await reload.WaitForAsync();
+            Check(!await reload.GetByRole(AriaRole.Button, new() { Name = "Reload fonts" }).IsVisibleAsync(), "Without the font module only the explicit Helvetica choice is offered.");
+            Check((await page.EvaluateAsync<string>(TryExport)).Contains("not loaded"), "Saving stays blocked even when the font module is unavailable.");
+            await reload.GetByRole(AriaRole.Button, new() { Name = "Use Helvetica instead" }).ClickAsync();
+            await reload.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            await page.UnrouteAsync("**/localfonts.js");
+            await Durable();
+            Check(await page.EvaluateAsync<string>(RecordFonts) == "[]", "No font names remain after the switch.");
+            await Menu(page, "New");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
+            await page.Locator("#base").WaitForAsync();
+            await Durable();
+            Check(await page.EvaluateAsync<string>(RecordFonts) == "[]", "A new document starts with no font names.");
 
             await page.EvaluateAsync("sessionStorage.setItem('fa-unsupported', '1')");
             await page.ReloadAsync();
