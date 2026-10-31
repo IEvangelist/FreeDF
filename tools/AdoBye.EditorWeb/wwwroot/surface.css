@@ -199,3 +199,46 @@ main::before { backdrop-filter: none; }
    under the strict gate (bisected: removing them restores 14 ms). Overlays on the Save path appear instantly; menus keep a short fade. */
 .mdl, .dlg, .toast, .pal-scrim, .pal, .tip { animation: none !important; }
 .cm:not(.sub) { animation-duration: var(--dur-1); }
+
+/* ---- Accent colour: pink by default; html[data-accent] selects another. Everything derives from these tokens. ---- */
+:root { --a-l: #be185d; --a-d: #f472b6; --a-l2: #9d174d; --a-d2: #f9a8d4; --primary: #be185d; --primary-hover: #9d174d; }
+:root[data-accent="blue"] { --a-l: #2563eb; --a-d: #4c8dff; --a-l2: #1d4ed8; --a-d2: #6aa2ff; --primary: #2563eb; --primary-hover: #1d4ed8; }
+:root[data-accent="violet"] { --a-l: #6d28d9; --a-d: #a78bfa; --a-l2: #5b21b6; --a-d2: #c4b5fd; --primary: #6d28d9; --primary-hover: #5b21b6; }
+:root[data-accent="green"] { --a-l: #15803d; --a-d: #4ade80; --a-l2: #166534; --a-d2: #86efac; --primary: #15803d; --primary-hover: #166534; }
+:root[data-accent="orange"] { --a-l: #c2410c; --a-d: #fb923c; --a-l2: #9a3412; --a-d2: #fdba74; --primary: #c2410c; --primary-hover: #9a3412; }
+:root[data-accent="red"] { --a-l: #b91c1c; --a-d: #f87171; --a-l2: #991b1b; --a-d2: #fca5a5; --primary: #b91c1c; --primary-hover: #991b1b; }
+:root[data-accent="teal"] { --a-l: #0f766e; --a-d: #2dd4bf; --a-l2: #115e59; --a-d2: #5eead4; --primary: #0f766e; --primary-hover: #115e59; }
+:root {
+  --accent: light-dark(var(--a-l), var(--a-d)); --accent-2: light-dark(var(--a-l2), var(--a-d2)); --ring: light-dark(var(--a-l), var(--a-d2));
+  --accent-bg: color-mix(in srgb, var(--accent) 14%, transparent); --accent-line: color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow: color-mix(in srgb, var(--accent) 22%, transparent); --sb-thumb-active: var(--accent);
+}
+body { background: radial-gradient(1200px 500px at 50% -120px, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%), var(--bg); }
+button.primary, .dfoot button.primary { box-shadow: inset 0 1px 0 #ffffff40, 0 1px 2px color-mix(in srgb, var(--primary) 60%, black), 0 6px 14px -6px color-mix(in srgb, var(--primary) 60%, transparent); }
+button.primary:hover:not(:disabled) { box-shadow: inset 0 1px 0 #ffffff50, 0 2px 4px color-mix(in srgb, var(--primary) 60%, black), 0 10px 20px -8px color-mix(in srgb, var(--primary) 70%, transparent); }
+#empty { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%), var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--hi), var(--raised)); }
+button.on { border-color: var(--accent-line); } .thumb.sel { border-color: var(--accent-line); } label.tgl:has(input:checked) { border-color: var(--accent-line); }
+.it:hover { outline-color: color-mix(in srgb, var(--accent) 60%, transparent); } .obj:hover { outline-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.it.txt[contenteditable] { background: var(--accent-bg); } .span:hover { background: var(--accent-bg); } .wgt { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.annot-hit.on { background: var(--accent-bg); }
+::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+
+/* ---- Toolbar rhythm: 32px icon targets, 4px gaps inside a group, 8px around separators ---- */
+header .group, #tools .group { gap: 4px; }
+header .group button.icon, #tools .group button.icon, header button.icon, #tools button.icon:not(.seg *), header a.sponsor, header a.gh { min-width: max(32px, var(--h)); width: max(32px, var(--h)); height: max(32px, var(--h)); }
+#tools .seg button.icon, #tools .seg label.btn.icon { min-width: 32px; }
+@media (min-width: 721px) { header .sp, #tools .sp { margin: 0 8px; } header { gap: 8px; } }
+
+/* ---- Menus: reserved check column, even padding, no overlap ---- */
+.cm-i { padding: 7px 12px; gap: 20px; min-height: 32px; }
+.cm.has-check { max-height: calc(100dvh - 16px); overflow-y: auto; min-width: 232px; }
+.cm.has-check .cm-i { padding-left: 34px; position: relative; }
+.cm.has-check .cm-i::before { content: ""; position: absolute; left: 12px; top: 50%; width: 14px; height: 14px; margin-top: -7px; opacity: 0; }
+.cm.has-check .cm-i[aria-checked="true"]::before { opacity: 1; background: var(--accent); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5l2.5 2.5 4.5-5.5'/%3E%3C/svg%3E") center / 14px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5l2.5 2.5 4.5-5.5'/%3E%3C/svg%3E") center / 14px no-repeat; }
+.cm .cm-h { padding: 8px 12px 4px 34px; font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--mut); }
+.cm-sw { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 12px 10px 34px; }
+.cm-sw button { width: 28px; height: 28px; min-width: 28px; padding: 0; border-radius: 50%; border: 2px solid transparent; background: var(--sw); box-shadow: inset 0 0 0 2px var(--raised); transition: box-shadow var(--dur-1), border-color var(--dur-1); }
+.cm-sw button:hover:not(:disabled) { background: var(--sw); border-color: color-mix(in srgb, var(--sw) 50%, transparent); }
+.cm-sw button[aria-checked="true"] { border-color: var(--sw); }
+@media (pointer: coarse) { .cm-sw button { width: 36px; height: 36px; min-width: 36px; } }
+@media (forced-colors: active) { .cm-sw button { forced-color-adjust: none; border: 2px solid CanvasText; } .cm-sw button[aria-checked="true"] { outline: 2px solid Highlight; } }
