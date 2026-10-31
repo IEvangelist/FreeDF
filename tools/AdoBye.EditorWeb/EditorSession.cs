@@ -217,11 +217,62 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     HashSet<FormObjectRange> AmbiguousFormObjects(int i) =>
         FormObjectEditPolicy.FindAmbiguous(PageText(i).Objects, SharedFormReferences());
     HashSet<int> SharedFormReferences() => sharedFormReferences ??= FormObjectEditPolicy.FindSharedForms(Pristine());
+    static Matrix PageTransform(ContentInterpreter.PageObject o, ObjEdit e)
+    {
+        var m = new Matrix(e.Sx, 0, 0, e.Sy, e.Tx, e.Ty);
+        if (e.Rot == 0 && e.Skx == 0) return m;
+        var corners = new[] { m.Apply(o.X0, o.Y0), m.Apply(o.X1, o.Y1), m.Apply(o.X0, o.Y1), m.Apply(o.X1, o.Y0) };
+        var cx = (corners.Min(c => c.X) + corners.Max(c => c.X)) / 2;
+        var cy = (corners.Min(c => c.Y) + corners.Max(c => c.Y)) / 2;
+        var rad = e.Rot * Math.PI / 180;
+        var skew = new Matrix(1, 0, Math.Tan(e.Skx * Math.PI / 180), 1, 0, 0);
+        var rot = new Matrix(Math.Cos(rad), Math.Sin(rad), -Math.Sin(rad), Math.Cos(rad), 0, 0);
+        return m.Then(Matrix.Translate(-cx, -cy)).Then(skew).Then(rot).Then(Matrix.Translate(cx, cy));
+    }
+
     static double[]? ObjectMatrix(ContentInterpreter.PageObject o, ObjEdit e)
     {
-        if (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0) return null;
-        var m = o.Ctm.Then(new Matrix(e.Sx, 0, 0, e.Sy, e.Tx, e.Ty)).Then(o.Ctm.Invert());
+        if (e.Sx == 1 && e.Sy == 1 && e.Tx == 0 && e.Ty == 0 && e.Rot == 0 && e.Skx == 0) return null;
+        var m = o.Ctm.Then(PageTransform(o, e)).Then(o.Ctm.Invert());
         return [m.A, m.B, m.C, m.D, m.E, m.F];
+    }
+
+    // Line width and dash are in page units; the rewriter divides them by the local scale so they stay absolute.
+    static ContentRewriter.ObjectEdit Rewrite(byte[] content, ContentInterpreter.PageObject o, ObjEdit e, bool allowZ)
+    {
+        var ctmScale = Math.Sqrt(Math.Abs(o.Ctm.Det));
+        double? width = e.Width is { } w && ctmScale > 1e-9 ? w / ctmScale : null;
+        double[]? dash = e.Dash is { } d && ctmScale > 1e-9 ? [.. d.Select(v => v / ctmScale)] : null;
+        var fill = Rgb(e.Fill); var stroke = Rgb(e.Stroke);
+        int? moveTo = null; string? state = null;
+        if (allowZ && !e.Delete && e.Z is "front" or "back")
+        {
+            var hops = o.Kind == "path" && !o.ComplexPaint && o.Style is not null;
+            if (ContentRewriter.ZTarget(content, o.Start, o.End, e.Z == "front", hops) is { } move)
+            {
+                moveTo = move.Position;
+                if (move.StateHopped)
+                {
+                    // The object now paints after/before colour and line operators it relied on, so restate them.
+                    if (o.HasFill) fill ??= [o.Fill.R, o.Fill.G, o.Fill.B];
+                    if (o.HasStroke) stroke ??= [o.Stroke.R, o.Stroke.G, o.Stroke.B];
+                    var s = o.Style!;
+                    var number = (double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
+                    state = $"{number(s.Width)} w {(int)s.Cap} J {(int)s.Join} j {number(s.MiterLimit)} M [{string.Join(' ', s.Dash.Select(number))}] {number(s.DashPhase)} d";
+                }
+            }
+        }
+        return new ContentRewriter.ObjectEdit(o.Start, o.End, e.Delete, ObjectMatrix(o, e), fill, stroke, LineWidth: width, Dash: dash, MoveTo: moveTo, State: state);
+    }
+    static void ValidateObjEdit(ObjEdit? e, bool inForm)
+    {
+        if (e is null) return;
+        if (!double.IsFinite(e.Rot) || !double.IsFinite(e.Skx) || Math.Abs(e.Skx) > 80) throw new ArgumentException("Rotation or skew is out of range.");
+        if (e.Width is { } w && (!double.IsFinite(w) || w < 0 || w > 1000)) throw new ArgumentException("Line width is out of range.");
+        if (e.Dash is { } d && (d.Length > 8 || d.Any(v => !double.IsFinite(v) || v < 0 || v > 10000) || d.Length > 0 && d.All(v => v == 0)))
+            throw new ArgumentException("Dash pattern is invalid.");
+        if (e.Z is not (null or "front" or "back")) throw new ArgumentException("Z-order must be front or back.");
+        if (e.Z is not null && inForm) throw new EditorConflictException("Z-order applies to page-level objects only.");
     }
     static bool IsReset(ObjEdit? e) => e is null || e == new ObjEdit();
     static bool AffectsBase(Item item) => item.Orig is not null || item.Type == "redact";
@@ -262,7 +313,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 {
                     var obj = pageObjects.SingleOrDefault(o => o.Form == pair.Key && o.Start == kv.Key.Start && o.End == kv.Key.End)
                         ?? throw new InvalidOperationException("The edited Form XObject object is no longer available.");
-                    return new ContentRewriter.ObjectEdit(obj.Start, obj.End, kv.Value.Delete, ObjectMatrix(obj, kv.Value), Rgb(kv.Value.Fill), Rgb(kv.Value.Stroke));
+                    return Rewrite([], obj, kv.Value, false);
                 });
                 var content = ContentRewriter.EditObjects(doc.File.DecodeStream(stream), edits);
                 formStreamContents[group.Key] = content;
@@ -279,11 +330,12 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             if (origs.Count > 0 || oe is { Count: > 0 })
             {
                 var (content, spans, objects) = PageText(i);
+                var pristineContent = content;
                 if (oe is { Count: > 0 })
                     content = ContentRewriter.EditObjects(content, oe.Select(kv =>
                     {
                         var o = objects[kv.Key]; var e = kv.Value;
-                        return new ContentRewriter.ObjectEdit(o.Start, o.End, e.Delete, ObjectMatrix(o, e), Rgb(e.Fill), Rgb(e.Stroke));
+                        return Rewrite(pristineContent, o, e, true);
                     }));
                 var removals = spans.Where(s => s.Form == 0 && origs.Contains(s.Index)).ToDictionary(s => s.Index, s => s.Advance);
                 editor.SetContentOverride(i, ContentRewriter.RemoveText(content, removals));
@@ -743,6 +795,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                         if (n < 0 || n >= objects.Count) throw new ArgumentException("Object is not editable.");
                         var o = objects[n];
                         var e = Read<ObjEdit>();
+                        ValidateObjEdit(e, o.Form != 0);
                         if (o.Form != 0)
                         {
                             if (!IsReset(e) && HasGraphicGroupEdits())
@@ -1162,7 +1215,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     }
 }
 
-public sealed record ObjEdit(bool Delete = false, double Sx = 1, double Sy = 1, double Tx = 0, double Ty = 0, string? Fill = null, string? Stroke = null);
+public sealed record ObjEdit(bool Delete = false, double Sx = 1, double Sy = 1, double Tx = 0, double Ty = 0, string? Fill = null, string? Stroke = null,
+    double Rot = 0, double Skx = 0, double? Width = null, double[]? Dash = null, string? Z = null);
 
 public sealed class EditorConflictException(string message) : InvalidOperationException(message);
 
