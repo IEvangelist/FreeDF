@@ -47,6 +47,7 @@ public sealed class ContentInterpreter
     }
 
     public bool DrawAnnotations { get; set; } = true;
+    public OptionalContentEvent OcEvent { get; set; }
 
     public void Render(PdfPage page, Matrix baseMatrix)
     {
@@ -70,6 +71,7 @@ public sealed class ContentInterpreter
             var flags = (int)(R(a.Get("F")).AsNumber() ?? 0);
             if ((flags & (2 | 32)) != 0 || R(a.Get("Subtype")).AsName() == "Popup") continue;
             if (R(a.Get("Rect")) is not PdfArray ra || ra.Count < 4) continue;
+            if (R(a.Get("OC")) is PdfDictionary aoc && IsHidden(aoc)) continue;
             var ap = R(a.Get("AP")) as PdfDictionary;
             var n = R(ap?.Get("N"));
             if (n is PdfDictionary states) n = R(R(a.Get("AS")).AsName() is { } s ? states.Get(s) : null);
@@ -420,33 +422,8 @@ public sealed class ContentInterpreter
         }
     }
 
-    bool IsHidden(PdfDictionary oc)
-    {
-        var cfg = R(R(_f.Catalog.Get("OCProperties")) is PdfDictionary ocp ? ocp.Get("D") : null) as PdfDictionary;
-        var type = R(oc.Get("Type")).AsName();
-        if (type == "OCMD")
-        {
-            // Visibility policy AnyOn (default) / AllOn / AnyOff / AllOff over OCGs.
-            var ocgs = R(oc.Get("OCGs"));
-            var list = ocgs is PdfArray oa ? oa.Items.Select(R).OfType<PdfDictionary>().ToList() : ocgs is PdfDictionary od ? [od] : [];
-            if (list.Count == 0) return false;
-            var pol = R(oc.Get("P")).AsName() ?? "AnyOn";
-            var states = list.Select(g => !OcgOff(g, cfg)).ToList();
-            var visible = pol switch { "AllOn" => states.All(x => x), "AnyOff" => states.Any(x => !x), "AllOff" => states.All(x => !x), _ => states.Any(x => x) };
-            return !visible;
-        }
-        return OcgOff(oc, cfg);
-    }
-
-    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg)
-    {
-        if (cfg is null) return false;
-        var baseOff = R(cfg.Get("BaseState")).AsName() == "OFF";
-        bool Contains(string key) => R(cfg.Get(key)) is PdfArray arr && arr.Items.Any(x => ReferenceEquals(R(x), ocg));
-        if (Contains("OFF")) return true;
-        if (Contains("ON")) return false;
-        return baseOff;
-    }
+    OptionalContentEvaluator? _oc;
+    bool IsHidden(PdfDictionary oc) => (_oc ??= new OptionalContentEvaluator(_f, OcEvent)).IsHidden(oc);
 
     void NextLine() { _tlm = Matrix.Translate(0, -_gs.Leading).Then(_tlm); _tm = _tlm; }
 
