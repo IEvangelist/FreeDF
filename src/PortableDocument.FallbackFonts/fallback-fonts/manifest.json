@@ -2259,8 +2259,8 @@
     },
     {
       "path": "licenses/Adobe-Core14-AFM-NOTICE.txt",
-      "size": 934,
-      "sha256": "dfabe5c31e4ef7104281ee1ccc381c200dc78b091be2b746cf8940f916fc67b9"
+      "size": 1254,
+      "sha256": "05a6a866fdfa199217465d524ad4d05329e67a337c4f5cf290e4a21f3d0768b5"
     },
     {
       "path": "licenses/DejaVu-AUTHORS.txt",
@@ -2289,8 +2289,8 @@
     },
     {
       "path": "licenses/manifest.json",
-      "size": 3573,
-      "sha256": "cad950704bbc212933766e56fc3c42335652890f7f1c71a1feecd0233763d3ec"
+      "size": 3922,
+      "sha256": "21ac304b1482d8b15287f972d7db93829995c8827562e8973ee84b00f8b6d963"
     }
   ]
 }

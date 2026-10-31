@@ -41,12 +41,12 @@
     {
       "name": "Adobe Core 14 AFM metrics",
       "version": "4.1",
-      "usage": "Glyph advance widths and the built-in Symbol/ZapfDingbats encodings embedded in PortableDocument.Content (Resources/std14-widths.txt); numeric facts only, no outlines.",
+      "usage": "Glyph advance widths and the built-in Symbol/ZapfDingbats encodings embedded in PortableDocument.Content (Resources/std14-widths.bin); numeric facts only, no outlines.",
       "license": "Adobe Core 14 AFM redistribution permission",
       "licenseFile": "licenses/Adobe-Core14-AFM-NOTICE.txt",
       "embeddedIn": "PortableDocument.Content (Resources/std14-widths.bin; the notice also ships there as Resources/std14-notice.txt)",
-      "copyright": "Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems Incorporated. All Rights Reserved.",
-      "source": "https://github.com/apache/pdfbox/tree/trunk/pdfbox/src/main/resources/org/apache/pdfbox/resources/afm",
+      "copyright": "Copyright (c) Adobe Systems Incorporated. All Rights Reserved. Years per AFM file: Helvetica 1985, 1987, 1989, 1990, 1997; Times 1985, 1987, 1989, 1990, 1993, 1997; Courier 1989-1993, 1997 (Bold variants omit 1992); Symbol 1985, 1987, 1989, 1990, 1997; ZapfDingbats 1985, 1987, 1988, 1989, 1997.",
+      "source": "https://github.com/apache/pdfbox/tree/trunk/pdfbox/src/main/resources/org/apache/pdfbox/resources/afm (widths verified identical to the published Core 14 AFMs also mirrored at https://github.com/pdf-raku/Font-AFM-raku/tree/master/etc/Core14_AFMs)",
       "files": []
     }
   ]
