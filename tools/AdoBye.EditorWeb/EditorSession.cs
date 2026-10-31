@@ -436,9 +436,12 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         if (from.Count == 0) throw new EditorConflictException(undo ? "Nothing to undo." : "Nothing to redo.");
         var entry = from[^1];
         var current = CapturePageHistory(entry.Label);
-        ApplyPageHistory(entry);
-        from.RemoveAt(from.Count - 1);
+        // Registered before applying so PruneAssets keeps assets used only by the state being left.
         to.Add(current);
+        try { ApplyPageHistory(entry); }
+        catch { to.Remove(current); throw; }
+        from.RemoveAt(from.Count - 1);
+        PruneAssets();
         return AsJson(new { label = entry.Label, undo = pageUndo.Count, redo = pageRedo.Count });
     }
 
