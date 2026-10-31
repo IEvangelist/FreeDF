@@ -40,6 +40,9 @@ Accuracy against Chrome (Edge/PDFium via `AdoBye.RenderCompare`, 96 dpi, bad-pix
 08-colour-spaces 0.31% / 4.93 -> 0.26% / 4.60; 09-images 0.26% / 6.30 -> 0.26% / 6.26; 21-brochure and 24-poster unchanged (0.11%, 0.02%).
 The residual difference is dominated by anti-aliasing and text, not colour.
 * Tests: `ColorPrintEdgeTests.DeviceCmyk_*` (14 PDFium reference colours, monotonicity, clamping/NaN).
+* Independent cross-check (PyMuPDF/MuPDF): seven DeviceCMYK swatches (K, CMYK all-ink, C, M, Y, 50% grey-ish, mixed), a DeviceN (Cyan, Magenta -> DeviceCMYK, PostScript function) and
+  an Indexed-over-Separation palette agree with MuPDF within 2 levels and with PDFium exactly. MuPDF's CMYK conversion is separate code from PDFium's table, so this supports the table values
+  (it does not resolve the licence/provenance caveat above).
 * Not implemented: black-point-aware or intent-dependent DeviceCMYK, `DefaultCMYK` overrides apply as described below.
 
 ## Colour-space edge cases (8.6.5, 8.6.6)
