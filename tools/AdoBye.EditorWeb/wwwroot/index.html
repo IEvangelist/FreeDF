@@ -161,7 +161,7 @@ const famCss = f => FAM[f] ?? `"${String(f).replace(/"/g, '')}", sans-serif`;
 let fontList = [];
 request('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
 const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-let S = 1, geom = null, spans = [], origKey = '', fields = [], widgets = [], widgetStamp = 0, widgetEl = null, widgetKey = '', objs = [], curObj = null, curSpan = null;
+let S = 1, pageHint = null, geom = null, spans = [], origKey = '', fields = [], widgets = [], widgetStamp = 0, widgetEl = null, widgetKey = '', objs = [], curObj = null, curSpan = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
@@ -458,7 +458,14 @@ function paint() {
       const [x0, y0, x1, y1] = oBox(o);
       const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}${o.inForm ? ' inside its graphic group' : ''}`;
       e.style.left = x0 * S + 'px'; e.style.top = y0 * S + 'px'; e.style.width = Math.max(x1 - x0, 1) * S + 'px'; e.style.height = Math.max(y1 - y0, 1) * S + 'px';
-      e.onpointerdown = ev => { if (tool === 'select' && (ev.altKey || !pageSized(o))) startObjMove(ev, o); };
+      const big = pageSized(o) && o !== curObj;
+      e.title = big ? `Alt+click, or focus and press Enter, to select this ${o.kind === 'form' ? 'whole page' : 'page-sized ' + o.kind}` : e.title;
+      if (big) { e.tabIndex = 0; e.setAttribute('role', 'button'); e.setAttribute('aria-label', 'Select whole-page content (Enter)'); e.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectObj(o); } }; }
+      e.onpointerdown = ev => {
+        if (tool !== 'select') return;
+        if (!big || ev.altKey) startObjMove(ev, o);
+        else if (pageHint !== $('name').textContent) { pageHint = $('name').textContent; status('Plain clicks pass through page-sized content. Alt+click, or Tab to it and press Enter, to select the whole page.'); }
+      };
       if (o === curObj) for (const [k, x, y, c] of [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']])
         handle(e, k, x, y, c, ev => startObjResize(ev, o, k));
       layer.appendChild(e);
@@ -533,28 +540,42 @@ function paint() {
 // Page-sized objects (a background fill or an imported page's content wrapper) are selected with Alt+click so plain clicks reach form widgets and text.
 const pageSized = o => { const [x0, y0, x1, y1] = oBox(o); return (x1 - x0) * (y1 - y0) >= 0.9 * state.pages[sel].width * state.pages[sel].height; };
 
+// Current value of each widget group by field name; check/radio groups report the checked on-state or Off, multi-select lists a JSON array.
+function widgetState() {
+  const s = {};
+  for (const w of widgets) {
+    if (w.kind === 'push') continue;
+    s[w.name] = w.kind === 'check' || w.kind === 'radio' ? (w.checked ? w.on : s[w.name] ?? 'Off') : w.multi ? JSON.stringify(w.values ?? []) : w.value;
+  }
+  return s;
+}
+async function setField(name, value, quiet = false) {
+  const first = widgets.find(x => x.name === name);
+  if (!first) return;
+  const multi = first.multi;
+  try {
+    await request(`/api/field?n=${encodeURIComponent(name)}&v=${encodeURIComponent(value)}${multi ? '&m=1' : ''}`, { method: 'POST' });
+    for (const x of widgets) if (x.name === name) {
+      if (x.kind === 'check' || x.kind === 'radio') x.checked = x.on === value; else if (multi) x.values = JSON.parse(value); else x.value = value;
+    }
+    const f = fields.find(x => x.name === name); if (f) f.value = multi ? '' : value;
+    status(`Set ${name}`);
+    await refreshDirty(); updateBase();
+    document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&v=${state.version}`));
+  } catch (e) { reportError(e); }
+}
+const commitField = (w, value) => { pushUndo(); return setField(w.name, value); };
+
 // Fillable widgets sit above every other layer object; the container persists across repaints so typing keeps focus.
 function paintWidgets(layer) {
   const key = `${widgetStamp}|${S}|${tool}`;
   if (tool !== 'select' || !widgets.length) { widgetEl = null; widgetKey = ''; return; }
   if (widgetEl && widgetKey === key) { layer.appendChild(widgetEl); return; }
   widgetKey = key; widgetEl = document.createElement('div'); widgetEl.className = 'wgts';
-  const commit = async (w, value, el) => {
-    try {
-      await request(`/api/field?n=${encodeURIComponent(w.name)}&v=${encodeURIComponent(value)}`, { method: 'POST' });
-      for (const x of widgets) if (x.name === w.name) {
-        if (x.kind === 'check' || x.kind === 'radio') x.checked = x.on === value; else x.value = value;
-      }
-      const f = fields.find(x => x.name === w.name); if (f) f.value = value;
-      status(`Set ${w.name}`);
-      await refreshDirty(); updateBase();
-      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&v=${state.version}`));
-    } catch (e) { reportError(e); }
-  };
   for (const w of widgets) {
     if (w.kind === 'push') continue;
     const h = (w.y1 - w.y0) * S, c = (w.kind === 'check' || w.kind === 'radio');
-    const el = document.createElement(w.kind === 'combo' || w.kind === 'list' ? 'select' : w.multiline ? 'textarea' : 'input');
+    const el = document.createElement(w.kind === 'list' || (w.kind === 'combo' && !w.edit) ? 'select' : w.multiline ? 'textarea' : 'input');
     el.className = 'wgt ' + w.kind; el.setAttribute('aria-label', w.name);
     el.style.left = w.x0 * S + 'px'; el.style.top = w.y0 * S + 'px'; el.style.width = Math.max(w.x1 - w.x0, 4) * S + 'px'; el.style.height = Math.max(h, 4) + 'px';
     el.style.fontSize = Math.max(8, Math.min(w.size > 0 ? w.size * S : h * 0.7, 28 * S)) + 'px';
@@ -563,25 +584,31 @@ function paintWidgets(layer) {
     el.onkeydown = ev => { if (ev.key === 'Escape') el.blur(); ev.stopPropagation(); };
     if (c) {
       el.type = w.kind === 'radio' ? 'radio' : 'checkbox'; el.checked = w.checked; if (w.kind === 'radio') el.name = w.name;
-      el.title = w.name; el.onchange = () => commit(w, el.checked ? w.on : 'Off', el);
+      el.title = w.name; el.onchange = () => commitField(w, el.checked ? w.on : 'Off');
     } else if (el.tagName === 'SELECT') {
-      const opts = [...(w.options ?? [])]; if (w.value && !opts.some(o => o.value === w.value)) opts.push({ value: w.value, label: w.value });
+      const vals = w.values ?? [], opts = [...(w.options ?? [])];
+      for (const v of vals) if (v && !opts.some(o => o.value === v)) opts.push({ value: v, label: v });
       el.innerHTML = opts.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
-      if (w.kind === 'list') el.size = Math.max(2, opts.length);
-      el.value = w.value; if (w.kind === 'combo' && !w.value) el.selectedIndex = -1;
-      el.onchange = () => commit(w, el.value, el);
+      if (w.kind === 'list') { el.size = Math.max(2, opts.length); el.multiple = !!w.multi; }
+      for (const o of el.options) o.selected = vals.includes(o.value);
+      if (w.kind === 'combo' && !vals.length) el.selectedIndex = -1;
+      el.onchange = () => commitField(w, w.multi ? JSON.stringify([...el.selectedOptions].map(o => o.value)) : el.value);
     } else {
       if (el.tagName === 'INPUT') el.type = w.password ? 'password' : 'text';
+      if (w.kind === 'combo') {
+        const list = document.createElement('datalist'); list.id = `dl-${widgetStamp}-${widgets.indexOf(w)}`;
+        list.innerHTML = (w.options ?? []).map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+        el.setAttribute('list', list.id); widgetEl.appendChild(list);
+      }
       if (w.maxLen > 0) el.maxLength = w.maxLen;
       if (w.comb) { el.style.fontFamily = 'monospace'; el.style.letterSpacing = Math.max(0, (w.x1 - w.x0) * S / w.maxLen - h * 0.42) + 'px'; }
       el.style.textAlign = ['left', 'center', 'right'][w.align] ?? 'left';
-      el.value = w.value; el.onchange = () => commit(w, el.value, el);
+      el.value = w.value; el.onchange = () => commitField(w, el.value);
     }
     widgetEl.appendChild(el);
   }
   layer.appendChild(widgetEl);
 }
-
 function handle(parent, cls, x, y, cursor, down) {
   if (locked) return;
   const h = document.createElement('div'); h.className = 'hd';
@@ -728,7 +755,7 @@ function setTool(t) {
   $('layer')?.classList.toggle('draw', t !== 'select');
 }
 
-function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null) })); if (undo.length > 100) undo.shift(); }
+function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null), fv: widgetState() })); if (undo.length > 100) undo.shift(); }
 async function doUndo() {
   if (!undo.length) return;
   const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null; curSpan = null;
@@ -736,6 +763,9 @@ async function doUndo() {
   objs.forEach((o, k) => { if (JSON.stringify(o.edit ?? null) !== JSON.stringify(s.ed[k])) { o.edit = s.ed[k]; changed.push(o); } });
   paint(); props(); queueSave();
   for (const o of changed) await saveObj(o);
+  const now = widgetState();
+  for (const [name, value] of Object.entries(s.fv ?? {})) if (now[name] !== undefined && now[name] !== value) await setField(name, value);
+  if (s.fv) { widgetStamp++; paint(); }
 }
 
 const oBox = o => {
