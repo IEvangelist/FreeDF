@@ -185,6 +185,18 @@ static class EditorForms
         }, name + ": every UI edit reaches the document");
         Check(await WholePage(page) == 0, name + ": filling never selected a page group");
 
+        if (formPage > 0)
+        {
+            // Undo history is per page: leaving the page discards it, so Ctrl+Z elsewhere cannot touch field edits or pop a stale entry.
+            await page.Locator("#pn").FillAsync("1"); await page.Locator("#pn").PressAsync("Enter");
+            await page.WaitForFunctionAsync("document.getElementById('pn').value === '1' && document.getElementById('base')?.naturalWidth > 0");
+            await page.Locator("body").PressAsync("Control+z");
+            await page.Locator("#pn").FillAsync((formPage + 1).ToString()); await page.Locator("#pn").PressAsync("Enter");
+            await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && document.querySelectorAll('#layer .wgt').length > 0", formPage + 1);
+            var current = (await Widgets(page, formPage)).Where(w => w.Kind == "text").ToDictionary(w => w.Name, w => w.Value);
+            Check(expected.Where(kv => current.ContainsKey(kv.Key)).All(kv => current[kv.Key] == kv.Value), name + ": cross-page Ctrl+Z must leave field edits intact");
+        }
+
         await page.Locator("#dl").ClickAsync();
         var download = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
         await page.Locator(".mdl").WaitForAsync(new() { State = WaitForSelectorState.Detached });
