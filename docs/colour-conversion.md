@@ -57,9 +57,9 @@ The residual difference is dominated by anti-aliasing and text, not colour.
 ## Default colour spaces (8.6.5.6)
 
 `/DefaultGray`, `/DefaultRGB` and `/DefaultCMYK` in the resource `/ColorSpace` dictionary now remap a Device space selected by `g/G/rg/RG/k/K`, by `cs`/`CS` with a Device name, or as an
-image or shading `/ColorSpace` (`PdfColorSpace.ParseWithDefaults`, `DefaultColorSpaceTests`). Entries with a different component count, Pattern, Indexed, Separation/DeviceN or unparsable values are ignored.
+image or shading `/ColorSpace` (`PdfColorSpace.ParseWithDefaults`, `DefaultColorSpaceTests`). Entries with a different component count, Pattern, Indexed, Lab, Separation/DeviceN or unparsable values are ignored.
 Device spaces nested in another space (Indexed base, Separation alternate, ICC alternate) are not remapped. Previously the entries were honoured only for page-group blending spaces and
-never for painting. Not compared against PDFium/MuPDF output; the initial graphics-state colour is not remapped.
+never for painting. Checked against MuPDF (CalGray default) and PDFium (ignores CalGray gamma); the initial graphics-state colour is not remapped.
 
 ## Transparency group blending spaces (11.4.7, 11.7.5.3)
 
@@ -100,4 +100,6 @@ levels of LittleCMS 2.17). ICC.1:2010 `D2Bx`/`B2Dx` multiProcessElements (`mpet`
 Constant fills rendered here and by PDFium (pypdfium2, 72 dpi): CalRGB and Lab with a D65 white point agree within 2 levels (`CalLabPdfiumReferenceTests`).
 Documented differences, kept because they follow the spec: PDFium does not adapt non-D65 white points (a D50 CalRGB green is 81,255,0 in PDFium vs 0,255,0 here
 after Bradford adaptation; Lab with a D50 white differs by up to 12 levels) and keeps CalGray close to identity (0.1 -> 26 vs 19 here; 0.25 -> 64 vs 61) rather than applying gamma then the sRGB curve.
-MuPDF was not compared.
+MuPDF 1.2x (PyMuPDF) agrees with this implementation within 1 level on D65 and D50 CalGray/CalRGB and on D50 Lab (so the spec-faithful adaptation here matches MuPDF, not PDFium),
+but differs by up to 10 levels on D65 Lab (which PDFium matches within 2) and ignores a CalRGB without `/Matrix`. Separation (CMYK alternate, tint 0.25-1) matches PDFium and MuPDF within 2 levels.
+`/DefaultGray` as CalGray matches MuPDF (18 vs 19); PDFium ignores the gamma (26). PDFium and MuPDF both ignore a Lab `/DefaultRGB`, so Lab defaults are ignored here too.
