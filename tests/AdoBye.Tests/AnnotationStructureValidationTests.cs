@@ -282,7 +282,8 @@ public class AnnotationStructureValidationTests
         }
 
         var wrongParent = Load(part, (10, "<< /Nums [1 7 0 R] >>"));
-        OnlyAnnotationFinding(Validate(wrongParent, part), "PDFUA-ANNOT-OBJR");
+        var wrongReport = Validate(wrongParent, part);
+        Assert.Equal("ISO 32000-2 14.7.5.3", Assert.Single(wrongReport.Findings, f => f.RuleId == "PDFUA-ANNOT-OBJR").Clause);
     }
 
     [Theory]
@@ -362,8 +363,10 @@ public class AnnotationStructureValidationTests
                 (9, $"<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] /StructParent 1 {contents} >>"));
             var report = Validate(doc, part);
             Assert.DoesNotContain(report.Findings, f => f.RuleId.StartsWith("PDFUA-ANNOT-"));
-            Assert.Equal(!described, report.Has("PDFUA-LINK-DESCRIPTION"));
-            Assert.Equal(described, report.IsCompliant);
+            // veraPDF PDFUA-1 7.18.5-2 accepts only /Contents; the mapped structure /Alt fallback is UA-2 only.
+            var expected = described && (part == 2 || contents.Contains("(Link description)"));
+            Assert.Equal(!expected, report.Has("PDFUA-LINK-DESCRIPTION"));
+            Assert.Equal(expected, report.IsCompliant);
         }
     }
 
@@ -403,11 +406,16 @@ public class AnnotationStructureValidationTests
     [InlineData(2)]
     public void ExistingExemptAnnotationSubtypesRemainExempt(int part)
     {
-        foreach (var subtype in new[] { "Popup", "PrinterMark", "TrapNet" })
+        // Popup is always exempt; TrapNet and untagged PrinterMark are only exempt when hidden/outside (see below).
+        var doc = Load(part, (9, "<< /Type /Annot /Subtype /Popup >>"));
+        Assert.True(Validate(doc, part).IsCompliant);
+        foreach (var subtype in new[] { "PrinterMark", "TrapNet" })
         {
-            var doc = Load(part, (9, $"<< /Type /Annot /Subtype /{subtype} >>"));
-            Assert.True(Validate(doc, part).IsCompliant);
+            var hidden = Load(part, (9, $"<< /Type /Annot /Subtype /{subtype} /F 2 /Rect [0 0 10 10] >>"));
+            Assert.True(Validate(hidden, part).IsCompliant);
         }
+        Assert.True(Validate(Load(part, (9, "<< /Type /Annot /Subtype /PrinterMark /Rect [0 0 10 10] >>")), part).IsCompliant);
+        Assert.Equal(part == 2, Validate(Load(part, (9, "<< /Type /Annot /Subtype /TrapNet /Rect [0 0 10 10] >>")), part).IsCompliant);
     }
 
     [Theory]

@@ -209,6 +209,30 @@ public sealed class StructureTree
 
     public static bool IsStandardType(string type) => Standard.Contains(type) || HeadingLevel(type) is not null;
 
+    static readonly HashSet<string> Standard17 = new(StringComparer.Ordinal)
+    {
+        "Document", "Part", "Art", "Sect", "Div", "BlockQuote", "Caption", "TOC", "TOCI", "Index", "NonStruct", "Private", "P",
+        "L", "LI", "Lbl", "LBody", "Table", "TR", "TH", "TD", "THead", "TBody", "TFoot", "Span", "Quote", "Note", "Reference", "BibEntry",
+        "Code", "Link", "Annot", "Ruby", "RB", "RT", "RP", "Warichu", "WT", "WP", "Figure", "Formula", "Form",
+    };
+
+    /// <summary>True for the structure types of ISO 32000-1 14.8.4 (Tables 333-340) including H and H1-H6, i.e. the vocabulary PDF/UA-1 uses.</summary>
+    public static bool IsPdf17StandardType(string type) => Standard17.Contains(type) || HeadingLevel(type) is >= 0 and <= 6;
+
+    /// <summary>Follows the RoleMap to an ISO 32000-1 standard type; <paramref name="circular"/> is true when the chain loops and null is returned when it does not end at a standard type.</summary>
+    public string? ResolvePdf17Role(string type, out bool circular)
+    {
+        circular = false;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var cur = type; ;)
+        {
+            if (IsPdf17StandardType(cur)) return cur;
+            if (!seen.Add(cur)) { circular = true; return null; }
+            if (!RoleMap.TryGetValue(cur, out var next)) return null;
+            cur = next;
+        }
+    }
+
     /// <summary>1..n for H1..Hn, 0 for the unnumbered H, null for anything else.</summary>
     public static int? HeadingLevel(string type)
     {

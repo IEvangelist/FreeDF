@@ -36,6 +36,10 @@ internal static class PdfUADeepChecks
                     c.Add("PDFUA-OC-AS", ValidationSeverity.Error, "optional content configuration must not contain /AS", Clause(c, "7.10", "8.9"));
             }
         }
+        if (c.Part == 1)
+            foreach (var o in c.AllObjects())
+                if (o is PdfStream rs && rs.Dict.Get("Ref") is not null && f.Resolve(rs.Dict.Get("Subtype")).AsName() == "Form")
+                { c.Add("PDFUA-XOBJECT-REF", ValidationSeverity.Error, "reference XObjects (Form XObject with /Ref) are not permitted", "ISO 14289-1 7.20"); break; }
         var reported = false;
         foreach (var o in c.AllObjects())
         {
@@ -62,7 +66,14 @@ internal static class PdfUADeepChecks
             if (f.Resolve(font.Get("ToUnicode")) is PdfStream) continue;
             var name = FontChecks.Name(f, font);
             if (subtype == "Type0")
-                c.Add("PDFUA-FONT-TOUNICODE", ValidationSeverity.Error, $"composite font {name} has no /ToUnicode CMap (heuristic: predefined Unicode CMaps would be exempt)", Clause(c, "7.21.7", "8.8"), u.Page);
+            {
+                // ISO 14289-1 7.21.7: Adobe CJK character collections map to Unicode through their UCS2 CMaps, so no /ToUnicode is needed.
+                var ordering = f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } dfs && f.Resolve(dfs[0]) is PdfDictionary dcid
+                    && f.Resolve(dcid.Get("CIDSystemInfo")) is PdfDictionary csi && f.Resolve(csi.Get("Registry")) is PdfString { Text: "Adobe" }
+                    && f.Resolve(csi.Get("Ordering")) is PdfString o ? o.Text : null;
+                if (ordering is not ("GB1" or "CNS1" or "Japan1" or "Korea1"))
+                    c.Add("PDFUA-FONT-TOUNICODE", ValidationSeverity.Error, $"composite font {name} has no /ToUnicode CMap (heuristic: predefined Unicode CMaps would be exempt)", Clause(c, "7.21.7", "8.8"), u.Page);
+            }
             else if (subtype is "Type1" or "TrueType" or "MMType1" or "Type3")
             {
                 var enc = f.Resolve(font.Get("Encoding"));
@@ -79,6 +90,7 @@ internal static class PdfUADeepChecks
     public static void ContentTagging(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
+        var forms = new Dictionary<PdfStream, (int Count, bool HasMcid)>(ReferenceEqualityComparer.Instance);
         var byPage = tree.Elements().SelectMany(e => e.MarkedContent).Where(m => m.Stream is null && m.PageIndex is not null)
             .GroupBy(m => m.PageIndex!.Value).ToDictionary(g => g.Key, g => g.ToList());
         for (var i = 0; i < c.Doc.Pages.Count; i++)
@@ -88,22 +100,29 @@ internal static class PdfUADeepChecks
             if (content.Length == 0) continue;
             var props = f.Resolve(page.Resources?.Get("Properties")) as PdfDictionary;
             var used = new HashSet<int>();
-            Scan(c, content, props, i, tree, used);
+            var budget = new ScanBudget { Forms = forms };
+            Scan(c, content, page.Resources, props, i, tree, used, false, false, null, 0, budget);
             if (byPage.TryGetValue(i, out var refs))
                 foreach (var mc in refs.Where(m => !used.Contains(m.Mcid)).Take(100))
                 c.Add("PDFUA-MCID-MISSING", ValidationSeverity.Warning, $"structure tree references MCID {mc.Mcid} but the page content has no such marked-content sequence", "ISO 32000-2 14.7.4.2", i);
         }
+        if (c.Part == 1 && forms.Values.Any(u => u.Count > 1 && u.HasMcid))
+            c.Add("PDFUA-FORM-REUSED-TAGGED", ValidationSeverity.Error, "a Form XObject containing marked content with MCIDs is invoked more than once, so its content has no unique semantic parent (veraPDF PDFUA-1 7.20-2; heuristic, per-invocation structure is not evaluated)", "ISO 14289-1 7.20");
     }
 
-    static void Scan(ValidationContext c, byte[] content, PdfDictionary? props, int page, StructureTree tree, HashSet<int> used)
+    sealed class ScanBudget { public int Steps; public bool UntaggedReported, ArtifactReported, NestingReported; public Dictionary<PdfStream, (int Count, bool HasMcid)> Forms = new(ReferenceEqualityComparer.Instance); }
+
+    const int MaxScanSteps = 5_000_000;
+    const int MaxFormDepth = 8;
+
+    static void Scan(ValidationContext c, byte[] content, PdfDictionary? resources, PdfDictionary? props, int page, StructureTree tree, HashSet<int> used,
+        bool inheritedArtifact, bool inheritedMcid, PdfStream? formStream, int depth, ScanBudget budget)
     {
         var f = c.F;
         var lex = new PdfLexer(content);
         var operands = new List<PdfObject>();
-        var stack = new List<(bool Artifact, int? Mcid)>();
-        bool reportedUntagged = false, reportedArtifact = false;
-        var steps = 0;
-        while (steps++ < 5_000_000)
+        var stack = new List<(bool Artifact, int? Mcid, bool Lang)>();
+        while (budget.Steps++ < MaxScanSteps)
         {
             lex.SkipWhite();
             if (lex.Pos >= lex.Length) break;
@@ -118,8 +137,16 @@ internal static class PdfUADeepChecks
             switch (op)
             {
                 case "BMC":
-                    stack.Add((operands.Count > 0 && operands[0].AsName() == "Artifact", null));
-                    break;
+                    {
+                        var bmcArtifact = operands.Count > 0 && operands[0].AsName() == "Artifact";
+                        if (bmcArtifact && !budget.NestingReported && (inheritedMcid || stack.Any(s => s.Mcid is not null)))
+                        {
+                            budget.NestingReported = true;
+                            c.Add("PDFUA-ARTIFACT-IN-TAGGED", ValidationSeverity.Error, "Artifact content is nested inside tagged content (veraPDF PDFUA-1 7.1-1)", Clause(c, "7.1", "8.2"), page);
+                        }
+                        stack.Add((bmcArtifact, null, false));
+                        break;
+                    }
                 case "BDC":
                     {
                         var tag = operands.Count > 0 ? operands[0].AsName() : null;
@@ -128,12 +155,18 @@ internal static class PdfUADeepChecks
                         var artifact = tag == "Artifact";
                         if (mcid is { } id)
                         {
-                            used.Add(id);
-                            if (artifact && !reportedArtifact) { reportedArtifact = true; c.Add("PDFUA-ARTIFACT-TAGGED", ValidationSeverity.Error, "Artifact marked content carries an MCID (content is both artifact and tagged)", Clause(c, "7.1", "8.2"), page); }
-                            else if (!artifact && tree.FindMarkedContent(page, id) is null)
+                            if (formStream is null) used.Add(id);
+                            if (artifact && !budget.ArtifactReported) { budget.ArtifactReported = true; c.Add("PDFUA-ARTIFACT-TAGGED", ValidationSeverity.Error, "Artifact marked content carries an MCID (content is both artifact and tagged)", Clause(c, "7.1", "8.2"), page); }
+                            else if (!artifact && (formStream is null ? tree.FindMarkedContent(page, id) : tree.FindMarkedContent(formStream, id) ?? tree.FindMarkedContent(page, id)) is null)
                                 c.Add("PDFUA-MCID-UNMAPPED", ValidationSeverity.Error, $"marked content MCID {id} is not referenced by the structure tree", Clause(c, "7.1", "8.2"), page);
                         }
-                        stack.Add((artifact, mcid));
+                        if (formStream is not null && mcid is not null && budget.Forms.TryGetValue(formStream, out var fu)) budget.Forms[formStream] = (fu.Count, true);
+                        if (!budget.NestingReported && (artifact && (inheritedMcid || stack.Any(s => s.Mcid is not null)) || mcid is not null && !artifact && (inheritedArtifact || stack.Any(s => s.Artifact))))
+                        {
+                            budget.NestingReported = true;
+                            c.Add(artifact ? "PDFUA-ARTIFACT-IN-TAGGED" : "PDFUA-TAGGED-IN-ARTIFACT", ValidationSeverity.Error, artifact ? "Artifact content is nested inside tagged content (veraPDF PDFUA-1 7.1-1)" : "tagged content is nested inside Artifact content (veraPDF PDFUA-1 7.1-2)", Clause(c, "7.1", "8.2"), page);
+                        }
+                        stack.Add((artifact, mcid, d?.Get("Lang") is not null));
                         break;
                     }
                 case "EMC":
@@ -142,10 +175,25 @@ internal static class PdfUADeepChecks
                 case "ID":
                     SkipInlineImage(lex);
                     goto default;
-                default:
-                    if (PaintOps.Contains(op) && !reportedUntagged && !stack.Any(s => s.Artifact || s.Mcid is not null))
+                case "Do" when operands.Count > 0 && operands[0].AsName() is { } xname
+                    && f.Resolve((f.Resolve(resources?.Get("XObject")) as PdfDictionary)?.Get(xname)) is PdfStream xo && f.Resolve(xo.Dict.Get("Subtype")).AsName() == "Form":
+                    // A Form XObject is not content itself: its own operators are judged in the tagging context of the invocation.
+                    if (depth < MaxFormDepth)
                     {
-                        reportedUntagged = true;
+                        var art = inheritedArtifact || stack.Any(s => s.Artifact);
+                        var mc = inheritedMcid || stack.Any(s => s.Mcid is not null);
+                        budget.Forms[xo] = (budget.Forms.TryGetValue(xo, out var prior) ? prior.Count + 1 : 1, prior.HasMcid);
+                        var formResources = f.Resolve(xo.Dict.Get("Resources")) as PdfDictionary ?? resources;
+                        var formProps = f.Resolve(formResources?.Get("Properties")) as PdfDictionary ?? props;
+                        Scan(c, f.DecodeStream(xo), formResources, formProps, page, tree, used, art, mc, xo, depth + 1, budget);
+                    }
+                    break;
+                default:
+                    if (formStream is null && op is "Tj" or "TJ" or "'" or "\"" && !stack.Any(s => s.Lang) && stack.LastOrDefault(s => s.Mcid is not null).Mcid is { } textMcid)
+                        c.TextMcids.Add((page, textMcid));
+                    if (PaintOps.Contains(op) && !budget.UntaggedReported && !inheritedArtifact && !inheritedMcid && !stack.Any(s => s.Artifact || s.Mcid is not null))
+                    {
+                        budget.UntaggedReported = true;
                         c.Add("PDFUA-CONTENT-UNTAGGED", ValidationSeverity.Error, "page content is neither tagged (marked content with an MCID) nor marked as an Artifact", Clause(c, "7.1", "8.2"), page);
                     }
                     break;
