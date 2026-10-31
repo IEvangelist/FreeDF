@@ -83,7 +83,7 @@ public static class JpxDecoder
             foreach (var (cn, typ, asoc) in info.CDef)
             {
                 if (cn >= channels.Count) continue;
-                if (typ == 0 && asoc >= 1) byAsoc[asoc] = cn;
+                if (typ == 0 && asoc is >= 1 and < 65535) byAsoc[asoc] = cn;
                 else if (typ is 1 or 2 && alphaCh < 0 && asoc == 0) { alphaCh = cn; premult = typ == 2; }
             }
             color.AddRange(byAsoc.Values);
@@ -125,7 +125,7 @@ public static class JpxDecoder
     {
         var c = ch.Comp;
         var plane = cs.Planes[c];
-        int rawDepth = cs.Depth[c], depth = Math.Min(rawDepth, 16), shift = rawDepth - depth, cw = cs.CW[c], chh = cs.CH[c];
+        int rawDepth = cs.Depth[c], depth = Math.Min(rawDepth, 16), cw = cs.CW[c], chh = cs.CH[c];
         var pal = ch.Col >= 0 && info.Palette is not null ? info.Palette[ch.Col] : null;
         var lutDepth = pal is not null ? Math.Min(info.PaletteDepth![ch.Col], 16) : depth;
         var lutLen = pal?.Length ?? 1 << depth;
@@ -187,7 +187,6 @@ public static class JpxDecoder
                         v = (int)(((a * wx + b * fx) * wy + (cc * wx + dd * fx) * fy + (long)xr * yr / 2) / ((long)xr * yr));
                     }
                 }
-                if (shift > 0) v >>= shift;
                 if ((uint)v > (uint)last) v = v < 0 ? 0 : last;
                 dst[o] = lut[v];
                 if (lut16 is not null) { var q = o * 2; var s16 = lut16[v]; dst16![q] = (byte)(s16 >> 8); dst16[q + 1] = (byte)s16; }
@@ -279,7 +278,7 @@ public static class JpxDecoder
     {
         if (end - p < 3) return;
         var ne = U16(d, p); var npc = d[p + 2];
-        if (ne == 0 || npc == 0 || p + 3 + npc > end) return;
+        if (ne is 0 or > 1024 || npc == 0 || p + 3 + npc > end) return;
         var depths = new int[npc];
         for (var i = 0; i < npc; i++) depths[i] = (d[p + 3 + i] & 0x7F) + 1;
         var q = p + 3 + npc;

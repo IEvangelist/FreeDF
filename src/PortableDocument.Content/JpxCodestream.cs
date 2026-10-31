@@ -201,7 +201,11 @@ internal sealed class JpxCodestream
             var body = p + 4;
             switch (m)
             {
-                case 0xFF51: ParseSiz(body); sizSeen = true; break;
+                case 0xFF51:
+                    if (sizSeen || len < 41) { Warning = "JPX: malformed SIZ marker segment"; return false; }
+                    ParseSiz(body);
+                    if (len != 38 + 3 * Csiz) { Warning = "JPX: SIZ length does not match the component count"; return false; }
+                    sizSeen = true; break;
                 case 0xFF52: ParseCod(body, len - 2, out _prog, out _layers, out _mct, out _sop, out _eph, out _cod); break;
                 case 0xFF53: ParseCoc(body, len - 2, _coc); break;
                 case 0xFF5C: _qcd = ParseQuant(body, len - 2); break;
@@ -226,6 +230,7 @@ internal sealed class JpxCodestream
         }
         if (!sizSeen || _cod is null || _qcd is null) { Warning = "JPX: incomplete main header"; return false; }
         if (Csiz is < 1 or > 16384 || (long)(Xsiz - XOsiz) * (Ysiz - YOsiz) > 400_000_000L) { Warning = "JPX: unsupported image size"; return false; }
+        if (!ValidateGeometry()) return false;
         if (!HasContiguousIndices(ppmMarkers, out var missingPpmIndex)) { Warning = $"JPX: missing PPM marker index {missingPpmIndex}"; return false; }
         var ppmData = JoinPackedSegments(ppmMarkers);
         var ppmPos = 0;
@@ -417,6 +422,26 @@ internal sealed class JpxCodestream
             {
                 Warning ??= $"JPX: tile {idx} decode error ({e.Message})";
             }
+        }
+        return true;
+    }
+
+    /// <summary>Upper bound on decoded component samples (all components together); bounds allocation before any plane is created.</summary>
+    const long MaxTotalSamples = 400_000_000L;
+
+    // T.800 A.5.1: image/tile geometry must be consistent, at most 65535 tiles, 1..38 bits per component.
+    bool ValidateGeometry()
+    {
+        if (XOsiz < 0 || YOsiz < 0 || XTOsiz < 0 || YTOsiz < 0 || XOsiz >= Xsiz || YOsiz >= Ysiz
+            || XTOsiz > XOsiz || YTOsiz > YOsiz || (long)XTOsiz + XTsiz <= XOsiz || (long)YTOsiz + YTsiz <= YOsiz)
+        { Warning = "JPX: inconsistent image or tile offsets"; return false; }
+        if ((long)CeilDiv(Xsiz - XTOsiz, XTsiz) * CeilDiv(Ysiz - YTOsiz, YTsiz) > 65535) { Warning = "JPX: more than 65535 tiles"; return false; }
+        long total = 0;
+        for (var c = 0; c < Csiz; c++)
+        {
+            if (Depth[c] > 38) { Warning = "JPX: unsupported component bit depth"; return false; }
+            total += (long)(CeilDiv(Xsiz, Xr[c]) - CeilDiv(XOsiz, Xr[c])) * (CeilDiv(Ysiz, Yr[c]) - CeilDiv(YOsiz, Yr[c]));
+            if (total > MaxTotalSamples) { Warning = "JPX: unsupported image size"; return false; }
         }
         return true;
     }
@@ -668,6 +693,11 @@ internal sealed class JpxCodestream
             var w = tc.X1 - tc.X0; var h = tc.Y1 - tc.Y0;
             if (w <= 0 || h <= 0) continue;
             var depth = Depth[c];
+            if (depth > 30)
+            {
+                StoreDeepComponent(tc, c, w, h);
+                continue;
+            }
             var shift = Math.Max(0, depth - 16);
             var eff = depth - shift;
             int offset = Signed[c] ? 0 : 1 << (depth - 1), lo = Signed[c] ? -(1 << (depth - 1)) : 0, hi = Signed[c] ? (1 << (depth - 1)) - 1 : (1 << depth) - 1;
@@ -686,6 +716,26 @@ internal sealed class JpxCodestream
             }
             tc.Out = [];
         }
+    }
+
+    // Components deeper than 30 bits overflow the int range arithmetic above; keep the top 16 bits using 64-bit
+    // math. Samples travel through float coefficients, so the lowest bits beyond 24 are not bit-exact.
+    void StoreDeepComponent(TComp tc, int c, int w, int h)
+    {
+        var depth = Depth[c];
+        var shift = depth - 16;
+        long offset = Signed[c] ? 0 : 1L << (depth - 1), lo = Signed[c] ? -(1L << (depth - 1)) : 0, hi = Signed[c] ? (1L << (depth - 1)) - 1 : (1L << depth) - 1;
+        var bias = Signed[c] ? 1L << 15 : 0;
+        var ox = tc.X0 - CeilDiv(XOsiz, Xr[c]); var oy = tc.Y0 - CeilDiv(YOsiz, Yr[c]);
+        var src = tc.Out; var dst = Planes[c]; var cw = CW[c];
+        for (var y = 0; y < h; y++)
+            for (var x = 0; x < w; x++)
+            {
+                var v = (long)MathF.Floor(src[y * w + x] + 0.5f) + offset;
+                v = v < lo ? lo : v > hi ? hi : v;
+                dst[(oy + y) * cw + ox + x] = (ushort)((v >> shift) + bias);
+            }
+        tc.Out = [];
     }
 
     void BuildComp(TComp tc, int depth)
@@ -1018,7 +1068,7 @@ internal sealed class JpxCodestream
         public readonly bool Rev = rev;
     }
 
-    static void DecodeBlocks(TComp[] comps)
+    void DecodeBlocks(TComp[] comps)
     {
         var jobs = new List<Job>();
         foreach (var tc in comps)
@@ -1029,7 +1079,8 @@ internal sealed class JpxCodestream
                         {
                             if (cb.NumPasses == 0) continue;
                             var nb = res.Bands[bi].Mb + tc.Roi - cb.Zbp;
-                            if (nb <= 0 || nb > 30) continue;
+                            if (nb <= 0) continue;
+                            if (nb > 30) { Warning ??= "JPX: code-blocks with more than 30 magnitude bit-planes are not supported"; continue; }
                             jobs.Add(new Job(cb, res.Bands[bi], tc.Cod.Style, tc.Roi, nb, tc.Cod.Transform == 1 && tc.Q.Style == 0));
                         }
         var arr = jobs.ToArray();
