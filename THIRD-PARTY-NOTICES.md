@@ -81,3 +81,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+
+## veraPDF and veraPDF-corpus (test oracle only)
+
+veraPDF (GPLv3 / MPLv2+) and the veraPDF-corpus are run locally by `tools/ua_crosscheck.py` as an independent PDF/UA oracle. No veraPDF binaries, profiles or corpus files are included in this repository or its packages, and no validation rules were copied from them; rule ids in code comments refer to published profile ids only.
