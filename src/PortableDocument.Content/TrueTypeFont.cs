@@ -52,6 +52,11 @@ public sealed class TrueTypeFont
     }
 
     public int NumGlyphs => _numGlyphs;
+    Shaping.OpenTypeLayout? _layout;
+    /// <summary>OpenType layout (GDEF/GSUB/GPOS/kern) reader for this font, created on first use.</summary>
+    public Shaping.OpenTypeLayout Layout => _layout ??= new Shaping.OpenTypeLayout(_d, t => _tables.TryGetValue(t, out var v) ? v : ((int, int)?)null, UnitsPerEm);
+    /// <summary>Horizontal advance in font design units.</summary>
+    public int AdvanceUnits(int gid) => _hmtx == 0 || _numHMetrics == 0 ? UnitsPerEm : U16(_hmtx + Math.Min(Math.Max(gid, 0), _numHMetrics - 1) * 4);
     uint U32(int o) => o + 4 <= _d.Length ? (uint)(_d[o] << 24 | _d[o + 1] << 16 | _d[o + 2] << 8 | _d[o + 3]) : 0;
     int U16(int o) => o + 2 <= _d.Length ? _d[o] << 8 | _d[o + 1] : 0;
     int S16(int o) => (short)U16(o);

@@ -52,6 +52,9 @@ public sealed class ContentInterpreter
     PathData? _textClip;
     List<string> _hiddenStack = [];
     List<int> _mcidStack = [];
+    readonly List<(string? Text, bool Used)> _actualText = [];
+    /// <summary>When set, text shown inside a marked-content sequence with /ActualText is reported once as that replacement text (ISO 32000-2 14.9.4).</summary>
+    public bool HonorActualText { get; set; }
     int _hiddenDepth;
     int _pageMcid = -1;
     int _type3Depth;
@@ -575,7 +578,7 @@ public sealed class ContentInterpreter
             case "sh": if (_hiddenDepth == 0 && a.Count > 0 && a[0] is PdfName sn && R(res.Get("Shading")) is PdfDictionary shd) Shade(R(shd.Get(sn.Value)), res, null); break;
             case "Do": if (a.Count > 0 && a[0] is PdfName xn && R(res.Get("XObject")) is PdfDictionary xd) DoXObject(R(xd.Get(xn.Value)), res, xd.Get(xn.Value) is PdfRef xrf ? xrf.Number : 0); break;
 
-            case "BMC": _hiddenStack.Add(a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : ""); _mcidStack.Add(-1); break;
+            case "BMC": _hiddenStack.Add(a.Count > 0 && a[0].AsName() == "Artifact" ? "A" : ""); _mcidStack.Add(-1); _actualText.Add((null, false)); break;
             case "BDC":
                 {
                     var hidden = false;
@@ -587,6 +590,7 @@ public sealed class ContentInterpreter
                         else Warn("invalid marked-content MCID");
                     }
                     _mcidStack.Add(mcid);
+                    _actualText.Add((HonorActualText && a.Count >= 2 && (a[1] is PdfName apn && R(res.Get("Properties")) is PdfDictionary apd ? R(apd.Get(apn.Value)) : a[1]) is PdfDictionary adict && R(adict.Get("ActualText")) is PdfString ats ? DecodeTextString(ats.Bytes) : null, false));
                     if (a.Count >= 2 && a[0].AsName() == "OC")
                     {
                         PdfObject? prop = a[1] is PdfName pn && R(res.Get("Properties")) is PdfDictionary pd ? R(pd.Get(pn.Value)) : a[1];
@@ -599,6 +603,7 @@ public sealed class ContentInterpreter
             case "EMC":
                 if (_mcidStack.Count == 0) { Warn("unmatched EMC"); break; }
                 _mcidStack.RemoveAt(_mcidStack.Count - 1);
+                if (_actualText.Count > 0) _actualText.RemoveAt(_actualText.Count - 1);
                 if (_hiddenStack.Count > 0) { if (_hiddenStack[^1] == "H") _hiddenDepth--; _hiddenStack.RemoveAt(_hiddenStack.Count - 1); }
                 break;
             case "d0": case "d1": case "MP": case "DP": case "BX": case "EX": break;
@@ -1121,6 +1126,21 @@ public sealed class ContentInterpreter
     public bool DrawGraphics { get; set; } = true;
     int _runDepth, _spanIndex, _collectDepth = 1, _curForm;
 
+    static string DecodeTextString(byte[] b) =>
+        b.Length >= 2 && b[0] == 0xFE && b[1] == 0xFF ? System.Text.Encoding.BigEndianUnicode.GetString(b, 2, b.Length - 2) : System.Text.Encoding.Latin1.GetString(b);
+
+    string SpanText(string shown)
+    {
+        for (var i = _actualText.Count - 1; i >= 0; i--)
+        {
+            if (_actualText[i].Text is not { } at) continue;
+            var used = _actualText[i].Used;
+            _actualText[i] = (at, true);
+            return used ? "" : at;
+        }
+        return shown;
+    }
+
     int CurrentMcid()
     {
         for (var i = _mcidStack.Count - 1; i >= 0; i--) if (_mcidStack[i] >= 0) return _mcidStack[i];
@@ -1172,7 +1192,7 @@ public sealed class ContentInterpreter
         var displacement = tmBefore.Invert().Apply(_tm.E, _tm.F);
         var local = font.Vertical ? displacement.Y : displacement.X;
         var scale = _gs.FontSize * (font.Vertical ? 1 : _gs.HScale);
-        TextSpans!.Add(new TextSpan(idx, op, sb!.ToString(), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
+        TextSpans!.Add(new TextSpan(idx, op, SpanText(sb!.ToString()), start.X, start.Y, Math.Sqrt((end.X - start.X) * (end.X - start.X) + (end.Y - start.Y) * (end.Y - start.Y)),
             Math.Sqrt(trm.C * trm.C + trm.D * trm.D), Math.Atan2(trm.B, trm.A) * 180 / Math.PI,
             font.Dict.Get("BaseFont") is PdfName bn ? bn.Value : "", Color(false), scale == 0 ? 0 : -local * 1000 / scale, font.Vertical, CurrentMcid(),
             _curForm, _gs.FontRef, font, pieces)

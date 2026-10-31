@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using PortableDocument.Content;
+using PortableDocument.Content.Shaping;
 using PortableDocument.Core;
 using PortableDocument.Document;
 using PortableDocument.Render;
@@ -23,7 +24,18 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
     sealed class Embedded(FontFace face, byte[] data, TrueTypeFont font, string key)
     {
         public FontFace Face = face; public byte[] Data = data; public TrueTypeFont Font = font; public string Key = key;
-        public SortedDictionary<int, int> Uni = [];
+        public SortedDictionary<int, string> Uni = [];
+        /// <summary>Records the ToUnicode text of a glyph (empty text only marks the glyph as used); false when the glyph is already mapped to different text.</summary>
+        public bool Map(int gid, string text)
+        {
+            if (Uni.TryGetValue(gid, out var have))
+            {
+                if (have.Length == 0) { Uni[gid] = text; return true; }
+                return text.Length == 0 || have == text;
+            }
+            Uni[gid] = text;
+            return true;
+        }
         Dictionary<int, int>? _cid;
 
         /// <summary>The Identity-H code for a glyph: the GID, or the CID for a CID-keyed CFF font.</summary>
@@ -43,7 +55,15 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
     /// <summary>The embedded program of an existing page font, reused when editing text that was drawn with it.</summary>
     public sealed record OrigFont(PdfFont Font, PdfRef? Ref, Matrix? Transform = null, double WordSpacing = 0);
 
-    sealed record Seg(string Text, Embedded? Emb, OrigFont? Orig);
+    sealed record Seg(string Text, Embedded? Emb, OrigFont? Orig, int Level = 0, IReadOnlyList<ShapedRun>? Runs = null);
+    static readonly Dictionary<string, int> NoLigatures = new() { ["liga"] = 0, ["clig"] = 0 };
+    static int Units(Seg s) => s.Runs is { } r ? r.Sum(x => x.Glyphs.Length) : s.Text.EnumerateRunes().Count();
+    static bool MayBeRtl(string s)
+    {
+        foreach (var c in s)
+            if (c >= '\u0590' && (c <= '\u08FF' || c is >= '\uFB1D' and <= '\uFEFF' or >= '\u200E' and <= '\u200F' or >= '\u202A' and <= '\u202E' or >= '\u2066' and <= '\u2069') || c is >= '\uD802' and <= '\uD803' or >= '\uD83A' and <= '\uD83B') return true;
+        return false;
+    }
 
     static string N(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
@@ -120,11 +140,11 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
         var cid = editor.AddObject(Dict([.. cidDict]));
 
         var cm = new StringBuilder("/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n/CMapName /Adobe-Identity-UCS def /CMapType 2 def\n1 begincodespacerange <0000> <FFFF> endcodespacerange\n");
-        foreach (var chunk in e.Uni.Chunk(100))
+        foreach (var chunk in e.Uni.Where(x => x.Value.Length > 0).Chunk(100))
         {
             cm.Append(chunk.Length).Append(" beginbfchar\n");
-            foreach (var (g, u) in chunk)
-                cm.Append('<').Append(e.Code(g).ToString("X4")).Append("> <").Append(u > 0xFFFF ? char.ConvertFromUtf32(u).Select(c => ((int)c).ToString("X4")).Aggregate((a, b) => a + b) : u.ToString("X4")).Append(">\n");
+            foreach (var (g, u) in chunk.Where(x => x.Value.Length > 0))
+                cm.Append('<').Append(e.Code(g).ToString("X4")).Append("> <").Append(string.Concat(u.Select(c => ((int)c).ToString("X4")))).Append(">\n");
             cm.Append("endbfchar\n");
         }
         cm.Append("endcmap CMapName currentdict /CMap defineresource pop end end\n");
@@ -182,11 +202,9 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
         }
         double MeasureSeg(Item it, Seg s, double size)
         {
-            if (s.Emb is { } e)
+            if (s.Emb is not null)
             {
-                double w = 0;
-                foreach (var rn in s.Text.EnumerateRunes()) w += e.Font.Advance(e.Font.LookupAny(rn.Value));
-                return w / 1000.0 * size;
+                return s.Runs!.Sum(r => r.Advance) / 1000.0 * size;
             }
             if (s.Orig is { } o)
             {
@@ -200,9 +218,13 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
         // Splits a line into runs: the original page font where it has the glyph, then the chosen font, then any installed font that has it.
         List<Seg> Segment(Item it, string line, OrigFont? orig, Embedded? primary)
         {
-            var segs = new List<(Embedded? E, OrigFont? O, StringBuilder T)>();
-            foreach (var rn in line.EnumerateRunes())
+            var levels = MayBeRtl(line) ? Bidi.Resolve(line).Levels : null;
+            var segs = new List<(Embedded? E, OrigFont? O, StringBuilder T, int Level)>();
+            for (var i = 0; i < line.Length;)
             {
+                System.Text.Rune.DecodeFromUtf16(line.AsSpan(i), out var rn, out var consumed);
+                var emoji = UnicodeData.EmojiClusterLength(line, i, line.Length);
+                var unit = emoji > 0 ? emoji : consumed;
                 Embedded? e = null; OrigFont? o = null;
                 if (orig?.Ref is not null && orig.Font.TryEncode(rn.Value, out _, out _)) o = orig;
                 else if (primary is not null)
@@ -212,13 +234,32 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                     else e = primary;
                 }
                 else if (!StdCovers(rn.Value) && catalog.Fallback(rn.Value, it.Bold, it.Italic) is { } fb2) e = GetEmb(fb2);
-                if (e is not null) { var gid = e.Font.LookupAny(rn.Value); if (gid > 0) e.Uni.TryAdd(gid, rn.Value); }
-                if (segs.Count == 0 || segs[^1].E != e || segs[^1].O != o) segs.Add((e, o, new StringBuilder()));
-                segs[^1].T.Append(rn.ToString());
+                var level = levels?[i] ?? 0;
+                if (segs.Count == 0 || segs[^1].E != e || segs[^1].O != o || segs[^1].Level != level) segs.Add((e, o, new StringBuilder(), level));
+                segs[^1].T.Append(line, i, unit);
+                i += unit;
             }
-            return segs.Select(s => new Seg(s.T.ToString(), s.E, s.O)).ToList();
-        }
-        foreach (var it in items)
+            var opts = it.Spacing != 0 ? new ShapingOptions { Features = NoLigatures } : null;
+            var result = new List<Seg>(segs.Count);
+            foreach (var (e, o, tb, level) in segs)
+            {
+                var text = tb.ToString();
+                var rtl = (level & 1) == 1;
+                if (e is not null)
+                {
+                    var runs = TextShaper.ItemizeRun(text, 0, text.Length, rtl).Select(x => TextShaper.Shape(e.Font, text, x.Start, x.Length, rtl, x.Script, opts)).ToList();
+                    if (rtl) runs.Reverse();
+                    result.Add(new Seg(text, e, o, level, runs));
+                }
+                else
+                {
+                    if (rtl) text = string.Concat(text.EnumerateRunes().Reverse().Select(r => char.ConvertFromUtf32(UnicodeData.Mirrored(r.Value))));
+                    result.Add(new Seg(text, e, o, level));
+                }
+            }
+            if (levels is null) return result;
+            return Bidi.VisualOrder(result.Select(s => s.Level).ToList()).Select(i => result[i]).ToList();
+        }        foreach (var it in items)
         {
             sb.Append("q\n");
             if (it.Opacity is > 0 and < 1)
@@ -243,7 +284,7 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                     var sourceText = it.Orig is not null ? original?.Invoke(it) : null;
                     var orig = it.OStyle is not null && it.OStyle == $"{it.Font}|{it.Bold.ToString().ToLowerInvariant()}|{it.Italic.ToString().ToLowerInvariant()}" ? sourceText : null;
                     var segLines = lines.Select(l => Segment(it, l, orig, ef)).ToList();
-                    var widths = segLines.Select((segs, li) => segs.Sum(s => MeasureSeg(it, s, size)) + tc * lines[li].EnumerateRunes().Count()).ToArray();
+                    var widths = segLines.Select((segs, li) => segs.Sum(s => MeasureSeg(it, s, size) + tc * Units(s))).ToArray();
                     var boxW = it.W > 0 ? it.W : widths.Max();
                     double Left(int li) => it.Align switch { "center" => (boxW - widths[li]) / 2, "right" => boxW - widths[li], _ => 0 };
                     var rule = new StringBuilder();
@@ -275,10 +316,9 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                             string key, shown;
                             if (seg.Emb is { } se)
                             {
-                                key = se.Key;
-                                var hex = new StringBuilder("<");
-                                foreach (var rn in seg.Text.EnumerateRunes()) hex.Append(se.Code(se.Font.LookupAny(rn.Value)).ToString("X4"));
-                                shown = hex + ">";
+                                sb.Append($"/{se.Key} {N(size)} Tf\n");
+                                foreach (var run in seg.Runs!) ShapedPdfWriter.Write(sb, run, size, se.Code, g => Math.Round(se.Font.Advance(g)), se.Map);
+                                continue;
                             }
                             else if (seg.Orig is { Ref: { } fontRef } so)
                             {
