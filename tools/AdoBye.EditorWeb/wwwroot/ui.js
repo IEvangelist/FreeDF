@@ -55,11 +55,11 @@
   }
 
   // Command palette: lists the enabled toolbar controls, so it can never drift from the real UI.
-  const split = t => { const m = /^(.*?)\s*\(([^)]+)\)$/.exec(t); return m ? [m[1], m[2]] : [t, '']; };
+  const split = t => { const m = /^(.*?)\s*\(([^)]+)\)$/.exec(t); return m && /^[A-Z0-9[\]]/.test(m[2]) ? [m[1], m[2]] : [t, '']; };
   function commands() {
     const list = [];
     for (const b of qa('header button, header a[href], #tools button[title], #tools label.btn[title]')) {
-      const t = b.title || b.dataset.tip || b.getAttribute('aria-label'); if (!t || b.disabled || b.closest('[hidden]')) continue;
+      const t = b.title || b.dataset.tip || b.getAttribute('aria-label'); if (!t || b.disabled || b.closest('[hidden]') || b.id === 'more') continue;
       const [label, key] = split(t); list.push({ label, key, run: () => b.click() });
     }
     const sys = (name, v) => ({ label: `Theme: ${name}`, run: () => setTheme(v) });
@@ -75,6 +75,7 @@
       input.setAttribute('role', 'combobox'); input.setAttribute('aria-expanded', 'true'); input.setAttribute('aria-controls', ul.id); input.setAttribute('aria-label', 'Command');
       ul.setAttribute('role', 'listbox'); ul.setAttribute('aria-label', 'Commands');
       const all = commands(); let shown = [], at = 0;
+      const none = el('div', { className: 'none', textContent: 'No matching commands', hidden: true }); none.setAttribute('role', 'status');
       const draw = () => {
         const f = input.value.trim().toLowerCase();
         shown = all.filter(c => !f || c.label.toLowerCase().includes(f)); at = Math.min(at, Math.max(shown.length - 1, 0));
@@ -82,7 +83,8 @@
           const li = el('li', {}, c.label, ...(c.key ? [el('kbd', { textContent: c.key })] : [])); li.id = `${ul.id}-${i}`; li.setAttribute('role', 'option');
           li.setAttribute('aria-selected', i === at); li.onpointerdown = e => e.preventDefault(); li.onclick = () => run(c); return li;
         }));
-        if (!shown.length) ul.append(el('li', { className: 'none', textContent: 'No matching commands' }));
+        if (!shown.length) ul.replaceChildren();
+        ul.hidden = !shown.length; none.hidden = !!shown.length; input.setAttribute('aria-expanded', !!shown.length);
         input.setAttribute('aria-activedescendant', shown.length ? `${ul.id}-${at}` : ''); q('[aria-selected="true"]', ul)?.scrollIntoView({ block: 'nearest' });
       };
       const run = c => { close(); setTimeout(c.run, 0); };
@@ -91,7 +93,7 @@
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (shown.length) at = (at + (e.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length; draw(); }
         else if (e.key === 'Enter' && shown[at]) { e.preventDefault(); run(shown[at]); }
       };
-      box.append(input, ul); draw(); input.focus();
+      box.append(input, ul, none); draw(); input.focus();
     });
   }
 
@@ -139,14 +141,14 @@
   addEventListener('keydown', e => {
     const open = q('.cm'); if (!open || e.ctrlKey || e.metaKey || e.altKey) return;
     const cur = document.activeElement?.closest?.('.cm'), menu = cur || open, k = e.key, list = items(menu), i = list.indexOf(document.activeElement);
-    const go = n => { e.preventDefault(); e.stopImmediatePropagation(); list[(n + list.length) % list.length]?.focus(); };
+    const go = n => { e.preventDefault(); e.stopImmediatePropagation(); for (const o of qa('[data-open]', menu)) { delete o.dataset.open; } list[(n + list.length) % list.length]?.focus(); };
     if (k === 'ArrowDown') go(i + 1); else if (k === 'ArrowUp') go(i < 0 ? list.length - 1 : i - 1); else if (k === 'Home') go(0); else if (k === 'End') go(list.length - 1);
     else if (k === 'Tab') closeMenus();
     else if ((k === 'ArrowRight' || k === 'Enter' || k === ' ') && document.activeElement?.classList.contains('has-sub')) {
       e.preventDefault(); e.stopImmediatePropagation(); const s = q(':scope > .cm.sub', document.activeElement);
-      if (s) { document.activeElement.dataset.open = ''; s.style.display = 'block'; document.activeElement.dispatchEvent(new PointerEvent('pointerenter')); items(s)[0]?.focus(); }
+      if (s) { document.activeElement.dataset.open = ''; document.activeElement.dispatchEvent(new PointerEvent('pointerenter')); items(s)[0]?.focus(); }
     } else if (k === 'ArrowLeft' && menu.classList.contains('sub')) {
-      e.preventDefault(); e.stopImmediatePropagation(); const p = menu.parentElement; menu.style.display = ''; p.focus();
+      e.preventDefault(); e.stopImmediatePropagation(); const p = menu.parentElement; delete p.dataset.open; p.focus();
     } else if (k.length === 1 && /\S/.test(k)) {
       e.preventDefault(); e.stopImmediatePropagation();
       const n = list.findIndex((b, j) => j > i && b.textContent.trim().toLowerCase().startsWith(k.toLowerCase())), w = n < 0 ? list.findIndex(b => b.textContent.trim().toLowerCase().startsWith(k.toLowerCase())) : n;
@@ -217,6 +219,7 @@
   function pageStatus() {
     const n = $('pn')?.value, t = $('pt')?.textContent;
     const text = n && t && t !== '/ 0' ? `Page ${n} ${t.replace('/', 'of')}` : '';
+    const base = $('base'), alt = `${text}, ${$('name')?.textContent ?? 'document'}`; if (base && text && base.alt !== alt) base.alt = alt;
     if (text && text !== lastPage && lastPage) say(text); lastPage = text;
     const name = $('name')?.textContent, has = name && !$('doc')?.classList.contains('empty');
     const title = has ? `${name} - AdoBye` : 'AdoBye - PDF Editor'; if (document.title !== title) document.title = title;
@@ -254,6 +257,12 @@
   }, true);
 
   // Pages list: roving focus, and Alt+Arrow reorders (the keyboard alternative to dragging a thumbnail).
+  // Focus a page thumbnail once the editor has finished updating the list (it rebuilds thumbnails after reorders).
+  function focusThumb(index, ready) {
+    const start = performance.now();
+    const tick = () => { const n = qa('#thumbs > .thumb')[index]; if (n && ready(n)) { n.tabIndex = 0; n.focus(); return; } if (performance.now() - start < 2000) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
   document.addEventListener('keydown', e => {
     const t = e.target.closest?.('#thumbs > .thumb'); if (!t || e.target !== t) return;
     const all = qa('#thumbs > .thumb'), i = all.indexOf(t);
@@ -261,10 +270,22 @@
     const d = { ArrowDown: 1, ArrowUp: -1 }[e.key]; if (!d) { if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); e.stopPropagation(); all.at(e.key === 'Home' ? 0 : -1).focus(); } return; }
     e.preventDefault(); e.stopPropagation(); const n = all[i + d]; if (!n) return;
     if (e.altKey) {
+      all.forEach(x => x.dataset.stale = '1');
       t.ondragstart?.(); n.ondrop?.({ preventDefault() { } }); say(`Moved page ${i + 1} to position ${i + d + 1}`);
-      const after = () => { const moved = qa('#thumbs > .thumb')[i + d]; moved ? moved.focus() : requestAnimationFrame(after); }; setTimeout(after, 50);
-    } else { n.focus(); n.click(); const keep = () => qa('#thumbs > .thumb')[i + d]?.focus(); setTimeout(keep, 30); }
+      focusThumb(i + d, x => !x.dataset.stale);
+    } else { n.click(); focusThumb(i + d, x => x.classList.contains('sel')); }
   }, true);
+
+  // Touch long-press opens the page context menu (the pointer alternative to right-click).
+  let pressTimer = 0, pressAt = null;
+  const cancelPress = () => { clearTimeout(pressTimer); pressAt = null; };
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch' || !e.target.closest?.('#layer')) return;
+    const t = e.target, x = e.clientX, y = e.clientY; pressAt = [x, y]; clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { if (t.isConnected && pressAt) t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y })); }, 650);
+  }, true);
+  document.addEventListener('pointermove', e => { if (pressAt && Math.hypot(e.clientX - pressAt[0], e.clientY - pressAt[1]) > 8) cancelPress(); }, true);
+  for (const type of ['pointerup', 'pointercancel', 'contextmenu']) document.addEventListener(type, cancelPress, true);
 
   // Resizable side panels; the grid already reads --lw and --rw, so this only writes those properties.
   function resizers() {
@@ -284,6 +305,26 @@
     }
   }
 
+  // Narrow screens: secondary header actions move into one overflow menu instead of scrolling the header sideways.
+  function overflow() {
+    const ids = ['rl', 'rr', 'del', 'title', 'pr', 'fb', 'fs', 'appearance'], dl = $('dl'); if (!dl || $('more')) return;
+    for (const id of ids) $(id)?.classList.add('hdr2');
+    const more = el('button', { id: 'more', type: 'button', className: 'icon', title: 'More actions' }); more.setAttribute('aria-haspopup', 'menu');
+    more.innerHTML = '<svg class="i"><use href="#i-more"/></svg>'; more.setAttribute('aria-label', 'More actions');
+    more.onclick = () => {
+      q('.cm')?.remove();
+      const m = el('div', { className: 'cm' }); m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'More actions');
+      for (const id of ids) {
+        const b = $(id); if (!b) continue; const t = (b.dataset.tip || b.title || b.getAttribute('aria-label') || id).replace(/\s*\(.*\)$/, '');
+        const i = el('button', { type: 'button', className: 'cm-i', disabled: b.disabled }, el('span', { textContent: t })); i.setAttribute('role', 'menuitem');
+        i.onclick = () => { m.remove(); id === 'appearance' ? appearanceMenu(more) : b.click(); }; m.append(i);
+      }
+      document.body.append(m); const r = more.getBoundingClientRect();
+      m.style.left = Math.max(4, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 4)) + 'px'; m.style.top = r.bottom + 4 + 'px'; q('.cm-i:not(:disabled)', m)?.focus();
+    };
+    dl.before(more);
+  }
+
   // Wiring.
   const errorRe = /not saved|could not|unsupported|cannot|failed|unavailable|error|not allowed|do not allow|did not/i, okRe = /^(Saved|Merged|Opened|Copied|Undid|Redid|Exported)/;
   let lastStatus = '';
@@ -300,7 +341,7 @@
     const skip = el('a', { className: 'skip', href: '#view', textContent: 'Skip to document' }); skip.onclick = e => { e.preventDefault(); $('view')?.focus(); };
     document.body.prepend(skip);
     const ap = $('appearance'); if (ap) ap.onclick = () => appearanceMenu(ap);
-    resizers(); sweep();
+    resizers(); overflow(); sweep();
     const mo = new MutationObserver(schedule);
     for (const id of ['view', 'thumbs', 'props']) if ($(id)) mo.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     mo.observe($('zv'), { childList: true, characterData: true, subtree: true });
