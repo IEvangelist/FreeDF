@@ -70,7 +70,7 @@ public static class PdfJavaScriptAnalyzer
     static readonly string[] UrlPrefixes = ["http://", "https://", "ftp://", "file://", "javascript:", "mailto:", "\\\\"];
 
     enum Kind { Ident, Number, String, Punct }
-    readonly record struct Token(Kind Kind, string Text, int Line);
+    readonly record struct Token(Kind Kind, string Text, int Line, string? Raw = null);
 
     public static PdfJsAnalysis Analyze(string source)
     {
@@ -97,9 +97,9 @@ public static class PdfJavaScriptAnalyzer
                 case Kind.String:
                     foreach (var u in ExtractUrls(t.Text))
                         if (urls.Count < MaxItems && urlSet.Add(u)) urls.Add(u);
-                    if (IsNopSled(t.Text)) Add("HeapSpray", "NopSledLiteral", t.Line, 4);
+                    if (IsNopSled(t.Raw ?? t.Text) || IsNopSled(t.Text)) Add("HeapSpray", "NopSledLiteral", t.Line, 4);
                     if (t.Text.Length >= 10_000) Add("HeapSpray", "VeryLargeStringLiteral", t.Line, 2);
-                    if (EscapeDensity(t.Text) > 0.5 && t.Text.Length >= 64) Add("Obfuscation", "DenseEscapedString", t.Line, 2);
+                    if ((t.Raw ?? t.Text) is var rawText && EscapeDensity(rawText) > 0.5 && rawText.Length >= 64) Add("Obfuscation", "DenseEscapedString", t.Line, 2);
                     break;
                 case Kind.Ident:
                     if (t.Text is "while" or "for") hasLoop = true;
@@ -190,7 +190,7 @@ public static class PdfJavaScriptAnalyzer
 
     static bool IsNopSled(string s)
     {
-        foreach (var marker in new[] { "%u9090", "%u0c0c", "%u0a0a", "\u9090\u9090", "\u0c0c\u0c0c", "\u0a0a\u0a0a", "\\x90\\x90", "%90%90" })
+        foreach (var marker in new[] { "%u9090", "%u0c0c", "%u0a0a", "\u9090\u9090", "\u0c0c\u0c0c", "\u0a0a\u0a0a", "\\x90\\x90", "\\u9090", "\\u0c0c", "\\u0a0a", "%90%90" })
         {
             var count = 0;
             var from = 0;
@@ -236,6 +236,7 @@ public static class PdfJavaScriptAnalyzer
                 var sb = new StringBuilder();
                 var startLine = line;
                 i++;
+                var rawStart = i;
                 while (i < s.Length && s[i] != c)
                 {
                     if (s[i] == '\n') { line++; if (c != '`') break; }
@@ -248,8 +249,9 @@ public static class PdfJavaScriptAnalyzer
                     if (sb.Length < MaxStringLength) sb.Append(s[i]);
                     i++;
                 }
+                var raw = s.Substring(rawStart, Math.Min(i - rawStart, 4 * MaxStringLength));
                 i++;
-                tokens.Add(new Token(Kind.String, sb.ToString(), startLine));
+                tokens.Add(new Token(Kind.String, sb.ToString(), startLine, raw));
                 continue;
             }
             if (char.IsLetter(c) || c is '_' or '$')
@@ -301,12 +303,25 @@ public static class JavaScriptFeatures
 {
     const int MaxSources = 5000;
     const int MaxStreamBytes = 4 * 1024 * 1024;
+    const long MaxTotalBytes = 32L * 1024 * 1024;
 
-    /// <summary>Statically analyses every action and XFA script. Nothing is executed and no URL is opened.</summary>
+    sealed class Budget
+    {
+        public long Remaining = MaxTotalBytes;
+        public bool Truncated;
+        public readonly Dictionary<PdfRef, PdfJsAnalysis?> ByRef = new();
+        public readonly Dictionary<object, PdfJsAnalysis?> ByObject = new(ReferenceEqualityComparer.Instance);
+    }
+
+    /// <summary>
+    /// Statically analyses every action and XFA script. Nothing is executed and no URL is opened. Identical script objects are analysed once
+    /// (memoised by reference), and decoded plus analysed bytes share a 32 MiB budget; scripts beyond it get a null analysis and set Truncated.
+    /// </summary>
     public static PdfJsReport GetJavaScriptReport(this PdfDocument doc)
     {
         var f = doc.File;
         var sources = new List<PdfJsSource>();
+        var budget = new Budget();
         var truncated = false;
         var report = doc.GetActionReport();
         truncated |= report.Truncated;
@@ -314,9 +329,9 @@ public static class JavaScriptFeatures
         {
             if (a.JavaScript is null) continue;
             if (sources.Count >= MaxSources) { truncated = true; break; }
-            var text = ScriptText(f, a.JavaScript, ref truncated);
+            var analysis = AnalyzeScript(f, a.JavaScript, budget);
             var loc = $"{a.Scope}/{a.Trigger}" + (a.FieldName is null ? "" : $"/{a.FieldName}") + (a.PageIndex is { } p ? $"/page{p}" : "") + (a.Name is null ? "" : $"/{a.Name}");
-            sources.Add(new PdfJsSource("Action", loc, "JavaScript", text is null ? null : PdfJavaScriptAnalyzer.Analyze(text)));
+            sources.Add(new PdfJsSource("Action", loc, "JavaScript", analysis));
         }
         var xfa = doc.GetXfaReport();
         truncated |= xfa.Truncated;
@@ -324,23 +339,49 @@ public static class JavaScriptFeatures
         {
             if (sources.Count >= MaxSources) { truncated = true; break; }
             var js = !s.IsFormCalc;
-            sources.Add(new PdfJsSource("Xfa", s.Source + (s.Activity is null ? "" : "#" + s.Activity), js ? "JavaScript" : "FormCalc",
-                js ? PdfJavaScriptAnalyzer.Analyze(s.Text) : null));
+            PdfJsAnalysis? analysis = null;
+            if (js)
+            {
+                if (budget.Remaining >= s.Text.Length) { budget.Remaining -= s.Text.Length; analysis = PdfJavaScriptAnalyzer.Analyze(s.Text); }
+                else budget.Truncated = true;
+            }
+            sources.Add(new PdfJsSource("Xfa", s.Source + (s.Activity is null ? "" : "#" + s.Activity), js ? "JavaScript" : "FormCalc", analysis));
         }
+        truncated |= budget.Truncated;
         var risk = sources.Select(s => s.Analysis?.Risk ?? PdfJsRisk.None).DefaultIfEmpty().Max();
         return new PdfJsReport(sources, risk, truncated);
     }
 
-    static string? ScriptText(PdfFile f, PdfObject script, ref bool truncated)
+    static PdfJsAnalysis? AnalyzeScript(PdfFile f, PdfObject script, Budget budget)
     {
-        switch (f.Resolve(script))
+        if (script is PdfRef r && budget.ByRef.TryGetValue(r, out var hit)) return hit;
+        var resolved = f.Resolve(script);
+        if (resolved is null) return null;
+        if (script is not PdfRef && budget.ByObject.TryGetValue(resolved, out hit)) return hit;
+        var text = ScriptText(f, resolved, budget);
+        PdfJsAnalysis? result = null;
+        if (text is not null)
+        {
+            if (budget.Remaining >= text.Length) { budget.Remaining -= text.Length; result = PdfJavaScriptAnalyzer.Analyze(text); }
+            else budget.Truncated = true;
+        }
+        if (script is PdfRef r2) budget.ByRef[r2] = result;
+        else budget.ByObject[resolved] = result;
+        return result;
+    }
+
+    static string? ScriptText(PdfFile f, PdfObject resolved, Budget budget)
+    {
+        switch (resolved)
         {
             case PdfString s: return s.Text;
             case PdfStream st:
+                if (budget.Remaining <= 0) { budget.Truncated = true; return null; }
                 byte[] bytes;
                 try { bytes = f.DecodeStream(st); }
                 catch (Exception e) when (e is PdfParseException or InvalidDataException or InvalidOperationException) { return null; }
-                if (bytes.Length > MaxStreamBytes) { bytes = bytes[..MaxStreamBytes]; truncated = true; }
+                budget.Remaining -= bytes.Length;
+                if (bytes.Length > MaxStreamBytes) { bytes = bytes[..MaxStreamBytes]; budget.Truncated = true; }
                 if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
                 if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
                 return Encoding.UTF8.GetString(bytes);

@@ -37,13 +37,18 @@ public static class PrcReader
     public const int MaxUncompressedFiles = 1024;
     public const long MaxInflatedBytes = 64L * 1024 * 1024;
     public const long MaxTotalInflatedBytes = 256L * 1024 * 1024;
+    public const long MaxTotalInputBytes = 64L * 1024 * 1024;
 
     static readonly string[] SectionNames = ["Globals", "Tree", "Tessellation", "Geometry", "ExtraGeometry"];
 
     public static bool LooksLikePrc(ReadOnlySpan<byte> d) => d.Length >= 11 && d[0] == 'P' && d[1] == 'R' && d[2] == 'C';
 
-    public static PrcModel Read(ReadOnlySpan<byte> data)
+    public static PrcModel Read(ReadOnlySpan<byte> data) => Read(data.ToArray());
+
+    public static PrcModel Read(byte[] array)
     {
+        ReadOnlySpan<byte> data = array;
+        var budget = new Budget();
         var truncated = false;
         var malformed = false;
         var structures = new List<PrcFileStructure>();
@@ -67,19 +72,26 @@ public static class PrcReader
             if (data.Length - o < 4) malformed = true;
             else modelOffset = U32(data, ref o);
         }
-        long inflatedTotal = 0;
-        foreach (var start in offsets)
+        foreach (var start in offsets.Distinct())
         {
             if (start < 0 || start >= data.Length) { malformed = true; continue; }
-            var fs = ReadStructure(data, start, ref inflatedTotal, ref truncated);
+            var fs = ReadStructure(array, start, budget, ref truncated);
             if (fs is null) { malformed = true; continue; }
             structures.Add(fs);
         }
         return new PrcModel(minimal, authoring, fsUuid, appUuid, structures, modelOffset, truncated, malformed);
     }
 
-    static PrcFileStructure? ReadStructure(ReadOnlySpan<byte> data, long start, ref long inflatedTotal, ref bool truncated)
+    sealed class Budget
     {
+        public long Inflated;
+        public long Input;
+        public readonly Dictionary<(long, long), (long? Length, bool Cut)> Cache = new();
+    }
+
+    static PrcFileStructure? ReadStructure(byte[] array, long start, Budget budget, ref bool truncated)
+    {
+        ReadOnlySpan<byte> data = array;
         var o = (int)start;
         if (data.Length - o < 3 + 8 + 32 + 4 || data[o] != 'P' || data[o + 1] != 'R' || data[o + 2] != 'C') return null;
         o += 3;
@@ -113,33 +125,40 @@ public static class PrcReader
             var cut = false;
             if (zlib)
             {
-                inflated = Inflate(slice, MaxInflatedBytes, MaxTotalInflatedBytes - inflatedTotal, out cut);
-                if (inflated is { } n) inflatedTotal += n;
-                if (cut) truncated = true;
+                if (budget.Cache.TryGetValue((begin, end), out var hit)) { inflated = hit.Length; cut = hit.Cut; }
+                else if (budget.Input + slice.Length > MaxTotalInputBytes) { cut = true; truncated = true; }
+                else
+                {
+                    budget.Input += slice.Length;
+                    inflated = Inflate(array, (int)begin, (int)(end - begin), MaxInflatedBytes, MaxTotalInflatedBytes - budget.Inflated, out cut, out var produced);
+                    budget.Inflated += produced;
+                    budget.Cache[(begin, end)] = (inflated, cut);
+                    if (cut) truncated = true;
+                }
             }
             sections.Add(new PrcSection(SectionNames[i], begin, end - begin, zlib, inflated, cut));
         }
         return new PrcFileStructure(start, minimal, authoring, fsUuid, appUuid, sizes, sections);
     }
 
-    static long? Inflate(ReadOnlySpan<byte> compressed, long maxOne, long maxRemaining, out bool truncated)
+    static long? Inflate(byte[] array, int offset, int count, long maxOne, long maxRemaining, out bool truncated, out long produced)
     {
         truncated = false;
+        produced = 0;
         var limit = Math.Min(maxOne, maxRemaining);
         if (limit <= 0) { truncated = true; return null; }
         try
         {
-            using var input = new MemoryStream(compressed.ToArray());
+            using var input = new MemoryStream(array, offset, count, writable: false);
             using var z = new ZLibStream(input, CompressionMode.Decompress);
             var buffer = new byte[16384];
-            long total = 0;
             int n;
             while ((n = z.Read(buffer, 0, buffer.Length)) > 0)
             {
-                total += n;
-                if (total > limit) { truncated = true; return limit; }
+                produced += n;
+                if (produced > limit) { truncated = true; produced = limit; return limit; }
             }
-            return total;
+            return produced;
         }
         catch (InvalidDataException) { return null; }
     }

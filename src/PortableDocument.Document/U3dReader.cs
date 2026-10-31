@@ -10,10 +10,12 @@ public sealed record U3dFileHeader(
     uint ProfileIdentifier,
     uint DeclarationSize,
     ulong FileSize,
-    uint CharacterEncoding)
+    uint CharacterEncoding,
+    double? UnitsScalingFactor = null)
 {
-    public bool NoCompression => (ProfileIdentifier & 0x1) != 0;
     public bool Extensible => (ProfileIdentifier & 0x2) != 0;
+    public bool NoCompression => (ProfileIdentifier & 0x4) != 0;
+    public bool DefinedUnits => (ProfileIdentifier & 0x8) != 0;
 }
 
 /// <summary>One U3D block envelope (ECMA-363 section 9.3): type, payload size and metadata size. The payload is not retained.</summary>
@@ -78,12 +80,12 @@ public static class U3dReader
         0xFFFFFF3C => "CLODProgressiveMeshContinuation",
         0xFFFFFF3E => "PointSetContinuation",
         0xFFFFFF3F => "LineSetContinuation",
-        0xFFFFFF42 => "AnimationModifier",
-        0xFFFFFF43 => "BoneWeightModifier",
-        0xFFFFFF44 => "CLODModifier",
+        0xFFFFFF41 => "GlyphModifier2D",
+        0xFFFFFF42 => "SubdivisionModifier",
+        0xFFFFFF43 => "AnimationModifier",
+        0xFFFFFF44 => "BoneWeightModifier",
         0xFFFFFF45 => "ShadingModifier",
-        0xFFFFFF46 => "SubdivisionModifier",
-        0xFFFFFF47 => "GlyphModifier",
+        0xFFFFFF46 => "CLODModifier",
         0xFFFFFF51 => "LightResource",
         0xFFFFFF52 => "ViewResource",
         0xFFFFFF53 => "LitTextureShader",
@@ -91,6 +93,7 @@ public static class U3dReader
         0xFFFFFF55 => "TextureResource",
         0xFFFFFF56 => "MotionResource",
         0xFFFFFF5C => "TextureContinuation",
+        _ when t is >= 0x100 and <= 0x00FFFFFF => "NewObject",
         _ => "Unknown",
     };
 
@@ -145,7 +148,7 @@ public static class U3dReader
                 case 0xFFFFFF24: views++; break;
                 case 0xFFFFFF21: groups++; break;
                 case 0xFFFFFF55: textures++; break;
-                case 0xFFFFFF53 or 0xFFFFFF45: shaders++; break;
+                case 0xFFFFFF53: shaders++; break;
                 case 0xFFFFFF54: materials++; break;
                 case 0xFFFFFF31 or 0xFFFFFF36 or 0xFFFFFF37: meshes++; break;
                 case 0xFFFFFF3B or 0xFFFFFF3C or 0xFFFFFF3E or 0xFFFFFF3F or 0xFFFFFF5C: cont++; break;
@@ -163,10 +166,14 @@ public static class U3dReader
     static U3dFileHeader? ReadHeader(ReadOnlySpan<byte> p)
     {
         if (p.Length < 24) return null;
+        var profile = BinaryPrimitives.ReadUInt32LittleEndian(p[4..]);
+        double? units = null;
+        if ((profile & 0x8) != 0 && p.Length >= 32)
+            units = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(p[24..]));
         return new U3dFileHeader(
             BinaryPrimitives.ReadInt16LittleEndian(p), BinaryPrimitives.ReadInt16LittleEndian(p[2..]),
-            BinaryPrimitives.ReadUInt32LittleEndian(p[4..]), BinaryPrimitives.ReadUInt32LittleEndian(p[8..]),
-            BinaryPrimitives.ReadUInt64LittleEndian(p[12..]), p.Length >= 24 ? BinaryPrimitives.ReadUInt32LittleEndian(p[20..]) : 0);
+            profile, BinaryPrimitives.ReadUInt32LittleEndian(p[8..]),
+            BinaryPrimitives.ReadUInt64LittleEndian(p[12..]), BinaryPrimitives.ReadUInt32LittleEndian(p[20..]), units);
     }
 
     // U3D strings are a U16 byte count followed by UTF-8 bytes (ECMA-363 section 9.2.1).

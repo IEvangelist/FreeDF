@@ -9,8 +9,8 @@ using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 namespace AdoBye.Tests;
 
 /// <summary>
-/// Inert 3D (U3D/PRC), media evaluation, RichMedia, XFA and JavaScript analysis tests. Fixtures are hand-built in this file
-/// (no third-party sample data, so no extra licences apply).
+/// Inert 3D (U3D/PRC), media evaluation, RichMedia, XFA and JavaScript analysis tests. All fixtures are synthetic, hand-built in this
+/// file (no real third-party U3D/PRC/XFA samples are bundled, so no extra licences apply).
 /// </summary>
 public class InertActiveContentTests
 {
@@ -44,8 +44,8 @@ public class InertActiveContentTests
         return Cat(parts.ToArray());
     }
 
-    static byte[] Header() => Block(0x00443355, Cat(
-        [1, 0, 0, 0], U32(0x1), U32(0), new byte[8], U32(106)));
+    static byte[] Header(uint profile = 0x4) => Block(0x00443355, Cat(
+        [1, 0, 0, 0], U32(profile), U32(0), new byte[8], U32(106)));
 
     static byte[] BuildU3d(int extraGroups = 0)
     {
@@ -91,6 +91,8 @@ public class InertActiveContentTests
         Assert.False(m.Truncated);
         Assert.Equal(1, m.Header!.MajorVersion);
         Assert.True(m.Header.NoCompression);
+        Assert.False(m.Header.Extensible);
+        Assert.False(m.Header.DefinedUnits);
         Assert.Equal(106u, m.Header.CharacterEncoding);
         Assert.Equal(new[] { "Group", "Model", "Light", "View" }, m.Nodes.Select(n => n.Kind));
         Assert.Equal(["Root"], m.Nodes[1].Parents);
@@ -126,7 +128,9 @@ public class InertActiveContentTests
         return ms.ToArray();
     }
 
-    static byte[] BuildPrc(byte[] sectionPayload)
+    static byte[] BuildPrc(byte[] sectionPayload) => BuildPrcRaw(Zlib(sectionPayload));
+
+    static byte[] BuildPrcRaw(byte[] sec)
     {
         var uuid = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
         var fsBody = new List<byte>();
@@ -138,7 +142,6 @@ public class InertActiveContentTests
         var headerLen = 3 + 8 + 32 + 4 + 4 + 4;
         var offsetsPos = headerLen + fsBody.Count;
         var sectionsStart = offsetsPos + 5 * 4;
-        var sec = Zlib(sectionPayload);
         var offsets = Enumerable.Range(0, 5).Select(i => (uint)(sectionsStart + i * sec.Length)).ToArray();
         var file = new List<byte>();
         file.AddRange("PRC"u8.ToArray());
@@ -182,6 +185,87 @@ public class InertActiveContentTests
         var data = doc.ReadModel(stream);
         Assert.Equal("U3D", data.Format);
         Assert.Equal(4, data.U3d!.Nodes.Count);
+    }
+
+    [Theory]
+    [InlineData(0x0u, false, false)]
+    [InlineData(0x2u, false, false)]
+    [InlineData(0x4u, true, false)]
+    [InlineData(0x6u, true, false)]
+    [InlineData(0x8u, false, true)]
+    public void U3d_profile_flags_follow_ecma_363_values(uint profile, bool noCompression, bool definedUnits)
+    {
+        var m = U3dReader.Read(Cat(Header(profile), Block(0xFFFFFF21, NodeData("R", [], null))));
+        Assert.Equal(noCompression, m.Header!.NoCompression);
+        Assert.Equal(definedUnits, m.Header.DefinedUnits);
+        Assert.Equal((profile & 2) != 0, m.Header.Extensible);
+    }
+
+    [Fact]
+    public void U3d_modifier_block_types_and_units_follow_the_standard()
+    {
+        var header = Block(0x00443355, Cat([1, 0, 0, 0], U32(0x8), U32(0), new byte[8], U32(106), BitConverter.GetBytes(0.001)));
+        var m = U3dReader.Read(Cat(header, Block(0xFFFFFF43, []), Block(0xFFFFFF41, []), Block(0xFFFFFF46, []), Block(0x100, [])));
+        Assert.Equal(0.001, m.Header!.UnitsScalingFactor);
+        Assert.Equal(["FileHeader", "AnimationModifier", "GlyphModifier2D", "CLODModifier", "NewObject"], m.Blocks.Select(b => b.TypeName));
+    }
+
+    [Fact]
+    public void U3d_max_blocks_is_enforced()
+    {
+        var parts = new List<byte[]> { Header() };
+        for (var i = 0; i < U3dReader.MaxBlocks + 5; i++) parts.Add(Block(0x1234, []));
+        var m = U3dReader.Read(Cat(parts.ToArray()));
+        Assert.True(m.Truncated);
+        Assert.Equal(U3dReader.MaxBlocks, m.Blocks.Count);
+    }
+
+    [Fact]
+    public void Prc_zlib_bomb_is_capped_and_truncated_zlib_does_not_throw()
+    {
+        var bomb = PrcReader.Read(BuildPrc(new byte[70 * 1024 * 1024]));
+        Assert.True(bomb.Truncated);
+        var fs = Assert.Single(bomb.FileStructures);
+        Assert.All(fs.Sections, s => Assert.True(s.InflatedLength is null or <= PrcReader.MaxInflatedBytes));
+        Assert.Contains(fs.Sections, s => s.InflateTruncated);
+
+        var noise = new byte[2000];
+        new Random(7).NextBytes(noise);
+        var z = Zlib(noise);
+        var cut = PrcReader.Read(BuildPrcRaw(z[..(z.Length / 2)]));
+        Assert.Equal(5, Assert.Single(cut.FileStructures).Sections.Count);
+    }
+
+    [Fact]
+    public void Prc_non_monotonic_overlapping_and_duplicate_offsets_are_handled()
+    {
+        var good = BuildPrc(new byte[100]);
+        const int offsetsPos = 55 + 54;
+        var swapped = (byte[])good.Clone();
+        BinaryPrimitives.WriteUInt32LittleEndian(swapped.AsSpan(offsetsPos + 8), 10);
+        Assert.True(PrcReader.Read(swapped).Malformed);
+
+        var overlap = (byte[])good.Clone();
+        var first = BinaryPrimitives.ReadUInt32LittleEndian(overlap.AsSpan(offsetsPos));
+        for (var i = 1; i < 5; i++) BinaryPrimitives.WriteUInt32LittleEndian(overlap.AsSpan(offsetsPos + 4 * i), first);
+        var o = PrcReader.Read(overlap);
+        Assert.Equal(5, Assert.Single(o.FileStructures).Sections.Count);
+
+        // 64 header entries all pointing at the same structure yield one structure, not 64 inflations.
+        const int delta = 4 * 63;
+        var wide = new List<byte>(good[..43]);
+        wide.AddRange(U32(64));
+        for (var i = 0; i < 64; i++) wide.AddRange(U32(55 + (uint)delta));
+        wide.AddRange(U32(0));
+        var fsBytes = good[55..];
+        for (var i = 0; i < 5; i++)
+        {
+            var at = 54 + 4 * i;
+            BinaryPrimitives.WriteUInt32LittleEndian(fsBytes.AsSpan(at), BinaryPrimitives.ReadUInt32LittleEndian(fsBytes.AsSpan(at)) + (uint)delta);
+        }
+        wide.AddRange(fsBytes);
+        var d = PrcReader.Read(wide.ToArray());
+        Assert.Single(d.FileStructures);
     }
 
     // ---- multimedia -----------------------------------------------------------------------------------------------
@@ -374,6 +458,71 @@ public class InertActiveContentTests
         var many = PdfJavaScriptAnalyzer.Analyze(string.Join(";", Enumerable.Range(0, 5000).Select(i => $"function f{i}(){{}}")));
         Assert.Equal(PdfJavaScriptAnalyzer.MaxItems, many.Functions.Count);
         Assert.Equal(PdfJsRisk.None, PdfJavaScriptAnalyzer.Analyze("\"unterminated string").Risk);
+    }
+
+    [Fact]
+    public void Analyzer_detects_backslash_escaped_and_percent_u_payloads()
+    {
+        string Lit(string unit, int n) => "var s = \"" + string.Concat(Enumerable.Repeat(unit, n)) + "\";";
+        foreach (var js in new[] { Lit("\\x90", 16), Lit("\\u9090", 16), Lit("%u9090", 16), Lit("\\u0c0c", 16), Lit("%u0c0c", 16) })
+        {
+            var a = PdfJavaScriptAnalyzer.Analyze(js);
+            Assert.Contains(a.Findings, f => f.Name == "NopSledLiteral");
+            Assert.Equal(PdfJsRisk.Medium, a.Risk);
+        }
+        var dense = PdfJavaScriptAnalyzer.Analyze(Lit("\\x41", 40));
+        Assert.Contains(dense.Findings, f => f.Name == "DenseEscapedString");
+        Assert.DoesNotContain(dense.Findings, f => f.Name == "NopSledLiteral");
+        var spray = PdfJavaScriptAnalyzer.Analyze("var s = unescape(\"%u9090%u9090%u9090%u9090%u9090%u9090%u9090%u9090\"); while (s.length < 0x40000) s += s;");
+        Assert.Contains(spray.Findings, f => f.Name == "LoopedConcatenationWithSledOrLargeLiteral");
+        Assert.Equal(PdfJsRisk.High, spray.Risk);
+        Assert.Contains(PdfJavaScriptAnalyzer.Analyze(Lit("A", 10_000)).Findings, f => f.Name == "VeryLargeStringLiteral");
+    }
+
+    [Fact]
+    public void Analyzer_token_budget_truncates()
+    {
+        var a = PdfJavaScriptAnalyzer.Analyze(string.Concat(Enumerable.Repeat("a;", PdfJavaScriptAnalyzer.MaxTokens / 2 + 10)));
+        Assert.True(a.Truncated);
+        Assert.Equal(PdfJavaScriptAnalyzer.MaxTokens, a.Tokens);
+    }
+
+    [Fact]
+    public void Xml_entity_expansion_is_refused_before_expanding()
+    {
+        var laughs = "<?xml version=\"1.0\"?><!DOCTYPE lolz [<!ENTITY lol \"lol\"><!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">" +
+            "<!ENTITY lol3 \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">]><lolz>&lol3;</lolz>";
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var r = XfaReader.ParseXml(Encoding.UTF8.GetBytes(laughs));
+        Assert.True(sw.ElapsedMilliseconds < 2000);
+        Assert.NotNull(r.Error);
+        Assert.Null(r.Root?.Text);
+    }
+
+    [Fact]
+    public void Shared_compressed_script_stream_is_decoded_and_analysed_once()
+    {
+        byte[] Deflate(byte[] d)
+        {
+            using var ms = new MemoryStream();
+            using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true)) z.Write(d);
+            return ms.ToArray();
+        }
+        var bomb = Deflate(Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("a=1;\n", 800_000))));
+        const int n = 2000;
+        var sb = new StringBuilder("%PDF-2.0\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n");
+        sb.Append("3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Annots [")
+          .Append(string.Join(" ", Enumerable.Range(0, n).Select(i => $"{100 + i} 0 R"))).Append("] >> endobj\n");
+        sb.Append("7 0 obj << /S /JavaScript /JS 8 0 R >> endobj\n");
+        sb.Append($"8 0 obj << /Filter /FlateDecode /Length {bomb.Length} >> stream\n").Append(Encoding.Latin1.GetString(bomb)).Append("\nendstream\nendobj\n");
+        for (var i = 0; i < n; i++) sb.Append($"{100 + i} 0 obj << /Type /Annot /Subtype /Link /Rect [0 0 1 1] /A 7 0 R >> endobj\n");
+        sb.Append("trailer << /Root 1 0 R /Size 3000 >>\n%%EOF\n");
+        var doc = Load(sb.ToString());
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var report = doc.GetJavaScriptReport();
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), sw.Elapsed.ToString());
+        Assert.NotEmpty(report.Sources);
+        Assert.True(report.Sources.Select(s => s.Analysis).Where(a => a is not null).Distinct(ReferenceEqualityComparer.Instance).Count() <= 1);
     }
 
     [Fact]
