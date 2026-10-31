@@ -61,7 +61,8 @@ var samplesOnly = args.Length == 2 && args[0] == "--samples";
 var protectionOnly = args.Length == 2 && args[0] == "--protection";
 var viewportOnly = args.Length == 3 && args[0] == "--viewport";
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot> | --viewport <published-wwwroot> <sample.pdf>");
+var formsOnly = args.Length == 2 && args[0] == "--forms";
+if (args.Length != 1 && !viewportOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !formsOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--page-history|--samples|--protection|--crypto-perf|--forms] <published-wwwroot> | --viewport <published-wwwroot> <sample.pdf>");
 var root = Path.GetFullPath(viewportOnly ? args[1] : args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -180,6 +181,12 @@ try
     {
         await EditorJsonSafety.Run(context, address + "/csharp-pdf/");
         Check(network.IsEmpty && errors.IsEmpty, "No unexpected JSON-safety browser errors or traffic.");
+        return;
+    }
+    if (formsOnly)
+    {
+        await EditorFormAuthoring.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
     }
     if (textSelectionOnly)
