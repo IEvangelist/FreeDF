@@ -1,7 +1,7 @@
 """Cross-checks every tests/fixtures/jbig2/*.pdf against independent JBIG2 decoders and prints a matrix.
 Decoders: pdfium (pypdfium2), MuPDF/jbig2dec (PyMuPDF), pdf.js (Node, `pdfjs-dist` installed in --pdfjs DIR). Expected pixels are the
 fixture .txt files ('1' = white), which are constructed from source bitmaps and never produced by the C# decoder.
-Usage: python tools/jbig2_crosscheck.py [--pdfjs DIR]    (DIR contains node_modules/pdfjs-dist)"""
+Versions used for the recorded results: pypdfium2 5.14.0 (PDFium 156.0.8076.0), PyMuPDF 2.0 (bundled MuPDF/jbig2dec), pdfjs-dist 3.11.174 on Node 22.\nSetup: pip install pypdfium2 pymupdf pillow pikepdf; mkdir DIR && cd DIR && npm install pdfjs-dist@3.11.174.\nFixtures named unverified-* (Amd.2/Amd.3) are not implemented by any of these decoders; expect DIFF/ERR there. No public Amd.2/Amd.3 samples exist.\nUsage: python tools/jbig2_crosscheck.py [--pdfjs DIR]    (DIR contains node_modules/pdfjs-dist)"""
 import glob, json, os, subprocess, sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")

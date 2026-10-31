@@ -96,6 +96,7 @@ public static class Jbig2Decoder
         public int PageDefault;
         public bool UnknownHeight;
         public int PageNum = -1, IgnoredPage = -1;
+        public bool Unverified;
     }
 
     static readonly int[] SltpGeneric = [0x9B25, 0x0795, 0x00E5, 0x0195];
@@ -115,6 +116,7 @@ public static class Jbig2Decoder
             warning = "JBIG2: " + e.Message;
         }
         if (st.Page is null) return null;
+        if (st.Unverified && warning is null) warning = "JBIG2: unverified T.88 Amd.2 (12-AT template) or Amd.3 (colour) data was decoded from the amendment text only; no independent decoder confirms the result";
         var stride = (width + 7) / 8;
         var res = new byte[stride * height];
         Array.Fill(res, (byte)0xFF);
@@ -314,11 +316,12 @@ public static class Jbig2Decoder
         var d = st.Data; var o = s.Off; var end = o + s.Len;
         var (w, h, x, y, op) = RegionInfo(d, o);
         var colour = (d[o + 16] & 8) != 0;
-        if (colour) { op = 0; if (!s.UnknownLen && end - o > 21) end -= 4; }
+        if (colour) { st.Unverified = true; op = 0; if (!s.UnknownLen && end - o > 21) end -= 4; }
         o += 17;
         var flags = d[o++];
         var mmr = (flags & 1) != 0; var tmpl = flags >> 1 & 3; var tpgd = (flags & 8) != 0;
         var ext = !mmr && tmpl == 0 && (flags & 0x10) != 0;
+        if (ext) st.Unverified = true;
         if (s.UnknownLen) { h = I32(d, end - 4); end -= 4; }
         var bm = NewBitmap(w, h);
         if (mmr) { DecodeMmr(d, o, end, bm); return (bm, x, y, op); }
@@ -674,6 +677,7 @@ public static class Jbig2Decoder
         var (w, h, x, y, op) = RegionInfo(d, o);
         if ((d[o + 16] & 8) != 0)
         {
+            st.Unverified = true;
             // Amd.3 colour section: trailing T.45 colour palette IDs whose total length (including this 4-byte field) is in the last four bytes.
             op = 0;
             var sect = end - o > 25 ? U32(d, end - 4) : 0;

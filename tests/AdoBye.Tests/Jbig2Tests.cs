@@ -10,7 +10,7 @@ public class Jbig2Tests
     static string Dir => Path.Combine(AppContext.BaseDirectory, "fixtures", "jbig2");
 
     public static IEnumerable<object[]> Fixtures() =>
-        Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "fixtures", "jbig2"), "*.pdf")
+        Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "fixtures", "jbig2"), "*.pdf").Where(p => !Path.GetFileName(p).StartsWith("unverified-", StringComparison.Ordinal))
             .Select(p => new object[] { Path.GetFileNameWithoutExtension(p) }).OrderBy(a => (string)a[0]);
 
     [Theory]
@@ -58,18 +58,20 @@ public class Jbig2Tests
     }
 
     [Fact]
-    public void DecodesExtendedTemplateAndColourFixturesFromRawStreams()
+    public void UnverifiedAmendmentFixturesDecodeToHandDerivedPixelsAndWarn()
     {
-        foreach (var name in new[] { "gen-t0-ext", "gen-t0-ext-at", "gen-t0-ext-tpgd", "colour-generic", "colour-text", "stripes-unknown-height" })
+        foreach (var name in new[] { "unverified-gen-t0-ext", "unverified-gen-t0-ext-at", "unverified-gen-t0-ext-tpgd", "unverified-colour-generic", "unverified-colour-text", "stripes-unknown-height" })
         {
             var doc = PdfDocument.Load(File.ReadAllBytes(Path.Combine(Dir, name + ".pdf")));
             var xo = (PdfDictionary)doc.File.Resolve(doc.Pages[0].Resources.Get("XObject"))!;
             var raw = ((PdfStream)doc.File.Resolve(xo.Get("Im0"))!).RawData;
             var expected = File.ReadAllText(Path.Combine(Dir, name + ".txt"));
-            var w = name == "colour-text" ? 200 : 240;
+            var w = name == "unverified-colour-text" ? 200 : 240;
             var h = expected.Length / w;
             var data = Jbig2Decoder.Decode(raw, null, w, h, out var warning);
-            Assert.Null(warning);
+            // Amd.2/Amd.3 output is decoded from the amendment text only and must say so; the striped fixture is independently verified.
+            if (name.StartsWith("unverified-", StringComparison.Ordinal)) Assert.Contains("unverified", warning);
+            else Assert.Null(warning);
             Assert.NotNull(data);
             var stride = (w + 7) / 8;
             for (var i = 0; i < expected.Length; i++)
@@ -131,12 +133,12 @@ public class Jbig2Tests
     }
 
     [Fact]
-    public void ColourRegionIsDecodedAsTransparentMonochromeInk()
+    public void UnverifiedColourRegionIsDecodedAsTransparentMonochromeInk()
     {
         // COLEXTFLAG (bit 3) + REPLACE onto a black page: the transparent background leaves the page unchanged.
         var colour = Embedded((1, 48, PageInfoSegment(8, 2, 0x84, 0)), (2, 38, MmrRegion(4 | 8, colourTrailer: true)), (3, 49, []));
         Assert.Equal(new byte[] { 0x00, 0x00 }, Jbig2Decoder.Decode(colour, null, 8, 2, out var warning));
-        Assert.Null(warning);
+        Assert.Contains("unverified", warning);
         // Without COLEXTFLAG the same REPLACE region overwrites the black page.
         var mono = Embedded((1, 48, PageInfoSegment(8, 2, 0x04, 0)), (2, 38, MmrRegion(4)), (3, 49, []));
         Assert.Equal(new byte[] { 0xBF, 0xBF }, Jbig2Decoder.Decode(mono, null, 8, 2, out _));
@@ -181,7 +183,7 @@ public class Jbig2Tests
     public void NewFixtureStreamsSurviveTruncationAndCorruption()
     {
         var rng = new Random(11);
-        foreach (var name in new[] { "gen-t0-ext-tpgd", "colour-text", "stripes-unknown-height", "comb-def1-02134", "intermediate-refine", "refine-page-offset",
+        foreach (var name in new[] { "unverified-gen-t0-ext-tpgd", "unverified-colour-text", "stripes-unknown-height", "comb-def1-02134", "intermediate-refine", "refine-page-offset",
                      "halftone-skip-xor", "halftone-skip-replace", "halftone-mmr-xor-rot", "generic-unknown-length", "symdict-ctx-retained-partial-export",
                      "huffman-custom-tables", "huffman-oddwidth-refagg-aggregate-rdwrdh", "huffman-oddwidth-mmr" })
         {

@@ -1,8 +1,9 @@
 """JBIG2 fixtures for T.88 amendments and the remaining segment-level features (stripes, combination operators, intermediate regions,
 halftone skip/HCOMBOP, colour extension). Expected pixels are constructed in Python from the spec rules, never produced by the C# decoder.
 Every fixture is also rendered by pdfium (via make_jbig2_fixtures.emit, which warns on mismatch) and tools/jbig2_crosscheck.py compares all
-fixtures against pdfium, MuPDF/jbig2dec (PyMuPDF) and pdf.js. Fixtures that no installed decoder understands (Amd.2 12-AT templates,
-Amd.3 colour) are hand-derived only.
+fixtures against pdfium, MuPDF/jbig2dec (PyMuPDF) and pdf.js. Fixtures named unverified-* (Amd.2 12-AT templates, Amd.3 colour) are hand-derived from the amendment text only: pdfium 5.14, MuPDF/jbig2dec
+and pdf.js 3.11 do not implement either amendment (jbig2dec lists colour as NYI) and no public sample stream exists. Amd.2 leaves the TPGD SLTP context
+for the 12-AT template unspecified (Figure 8 is not amended); this generator maps the standard pattern by pixel position, which is an assumption.
 Run: python tools/make_jbig2_extension_fixtures.py"""
 import os, struct, sys
 
@@ -69,7 +70,7 @@ def ext_segment(num, b, at, tpgd=False, page=1):
 
 def ext_cases(b, w, h):
     moved = [(-5, 0), (2, -4), (-6, -2), (-1, -5), (3, -3), (4, -1), (-8, 0), (-7, -1), (1, -6), (7, -2), (-3, -3), (-4, -6)]
-    for name, at, tpgd in (("gen-t0-ext", EXT_NOMINAL, False), ("gen-t0-ext-at", moved, False), ("gen-t0-ext-tpgd", moved, True)):
+    for name, at, tpgd in (("unverified-gen-t0-ext", EXT_NOMINAL, False), ("unverified-gen-t0-ext-at", moved, False), ("unverified-gen-t0-ext-tpgd", moved, True)):
         emit(name, w, h, E.seg(1, 48, 1, E.page_info(w, h)) + ext_segment(2, b, at, tpgd), None, truth(b))
 
 
@@ -78,7 +79,7 @@ def colour_cases(b, w, h):
     page = struct.pack(">IIIIBH", w, h, 0, 0, 0x80, 0)  # bit 7: page might contain coloured segments
     palette = bytes([0]) + bytes([3, 1]) + struct.pack(">I", 1) + bytes([10, 20, 30])  # flags, CPNCOMP=3, CPCOMPLEN=1, CPNVALS=1, one RGB value
     gen = gseg(3, b, op=4, flags_extra=8, refs=[2], trailer=struct.pack(">I", 32))  # COLEXTFLAG, REPLACE, GBFGCOLID = default colour 32 (palette entry 0)
-    emit("colour-generic", w, h, E.seg(1, 48, 1, page) + E.seg(2, 54, 1, palette) + gen, None, truth(b))
+    emit("unverified-colour-generic", w, h, E.seg(1, 48, 1, page) + E.seg(2, 54, 1, palette) + gen, None, truth(b))
 
     order, syms = M.glyph_set()
     index = {c: i for i, c in enumerate(order)}
@@ -98,7 +99,7 @@ def colour_cases(b, w, h):
     body = bytearray(txt[hl:]); body[16] |= 8 | 4  # COLEXTFLAG; external combination operator REPLACE
     section = bytes(range(len(pl))) + struct.pack(">I", len(pl) + 4)  # opaque T.45 colour palette IDs + section length (field included)
     textseg = E.seg(2, 6, 1, bytes(body) + section, [1])
-    emit("colour-text", W, H, E.seg(0, 48, 1, struct.pack(">IIIIBH", W, H, 0, 0, 0x80, 0)) + sd + textseg, None, truth(canvas))
+    emit("unverified-colour-text", W, H, E.seg(0, 48, 1, struct.pack(">IIIIBH", W, H, 0, 0, 0x80, 0)) + sd + textseg, None, truth(canvas))
 
 
 # ---------------------------------------------------------------- stripes of unknown height
