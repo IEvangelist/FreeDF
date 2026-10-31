@@ -179,7 +179,7 @@ public static class AnnotationAppearance
                     sb.Append($"{F(ax)} {F(ay)} m\n");
                     for (var s = 1; s <= steps; s++)
                     {
-                        var t = Math.Min(s * 2.0, len); var off = s % 2 == 0 ? 0 : 2;
+                        var t = Math.Min(s * 2.0, len); var off = s % 2 == 0 ? 0 : viewer ? 1 : 2;
                         sb.Append($"{F(ax + dx * t - dy * off)} {F(ay + dy * t + dx * off)} l\n");
                     }
                     sb.Append("S\n");
@@ -249,7 +249,12 @@ public static class AnnotationAppearance
             case "Ink" when res(a.Get("InkList")) is PdfArray ink:
                 sb.Append(Color(c.Length == 0 ? [0] : c, true)).Append($"{F(bw)} w 1 J 1 j\n").Append(dash);
                 foreach (var stroke in ink.Items)
-                    AppendSmooth(sb, res(stroke) is PdfArray pa ? pa.Items.Select(x => res(x).AsNumber() ?? 0).ToArray() : []);
+                {
+                    var pts = res(stroke) is PdfArray pa ? pa.Items.Take(65_536).Select(x => res(x).AsNumber() ?? 0).ToArray() : [];
+                    if (!viewer) { AppendSmooth(sb, pts); continue; }
+                    for (var i = 0; i + 1 < pts.Length; i += 2) sb.Append($"{F(pts[i])} {F(pts[i + 1])} {(i == 0 ? "m" : "l")}\n");
+                    if (pts.Length >= 2) sb.Append(pts.Length == 2 ? $"{F(pts[0])} {F(pts[1])} l S\n" : "S\n");
+                }
                 break;
             case "FreeText" when res(a.Get("Contents")) is PdfString txt:
             {
