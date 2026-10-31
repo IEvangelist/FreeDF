@@ -1,0 +1,192 @@
+/* Surface, depth and motion layer. Loaded after theme.css; only overrides.
+   Motion rules: transform/opacity/clip-path only. Bounding boxes of interactive controls never animate on entry
+   (clip-path and opacity do not move them), so input is never delayed and automated clicks never wait for a box to settle. */
+:root {
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 .17 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --hi: light-dark(#ffffff, #1d2028);
+  --lo: light-dark(#f4f4f6, #13151a);
+  --edge: light-dark(#ffffffcc, #ffffff0d);
+  --glow: light-dark(#2563eb2e, #4c8dff38);
+  --e1: 0 1px 2px light-dark(#0000000f, #0000004d), 0 1px 1px light-dark(#0000000a, #00000033);
+  --e2: 0 6px 16px -4px light-dark(#0000001c, #0000008c), 0 2px 4px light-dark(#0000000f, #00000040);
+  --e3: 0 22px 54px -12px light-dark(#0000003d, #000000d9), 0 8px 18px -6px light-dark(#0000001f, #00000080);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-expo: cubic-bezier(.22, 1, .36, 1);
+}
+
+/* Layered chrome */
+body { background: radial-gradient(1200px 500px at 50% -120px, light-dark(#2563eb12, #4c8dff14), transparent 70%), var(--bg); }
+header { position: relative; z-index: 12; background: var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--hi), var(--panel)); box-shadow: inset 0 1px 0 var(--edge), 0 1px 0 var(--line), 0 10px 18px -14px light-dark(#0000002e, #000000b3); }
+#tools { position: relative; z-index: 6; background: var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--panel), var(--lo)); box-shadow: 0 1px 0 var(--line), 0 8px 14px -12px light-dark(#00000029, #000000a6); }
+footer { background: var(--grain) 0 0 / 140px, linear-gradient(0deg, var(--lo), var(--panel)); box-shadow: inset 0 1px 0 var(--edge); }
+#thumbs, #props { background: var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--panel), var(--lo)); }
+#thumbs { box-shadow: inset -1px 0 0 var(--edge); }
+#props { box-shadow: inset 1px 0 0 var(--edge); }
+#props section { background: transparent; }
+#props section.head { background: linear-gradient(180deg, var(--accent-bg), transparent); }
+.logo { box-shadow: 0 1px 0 #ffffff55 inset, 0 3px 8px -2px #2f5fd099; }
+.doc { box-shadow: inset 0 1px 2px light-dark(#0000000d, #00000066); }
+
+/* Canvas: soft vignette and a dot grid so an empty or small page never floats in a void */
+#view {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 0%, light-dark(#ffffffb3, #ffffff0b), transparent 70%),
+    radial-gradient(circle, light-dark(#0000001f, #ffffff12) 1px, transparent 1.4px) 0 0 / 22px 22px,
+    var(--canvas);
+}
+#page { box-shadow: 0 0 0 1px light-dark(#00000026, #0006), 0 2px 4px light-dark(#0000001a, #00000066), 0 18px 48px -8px light-dark(#00000040, #000000b3); }
+
+/* Buttons: tactile hover, press and primary gradient */
+button, label.btn { will-change: auto; }
+button:hover:not(:disabled), label.btn:hover { transform: translateY(-1px); }
+button:active:not(:disabled), label.btn:active { transform: translateY(0) scale(.96); transition-duration: 60ms; }
+button.primary, .dfoot button.primary { background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 88%, white), var(--primary)); box-shadow: inset 0 1px 0 #ffffff40, 0 1px 2px #1d4ed880, 0 6px 14px -6px #2563eb99; }
+button.primary:hover:not(:disabled) { background: linear-gradient(180deg, color-mix(in srgb, var(--primary-hover) 90%, white), var(--primary-hover)); box-shadow: inset 0 1px 0 #ffffff50, 0 2px 4px #1d4ed880, 0 10px 20px -8px #2563ebb3; }
+button.icon svg.i, button svg.i { transition: transform var(--dur-2) var(--ease-out); }
+button.icon:hover:not(:disabled) svg.i { transform: scale(1.12); }
+.seg { box-shadow: inset 0 1px 2px light-dark(#00000014, #00000080); }
+.seg button.on, .form-mode button.on { background: linear-gradient(180deg, var(--hi), var(--panel)); box-shadow: var(--e1), inset 0 0 0 1px var(--accent-line), 0 0 0 3px var(--glow); animation: tool-pop var(--dur-3) var(--ease-expo); }
+@keyframes tool-pop { from { transform: scale(.9); } to { transform: scale(1); } }
+button.toggle.on, button[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 0 3px var(--glow); }
+.btn-outline, .dfoot button:not(.primary), #props section.acts2 button { background: linear-gradient(180deg, var(--hi), var(--lo)); }
+a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transform var(--dur-2) var(--ease-expo); }
+
+/* Inputs */
+#props input, #props select, #props textarea, .dbody input:not([type=checkbox]):not([type=radio]), .dbody select, #pn, #fq { box-shadow: inset 0 1px 2px light-dark(#0000000d, #00000066); transition: border-color var(--dur-1), box-shadow var(--dur-2) var(--ease-out); }
+#props section { animation: sec-in var(--dur-3) var(--ease-out) both; }
+#props section:nth-child(2) { animation-delay: 30ms; } #props section:nth-child(3) { animation-delay: 60ms; } #props section:nth-child(n+4) { animation-delay: 90ms; }
+@keyframes sec-in { from { opacity: 0; } }
+
+/* Thumbnails: cards that lift and glow */
+.thumb { transition: background-color var(--dur-2), border-color var(--dur-2), box-shadow var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out); }
+.thumb:hover { transform: translateY(-2px); box-shadow: var(--e2); }
+.thumb.sel { box-shadow: 0 0 0 3px var(--glow), var(--e1); }
+.thumb.sel .num { animation: tool-pop var(--dur-3) var(--ease-expo); }
+.thumb .paper { box-shadow: var(--e1), 0 0 0 1px light-dark(#0000001f, #0004); transition: box-shadow var(--dur-3); }
+.thumb:hover .paper { box-shadow: var(--e2), 0 0 0 1px light-dark(#0000001f, #0004); }
+.thumb img { transition: opacity var(--dur-3) var(--ease-out); }
+.thumb:hover .acts, .thumb:focus-within .acts { animation: fade-in var(--dur-2) var(--ease-in-out); }
+
+/* Menus: glass surface, clip reveal, opacity stagger (no box movement) */
+.cm, .fpop, #findbar { background: color-mix(in srgb, var(--raised) 90%, transparent); backdrop-filter: blur(16px) saturate(1.5); box-shadow: var(--e3), inset 0 1px 0 var(--edge); border-color: color-mix(in srgb, var(--line-2) 80%, transparent); }
+.cm:not(.sub), .fpop { animation: reveal var(--dur-3) var(--ease-out) backwards; }
+.cm.sub { animation: fade-in var(--dur-2) var(--ease-in-out) both; }
+@keyframes reveal { from { opacity: 0; clip-path: inset(0 0 100% 0 round 10px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 10px); } }
+.cm:not(.sub) > .cm-i, .cm:not(.sub) > .cm-sep { animation: fade-in var(--dur-3) var(--ease-in-out) both; }
+.cm:not(.sub) > :nth-child(2) { animation-delay: 15ms; } .cm:not(.sub) > :nth-child(3) { animation-delay: 30ms; } .cm:not(.sub) > :nth-child(4) { animation-delay: 45ms; }
+.cm:not(.sub) > :nth-child(5) { animation-delay: 60ms; } .cm:not(.sub) > :nth-child(6) { animation-delay: 75ms; } .cm:not(.sub) > :nth-child(n+7) { animation-delay: 90ms; }
+.cm-i { transition: background-color var(--dur-1), box-shadow var(--dur-2) var(--ease-out); }
+
+/* Dialogs, palette: scrim blur, clip-path reveal */
+.mdl, .pal-scrim { backdrop-filter: blur(5px) saturate(1.2); animation: fade-in var(--dur-3) var(--ease-in-out) both; }
+.dlg, .pal { background: linear-gradient(180deg, var(--hi), var(--raised)); box-shadow: var(--e3), inset 0 1px 0 var(--edge); animation: reveal-dlg var(--dur-3) var(--ease-out) backwards; }
+@keyframes reveal-dlg { from { opacity: 0; clip-path: inset(6% 4% 10% 4% round 14px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 14px); } }
+.dlg h3 { background: linear-gradient(180deg, var(--accent-bg), transparent); padding-bottom: 10px; }
+
+/* Toasts: icon, progress */
+.toast { position: relative; overflow: hidden; padding-right: 18px; box-shadow: var(--e3); background: linear-gradient(180deg, var(--hi), var(--raised)); animation: toast-in2 var(--dur-3) var(--ease-expo) both; }
+@keyframes toast-in2 { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+.toast::before { width: 18px; height: 18px; border-radius: 50%; background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5l2.5 2.5 4.5-5.5'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.toast.error::before { background: var(--danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 3v3.5M6 9h.01'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.toast::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--ok); transform-origin: left; animation: toast-bar var(--ms, 3500ms) linear both; }
+.toast.error::after { background: var(--danger); }
+@keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* Empty state: a real drop zone */
+#empty {
+  position: relative; max-width: min(30rem, 92%); padding: 28px 28px 24px; gap: 8px; cursor: pointer;
+  border: 1.5px dashed light-dark(#a1a1aa, #3a4150); border-radius: 22px;
+  background: radial-gradient(120% 90% at 50% 0%, light-dark(#2563eb0f, #4c8dff14), transparent 60%), var(--grain) 0 0 / 140px, linear-gradient(180deg, var(--hi), var(--raised));
+  box-shadow: var(--e2), inset 0 1px 0 var(--edge);
+  transition: border-color var(--dur-2), box-shadow var(--dur-3) var(--ease-out);
+  animation: empty-in 420ms var(--ease-out) both;
+}
+#empty:hover { border-color: var(--accent); box-shadow: var(--e3), 0 0 0 4px var(--glow), inset 0 1px 0 var(--edge); }
+#empty > svg.i { display: none; }
+#empty::before {
+  content: ""; width: 68px; height: 88px; margin: 4px 0 10px; border-radius: 6px; justify-self: center;
+  background: repeating-linear-gradient(180deg, transparent 0 12px, light-dark(#d4d4d8, #3a4150) 12px 14px) 14px 22px / 40px 56px no-repeat,
+    linear-gradient(180deg, var(--accent) 0 0) 14px 12px / 24px 5px no-repeat,
+    linear-gradient(180deg, var(--hi), var(--raised));
+  border: 1px solid var(--line-2);
+  box-shadow: -10px 6px 0 -2px light-dark(#e4e4e7, #20242d), -10px 6px 0 -1px var(--line-2), 10px 4px 0 -2px light-dark(#ededf0, #1a1d25), 10px 4px 0 -1px var(--line-2), var(--e2);
+  transform: rotate(-3deg); transform-origin: 50% 90%;
+  animation: paper-in 600ms var(--ease-expo) 80ms both;
+}
+@keyframes paper-in { from { opacity: 0; transform: translateY(14px) rotate(-12deg) scale(.9); } }
+@keyframes empty-in { from { opacity: 0; } }
+#empty:hover::before { transform: rotate(-1deg) translateY(-3px); transition: transform var(--dur-3) var(--ease-expo); }
+#empty strong { font-size: 1.25rem; letter-spacing: -.015em; color: var(--fg); }
+#empty > span { color: var(--mut); }
+#empty button, #empty .welcome-note, #empty .sample-hint { animation: fade-in 500ms var(--ease-in-out) 120ms both; }
+#empty .welcome-note { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); width: 100%; text-align: center; }
+#empty #sampleOpen { min-height: 40px; padding: 0 22px; font-size: var(--text-lg); margin-top: 8px; }
+#empty #sampleCollection { background: transparent; border: 1px solid var(--line-2); box-shadow: none; }
+#drop #empty { border-style: solid; box-shadow: 0 0 0 5px var(--glow), var(--e3); }
+
+/* Panels and sheets: slide in and out with transitions (works for both directions without JS) */
+@media (max-width: 760px) {
+  main #thumbs, main #props { visibility: visible; transition: transform 280ms var(--ease-out), visibility 0s linear 0s; animation: none; padding-left: 12px; padding-right: 12px; border-width: 0 1px 0 0; }
+  main #props { border-width: 0 0 0 1px; }
+  main.hide-l #thumbs { transform: translateX(-104%); visibility: hidden; transition: transform 240ms var(--ease-in-out), visibility 0s linear 240ms; }
+  main.hide-r #props { transform: translateX(104%); visibility: hidden; transition: transform 240ms var(--ease-in-out), visibility 0s linear 240ms; }
+  main::before, main:not(.hide-l)::before, main:not(.hide-r)::before { content: ""; position: absolute; inset: 0; z-index: 15; background: var(--scrim); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; animation: none; transition: opacity 240ms var(--ease-in-out); }
+  main:not(.hide-l)::before, main:not(.hide-r)::before { opacity: 1; pointer-events: auto; }
+  #thumbs, #props { z-index: 20; width: min(300px, 88vw); }
+  main:not(.hide-l) #thumbs, main:not(.hide-r) #props { top: 0; }
+}
+@media (max-width: 600px) { main #thumbs, main #props { position: absolute; top: 0; bottom: 0; } }
+
+/* Narrow toolbar: three tidy rows, nothing clipped */
+@media (max-width: 760px) {
+  #tools { gap: 6px 4px; }
+  #tools .seg { order: 1; }
+  #tools #nav { order: 2; } #tools > .group:has(#formBtn), #tools .form-mode { order: 3; } #tools #lock { order: 4; } #tools #prev { order: 5; }
+  #tools > .group:last-child { order: 6; flex: 1 1 100%; justify-content: space-between; }
+  #tools .seg { flex-wrap: nowrap; justify-content: space-between; gap: 0; }
+  #tools .seg > *, #tools .seg button.icon, #tools .seg label.btn.icon { flex: 1 1 0; min-width: 0; width: auto; }
+  #tools #formBtn { padding: 0 8px; } #tools #formBtn > svg.i:last-child { display: none; }
+  .doc { max-width: 40vw; }
+}
+
+/* Reduced motion and transparency */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) :is(*, *::before, *::after) { animation-duration: .001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; transition-delay: 0s !important; }
+  :root:not([data-motion="full"]) :is(button:hover:not(:disabled), .thumb:hover, #empty:hover::before) { transform: none !important; }
+}
+:root[data-motion="reduce"] button:hover:not(:disabled), :root[data-motion="reduce"] .thumb:hover, :root[data-motion="reduce"] #empty:hover::before { transform: none !important; }
+:root[data-motion="reduce"] main #thumbs, :root[data-motion="reduce"] main #props, :root[data-motion="reduce"] main::before { transition: none !important; }
+@media (prefers-reduced-transparency: reduce) { .cm, .fpop, #findbar, .mdl, .pal-scrim, main::before { backdrop-filter: none !important; background-color: var(--raised); } }
+@media (forced-colors: active) {
+  #empty { border: 2px dashed CanvasText; background: Canvas; } #empty::before { border: 2px solid CanvasText; background: Canvas; box-shadow: none; }
+  header, #tools, footer, #thumbs, #props, #view { background: Canvas; box-shadow: none; }
+  .toast::after { background: Highlight; }
+}
+
+/* Scrollbars: thin, themed gutter that fades into the surface at both ends. Chromium/WebKit use the pseudo-elements
+   (they support the gradient); Firefox gets thin + colours. Thumb states stay visible for pointer; touch uses native overlay bars. */
+:root { --sb-track: light-dark(#0000000d, #ffffff0c); --sb-thumb: light-dark(#00000047, #ffffff3d); --sb-thumb-hover: light-dark(#00000073, #ffffff66); --sb-thumb-active: light-dark(#2563eb, #6aa2ff); }
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; } }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track:vertical { background: linear-gradient(180deg, transparent 0, var(--sb-track) 18px, var(--sb-track) calc(100% - 18px), transparent 100%); }
+::-webkit-scrollbar-track:horizontal { background: linear-gradient(90deg, transparent 0, var(--sb-track) 18px, var(--sb-track) calc(100% - 18px), transparent 100%); }
+::-webkit-scrollbar-thumb { background: var(--sb-thumb); background-clip: padding-box; border: 2px solid transparent; border-radius: 8px; min-height: 36px; min-width: 36px; }
+::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); background-clip: padding-box; border: 2px solid transparent; }
+::-webkit-scrollbar-thumb:active { background: var(--sb-thumb-active); background-clip: padding-box; border: 2px solid transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+@media (forced-colors: active) { ::-webkit-scrollbar-track:vertical, ::-webkit-scrollbar-track:horizontal { background: Canvas; } ::-webkit-scrollbar-thumb { background: CanvasText; } }
+
+/* Floating page pager. z-index scale: canvas 0 < pager 8 < tool bar 6..find bar 50 < sheets 20 < menus 1000 < modals 2000. */
+#pager { position: absolute; z-index: 8; right: calc(var(--sbw, 0px) + 14px); bottom: calc(var(--sbh, 0px) + 14px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 2px; padding: 4px;
+  border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--raised) 88%, transparent); backdrop-filter: blur(12px) saturate(1.4); box-shadow: var(--e3), inset 0 1px 0 var(--edge);
+  opacity: 0; visibility: hidden; transform: translateY(10px) scale(.96); transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out), visibility 0s linear var(--dur-3); }
+#pager[data-show="true"] { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+#pager button { width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 50%; }
+#pager .pg-count { min-width: 64px; padding: 0 6px; text-align: center; font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+@media (pointer: coarse), (max-width: 760px) { #pager button { width: 44px; height: 44px; min-height: 44px; } #pager { right: calc(var(--sbw, 0px) + 12px + env(safe-area-inset-right)); } }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) #pager { transform: none; } }
+:root[data-motion="reduce"] #pager { transform: none; transition: none; }
+@media (forced-colors: active) { #pager { border: 1px solid CanvasText; background: Canvas; } }
+
+/* Gradients sit on a solid surface colour so contrast tooling and forced fallbacks see a real background. */
+header, #tools, footer, #thumbs, #props { background-color: var(--panel); }

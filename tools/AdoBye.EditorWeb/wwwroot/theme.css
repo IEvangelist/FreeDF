@@ -268,7 +268,7 @@ footer #recovery { height: 24px; }
 }
 
 /* Reduced motion and transparency */
-@media (prefers-reduced-motion: reduce) { .toast, .tip { animation: none; } }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) :is(.toast, .tip) { animation: none; } }
 :root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 @media (prefers-reduced-transparency: reduce) { .mdl, button.mini { backdrop-filter: none; } .mdl, .pal-scrim { background: light-dark(#09090bcc, #000d); } }
 

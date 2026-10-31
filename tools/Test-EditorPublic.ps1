@@ -78,7 +78,7 @@ try {
     if ($bytes -ge 1000000000) { throw "Published site exceeds the 1 GB Pages limit: $bytes bytes." }
     $result.payload = @{ files = $assets.Count; bytes = $bytes }
     $expected = (Get-FileHash $native[0].FullName -Algorithm SHA256).Hash
-    $identityAssets = @("_framework/$($native[0].Name)", 'index.html', 'host.js', 'worker.js', 'editor.js', 'editor.css', 'theme.css', 'ui.js', 'recovery.js')
+    $identityAssets = @("_framework/$($native[0].Name)", 'index.html', 'host.js', 'worker.js', 'editor.js', 'editor.css', 'theme.css', 'surface.css', 'ui.js', 'recovery.js')
     if (Test-Path (Join-Path $site 'samples.js')) { $identityAssets += 'samples.js' }
     foreach ($asset in @('annotations.js', 'form-fields.js', 'pool.js', 'scheduler.js', 'replica-worker.js')) {
         if (Test-Path (Join-Path $site $asset)) { $identityAssets += $asset }

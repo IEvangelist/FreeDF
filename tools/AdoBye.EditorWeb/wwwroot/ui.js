@@ -14,18 +14,20 @@
   const setTheme = v => { store.set('editor.theme', v === 'system' ? null : v); v === 'system' ? delete doc.dataset.theme : doc.dataset.theme = v; };
   const osReduced = matchMedia('(prefers-reduced-motion: reduce)');
   const setMotion = on => { store.set('editor.motion', on ? 'reduce' : null); on ? doc.dataset.motion = 'reduce' : delete doc.dataset.motion; };
+  // Explicit opt-in to animation even when the OS asks for reduced motion (the user chose it here, in the app).
+  const setFullMotion = on => { store.set('editor.motion', on ? 'full' : null); on ? doc.dataset.motion = 'full' : delete doc.dataset.motion; };
 
   // Announcements and toasts. Toasts are visual only: the status bar is already the polite live region.
   const live = el('div', { id: 'announce', className: 'sr-only', role: 'status' }); live.setAttribute('aria-live', 'polite');
   const toasts = el('div', { className: 'toasts' }); toasts.setAttribute('aria-hidden', 'true');
   const say = t => { live.textContent = ''; requestAnimationFrame(() => { live.textContent = t; }); };
   function toast(message, kind) {
-    const t = el('div', { className: 'toast' + (kind === 'error' ? ' error' : '') }, message);
+    const t = el('div', { className: 'toast' + (kind === 'error' ? ' error' : '') }, message); t.style.setProperty('--ms', (kind === 'error' ? 6000 : 3500) + 'ms');
     while (toasts.children.length > 2) toasts.firstChild.remove();
     toasts.append(t);
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, kind === 'error' ? 6000 : 3500);
   }
-  window.editorUi = { toast, say, setTheme, setMotion };
+  window.editorUi = { toast, say, setTheme, setMotion, setFullMotion };
 
   // Focus handling shared by the palette and About dialogs.
   // Only elements this layer made inert are released again; the editor's own inert states (startup, recovery gating) are never overwritten.
@@ -125,7 +127,7 @@
     };
     const t = theme();
     m.append(...[['system', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => item('menuitemradio', l, t === v, () => setTheme(v))), el('div', { className: 'cm-sep' }),
-      item('menuitemcheckbox', osReduced.matches ? 'Reduce motion (set by system)' : 'Reduce motion', osReduced.matches || doc.dataset.motion === 'reduce', () => setMotion(doc.dataset.motion !== 'reduce'), osReduced.matches),
+      osReduced.matches ? item('menuitemcheckbox', 'Allow animations (system asks to reduce)', doc.dataset.motion === 'full', () => setFullMotion(doc.dataset.motion !== 'full')) : item('menuitemcheckbox', 'Reduce motion', doc.dataset.motion === 'reduce', () => setMotion(doc.dataset.motion !== 'reduce')),
       el('div', { className: 'cm-sep' }), item('menuitem', 'Commands\u2026', false, palette), item('menuitem', 'Keyboard shortcuts and about\u2026', false, about));
     document.body.append(m); const r = anchor.getBoundingClientRect();
     m.style.left = Math.max(4, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 4)) + 'px'; m.style.top = r.bottom + 4 + 'px';
@@ -286,6 +288,14 @@
   document.addEventListener('pointermove', e => { if (pressAt && Math.hypot(e.clientX - pressAt[0], e.clientY - pressAt[1]) > 8) cancelPress(); }, true);
   for (const type of ['pointerup', 'pointercancel', 'contextmenu']) document.addEventListener(type, cancelPress, true);
 
+  // Sheet scrim (narrow screens) closes the open panel; the empty state doubles as a click target for Open.
+  document.addEventListener('click', e => {
+    const m = q('main');
+    if (e.target === m && matchMedia('(max-width: 760px)').matches) for (const [c, b] of [['hide-l', 'tl'], ['hide-r', 'tr']]) if (!m.classList.contains(c)) $(b).click();
+    const em = e.target.closest?.('#empty');
+    if (em && !e.target.closest('button, a, kbd')) { const i = $('open'); if (i) { i.value = ''; i.click(); } }
+  });
+
   // Resizable side panels; the grid already reads --lw and --rw, so this only writes those properties.
   function resizers() {
     const main = q('main'); if (!main || q('.rz')) return;
@@ -324,6 +334,45 @@
     dl.before(more);
   }
 
+  // Side panels start collapsed on the empty screen and open (with the panels' slide-in) once a document loads.
+  const userPanel = { l: false, r: false };
+  const panelBtn = { l: 'tl', r: 'tr' };
+  const isEmpty = () => $('doc')?.classList.contains('empty') ?? false;
+  function setPanelClass(side, open) {
+    const m = q('main'), b = $(panelBtn[side]); if (!m || !b) return;
+    m.classList.toggle('hide-' + side, !open); b.classList.toggle('on', open); b.setAttribute('aria-pressed', open);
+  }
+  function syncPanels() {
+    const empty = isEmpty(), w = innerWidth;
+    for (const side of ['l', 'r']) {
+      if (userPanel[side]) continue;
+      if (empty) setPanelClass(side, false);
+      else { const pref = store.get('panel-' + side); setPanelClass(side, pref ? pref === '1' : w >= (side === 'l' ? 760 : 1000)); }
+    }
+    for (const side of ['l', 'r']) { const b = $(panelBtn[side]), m = q('main'); b.setAttribute('aria-expanded', !m.classList.contains('hide-' + side)); b.setAttribute('aria-controls', side === 'l' ? 'thumbs' : 'props'); }
+  }
+  let wasEmpty = null;
+  function panelsOnDocChange() { const e = isEmpty(); if (e !== wasEmpty) { if (!e) { userPanel.l = userPanel.r = false; } wasEmpty = e; } syncPanels(); }
+
+  // Floating page pager: pinned to the bottom-right of the page viewport; drives the existing prev/next controls.
+  let pager = null;
+  function makePager() {
+    const host = $('center'); if (!host || pager) return;
+    const mk = (id, label, d) => { const b = el('button', { type: 'button', id, className: 'icon' }); b.setAttribute('aria-label', label); b.innerHTML = `<svg class="i" aria-hidden="true"><use href="#i-${d}"/></svg>`; return b; };
+    const prev = mk('pgPrev', 'Previous page', 'left'), next = mk('pgNext', 'Next page', 'right'), count = el('span', { className: 'pg-count' });
+    prev.onclick = () => { if (!$('pp').disabled) $('pp').click(); }; next.onclick = () => { if (!$('np').disabled) $('np').click(); };
+    pager = el('div', { id: 'pager' }, prev, count, next); pager.setAttribute('role', 'group'); pager.setAttribute('aria-label', 'Page navigation (floating)');
+    pager.dataset.show = 'false'; pager.inert = true; host.append(pager);
+  }
+  function updatePager() {
+    makePager(); if (!pager) return;
+    const n = +$('pn')?.value || 0, total = +(/\d+/.exec($('pt')?.textContent ?? '')?.[0] ?? 0), show = !isEmpty() && total > 0;
+    if (show !== (pager.dataset.show === 'true')) { pager.dataset.show = show; pager.inert = !show; }
+    const [prev, next, count] = [pager.children[0], pager.children[2], pager.children[1]];
+    count.textContent = show ? `${n} / ${total}` : ''; prev.disabled = !show || n <= 1; next.disabled = !show || n >= total;
+    const v = $('view'); pager.style.setProperty('--sbw', (v.offsetWidth - v.clientWidth) + 'px'); pager.style.setProperty('--sbh', (v.offsetHeight - v.clientHeight) + 'px');
+  }
+
   // Wiring.
   const errorRe = /not saved|could not|unsupported|cannot|failed|unavailable|error|not allowed|do not allow|did not/i, okRe = /^(Saved|Merged|Opened|Copied|Undid|Redid|Exported)/;
   let lastStatus = '';
@@ -332,7 +381,7 @@
     if (errorRe.test(t)) toast(t, 'error'); else if (okRe.test(t)) toast(t);
   }
   let queued = false;
-  function sweep() { queued = false; landmarks(); thumbs(); labelControls(); welcome(); rove(); pageStatus(); }
+  function sweep() { queued = false; landmarks(); thumbs(); labelControls(); welcome(); rove(); pageStatus(); updatePager(); }
   const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(sweep); } };
 
   function init() {
@@ -341,6 +390,12 @@
     document.body.prepend(skip);
     const ap = $('appearance'); if (ap) ap.onclick = () => appearanceMenu(ap);
     resizers(); overflow(); sweep();
+    for (const side of ['l', 'r']) $(panelBtn[side]).addEventListener('click', () => { if (isEmpty()) userPanel[side] = true; requestAnimationFrame(syncPanels); });
+    new MutationObserver(panelsOnDocChange).observe($('doc'), { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(syncPanels).observe(q('main'), { attributes: true, attributeFilter: ['class'] });
+    addEventListener('resize', () => requestAnimationFrame(panelsOnDocChange));
+    addEventListener('editor-ready', () => setTimeout(panelsOnDocChange, 0), { once: true });
+    panelsOnDocChange();
     const mo = new MutationObserver(schedule);
     for (const id of ['view', 'thumbs', 'props']) if ($(id)) mo.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     mo.observe($('zv'), { childList: true, characterData: true, subtree: true });
