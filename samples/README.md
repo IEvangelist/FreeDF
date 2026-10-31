@@ -105,3 +105,5 @@ Known differences and notes:
 * `13`: Edge page 1 is offset in the harness crop (white TrimBox edge confuses the page locator); visual inspection shows identical output.
 * Our renderer draws the Symbol/ZapfDingbats standard fonts as Latin text, so the form checkbox tick is vector-drawn in `11`; and a `PatternType 2` shading used as a stroke colour (tile 11 of `06`) renders dark rather than as the gradient. Both are renderer gaps, not file defects.
 * The compare harness was extended to size the viewport to the page and to stop the crop at the gap between pages, so A4/A3 and multi-page samples compare correctly.
+
+**Encrypted samples in the browser editor:** `17` (password `user123`) and `18` (owner-restricted, opens freely) are offered in File > Open sample and via `#sample=17` / `#sample=18`; they open through the same password dialog as any local file. See [browser-encryption.md](../docs/browser-encryption.md).

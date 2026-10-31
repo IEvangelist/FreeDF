@@ -54,6 +54,7 @@ static class EditorPageHistory
         if (undone.GetProperty("pages")[0].GetProperty("rotation").GetInt32() != 0) throw new Exception("Page undo did not restore rotation.");
         if (!await page.EvaluateAsync<bool>("url => pdfHost.request(url).then(r => r.ok)", "/api/asset/" + asset))
             throw new Exception("Page undo dropped an image used only by the state being left.");
+        await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Undid')", null, new() { Timeout = 10000 }).ContinueWith(_ => { });
         var message = await page.EvaluateAsync<string>("document.getElementById('status').textContent");
         if (!message.StartsWith("Undid", StringComparison.Ordinal)) throw new Exception("Page undo was not announced: " + message);
 
