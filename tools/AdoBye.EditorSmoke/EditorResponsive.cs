@@ -106,9 +106,9 @@ static class EditorResponsive
             var viewWidth = (int)Math.Round(w / zoom);
             if (viewWidth <= 760)
             {
-                foreach (var (toggle, panel) in new[] { ("#tl", "#thumbs"), ("#tr", "#props") })
+                foreach (var (toggle, panel) in new[] { ("#tl", "#left"), ("#tr", "#props") })
                 {
-                    var open = await page.EvaluateAsync<bool>("p => !document.querySelector('main').classList.contains(p === '#thumbs' ? 'hide-l' : 'hide-r')", panel);
+                    var open = await page.EvaluateAsync<bool>("p => !document.querySelector('main').classList.contains(p === '#left' ? 'hide-l' : 'hide-r')", panel);
                     if (!open) await Click(page, toggle);
                     await page.WaitForTimeoutAsync(300);
                     var sheet = await page.EvaluateAsync<string>("p => { const e = document.querySelector(p), s = getComputedStyle(e), r = e.getBoundingClientRect(); return s.position === 'absolute' && r.width <= innerWidth * .9 + 1 && r.left >= -1 && r.right <= innerWidth + 1 && getComputedStyle(document.querySelector('main'), '::before').content !== 'none' ? '' : `not a sheet: position ${s.position}, width ${Math.round(r.width)} of ${innerWidth}, scrim ${getComputedStyle(document.querySelector('main'), '::before').content}`; }", panel);

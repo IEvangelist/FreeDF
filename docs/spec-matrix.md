@@ -232,6 +232,27 @@ The integrated SubmitForm/JPX/OBJR/JBIG2/Pages batch passes 965/965 combined foc
 
 The later 12-bit Huffman SOF1/SOF2 DCT addition is covered by native-precision reference fixtures and PDF image-pipeline regressions; arithmetic 12-bit remains unsupported. JPEG/editor focus passes 120/120. After undo-safe asset retention and deterministic ten-minute unclaimed-upload expiry/cancellation tests, editor/session/HTTP focus passes 18/18 and the full Release suite passes 1502/1502. Incremental solution build succeeds with zero warnings/errors. Integrated published WASM Chromium smoke now passes image insert/delete/undo and the existing local edit/export/mobile/no-network scenarios; this supersedes the earlier pre-merge-only smoke boundary. Scope and residuals remain documented; counts stay 15 Partial / 0 Todo.
 
+### Current all-branch integration evidence
+
+The combined Release solution build has zero compiler warnings/errors and all
+3,079 native tests pass, including sequential/threaded rendering of the same
+396 golden entries without baseline changes. The Node chunk passes 55 tests.
+Fresh mixed-AOT startup meets unchanged ceilings: 62 files, 24,913,330 raw bytes,
+8,882,757 gzip bytes and a 16,104,279-byte native module; 488 lazy files are
+counted separately. AOT publishing still emits reflection-based JSON IL2026
+diagnostics; it is not a warning-free publish.
+
+Published browser checks pass startup/cache version pinning, culture, recovery,
+protected saving, local file/font access, forms, object editing, merge, samples,
+Contents, worker-pool pixel equality/fallback, image continuity, selection, JSON,
+accessibility and all 41 responsive configurations. Save-overlap input-to-frame
+is 10.3-11.7 ms at 4x CPU against the unchanged 50 ms ceiling. The performance
+profile covers 535 metric groups and passes the unchanged CI regression policy
+and ten synthetic controls, but reports four strict timing-goal misses, including
+two new goal misses; regression-policy success is not strict-goal success.
+Current clause-table status is 14 literal Partial rows and zero Todo rows
+(the separate editor Partial entry is not a clause row). Full parity remains open.
+
 ## Editor
 
 | Feature | Status |

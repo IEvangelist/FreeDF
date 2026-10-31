@@ -127,8 +127,9 @@ its dirty state or undo history. `--forms` covers both modes and their toggle.
 Rapid on-page field edits commit in order; editor undo and save wait for queued
 values so undoing one field cannot restore stale values in another.
 `--annotations` checks real note creation, property editing and save/reopen.
-The experimental render-replica pool remains opt-in with `?pool=1`; replicas do
-not yet share lazy fallback-font assets, so it is not the default editor path.
+The render-replica pool is enabled on eligible devices, with `?pool=0` retaining
+the single-worker path. Low-resource devices and replica startup/crash failures
+fall back to the primary worker; pool smoke checks compare decoded pixels.
 
 | Existing editor action | Browser host |
 |---|---|
@@ -142,13 +143,13 @@ not yet share lazy fallback-font assets, so it is not the default editor path.
 | Forms: text, button and choice fields | The in-page Fill out / Edit toggle defaults to Edit for layout authoring. Fill out in Select mode exposes text/comb/multiline, editable combo/multi-select list, checkbox and radio controls with native Tab/Space interaction and field undo; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
 | Page rotate/delete/reorder/duplicate; blank insert; merge/import | Same page editor |
 | Title/document metadata; search/case matching/highlights | Same local session |
-| Save / Save as / Download; PDF page-range extraction | Downloads a copy; cannot overwrite the original filesystem path |
+| Save / Save as / Download; PDF page-range extraction | File System Access browsers can save to an explicitly chosen local handle after permission checks; other browsers download a copy. Protected Save / Save as retain the protection dialog rather than entering the plain file-picker path. Stored handles contain no PDF bytes or passwords |
 | Reload / previous edit recovery | Explicit Resume previous edit or Discard and clear; unencrypted editable state, undo and clipboard remain local in IndexedDB |
 | PNG, all-pages PNG ZIP, text, compressed PDF exports | Local downloads |
 | Print, fullscreen, keyboard shortcuts, panels | Browser APIs and existing editor UI; printing uses locally rendered page images |
-| Password-protected export | Not available in WASM: .NET browser lacks the required synchronous PDF cryptography. The browser menu explicitly offers unprotected compression instead; the server keeps protected export |
-| Password/certificate-protected input | The existing open UI has no password/certificate prompt. Unsupported browser cryptography reports an explicit server-editor limitation. Successfully opened/imported encrypted input disables recovery; decrypted bytes and passwords are never cached for recovery |
-| Installed fonts and system font fallback | Browser cannot enumerate host fonts. New text offers the five standard PDF families; original embedded fonts can still be reused. Non-embedded fonts render using bundled, licensed Bitstream Vera Sans regular/bold substitutes, not exact serif/monospace/italic/Symbol/Dingbats/CJK fidelity. For exact appearance and broader character coverage, use PDFs with embedded fonts or the server editor |
+| Password-protected export | The protection dialog writes AES-256 (R6) with open/owner passwords and permission checks; protection is not silently dropped. See [browser-encryption.md](browser-encryption.md) |
+| Password/certificate-protected input | Supported password-encrypted PDFs open through an accessible password prompt with cancel/retry; unsupported certificate input remains an explicit limitation. Encrypted input disables recovery; decrypted bytes and passwords are never cached for recovery |
+| Installed fonts and system font fallback | Local Font Access browsers offer permission-based search/preview and embed a chosen eligible font; only metadata is cached, not font bytes. Restricted embedding is refused with an explicit substitute choice. Unsupported browsers retain standard families and original embedded fonts. Non-embedded font substitution remains bounded; see [fallback-fonts.md](fallback-fonts.md) |
 
 Recovered startup retries are logged as `[PDF boot] retry ...` console warnings
 and exposed as `pdfHost.bootRetries`; nothing is sent to telemetry. Smoke checks
