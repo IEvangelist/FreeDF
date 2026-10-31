@@ -421,6 +421,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             if (double.IsNaN(x + y) || double.IsInfinity(x + y)) return false;
             if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
         }
+        if (double.IsNaN(pad)) return false;
         var c = _clip;
         return maxY + pad < c.Y0 || minY - pad > c.Y1 || maxX + pad < c.X0 || minX - pad > c.X1;
     }
@@ -446,9 +447,20 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         PaintScan(evenOdd, color, alpha, blendMode);
     }
 
+    /// <summary>Conservative device-space reach of a stroke beyond its centerline hull: the Frobenius norm bounds the largest singular value of the CTM, so anisotropic scales cannot under-estimate it. Negative means no safe bound (never skip).</summary>
+    static double StrokePad(in Matrix m, StrokeStyle style)
+    {
+        var scale = Math.Sqrt(Math.Abs(m.Det));
+        if (!(scale > 0)) return double.NaN;
+        var width = style.Width;
+        if (width * scale < 1) width = 1 / scale; // hairline rule used by AddStroke
+        var norm = Math.Sqrt(m.A * m.A + m.B * m.B + m.C * m.C + m.D * m.D);
+        return width * norm * Math.Max(style.MiterLimit, 2) + 2;
+    }
+
     public void Stroke(PathData path, Matrix ctm, StrokeStyle style, RgbColor color, double alpha, string blendMode)
     {
-        if (_clip.Empty || Misses(path, ctm, Math.Max(style.Width * Math.Sqrt(Math.Abs(ctm.Det)), 1) * Math.Max(style.MiterLimit, 2) + 2)) return;
+        if (_clip.Empty || Misses(path, ctm, StrokePad(ctm, style))) return;
         AddStroke(path, ctm, style);
         PaintScan(false, color, alpha, blendMode);
     }

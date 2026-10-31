@@ -120,7 +120,7 @@ export async function start() {
         return remember(data);
       });
       // Render replicas (see pool.js) take heavy rasters and thumbnail bursts; any failure falls back to the primary worker.
-      const pooled = renderPool?.tryRender(url).catch(error => { if (error?.name === 'AbortError') throw error; console.warn('Render pool failed; using the primary PDF engine.', error); return null; });
+      const pooled = renderPool?.tryRender(url).catch(error => { if (error?.name !== 'AbortError') console.warn('Render pool failed; using the primary PDF engine.', error); return null; });
       if (!pooled) return primary();
       return pooled.then(async blob => {
         if (!blob) return primary();

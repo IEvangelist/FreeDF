@@ -102,13 +102,6 @@ export function createRenderPool({
     return snapshots.get(key).then(bytes => { if (!bytes) snapshots.delete(key); return bytes; });
   };
 
-  const supersede = (request, priority) => scheduler.cancel(task => {
-    const g = task.group;
-    return g && (g.version < request.version ||
-      (priority <= Priority.Visible && task.priority === Priority.Visible && g.page !== request.page && g.version === request.version) ||
-      (priority <= Priority.Visible && task.priority >= Priority.Prefetch && g.version < request.version));
-  });
-
   const isBurst = () => {
     const t = now();
     recent.push(t);
@@ -116,7 +109,11 @@ export function createRenderPool({
     return recent.length >= burstSize;
   };
 
-  async function tryRender(url, { priority } = {}) {
+  // Cancellation is explicit only: a caller that owns a `slot` (for example the viewer's one 'current view' render) supersedes that slot's
+  // earlier work by passing a new request in the same slot. Work without a slot (print, export, thumbnails) is never cancelled by other requests.
+  const cancelSlot = (slot, keep) => scheduler.cancel(task => task.group?.slot === slot && task.group.token !== keep);
+
+  async function tryRender(url, { priority, slot = null } = {}) {
     if (scheduler.disabled || budget <= 0) return null;
     const request = parsePageImageUrl(url);
     if (!request) return null;
@@ -128,13 +125,13 @@ export function createRenderPool({
     if (!tiled && !isBurst() && scheduler.slotCount === 0) return null;
     if (tiled && !canStitch) return null;
     const key = `${version}:${bare}`;
-    const group = { page, version };
+    const group = { page, version, slot, token: Symbol('render') };
     const loadBytes = async () => {
       const bytes = await getSnapshot(version, bare);
       if (!bytes) throw Object.assign(new Error('stale snapshot'), { stale: true });
       return bytes.slice().buffer;
     };
-    supersede(request, priority);
+    if (slot !== null) cancelSlot(slot, group.token);
     try {
       if (!tiled) {
         const reply = await scheduler.submit({
@@ -159,7 +156,7 @@ export function createRenderPool({
         run: async replica => { await replica.ensure(key, loadBytes); return replica.call({ op: 'band', page, dpi, y0, y1 }); },
       }).then(reply => {
         workerMs.push(Math.round(reply.ms));
-        context.putImageData(new ImageData(new Uint8ClampedArray(reply.rgba), size.width, y1 - y0), 0, y0);
+        context.putImageData(new (env.ImageData ?? ImageData)(new Uint8ClampedArray(reply.rgba), size.width, y1 - y0), 0, y0);
       })));
       const t2 = now();
       const blob = await canvas.convertToBlob({ type: 'image/png' });
@@ -172,5 +169,5 @@ export function createRenderPool({
     }
   }
 
-  return { tryRender, scheduler, timings, get enabled() { return !scheduler.disabled && budget > 0; }, maxSlots: budget, dispose: () => scheduler.dispose() };
+  return { tryRender, cancelSlot: slot => cancelSlot(slot, null), scheduler, timings, get enabled() { return !scheduler.disabled && budget > 0; }, maxSlots: budget, dispose: () => scheduler.dispose() };
 }

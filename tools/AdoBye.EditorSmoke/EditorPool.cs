@@ -13,7 +13,7 @@ using PortableDocument.Document;
 /// </summary>
 static class EditorPool
 {
-    sealed record Scenario(string Name, string Query, int Cores, string? Route, int? Memory = null, int BandFactor = 1);
+    sealed record Scenario(string Name, string Query, int Cores, string? Route, int? Memory = null, int BandFactor = 1, int Throttle = 1);
 
     public static async Task Run(string root, string output, string samples, int cores)
     {
@@ -44,6 +44,8 @@ static class EditorPool
                 new("pool-2-cores", "", 2, null),
                 new("pool-low-memory", "", cores, null, 2),
                 new("pool-2-bands-per-worker", "", cores, null, null, 2),
+                new("single-worker-cpu-4x", "?pool=0", cores, null, null, 1, 4),
+                new("pool-cpu-4x", "", cores, null, null, 1, 4),
             ];
             var results = new List<JsonElement>();
             foreach (var s in scenarios)
@@ -57,6 +59,11 @@ static class EditorPool
                 if (s.Route == "crash")
                     await context.RouteAsync("**/replica-worker.js", r => r.FulfillAsync(new() { Status = 200, ContentType = "text/javascript", Body = "self.onmessage = () => { throw new Error('simulated replica crash'); }; self.postMessage({ ready: true });" }));
                 var page = await context.NewPageAsync();
+                if (s.Throttle > 1)
+                {
+                    var cdp = await context.NewCDPSessionAsync(page);
+                    await cdp.SendAsync("Emulation.setCPUThrottlingRate", new Dictionary<string, object> { ["rate"] = s.Throttle });
+                }
                 page.Console += (_, m) => { if (m.Type is "warning" or "error") Console.WriteLine($"  [{s.Name}] {m.Text}"); };
                 page.SetDefaultTimeout(180000);
                 await page.GotoAsync(address + "/csharp-pdf/" + s.Query);
@@ -70,7 +77,7 @@ static class EditorPool
                 named["scenario"] = JsonSerializer.SerializeToElement(s.Name);
                 var element = JsonSerializer.SerializeToElement(named);
                 results.Add(element);
-                Console.WriteLine($"{s.Name}: pool={element.GetProperty("pool")} cold240={element.GetProperty("cold240Ms"):0} warm240={element.GetProperty("warm240Ms"):0} nav137={element.GetProperty("nav137Ms"):0} thumbs={element.GetProperty("thumbsMs"):0} maxFrameGap={element.GetProperty("maxFrameGapMs"):0} engine={element.GetProperty("engine")} tiles={element.GetProperty("timings")}");
+                Console.WriteLine($"{s.Name}: pool={element.GetProperty("pool")} cold240={element.GetProperty("cold240Ms"):0} warm240={element.GetProperty("warm240Ms"):0} nav137={element.GetProperty("nav137Ms"):0} thumbs={element.GetProperty("thumbsMs"):0} print12={element.GetProperty("printMs"):0} maxFrameGap={element.GetProperty("maxFrameGapMs"):0} engine={element.GetProperty("engine")} tiles={element.GetProperty("timings")}");
             }
             await File.WriteAllTextAsync(Path.Combine(output, "pool.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
             var baseline = results[0].GetProperty("hashes").EnumerateArray().Select(h => h.GetString()).ToArray();
@@ -81,6 +88,7 @@ static class EditorPool
             }
             string Pool(int i) => results[i].GetProperty("pool").GetString()!;
             if (!Pool(1).Contains("spawned")) throw new Exception("The pool never spawned a replica: " + Pool(1));
+            if (!Pool(1).Contains("cancelled=0")) throw new Exception("Unrelated work was cancelled (print batch must complete): " + Pool(1));
             foreach (var i in new[] { 2, 3 })
                 if (!Pool(i).Contains("disabled=true")) throw new Exception($"{results[i].GetProperty("scenario")} should disable the pool and fall back: {Pool(i)}");
             foreach (var i in new[] { 4, 5 })
@@ -129,12 +137,17 @@ static class EditorPool
           const thumbs = await Promise.all(Array.from({ length: pages }, (_, page) => host.image(`/api/page/${page}.png?dpi=41&v=${v}`)));
           const thumbsMs = performance.now() - start;
           for (const t of thumbs) hashes.push(await hash(t));
+          // Print path: every page at 150 dpi in one Promise.all must all complete (no cancellation of unrelated work).
+          const printStart = performance.now();
+          const printed = await Promise.all(Array.from({ length: pages }, (_, page) => host.image(`/api/page/${page}.png?dpi=150&v=${v}&bare=false`)));
+          const printMs = performance.now() - printStart;
+          for (const p of printed) hashes.push(await hash(p));
           running = false;
           const pool = host.renderPool;
           const stats = pool ? pool.scheduler.stats : null;
-          return { pages, cold240Ms, warm240Ms, nav137Ms, thumbsMs, maxFrameGapMs, hashes,
+          return { pages, printMs, cold240Ms, warm240Ms, nav137Ms, thumbsMs, maxFrameGapMs, hashes,
             engine, timings: pool ? pool.timings.slice(0, 4) : null,
-            pool: pool ? `slots=${pool.maxSlots} spawned=${stats.spawned} completed=${stats.completed} failures=${stats.failures} disabled=${pool.scheduler.disabled}` : 'none' };
+            pool: pool ? `slots=${pool.maxSlots} spawned=${stats.spawned} completed=${stats.completed} failures=${stats.failures} cancelled=${stats.cancelled} disabled=${pool.scheduler.disabled}` : 'none' };
         }
         """;
 }
