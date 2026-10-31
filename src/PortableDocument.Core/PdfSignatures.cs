@@ -36,6 +36,8 @@ public sealed record PdfSignatureInfo
     public bool IsDocumentTimeStamp { get; init; }
     /// <summary>Generation time of the RFC 3161 TSTInfo for a document timestamp. It is the TSA's claim; the TSA certificate chain is not validated for trust here.</summary>
     public DateTimeOffset? TimeStampTime { get; init; }
+    /// <summary>OID of the hash algorithm of a document timestamp's message imprint.</summary>
+    public string? TimeStampImprintAlgorithm { get; init; }
     /// <summary>The signature carries a DocMDP transform and is referenced from the catalog /Perms /DocMDP: a certification signature (§12.8.2.2).</summary>
     public bool IsCertification => DocMdpStatus != PdfDocMdpStatus.NotCertification;
     /// <summary>The /P value of the DocMDP transform parameters, when the signature declares one (even if it is not effective).</summary>
@@ -231,20 +233,21 @@ public static class PdfSignatures
         catch (Exception e) when (e is PdfParseException or ArgumentException or InvalidOperationException) { return info with { FieldLockAction = action, FieldMdpFindings = ["The signed revision could not be re-read, so locked fields were not compared"] }; }
         var before = FieldValues(old);
         var after = FieldValues(f);
-        foreach (var (name, value) in before)
+        foreach (var (name, values) in before)
         {
             if (!Locked(name)) continue;
-            if (!after.TryGetValue(name, out var now)) findings.Add($"Locked field {name} was removed");
-            else if (!PdfObjectEquality.DeepEquals(value, now)) findings.Add($"Locked field {name} changed its value");
+            if (!after.TryGetValue(name, out var now)) { findings.Add($"Locked field {name} was removed"); continue; }
+            if (now.Count != values.Count) findings.Add($"Locked field {name} now exists {now.Count} time(s) instead of {values.Count}; duplicate field names are not accepted under a lock");
+            else if (!values.Zip(now).All(p => PdfObjectEquality.DeepEquals(p.First, p.Second))) findings.Add($"Locked field {name} changed its value");
         }
         foreach (var name in after.Keys)
             if (!before.ContainsKey(name) && Locked(name)) findings.Add($"A field named {name}, covered by the lock, was added");
         return info with { FieldLockAction = action, FieldMdpFindings = findings };
     }
 
-    static Dictionary<string, PdfObject?> FieldValues(PdfFile f)
+    static Dictionary<string, List<PdfObject?>> FieldValues(PdfFile f)
     {
-        var map = new Dictionary<string, PdfObject?>(StringComparer.Ordinal);
+        var map = new Dictionary<string, List<PdfObject?>>(StringComparer.Ordinal);
         if (f.Resolve(f.Catalog.Get("AcroForm")) is not PdfDictionary form) return map;
         var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
         void Walk(PdfObject? node, string prefix, int depth)
@@ -252,7 +255,7 @@ public static class PdfSignatures
             if (depth > 64 || map.Count > 100_000 || f.Resolve(node) is not PdfDictionary d || !seen.Add(d)) return;
             var name = (f.Resolve(d.Get("T")) as PdfString)?.Text;
             var full = name is null ? prefix : prefix.Length == 0 ? name : prefix + "." + name;
-            if (name is not null) map[full] = f.Resolve(d.Get("V"));
+            if (name is not null) { if (!map.TryGetValue(full, out var l)) map[full] = l = []; l.Add(f.Resolve(d.Get("V"))); }
             if (f.Resolve(d.Get("Kids")) is PdfArray kids) foreach (var k in kids.Items) Walk(k, full, depth + 1);
         }
         if (f.Resolve(form.Get("Fields")) is PdfArray fields) foreach (var x in fields.Items) Walk(x, "", 0);
@@ -462,7 +465,7 @@ public static class PdfSignatures
             var expected = HashOf(alg, Concat(data, br));
             var imprintOk = expected is not null && expected.AsSpan().SequenceEqual(hashed);
             var si = cms.SignerInfos[0];
-            info = info with { SignerCertificate = si.Certificate, SignerName = si.Certificate?.GetNameInfo(X509NameType.SimpleName, false), TimeStampTime = genTime, DigestValid = imprintOk };
+            info = info with { SignerCertificate = si.Certificate, SignerName = si.Certificate?.GetNameInfo(X509NameType.SimpleName, false), TimeStampTime = genTime, TimeStampImprintAlgorithm = alg, DigestValid = imprintOk };
             try { cms.CheckSignature(true); info = info with { SignatureValid = imprintOk }; }
             catch (CryptographicException e) { info = info with { Error = e.Message }; }
             return si.Certificate is null ? info : info with { ChainTrusted = BuildChain(si.Certificate, cms.Certificates) };

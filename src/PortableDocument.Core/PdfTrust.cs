@@ -67,6 +67,8 @@ public sealed class PdfTrustPolicy
     public IReadOnlyList<string> RequiredCertificatePolicies { get; init; } = [];
     /// <summary>Longest accepted path in certificates, including the signer and the anchor.</summary>
     public int MaxChainLength { get; init; } = 10;
+    /// <summary>Overrides "now" for the freshness checks of revocation evidence (tests, reproducible validation). Null uses the system clock.</summary>
+    public DateTimeOffset? CurrentTime { get; init; }
     public TimeSpan ClockSkew { get; init; } = TimeSpan.FromMinutes(5);
 }
 
@@ -241,7 +243,7 @@ public static class PdfCertificateValidator
             foreach (var c in d.Crls) if (PdfRevocationParser.ParseCrl(c) is { } p) crls.Add((src, p)); else skipped.Add($"A CRL from {src} could not be parsed");
             foreach (var o in d.OcspResponses) if (PdfRevocationParser.ParseOcsp(o) is { } p) ocsps.Add((src, p)); else skipped.Add($"An OCSP response from {src} was unsuccessful or could not be parsed");
         }
-        var now = DateTimeOffset.UtcNow;
+        var now = policy.CurrentTime ?? DateTimeOffset.UtcNow;
         for (var i = 0; i + 1 < chain.Count; i++)
         {
             var cert = chain[i];
