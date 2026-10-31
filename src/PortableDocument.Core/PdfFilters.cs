@@ -190,8 +190,11 @@ public static class PdfFilters
         var colors = (int)(r(p.Get("Colors")).AsNumber() ?? 1);
         var bpc = (int)(r(p.Get("BitsPerComponent")).AsNumber() ?? 8);
         var columns = (int)(r(p.Get("Columns")).AsNumber() ?? 1);
-        var bpp = Math.Max(1, colors * bpc / 8);
-        if (colors < 1 || columns < 1 || bpc is not (1 or 2 or 4 or 8 or 16) || (long)colors * bpc * columns > 1 << 28) return data;
+        var componentBits = (long)colors * bpc;
+        if (colors < 1 || columns < 1 || bpc is not (1 or 2 or 4 or 8 or 16) ||
+            componentBits > 1 << 28 || componentBits * columns > 1 << 28)
+            throw new PdfParseException("Invalid or oversized predictor parameters");
+        var bpp = Math.Max(1, (colors * bpc + 7) / 8);
         var rowBytes = (colors * bpc * columns + 7) / 8;
         if (pred == 2)
         {
@@ -247,13 +250,16 @@ public static class PdfFilters
                 continue;
             }
             var mask = (1 << bpc) - 1; var n = colors * columns;
-            var prev = new int[colors];
             for (var s = 0; s < n; s++)
             {
                 var bit = s * bpc; var idx = row + (bit >> 3); var sh = 8 - bpc - (bit & 7);
-                var c = s % colors;
-                var v = ((data[idx] >> sh & mask) + prev[c]) & mask;
-                prev[c] = v;
+                var previous = 0;
+                if (s >= colors)
+                {
+                    var previousBit = (s - colors) * bpc;
+                    previous = data[row + (previousBit >> 3)] >> (8 - bpc - (previousBit & 7)) & mask;
+                }
+                var v = ((data[idx] >> sh & mask) + previous) & mask;
                 data[idx] = (byte)(data[idx] & ~(mask << sh) | v << sh);
             }
         }

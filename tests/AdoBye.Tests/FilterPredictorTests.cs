@@ -78,12 +78,25 @@ public class FilterPredictorTests
     [InlineData(2, 0, 8)]
     [InlineData(2, 1, 3)]
     [InlineData(15, 99999999, 16)]
-    public void DegeneratePredictorParametersTerminate(int columns, int colors, int bpc)
+    [InlineData(-1, 1, 8)]
+    [InlineData(1, -1, 8)]
+    [InlineData(int.MaxValue, int.MaxValue, 16)]
+    public void DegeneratePredictorParametersAreRejected(int columns, int colors, int bpc)
     {
         var z = new MemoryStream();
         using (var zs = new ZLibStream(z, CompressionMode.Compress, true)) zs.Write(new byte[64]);
-        Assert.NotNull(Run(z.ToArray(), 2, colors, bpc, columns));
-        Assert.NotNull(Run(z.ToArray(), 15, colors, bpc, columns));
+        Assert.Throws<PdfParseException>(() => Run(z.ToArray(), 2, colors, bpc, columns));
+        Assert.Throws<PdfParseException>(() => Run(z.ToArray(), 15, colors, bpc, columns));
+    }
+
+    [Fact]
+    public void PngSubPredictorRoundsPackedPixelSizeUpToBytes()
+    {
+        // Two RGB pixels at four bits per component occupy three bytes; the byte offset is ceil(12/8).
+        byte[] encoded = [1, 0x12, 0x34, 0x44];
+        using var z = new MemoryStream();
+        using (var zs = new ZLibStream(z, CompressionMode.Compress, true)) zs.Write(encoded);
+        Assert.Equal(new byte[] { 0x12, 0x34, 0x56 }, Run(z.ToArray(), 11, 3, 4, 2));
     }
 
     [Fact]
