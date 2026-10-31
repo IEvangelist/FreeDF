@@ -479,6 +479,8 @@ async function build(immediateBase = false, renderDelay = 180) {
   const targetUrl = `/api/page/${sel}.png?dpi=${dpi}&v=${state.version}&bare=${!preview}`;
   const current = shownPage === sel && $('base')?.naturalWidth > 0;
   const targetCached = host?.hasCachedImage(targetUrl) ?? false;
+  // The incoming base inherits this target, so record it before any decode can replace the old base.
+  if ($('base')) $('base').dataset.targetUrl = targetUrl;
   if (current) {
     const previewUrl = `/api/page/${sel}.png?dpi=${Math.min(dpi, 40)}&v=${state.version}&bare=${!preview}`;
     if (immediateBase && !targetCached && $('base').dataset.loadedUrl !== previewUrl) {
