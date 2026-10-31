@@ -92,10 +92,15 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     public int Width => _w;
     public int Height => _h;
 
+    /// <summary>Test hook: rasterizers constructed while set stay sequential.</summary>
+    internal static bool ForceSequential;
+    internal static long PoolRetainedBytes => BufferPool.RetainedBytes;
+    readonly bool _threads = ThreadsAvailable && !ForceSequential;
+
     public const int MaxDimension = 1 << 16;
 
     /// <summary>Row-parallel paths are used on hosts with threads; browsers stay sequential, and the "PortableDocument.Render.DisableThreads" AppContext switch forces sequential everywhere (single-thread profiling).</summary>
-    static readonly bool UseThreads = !OperatingSystem.IsBrowser() && Environment.ProcessorCount > 1
+    static readonly bool ThreadsAvailable = !OperatingSystem.IsBrowser() && Environment.ProcessorCount > 1
         && !(AppContext.TryGetSwitch("PortableDocument.Render.DisableThreads", out var disabled) && disabled);
     public const long MaxPixels = 100_000_000;
 
@@ -162,7 +167,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 }
             }
         }
-        if (UseThreads && (long)_w * _h > 100_000)
+        if (_threads && (long)_w * _h > 100_000)
         {
             const int Band = 32;
             Parallel.For(0, (_h + Band - 1) / Band, b => Rows(b * Band, Math.Min(_h, b * Band + Band)));
@@ -598,7 +603,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
 
     void Enqueue(float r, float g, float b, float al)
     {
-        if (!UseThreads) { PaintRowsNormalCore(_sc, _clip, r, g, b, al); return; }
+        if (!_threads) { PaintRowsNormalCore(_sc, _clip, r, g, b, al); return; }
         if (_cmds.Length == 0) { _cmds = System.Buffers.ArrayPool<PaintCmd>.Shared.Rent(8192); _qEdges = System.Buffers.ArrayPool<Edge>.Shared.Rent(1 << 17); }
         if (_nc == _cmds.Length || _qCount + _en > _qEdges.Length) Flush();
         if (_en > _qEdges.Length)
@@ -649,7 +654,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 PaintRowsNormalCore(sc, c.Clip, c.R, c.G, c.B, c.Al);
             }
         }
-        if (UseThreads && bands >= 2 && (n >= 64 || area >= 150_000))
+        if (_threads && bands >= 2 && (n >= 64 || area >= 150_000))
         {
             Parallel.For(0, bands,
                 () => _scanPool.TryTake(out var s) ? s : new EdgeScanner(_w),
@@ -724,7 +729,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         }
     }
     /// <summary>First index in [from, to) whose coverage is below 1 (or <paramref name="to"/>).</summary>
-    static int RunEnd(float[] cov, int from, int to)
+    internal static int RunEnd(float[] cov, int from, int to)
     {
         var e = from;
         if (Vector256.IsHardwareAccelerated)
@@ -748,7 +753,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     /// arithmetic of the general paths. Page pixels (<paramref name="la"/> null) are overwritten when s is opaque and lerped otherwise; layer pixels (s == 1 only) with
     /// zero alpha take the colour and opaque layer pixels get <c>px += r - px</c> (k == 1).
     /// </summary>
-    static void FillOpaqueRun(float[] px, float[]? la, int o, int n, float r, float g, float b, float s)
+    internal static void FillOpaqueRun(float[] px, float[]? la, int o, int n, float r, float g, float b, float s)
     {
         var i = 0;
         if (Vector128.IsHardwareAccelerated)
@@ -797,7 +802,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void OpaquePixel(float[] px, float[]? la, int oi, float r, float g, float b, float s)
+    internal static void OpaquePixel(float[] px, float[]? la, int oi, float r, float g, float b, float s)
     {
         var o3 = oi * 3;
         if (la is null)
@@ -1047,7 +1052,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 Put(rowBase + x, r, g, b, cov, al, mode);
             }
         }
-        if (UseThreads && (long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
+        if (_threads && (long)(x1 - x0) * (y1 - y0) > 50_000) Parallel.For(y0, y1, Row);
         else for (var y = y0; y < y1; y++) Row(y);
     }
 
@@ -1101,24 +1106,50 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
     static class BufferPool
     {
         const int SharedLimit = 1 << 20;
-        const long RetainedBytesCap = 256L << 20;
-        static readonly List<float[]> Free = [];
+        const long RetainedBytesCap = 64L << 20;
+        const long MaxIdleMs = 5000;
+        static readonly List<(float[] Buf, long Tick)> Free = [];
         static long _freeBytes;
+
+        static BufferPool() => new Gen2Trimmer();
+
+        /// <summary>Drops everything when a gen2 collection runs: the process is under memory pressure or idle, so retained layers are not worth keeping.</summary>
+        sealed class Gen2Trimmer
+        {
+            ~Gen2Trimmer()
+            {
+                if (!Environment.HasShutdownStarted) { Clear(); new Gen2Trimmer(); }
+            }
+        }
+
+        internal static void Clear()
+        {
+            lock (Free) { Free.Clear(); _freeBytes = 0; }
+        }
+
+        internal static long RetainedBytes { get { lock (Free) return _freeBytes; } }
+
+        static void Age(long now)
+        {
+            for (var i = Free.Count - 1; i >= 0; i--)
+                if (now - Free[i].Tick > MaxIdleMs) { _freeBytes -= (long)Free[i].Buf.Length * sizeof(float); Free.RemoveAt(i); }
+        }
 
         public static float[] Rent(int n)
         {
             if (n <= SharedLimit) return System.Buffers.ArrayPool<float>.Shared.Rent(n);
             lock (Free)
             {
+                Age(Environment.TickCount64);
                 var best = -1;
                 for (var i = 0; i < Free.Count; i++)
                 {
-                    var len = Free[i].Length;
-                    if (len >= n && len <= n + (n >> 3) && (best < 0 || len < Free[best].Length)) best = i;
+                    var len = Free[i].Buf.Length;
+                    if (len >= n && len <= n + (n >> 3) && (best < 0 || len < Free[best].Buf.Length)) best = i;
                 }
                 if (best >= 0)
                 {
-                    var a = Free[best]; Free.RemoveAt(best); _freeBytes -= (long)a.Length * sizeof(float);
+                    var a = Free[best].Buf; Free.RemoveAt(best); _freeBytes -= (long)a.Length * sizeof(float);
                     return a;
                 }
             }
@@ -1131,12 +1162,13 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             var bytes = (long)a.Length * sizeof(float);
             lock (Free)
             {
+                var now = Environment.TickCount64;
+                Age(now);
                 if (_freeBytes + bytes > RetainedBytesCap) return;
-                Free.Add(a); _freeBytes += bytes;
+                Free.Add((a, now)); _freeBytes += bytes;
             }
         }
     }
-
     public void BeginGroup(bool isolated, bool knockout, double alpha, string blendMode) =>
         BeginGroup(isolated, knockout, alpha, blendMode, null);
 
@@ -1255,7 +1287,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                 Put((y - _oy) * _lw + (x - _ox), r, gg, b, cov, ag * g.Alpha, g.Mode);
             }
         }
-        if (UseThreads && (long)(c.X1 - c.X0) * (c.Y1 - c.Y0) > 100_000) Parallel.For(c.Y0, c.Y1, Row);
+        if (_threads && (long)(c.X1 - c.X0) * (c.Y1 - c.Y0) > 100_000) Parallel.For(c.Y0, c.Y1, Row);
         else for (var y = c.Y0; y < c.Y1; y++) Row(y);
         Return(g.Px); Return(g.A); Return(g.Ag); Return(g.Ip); Return(g.Ia);
     }
