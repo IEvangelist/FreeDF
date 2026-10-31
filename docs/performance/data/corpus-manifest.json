@@ -1,0 +1,77 @@
+{
+  "files": [
+    {
+      "file": "911report.pdf",
+      "url": "https://www.govinfo.gov/content/pkg/GPO-911REPORT/pdf/GPO-911REPORT.pdf",
+      "terms": "US Government Publishing Office (US gov work)",
+      "bytes": 2475163,
+      "pages": 585,
+      "sha256": "657d41475eb3a9a5e3e87a6c7c51ac1dfbe1af7566d1abff7bf7286e7e1c0e1b"
+    },
+    {
+      "file": "arxiv-attention.pdf",
+      "url": "https://arxiv.org/pdf/1706.03762",
+      "terms": "arXiv, per-paper licence; local measurement only",
+      "bytes": 2215244,
+      "pages": 15,
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+    },
+    {
+      "file": "arxiv-llama2.pdf",
+      "url": "https://arxiv.org/pdf/2307.09288",
+      "terms": "arXiv, per-paper licence; local measurement only",
+      "bytes": 13661300,
+      "pages": 77,
+      "sha256": "1df284ce95f783002074bfe8f21d47c646b396ceb1736ea3ec0ea212fc070d91"
+    },
+    {
+      "file": "budget2024.pdf",
+      "url": "https://www.govinfo.gov/content/pkg/BUDGET-2024-BUD/pdf/BUDGET-2024-BUD.pdf",
+      "terms": "GPO (US gov work)",
+      "bytes": 2417116,
+      "pages": 184,
+      "sha256": "cfb0751f9ef9f60e356f4808f3231c03af802ae63a4fc0f391bdc174bd3fe28a"
+    },
+    {
+      "file": "cfr-title26.pdf",
+      "url": "https://www.govinfo.gov/content/pkg/CFR-2023-title26-vol1/pdf/CFR-2023-title26-vol1.pdf",
+      "terms": "GPO (US gov work)",
+      "bytes": 2978457,
+      "pages": 753,
+      "sha256": "e8c69fa58d7ba87159f7feee325ade2d9be6edd4842f085faeeca2adaf19cc53"
+    },
+    {
+      "file": "usc-title42.pdf",
+      "url": "https://www.govinfo.gov/content/pkg/CFR-2023-title40-vol1/pdf/CFR-2023-title40-vol1.pdf",
+      "terms": "GPO (US gov work)",
+      "bytes": 3561427,
+      "pages": 849,
+      "sha256": "e9bc87eb88e9d82cc4a792c219201834ca03cddadaa205e46241cef21cbc116f"
+    },
+    {
+      "file": "irs-p17.pdf",
+      "url": "https://www.irs.gov/pub/irs-pdf/p17.pdf",
+      "terms": "IRS (US gov work)",
+      "bytes": 3088632,
+      "pages": 142,
+      "sha256": "2d2381d62c7c77ed4b64b83ac23c28ed85b7c8304eb580c09bd9fd660be0840b"
+    },
+    {
+      "file": "nasa-sp-4029.pdf",
+      "url": "https://www.nasa.gov/wp-content/uploads/2023/04/sp-4029.pdf",
+      "terms": "NASA (generally public domain; verify per document)",
+      "bytes": 36037981,
+      "pages": 344,
+      "sha256": "2b8051684d39e0e8dfd914320908e3d67b3729b68ffc17d5ee96449fdeeb18af"
+    },
+    {
+      "file": "darwin-origin-scan.pdf",
+      "url": "https://archive.org/download/originofspecies00darwuoft/originofspecies00darwuoft.pdf",
+      "terms": "Internet Archive scan of a public-domain (1859) book; JPX scanned pages",
+      "bytes": 25372662,
+      "pages": 568,
+      "sha256": "6f04f39b2a590a7864c4e9d24fa17da24dea26f4e0a8b8cbc70fc11484c2aa3c"
+    }
+  ],
+  "note": "PDFs are not committed. Download with tools/profile/Get-Corpus.ps1; synthetic files come from tools/profile/gen_synthetic.py."
+}
