@@ -5,9 +5,10 @@ Everything here is an independent encoder written from the spec: a Huffman bit w
 (T.800 Annex C / T.88 Annex E) for the refinement bitmaps. The expected page bitmap (.txt, '1' = white) is built directly
 from the target symbol bitmaps below, i.e. it is constructed, not produced by the C# decoder. The fixtures were additionally cross-checked against pdfium (pypdfium2 5.14): both render identically to the constructed bitmap.
 MuPDF/jbig2dec cannot confirm them: jbig2dec never repositions its arithmetic decoder for Huffman refinement data (and pdf.js
-reports "symbol refinement with Huffman is not supported"). pdfium also mis-decodes Huffman refinements whose symbol width is not
-a multiple of 8 or whose RDW/RDH are non-zero, so the fixtures avoid those inputs; the C# decoder handles them per T.88 but they
-are not independently verified.
+reports "symbol refinement with Huffman is not supported"). pdfium (pypdfium2 5.14) does decode them, and the huffman-oddwidth-* fixtures
+(symbol widths 5/6/7/8/13, i.e. not multiples of 8, and RDW = 1 / RDH = -1 refinements) render identically to the constructed bitmaps there.
+The huffman-oddwidth-raw / -mmr (non-refinement, byte-padded collective bitmap rows and MMR collective bitmaps) and huffman-custom-tables
+(segment type 53 with lower/upper/OOB lines in every table slot) fixtures are additionally confirmed by pdfium, MuPDF-or-pdf.js where noted in tools/jbig2_crosscheck.py output.
 
 Usage: python make_huffman_refagg.py [output-directory]
 """
@@ -55,7 +56,7 @@ class BitWriter:
 
 class HuffTable:
     def __init__(self, n):
-        normal, lower, upper, oob = TABLES[n]
+        normal, lower, upper, oob = TABLES[n] if isinstance(n, int) else n
         lines = [(p, r, lo, 'n') for p, r, lo in normal]
         if lower: lines.append((lower[0], 32, lower[1], 'l'))
         lines.append((upper[0], 32, upper[1], 'u'))
@@ -84,7 +85,13 @@ class HuffTable:
                 bw.put(code, ln)
                 bw.put(value - lo, r)
                 return
-        raise ValueError(f"value {value} not codable with normal lines")
+        for i, (p, r, lo, kind) in enumerate(self.lines):
+            if (kind == 'l' and value <= lo) or (kind == 'u' and value >= lo):
+                code, ln = self.codes[i]
+                bw.put(code, ln)
+                bw.put(lo - value if kind == 'l' else value - lo, 32)
+                return
+        raise ValueError(f"value {value} not codable")
 
     def put_oob(self, bw):
         for i, l in enumerate(self.lines):
@@ -295,7 +302,7 @@ def dict1(aggregate, code_len):
     return struct.pack('>H', flags) + bytes([0xFF, 0xFF, 0xFF, 0xFF]) + struct.pack('>II', 2 + new, new) + bw.to_bytes()
 
 
-def text_region(symbols, w, h):
+def text_region(symbols, w, h, tables=None, hf=0):
     """Huffman text region (no refinement) placing each symbol at the given (x, y) top-left; ids use ceil(log2(n))-bit codes."""
     n = len(symbols)
     bw = BitWriter()
@@ -306,7 +313,7 @@ def text_region(symbols, w, h):
     for _ in range(n):
         bw.put(0, 1)
     bw.align()
-    t6, t8, t11 = HuffTable(6), HuffTable(8), HuffTable(11)
+    t6, t8, t11 = tables or (HuffTable(6), HuffTable(8), HuffTable(11))
     t11.put(bw, 1)
     y = symbols[0][2]
     t11.put(bw, y + 1)
@@ -320,7 +327,7 @@ def text_region(symbols, w, h):
     t8.put_oob(bw)
     body = bw.to_bytes()
     flags = 0x0011  # SBHUFF=1, REFCORNER=TOPLEFT
-    return region_info(w, h, 0, 0) + struct.pack('>HHI', flags, 0, n) + body
+    return region_info(w, h, 0, 0) + struct.pack('>HHI', flags, hf, n) + body
 
 
 def build(aggregate):
@@ -364,10 +371,159 @@ def make_pdf(stream, w, h):
     return bytes(out)
 
 
+def layout(syms, start=2, y=2, pw=64, ph=20):
+    canvas = blank(pw, ph)
+    placed, x = [], start
+    for sid, bmp in syms:
+        placed.append((sid, x, y, len(bmp[0])))
+        compose(canvas, bmp, x, y)
+        x += len(bmp[0]) + 2
+    return placed, canvas, pw, ph
+
+
+# ---- symbol widths that are not multiples of 8, non-zero RDW/RDH, MMR collective bitmaps, custom Huffman tables (segment type 53)
+A5 = [r[:5] for r in S0]
+B7 = [r[:7] for r in S1]
+N0o = [r[:6] for r in N0]
+N1o = ['.' + r + '.' for r in N0o]
+N1o[0] = "...###.."; N1o[6] = ".#.....#"
+Rp = [N0o[y + 1] + '.' for y in range(7)]   # 7x7: N0o shifted up one row (RDW = 1, RDH = -1 -> dx = 0, dy = -1)
+Rp[2] = "#..##.#"; Rp[5] = ".#....#"
+N2oc = blank(13, 8)
+compose(N2oc, A5, 0, 0)
+compose(N2oc, Rp, 6, 0)
+N2o = to_rows(N2oc)
+
+
+def g4(rows):
+    import io
+    from PIL import Image
+    w, h = len(rows[0]), len(rows)
+    im = Image.new('1', (w, h), 0)
+    im.putdata([1 if ch == '#' else 0 for r in rows for ch in r])
+    buf = io.BytesIO(); im.save(buf, format='TIFF', compression='group4')
+    t = Image.open(io.BytesIO(buf.getvalue()))
+    off, cnt = t.tag_v2[273], t.tag_v2[279]
+    off = off if isinstance(off, int) else off[0]; cnt = cnt if isinstance(cnt, int) else cnt[0]
+    return buf.getvalue()[off:off + cnt]
+
+
+def dict0_widths(a, b, mmr=False, flags=0x0001, tables=None):
+    """Huffman symbol dictionary without refinement: a then b in one height class, any widths (rows of the collective bitmap are byte padded)."""
+    bw = BitWriter()
+    t4, t2, t1 = tables or (HuffTable(4), HuffTable(2), HuffTable(1))
+    t4.put(bw, len(a))
+    t2.put(bw, len(a[0])); t2.put(bw, len(b[0]) - len(a[0])); t2.put_oob(bw)
+    rows = [x + y for x, y in zip(a, b)]
+    if mmr:
+        data = g4(rows)
+        t1.put(bw, len(data)); bw.align(); bw.bytes_(data)
+    else:
+        t1.put(bw, 0); bw.align()
+        for row in rows:
+            for ch in row: bw.put(1 if ch == '#' else 0, 1)
+            bw.align()
+    HuffTable(1).put(bw, 0); HuffTable(1).put(bw, 2)
+    return struct.pack('>HII', flags, 2, 2) + bw.to_bytes()
+
+
+def dict1_odd(aggregate, code_len=2):
+    """Huffman symbol dictionary with SDREFAGG=1 over dict0_widths(A5, B7): 6-wide refinement of the 5-wide A5 and an 8-wide/13-wide second symbol."""
+    bw = BitWriter()
+    gr = [(0, 0)] * 8192
+    t4, t2, t1, t15, t6, t8, t11 = (HuffTable(n) for n in (4, 2, 1, 15, 6, 8, 11))
+
+    def single(ref_id, ref, target, dx, dy):
+        t1.put(bw, 1)
+        bw.put(ref_id, code_len)
+        t15.put(bw, dx); t15.put(bw, dy)
+        data = refinement_bytes(gr, target, ref, dx, dy)
+        t1.put(bw, len(data))
+        bw.align()
+        bw.bytes_(data)
+
+    t4.put(bw, 8)
+    t2.put(bw, 6); single(0, A5, N0o, 0, 0)       # N0o (id 2, 6x8) refines A5 (id 0, 5x8)
+    if not aggregate:
+        t2.put(bw, 2); single(2, N0o, N1o, 1, 0)  # N1o (id 3, 8x8) refines N0o with dx = 1
+    else:
+        t2.put(bw, 7)                             # N2o (id 3, 13x8)
+        t1.put(bw, 2)
+        t11.put(bw, 1); t11.put(bw, 1)
+        t6.put(bw, 0)
+        bw.put(0, code_len); bw.put(0, 1)         # instance 1: A5 at S = 0
+        t8.put(bw, 2)                             # next S = (0 + 4) + 2 = 6
+        bw.put(2, code_len); bw.put(1, 1)         # instance 2: refined N0o, RI = 1
+        t15.put(bw, 1); t15.put(bw, -1)           # RDW = 1, RDH = -1 -> 7x7
+        t15.put(bw, 0); t15.put(bw, 0)            # RDX = 0, RDY = 0 -> dx = floor(1/2) = 0, dy = floor(-1/2) = -1
+        data = refinement_bytes(gr, Rp, N0o, 0, -1)
+        t1.put(bw, len(data))
+        bw.align()
+        bw.bytes_(data)
+        t8.put_oob(bw)
+    t2.put_oob(bw)
+    t1.put(bw, 0); t1.put(bw, 4)
+    return struct.pack('>H', 0x0003) + bytes([0xFF, 0xFF, 0xFF, 0xFF]) + struct.pack('>II', 4, 2) + bw.to_bytes()
+
+
+def table_payload(spec):
+    normal, lower, upper, oob = spec
+    ps = max([p for p, _, _ in normal] + [lower[0], upper[0]] + ([oob] if oob is not None else [])).bit_length()
+    rs = max(max(r for _, r, _ in normal).bit_length(), 1)
+    bw = BitWriter()
+    for p, r, _ in normal:
+        bw.put(p, ps); bw.put(r, rs)
+    bw.put(lower[0], ps); bw.put(upper[0], ps)
+    if oob is not None: bw.put(oob, ps)
+    flags = (1 if oob is not None else 0) | (ps - 1) << 1 | (rs - 1) << 4
+    return bytes([flags]) + struct.pack('>ii', normal[0][2], upper[1]) + bw.to_bytes()
+
+
+# (normal lines (prefix length, range length, low), lower (prefix length, HTLOW - 1), upper (prefix length, HTHIGH), OOB prefix length)
+CUSTOM_DH = ([(2, 1, -2), (2, 2, 0), (2, 1, 4)], (3, -3), (3, 6), None)
+CUSTOM_DW = ([(2, 1, 0), (2, 2, 2), (3, 1, 6)], (3, -1), (3, 8), 3)
+CUSTOM_BM = ([(1, 0, 0)], (2, -1), (2, 1), None)
+CUSTOM_FS = ([(2, 2, 0)], (2, -1), (2, 4), None)
+CUSTOM_DS = ([(1, 1, 0)], (3, -1), (2, 2), 3)
+CUSTOM_DT = ([(1, 1, 1)], (2, 0), (2, 3), None)
+
+
+def build_custom():
+    tdh, tdw, tbm, tfs, tds, tdt = (HuffTable(s) for s in (CUSTOM_DH, CUSTOM_DW, CUSTOM_BM, CUSTOM_FS, CUSTOM_DS, CUSTOM_DT))
+    dict_ = dict0_widths(S0, S1, flags=0x007D, tables=(tdh, tdw, tbm))
+    syms = [(0, S0), (1, S1)]
+    placed, canvas, pw, ph = layout(syms, start=-6)
+    stream = (segment(1, 53, 1, [], table_payload(CUSTOM_DH)) + segment(2, 53, 1, [], table_payload(CUSTOM_DW)) +
+              segment(3, 53, 1, [], table_payload(CUSTOM_BM)) + segment(4, 53, 1, [], table_payload(CUSTOM_FS)) +
+              segment(5, 53, 1, [], table_payload(CUSTOM_DS)) + segment(6, 53, 1, [], table_payload(CUSTOM_DT)) +
+              segment(7, 48, 1, [], page_info(pw, ph)) + segment(8, 0, 1, [1, 2, 3], dict_) +
+              segment(9, 6, 1, [8, 4, 5, 6], text_region(placed, pw, ph, (tfs, tds, tdt), 0x3F)) + segment(10, 49, 1, [], b''))
+    return stream, to_rows(canvas), pw, ph
+
+
+def build_widths(a, b, mmr=False):
+    placed, canvas, pw, ph = layout([(0, a), (1, b)])
+    stream = (segment(0, 48, 1, [], page_info(pw, ph)) + segment(1, 0, 1, [], dict0_widths(a, b, mmr)) +
+              segment(2, 6, 1, [1], text_region(placed, pw, ph)) + segment(3, 49, 1, [], b''))
+    return stream, to_rows(canvas), pw, ph
+
+
+def build_odd(aggregate):
+    syms = [(0, A5), (1, B7), (2, N0o), (3, N2o if aggregate else N1o)]
+    placed, canvas, pw, ph = layout(syms)
+    stream = (segment(0, 48, 1, [], page_info(pw, ph)) + segment(1, 0, 1, [], dict0_widths(A5, B7)) + segment(2, 0, 1, [1], dict1_odd(aggregate)) +
+              segment(3, 6, 1, [2], text_region(placed, pw, ph)) + segment(4, 49, 1, [], b''))
+    return stream, to_rows(canvas), pw, ph
+
+
 if __name__ == '__main__':
     outdir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent
-    for name, aggregate in (('huffman-refagg-single', False), ('huffman-refagg-aggregate', True)):
-        stream, rows, w, h = build(aggregate)
+    jobs = (('huffman-refagg-single', lambda: build(False)), ('huffman-refagg-aggregate', lambda: build(True)),
+            ('huffman-oddwidth-refagg-single', lambda: build_odd(False)), ('huffman-oddwidth-refagg-aggregate-rdwrdh', lambda: build_odd(True)),
+            ('huffman-oddwidth-raw', lambda: build_widths(A5, B7)), ('huffman-oddwidth-mmr', lambda: build_widths(A5, B7, True)),
+            ('huffman-custom-tables', build_custom))
+    for name, job in jobs:
+        stream, rows, w, h = job()
         (outdir / f'{name}.pdf').write_bytes(make_pdf(stream, w, h))
         (outdir / f'{name}.txt').write_text(''.join(('0' if ch == '#' else '1') for r in rows for ch in r), newline='')
         print(name, len(stream), 'bytes')

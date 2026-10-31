@@ -5,7 +5,9 @@ namespace PortableDocument.Content;
 /// <summary>
 /// JBIG2 decoder (ITU-T T.88 / ISO 32000-2 §7.4.7): generic regions (MMR and arithmetic, templates 0-3, TPGD),
 /// generic refinement, symbol dictionaries (arithmetic, and Huffman including refinement/aggregation), text regions (arithmetic and Huffman), pattern dictionaries, halftone regions,
-/// custom Huffman tables and /JBIG2Globals. Not implemented: Amendment 2 12-AT extended templates and Amendment 3 colour extensions. Works on one byte per pixel internally; output is packed 1 bpp.
+/// custom Huffman tables and /JBIG2Globals. Amendment 2 12-AT extended generic templates (GBTEMPLATE 0 + EXTTEMPLATE) are decoded. Amendment 3 colour regions (COLEXTFLAG) are decoded as monochrome ink:
+/// the trailing GBFGCOLID / colour section is skipped, the background is transparent (the region is OR-ed onto the page) and the palette segment is ignored, because PDF only allows monochrome JBIG2.
+/// Works on one byte per pixel internally; output is packed 1 bpp.
 /// </summary>
 public static class Jbig2Decoder
 {
@@ -93,6 +95,7 @@ public static class Jbig2Decoder
         public Bitmap? Page;
         public int PageDefault;
         public bool UnknownHeight;
+        public int PageNum = -1, IgnoredPage = -1;
     }
 
     static readonly int[] SltpGeneric = [0x9B25, 0x0795, 0x00E5, 0x0195];
@@ -150,7 +153,7 @@ public static class Jbig2Decoder
                 if (s is null) break;
                 s.Off = pos;
                 if (s.UnknownLen) s.Len = FindGenericEnd(d, pos);
-                if (pos + s.Len > d.Length) s.Len = d.Length - pos;
+                if ((long)pos + s.Len > d.Length) s.Len = d.Length - pos;
                 pos += s.Len;
                 if (s.Type == 51) break;
                 segs.Add(s);
@@ -169,6 +172,7 @@ public static class Jbig2Decoder
             {
                 s.Off = pos;
                 if (s.UnknownLen) s.Len = FindGenericEnd(d, pos);
+                if ((long)pos + s.Len > d.Length) s.Len = d.Length - pos;
                 pos += s.Len;
             }
         }
@@ -209,7 +213,7 @@ public static class Jbig2Decoder
         }
         if (bigPage) { s.Page = I32(d, pos); pos += 4; } else { s.Page = d[pos]; pos++; }
         var len = U32(d, pos); pos += 4;
-        if (len == 0xFFFFFFFF) s.UnknownLen = true; else s.Len = (int)len;
+        if (len == 0xFFFFFFFF) s.UnknownLen = true; else s.Len = len > int.MaxValue ? int.MaxValue : (int)len;
         return s;
     }
 
@@ -227,18 +231,24 @@ public static class Jbig2Decoder
     {
         var d = st.Data;
         var o = s.Off; var end = s.Off + s.Len;
+        if (s.Page != 0 && s.Page == st.IgnoredPage) return;
         switch (s.Type)
         {
             case 48:
                 {
+                    if (st.Page is not null && s.Page != st.PageNum) { st.IgnoredPage = s.Page; break; }
                     var w = (int)U32(d, o); var h = U32(d, o + 4);
                     var unknown = h == 0xFFFFFFFF;
                     st.UnknownHeight = unknown;
+                    st.PageNum = s.Page;
                     st.PageDefault = d[o + 16] >> 2 & 1;
-                    st.Page = new Bitmap(w, unknown ? 0 : (int)h);
+                    st.Page = NewBitmap(w, unknown ? 0 : (int)h);
                     if (st.PageDefault != 0) Array.Fill(st.Page.D, (byte)1);
                     break;
                 }
+            case 50:
+                if (st.UnknownHeight && st.Page is not null && s.Len >= 4) GrowPage(st, (long)U32(d, o) + 1);
+                break;
             case 53: st.Results[s.Num] = Jb2HuffTable.Parse(d, o, end); break;
             case 0: st.Results[s.Num] = DecodeSymbolDict(st, s); break;
             case 16: st.Results[s.Num] = DecodePatternDict(st, s); break;
@@ -249,17 +259,23 @@ public static class Jbig2Decoder
         }
     }
 
+    // Striped pages of unknown height grow as stripes arrive; end-of-stripe segments fix the final row count.
+    static void GrowPage(State st, long rows)
+    {
+        var pg = st.Page!;
+        if (rows <= pg.H) return;
+        if (rows > int.MaxValue) throw new InvalidOperationException("bad JBIG2 page height");
+        var np = NewBitmap(pg.W, (int)rows);
+        if (st.PageDefault != 0) Array.Fill(np.D, (byte)1);
+        pg.D.CopyTo(np.D, 0);
+        st.Page = np;
+    }
+
     static void Region(State st, Seg s, (Bitmap Bm, int X, int Y, int Op) r)
     {
         if (s.Type is 4 or 20 or 36 or 40) { st.Results[s.Num] = r.Bm; return; }
         var pg = st.Page ?? throw new InvalidOperationException("region before page info");
-        if (st.UnknownHeight && r.Y + r.Bm.H > pg.H)
-        {
-            var np = new Bitmap(pg.W, r.Y + r.Bm.H);
-            if (st.PageDefault != 0) Array.Fill(np.D, (byte)1);
-            pg.D.CopyTo(np.D, 0);
-            st.Page = pg = np;
-        }
+        if (st.UnknownHeight && r.Y >= 0 && (long)r.Y + r.Bm.H > pg.H) { GrowPage(st, (long)r.Y + r.Bm.H); pg = st.Page!; }
         Compose(pg, r.Bm, r.X, r.Y, r.Op);
     }
 
@@ -297,16 +313,49 @@ public static class Jbig2Decoder
     {
         var d = st.Data; var o = s.Off; var end = o + s.Len;
         var (w, h, x, y, op) = RegionInfo(d, o);
+        var colour = (d[o + 16] & 8) != 0;
+        if (colour) { op = 0; if (!s.UnknownLen && end - o > 21) end -= 4; }
         o += 17;
         var flags = d[o++];
         var mmr = (flags & 1) != 0; var tmpl = flags >> 1 & 3; var tpgd = (flags & 8) != 0;
+        var ext = !mmr && tmpl == 0 && (flags & 0x10) != 0;
         if (s.UnknownLen) { h = I32(d, end - 4); end -= 4; }
         var bm = NewBitmap(w, h);
         if (mmr) { DecodeMmr(d, o, end, bm); return (bm, x, y, op); }
-        var at = ReadAt(d, ref o, tmpl == 0 ? 4 : 1);
+        var at = ReadAt(d, ref o, ext ? 12 : tmpl == 0 ? 4 : 1);
         var mq = new MqDecoder(d, o, end);
-        DecodeGeneric(mq, new byte[65536], bm, tmpl, tpgd, at, null);
+        if (ext) DecodeGenericExt(mq, new byte[65536], bm, tpgd, at);
+        else DecodeGeneric(mq, new byte[65536], bm, tmpl, tpgd, at, null);
         return (bm, x, y, op);
+    }
+
+    // Bit of the 16-bit context occupied by each extended-template AT pixel A1..A12, i.e. the bit of the pixel at its nominal position (T.88 Amd.2 Figure 3(b), shared with the 4-AT layout).
+    static readonly int[] ExtAtBit = [1, 13, 9, 14, 12, 5, 2, 3, 11, 4, 15, 10];
+
+    /// <summary>T.88 Amd.2 generic region decoding with GBTEMPLATE 0 and EXTTEMPLATE 1 (four fixed pixels plus twelve adaptive ones); separate from <see cref="DecodeGeneric"/> to keep that hot loop untouched.</summary>
+    static void DecodeGenericExt(MqDecoder mq, byte[] cx, Bitmap bm, bool tpgd, sbyte[] at)
+    {
+        int w = bm.W, h = bm.H;
+        var D = bm.D;
+        var ltp = 0;
+        for (var y = 0; y < h; y++)
+        {
+            if (tpgd)
+            {
+                ltp ^= mq.Decode(cx, SltpGeneric[0]);
+                if (ltp != 0)
+                {
+                    if (y > 0) Array.Copy(D, (y - 1) * w, D, y * w, w);
+                    continue;
+                }
+            }
+            for (var x = 0; x < w; x++)
+            {
+                var c = Px(bm, x - 1, y) | Px(bm, x + 1, y - 1) << 6 | Px(bm, x, y - 1) << 7 | Px(bm, x - 1, y - 1) << 8;
+                for (var k = 0; k < 12; k++) c |= Px(bm, x + at[2 * k], y + at[2 * k + 1]) << ExtAtBit[k];
+                D[y * w + x] = (byte)mq.Decode(cx, c);
+            }
+        }
     }
 
     static sbyte[] ReadAt(byte[] d, ref int o, int pairs)
@@ -623,6 +672,13 @@ public static class Jbig2Decoder
     {
         var d = st.Data; var o = s.Off; var end = o + s.Len;
         var (w, h, x, y, op) = RegionInfo(d, o);
+        if ((d[o + 16] & 8) != 0)
+        {
+            // Amd.3 colour section: trailing T.45 colour palette IDs whose total length (including this 4-byte field) is in the last four bytes.
+            op = 0;
+            var sect = end - o > 25 ? U32(d, end - 4) : 0;
+            if (sect >= 4 && sect <= end - o - 21) end -= (int)sect;
+        }
         o += 17;
         var f = U16(d, o); o += 2;
         var tp = new TextParams
