@@ -17,7 +17,8 @@ function Run([string] $What, [scriptblock] $Block) {
     try { $global:LASTEXITCODE = 0; & $Block; if ($LASTEXITCODE) { throw "$What failed (exit $LASTEXITCODE)." } } finally { Write-Host '::endgroup::' }
 }
 function Smoke([string[]] $Mode) { dotnet run --no-build -c Release --project $smokeProject -- @Mode }
-function Dir([string] $Name) { $p = Join-Path $Work $Name; New-Item -ItemType Directory -Force $p | Out-Null; $p }
+function WorkDir([string] $Name) { $p = Join-Path $Work $Name; New-Item -ItemType Directory -Force $p | Out-Null; $p }
+New-Item -ItemType Directory -Force $Work | Out-Null
 function Prepare {
     if (!(Test-Path (Join-Path $Site 'index.html'))) { throw "Published site not found at $Site. Run tools/Publish-EditorPages.ps1 first or pass -Site." }
     dotnet build $smokeProject -c Release --nologo -v q
@@ -34,6 +35,8 @@ if ($unitFilters.ContainsKey($Chunk)) {
 }
 if ($Chunk -eq 'node') {
     Run 'worker cache and scheduling invariants' { node --test (Get-ChildItem tools/AdoBye.EditorWasm/tests -Filter *.test.mjs).FullName }
+    $cjs = @(Get-ChildItem tools/AdoBye.EditorWasm, tools/AdoBye.EditorWeb -Filter *.test.cjs | Where-Object Name -notlike 'e2e_*')
+    if ($cjs) { Run 'host, worker and selection invariants' { node --test $cjs.FullName } }
     Run 'sample loader integrity' { node --test tools/AdoBye.EditorWeb/samples.test.mjs }
     return
 }
@@ -43,7 +46,7 @@ $repacked = Join-Path $samples '26-repacked-object-streams.pdf'
 switch ($Chunk) {
     'default' {
         $env:EDITOR_SMOKE_TRANSIENT_BOOT = '1'
-        $env:EDITOR_SMOKE_ARTIFACTS = Dir 'editor-save-overlap'
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-save-overlap'
         Run 'local editor and trim-safe JSON round trips' { Smoke @($Site) }
     }
     'forms' { Run 'on-page form filling and field authoring' { Smoke @('--forms', $Site) } }
@@ -52,19 +55,19 @@ switch ($Chunk) {
         Run 'one-click sample collection' { Smoke @('--samples', $Site) }
         Run 'annotation authoring' { Smoke @('--annotations', $Site) }
     }
-    'boot' { Run 'cold boot and injected resource failures' { Smoke @('--boot', $Site, (Dir 'editor-boot')) } }
+    'boot' { Run 'cold boot and injected resource failures' { Smoke @('--boot', $Site, (WorkDir 'editor-boot')) } }
     'viewport' {
-        $env:EDITOR_SMOKE_ARTIFACTS = Dir 'editor-viewport'
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-viewport'
         Run 'viewport fit and window scrolling' { Smoke @('--viewport', $Site, $repacked) }
-        Run 'page-image continuity' { Smoke @('--page-image', $Site, $repacked, (Dir 'editor-page-image')) }
+        Run 'page-image continuity' { Smoke @('--page-image', $Site, $repacked, (WorkDir 'editor-page-image')) }
     }
     'a11y' {
-        $env:EDITOR_SMOKE_ARTIFACTS = Dir 'editor-a11y'
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-a11y'
         Run 'axe-core tooling (test-only, never published)' { npm ci --prefix tools/AdoBye.EditorSmoke/a11y }
         Run 'accessibility' { Smoke @('--a11y', $Site, $showcase) }
     }
     'responsive' {
-        $env:EDITOR_SMOKE_ARTIFACTS = Dir 'editor-responsive'
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-responsive'
         Run 'responsive layout matrix' { Smoke @('--responsive', $Site, $showcase) }
     }
     'profile' {
