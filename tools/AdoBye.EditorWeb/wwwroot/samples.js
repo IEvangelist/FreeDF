@@ -87,7 +87,11 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
   let entries = null, manifestPromise = null, active = null, panel = null;
   doc.head.append(Object.assign(doc.createElement('style'), { textContent: css }));
 
+  // Capability contract (additive): the host/crypto code may set window.pdfEditorCapabilities = { openEncrypted: true } once the editor can
+  // ask for passwords. Until then only samples that need a password (manifest requiresPassword) are blocked; encrypted samples that open
+  // with an empty password (18) are attempted and, if this build cannot decrypt them, the open error is shown with Retry.
   const canOpenEncrypted = () => capabilities()?.openEncrypted === true;
+  const blocked = e => e.requiresPassword && !canOpenEncrypted();
   function ensureManifest() {
     manifestPromise ??= (async () => {
       let response;
@@ -144,7 +148,7 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
       if (!entry) throw new Error(name === FULL_COLLECTION
         ? 'The full sample collection is not published here. Generate it with: dotnet run --project tools/AdoBye.Samples -- generate samples 27-'
         : `Unknown sample "${name}".`);
-      if (entry.encrypted && !canOpenEncrypted()) throw new Error(`${entry.file} requires password support, which this build does not have.`);
+      if (blocked(entry)) throw new Error(`${entry.file} needs a password, and this build has no password prompt yet.`);
       const label = `Downloading ${entry.file}`;
       progress(`${label} (${formatSize(entry.size)})…`, 0, entry.size);
       let spoken = -1;
@@ -157,7 +161,8 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
       if (control.signal.aborted) return;
       if (!wasDirty && isDirty() && !confirmReplace()) { hidePanel(); return; }
       progress(`Opening ${entry.file}…`);
-      await open(new File([bytes], entry.file, { type: 'application/pdf' }));
+      try { await open(new File([bytes], entry.file, { type: 'application/pdf' })); }
+      catch (error) { throw entry.encrypted ? new Error(`${entry.file} is encrypted and this build could not open it: ${error.message}`) : error; }
       hidePanel();
       status(`Opened ${entry.title} (${entry.pages} pages). It stayed on this device.`);
     } catch (error) {
@@ -191,9 +196,9 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
     ensureManifest().catch(() => {});
     if (!entries) return [{ label: 'Full sample collection', run: () => load(FULL_COLLECTION) }, '-', { label: 'Other samples load after the list is ready', disabled: true }];
     const item = e => {
-      const blocked = e.encrypted && !canOpenEncrypted();
-      return { label: esc(e.name === FULL_COLLECTION ? `${e.title} (${e.pages} pages)` : `${e.name.slice(0, 2)} ${e.title}`) + (blocked ? ' — requires password support' : ''),
-        key: formatSize(e.size), disabled: blocked, run: () => load(e.name) };
+      const off = blocked(e);
+      return { label: esc(e.name === FULL_COLLECTION ? `${e.title} (${e.pages} pages)` : `${e.name.slice(0, 2)} ${e.title}`) + (off ? ' — requires password support' : ''),
+        key: formatSize(e.size), disabled: off, run: () => load(e.name) };
     };
     const [full, rest] = [entries.filter(e => e.name === FULL_COLLECTION), entries.filter(e => e.name !== FULL_COLLECTION)];
     return [...full.map(item), full.length && rest.length ? '-' : null, ...rest.map(item)];
