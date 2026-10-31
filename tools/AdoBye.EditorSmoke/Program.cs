@@ -50,7 +50,8 @@ var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap] <published-wwwroot-or-url>");
+var formsOnly = args.Length == 2 && args[0] == "--forms";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms] <published-wwwroot-or-url>");
 var publicSite = Uri.TryCreate(args[^1], UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
     throw new ArgumentException("The public editor URL must end in /csharp-pdf/.");
@@ -167,6 +168,12 @@ try
     {
         await EditorTextSelection.Run(page);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
+        return;
+    }
+    if (formsOnly)
+    {
+        await EditorForms.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
     }
     if (mergeOnly)

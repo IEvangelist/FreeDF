@@ -119,6 +119,10 @@ footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 .obj.on { outline: 1.5px solid var(--accent); }
 .span { position: absolute; cursor: text; outline: 1px dashed transparent; border-radius: 2px; }
 .span:hover { outline-color: var(--accent); background: #4c8dff1f; }
+.wgts { position: absolute; inset: 0; pointer-events: none; }
+.wgt { position: absolute; pointer-events: auto; box-sizing: border-box; margin: 0; padding: 0 2px; border: 1px solid #4c8dff99; background: #fff; color: #000; font-family: Helvetica, Arial, sans-serif; accent-color: var(--accent); }
+.wgt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wgt.multiline, textarea.wgt { resize: none; }
 .hd { position: absolute; width: 9px; height: 9px; background: #fff; border: 1.5px solid var(--accent); border-radius: 50%; z-index: 5; box-shadow: 0 1px 3px #0006; }
 svg.lines { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .cm { position: fixed; z-index: 1000; min-width: 220px; padding: 5px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 12px 32px #000a, 0 2px 6px #0006; font-size: 12.5px; animation: cm-in .08s ease-out; }

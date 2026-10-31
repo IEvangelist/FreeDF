@@ -60,6 +60,8 @@ jobs:
           EDITOR_SMOKE_TRANSIENT_BOOT: '1'
           EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-save-overlap
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "${{ runner.temp }}/editor-pages/wwwroot"
+      - name: Exercise on-page form filling
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --forms "${{ runner.temp }}/editor-pages/wwwroot"
       - name: Exercise local Merge PDFs flow
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --merge "${{ runner.temp }}/editor-pages/wwwroot"
       - name: Exercise cold boot and injected resource failures
