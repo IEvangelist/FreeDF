@@ -9,6 +9,14 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
 {
     readonly byte[] _d = layout.D;
     int _flags, _markSet, _mask, _depth;
+    long _ops;
+    readonly long _budget = Math.Max(buf.Len * 256L, 50000);
+    const int MaxContext = 64, MaxRecords = 256;
+
+    /// <summary>True when the operation budget ran out; remaining lookups were skipped and the glyphs keep what was applied so far.</summary>
+    public bool Truncated { get; private set; }
+
+    bool Over { get { if (_ops > _budget) Truncated = true; return Truncated; } }
     bool _gpos;
     int _next;
     const int MaxDepth = 6;
@@ -19,7 +27,7 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
     public void RunStage(bool gpos, PlanLookup[]? lookups)
     {
         if (lookups is null) return;
-        foreach (var l in lookups) RunLookup(gpos, l.Index, l.Mask);
+        foreach (var l in lookups) { if (Over) return; RunLookup(gpos, l.Index, l.Mask); }
     }
 
     void RunLookup(bool gpos, int index, int mask)
@@ -32,12 +40,12 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
         var reverse = !gpos && type == 8 || !gpos && type == 7 && ResolveType(lk, 0, out _) == 8;
         if (reverse)
         {
-            for (var i = buf.Len - 1; i >= 0; i--)
+            for (var i = buf.Len - 1; i >= 0 && !Over; i--)
                 if ((buf.Info[i].Mask & mask) != 0 && !Skip(i)) ApplyAt(lk, i);
             return;
         }
         var pos = 0;
-        while (pos < buf.Len)
+        while (pos < buf.Len && !Over)
         {
             if ((buf.Info[pos].Mask & mask) != 0 && !Skip(pos) && ApplyAt(lk, pos)) pos = _next > pos ? _next : pos + (buf.Len > 0 && _next == pos ? 0 : 1);
             else pos++;
@@ -90,6 +98,7 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
         var n = U16(lk + 4);
         for (var s = 0; s < n; s++)
         {
+            _ops++;
             var type = ResolveType(lk, s, out var sub);
             _next = pos + 1;
             if (_gpos ? ApplyGpos(type, sub, pos) : ApplyGsub(type, sub, pos)) return true;
@@ -155,7 +164,7 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
     void SetGlyph(int pos, int gid)
     {
         buf.Info[pos].Gid = gid;
-        buf.Info[pos].Class = layout.GlyphClass(gid);
+        buf.Info[pos].Class = layout.ClassFor(gid, buf.Info[pos].Class);
     }
 
     bool Ligature(int sub, int pos, int gid)
@@ -166,27 +175,31 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
         var count = U16(set);
         for (var l = 0; l < count; l++)
         {
-            var lig = set + U16(set + 2 + l * 2);
-            var ligGlyph = U16(lig);
-            var comps = U16(lig + 2);
-            if (comps == 0) continue;
-            var matched = new int[comps];
-            matched[0] = pos;
-            var p = pos; var ok = true;
-            for (var k = 1; k < comps; k++)
-            {
-                p = NextIdx(p);
-                if (p < 0 || buf.Info[p].Gid != U16(lig + 4 + (k - 1) * 2) || (buf.Info[p].Mask & _mask) == 0) { ok = false; break; }
-                matched[k] = p;
-            }
-            if (!ok) continue;
-            ApplyLigature(matched, ligGlyph);
-            return true;
+            if (++_ops > _budget) return false;
+            if (TryLigature(set + U16(set + 2 + l * 2), pos)) return true;
         }
         return false;
     }
 
-    void ApplyLigature(int[] matched, int ligGlyph)
+    bool TryLigature(int lig, int pos)
+    {
+        var ligGlyph = U16(lig);
+        var comps = U16(lig + 2);
+        if (comps == 0 || comps > MaxContext) return false;
+        Span<int> matched = stackalloc int[comps];
+        matched[0] = pos;
+        var p = pos;
+        for (var k = 1; k < comps; k++)
+        {
+            p = NextIdx(p);
+            if (p < 0 || buf.Info[p].Gid != U16(lig + 4 + (k - 1) * 2) || (buf.Info[p].Mask & _mask) == 0) return false;
+            matched[k] = p;
+        }
+        ApplyLigature(matched, ligGlyph);
+        return true;
+    }
+
+    void ApplyLigature(ReadOnlySpan<int> matched, int ligGlyph)
     {
         var first = matched[0]; var last = matched[^1];
         var id = buf.NewLigId();
@@ -202,7 +215,7 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
         }
         var removed = last - first;
         var li = buf.Info[first];
-        li.Gid = ligGlyph; li.Class = layout.GlyphClass(ligGlyph); li.Start = start; li.End = end; li.Flags = flags | GlyphInfo.FlagLigature;
+        li.Gid = ligGlyph; li.Class = layout.ClassFor(ligGlyph, li.Class); li.Start = start; li.End = end; li.Flags = flags | GlyphInfo.FlagLigature;
         li.LigId = id; li.LigNum = matched.Length; li.LigComp = 0;
         if (li.Class == 0) li.Class = 2;
         buf.Info[first] = li;
@@ -326,9 +339,9 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
         {
             substCount = U16(o + 2); inArr = o + 4; records = inArr + Math.Max(inCount - 1, 0) * 2;
         }
-        if (inCount == 0) return false;
+        if (inCount == 0 || inCount > MaxContext || ++_ops > _budget) return false;
 
-        var matched = new int[inCount];
+        Span<int> matched = stackalloc int[inCount];
         matched[0] = pos;
         var p = pos;
         for (var k = 1; k < inCount; k++)
@@ -373,9 +386,9 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
         {
             substCount = U16(o + 2); inArr = o + 4; records = inArr + inCount * 2;
         }
-        if (inCount == 0) return false;
+        if (inCount == 0 || inCount > MaxContext || ++_ops > _budget) return false;
         if (Ot.Coverage(_d, sub + U16(inArr), buf.Info[pos].Gid) < 0) return false;
-        var matched = new int[inCount];
+        Span<int> matched = stackalloc int[inCount];
         matched[0] = pos;
         var p = pos;
         for (var k = 1; k < inCount; k++)
@@ -403,14 +416,16 @@ internal sealed class LookupEngine(OpenTypeLayout layout, GlyphBuffer buf, bool 
         return true;
     }
 
-    void ApplyNested(int records, int count, int[] matched)
+    void ApplyNested(int records, int count, Span<int> matched)
     {
         var lastIdx = matched[^1];
+        count = Math.Min(count, MaxRecords);
         var total = 0;
         if (_depth >= MaxDepth) { _next = lastIdx + 1; return; }
         var saveFlags = _flags; var saveSet = _markSet;
-        for (var r = 0; r < count; r++)
+        for (var r = 0; r < count && !Over; r++)
         {
+            _ops++;
             var seq = U16(records + r * 4);
             var li = U16(records + r * 4 + 2);
             if (seq >= matched.Length) continue;
