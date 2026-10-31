@@ -125,8 +125,8 @@ static class EditorResponsive
             problems.AddRange(issues.Select(i => $"{name} {i}"));
         }
 
-        var theme = await new HttpClient().GetStringAsync(site + "theme.css");
-        if (!theme.Contains("env(safe-area-inset-left)") || !theme.Contains("env(safe-area-inset-bottom)")) problems.Add("theme.css does not apply safe-area insets to the header and status bar");
+        var theme = await new HttpClient().GetStringAsync(site + "editor.css");
+        if (!theme.Contains("env(safe-area-inset-left)") || !theme.Contains("env(safe-area-inset-bottom)")) problems.Add("the merged stylesheet (theme.css rules) does not apply safe-area insets to the header and status bar");
         var viewportMeta = await ViewportMeta(browser, site);
         if (viewportMeta.Contains("user-scalable=no") || viewportMeta.Contains("maximum-scale")) problems.Add("viewport meta blocks pinch zoom: " + viewportMeta);
 
