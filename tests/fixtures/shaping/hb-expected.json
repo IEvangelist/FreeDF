@@ -1,0 +1,2766 @@
+{
+ "generator": "uharfbuzz 0.57.0 / HarfBuzz 15.0.0",
+ "cases": [
+  {
+   "id": "latin-plain",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    72,
+    101,
+    108,
+    108,
+    111,
+    32,
+    87,
+    111,
+    114,
+    108,
+    100
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 9,
+     "cluster": 0,
+     "xadv": 652,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 32,
+     "cluster": 1,
+     "xadv": 496,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 39,
+     "cluster": 2,
+     "xadv": 255,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 39,
+     "cluster": 3,
+     "xadv": 255,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 42,
+     "cluster": 4,
+     "xadv": 542,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 5,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 24,
+     "cluster": 6,
+     "xadv": 786,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 42,
+     "cluster": 7,
+     "xadv": 542,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 45,
+     "cluster": 8,
+     "xadv": 347,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 39,
+     "cluster": 9,
+     "xadv": 255,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 31,
+     "cluster": 10,
+     "xadv": 555,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-fi",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    111,
+    102,
+    102,
+    105,
+    99,
+    101,
+    32,
+    102,
+    105,
+    32,
+    102,
+    108,
+    32,
+    102,
+    102,
+    105
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 42,
+     "cluster": 0,
+     "xadv": 542,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 165,
+     "cluster": 1,
+     "xadv": 577,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 36,
+     "cluster": 3,
+     "xadv": 246,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 30,
+     "cluster": 4,
+     "xadv": 435,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 32,
+     "cluster": 5,
+     "xadv": 496,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 6,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 7,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 36,
+     "cluster": 8,
+     "xadv": 246,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 9,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 10,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 39,
+     "cluster": 11,
+     "xadv": 255,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 12,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 165,
+     "cluster": 13,
+     "xadv": 577,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 36,
+     "cluster": 15,
+     "xadv": 246,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-fi-off",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    111,
+    102,
+    102,
+    105,
+    99,
+    101,
+    32,
+    102,
+    105,
+    32,
+    102,
+    108,
+    32,
+    102,
+    102,
+    105
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {
+    "liga": 0,
+    "clig": 0
+   },
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 42,
+     "cluster": 0,
+     "xadv": 542,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 1,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 2,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 36,
+     "cluster": 3,
+     "xadv": 246,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 30,
+     "cluster": 4,
+     "xadv": 435,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 32,
+     "cluster": 5,
+     "xadv": 496,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 6,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 7,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 36,
+     "cluster": 8,
+     "xadv": 246,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 9,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 10,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 39,
+     "cluster": 11,
+     "xadv": 255,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 12,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 13,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 33,
+     "cluster": 14,
+     "xadv": 292,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 36,
+     "cluster": 15,
+     "xadv": 246,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-kern",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    65,
+    86,
+    32,
+    84,
+    111,
+    32,
+    87,
+    97,
+    46,
+    32,
+    80,
+    44,
+    32,
+    84,
+    121
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 2,
+     "cluster": 0,
+     "xadv": 530,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 23,
+     "cluster": 1,
+     "xadv": 515,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 2,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 21,
+     "cluster": 3,
+     "xadv": 470,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 42,
+     "cluster": 4,
+     "xadv": 542,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 5,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 24,
+     "cluster": 6,
+     "xadv": 770,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 28,
+     "cluster": 7,
+     "xadv": 504,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 263,
+     "cluster": 8,
+     "xadv": 249,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 9,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 17,
+     "cluster": 10,
+     "xadv": 454,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 264,
+     "cluster": 11,
+     "xadv": 249,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 12,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 21,
+     "cluster": 13,
+     "xadv": 503,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 52,
+     "cluster": 14,
+     "xadv": 467,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-kern-off",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    65,
+    86,
+    32,
+    84,
+    111,
+    32,
+    87,
+    97,
+    46,
+    32,
+    80,
+    44,
+    32,
+    84,
+    121
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {
+    "kern": 0
+   },
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 2,
+     "cluster": 0,
+     "xadv": 544,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 23,
+     "cluster": 1,
+     "xadv": 515,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 2,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 21,
+     "cluster": 3,
+     "xadv": 536,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 42,
+     "cluster": 4,
+     "xadv": 542,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 5,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 24,
+     "cluster": 6,
+     "xadv": 786,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 28,
+     "cluster": 7,
+     "xadv": 504,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 263,
+     "cluster": 8,
+     "xadv": 249,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 9,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 17,
+     "cluster": 10,
+     "xadv": 566,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 264,
+     "cluster": 11,
+     "xadv": 249,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 12,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 21,
+     "cluster": 13,
+     "xadv": 536,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 52,
+     "cluster": 14,
+     "xadv": 467,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-combining",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    101,
+    769,
+    32,
+    97,
+    776,
+    32,
+    111,
+    770
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 117,
+     "cluster": 0,
+     "xadv": 496,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 2,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 107,
+     "cluster": 3,
+     "xadv": 504,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 5,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 136,
+     "cluster": 6,
+     "xadv": 542,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-mark-gpos",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    120,
+    769,
+    32,
+    97,
+    803,
+    32,
+    87,
+    778
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 51,
+     "cluster": 0,
+     "xadv": 446,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 568,
+     "cluster": 1,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -223,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 2,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 28,
+     "cluster": 3,
+     "xadv": 504,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 621,
+     "cluster": 4,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -257,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 5,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 24,
+     "cluster": 6,
+     "xadv": 786,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 590,
+     "cluster": 7,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -394,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-precomposed",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    233,
+    224,
+    241,
+    32,
+    197
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 117,
+     "cluster": 0,
+     "xadv": 482,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 103,
+     "cluster": 1,
+     "xadv": 504,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 133,
+     "cluster": 2,
+     "xadv": 547,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 3,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 59,
+     "cluster": 4,
+     "xadv": 544,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-smcp",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    83,
+    109,
+    97,
+    108,
+    108,
+    32,
+    67,
+    97,
+    112,
+    115
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {
+    "smcp": 1
+   },
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 20,
+     "cluster": 0,
+     "xadv": 534,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 310,
+     "cluster": 1,
+     "xadv": 647,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 298,
+     "cluster": 2,
+     "xadv": 470,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 309,
+     "cluster": 3,
+     "xadv": 437,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 309,
+     "cluster": 4,
+     "xadv": 437,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 5,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 4,
+     "cluster": 6,
+     "xadv": 578,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 298,
+     "cluster": 7,
+     "xadv": 470,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 313,
+     "cluster": 8,
+     "xadv": 509,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 316,
+     "cluster": 9,
+     "xadv": 474,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-turkish",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    73,
+    305,
+    32,
+    304,
+    105
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": "TRK ",
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 10,
+     "cluster": 0,
+     "xadv": 263,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 0,
+     "cluster": 1,
+     "xadv": 653,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 2,
+     "xadv": 200,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 10,
+     "cluster": 3,
+     "xadv": 263,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 584,
+     "cluster": 3,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -131,
+     "yoff": 0
+    },
+    {
+     "gid": 36,
+     "cluster": 4,
+     "xadv": 246,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "latin-emoji-notdef",
+   "font": "SourceSans3-subset.otf",
+   "text": [
+    97,
+    128512,
+    98
+   ],
+   "direction": "ltr",
+   "script": "Latn",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 28,
+     "cluster": 0,
+     "xadv": 504,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 0,
+     "cluster": 1,
+     "xadv": 653,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 29,
+     "cluster": 2,
+     "xadv": 553,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-hello",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1605,
+    1585,
+    1581,
+    1576,
+    1575
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 6,
+     "cluster": 4,
+     "xadv": 291,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 228,
+     "cluster": 3,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 94,
+     "yoff": -3
+    },
+    {
+     "gid": 13,
+     "cluster": 3,
+     "xadv": 343,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 22,
+     "cluster": 2,
+     "xadv": 589,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 26,
+     "cluster": 1,
+     "xadv": 356,
+     "yadv": 0,
+     "xoff": -40,
+     "yoff": 0
+    },
+    {
+     "gid": 70,
+     "cluster": 0,
+     "xadv": 525,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-salam",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1575,
+    1604,
+    1587,
+    1604,
+    1575,
+    1605,
+    32,
+    1593,
+    1604,
+    1610,
+    1603,
+    1605
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 68,
+     "cluster": 11,
+     "xadv": 562,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 51,
+     "cluster": 10,
+     "xadv": 508,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 229,
+     "cluster": 9,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 39,
+     "yoff": -5
+    },
+    {
+     "gid": 14,
+     "cluster": 9,
+     "xadv": 373,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 61,
+     "cluster": 8,
+     "xadv": 300,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 42,
+     "cluster": 7,
+     "xadv": 503,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 6,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 65,
+     "cluster": 5,
+     "xadv": 484,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 8,
+     "cluster": 4,
+     "xadv": 379,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 62,
+     "cluster": 3,
+     "xadv": 220,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 29,
+     "cluster": 2,
+     "xadv": 850,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 63,
+     "cluster": 1,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 5,
+     "cluster": 0,
+     "xadv": 238,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-lam-alef",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1604,
+    1575,
+    32,
+    1604,
+    1571,
+    32,
+    1604,
+    1573,
+    32,
+    1604,
+    1570
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 221,
+     "cluster": 10,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -47,
+     "yoff": 50
+    },
+    {
+     "gid": 7,
+     "cluster": 10,
+     "xadv": 363,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 64,
+     "cluster": 9,
+     "xadv": 219,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 8,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 234,
+     "cluster": 7,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 53,
+     "yoff": 0
+    },
+    {
+     "gid": 7,
+     "cluster": 7,
+     "xadv": 363,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 64,
+     "cluster": 6,
+     "xadv": 219,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 5,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 217,
+     "cluster": 4,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -6,
+     "yoff": 50
+    },
+    {
+     "gid": 7,
+     "cluster": 4,
+     "xadv": 363,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 64,
+     "cluster": 3,
+     "xadv": 219,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 2,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 7,
+     "cluster": 1,
+     "xadv": 363,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 64,
+     "cluster": 0,
+     "xadv": 219,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-basmala",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1576,
+    1587,
+    1605,
+    32,
+    1575,
+    1604,
+    1604,
+    1607
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 74,
+     "cluster": 7,
+     "xadv": 486,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 61,
+     "cluster": 6,
+     "xadv": 300,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 63,
+     "cluster": 5,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 5,
+     "cluster": 4,
+     "xadv": 238,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 3,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 68,
+     "cluster": 2,
+     "xadv": 562,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 29,
+     "cluster": 1,
+     "xadv": 850,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 228,
+     "cluster": 0,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 31,
+     "yoff": -3
+    },
+    {
+     "gid": 15,
+     "cluster": 0,
+     "xadv": 269,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-marks",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1605,
+    1615,
+    1581,
+    1614,
+    1605,
+    1617,
+    1614,
+    1583
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 24,
+     "cluster": 7,
+     "xadv": 532,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 253,
+     "cluster": 6,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 120,
+     "yoff": 104
+    },
+    {
+     "gid": 250,
+     "cluster": 5,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 128,
+     "yoff": -96
+    },
+    {
+     "gid": 69,
+     "cluster": 4,
+     "xadv": 578,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 253,
+     "cluster": 3,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -6,
+     "yoff": -106
+    },
+    {
+     "gid": 21,
+     "cluster": 2,
+     "xadv": 637,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 254,
+     "cluster": 1,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 130,
+     "yoff": -100
+    },
+    {
+     "gid": 70,
+     "cluster": 0,
+     "xadv": 525,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-digits",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1633,
+    1634,
+    1635,
+    32,
+    1636,
+    1637
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 106,
+     "cluster": 5,
+     "xadv": 572,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 105,
+     "cluster": 4,
+     "xadv": 572,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 3,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 104,
+     "cluster": 2,
+     "xadv": 572,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 103,
+     "cluster": 1,
+     "xadv": 572,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 102,
+     "cluster": 0,
+     "xadv": 572,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-zwnj",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1576,
+    8204,
+    1576,
+    32,
+    1576,
+    8205,
+    1576
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 228,
+     "cluster": 6,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 387,
+     "yoff": -23
+    },
+    {
+     "gid": 12,
+     "cluster": 6,
+     "xadv": 1093,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 5,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 228,
+     "cluster": 4,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 31,
+     "yoff": -3
+    },
+    {
+     "gid": 15,
+     "cluster": 4,
+     "xadv": 269,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 3,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 228,
+     "cluster": 2,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 410,
+     "yoff": -23
+    },
+    {
+     "gid": 11,
+     "cluster": 2,
+     "xadv": 993,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 1,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 228,
+     "cluster": 0,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 410,
+     "yoff": -23
+    },
+    {
+     "gid": 11,
+     "cluster": 0,
+     "xadv": 993,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "arabic-persian",
+   "font": "NotoSansArabic-subset.ttf",
+   "text": [
+    1662,
+    1670,
+    1688,
+    1711,
+    32,
+    1705,
+    1740
+   ],
+   "direction": "rtl",
+   "script": "Arab",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 92,
+     "cluster": 6,
+     "xadv": 736,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 52,
+     "cluster": 5,
+     "xadv": 412,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 2,
+     "cluster": 4,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 224,
+     "cluster": 3,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 467,
+     "yoff": 0
+    },
+    {
+     "gid": 53,
+     "cluster": 3,
+     "xadv": 877,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 212,
+     "cluster": 2,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -20,
+     "yoff": -112
+    },
+    {
+     "gid": 26,
+     "cluster": 2,
+     "xadv": 356,
+     "yadv": 0,
+     "xoff": -40,
+     "yoff": 0
+    },
+    {
+     "gid": 232,
+     "cluster": 1,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 116,
+     "yoff": -3
+    },
+    {
+     "gid": 21,
+     "cluster": 1,
+     "xadv": 637,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 232,
+     "cluster": 0,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -32,
+     "yoff": -8
+    },
+    {
+     "gid": 16,
+     "cluster": 0,
+     "xadv": 299,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "hebrew-shalom",
+   "font": "NotoSansHebrew-subset.ttf",
+   "text": [
+    1513,
+    1500,
+    1493,
+    1501
+   ],
+   "direction": "rtl",
+   "script": "Hebr",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 21,
+     "cluster": 3,
+     "xadv": 684,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 111,
+     "cluster": 2,
+     "xadv": 291,
+     "yadv": 0,
+     "xoff": -10,
+     "yoff": 0
+    },
+    {
+     "gid": 48,
+     "cluster": 1,
+     "xadv": 522,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 87,
+     "cluster": 0,
+     "xadv": 730,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "hebrew-niqqud",
+   "font": "NotoSansHebrew-subset.ttf",
+   "text": [
+    1506,
+    1460,
+    1489,
+    1456,
+    1512,
+    1460,
+    1497,
+    1514
+   ],
+   "direction": "rtl",
+   "script": "Hebr",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 98,
+     "cluster": 7,
+     "xadv": 685,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 125,
+     "cluster": 6,
+     "xadv": 275,
+     "yadv": 0,
+     "xoff": -20,
+     "yoff": 0
+    },
+    {
+     "gid": 40,
+     "cluster": 5,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 319,
+     "yoff": 0
+    },
+    {
+     "gid": 78,
+     "cluster": 4,
+     "xadv": 523,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 86,
+     "cluster": 3,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 167,
+     "yoff": 0
+    },
+    {
+     "gid": 10,
+     "cluster": 2,
+     "xadv": 547,
+     "yadv": 0,
+     "xoff": -25,
+     "yoff": 0
+    },
+    {
+     "gid": 40,
+     "cluster": 1,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 200,
+     "yoff": 0
+    },
+    {
+     "gid": 8,
+     "cluster": 0,
+     "xadv": 593,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "hebrew-final-forms",
+   "font": "NotoSansHebrew-subset.ttf",
+   "text": [
+    1499,
+    1498,
+    32,
+    1502,
+    1501,
+    32,
+    1504,
+    1503,
+    32,
+    1508,
+    1507,
+    32,
+    1510,
+    1509
+   ],
+   "direction": "rtl",
+   "script": "Hebr",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 25,
+     "cluster": 13,
+     "xadv": 529,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 106,
+     "cluster": 12,
+     "xadv": 556,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 97,
+     "cluster": 11,
+     "xadv": 270,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 23,
+     "cluster": 10,
+     "xadv": 620,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 67,
+     "cluster": 9,
+     "xadv": 574,
+     "yadv": 0,
+     "xoff": -27,
+     "yoff": 0
+    },
+    {
+     "gid": 97,
+     "cluster": 8,
+     "xadv": 270,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 22,
+     "cluster": 7,
+     "xadv": 329,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 59,
+     "cluster": 6,
+     "xadv": 379,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 97,
+     "cluster": 5,
+     "xadv": 270,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 21,
+     "cluster": 4,
+     "xadv": 684,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 54,
+     "cluster": 3,
+     "xadv": 648,
+     "yadv": 0,
+     "xoff": -12,
+     "yoff": 0
+    },
+    {
+     "gid": 97,
+     "cluster": 2,
+     "xadv": 270,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 19,
+     "cluster": 1,
+     "xadv": 545,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 45,
+     "cluster": 0,
+     "xadv": 515,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-hindi",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2361,
+    2367,
+    2344,
+    2381,
+    2342,
+    2368
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 447,
+     "cluster": 0,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 85,
+     "cluster": 0,
+     "xadv": 531,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 151,
+     "cluster": 2,
+     "xadv": 309,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 70,
+     "cluster": 4,
+     "xadv": 531,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 30,
+     "cluster": 5,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-namaste",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2344,
+    2350,
+    2360,
+    2381,
+    2340,
+    2375
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 72,
+     "cluster": 0,
+     "xadv": 555,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 77,
+     "cluster": 1,
+     "xadv": 598,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 162,
+     "cluster": 2,
+     "xadv": 389,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 68,
+     "cluster": 4,
+     "xadv": 570,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 37,
+     "cluster": 5,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-karma",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2325,
+    2352,
+    2381,
+    2350
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 53,
+     "cluster": 0,
+     "xadv": 768,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 77,
+     "cluster": 1,
+     "xadv": 598,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 409,
+     "cluster": 1,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-kssa",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2325,
+    2381,
+    2359,
+    2340,
+    2381,
+    2352,
+    2367,
+    2351
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 87,
+     "cluster": 0,
+     "xadv": 717,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 448,
+     "cluster": 3,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 210,
+     "cluster": 3,
+     "xadv": 552,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 78,
+     "cluster": 7,
+     "xadv": 580,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-prakash",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2346,
+    2381,
+    2352,
+    2325,
+    2366,
+    2358
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 215,
+     "cluster": 0,
+     "xadv": 569,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 53,
+     "cluster": 3,
+     "xadv": 768,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 28,
+     "cluster": 4,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 82,
+     "cluster": 5,
+     "xadv": 680,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-kitab",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2325,
+    2367,
+    2340,
+    2366,
+    2348
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 448,
+     "cluster": 0,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 53,
+     "cluster": 0,
+     "xadv": 768,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 68,
+     "cluster": 2,
+     "xadv": 570,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 28,
+     "cluster": 3,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 75,
+     "cluster": 4,
+     "xadv": 571,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-nukta",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2325,
+    2364,
+    2366,
+    32,
+    2332,
+    2364
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 127,
+     "cluster": 0,
+     "xadv": 768,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 28,
+     "cluster": 2,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 3,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 130,
+     "cluster": 4,
+     "xadv": 742,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-reph-matra",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2342,
+    2352,
+    2381,
+    2358,
+    2344,
+    2367
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 70,
+     "cluster": 0,
+     "xadv": 531,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 82,
+     "cluster": 1,
+     "xadv": 680,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 409,
+     "cluster": 1,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 448,
+     "cluster": 4,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 72,
+     "cluster": 4,
+     "xadv": 555,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  },
+  {
+   "id": "devanagari-sentence",
+   "font": "NotoSansDevanagari-subset.ttf",
+   "text": [
+    2349,
+    2366,
+    2352,
+    2340,
+    32,
+    2319,
+    2325,
+    32,
+    2342,
+    2375,
+    2358,
+    32,
+    2361,
+    2376
+   ],
+   "direction": "ltr",
+   "script": "Deva",
+   "language": null,
+   "features": {},
+   "upem": 1000,
+   "glyphs": [
+    {
+     "gid": 76,
+     "cluster": 0,
+     "xadv": 703,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 28,
+     "cluster": 1,
+     "xadv": 259,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 79,
+     "cluster": 2,
+     "xadv": 409,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 68,
+     "cluster": 3,
+     "xadv": 570,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 4,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 13,
+     "cluster": 5,
+     "xadv": 553,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 53,
+     "cluster": 6,
+     "xadv": 768,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 7,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 70,
+     "cluster": 8,
+     "xadv": 531,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 37,
+     "cluster": 9,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": -7,
+     "yoff": 0
+    },
+    {
+     "gid": 82,
+     "cluster": 10,
+     "xadv": 680,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 1,
+     "cluster": 11,
+     "xadv": 260,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 85,
+     "cluster": 12,
+     "xadv": 531,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    },
+    {
+     "gid": 38,
+     "cluster": 13,
+     "xadv": 0,
+     "yadv": 0,
+     "xoff": 0,
+     "yoff": 0
+    }
+   ]
+  }
+ ]
+}

@@ -175,6 +175,8 @@ public sealed class PdfFont
     bool _cjkSerif;
     readonly bool[] _pdfWidth = new bool[256];
     Dictionary<int, int>? _toUnicode;
+    /// <summary>ToUnicode entries that map one code to several code points (ligatures, shaped clusters).</summary>
+    Dictionary<int, string>? _toUnicodeText;
     readonly Dictionary<(int Code, string Unicode), PathData?> _glyphCache = [];
     public PdfDictionary? CharProcs { get; }
     public PdfDictionary? Type3Resources { get; }
@@ -349,7 +351,7 @@ public sealed class PdfFont
         _openTypeLayout ??= _tt;
 
         if (!IsType0) BuildSimpleEncoding(dict, fontDict);
-        if (f.Resolve(dict.Get("ToUnicode")) is PdfStream tu) _toUnicode = ParseToUnicode(f.DecodeStream(tu));
+        if (f.Resolve(dict.Get("ToUnicode")) is PdfStream tu) _toUnicode = ParseToUnicode(f.DecodeStream(tu), out _toUnicodeText);
     }
 
     void ParseW(PdfArray? w)
@@ -459,9 +461,16 @@ public sealed class PdfFont
                 if (first + i >= 0 && _f.Resolve(wa[i]).AsNumber() is { } w) { _widths[first + i] = w; _hasWidth[first + i] = true; _pdfWidth[first + i] = true; }
     }
 
-    static Dictionary<int, int> ParseToUnicode(byte[] data)
+    static Dictionary<int, int> ParseToUnicode(byte[] data, out Dictionary<int, string>? multi)
     {
         var map = new Dictionary<int, int>();
+        Dictionary<int, string>? text = null;
+        void Multi(int code, byte[] dest)
+        {
+            if (dest.Length < 4) return;
+            var s = Encoding.BigEndianUnicode.GetString(dest);
+            if (s.EnumerateRunes().Count() > 1) (text ??= [])[code] = s;
+        }
         var lx = new PdfLexer(data);
         var stack = new List<PdfObject>();
         PdfObject? o;
@@ -472,7 +481,7 @@ public sealed class PdfFont
                 if (k.Value == "endbfchar")
                     for (var i = 0; i + 1 < stack.Count; i += 2)
                     {
-                        if (stack[i] is PdfString s && stack[i + 1] is PdfString d) map[Be(s.Bytes)] = FirstCp(d.Bytes);
+                        if (stack[i] is PdfString s && stack[i + 1] is PdfString d) { map[Be(s.Bytes)] = FirstCp(d.Bytes); Multi(Be(s.Bytes), d.Bytes); }
                     }
                 else if (k.Value == "endbfrange")
                     for (var i = 0; i + 2 < stack.Count; i += 3)
@@ -480,12 +489,13 @@ public sealed class PdfFont
                         if (stack[i] is not PdfString lo || stack[i + 1] is not PdfString hi) continue;
                         int a = Be(lo.Bytes), b = Be(hi.Bytes);
                         if (stack[i + 2] is PdfString d) { var cp = FirstCp(d.Bytes); for (var c = a; c <= b && c - a < 65536; c++) map[c] = cp + c - a; }
-                        else if (stack[i + 2] is PdfArray arr) for (var c = a; c <= b && c - a < arr.Count; c++) if (arr[c - a] is PdfString ds) map[c] = FirstCp(ds.Bytes);
+                        else if (stack[i + 2] is PdfArray arr) for (var c = a; c <= b && c - a < arr.Count; c++) if (arr[c - a] is PdfString ds) { map[c] = FirstCp(ds.Bytes); Multi(c, ds.Bytes); }
                     }
                 stack.Clear();
             }
             else stack.Add(o);
         }
+        multi = text;
         return map;
     }
 
@@ -499,6 +509,7 @@ public sealed class PdfFont
     {
         var code = r.Code;
         var raw = r.Raw >= 0 ? r.Raw : code;
+        if (_toUnicodeText is not null && _toUnicodeText.TryGetValue(raw, out var multiText)) return multiText;
         if (_toUnicode is not null && _toUnicode.TryGetValue(raw, out var cp)) return char.ConvertFromUtf32(cp);
         if (IsType0)
         {
