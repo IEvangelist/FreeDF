@@ -100,6 +100,7 @@ public static class PdfXfdf
         var byName = new Dictionary<string, (int Page, int Number)>();
         var elements = annots.Elements().Take(MaxAnnotations).ToList();
         var created = 0;
+        using var batch = editor.BeginAnnotationBatch();
         foreach (var pass in new[] { false, true })
             foreach (var e in elements)
             {

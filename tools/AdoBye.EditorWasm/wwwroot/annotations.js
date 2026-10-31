@@ -9,6 +9,7 @@ const TOOLS = [
 ];
 const STAMPS = ['Approved', 'Draft', 'Confidential', 'Final', 'ForComment', 'NotApproved', 'AsIs', 'Expired', 'Experimental', 'TopSecret', 'Sold', 'Departmental', 'ForPublicRelease', 'NotForPublicRelease'];
 const STATES = [['', 'No status'], ['None', 'None'], ['Accepted', 'Accepted'], ['Rejected', 'Rejected'], ['Cancelled', 'Cancelled'], ['Completed', 'Completed'], ['Marked', 'Marked'], ['Unmarked', 'Unmarked']];
+const MAX_ATTACHMENT = 25 * 1024 * 1024, MAX_STAMP_EDGE = 1600;
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
 const hex = c => c?.length === 3 ? '#' + c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('') : '#000000';
 const el = (tag, attrs = {}, ...kids) => {
@@ -196,7 +197,8 @@ export function createAnnotations(ctx) {
     try {
       if (kind === 'attachment' && !geo.extra) {
         const file = pendingFile ?? await pickFile(''); pendingFile = null; if (!file) return;
-        geo.extra = { attachment: { fileName: file.name, data: [...new Uint8Array(await file.arrayBuffer())].length ? await toBase64(file) : '', mimeType: file.type || undefined } };
+        if (file.size > MAX_ATTACHMENT) { announce('Attachments are limited to 25 MB; ' + file.name + ' is ' + Math.ceil(file.size / 1048576) + ' MB.'); return; }
+        geo.extra = { attachment: { fileName: file.name, data: file.size ? await toBase64(file) : '', mimeType: file.type || undefined } };
       }
       if (kind === 'image-stamp' && !geo.extra) {
         const file = pendingFile ?? await pickFile('image/png,image/jpeg'); pendingFile = null; if (!file) return;
@@ -222,12 +224,13 @@ export function createAnnotations(ctx) {
   const toBase64 = async file => { const bytes = new Uint8Array(await file.arrayBuffer()); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
   const pickFile = accept => new Promise(resolve => { const i = el('input', { type: 'file', accept }); i.onchange = () => resolve(i.files[0] ?? null); i.oncancel = () => resolve(null); i.click(); });
   async function decodeImage(file) {
-    const bmp = await createImageBitmap(file), c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext('2d');
-    g.drawImage(bmp, 0, 0);
-    const d = g.getImageData(0, 0, bmp.width, bmp.height).data, n = bmp.width * bmp.height, rgbBytes = new Uint8Array(n * 3), alpha = new Uint8Array(n);
+    const bmp = await createImageBitmap(file), k = Math.min(1, MAX_STAMP_EDGE / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k)), c = new OffscreenCanvas(w, h), g = c.getContext('2d');
+    g.drawImage(bmp, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data, n = w * h, rgbBytes = new Uint8Array(n * 3), alpha = new Uint8Array(n);
     for (let i = 0; i < n; i++) { rgbBytes.set([d[i * 4], d[i * 4 + 1], d[i * 4 + 2]], i * 3); alpha[i] = d[i * 4 + 3]; }
     const b64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
-    return { width: bmp.width, height: bmp.height, rgb: b64(rgbBytes), alpha: b64(alpha) };
+    return { width: w, height: h, rgb: b64(rgbBytes), alpha: b64(alpha) };
   }
 
   // ---- UI ----
