@@ -122,7 +122,7 @@ const usedFonts = new Set();
 const request = async (url, options) => {
   const response = await (host ? host.request(url, options) : fetch(url, options));
   if (!response.ok) throw new Error(await response.text() || `Editor command failed (${response.status}).`);
-  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/close'].includes(url.split('?')[0])) fa?.clear();
+  if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/close'].includes(url.split('?')[0])) { fa?.clear(); usedFonts.clear(); }
   if (options?.method === 'POST' && ['/api/new', '/api/open', '/api/recovery'].includes(url.split('?')[0])) {
     selectionEpoch++; buildEpoch++; clearTimeout(baseRenderTimer); shownPage = -1;
     clip = null; pendingUploads.clear(); assetImages.clear();
@@ -1499,17 +1499,18 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
 async function reconcileLocalFonts(families) {
-  if (!families?.length || !localFonts) return;
+  if (!families?.length) return;
   families.forEach(f => usedFonts.add(f));
   const { missing } = await (await post('/api/require-fonts', JSON.stringify(families))).json();
   if (!missing.length) return;
   const warning = `Saving is blocked: this document uses installed fonts (${missing.join(', ')}) that are not loaded after the reload.`;
   status(warning);
-  const dialog = modal('Reload installed fonts', `<p>${esc(warning)}</p><p>Reload them from this device (the browser may ask for permission) or switch those items to Helvetica. Nothing changes unless you choose.</p><p data-error role="alert"></p><button type="button" class="fpl" data-std>Use Helvetica instead</button>`, 'Reload fonts', async () => {
+  const dialog = modal('Reload installed fonts', `<p>${esc(warning)}</p><p>${localFonts ? 'Reload them from this device (the browser may ask for permission) or switch those items to Helvetica.' : 'Reloading installed fonts is unavailable here, so switch those items to Helvetica.'} Nothing changes unless you choose.</p><p data-error role="alert"></p><button type="button" class="fpl" data-std>Use Helvetica instead</button>`, 'Reload fonts', async () => {
     await localFonts.reload(missing); await refresh(); status('Installed fonts reloaded.');
   });
+  if (!localFonts) dialog.querySelector('.dok').style.display = 'none';
   dialog.querySelector('[data-std]').onclick = async () => {
-    for (const family of missing) await post(`/api/replace-font?from=${encodeURIComponent(family)}&to=Helvetica`);
+    for (const family of missing) { await post(`/api/replace-font?from=${encodeURIComponent(family)}&to=Helvetica`); usedFonts.delete(family); }
     dialog.remove(); await refreshDirty(); await refresh(); status(`Switched ${missing.join(', ')} to Helvetica.`);
   };
 }
@@ -1561,7 +1562,7 @@ async function startEditor() {
     validateUi = module.validateUi;
     recovery = await module.createRecovery({
       capture: { state: async () => (await request('/api/state')).json(), document: async () => (await request('/api/recovery')).blob() },
-      ui: () => ({ sel, zoom, fitMode, preview, undo, clip, localFonts: [...usedFonts] }),
+      ui: () => ({ sel, zoom, fitMode, preview, undo, clip, localFonts: [...usedFonts].slice(0, 64) }),
       flush, button: $('recovery'), onError: reportError,
     });
     retained = await recovery.load();
@@ -1609,7 +1610,7 @@ async function startEditor() {
     });
   prompt.querySelector('.dc').textContent = 'Discard and clear';
   prompt.querySelector('.dc').onclick = async () => {
-    try { await recovery.clear(); await fa?.clear(); await ready(); recovery.start(); prompt.remove(); }
+    try { await recovery.clear(); await fa?.clear(); usedFonts.clear(); await ready(); recovery.start(); prompt.remove(); }
     catch (error) { prompt.querySelector('[data-recovery-error]').textContent = error.message; }
   };
   const resume = prompt.querySelector('.dok').onclick;

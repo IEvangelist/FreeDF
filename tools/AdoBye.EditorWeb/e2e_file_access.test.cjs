@@ -261,3 +261,12 @@ test('reload re-registers named families and reports the ones that are gone', as
   assert.deepEqual(result.restored, ['Here']);
   assert.equal(result.failed[0].family, 'Gone');
 });
+
+test('recovery UI validation caps and type-checks the local font list', async () => {
+  const { validateUi } = await load('recovery.js');
+  const ui = extra => ({ sel: 0, zoom: 1, fitMode: 'page', preview: false, undo: [], clip: null, ...extra });
+  validateUi(ui({}));
+  validateUi(ui({ localFonts: ['Source Code Pro'] }));
+  for (const bad of ['Source', [1], [''], [{}], Array(65).fill('a'), ['x'.repeat(257)], null])
+    assert.throws(() => validateUi(ui({ localFonts: bad })), /corrupt/);
+});
