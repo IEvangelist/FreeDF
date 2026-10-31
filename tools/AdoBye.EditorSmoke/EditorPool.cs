@@ -13,7 +13,7 @@ using PortableDocument.Document;
 /// </summary>
 static class EditorPool
 {
-    sealed record Scenario(string Name, string Query, int Cores, string? Route, int? Memory = null);
+    sealed record Scenario(string Name, string Query, int Cores, string? Route, int? Memory = null, int BandFactor = 1);
 
     public static async Task Run(string root, string output, string samples, int cores)
     {
@@ -43,6 +43,7 @@ static class EditorPool
                 new("pool-replica-crash", "", cores, "crash"),
                 new("pool-2-cores", "", 2, null),
                 new("pool-low-memory", "", cores, null, 2),
+                new("pool-2-bands-per-worker", "", cores, null, null, 2),
             ];
             var results = new List<JsonElement>();
             foreach (var s in scenarios)
@@ -50,7 +51,7 @@ static class EditorPool
                 await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 1000 } });
                 await context.AddInitScriptAsync(
                     $"Object.defineProperty(Navigator.prototype,'hardwareConcurrency',{{get:()=>{s.Cores}}});" +
-                    (s.Memory is { } m ? $"Object.defineProperty(Navigator.prototype,'deviceMemory',{{get:()=>{m}}});" : ""));
+                    $"window.poolBandFactor={s.BandFactor};" + (s.Memory is { } m ? $"Object.defineProperty(Navigator.prototype,'deviceMemory',{{get:()=>{m}}});" : ""));
                 if (s.Route == "bootfail")
                     await context.RouteAsync("**/replica-worker.js", r => r.FulfillAsync(new() { Status = 200, ContentType = "text/javascript", Body = "self.postMessage({ startupError: 'simulated boot failure' });" }));
                 if (s.Route == "crash")
@@ -69,7 +70,7 @@ static class EditorPool
                 named["scenario"] = JsonSerializer.SerializeToElement(s.Name);
                 var element = JsonSerializer.SerializeToElement(named);
                 results.Add(element);
-                Console.WriteLine($"{s.Name}: pool={element.GetProperty("pool")} cold240={element.GetProperty("cold240Ms"):0} warm240={element.GetProperty("warm240Ms"):0} nav137={element.GetProperty("nav137Ms"):0} thumbs={element.GetProperty("thumbsMs"):0} maxFrameGap={element.GetProperty("maxFrameGapMs"):0} tiles={element.GetProperty("timings")}");
+                Console.WriteLine($"{s.Name}: pool={element.GetProperty("pool")} cold240={element.GetProperty("cold240Ms"):0} warm240={element.GetProperty("warm240Ms"):0} nav137={element.GetProperty("nav137Ms"):0} thumbs={element.GetProperty("thumbsMs"):0} maxFrameGap={element.GetProperty("maxFrameGapMs"):0} engine={element.GetProperty("engine")} tiles={element.GetProperty("timings")}");
             }
             await File.WriteAllTextAsync(Path.Combine(output, "pool.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
             var baseline = results[0].GetProperty("hashes").EnumerateArray().Select(h => h.GetString()).ToArray();
@@ -119,7 +120,9 @@ static class EditorPool
           const timed = async url => { const t = performance.now(); const image = await host.image(url); const ms = performance.now() - t; hashes.push(await hash(image)); return ms; };
           const url = (page, dpi) => `/api/page/${page}.png?dpi=${dpi}&v=${v}&bare=true`;
           const cold240Ms = await timed(url(0, 239));
-          const warm240Ms = await timed(url(1, 239));
+          window.profileWorkerStages = [];
+                    const warm240Ms = await timed(url(1, 239));
+                    const engine = (window.profileWorkerStages ?? []).map(s => s.engine).filter(Boolean);
           let nav137Ms = 0;
           for (let page = 2; page < Math.min(pages, 6); page++) nav137Ms += await timed(url(page, 137));
           const start = performance.now();
@@ -130,7 +133,7 @@ static class EditorPool
           const pool = host.renderPool;
           const stats = pool ? pool.scheduler.stats : null;
           return { pages, cold240Ms, warm240Ms, nav137Ms, thumbsMs, maxFrameGapMs, hashes,
-            timings: pool ? pool.timings.slice(0, 4) : null,
+            engine, timings: pool ? pool.timings.slice(0, 4) : null,
             pool: pool ? `slots=${pool.maxSlots} spawned=${stats.spawned} completed=${stats.completed} failures=${stats.failures} disabled=${pool.scheduler.disabled}` : 'none' };
         }
         """;

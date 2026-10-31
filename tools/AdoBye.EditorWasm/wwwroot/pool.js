@@ -150,18 +150,20 @@ export function createRenderPool({
       });
       if (size.width * size.height > maxTilePixels) return null;
       const t1 = now();
-      const bands = planBands(size.height, Math.max(budget, 1) * 2, 192);
+      const bands = planBands(size.height, Math.max(budget, 1) * (env.poolBandFactor ?? 1), 192);
       const canvas = new env.OffscreenCanvas(size.width, size.height);
       const context = canvas.getContext('2d');
+      const workerMs = [];
       await Promise.all(bands.map(([y0, y1]) => scheduler.submit({
         priority, group, weight: (y1 - y0) * size.width,
         run: async replica => { await replica.ensure(key, loadBytes); return replica.call({ op: 'band', page, dpi, y0, y1 }); },
       }).then(reply => {
+        workerMs.push(Math.round(reply.ms));
         context.putImageData(new ImageData(new Uint8ClampedArray(reply.rgba), size.width, y1 - y0), 0, y0);
       })));
       const t2 = now();
       const blob = await canvas.convertToBlob({ type: 'image/png' });
-      timings.push({ page, dpi, bands: bands.length, planMs: t1 - t0, bandsMs: t2 - t1, encodeMs: now() - t2 });
+      timings.push({ page, dpi, bands: bands.length, workerMs, planMs: t1 - t0, bandsMs: t2 - t1, encodeMs: now() - t2 });
       if (timings.length > 32) timings.shift();
       return blob;
     } catch (error) {
