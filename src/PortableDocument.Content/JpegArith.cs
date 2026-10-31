@@ -112,6 +112,7 @@ public static partial class JpegDecoder
             var c = sc[ci];
             var coef = c.Coef.AsSpan((by * c.BW + bx) * 64, 64);
             if (ad.Overflow) return;
+            if (c.NoPred) last[ci] = 0;
             if (!prog)
             {
                 ArithDc(ad, dcStats[c.Td], dcL[c.Td], dcU[c.Td], ref last[ci], ref ctx[ci], coef, 0);
