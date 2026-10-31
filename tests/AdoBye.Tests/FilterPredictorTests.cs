@@ -19,6 +19,53 @@ public class FilterPredictorTests
     }
 
     // pred2-16 is verified by libtiff (tools/make_filter_fixtures.py asserts it); pred2-4 is hand-derived.
+    [Fact]
+    public void LzwMatchesLibtiffStream() =>
+        Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, "lzw-libtiff.exp")),
+            PdfFilters.Decode(File.ReadAllBytes(Path.Combine(Dir, "lzw-libtiff.bin")), [("LZWDecode", null)], o => o).Data);
+
+    [Fact]
+    public void LzwSpecExample()
+    {
+        // ISO 32000-2 §7.4.4.2 example: 45 45 45 45 45 65 45 45 45 66
+        byte[] enc = [0x80, 0x0B, 0x60, 0x50, 0x22, 0x0C, 0x0C, 0x85, 0x01];
+        Assert.Equal(new byte[] { 45, 45, 45, 45, 45, 65, 45, 45, 45, 66 }, PdfFilters.Decode(enc, [("LZWDecode", null)], o => o).Data);
+    }
+
+    // Vectors from Python base64.a85encode (independent).
+    [Theory]
+    [InlineData("<~87cURD_*#TDfTZ)+TMKB!+B=~>", "Hello, world!\0\0\0\0ab")]
+    [InlineData("<~z!!~>", "\0\0\0\0\0")]
+    [InlineData("@:E_W+Ct~>", "abcd e")]
+    [InlineData("<~87cUR D_*#T\nDfTZ)+TMKB!+B=~>", "Hello, world!\0\0\0\0ab")]
+    public void Ascii85MatchesPythonEncoder(string enc, string expected) =>
+        Assert.Equal(expected.Select(c => (byte)c).ToArray(), PdfFilters.Decode(System.Text.Encoding.ASCII.GetBytes(enc), [("ASCII85Decode", null)], o => o).Data);
+
+    [Fact]
+    public void FilterChainAppliesDecodeParmsPerStage()
+    {
+        // ASCIIHex -> Flate(+PNG Sub predictor); parms array has null for the first stage
+        var raw = new byte[] { 1, 1, 1, 1, 1 };
+        var z = new MemoryStream();
+        using (var zs = new ZLibStream(z, CompressionMode.Compress, true)) zs.Write(raw);
+        var hex = System.Text.Encoding.ASCII.GetBytes(Convert.ToHexString(z.ToArray()) + ">");
+        var d = new PdfDictionary();
+        d.Entries["Filter"] = new PdfArray([new PdfName("ASCIIHexDecode"), new PdfName("FlateDecode")]);
+        var pr = new PdfDictionary();
+        pr.Entries["Predictor"] = new PdfInteger(11); pr.Entries["Columns"] = new PdfInteger(4);
+        d.Entries["DecodeParms"] = new PdfArray([PdfNull.Instance, pr]);
+        var fl = PdfFilters.GetFilters(d, o => o);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, PdfFilters.Decode(hex, fl, o => o).Data);
+    }
+
+    [Fact]
+    public void RunLengthEdges()
+    {
+        // literal run, repeat run, truncated repeat run and EOD marker
+        byte[] enc = [1, 9, 8, 254, 7, 128, 0, 99];
+        Assert.Equal(new byte[] { 9, 8, 7, 7, 7 }, PdfFilters.Decode(enc, [("RunLengthDecode", null)], o => o).Data);
+    }
+
     [Theory]
     [InlineData("pred2-16", 16, 9)]
     [InlineData("pred2-4", 4, 7)]
