@@ -179,7 +179,7 @@ public sealed partial class PdfEditor
     }
 
     /// <summary>Returns the /DR font object registered under <paramref name="name"/>, creating a standard-14 font (or registering <paramref name="custom"/>) when missing.</summary>
-    PdfObject FormFont(string name, PdfRef? custom = null)
+    PdfObject FormFont(string name, PdfRef? custom = null, bool register = true)
     {
         PdfObject? found = null;
         if (AcroFormDict is { } form && Res(form.Get("DR")) is PdfDictionary dr && Res(dr.Get("Font")) is PdfDictionary fonts && fonts.Get(name) is { } f) found = f;
@@ -189,6 +189,7 @@ public sealed partial class PdfEditor
                 ? new Dictionary<string, PdfObject> { ["Type"] = new PdfName("Font"), ["Subtype"] = new PdfName("Type1"), ["BaseFont"] = new PdfName(baseFont) }
                 : new Dictionary<string, PdfObject> { ["Type"] = new PdfName("Font"), ["Subtype"] = new PdfName("Type1"), ["BaseFont"] = new PdfName(baseFont), ["Encoding"] = new PdfName("WinAnsiEncoding") })))
             : throw new ArgumentException($"Unknown form font '{name}'."));
+        if (!register) return font;
         EditAcroForm(e =>
         {
             var drd = Res(e.GetValueOrDefault("DR")) is PdfDictionary x ? new Dictionary<string, PdfObject>(x.Entries) : [];

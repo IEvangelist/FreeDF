@@ -8,7 +8,7 @@ public sealed partial class PdfEditor
     PdfObject? TryFormFont(string name)
     {
         if (AcroFormDict is { } form && Res(form.Get("DR")) is PdfDictionary dr && Res(dr.Get("Font")) is PdfDictionary fonts && fonts.Get(name) is { } f) return f;
-        return StandardFormFonts.ContainsKey(name) ? FormFont(name) : null;
+        return StandardFormFonts.ContainsKey(name) ? FormFont(name, register: false) : null;
     }
 
     static string Circle(double cx, double cy, double r)
