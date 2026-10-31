@@ -16,8 +16,10 @@ cold-replica low-resolution preview admission, stale thumbnail requests across
 document replacement, exact zoom latency, navigation wall time, and sample-26
 performance measurements. Startup long tasks/repeat visits and further raster
 work remain independent workstreams. All three delegated sessions returned;
-none needs recreation. Startup's per-client cache pinning still awaits its
-browser/mid-boot validation and final AOT check.
+none needs recreation. Startup's separate branch now includes per-client cache
+pinning and real mid-boot update validation (`a7c88436`, `ef0a201d`):
+service-worker, recovery, default and boot smokes pass on its trimmed non-AOT
+build. That branch is not integrated here; its final AOT check remains open.
 
 ## Latest reviewed five-branch slice
 
