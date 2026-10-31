@@ -74,7 +74,7 @@ try
 {
     var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var pw = await Playwright.CreateAsync();
-    await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"] });
+    await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"], IgnoreDefaultArgs = viewportOnly ? ["--hide-scrollbars"] : null });
     await using var context = await browser.NewContextAsync(new() { AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
     var page = await context.NewPageAsync();
     page.SetDefaultTimeout(60000);
