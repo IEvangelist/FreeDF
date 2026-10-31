@@ -94,24 +94,25 @@ public sealed class PdfDocument
     PdfDocument Init()
     {
         var root = File.Resolve(File.Catalog.Get("Pages")) as PdfDictionary ?? throw new PdfParseException("missing page tree");
-        Walk(root, [], new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance));
+        Walk(root, [], new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance), 0);
         return this;
     }
 
     static readonly string[] Inheritable = ["Resources", "MediaBox", "CropBox", "Rotate"];
+    const int MaxTreeDepth = 256;
 
-    void Walk(PdfDictionary node, Dictionary<string, PdfObject> inh, HashSet<PdfDictionary> seen)
+    void Walk(PdfDictionary node, Dictionary<string, PdfObject> inh, HashSet<PdfDictionary> seen, int depth)
     {
-        if (!seen.Add(node)) return;
+        if (depth > MaxTreeDepth || !seen.Add(node)) return;
         var next = new Dictionary<string, PdfObject>(inh);
         foreach (var k in Inheritable) if (node.Get(k) is { } v) next[k] = v;
         var type = File.Resolve(node.Get("Type")).AsName();
         if (File.Resolve(node.Get("Kids")) is PdfArray kids && type != "Page")
         {
             foreach (var k in kids.Items)
-                if (File.Resolve(k) is PdfDictionary kd) Walk(kd, next, seen);
+                if (File.Resolve(k) is PdfDictionary kd) Walk(kd, next, seen, depth + 1);
         }
-        else Pages.Add(new PdfPage(this, node, inh));
+        else if (type != "Pages") Pages.Add(new PdfPage(this, node, inh));
     }
 
     public string? Info(string key) => File.Resolve(File.Trailer.Get("Info")) is PdfDictionary d && File.Resolve(d.Get(key)) is PdfString s ? s.Text : null;
