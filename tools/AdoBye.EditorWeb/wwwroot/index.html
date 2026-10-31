@@ -94,7 +94,11 @@
   <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
 </header>
 <main>
-  <div id="thumbs"></div>
+  <div id="left">
+    <div id="ltabs" role="tablist" aria-label="Sidebar"><button id="tabPages" role="tab" aria-selected="true" aria-controls="thumbs">Pages</button><button id="tabContents" role="tab" aria-selected="false" aria-controls="contents" tabindex="-1">Contents</button></div>
+    <div id="thumbs" role="tabpanel" aria-labelledby="tabPages"></div>
+    <div id="contents" role="tabpanel" aria-labelledby="tabContents" hidden></div>
+  </div>
   <div id="center">
     <div id="tools">
       <div class="seg" role="toolbar" aria-label="Tools">
@@ -350,6 +354,11 @@ function pageFields() {
 }
 let neighborPrefetchEpoch = 0;
 const cancelNeighborPrefetch = () => { clearTimeout(neighborPrefetchTimer); neighborPrefetchTimer = 0; neighborPrefetchEpoch++; };
+let outline = null;
+import('./outline-panel.mjs').then(m => {
+  outline = m.createOutlinePanel({ tabPages: $('tabPages'), tabContents: $('tabContents'), thumbs: $('thumbs'), contents: $('contents'), load: async () => (await request('/api/outlines')).json(), goTo: goPage });
+  outline.update(state, sel);
+}).catch(reportError);
 addEventListener('pointerdown', cancelNeighborPrefetch, true);
 addEventListener('keydown', cancelNeighborPrefetch, true);
 function scheduleNeighborPrefetch() {
@@ -379,6 +388,7 @@ async function select(retainedUndo = null) {
     if (!retainedUndo) await post('/api/asset-history');
     if (epoch !== selectionEpoch) return;
     document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
+    outline?.update(state, sel);
     if (!state.pageCount) { buildEpoch++; shownPage = -1; clearTimeout(baseRenderTimer); v.innerHTML = '<div id="empty">' + ic('file') + '<strong>No document open</strong><span>Open a PDF or drop one here.</span></div>'; items = []; cur = null; curObj = null; curSpan = null; props(); return; }
     const nextItems = await (await request(`/api/page/${page}/items`)).json();
     if (epoch !== selectionEpoch || page !== sel) return;
@@ -1524,7 +1534,7 @@ addEventListener('beforeunload', e => { if (state.dirty) { e.preventDefault(); e
 
 // Global shortcuts (captured so they run before the editing shortcuts below)
 addEventListener('keydown', e => {
-  const k = e.key.toLowerCase(), typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || editing || document.querySelector('.mdl');
+  const k = e.key.toLowerCase(), typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || editing || document.querySelector('.mdl') || document.activeElement?.closest?.('.ct-tree');
   const m = e.ctrlKey || e.metaKey;
   if (m && k === 'f') { e.preventDefault(); openFind(); return; }
   if (m && k === 'p') { e.preventDefault(); printDoc(); return; }

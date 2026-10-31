@@ -64,5 +64,7 @@
     <Content Include="..\AdoBye.EditorWeb\wwwroot\samples.js" Link="wwwroot\samples.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\form-fields.js" Link="wwwroot\form-fields.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\annotations.js" Link="wwwroot\annotations.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\outline-map.mjs" Link="wwwroot\outline-map.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\outline-panel.mjs" Link="wwwroot\outline-panel.mjs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

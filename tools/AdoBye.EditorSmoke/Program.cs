@@ -68,6 +68,7 @@ var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
+var outlineOnly = args.Length == 2 && args[0] == "--outline";
 var fileAccessOnly = args.Length == 2 && args[0] == "--file-access";
 var formsOnly = args.Length == 2 && args[0] == "--forms";
 var annotationsOnly = args.Length == 2 && args[0] == "--annotations";
@@ -80,7 +81,7 @@ var a11yOnly = args.Length == 3 && args[0] == "--a11y";
 var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
 var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !outlineOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
 var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
@@ -240,6 +241,14 @@ try
     {
         await EditorAnnotations.Run(page);
         Check(network.IsEmpty && errors.IsEmpty, "No unexpected annotation errors or outbound traffic.");
+        return;
+    }
+    if (outlineOnly)
+    {
+        var shots = Environment.GetEnvironmentVariable("EDITOR_SMOKE_SHOTS") ?? Path.Combine(Path.GetTempPath(), "editor-outline-shots");
+        await EditorOutline.Run(page, shots);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
+        Console.WriteLine("PASS: Contents tab highlights/expands/reveals the active page's outline entry (keyboard, Go to page, thumbnails, outline click), 10k outline windowed, empty state, no document scroll or focus theft. Screenshots: " + shots);
         return;
     }
     if (textSelectionOnly)
