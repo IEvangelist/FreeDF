@@ -103,7 +103,7 @@ jobs:
         shell: pwsh
         run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256'
       - name: Hand the site to validation and deployment
-              uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7
         with:
           name: editor-site
           path: ${{ runner.temp }}/editor-pages
