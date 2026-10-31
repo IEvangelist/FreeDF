@@ -86,4 +86,11 @@ no separations, no `OPM` for ICCBased CMYK, no Acrobat "black overprint" gray-as
 PDF restricts `ICCBased` profiles to input/display/output/colour-space classes with N = 1, 3 or 4. DeviceLink, abstract and named-colour
 (`ncl2`) profiles are rejected and fall back to `/Alternate` or the Device space by design; that is the specified behaviour, not a gap.
 Perceptual/saturation LUT handling, v4 reference black, BPC and rendering intents are covered by `IccTests`/`IccCmmTests` (within two 8-bit
-levels of LittleCMS 2.17). Still open: D2B/B2D tags, v4 gamut tags, partial observer adaptation and a general gamut-mapping CMM.
+levels of LittleCMS 2.17). ICC.1:2010 `D2Bx`/`B2Dx` multiProcessElements (`mpet`: `cvst` with `curf` segments of `parf` types 0-2 and middle `samf` segments, `matf`, float `clut`) are read, preferred over `A2Bx`/`B2Ax`, and fall back to them when an element is unsupported (`bACS`/`eACS`, non-finite or out-of-bounds data). `IccMultiProcessTests` match Little CMS 2.17 (Pillow, NOOPTIMIZE) within two levels on two hand-assembled profiles (`tools/make_mpet_fixtures.py`; self-derived, not vendor profiles). Still open: v4 gamut tags, partial observer adaptation (not required by PDF) and a general gamut-mapping CMM.
+
+## CalGray/CalRGB/Lab vs PDFium
+
+Constant fills rendered here and by PDFium (pypdfium2, 72 dpi): CalRGB and Lab with a D65 white point agree within 2 levels (`CalLabPdfiumReferenceTests`).
+Documented differences, kept because they follow the spec: PDFium does not adapt non-D65 white points (a D50 CalRGB green is 81,255,0 in PDFium vs 0,255,0 here
+after Bradford adaptation; Lab with a D50 white differs by up to 12 levels) and keeps CalGray close to identity (0.1 -> 26 vs 19 here; 0.25 -> 64 vs 61) rather than applying gamma then the sRGB curve.
+MuPDF was not compared.
