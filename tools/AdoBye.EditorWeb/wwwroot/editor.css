@@ -291,3 +291,10 @@ button:disabled { opacity: .4; cursor: default; }
 
 .locked .it, .locked .obj { cursor: default; }
 .locked .it.txt { cursor: text; }
+@media (forced-colors: active) {
+  .it, .obj, .span { forced-color-adjust: none; }
+  .it:hover, .obj:hover, .span:hover { outline: 1px dashed Highlight; }
+  .it.on, .obj.on, .thumb.sel { outline: 3px solid Highlight; border-color: Highlight; }
+  .thumb.sel .num { background: Highlight; color: HighlightText; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+}

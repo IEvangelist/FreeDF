@@ -71,6 +71,7 @@ var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
 var formsOnly = args.Length == 2 && args[0] == "--forms";
 var annotationsOnly = args.Length == 2 && args[0] == "--annotations";
 var pageHistoryOnly = args.Length == 2 && args[0] == "--page-history";
+var objectBreadthOnly = args.Length == 2 && args[0] == "--object-breadth";
 var samplesOnly = args.Length == 2 && args[0] == "--samples";
 var protectionOnly = args.Length == 2 && args[0] == "--protection";
 var viewportOnly = args.Length == 3 && args[0] == "--viewport";
@@ -78,7 +79,7 @@ var a11yOnly = args.Length == 3 && args[0] == "--a11y";
 var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
 var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
 var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
@@ -184,6 +185,12 @@ try
     Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
     Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
+    if (objectBreadthOnly)
+    {
+        await EditorObjectBreadth.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound traffic or browser errors during object editing.");
+        return;
+    }
     if (pageHistoryOnly)
     {
         await EditorPageHistory.Run(page, address + "/csharp-pdf/");
