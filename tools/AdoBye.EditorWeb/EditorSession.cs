@@ -133,6 +133,66 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         }
     }
 
+    sealed record WidgetOption(string Value, string Label);
+    sealed record WidgetDetails(string Name, string Kind, double X0, double Y0, double X1, double Y1, string Value, string? On, bool Checked,
+        bool ReadOnly, bool Multiline, bool Password, bool Comb, int MaxLen, int Align, double Size, List<WidgetOption>? Options);
+
+    /// <summary>Fillable AcroForm widgets on page <paramref name="i"/> in the same CropBox space as objects and text; push buttons are listed but never executed.</summary>
+    List<WidgetDetails> WidgetDetailsFor(int i)
+    {
+        var doc = Pristine(); var file = doc.File; var page = doc.Pages[i];
+        var list = new List<WidgetDetails>();
+        if (file.Resolve(page.Dict.Get("Annots")) is not PdfArray annots) return list;
+        var fields = new Dictionary<string, PdfFormField>();
+        foreach (var field in doc.GetFormFields()) fields.TryAdd(field.FullName, field);
+        var box = page.CropBox;
+        foreach (var annot in annots.Items)
+        {
+            if (file.Resolve(annot) is not PdfDictionary d || file.Resolve(d.Get("Subtype")).AsName() != "Widget") continue;
+            if (((int)(file.Resolve(d.Get("F")).AsNumber() ?? 0) & (2 | 32)) != 0) continue;
+            var parts = new List<string>();
+            PdfObject? opt = null, maxLen = null, q = null, da = null;
+            var node = d; var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            for (var depth = 0; node is not null && depth < 32 && seen.Add(node); depth++)
+            {
+                if (file.Resolve(node.Get("T")) is PdfString t) parts.Insert(0, t.Text);
+                opt ??= node.Get("Opt"); maxLen ??= node.Get("MaxLen"); q ??= node.Get("Q"); da ??= node.Get("DA");
+                node = file.Resolve(node.Get("Parent")) as PdfDictionary;
+            }
+            if (!fields.TryGetValue(string.Join(".", parts), out var field) || field.FieldType is not ("Tx" or "Btn" or "Ch")) continue;
+            if (file.Resolve(d.Get("Rect")) is not PdfArray ra || ra.Count < 4) continue;
+            double N(int k) => file.Resolve(ra[k]).AsNumber() ?? 0;
+            var (x0, x1, y0, y1) = (Math.Min(N(0), N(2)) - box.Left, Math.Max(N(0), N(2)) - box.Left, box.Top - Math.Max(N(1), N(3)), box.Top - Math.Min(N(1), N(3)));
+            var ff = field.Flags;
+            string kind; string? on = null; var isChecked = false; List<WidgetOption>? options = null;
+            if (field.FieldType == "Btn")
+            {
+                kind = (ff & 65536) != 0 ? "push" : (ff & 32768) != 0 ? "radio" : "check";
+                if (file.Resolve(d.Get("AP")) is PdfDictionary ap && file.Resolve(ap.Get("N")) is PdfDictionary states)
+                    on = states.Entries.Keys.FirstOrDefault(k => k != "Off");
+                isChecked = on is not null && file.Resolve(d.Get("AS")).AsName() == on;
+            }
+            else
+            {
+                kind = field.FieldType == "Ch" ? ((ff & 131072) != 0 ? "combo" : "list") : "text";
+                if (field.FieldType == "Ch" && file.Resolve(opt) is PdfArray oa)
+                {
+                    options = [];
+                    foreach (var o in oa.Items)
+                        if (file.Resolve(o) is PdfString s) options.Add(new(s.Text, s.Text));
+                        else if (file.Resolve(o) is PdfArray pair && pair.Count >= 2 && file.Resolve(pair[0]) is PdfString ev && file.Resolve(pair[1]) is PdfString dv) options.Add(new(ev.Text, dv.Text));
+                }
+            }
+            var size = file.Resolve(da) is PdfString das && System.Text.RegularExpressions.Regex.Match(das.Text, @"(\d+(?:\.\d+)?)\s+Tf") is { Success: true } m
+                ? double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+            var comb = kind == "text" && (ff & (1 << 24)) != 0 && file.Resolve(maxLen).AsNumber() is > 0;
+            list.Add(new(field.FullName, kind, x0, y0, x1, y1, field.Value ?? "", on, isChecked,
+                (ff & 1) != 0, kind == "text" && (ff & 4096) != 0, kind == "text" && (ff & 8192) != 0, comb,
+                (int)(file.Resolve(maxLen).AsNumber() ?? 0), (int)(file.Resolve(q).AsNumber() ?? 0), size, options));
+        }
+        return list;
+    }
+
     HashSet<FormObjectRange> AmbiguousFormObjects(int i) =>
         FormObjectEditPolicy.FindAmbiguous(PageText(i).Objects, SharedFormReferences());
     HashSet<int> SharedFormReferences() => sharedFormReferences ??= FormObjectEditPolicy.FindSharedForms(Pristine());
@@ -507,6 +567,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     if (!selectionReplies.TryGetValue(id, out var selection))
                         selectionReplies[id] = selection = AsJson(new { spans = TextDetailsFor(i), objects = ObjectDetailsFor(i) });
                     return selection;
+                case "widgets" when method == "GET":
+                    return AsJson(WidgetDetailsFor(i));
                 case "objects":
                     if (method == "GET")
                         return AsJson(ObjectDetailsFor(i));

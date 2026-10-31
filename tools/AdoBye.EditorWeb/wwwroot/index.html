@@ -161,7 +161,7 @@ const famCss = f => FAM[f] ?? `"${String(f).replace(/"/g, '')}", sans-serif`;
 let fontList = [];
 request('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
 const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null, curSpan = null;
+let S = 1, geom = null, spans = [], origKey = '', fields = [], widgets = [], widgetStamp = 0, widgetEl = null, widgetKey = '', objs = [], curObj = null, curSpan = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
@@ -310,8 +310,9 @@ async function select(retainedUndo = null) {
     const nextSpans = await (await request(`/api/page/${page}/text`)).json();
     const nextObjects = await (await request(`/api/page/${page}/objects`)).json();
     const nextFields = await (await request('/api/fields')).json();
+    const nextWidgets = await (await request(`/api/page/${page}/widgets`)).json();
     if (epoch !== selectionEpoch || page !== sel) return;
-    items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields;
+    items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields; widgets = nextWidgets; widgetStamp++;
     origKey = okey();
     cur = null; curObj = null; curSpan = null;
     pruneAssetImages();
@@ -457,7 +458,7 @@ function paint() {
       const [x0, y0, x1, y1] = oBox(o);
       const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}${o.inForm ? ' inside its graphic group' : ''}`;
       e.style.left = x0 * S + 'px'; e.style.top = y0 * S + 'px'; e.style.width = Math.max(x1 - x0, 1) * S + 'px'; e.style.height = Math.max(y1 - y0, 1) * S + 'px';
-      e.onpointerdown = ev => { if (tool === 'select') startObjMove(ev, o); };
+      e.onpointerdown = ev => { if (tool === 'select' && (ev.altKey || !pageSized(o))) startObjMove(ev, o); };
       if (o === curObj) for (const [k, x, y, c] of [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']])
         handle(e, k, x, y, c, ev => startObjResize(ev, o, k));
       layer.appendChild(e);
@@ -526,6 +527,59 @@ function paint() {
     layer.appendChild(e);
     if (it.type === 'image') setImage(e.querySelector('img'), `/api/asset/${it.asset}`).catch(reportError);
   }
+  paintWidgets(layer);
+}
+
+// Page-sized objects (a background fill or an imported page's content wrapper) are selected with Alt+click so plain clicks reach form widgets and text.
+const pageSized = o => { const [x0, y0, x1, y1] = oBox(o); return (x1 - x0) * (y1 - y0) >= 0.9 * state.pages[sel].width * state.pages[sel].height; };
+
+// Fillable widgets sit above every other layer object; the container persists across repaints so typing keeps focus.
+function paintWidgets(layer) {
+  const key = `${widgetStamp}|${S}|${tool}`;
+  if (tool !== 'select' || !widgets.length) { widgetEl = null; widgetKey = ''; return; }
+  if (widgetEl && widgetKey === key) { layer.appendChild(widgetEl); return; }
+  widgetKey = key; widgetEl = document.createElement('div'); widgetEl.className = 'wgts';
+  const commit = async (w, value, el) => {
+    try {
+      await request(`/api/field?n=${encodeURIComponent(w.name)}&v=${encodeURIComponent(value)}`, { method: 'POST' });
+      for (const x of widgets) if (x.name === w.name) {
+        if (x.kind === 'check' || x.kind === 'radio') x.checked = x.on === value; else x.value = value;
+      }
+      const f = fields.find(x => x.name === w.name); if (f) f.value = value;
+      status(`Set ${w.name}`);
+      await refreshDirty(); updateBase();
+      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&v=${state.version}`));
+    } catch (e) { reportError(e); }
+  };
+  for (const w of widgets) {
+    if (w.kind === 'push') continue;
+    const h = (w.y1 - w.y0) * S, c = (w.kind === 'check' || w.kind === 'radio');
+    const el = document.createElement(w.kind === 'combo' || w.kind === 'list' ? 'select' : w.multiline ? 'textarea' : 'input');
+    el.className = 'wgt ' + w.kind; el.setAttribute('aria-label', w.name);
+    el.style.left = w.x0 * S + 'px'; el.style.top = w.y0 * S + 'px'; el.style.width = Math.max(w.x1 - w.x0, 4) * S + 'px'; el.style.height = Math.max(h, 4) + 'px';
+    el.style.fontSize = Math.max(8, Math.min(w.size > 0 ? w.size * S : h * 0.7, 28 * S)) + 'px';
+    if (w.readOnly) el.disabled = true;
+    el.onpointerdown = ev => ev.stopPropagation();
+    el.onkeydown = ev => { if (ev.key === 'Escape') el.blur(); ev.stopPropagation(); };
+    if (c) {
+      el.type = w.kind === 'radio' ? 'radio' : 'checkbox'; el.checked = w.checked; if (w.kind === 'radio') el.name = w.name;
+      el.title = w.name; el.onchange = () => commit(w, el.checked ? w.on : 'Off', el);
+    } else if (el.tagName === 'SELECT') {
+      const opts = [...(w.options ?? [])]; if (w.value && !opts.some(o => o.value === w.value)) opts.push({ value: w.value, label: w.value });
+      el.innerHTML = opts.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+      if (w.kind === 'list') el.size = Math.max(2, opts.length);
+      el.value = w.value; if (w.kind === 'combo' && !w.value) el.selectedIndex = -1;
+      el.onchange = () => commit(w, el.value, el);
+    } else {
+      if (el.tagName === 'INPUT') el.type = w.password ? 'password' : 'text';
+      if (w.maxLen > 0) el.maxLength = w.maxLen;
+      if (w.comb) { el.style.fontFamily = 'monospace'; el.style.letterSpacing = Math.max(0, (w.x1 - w.x0) * S / w.maxLen - h * 0.42) + 'px'; }
+      el.style.textAlign = ['left', 'center', 'right'][w.align] ?? 'left';
+      el.value = w.value; el.onchange = () => commit(w, el.value, el);
+    }
+    widgetEl.appendChild(el);
+  }
+  layer.appendChild(widgetEl);
 }
 
 function handle(parent, cls, x, y, cursor, down) {
