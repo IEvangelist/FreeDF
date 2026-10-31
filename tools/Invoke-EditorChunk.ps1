@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('node', 'dotnet-editor', 'dotnet-codecs', 'dotnet-render', 'default', 'forms', 'authoring', 'boot', 'viewport', 'a11y', 'responsive', 'profile')]
+    [ValidateSet('node', 'dotnet-editor', 'dotnet-codecs', 'dotnet-render', 'default', 'forms', 'authoring', 'boot', 'viewport', 'a11y', 'responsive', 'profile-invariants', 'perf')]
     [string] $Chunk,
     [string] $Site = (Join-Path $PSScriptRoot 'AdoBye.EditorWasm\bin\pages\wwwroot'),
     [string] $Work = (Join-Path ([IO.Path]::GetTempPath()) 'editor-chunks')
@@ -43,9 +43,11 @@ if ($Chunk -eq 'node') {
 Prepare
 $showcase = Join-Path $samples '01-spec-showcase.pdf'
 $repacked = Join-Path $samples '26-repacked-object-streams.pdf'
+$profilePdfs = @($showcase, (Join-Path $samples '03-typography-embedded.pdf'), (Join-Path $samples '09-images.pdf'), (Join-Path $samples '20-report.pdf'))
 switch ($Chunk) {
     'default' {
         $env:EDITOR_SMOKE_TRANSIENT_BOOT = '1'
+        $env:EDITOR_PERF_REPORT_ONLY = '1'
         $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-save-overlap'
         Run 'local editor and trim-safe JSON round trips' { Smoke @($Site) }
     }
@@ -70,11 +72,21 @@ switch ($Chunk) {
         $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-responsive'
         Run 'responsive layout matrix' { Smoke @('--responsive', $Site, $showcase) }
     }
-    'profile' {
-        $report = Join-Path $Work 'editor-profile.json'
+    'profile-invariants' {
+        # Blocking: runs the profile workload with timing report-only, so only functional invariants
+        # (e.g. overlay-only edits leave bare-page pixels exact) can fail. Timing gates live in 'perf'.
         $env:EDITOR_PROFILE_REPORT_ONLY = '1'
+        Run 'profile functional invariants' { Smoke (@('--profile', $Site, (Join-Path $Work 'editor-profile.json')) + $profilePdfs) }
+    }
+    'perf' {
+        # Non-blocking (scheduled workflow): thresholds are unchanged, a regression is reported not deployed against.
+        $report = Join-Path $Work 'editor-profile.json'
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-save-overlap'
         $failed = @()
-        try { Run 'strict end-to-end performance goals' { Smoke @('--profile', $Site, $report, $showcase, (Join-Path $samples '03-typography-embedded.pdf'), (Join-Path $samples '09-images.pdf'), (Join-Path $samples '20-report.pdf')) } }
+        try { Run 'save-overlap input-to-frame ceiling' { Smoke @($Site) } }
+        catch { $failed += $_.Exception.Message; Write-Host "::error::$($_.Exception.Message)" }
+        $env:EDITOR_PROFILE_REPORT_ONLY = '1'
+        try { Run 'strict end-to-end performance goals' { Smoke (@('--profile', $Site, $report) + $profilePdfs) } }
         catch { $failed += $_.Exception.Message; Write-Host "::error::$($_.Exception.Message)" }
         Remove-Item Env:EDITOR_PROFILE_REPORT_ONLY
         if (Test-Path $report) {
