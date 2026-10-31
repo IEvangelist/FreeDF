@@ -109,7 +109,7 @@ static class EditorBoot
                 await context.UnrouteAllAsync();
                 if (scenario == "stalled-worker") await page.Clock.ResumeAsync();
                 await reload.PressAsync("Enter");
-                await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+                await page.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
             }
             else
             {
