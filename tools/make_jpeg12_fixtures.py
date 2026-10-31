@@ -6,8 +6,9 @@ decoder's integer butterfly. Every fixture is checked against imagecodecs'
 12-bit libjpeg-turbo decoder, with fancy upsampling disabled, before writing.
 Raw reference samples are retained in JSON, before the decoder API's >>4 mapping.
 Coverage is SOF1 sequential and SOF2 progressive, including refinement, restart
-markers, separate scans, 4:2:0 and Gray/RGB/YCbCr/CMYK/YCCK. SOF11, hierarchical
-JPEG and subsampled interleaved lossless remain outside this fixture set.
+markers, separate scans, 4:2:0 and Gray/RGB/YCbCr/CMYK/YCCK; arithmetic cases include non-default DAC conditioning
+(L/U/Kx) checked against libjpeg-turbo. SOF11, hierarchical JPEG and subsampled interleaved lossless are covered by
+make_jpeg_lossless_arith_fixtures.py / make_jpeg_hierarchical_fixtures.py.
 Requires imagecodecs. Run: python tools/make_jpeg12_fixtures.py
 """
 import base64
@@ -168,7 +169,7 @@ def encode(w, h, ids, sampling, blocks, quant, progressive, restart, separate, a
     return data + b"\xff\xd9"
 
 
-def encode_arith(w, h, ids, sampling, blocks, quant, progressive, restart):
+def encode_arith(w, h, ids, sampling, blocks, quant, progressive, restart, cond=None):
     """SOF9/SOF10 12-bit stream: coefficients are entropy coded with the T.81 Annex D/F/G QM-coder port in
     make_jpeg_ext_fixtures.py (the probability table is read from JpegArith.cs, so a table typo would also
     be caught by the independent libjpeg-turbo decode in check_reference)."""
@@ -189,9 +190,12 @@ def encode_arith(w, h, ids, sampling, blocks, quant, progressive, restart):
     for cid, (hs, vs) in zip(ids, sampling):
         frame += bytes([cid, hs * 16 + vs, 0])
     data += segment(0xCA if progressive else 0xC9, frame)
+    if cond:
+        # T.81 B.2.4.3: Tc/Tb, then Cs = U << 4 | L for DC (lossless) tables or Kx for AC tables; table 0 is used by all components.
+        data += segment(0xCC, bytes([0x00, cond["dcl"][0] | cond["dcu"][0] << 4, 0x10, cond["ack"][0]]))
     if restart:
         data += segment(0xDD, restart.to_bytes(2, "big"))
-    cond = dict(dcl=[0] * 4, dcu=[1] * 4, ack=[5] * 4)
+    cond = cond or dict(dcl=[0] * 4, dcu=[1] * 4, ack=[5] * 4)
     for sc in ext.prog_scans(len(ids)) if progressive else ext.seq_scans(len(ids)):
         sc = dict(sc, prog=progressive)
         header = bytes([len(sc["ids"])]) + b"".join(bytes([ids[ci], 0]) for ci in sc["ids"])
@@ -255,6 +259,13 @@ def fixtures():
         ("arith-rgb-interleaved", 17, 9, [82, 71, 66], [(1, 1)] * 3, False, 2, False, None, False, True),
         ("arith-ycc-420", 17, 9, [1, 2, 3], [(2, 2), (1, 1), (1, 1)], False, 1, False, None, False, True),
         ("arith-ycc-420-progressive", 17, 9, [1, 2, 3], [(2, 2), (1, 1), (1, 1)], True, 1, False, None, False, True),
+        # Non-default DAC conditioning (T.81 F.1.4.4.1.4 / F.1.4.4.2.1): L/U bound the DC difference categories, Kx splits AC magnitude contexts.
+        ("arith-gray-dac-narrow", 33, 9, [1], [(1, 1)], False, 0, False, None, False, True, dict(dcl=[0] * 4, dcu=[0] * 4, ack=[1] * 4)),
+        ("arith-gray-dac-wide", 33, 9, [1], [(1, 1)], False, 0, False, None, False, True, dict(dcl=[4] * 4, dcu=[12] * 4, ack=[63] * 4)),
+        ("arith-gray-dac-max", 33, 9, [1], [(1, 1)], False, 2, False, None, False, True, dict(dcl=[15] * 4, dcu=[15] * 4, ack=[40] * 4)),
+        ("arith-gray-dac-progressive", 33, 9, [1], [(1, 1)], True, 2, False, None, False, True, dict(dcl=[2] * 4, dcu=[6] * 4, ack=[9] * 4)),
+        ("arith-rgb-dac", 17, 9, [82, 71, 66], [(1, 1)] * 3, False, 2, False, None, False, True, dict(dcl=[1] * 4, dcu=[3] * 4, ack=[20] * 4)),
+        ("arith-ycc-420-dac-progressive", 17, 9, [1, 2, 3], [(2, 2), (1, 1), (1, 1)], True, 1, False, None, False, True, dict(dcl=[3] * 4, dcu=[9] * 4, ack=[2] * 4)),
     ]
     for name, w, h, ids, sampling, prog, restart, separate, adobe, wide, *arith in cases:
         hm, vm = max(s[0] for s in sampling), max(s[1] for s in sampling)
@@ -276,7 +287,7 @@ def fixtures():
                     block[1], block[8], block[16], block[63] = (3, -3, 1, 0) if wide else (513, -257, 1, -3)
                 component.append(block)
             blocks.append(component)
-        jpeg = (encode_arith(w, h, ids, sampling, blocks, quant, prog, restart) if arith
+        jpeg = (encode_arith(w, h, ids, sampling, blocks, quant, prog, restart, arith[1] if len(arith) > 1 else None) if arith
                 else encode(w, h, ids, sampling, blocks, quant, prog, restart, separate, adobe))
         yield dict(name=name, width=w, height=h, components=len(ids),
                    jpeg=base64.b64encode(jpeg).decode("ascii"),
