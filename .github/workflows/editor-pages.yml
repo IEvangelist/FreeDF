@@ -23,23 +23,56 @@ concurrency:
   group: editor-pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
   cancel-in-progress: true
 
+env:
+  EDITOR_AOT: ${{ github.event_name != 'workflow_dispatch' || inputs.aot }}
+  # Bump to invalidate every content-addressed cache below.
+  CACHE_VERSION: v1
+
 jobs:
+  # Publishes the site once. The result is cached by a hash of every input that can change it
+  # (an exact hit skips the AOT publish) and handed to the validation jobs as one artifact.
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      EDITOR_AOT: ${{ github.event_name != 'workflow_dispatch' || inputs.aot }}
+    outputs:
+      aot: ${{ env.EDITOR_AOT }}
+      site-cache-hit: ${{ steps.site-cache.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v4
+      - name: Compute input hashes
+        id: hash
+        shell: bash
+        run: |
+          # Everything that can change published bytes, minus tests, build outputs and this workflow.
+          echo "site=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/**', 'tools/AdoBye.EditorWasm/**', 'tools/AdoBye.EditorWeb/**', 'tools/AdoBye.Samples/**', 'tools/Publish-EditorPages.ps1', '!**/bin/**', '!**/obj/**', '!tools/AdoBye.EditorWasm/tests/**', '!**/*.test.*', '!tools/AdoBye.EditorWeb/e2e_*') }}" >> "$GITHUB_OUTPUT"
+          # Inputs of the compile/AOT step only; static web assets (html/css/js) are excluded so
+          # an asset-only change reuses the incremental AOT intermediates.
+          echo "compile=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/_gen/fonts/**', 'tools/AdoBye.EditorWasm/*.cs', 'tools/AdoBye.EditorWasm/*.csproj', 'tools/AdoBye.EditorWeb/*.cs', 'tools/AdoBye.EditorWeb/*.csproj', '!**/bin/**', '!**/obj/**') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore published site (exact input match)
+        id: site-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/editor-pages
+          key: site-${{ env.CACHE_VERSION }}-${{ runner.os }}-aot-${{ env.EDITOR_AOT }}-${{ steps.hash.outputs.site }}
       - uses: actions/setup-dotnet@v4
+        if: steps.site-cache.outputs.cache-hit != 'true'
         with:
           global-json-file: global.json
           cache: true
           cache-dependency-path: Directory.Packages.props
+      - name: Restore incremental publish intermediates
+        if: steps.site-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/editor-publish-build
+          key: obj-${{ env.CACHE_VERSION }}-${{ runner.os }}-aot-${{ env.EDITOR_AOT }}-${{ steps.hash.outputs.compile }}
+          restore-keys: |
+            obj-${{ env.CACHE_VERSION }}-${{ runner.os }}-aot-${{ env.EDITOR_AOT }}-
       - name: Install pinned SDK WebAssembly toolchain
-        if: env.EDITOR_AOT == 'true'
+        if: steps.site-cache.outputs.cache-hit != 'true' && env.EDITOR_AOT == 'true'
         run: dotnet workload install wasm-tools --skip-manifest-update --disable-parallel
       - name: Publish static WebAssembly editor
+        if: steps.site-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $options = @{
@@ -48,90 +81,185 @@ jobs:
             Aot = $env:EDITOR_AOT -eq 'true'
           }
           ./tools/Publish-EditorPages.ps1 @options
+      - name: Record site manifest
+        shell: pwsh
+        run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256'
+      - name: Hand the site to validation and deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-site
+          path: ${{ runner.temp }}/editor-pages
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+
+  # Source-level suites; independent of the published site so they run alongside the build.
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
       - name: Verify worker cache and scheduling invariants
         run: node --test tools/AdoBye.EditorWasm/tests/*.test.mjs
+      - name: Verify sample loader integrity checks
+        run: node --test tools/AdoBye.EditorWeb/samples.test.mjs
       - name: Test shared editor and browser-compatible rendering
         run: dotnet test tests/AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx|FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests"
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, boot-viewport, quality, profile]
+    env:
+      SITE: ${{ runner.temp }}/editor-pages/wwwroot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-site
+          path: ${{ runner.temp }}/editor-pages
+      - name: Verify the site is exactly what the build job produced
+        shell: pwsh
+        run: ./tools/Site-Manifest.ps1 -Site "$env:SITE" -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256' -Verify
       - name: Build browser smoke runner
         run: dotnet build tools/AdoBye.EditorSmoke -c Release
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('Directory.Packages.props') }}
       - name: Install Chromium
         shell: pwsh
         run: ./tools/AdoBye.EditorSmoke/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+
       - name: Exercise local editor and trim-safe JSON round trips
+        if: matrix.group == 'core'
         env:
           EDITOR_SMOKE_TRANSIENT_BOOT: '1'
           EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-save-overlap
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "${{ runner.temp }}/editor-pages/wwwroot"
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- "$SITE"
       - name: Exercise on-page form filling and field authoring
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --forms "${{ runner.temp }}/editor-pages/wwwroot"
+        if: matrix.group == 'core'
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --forms "$SITE"
       - name: Exercise local Merge PDFs flow
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --merge "${{ runner.temp }}/editor-pages/wwwroot"
-      - name: Verify sample loader integrity checks
-        run: node --test tools/AdoBye.EditorWeb/samples.test.mjs
+        if: matrix.group == 'core'
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --merge "$SITE"
       - name: Exercise one-click sample collection
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --samples "${{ runner.temp }}/editor-pages/wwwroot"
+        if: matrix.group == 'core'
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --samples "$SITE"
       - name: Exercise annotation authoring
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --annotations "${{ runner.temp }}/editor-pages/wwwroot"
+        if: matrix.group == 'core'
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --annotations "$SITE"
+
       - name: Exercise cold boot and injected resource failures
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --boot "${{ runner.temp }}/editor-pages/wwwroot" "${{ runner.temp }}/editor-boot"
+        if: matrix.group == 'boot-viewport'
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --boot "$SITE" "${{ runner.temp }}/editor-boot"
       - name: Exercise viewport fit and window scrolling
+        if: matrix.group == 'boot-viewport'
         env:
           EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-viewport
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --viewport "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf"
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --viewport "$SITE" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf"
       - name: Exercise page-image continuity
-        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --page-image "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf" "${{ runner.temp }}/editor-page-image"
+        if: matrix.group == 'boot-viewport'
+        run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --page-image "$SITE" "${{ github.workspace }}/samples/26-repacked-object-streams.pdf" "${{ runner.temp }}/editor-page-image"
+
       - name: Install accessibility test tooling (axe-core; test-only, never published)
+        if: matrix.group == 'quality'
         run: npm ci --prefix tools/AdoBye.EditorSmoke/a11y
       - name: Exercise accessibility (axe-core, keyboard, focus, targets)
+        if: matrix.group == 'quality'
         env:
           EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-a11y
-        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --a11y "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
+        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --a11y "$SITE" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
       - name: Exercise responsive layout matrix
+        if: matrix.group == 'quality'
         env:
           EDITOR_SMOKE_ARTIFACTS: ${{ runner.temp }}/editor-responsive
-        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --responsive "${{ runner.temp }}/editor-pages/wwwroot" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
+        run: mkdir -p "$EDITOR_SMOKE_ARTIFACTS" && dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --responsive "$SITE" "${{ github.workspace }}/samples/01-spec-showcase.pdf"
+
       - name: Measure strict end-to-end performance goals
+        if: matrix.group == 'profile'
         id: profile
         env:
           EDITOR_PROFILE_REPORT_ONLY: '1'
         run: >-
           dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke --
-          --profile "${{ runner.temp }}/editor-pages/wwwroot"
+          --profile "$SITE"
           "${{ runner.temp }}/editor-profile.json"
           "${{ github.workspace }}/samples/01-spec-showcase.pdf"
           "${{ github.workspace }}/samples/03-typography-embedded.pdf"
           "${{ github.workspace }}/samples/09-images.pdf"
           "${{ github.workspace }}/samples/20-report.pdf"
       - name: Enforce CI regressions and report open performance goals
-        if: always() && steps.profile.outcome != 'skipped'
+        if: matrix.group == 'profile' && always() && steps.profile.outcome != 'skipped'
         run: dotnet run --no-build -c Release --project tools/AdoBye.EditorSmoke -- --profile-ci "${{ runner.temp }}/editor-profile.json" "${{ github.workspace }}/docs/performance/editor-ci-known-misses.v1.json"
       - name: Verify performance gates reject synthetic regressions
+        if: matrix.group == 'profile'
         shell: pwsh
         run: ./tools/Test-EditorProfileCi.ps1 -Profile '${{ runner.temp }}/editor-profile.json' -Output '${{ runner.temp }}/editor-profile-ci-tests'
+
       - name: Retain validation evidence
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: editor-validation-${{ env.EDITOR_AOT == 'true' && 'aot' || 'non-aot' }}
+          name: editor-validation-${{ needs.build.outputs.aot == 'true' && 'aot' || 'non-aot' }}-${{ matrix.group }}
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: ignore
           path: |
-            ${{ runner.temp }}/editor-pages/wwwroot
             ${{ runner.temp }}/editor-boot
+            ${{ runner.temp }}/editor-viewport
             ${{ runner.temp }}/editor-page-image
             ${{ runner.temp }}/editor-save-overlap
             ${{ runner.temp }}/editor-a11y
             ${{ runner.temp }}/editor-responsive
             ${{ runner.temp }}/editor-profile.json*
             ${{ runner.temp }}/editor-profile-ci-tests
+
+  # Single required gate: nothing is packaged or deployed unless every validation job passed.
+  validated:
+    needs: [build, unit, smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every validation job to succeed
+        run: |
+          echo "build=${{ needs.build.result }} unit=${{ needs.unit.result }} smoke=${{ needs.smoke.result }}"
+          [ "${{ needs.build.result }}" = success ] && [ "${{ needs.unit.result }}" = success ] && [ "${{ needs.smoke.result }}" = success ]
+
+  package:
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.deploy)
+    needs: validated
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-site
+          path: ${{ runner.temp }}/editor-pages
+      - name: Verify the site is exactly what was validated
+        shell: pwsh
+        run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256' -Verify
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.deploy)
         with:
           path: ${{ runner.temp }}/editor-pages/wwwroot
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && (github.event_name != 'workflow_dispatch' || inputs.deploy)
-    needs: build
+    needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: read
