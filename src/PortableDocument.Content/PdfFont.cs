@@ -29,6 +29,12 @@ public interface IFontAssetPending
     bool HasPending { get; }
 }
 
+/// <summary>Optional capability of an <see cref="IFontFallback"/>: problems with its font data (missing, corrupt) that should surface as render warnings.</summary>
+public interface IFontAssetDiagnostics
+{
+    IReadOnlyList<string> Warnings { get; }
+}
+
 /// <summary>Resolves non-embedded fonts from the host's installed fonts (Windows, macOS, Linux directories).</summary>
 public sealed class SystemFontFallback : IFontFallback, ICjkFontFallback
 {
@@ -143,7 +149,15 @@ public sealed class PdfFont
     string _ordering = "";
     Dictionary<int, int>? _cidToUni;
     public bool HasOutlines => _tt?.HasGlyf == true || _cff is not null || _t1 is not null || _cjkGlyphs is not null;
-    public IReadOnlyList<string> Warnings => _openTypeLayout?.Warnings ?? Array.Empty<string>();
+    public IReadOnlyList<string> Warnings
+    {
+        get
+        {
+            var layout = _openTypeLayout?.Warnings ?? Array.Empty<string>();
+            return _diagnostics is { Warnings.Count: > 0 } ? [.. layout, .. _diagnostics.Warnings] : layout;
+        }
+    }
+    IFontAssetDiagnostics? _diagnostics;
     readonly PdfFile _f;
     readonly string?[] _names = new string?[256];
     readonly double[] _widths = new double[256];
@@ -329,6 +343,7 @@ public sealed class PdfFont
                 }
             }
             if (_cjkGlyphs is null) _tt ??= fallback.Find(BaseFont, cls.Bold, cls.Italic, cls.Mono, cls.Serif);
+            _diagnostics = fallback as IFontAssetDiagnostics;
             _fallbackUsed = true;
         }
         _openTypeLayout ??= _tt;

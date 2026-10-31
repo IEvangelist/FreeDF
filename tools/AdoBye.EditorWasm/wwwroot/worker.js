@@ -56,10 +56,30 @@ function base64(bytes) {
 
 // Fallback fonts and CJK glyph chunks are same-origin files under fallback-fonts/, fetched on first use (never at startup).
 // Failed or missing files are reported as unavailable so rendering degrades to the built-in fallback instead of retrying.
+let manifestLoaded;
+// The manifest (size and SHA-256 per asset) is fetched lazily with the first font request; C# rejects any asset that does not match it.
+function loadFontManifest(exports) {
+  return manifestLoaded ??= (async () => {
+    try {
+      const response = await fetch(new URL('fallback-fonts/manifest.json', import.meta.url), {
+        credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      exports.BrowserEditor.ProvideFontManifest({ bytes: new Uint8Array(await response.arrayBuffer()) });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+}
+
 async function supplyFallbackFonts(exports) {
   const paths = JSON.parse(exports.BrowserEditor.TakeFontRequests());
+  if (paths.length === 0) return 0;
+  const verified = await loadFontManifest(exports);
   await Promise.all(paths.map(async path => {
     try {
+      if (!verified) throw new Error('font manifest unavailable');
       const response = await fetch(new URL(`fallback-fonts/${path}`, import.meta.url), {
         credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(20000),
       });

@@ -32,7 +32,7 @@ public static class CjkIndex
 /// DejaVu Sans for Symbol and ZapfDingbats, and Noto Sans CJK outlines for the Adobe-Japan1/GB1/CNS1/Korea1 orderings, all read through an
 /// <see cref="IFallbackAssetSource"/> so the data is only loaded when a document needs it. Installed CJK fonts, when a fallback is supplied, win.
 /// </summary>
-public sealed class BundledFontFallback : IFontFallback, ICjkFontFallback, ICjkGlyphFallback, IFontAssetPending
+public sealed class BundledFontFallback : IFontFallback, ICjkFontFallback, ICjkGlyphFallback, IFontAssetPending, IFontAssetDiagnostics
 {
     readonly IFallbackAssetSource _source;
     readonly IFontFallback? _inner;
@@ -49,6 +49,12 @@ public sealed class BundledFontFallback : IFontFallback, ICjkFontFallback, ICjkG
 
     /// <summary>Desktop default: bundled data beside the application, installed CJK fonts first.</summary>
     public static BundledFontFallback CreateDefault() => new(new DirectoryAssetSource(), new SystemFontFallback());
+
+    readonly List<string> _warnings = [];
+
+    public IReadOnlyList<string> Warnings { get { lock (_warnings) return _warnings.ToArray(); } }
+
+    void Warn(string message) { lock (_warnings) if (!_warnings.Contains(message)) _warnings.Add(message); }
 
     public bool HasPending => _source is IFontAssetPending { HasPending: true };
 
@@ -74,6 +80,7 @@ public sealed class BundledFontFallback : IFontFallback, ICjkFontFallback, ICjkG
                 try { font = new TrueTypeFont(data); }
                 catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
             }
+            if (font is null) Warn($"fallback font {path} is unavailable or corrupt; a built-in substitute is used");
             if (font is null) return _inner?.Find(baseFont, bold, italic, fixedPitch, serif);
             return _fonts[path] = font;
         }
@@ -90,7 +97,9 @@ public sealed class BundledFontFallback : IFontFallback, ICjkFontFallback, ICjkG
             if (!_chunks.TryGetValue((ordering, block), out var glyphs))
             {
                 if (!_source.TryRead(CjkIndex.ChunkPath(ordering, block), out var data)) return null;
-                _chunks[(ordering, block)] = glyphs = data is null ? null : CjkChunkCodec.Decode(data);
+                glyphs = data is null ? null : CjkChunkCodec.Decode(data);
+                if (glyphs is null or { Count: 0 }) { glyphs = null; Warn($"CJK fallback data {CjkIndex.ChunkPath(ordering, block)} is unavailable or corrupt; those glyphs are not drawn"); }
+                _chunks[(ordering, block)] = glyphs;
             }
             return glyphs is not null && glyphs.TryGetValue(codePoint & 0xFF, out var p) ? p : null;
         }

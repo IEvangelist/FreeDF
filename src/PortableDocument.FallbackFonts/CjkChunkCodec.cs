@@ -13,6 +13,9 @@ public static class CjkChunkCodec
 {
     const int MaxOps = 4096;
 
+    /// <summary>Upper bound for one decompressed chunk (real chunks are well under 200 KB); larger output is treated as corrupt.</summary>
+    public const int MaxDecodedBytes = 1 << 20;
+
     public static byte[] Encode(IReadOnlyList<(int Low, PathData Path)> glyphs)
     {
         using var raw = new MemoryStream();
@@ -85,7 +88,13 @@ public static class CjkChunkCodec
         {
             using var z = new DeflateStream(new MemoryStream(chunk), CompressionMode.Decompress);
             using var ms = new MemoryStream();
-            z.CopyTo(ms);
+            var buf = new byte[8192];
+            int n0;
+            while ((n0 = z.Read(buf, 0, buf.Length)) > 0)
+            {
+                if (ms.Length + n0 > MaxDecodedBytes) return [];
+                ms.Write(buf, 0, n0);
+            }
             var d = ms.GetBuffer().AsSpan(0, (int)ms.Length);
             var pos = 0;
             if (d.Length < 2) return result;

@@ -8,7 +8,9 @@ namespace PortableDocument.Content;
 /// </summary>
 internal sealed class Std14Metrics
 {
-    const string ResourceName = "PortableDocument.Content.Resources.std14-widths.txt";
+    const string ResourceName = "PortableDocument.Content.Resources.std14-widths.bin";
+    /// <summary>The Adobe copyright notice and permission paragraph that must travel with the data.</summary>
+    public const string NoticeResourceName = "PortableDocument.Content.Resources.std14-notice.txt";
     static readonly Lazy<Dictionary<string, Std14Metrics>> All = new(Load);
 
     readonly Dictionary<string, int> _byName = [];
@@ -47,14 +49,21 @@ internal sealed class Std14Metrics
     static Dictionary<string, Std14Metrics> Load()
     {
         var all = new Dictionary<string, Std14Metrics>(StringComparer.Ordinal);
-        using var s = typeof(Std14Metrics).Assembly.GetManifestResourceStream(ResourceName);
-        if (s is null) return all;
+        using var raw = typeof(Std14Metrics).Assembly.GetManifestResourceStream(ResourceName);
+        if (raw is null) return all;
+        using var s = new System.IO.Compression.DeflateStream(raw, System.IO.Compression.CompressionMode.Decompress);
         using var r = new StreamReader(s);
         Std14Metrics? cur = null;
         for (var line = r.ReadLine(); line is not null; line = r.ReadLine())
         {
             if (line.Length == 0 || line[0] == '#') continue;
-            if (line[0] == '@') { all[line[1..]] = cur = new Std14Metrics(line[1..]); continue; }
+            if (line[0] == '@')
+            {
+                var eq = line.IndexOf('=');
+                if (eq > 0) { if (all.TryGetValue(line[(eq + 1)..], out var canon)) all[line[1..eq]] = canon; cur = null; continue; }
+                all[line[1..]] = cur = new Std14Metrics(line[1..]);
+                continue;
+            }
             if (cur is null) continue;
             var f = line.Split(' ');
             if (f.Length != 3 || !int.TryParse(f[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var code) ||

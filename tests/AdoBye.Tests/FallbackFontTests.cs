@@ -63,6 +63,122 @@ public class FallbackFontTests
     {
         var assembly = typeof(BundledFontFallback).Assembly;
         Assert.True(new FileInfo(assembly.Location).Length < 200_000);
+        Assert.DoesNotContain(assembly.GetManifestResourceNames(), n => n.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || n.Contains("cjk/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void StartupAssembliesCarryOnlyTheCompactMetricsTable()
+    {
+        var content = typeof(PdfFont).Assembly;
+        var resources = content.GetManifestResourceNames();
+        Assert.DoesNotContain(resources, n => n.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || n.Contains("cjk", StringComparison.OrdinalIgnoreCase) && !n.Contains("cmap", StringComparison.OrdinalIgnoreCase));
+        long Size(string name)
+        {
+            using var s = content.GetManifestResourceStream(name)!;
+            return s.Length;
+        }
+        Assert.True(Size("PortableDocument.Content.Resources.std14-widths.bin") < 20_000, "std14 table grew");
+        using var notice = new StreamReader(content.GetManifestResourceStream(Std14Metrics.NoticeResourceName)!);
+        var text = notice.ReadToEnd();
+        Assert.Contains("Adobe Systems Incorporated", text);
+        Assert.Contains("may be used, copied, and distributed for any purpose and without charge", text);
+        Assert.Contains("Adobe", File.ReadAllText(Path.Combine(Root, "licenses", "Adobe-Core14-AFM-NOTICE.txt")));
+    }
+
+    [Fact]
+    public void ThirdPartyNoticesListEveryComponent()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "THIRD-PARTY-NOTICES.md"))) dir = dir.Parent;
+        Assert.NotNull(dir);
+        var text = File.ReadAllText(Path.Combine(dir.FullName, "THIRD-PARTY-NOTICES.md"));
+        foreach (var name in new[] { "Liberation", "DejaVu", "Noto Sans", "Adobe Core 14" }) Assert.Contains(name, text);
+    }
+
+    [Fact]
+    public void ManifestVerificationRejectsTruncatedAndCorruptAssets()
+    {
+        var manifest = AssetManifest.TryParse(File.ReadAllBytes(Path.Combine(Root, "manifest.json")))!;
+        const string path = "cjk/GB1/4e.bin";
+        var good = File.ReadAllBytes(Path.Combine(Root, path));
+        Assert.True(manifest.Verify(path, good));
+        Assert.False(manifest.Verify(path, good[..^1]));
+        var flipped = (byte[])good.Clone(); flipped[good.Length / 2] ^= 0xFF;
+        Assert.False(manifest.Verify(path, flipped));
+        Assert.False(manifest.Verify("cjk/GB1/unlisted.bin", good));
+        Assert.Null(AssetManifest.TryParse([1, 2, 3]));
+
+        var source = new ProvidedAssetSource { Manifest = manifest };
+        var fallback = new BundledFontFallback(source);
+        Assert.Null(fallback.GetCjkGlyph("GB1", false, 0x4E2D));
+        source.TakeRequests();
+        source.Provide(path, good[..^1]);
+        Assert.Null(fallback.GetCjkGlyph("GB1", false, 0x4E2D));
+        Assert.False(fallback.HasPending);
+        Assert.Contains(fallback.Warnings, w => w.Contains(path) && w.Contains("corrupt"));
+    }
+
+    [Fact]
+    public void CorruptChunksDecodeToNothingAndWarn()
+    {
+        var good = File.ReadAllBytes(Path.Combine(Root, "cjk", "Japan1", "65.bin"));
+        Assert.NotEmpty(CjkChunkCodec.Decode(good));
+        Assert.Empty(CjkChunkCodec.Decode(good[..(good.Length / 2)]));
+        var garbage = new byte[200]; new Random(7).NextBytes(garbage);
+        Assert.Empty(CjkChunkCodec.Decode(garbage));
+
+        using var bomb = new MemoryStream();
+        using (var z = new System.IO.Compression.DeflateStream(bomb, System.IO.Compression.CompressionLevel.SmallestSize, true))
+            z.Write(new byte[CjkChunkCodec.MaxDecodedBytes * 4]);
+        Assert.True(bomb.Length < 10_000);
+        Assert.Empty(CjkChunkCodec.Decode(bomb.ToArray()));
+
+        var dir = Path.Combine(Path.GetTempPath(), "fb-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "cjk", "Japan1"));
+        try
+        {
+            File.WriteAllBytes(Path.Combine(dir, "cjk", "Japan1", "65.bin"), good[..(good.Length / 2)]);
+            var fallback = new BundledFontFallback(new DirectoryAssetSource(dir));
+            Assert.Null(fallback.GetCjkGlyph("Japan1", false, 0x65E5));
+            Assert.Contains(fallback.Warnings, w => w.Contains("corrupt"));
+            var font = Font("<< /Subtype /Type0 /BaseFont /MSGothic /Encoding /UniJIS-UTF16-H /DescendantFonts [<< /Subtype /CIDFontType2 /BaseFont /MSGothic /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 2 >> >>] >>", fallback);
+            font.GetGlyph(font.Decode([0x65, 0xE5]).First().Code);
+            Assert.Contains(font.Warnings, w => w.Contains("CJK fallback data"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void DirectorySourceRejectsTamperedFiles()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "fb-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "latin"));
+        try
+        {
+            File.Copy(Path.Combine(Root, "manifest.json"), Path.Combine(dir, "manifest.json"));
+            var bytes = File.ReadAllBytes(Path.Combine(Root, "latin", "LiberationSans-Regular.ttf"));
+            File.WriteAllBytes(Path.Combine(dir, "latin", "LiberationSans-Regular.ttf"), bytes[..^10]);
+            var fallback = new BundledFontFallback(new DirectoryAssetSource(dir), new FixedFallback());
+            Assert.NotNull(fallback.Find("Arial", false, false, false, false));
+            Assert.Contains(fallback.Warnings, w => w.Contains("LiberationSans-Regular.ttf"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void WidthFittingIsClampedAndHasADeadZone()
+    {
+        PathData Glyph(string widths) => Font($"<< /Subtype /Type1 /BaseFont /Verdana /FirstChar 65 /LastChar 65 /Widths [{widths}] /Encoding /WinAnsiEncoding >>").GetGlyph('A')!;
+        double MaxX(PathData g) => Enumerable.Range(0, g.Pts.Count / 2).Max(i => g.Pts[i * 2]);
+        double MaxY(PathData g) => Enumerable.Range(0, g.Pts.Count / 2).Max(i => g.Pts[i * 2 + 1]);
+        var natural = Font("<< /Subtype /Type1 /BaseFont /Verdana /Encoding /WinAnsiEncoding >>").GetGlyph('A')!;
+        var advance = new TrueTypeFont(File.ReadAllBytes(Path.Combine(Root, "latin", "LiberationSans-Regular.ttf")));
+        var adv = advance.Advance(advance.LookupAny('A'));
+        Assert.Equal(natural.Pts, Glyph(((int)Math.Round(adv * 1.02)).ToString()).Pts);
+        Assert.Equal(MaxX(natural) * 0.5, MaxX(Glyph("10")), 0.5);
+        Assert.Equal(MaxX(natural) * 1.5, MaxX(Glyph("5000")), 0.5);
+        Assert.Equal(MaxY(natural), MaxY(Glyph("5000")), 0.01);
+        Assert.Equal(MaxY(natural), MaxY(Glyph("10")), 0.01);
     }
 
     [Theory]
@@ -292,6 +408,21 @@ public class FallbackFontTests
         var ink = 0;
         for (var i = 0; i < a.Rgba.Length; i += 4) if (a.Rgba[i] < 128) ink++;
         Assert.InRange(ink, 400, 8000);
+    }
+
+    [Theory]
+    [InlineData("nonembedded-latin.pdf", 1500)]
+    [InlineData("nonembedded-symbol-dingbats.pdf", 400)]
+    [InlineData("nonembedded-cjk.pdf", 1500)]
+    public void NonEmbeddedFixturesDrawBundledGlyphs(string file, int minInk)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "fixtures", "fonts-nonembedded", file);
+        var options = new PdfRenderOptions { FontFallback = Bundled() };
+        var page = DocumentRenderer.RenderPage(PdfDocument.Open(path).Pages[0], options, 96);
+        var ink = 0;
+        for (var i = 0; i < page.Rgba.Length; i += 4) if (page.Rgba[i] < 128) ink++;
+        Assert.True(ink >= minInk, $"{file}: {ink} dark pixels");
+        Assert.DoesNotContain(page.Warnings, w => w.Contains("unavailable") || w.Contains("corrupt"));
     }
 
     sealed class FixedFallback : IFontFallback

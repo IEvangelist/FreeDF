@@ -43,6 +43,8 @@
       "version": "4.1",
       "usage": "Glyph advance widths and the built-in Symbol/ZapfDingbats encodings embedded in PortableDocument.Content (Resources/std14-widths.txt); numeric facts only, no outlines.",
       "license": "Adobe Core 14 AFM redistribution permission",
+      "licenseFile": "licenses/Adobe-Core14-AFM-NOTICE.txt",
+      "embeddedIn": "PortableDocument.Content (Resources/std14-widths.bin; the notice also ships there as Resources/std14-notice.txt)",
       "copyright": "Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems Incorporated. All Rights Reserved.",
       "source": "https://github.com/apache/pdfbox/tree/trunk/pdfbox/src/main/resources/org/apache/pdfbox/resources/afm",
       "files": []

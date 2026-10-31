@@ -29,6 +29,13 @@ public static partial class BrowserEditor
     public static void FontAssetUnavailable(string path) => FontAssets.Provide(path, null);
 
     [JSExport]
+    public static void ProvideFontManifest(JSObject body)
+    {
+        using var b = body;
+        FontAssets.Manifest = AssetManifest.TryParse(b.GetPropertyAsByteArray("bytes") ?? []);
+    }
+
+    [JSExport]
     public static string Request(string command)
     {
         Command? c = null;
