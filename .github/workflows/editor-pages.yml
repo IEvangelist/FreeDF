@@ -119,10 +119,9 @@ jobs:
       fail-fast: false
       matrix:
         group: [core, boot-viewport, quality, profile]
-    env:
-      SITE: ${{ runner.temp }}/editor-pages/wwwroot
     steps:
       - uses: actions/checkout@v4
+      - run: echo "SITE=${{ runner.temp }}/editor-pages/wwwroot" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
