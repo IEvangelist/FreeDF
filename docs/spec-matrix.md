@@ -289,6 +289,17 @@ Integration fix: form-fill appearance generation registered a standard font in t
 
 Status stays **Partial** for the annotation, form, action and rendering rows: authoring covers the implemented annotation/field types with generated appearances, not every ISO 32000-2 annotation or widget behaviour; signatures/PAdES-LTV remain as documented before this batch. **The worker pool ships opt-in (`?pool=1`), not on by default:** with it enabled the Chromium recovery smoke ("Resume retains exact original-font/geometry raster fidelity") fails, because render replicas have no fallback-font asset source (batch 2) and so can draw non-embedded text differently from the primary engine. Enabling it by default needs the replicas to receive the same lazy font assets (or a hash parity check) first. Pool speed-ups are measured on a non-AOT build in the child report (`docs/performance/2026-10-30-worker-pool.md`); AOT/SIMD pool timing was not measured there and the pool benchmark (`--pool`) was not rerun here.
 
+## Authored text shaping and extraction integration
+
+Editor-authored text now uses bounded OpenType GSUB/GPOS lookup processing,
+script/language selection, Arabic joining, a pragmatic Devanagari shaper,
+Unicode 16 bidi tables and line-breaking support. Existing PDF text is not
+reshaped. Generated glyph/CID text includes multi-code-point ToUnicode entries
+and ActualText; replacement extraction is opt-in, uses shared PDF string
+decoding and preserves Form-local state even with malformed marked content.
+HarfBuzz glyph fixtures and Unicode bidi conformance inputs provide bounded
+references, not complete OpenType or script parity. Clause 9 remains Partial.
+
 ## Annotation rendering fidelity batch (clause 12)
 
 Annotations without `/AP` now render through the shared generator used for authoring (`AnnotationAppearance.Build(viewer: true)`), replacing a weaker duplicate: cloudy `/BE` borders, Line/PolyLine endings, `/RD` insets on Square/Circle, `/BS /D` and `/Border` dash arrays, Text note icons, Caret and FileAttachment glyphs; FreeText uses `/C` as background and the `/DA` colour for the border. Annotation-dictionary `/OC` is evaluated, the Print flag is required for the Print event, NoView hides only on screen, Invisible hides unknown subtypes, NoRotate keeps annotations upright on rotated pages, and a 50,000-annotation page budget guards hostile `/Annots`. Stamp and Redact never get viewer-generated appearances.

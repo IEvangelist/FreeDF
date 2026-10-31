@@ -37,7 +37,7 @@ if ($Chunk -eq 'node') {
     Run 'worker cache and scheduling invariants' { node --test (Get-ChildItem tools/AdoBye.EditorWasm/tests -Filter *.test.mjs).FullName }
     $cjs = @(Get-ChildItem tools/AdoBye.EditorWasm, tools/AdoBye.EditorWeb -Filter *.test.cjs | Where-Object Name -notlike 'e2e_*')
     if ($cjs) { Run 'host, worker and selection invariants' { node --test $cjs.FullName } }
-    Run 'sample loader integrity' { node --test tools/AdoBye.EditorWeb/samples.test.mjs }
+    Run 'sample, outline and publish bundle integrity' { node --test tools/AdoBye.EditorWeb/samples.test.mjs tools/AdoBye.EditorWeb/outline_map.test.mjs tools/bundle-editor-site.test.mjs }
     return
 }
 Prepare
@@ -56,6 +56,9 @@ switch ($Chunk) {
         Run 'Merge PDFs flow' { Smoke @('--merge', $Site) }
         Run 'one-click sample collection' { Smoke @('--samples', $Site) }
         Run 'annotation authoring' { Smoke @('--annotations', $Site) }
+        Run 'object transformations and styling' { Smoke @('--object-breadth', $Site) }
+        Run 'local file saving and font access' { Smoke @('--file-access', $Site) }
+        Run 'Contents panel and active page' { Smoke @('--outline', $Site) }
     }
     'boot' { Run 'cold boot and injected resource failures' { Smoke @('--boot', $Site, (WorkDir 'editor-boot')) } }
     'viewport' {

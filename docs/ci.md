@@ -24,7 +24,7 @@ Locally (site published first with `tools/Publish-EditorPages.ps1 -Output <dir>`
 ./tools/Invoke-EditorChunk.ps1 -Chunk dotnet-editor
 ```
 
-Chunks: `node`, `dotnet-editor`, `dotnet-codecs`, `dotnet-render`, `default`, `forms`, `authoring` (merge, samples, annotations), `boot`, `viewport` (viewport, page-image), `a11y`, `responsive`, `profile-invariants` (blocking: runs the profile with timing misses report-only, so functional invariants such as overlay-only bare-page pixel exactness still fail), `perf` (non-blocking, see below).
+Chunks: `node` (worker/selection invariants, sample/outline modules and publish bundler), `dotnet-editor`, `dotnet-codecs`, `dotnet-render`, `default`, `forms`, `authoring` (merge, samples, annotations, object styling, local file/font access and Contents), `boot`, `viewport` (viewport, page-image), `a11y`, `responsive`, `profile-invariants` (blocking: runs the profile with timing misses report-only, so functional invariants such as overlay-only bare-page pixel exactness still fail), `perf` (non-blocking, see below).
 
 ## Change detection
 
