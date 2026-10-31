@@ -191,10 +191,11 @@ public static class PdfFilters
         var bpc = (int)(r(p.Get("BitsPerComponent")).AsNumber() ?? 8);
         var columns = (int)(r(p.Get("Columns")).AsNumber() ?? 1);
         var bpp = Math.Max(1, colors * bpc / 8);
+        if (colors < 1 || columns < 1 || bpc is not (1 or 2 or 4 or 8 or 16) || (long)colors * bpc * columns > 1 << 28) return data;
         var rowBytes = (colors * bpc * columns + 7) / 8;
         if (pred == 2)
         {
-            if (bpc != 8) return data;
+            if (bpc != 8) { TiffPredictSubByteOr16(data, colors, bpc, columns, rowBytes); return data; }
             for (var row = 0; row + rowBytes <= data.Length; row += rowBytes)
                 for (var i = bpp; i < rowBytes; i++) data[row + i] += data[row + i - bpp];
             return data;
@@ -227,6 +228,33 @@ public static class PdfFilters
             (prev, cur) = (cur, prev);
         }
         return res;
+    }
+
+    // TIFF predictor 2 (T.2 differencing per colour component) for bit depths other than 8; rows are byte-padded.
+    static void TiffPredictSubByteOr16(byte[] data, int colors, int bpc, int columns, int rowBytes)
+    {
+        for (var row = 0; row + rowBytes <= data.Length; row += rowBytes)
+        {
+            if (bpc == 16)
+            {
+                for (var i = colors * 2; i + 1 < rowBytes; i += 2)
+                {
+                    var v = (data[row + i] << 8 | data[row + i + 1]) + (data[row + i - colors * 2] << 8 | data[row + i - colors * 2 + 1]);
+                    data[row + i] = (byte)(v >> 8); data[row + i + 1] = (byte)v;
+                }
+                continue;
+            }
+            var mask = (1 << bpc) - 1; var n = colors * columns;
+            var prev = new int[colors];
+            for (var s = 0; s < n; s++)
+            {
+                var bit = s * bpc; var idx = row + (bit >> 3); var sh = 8 - bpc - (bit & 7);
+                var c = s % colors;
+                var v = ((data[idx] >> sh & mask) + prev[c]) & mask;
+                prev[c] = v;
+                data[idx] = (byte)(data[idx] & ~(mask << sh) | v << sh);
+            }
+        }
     }
 
     static int Paeth(int a, int b, int c)
