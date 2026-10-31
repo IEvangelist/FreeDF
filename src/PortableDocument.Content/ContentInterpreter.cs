@@ -1114,7 +1114,7 @@ public sealed class ContentInterpreter
             off += run.ByteLength;
             if (DrawGraphics && !hidden)
             {
-                if (font.IsType3) DrawType3(font, run.Code, trm);
+                if (font.IsType3) { if (_gs.RenderMode is not (3 or 7)) DrawType3(font, run.Code, trm); }
                 else
                 {
                     var outline = font.GetGlyph(run.Code, font.ToUnicode(run));
