@@ -58,9 +58,9 @@ button:focus-visible, label.btn:focus-within, a:focus-visible, [tabindex]:focus-
 #props input:focus, #props select:focus, #props textarea:focus, .dbody input:focus, .dbody select:focus { border-color: var(--ring); box-shadow: 0 0 0 3px var(--accent-bg); }
 
 /* Buttons */
-button, label.btn { height: var(--h); border-radius: var(--radius); font-size: var(--text-base); transition: background-color var(--dur-1) var(--ease-in-out), color var(--dur-1) var(--ease-in-out), border-color var(--dur-1) var(--ease-in-out), box-shadow var(--dur-1) var(--ease-in-out), transform var(--dur-1) var(--ease); }
+button, label.btn { height: var(--h); border-radius: var(--radius); font-size: var(--text-base); transition: background-color var(--dur-1) var(--ease-in-out), color var(--dur-1) var(--ease-in-out), border-color var(--dur-1) var(--ease-in-out), box-shadow var(--dur-1) var(--ease-in-out); }
 button:hover, label.btn:hover { background: var(--hover); }
-button:active:not(:disabled), label.btn:active { background: var(--line); transform: scale(.97); }
+button:active:not(:disabled), label.btn:active { background: var(--line); }
 button:disabled { opacity: .5; }
 button.primary, .btn-primary { background: var(--primary); color: var(--primary-fg); box-shadow: var(--shadow-sm); }
 button.primary:hover, .btn-primary:hover { background: var(--primary-hover); color: var(--primary-fg); }
