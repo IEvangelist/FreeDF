@@ -33,7 +33,7 @@ Get-ChildItem $Corpus -Recurse -Filter $Filter -File | Sort-Object Length | ForE
         Use-Slot {
             $p = if ($e -in 'adobye', 'pdfpig') {
                 $a = @($f, '--engine', $e, '--ops', $Ops, '--iters', $Iters, '--pages', $Pages, '--budget', $Budget)
-                if ($e -eq 'pdfpig') { $a[4] = 'open,text' }
+                if ($e -eq 'pdfpig' -and $Ops -notlike '*text_all*') { $a[4] = 'open,text' }
                 Start-Process $exe -ArgumentList $a -NoNewWindow -PassThru -RedirectStandardOutput "$Out.tmp"
             } else {
                 $o = if ($e -eq 'pikepdf') { 'open,save' } else { $Ops }

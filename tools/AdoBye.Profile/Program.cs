@@ -74,6 +74,16 @@ if (engine == "adobye")
     Guard("setup", () => doc ??= PdfDocument.Load(data));
     if (doc is null) return;
     var pages = doc.Pages.Count;
+    if (ops.Contains("alloc_split")) Guard("alloc_split", () =>
+    {
+        PortableDocument.Core.PdfFile.Load(data);
+        var a0 = GC.GetAllocatedBytesForCurrentThread();
+        var f = PortableDocument.Core.PdfFile.Load(data);
+        var a1 = GC.GetAllocatedBytesForCurrentThread();
+        var d2 = PdfDocument.Load(data);
+        var a2 = GC.GetAllocatedBytesForCurrentThread();
+        Emit("alloc_split", [0], new { file_load_mb = Math.Round((a1 - a0) / 1048576.0, 2), file_plus_pages_mb = Math.Round((a2 - a1) / 1048576.0, 2), xref = f.Xref.Count, pages = d2.Pages.Count });
+    });
     if (ops.Contains("fingerprint")) Guard("fingerprint", () =>
     {
         var sb = new System.Text.StringBuilder();
