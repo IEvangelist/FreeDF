@@ -1564,7 +1564,7 @@ async function startEditor() {
     status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password-protected PDFs open and save here too; passwords are never stored.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
     // Samples are fetched only on demand; a missing samples.js (older publish) just leaves the feature off.
     if (!samples) import(new URL('samples.js', document.baseURI)).then(m => {
-      samples = m.createSamples({ open: file => act(() => upload('/api/open', file), e => { throw e; }), isDirty: () => state.dirty, confirmReplace: confirmDiscard, status });
+      samples = m.createSamples({ open: file => act(() => openPdf(file), e => { throw e; }).then(announceProtection), isDirty: () => state.dirty, confirmReplace: confirmDiscard, status });
       return samples.deepLink();
     }).catch(e => console.warn('Sample loader unavailable:', e));
   };
