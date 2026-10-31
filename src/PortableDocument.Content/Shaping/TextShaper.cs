@@ -31,6 +31,8 @@ public sealed class ShapedRun
     public required ShapedGlyph[] Glyphs { get; init; }
     public double Advance { get; init; }
     public bool HasMissingGlyphs { get; init; }
+    /// <summary>The lookup operation budget was exhausted (malformed or hostile layout data); the glyphs keep the substitutions applied before that point.</summary>
+    public bool Truncated { get; init; }
     public bool Vertical { get; init; }
 }
 
@@ -152,9 +154,9 @@ public static class TextShaper
         for (var i = 0; i < buf.Len; i++)
         {
             buf.Pos[i].XAdv = font.AdvanceUnits(buf.Info[i].Gid);
-            if (IsDefaultIgnorable(buf.Info[i].Cp) && buf.Info[i].Class == 0 && buf.Info[i].Flags == 0)
+            if (IsDefaultIgnorable(buf.Info[i].Cp) && (buf.Info[i].Class == 0 || !layout.HasGlyphClasses) && buf.Info[i].Flags == 0)
             {
-                if (spaceGid > 0) { buf.Info[i].Gid = spaceGid; buf.Info[i].Class = layout.GlyphClass(spaceGid); }
+                if (spaceGid > 0) { buf.Info[i].Gid = spaceGid; buf.Info[i].Class = layout.ClassFor(spaceGid, buf.Info[i].Class); }
                 buf.Pos[i].XAdv = 0;
             }
         }
@@ -165,7 +167,7 @@ public static class TextShaper
                 if (buf.Info[i].Class != 3 && buf.Info[i + 1].Class != 3 && layout.TryKernPair(buf.Info[i].Gid, buf.Info[i + 1].Gid, out var kv)) buf.Pos[i].XAdv += kv;
         }
         engine.FinishPositions();
-        return Finish(font, buf, text, start, length, rightToLeft, script, missing, options.Vertical);
+        return Finish(font, buf, text, start, length, rightToLeft, script, missing, options.Vertical, engine.Truncated);
     }
 
     // Fonts without GDEF glyph classes: marks are recognised from the Unicode category, as HarfBuzz does.
@@ -191,7 +193,7 @@ public static class TextShaper
         return extra.Length == 0 ? stages : [stages[0] with { Features = [.. stages[0].Features, .. extra] }];
     }
 
-    static ShapedRun Finish(TrueTypeFont font, GlyphBuffer buf, string text, int start, int length, bool rtl, ScriptId script, bool missing, bool vertical)
+    static ShapedRun Finish(TrueTypeFont font, GlyphBuffer buf, string text, int start, int length, bool rtl, ScriptId script, bool missing, bool vertical, bool truncated = false)
     {
         if (rtl) buf.Reverse();
         var scale = 1000.0 / font.UnitsPerEm;
@@ -203,7 +205,7 @@ public static class TextShaper
             glyphs[i] = new ShapedGlyph(g.Gid, g.Start, Math.Max(g.End - g.Start, 0), p.XAdv * scale, p.YAdv * scale, p.XOff * scale, p.YOff * scale, (g.Flags & GlyphInfo.FlagLigature) != 0);
             total += p.XAdv * scale;
         }
-        return new ShapedRun { Text = text, Start = start, Length = length, RightToLeft = rtl, Script = script, Glyphs = glyphs, Advance = total, HasMissingGlyphs = missing, Vertical = vertical };
+        return new ShapedRun { Text = text, Start = start, Length = length, RightToLeft = rtl, Script = script, Glyphs = glyphs, Advance = total, HasMissingGlyphs = missing, Vertical = vertical, Truncated = truncated };
     }
 
     // Canonical composition (base + mark -> precomposed) when the font has the composed glyph; canonical decomposition when it lacks the precomposed one.
@@ -228,7 +230,7 @@ public static class TextShaper
                 var gc = font.LookupAny(composed);
                 if (gc <= 0) continue;
                 ref var prev = ref buf.Info[i - 1];
-                prev.Gid = gc; prev.Cp = composed; prev.Class = font.Layout.GlyphClass(gc); prev.End = Math.Max(prev.End, g.End);
+                prev.Gid = gc; prev.Cp = composed; prev.Class = font.Layout.ClassFor(gc, prev.Class); prev.End = Math.Max(prev.End, g.End);
                 buf.RemoveAt(i);
                 i--;
             }

@@ -127,7 +127,7 @@ internal sealed class GlyphBuffer
         for (var k = 0; k < gids.Length; k++)
         {
             var g = first;
-            g.Gid = gids[k]; g.Start = start; g.End = end; g.Flags = flags; g.Class = layout.GlyphClass(gids[k]);
+            g.Gid = gids[k]; g.Start = start; g.End = end; g.Flags = flags; g.Class = layout.ClassFor(gids[k], first.Class);
             Info[index + k] = g;
             Pos[index + k] = default;
         }
@@ -203,6 +203,9 @@ public sealed class OpenTypeLayout
     public int UnitsPerEm { get; }
 
     internal bool HasGlyphClasses => _glyphClassDef > 0;
+
+    /// <summary>The class of a substituted glyph: from GDEF when the font has glyph classes, otherwise the class the glyph already had (Unicode-derived).</summary>
+    internal byte ClassFor(int gid, byte existing) => _glyphClassDef > 0 ? GlyphClass(gid) : existing;
 
     internal byte GlyphClass(int gid) => (byte)Ot.Class(D, _glyphClassDef, gid);
 
