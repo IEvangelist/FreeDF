@@ -17,7 +17,7 @@ $index = Join-Path $site 'index.html'
 $html = [IO.File]::ReadAllText($index).Replace('<head>', "<head>`n<base href=`"$BasePath`">`n<meta name=`"editor-host`" content=`"wasm`">")
 [IO.File]::WriteAllText($index, $html)
 [IO.File]::WriteAllText((Join-Path $site '.nojekyll'), '')
-foreach ($asset in @('editor.css', 'editor.js', 'host.js', 'worker.js', 'recovery.js', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
+foreach ($asset in @('editor.css', 'editor.js', 'form-fields.js', 'host.js', 'worker.js', 'recovery.js', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
     if (!(Test-Path (Join-Path $site $asset))) { throw "Missing site asset: $asset" }
 }
 $wasm = @(Get-ChildItem (Join-Path $site '_framework') -Filter '*.wasm')

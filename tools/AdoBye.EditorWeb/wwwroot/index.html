@@ -161,7 +161,7 @@ const famCss = f => FAM[f] ?? `"${String(f).replace(/"/g, '')}", sans-serif`;
 let fontList = [];
 request('/api/fonts').then(r => r.json()).then(l => { fontList = l; });
 const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null, curSpan = null;
+let S = 1, geom = null, spans = [], origKey = '', fields = [], objs = [], curObj = null, curSpan = null, formUi = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
@@ -310,6 +310,7 @@ async function select(retainedUndo = null) {
     const nextSpans = await (await request(`/api/page/${page}/text`)).json();
     const nextObjects = await (await request(`/api/page/${page}/objects`)).json();
     const nextFields = await (await request('/api/fields')).json();
+    await formUi?.load(page);
     if (epoch !== selectionEpoch || page !== sel) return;
     items = nextItems; spans = nextSpans; objs = nextObjects; fields = nextFields;
     origKey = okey();
@@ -526,6 +527,7 @@ function paint() {
     layer.appendChild(e);
     if (it.type === 'image') setImage(e.querySelector('img'), `/api/asset/${it.asset}`).catch(reportError);
   }
+  formUi?.paint(layer);
 }
 
 function handle(parent, cls, x, y, cursor, down) {
@@ -612,6 +614,7 @@ function startResize(ev, it, k, el) {
 }
 
 function layerDown(ev) {
+  if (formUi?.layerDown(ev)) return;
   if (tool === 'select') { cur = null; curObj = null; curSpan = null; paint(); props(); return; }
   curSpan = null;
   const kind = tool;
@@ -669,6 +672,7 @@ function editText(el, it) {
 }
 
 function setTool(t) {
+  formUi?.cancelArmed();
   tool = t;
   document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   $('layer')?.classList.toggle('draw', t !== 'select');
@@ -688,7 +692,7 @@ function pageHistoryStep(kind) {
   if (!(kind === 'undo' ? state.pageUndo : state.pageRedo)) { status(kind === 'undo' ? 'Nothing to undo.' : 'Nothing to redo.'); return; }
   return act(async () => {
     const r = await (await post(`/api/page-${kind}`)).json();
-    status(`${kind === 'undo' ? 'Undid' : 'Redid'} ${r.label} page change.`);
+    status(`${kind === 'undo' ? 'Undid' : 'Redid'} ${r.label}${r.label.startsWith('form field') ? '' : ' page change'}.`);
   }, e => { reportError(e); });
 }
 const oBox = o => {
@@ -821,6 +825,7 @@ async function flush() {
 
 function props() {
   const p = $('props');
+  if (!cur && !curObj && !curSpan && formUi?.props(p)) return;
   if (curSpan) return spanProps();
   if (!cur && curObj) return objProps();
   if (!cur) {
@@ -1483,6 +1488,23 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' && sel < state.pageCount - 1) flush().then(() => { sel++; select(); });
   if (e.key === 'ArrowUp' && sel > 0) flush().then(() => { sel--; select(); });
 });
+import(new URL('form-fields.js', document.baseURI)).then(m => {
+  formUi = m.createFormFields({
+    request, post, flush, status, esc, ic, modal, buildMenu, openMenuAt, toLayer, locked: () => locked, tool: () => tool, scale: () => S,
+    pageIndex: () => sel, pageCount: () => state.pageCount, pageGeometry: () => state.pages[sel], layer: () => $('layer'),
+    repaint: () => paint(), props: () => props(), otherSelection: () => !!(cur || curObj || curSpan), clearOtherSelection: () => { cur = null; curObj = null; curSpan = null; },
+    download: u => flush().then(() => dlUrl(u)),
+    toolbar: () => { const g = document.createElement('div'); g.className = 'group'; document.querySelector('#tools .seg').after(g); return g; },
+    afterMutation: async () => {
+      const s = await (await request('/api/state')).json();
+      Object.assign(state, { version: s.version, pageUndo: s.pageUndo, pageRedo: s.pageRedo, dirty: s.dirty, canSave: s.canSave, fileName: s.fileName });
+      setDocLabel(s);
+      document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&v=${state.version}`));
+      await updateBase();
+    },
+  });
+  if (state.pageCount) formUi.load(sel).then(() => paint());
+}).catch(reportError);
 async function startEditor() {
   const ready = async retainedUndo => {
     await refresh(retainedUndo);

@@ -449,8 +449,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     public Reply Handle(string method, string path, IReadOnlyDictionary<string, string> query, byte[]? body = null, string? uploadName = null)
     {
         var segments = path.Trim('/').Split('/');
-        var pending = method == "POST" && segments.Length > 1 && PageOperations.Contains(segments[1]) && editor.PageCount > 0
-            ? CapturePageHistory(segments[1]) : null;
+        var pending = method == "POST" && segments.Length > 1 && (PageOperations.Contains(segments[1]) || (segments[1] == "form" && segments.Length > 2 && EditorForms.IsMutation(segments[2]))) && editor.PageCount > 0
+            ? CapturePageHistory(segments[1] == "form" ? "form field " + segments[2] : segments[1]) : null;
         if (pending is null) return HandleCore(method, path, query, body, uploadName);
         // Registered first so PruneAssets inside the operation keeps the assets that undo needs.
         var droppedRedo = pageRedo.ToArray();
@@ -459,6 +459,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         catch
         {
             pageUndo.Remove(pending); pageRedo.AddRange(droppedRedo);
+            // A failed multi-step form command must not leave a half-applied edit behind.
+            if (segments[1] == "form") { editor.Restore(pending.Editor); Changed(); }
             throw;
         }
         finally { if (pageUndo.Count > PageHistoryLimit) { pageUndo.RemoveAt(0); PruneAssets(); } }
@@ -487,6 +489,13 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "recovery": return CaptureRecovery();
                 case "fonts": return AsJson(catalog.List());
                 case "fields": return AsJson(editor.PageCount == 0 ? [] : Pristine().GetFormFields().Where(f => f.FieldType is "Tx" or "Btn" or "Ch").Select(f => new { name = f.FullName, type = f.FieldType, value = f.Value ?? "" }));
+                case "forms": return AsJson(editor.PageCount == 0 ? [] : EditorForms.List(editor, page => Pristine().Pages[page].CropBox, Int("page", -1)));
+                case "form" when p.ElementAtOrDefault(2) == "export":
+                    {
+                        RequirePages();
+                        var export = EditorForms.Export(editor, query);
+                        return new(export.Data, export.ContentType, export.FileName);
+                    }
                 case "asset":
                     var a = assets[p[2]];
                     return new(a.Data, a.Mime);
@@ -667,6 +676,13 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "field":
                     if (!editor.SetFieldValue(Q("n") ?? "", Q("v") ?? "")) throw new ArgumentException("Form field not found.");
                     break;
+                case "form":
+                    {
+                        RequirePages();
+                        var formReply = EditorForms.Handle(editor, p.ElementAtOrDefault(2) ?? "", query, body, page => Pristine().Pages[page].CropBox);
+                        PruneAssets(); Changed();
+                        return AsJson(formReply);
+                    }
                 case "info":
                     var info = Read<Dictionary<string, string>>() ?? [];
                     foreach (var k in InfoKeys) if (info.TryGetValue(k.ToLowerInvariant(), out var v)) editor.SetInfo(k, v);

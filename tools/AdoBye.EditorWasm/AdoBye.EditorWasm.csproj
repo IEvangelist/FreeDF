@@ -21,11 +21,13 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
     <Compile Include="..\AdoBye.EditorWeb\EditorSession.cs" Link="EditorSession.cs" />
+    <Compile Include="..\AdoBye.EditorWeb\EditorForms.cs" Link="EditorForms.cs" />
     <Compile Include="..\AdoBye.EditorWeb\FormObjectEditPolicy.cs" Link="FormObjectEditPolicy.cs" />
     <Compile Include="..\AdoBye.EditorWeb\OverlayBuilder.cs" Link="OverlayBuilder.cs" />
     <Compile Include="..\AdoBye.EditorWeb\FontCatalog.cs" Link="FontCatalog.cs" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.css" Link="wwwroot\editor.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.js" Link="wwwroot\editor.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\form-fields.js" Link="wwwroot\form-fields.js" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
