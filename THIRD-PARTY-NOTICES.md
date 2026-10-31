@@ -100,3 +100,8 @@ Test fonts in `tests/fixtures/shaping` (SIL Open Font License 1.1; used only by 
 - Noto Sans Arabic, Hebrew and Devanagari subsets: Copyright The Noto Project Authors. Licence and copyrights: `tests/fixtures/shaping/OFL-Noto.txt`.
 
 HarfBuzz (via the `uharfbuzz` Python package, MIT) was used only to generate the reference glyph sequences in `tests/fixtures/shaping/hb-expected.json`; no HarfBuzz code is included.
+
+
+## veraPDF and veraPDF-corpus (test oracle only)
+
+veraPDF (GPLv3 / MPLv2+) and the veraPDF-corpus are run locally by `tools/ua_crosscheck.py` as an independent PDF/UA oracle. No veraPDF binaries, profiles or corpus files are included in this repository or its packages, and no validation rules were copied from them; rule ids in code comments refer to published profile ids only.
