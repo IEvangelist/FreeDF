@@ -122,10 +122,11 @@ public static class AnnotationAppearance
     }
 
     /// <summary>Builds the normal appearance for <paramref name="a"/>. <paramref name="add"/> registers a new indirect object (used for images). Returns null for subtypes without a drawn appearance.</summary>
-    public static PdfStream? Build(PdfDictionary a, Func<PdfObject?, PdfObject?> res, Func<PdfObject, PdfRef> add, PdfStream? previous = null, PdfAnnotationImage? image = null)
+    public static PdfStream? Build(PdfDictionary a, Func<PdfObject?, PdfObject?> res, Func<PdfObject, PdfRef> add, PdfStream? previous = null, PdfAnnotationImage? image = null, bool viewer = false)
     {
         double[] Nums(string k) => res(a.Get(k)) is PdfArray arr ? arr.Items.Select(x => res(x).AsNumber() ?? 0).ToArray() : [];
         var sub = res(a.Get("Subtype")).AsName() ?? "";
+        if (viewer && sub is "Stamp" or "Redact") return null;
         var rect = Nums("Rect");
         if (rect.Length != 4) return null;
         double x0 = Math.Min(rect[0], rect[2]), y0 = Math.Min(rect[1], rect[3]), x1 = Math.Max(rect[0], rect[2]), y1 = Math.Max(rect[1], rect[3]);
@@ -133,15 +134,22 @@ public static class AnnotationAppearance
         var c = Nums("C"); var ic = Nums("IC");
         var ca = res(a.Get("CA")).AsNumber() ?? 1;
         double bw = 1; var dash = "";
+        string Dash(PdfObject? d)
+        {
+            var v = res(d) is PdfArray da ? da.Items.Take(16).Select(x => Math.Max(res(x).AsNumber() ?? 3, 0)).ToArray() : [];
+            return v.Length > 0 && v.Sum() > 0 ? $"[{string.Join(' ', v.Select(F))}] 0 d\n" : "[3] 0 d\n";
+        }
         if (res(a.Get("BS")) is PdfDictionary bs)
         {
             bw = res(bs.Get("W")).AsNumber() ?? 1;
-            if (res(bs.Get("S")).AsName() == "D")
-            {
-                var d = res(bs.Get("D")) is PdfArray da ? da.Items.Select(x => res(x).AsNumber() ?? 3).ToArray() : [3];
-                dash = $"[{string.Join(' ', d.Select(F))}] 0 d\n";
-            }
+            if (res(bs.Get("S")).AsName() == "D") dash = Dash(bs.Get("D"));
         }
+        else if (res(a.Get("Border")) is PdfArray border && border.Count >= 3)
+        {
+            bw = res(border[2]).AsNumber() ?? 1;
+            if (border.Count >= 4 && res(border[3]) is PdfArray) dash = Dash(border[3]);
+        }
+        bw = Math.Max(bw, 0);
         var sb = new StringBuilder();
         var resources = new Dictionary<string, PdfObject>();
         var gs = new Dictionary<string, PdfObject> { ["CA"] = new PdfReal(ca), ["ca"] = new PdfReal(ca) };
@@ -161,6 +169,7 @@ public static class AnnotationAppearance
                 for (var i = 0; i + 8 <= q.Length; i += 8)
                 {
                     double ax = q[i + 4], ay = q[i + 5], bx = q[i + 6], by = q[i + 7];
+                    if (viewer && sub != "StrikeOut") { var lift = Math.Max(bw, 1); ay += lift; by += lift; }
                     if (sub == "StrikeOut") { ax = (q[i] + q[i + 4]) / 2; ay = (q[i + 1] + q[i + 5]) / 2; bx = (q[i + 2] + q[i + 6]) / 2; by = (q[i + 3] + q[i + 7]) / 2; }
                     if (sub != "Squiggly") { sb.Append($"{F(ax)} {F(ay)} m {F(bx)} {F(by)} l S\n"); continue; }
                     var len = Math.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
@@ -179,8 +188,11 @@ public static class AnnotationAppearance
             case "Square" or "Circle":
             {
                 var cloud = CloudIntensity(a, res) > 0;
-                var inset = bw / 2 + (cloud ? CloudRadius(Math.Min(w, h)) : 0);
-                double rx = x0 + inset, ry = y0 + inset, rw = w - 2 * inset, rh = h - 2 * inset;
+                var rd = Nums("RD");
+                double dl = 0, db = 0, dr = 0, dt = 0;
+                if (rd.Length >= 4 && rd.All(v => v >= 0)) (dl, db, dr, dt) = (rd[0], rd[1], rd[2], rd[3]);
+                var inset = bw / 2 + (cloud ? CloudRadius(Math.Min(w - dl - dr, h - db - dt)) : 0);
+                double rx = x0 + dl + inset, ry = y0 + db + inset, rw = w - dl - dr - 2 * inset, rh = h - db - dt - 2 * inset;
                 if (rw <= 0 || rh <= 0) return null;
                 var fill = ic.Length > 0; var stroke = bw > 0;
                 if (fill) sb.Append(Color(ic, false));
@@ -247,8 +259,11 @@ public static class AnnotationAppearance
                 if (m.Success) double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out size);
                 if (size <= 0) size = 12;
                 var colorOps = System.Text.RegularExpressions.Regex.Replace(da, @"/\S+\s+[\d.]+\s+Tf", "").Trim();
-                if (ic.Length > 0) sb.Append("q\n").Append(Color(ic, false)).Append($"{F(x0)} {F(y0)} {F(w)} {F(h)} re f\nQ\n");
-                if (c.Length > 0 && bw > 0) sb.Append("q\n").Append(Color(c, true)).Append($"{F(bw)} w\n{dash}{F(x0 + bw / 2)} {F(y0 + bw / 2)} {F(w - bw)} {F(h - bw)} re S\nQ\n");
+                var explicitBorder = res(a.Get("BS")) is PdfDictionary || res(a.Get("Border")) is PdfArray;
+                var fillColor = ic.Length > 0 ? ic : viewer ? c : [];
+                var borderColor = !viewer ? c : ic.Length > 0 && c.Length > 0 ? c : DaColor(da);
+                if (fillColor.Length > 0) sb.Append("q\n").Append(Color(fillColor, false)).Append($"{F(x0)} {F(y0)} {F(w)} {F(h)} re f\nQ\n");
+                if (borderColor.Length > 0 && bw > 0 && (!viewer || explicitBorder)) sb.Append("q\n").Append(Color(borderColor, true)).Append($"{F(bw)} w\n{dash}{F(x0 + bw / 2)} {F(y0 + bw / 2)} {F(w - bw)} {F(h - bw)} re S\nQ\n");
                 var pad = 2 + bw;
                 var lines = Wrap(txt.Text, size, Math.Max(w - 2 * pad, size));
                 var lead = size * 1.15;
@@ -301,6 +316,16 @@ public static class AnnotationAppearance
             ["Resources"] = new PdfDictionary(resources),
             ["Length"] = new PdfInteger(body.Length),
         }), body);
+    }
+
+    /// <summary>Fill colour operands of a /DA string (g, rg or k operator), or empty when none.</summary>
+    static double[] DaColor(string da)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(da, @"((?:[-+]?[\d.]+\s+){1,4})(rg|g|k)\b");
+        if (!m.Success) return [];
+        var v = m.Groups[1].Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 0).ToArray();
+        return m.Groups[2].Value switch { "g" when v.Length >= 1 => [v[^1]], "rg" when v.Length >= 3 => v[^3..], "k" when v.Length >= 4 => v[^4..], _ => [] };
     }
 
     static double CloudIntensity(PdfDictionary a, Func<PdfObject?, PdfObject?> res) =>
