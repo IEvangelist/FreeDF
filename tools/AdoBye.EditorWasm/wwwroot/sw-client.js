@@ -12,26 +12,54 @@ export async function registerServiceWorker() {
   let registration;
   try { registration = await navigator.serviceWorker.register(url, { scope: new URL('./', url).pathname, updateViaCache: 'none' }); }
   catch (error) { console.warn('[PDF boot] offline cache unavailable:', error.message); return; }
-  // Any controlled tab reloads when a new version takes over, so no tab keeps an older build under the new worker.
+  // Unsaved edits, or edits whose recovery copy is not written yet, must never be discarded by a version change.
+  const dirty = () => document.getElementById('dstate')?.dataset.dirty === 'true'
+    || document.getElementById('recovery')?.textContent.startsWith('Recovery pending') === true;
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data?.type === 'QUERY_DIRTY') event.ports[0]?.postMessage({ clean: !dirty() });
+    else if (event.data?.type === 'KILLED') applyUpdate('The offline cache was turned off.');
+  });
+  const banner = (message, actions = []) => {
+    let element = document.getElementById('update-banner');
+    if (!element) {
+      element = document.createElement('div');
+      element.id = 'update-banner'; element.setAttribute('role', 'status');
+      element.style.cssText = 'position:fixed;inset:auto 16px 16px auto;z-index:1000;display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:8px;background:#1f2933;color:#fff;box-shadow:0 4px 16px #0006;font:14px system-ui,sans-serif';
+      document.body.append(element);
+    }
+    const text = document.createElement('span');
+    text.textContent = message;
+    element.replaceChildren(text, ...actions.map(([label, handler, primary]) => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = label; if (primary) button.className = 'primary';
+      button.onclick = handler;
+      return button;
+    }));
+    return element;
+  };
+  // A new version or kill switch took over: reload when clean, otherwise wait (persistent notice) until the work is saved.
+  let waitingToReload = false;
+  function applyUpdate(reason) {
+    if (!dirty()) { location.reload(); return; }
+    banner(`${reason} You have unsaved changes: save, then reload to finish updating.`, [['Reload now', () => location.reload(), true]]);
+    if (waitingToReload) return;
+    waitingToReload = true;
+    const timer = setInterval(() => { if (!dirty()) { clearInterval(timer); location.reload(); } }, 1000);
+  }
   const controlled = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (controlled) location.reload(); });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (controlled) applyUpdate('A new version of the editor is ready.'); });
   const offer = worker => {
     if (!navigator.serviceWorker.controller || document.getElementById('update-banner')) return;
-    const banner = document.createElement('div');
-    banner.id = 'update-banner'; banner.setAttribute('role', 'status');
-    banner.style.cssText = 'position:fixed;inset:auto 16px 16px auto;z-index:1000;display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:8px;background:#1f2933;color:#fff;box-shadow:0 4px 16px #0006;font:14px system-ui,sans-serif';
-    const text = document.createElement('span');
-    text.textContent = 'A new version of the editor is ready.';
-    const reload = document.createElement('button');
-    reload.type = 'button'; reload.textContent = 'Reload'; reload.className = 'primary';
-    reload.onclick = () => { worker.postMessage({ type: 'SKIP_WAITING' }); };
-    const later = document.createElement('button');
-    later.type = 'button'; later.textContent = 'Later';
-    later.onclick = () => banner.remove();
-    banner.append(text, reload, later);
-    document.body.append(banner);
-  };
-  const track = worker => worker.addEventListener('statechange', () => { if (worker.state === 'installed') offer(worker); });
+    const ask = () => {
+      if (dirty()) { banner('A new version is ready. Save your changes here, then reload.', [['Reload', ask, true], ['Later', () => element.remove()]]); return; }
+      const channel = new MessageChannel();
+      channel.port1.onmessage = ({ data }) => {
+        if (data.type === 'BLOCKED') banner('A new version is ready, but another editor tab has unsaved changes. Save there, then reload.', [['Reload', ask, true], ['Later', () => element.remove()]]);
+      };
+      worker.postMessage({ type: 'REQUEST_ACTIVATE' }, [channel.port2]);
+    };
+    const element = banner('A new version of the editor is ready.', [['Reload', ask, true], ['Later', () => element.remove()]]);
+  };  const track = worker => worker.addEventListener('statechange', () => { if (worker.state === 'installed') offer(worker); });
   if (registration.waiting) offer(registration.waiting);
   if (registration.installing) track(registration.installing);
   registration.addEventListener('updatefound', () => registration.installing && track(registration.installing));

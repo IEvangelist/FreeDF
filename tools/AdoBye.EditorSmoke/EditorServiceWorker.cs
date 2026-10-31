@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -16,6 +18,29 @@ static partial class EditorServiceWorker
     private static partial Regex ManifestPattern();
 
     sealed record Manifest(string Version, string[] Urls);
+
+    static byte[] MinimalPdf()
+    {
+        var sb = new StringBuilder("%PDF-1.4\n");
+        var offsets = new List<int>();
+        void Obj(string body) { offsets.Add(sb.Length); sb.Append(body); }
+        Obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        Obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        Obj("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n");
+        var xref = sb.Length;
+        sb.Append("xref\n0 4\n0000000000 65535 f \n");
+        foreach (var offset in offsets) sb.Append(CultureInfo.InvariantCulture, $"{offset:D10} 00000 n \n");
+        sb.Append(CultureInfo.InvariantCulture, $"trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
+        return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+
+    static async Task MakeDirty(IPage tab)
+    {
+        await tab.SetInputFilesAsync("#open", new FilePayload { Name = "dirty.pdf", MimeType = "application/pdf", Buffer = MinimalPdf() });
+        await tab.WaitForFunctionAsync("document.getElementById('dstate') && !document.getElementById('dstate').hidden");
+        await tab.Locator("#rr").ClickAsync();
+        await tab.WaitForFunctionAsync("document.getElementById('dstate').dataset.dirty === 'true'");
+    }
 
     static Manifest ReadManifest(string site)
     {
@@ -124,9 +149,17 @@ static partial class EditorServiceWorker
         var errors = new ConcurrentQueue<string>();
         page.PageError += (_, error) => errors.Enqueue(error);
 
+        // Recovery from a closed dirty tab legitimately offers Resume on the next start; discard it to reach Ready.
+        async Task WaitReady(IPage tab)
+        {
+            await tab.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.') || !!document.querySelector('.dc')");
+            if (await tab.Locator(".dc").CountAsync() > 0) await tab.Locator(".dc").ClickAsync();
+            await tab.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
+        }
         async Task<double> Ready()
         {
-            await page.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
+            try { await WaitReady(page); }
+            catch (TimeoutException) { throw new Exception("Service worker: editor never became ready: " + await page.Locator("#status").TextContentAsync() + " | " + string.Join(" | ", errors) + " | " + page.Url); }
             return await page.EvaluateAsync<double>("performance.now()");
         }
         Task<string?> Version() => page.EvaluateAsync<string?>(@"async () => {
@@ -208,7 +241,21 @@ static partial class EditorServiceWorker
         var second = await context.NewPageAsync();
         second.SetDefaultTimeout(90000);
         await second.GotoAsync(url);
-        await second.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
+        await WaitReady(second);
+        await second.WaitForFunctionAsync("!!document.getElementById('update-banner')");
+        // A tab with unsaved edits blocks activation: nothing reloads and the old build keeps serving everyone.
+        await MakeDirty(second);
+        await second.EvaluateAsync("window.__stale = true");
+        await page.Locator("#update-banner button.primary").ClickAsync();
+        await WaitFor("document.getElementById('update-banner')?.textContent.includes('another editor tab')", "blocked-by-dirty-tab notice");
+        Check(await Version() == manifestA.Version, "a dirty tab blocks activation of the new worker.");
+        Check(await second.EvaluateAsync<bool>("window.__stale === true && document.getElementById('dstate').dataset.dirty === 'true'"), "the dirty tab was not reloaded.");
+        Check((await CacheNames()).Length == 2, "both versions stay cached while activation is blocked.");
+        await second.CloseAsync();
+        second = await context.NewPageAsync();
+        second.SetDefaultTimeout(90000);
+        await second.GotoAsync(url);
+        await WaitReady(second);
         await second.WaitForFunctionAsync("!!document.getElementById('update-banner')");
         await second.EvaluateAsync("window.__stale = true");
         await page.ReloadAsync();
@@ -219,7 +266,7 @@ static partial class EditorServiceWorker
         await AcceptUpdate();
         await WaitFor("!!navigator.serviceWorker.controller", "controller");
         await second.WaitForFunctionAsync("window.__stale === undefined");
-        await second.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
+        await WaitReady(second);
         Check((await second.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("build B", StringComparison.Ordinal), "the other tab reloaded onto the new build.");
         Check(await second.EvaluateAsync<bool>("navigator.serviceWorker.controller !== null"), "the other tab is controlled by the new worker.");
         await second.CloseAsync();
@@ -270,9 +317,22 @@ static partial class EditorServiceWorker
         Check(!await page.EvaluateAsync<bool>("async name => !!(await (await caches.open((await caches.keys())[0])).match(new URL(name, document.baseURI)))", victim), "the failed write left the entry absent while the editor still started.");
 
         // 10. Kill switch: caches removed, worker unregistered, pages reloaded, and the client does not register again.
+        // The kill switch must not reload a tab with unsaved edits (here also with recovery reported off, as for encrypted input).
+        var dirtyTab = await context.NewPageAsync();
+        dirtyTab.SetDefaultTimeout(90000);
+        await dirtyTab.GotoAsync(url);
+        await WaitReady(dirtyTab);
+        await MakeDirty(dirtyTab);
+        await dirtyTab.EvaluateAsync("window.__stale = true; const r = document.getElementById('recovery'); r.hidden = false; r.textContent = 'Recovery off (encrypted)'");
+        await page.EvaluateAsync("window.__stale = true");
+        await Task.Delay(3500);
         File.WriteAllText(Path.Combine(site, "sw.js"), ManifestPattern().Replace(originalSw, "const MANIFEST = {\"kill\":true};"));
         await page.EvaluateAsync("navigator.serviceWorker.getRegistration().then(r => r.update())");
         await WaitFor("navigator.serviceWorker.getRegistration().then(r => !r)", "kill switch unregistration");
+        await dirtyTab.WaitForFunctionAsync("document.getElementById('update-banner')?.textContent.includes('unsaved changes')");
+        Check(await dirtyTab.EvaluateAsync<bool>("window.__stale === true && document.getElementById('dstate').dataset.dirty === 'true'"), "the kill switch did not reload a dirty tab.");
+        await WaitFor("window.__stale === undefined", "clean tab reload after the kill switch");
+        await dirtyTab.CloseAsync();
         await Ready();
         await Task.Delay(4000);
         Check(await page.EvaluateAsync<bool>("navigator.serviceWorker.getRegistration().then(r => !r)"), "client does not re-register while the kill switch is published.");
@@ -329,6 +389,6 @@ static partial class EditorServiceWorker
         Check(errors.IsEmpty, "no page errors: " + string.Join(" | ", errors));
         var report = new { coldMs, coldBoot, warmBoot, warmMs = warm, offlineMs, slow4g = new { firstVisitMs = slowWorker.Cold, workerRepeatMs = slowWorker.Repeat, httpRevalidateRepeatMs = slowHttp.Repeat }, httpCacheRepeatMs = httpRepeat, httpBoot, precachedFiles = manifestA.Urls.Length, version = manifestA.Version };
         File.WriteAllText(Path.Combine(output, "service-worker.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
-        Console.WriteLine($"PASS: service worker precache ({manifestA.Urls.Length} files), controlled repeat visits with zero asset requests, offline start, repair, update prompt, plain-reload consistency, corrupt build rejection, rollback, two-tab update, range pass-through, failed cache write and kill switch. cold {coldMs:F0} ms, repeat {string.Join("/", warm.Select(w => w.ToString("F0")))} ms, offline {offlineMs:F0} ms, slow4G first {slowWorker.Cold:F0} ms, repeat with worker {slowWorker.Repeat:F0} ms, repeat without worker (revalidating) {slowHttp.Repeat:F0} ms; no-worker repeat {string.Join("/", httpRepeat.Select(w => w.ToString("F0")))} ms. boot cold {coldBoot} warm {warmBoot} stages {warmStages} no-worker boot {httpBoot}");
+        Console.WriteLine($"PASS: service worker precache ({manifestA.Urls.Length} files), controlled repeat visits with zero asset requests, offline start, repair, update prompt, plain-reload consistency, corrupt build rejection, rollback, two-tab update, dirty-tab protection, range pass-through, failed cache write and kill switch. cold {coldMs:F0} ms, repeat {string.Join("/", warm.Select(w => w.ToString("F0")))} ms, offline {offlineMs:F0} ms, slow4G first {slowWorker.Cold:F0} ms, repeat with worker {slowWorker.Repeat:F0} ms, repeat without worker (revalidating) {slowHttp.Repeat:F0} ms; no-worker repeat {string.Join("/", httpRepeat.Select(w => w.ToString("F0")))} ms. boot cold {coldBoot} warm {warmBoot} stages {warmStages} no-worker boot {httpBoot}");
     }
 }

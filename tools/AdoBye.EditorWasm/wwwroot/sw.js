@@ -47,18 +47,36 @@ self.addEventListener('install', event => kill ? event.waitUntil(self.skipWaitin
   throw error;
 })));
 
-// Old caches may be removed immediately: every controlled page reloads on controllerchange (sw-client.js),
-// so no page keeps running an older build under this worker.
+// A new worker only activates once every open editor tab reports it is clean (REQUEST_ACTIVATE), and each tab
+// reloads (or defers while dirty) on controllerchange, so no tab keeps an older build under this worker.
 self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const name of await caches.keys())
     if (name.startsWith(PREFIX) && name !== cacheName) await caches.delete(name);
   if (!kill) return;
   await self.registration.unregister();
-  for (const client of await self.clients.matchAll({ type: 'window' })) client.navigate(client.url).catch(() => {});
+  // Pages decide when to reload: a tab with unsaved edits must never be navigated away.
+  for (const client of await self.clients.matchAll({ type: 'window', includeUncontrolled: true })) client.postMessage({ type: 'KILLED' });
 })()));
 
+// Ask every open editor tab whether it has unsaved or not-yet-recovered edits. Silence counts as dirty.
+async function tabsAreClean(except) {
+  const answers = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(client => client.id !== except).map(client => new Promise(resolve => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(false), 2000);
+    channel.port1.onmessage = reply => { clearTimeout(timer); resolve(reply.data?.clean === true); };
+    client.postMessage({ type: 'QUERY_DIRTY' }, [channel.port2]);
+  }));
+  return (await Promise.all(answers)).every(Boolean);
+}
+
 self.addEventListener('message', event => {
-  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data?.type === 'REQUEST_ACTIVATE') {
+    const port = event.ports[0];
+    event.waitUntil(tabsAreClean(event.source?.id).then(clean => {
+      if (clean) self.skipWaiting();
+      port?.postMessage({ type: clean ? 'ACTIVATING' : 'BLOCKED' });
+    }));
+  }
   else if (event.data?.type === 'GET_VERSION') event.source?.postMessage({ type: 'VERSION', version: MANIFEST?.version ?? null, cache: cacheName });
 });
 
