@@ -8,7 +8,7 @@ const source = readFileSync(join(__dirname, 'wwwroot', 'host.js'), 'utf8')
   .replace('export async function start()', 'async function start()')
   .replace('import.meta.url', '"https://editor.test/host.js"');
 
-async function harness(reply = () => ({ bytes: new Uint8Array([1, 2, 3]), contentType: 'image/png' })) {
+async function harness(reply = () => ({ bytes: new Uint8Array([1, 2, 3]), contentType: 'image/png' }), pool = null) {
   const requests = [];
   class Worker {
     constructor() { queueMicrotask(() => this.onmessage({ data: { ready: true } })); }
@@ -29,10 +29,13 @@ async function harness(reply = () => ({ bytes: new Uint8Array([1, 2, 3]), conten
   }
   const context = vm.createContext({
     Worker, URL, URLSearchParams, Blob, Response, FormData, File, FileReader, fetch,
-    performance, setTimeout, clearTimeout, location: { href: 'https://editor.test/', search: '' },
+    performance, setTimeout, clearTimeout, console,
+    createRenderPool: pool,
+    location: { href: 'https://editor.test/', search: pool ? '?pool=1' : '?pool=0' },
     window: {},
   });
-  return { host: await vm.runInContext(`${source}\nstart()`, context), requests };
+  const script = source.replace("await import('./pool.js')", '({ createRenderPool: globalThis.createRenderPool })');
+  return { host: await vm.runInContext(`${script}\nstart()`, context), requests };
 }
 
 test('versioned Blob images coalesce and canonicalize query order and transient timestamps', async () => {
@@ -93,4 +96,34 @@ test('unversioned images are not reused and binary API responses preserve bytes 
   assert.equal(response.headers.get('Content-Type'), 'application/pdf');
   assert.equal(response.headers.get('X-File-Name'), 'edited.pdf');
   assert.equal(requests.length, 3);
+});
+
+test('pooled Blob requests coalesce without blocking their queued snapshot request', async () => {
+  const blob = new Blob([new Uint8Array([9, 8, 7])], { type: 'image/png' });
+  const { host, requests } = await harness(() => ({
+    bytes: new Uint8Array([37, 80, 68, 70]), fileName: 'v3', contentType: 'application/pdf',
+  }), ({ snapshot }) => ({
+    enabled: true,
+    async tryRender() {
+      const source = await snapshot(true);
+      assert.equal(source.version, 3);
+      return blob;
+    },
+  }));
+  const url = '/api/page/0.png?v=3&dpi=240&bare=true';
+  const [first, second] = await Promise.all([host.imageBlob(url), host.imageBlob(url)]);
+  assert.equal(first, blob);
+  assert.equal(first, second);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, '/api/snapshot?bare=true');
+});
+
+test('unavailable pooled renders retain primary bytes and normal caching', async () => {
+  const { host, requests } = await harness(undefined, () => ({
+    enabled: true, tryRender: async () => null,
+  }));
+  const url = '/api/page/0.png?v=3&dpi=240';
+  assert.equal((await host.imageBlob(url)).size, 3);
+  assert.equal((await host.imageBlob(url)).size, 3);
+  assert.equal(requests.length, 1);
 });
