@@ -42,6 +42,39 @@ async function precache() {
   await Promise.all(Array.from({ length: 6 }, worker));
 }
 
+// Each client (page or its engine worker) is pinned to the cache version that served its first request, so a tab
+// that is still booting when a newer worker activates keeps getting its own build's files. Old caches live until
+// no open client is pinned to them. Pins are persisted because workers are stopped when idle.
+const PINS = 'adobye-pins';
+const pins = new Map();
+const pinKey = id => new URL('pin/' + id, scope).href;
+async function pinOf(id) {
+  if (!id) return null;
+  if (pins.has(id)) return pins.get(id);
+  const hit = await (await caches.open(PINS)).match(pinKey(id));
+  const name = hit ? await hit.text() : null;
+  if (name) pins.set(id, name);
+  return name;
+}
+async function setPin(id, name) {
+  if (!id) return;
+  pins.set(id, name);
+  await (await caches.open(PINS)).put(pinKey(id), new Response(name)).catch(() => {});
+}
+async function dropUnpinnedCaches() {
+  const live = new Set((await self.clients.matchAll({ type: 'all', includeUncontrolled: true })).map(client => client.id));
+  const store = await caches.open(PINS);
+  const used = new Set(cacheName ? [cacheName] : []);
+  for (const request of await store.keys()) {
+    const id = new URL(request.url).pathname.split('/').pop();
+    if (!live.has(id)) { await store.delete(request); pins.delete(id); continue; }
+    const name = await (await store.match(request)).text();
+    used.add(name);
+  }
+  for (const name of await caches.keys())
+    if (name.startsWith(PREFIX) && !used.has(name)) await caches.delete(name);
+}
+
 self.addEventListener('install', event => kill ? event.waitUntil(self.skipWaiting()) : event.waitUntil(precache().catch(async error => {
   if (cacheName) await caches.delete(cacheName);
   throw error;
@@ -50,9 +83,9 @@ self.addEventListener('install', event => kill ? event.waitUntil(self.skipWaitin
 // A new worker only activates once every open editor tab reports it is clean (REQUEST_ACTIVATE), and each tab
 // reloads (or defers while dirty) on controllerchange, so no tab keeps an older build under this worker.
 self.addEventListener('activate', event => event.waitUntil((async () => {
-  for (const name of await caches.keys())
-    if (name.startsWith(PREFIX) && name !== cacheName) await caches.delete(name);
+  await dropUnpinnedCaches();
   if (!kill) return;
+  for (const name of await caches.keys()) if (name.startsWith(PREFIX) || name === PINS) await caches.delete(name);
   await self.registration.unregister();
   // Pages decide when to reload: a tab with unsaved edits must never be navigated away.
   for (const client of await self.clients.matchAll({ type: 'window', includeUncontrolled: true })) client.postMessage({ type: 'KILLED' });
@@ -109,6 +142,28 @@ async function serve(request, key) {
   return cached ?? new Response('This editor build was replaced. Reload to get the new version.', { status: 503 });
 }
 
+// Serve a pinned (older) client strictly from its own build's cache; never mix in the network or the newer build.
+async function servePinned(name, key) {
+  const cached = await (await caches.open(name)).match(key);
+  return cached ?? new Response('This editor build was replaced. Reload to get the new version.', { status: 503 });
+}
+
+async function route(event, bare, navigation) {
+  const { request } = event;
+  // Navigations create the client; a dedicated engine worker inherits the pin of the page that started it.
+  const id = navigation || request.destination === 'worker' ? event.resultingClientId : event.clientId;
+  let pin = await pinOf(id);
+  if (!pin && request.destination === 'worker') pin = await pinOf(event.clientId);
+  if (!pin) { pin = cacheName; await setPin(id, pin); }
+  else if (!pins.has(id)) pins.set(id, pin);
+  if (pin !== cacheName && await caches.has(pin)) {
+    await setPin(id, pin);
+    return servePinned(pin, navigation ? indexUrl : bare);
+  }
+  if (navigation) return serve(request, indexUrl);
+  return entries.has(bare) ? serve(request, bare) : fetch(request);
+}
+
 self.addEventListener('fetch', event => {
   const { request } = event;
   if (!cacheName || request.method !== 'GET' || request.headers.has('range')) return;
@@ -117,8 +172,10 @@ self.addEventListener('fetch', event => {
   if (url.origin !== location.origin) return;
   const bare = url.origin + url.pathname;
   if (request.mode === 'navigate') {
-    if (bare === scope || bare === indexUrl) event.respondWith(serve(request, indexUrl));
+    if (bare === scope || bare === indexUrl) event.respondWith(route(event, bare, true));
     return;
   }
-  if (entries.has(bare)) event.respondWith(serve(request, bare));
+  const id = event.clientId;
+  // Same-origin non-asset requests (for example the API-less editor never makes any) stay untouched unless pinned to an older build.
+  if (entries.has(bare) || pins.get(id) && pins.get(id) !== cacheName || /\/_framework\/|\.(js|css|wasm|dat)$/.test(url.pathname)) event.respondWith(route(event, bare, false));
 });

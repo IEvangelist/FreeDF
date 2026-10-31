@@ -169,7 +169,7 @@ static partial class EditorServiceWorker
                 reg.active.postMessage({ type: 'GET_VERSION' });
             });
         }");
-        Task<string[]> CacheNames() => page.EvaluateAsync<string[]>("caches.keys()");
+        Task<string[]> CacheNames() => page.EvaluateAsync<string[]>("caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\")))");
         async Task AcceptUpdate()
         {
             await page.EvaluateAsync("window.__stale = true");
@@ -189,9 +189,9 @@ static partial class EditorServiceWorker
         var coldBoot = await page.EvaluateAsync<string>("JSON.stringify({ ...window.pdfHost.bootTimings, workerStartAt: window.pdfHost.bootTimings.origin - performance.timeOrigin, dcl: performance.getEntriesByType(\"navigation\")[0].domContentLoadedEventEnd, fcp: performance.getEntriesByName(\"first-contentful-paint\")[0]?.startTime })");
         await page.EvaluateAsync("navigator.serviceWorker.ready.then(() => true)");
         Check(await Version() == manifestA.Version, "first visit activates the build's version.");
-        await WaitFor($"caches.keys().then(async k => k.length === 1 && (await (await caches.open(k[0])).keys()).length === {manifestA.Urls.Length})", "precache completion");
+        await WaitFor($"caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))).then(async k => k.length === 1 && (await (await caches.open(k[0])).keys()).length === {manifestA.Urls.Length})", "precache completion");
         Check((await CacheNames()).Single() == "adobye-editor-" + manifestA.Version, "one versioned cache.");
-        var cachedUrls = await page.EvaluateAsync<string[]>("caches.keys().then(async k => (await (await caches.open(k[0])).keys()).map(r => new URL(r.url).pathname))");
+        var cachedUrls = await page.EvaluateAsync<string[]>("caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))).then(async k => (await (await caches.open(k[0])).keys()).map(r => new URL(r.url).pathname))");
         Check(cachedUrls.All(u => u.StartsWith("/csharp-pdf/", StringComparison.Ordinal) && !u.Contains("/api/")) && cachedUrls.Length == manifestA.Urls.Length, "only manifest assets are cached.");
 
         var native = manifestA.Urls.First(u => u.Contains("dotnet.native.", StringComparison.Ordinal) && u.EndsWith(".wasm", StringComparison.Ordinal));
@@ -223,10 +223,10 @@ static partial class EditorServiceWorker
 
         // 4. Evicted entry: the worker refetches only bytes that match the build digest and repairs the cache.
         var victim = manifestA.Urls.First(u => u.EndsWith(".js", StringComparison.Ordinal) && u.Contains("dotnet.runtime", StringComparison.Ordinal));
-        await page.EvaluateAsync("async name => (await (await caches.open((await caches.keys())[0])).delete(new URL(name, document.baseURI)))", victim);
+        await page.EvaluateAsync("async name => (await (await caches.open((await caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))))[0])).delete(new URL(name, document.baseURI)))", victim);
         await page.ReloadAsync();
         await Ready();
-        await WaitFor($"caches.keys().then(async k => !!(await (await caches.open(k[0])).match(new URL('{victim}', document.baseURI))))", "cache repair");
+        await WaitFor($"caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))).then(async k => !!(await (await caches.open(k[0])).match(new URL('{victim}', document.baseURI))))", "cache repair");
 
         // 5. Deploy B: old build keeps serving until the user accepts, never a mix of old and new.
         File.WriteAllText(Path.Combine(site, "editor.css"), originalCss + "\n/* build B */\n");
@@ -351,10 +351,10 @@ static partial class EditorServiceWorker
                 ["message"] = JsonSerializer.Serialize(new { id = 1, method = "Runtime.evaluate", @params = new { expression = "Cache.prototype.put = () => Promise.reject(new DOMException('full', 'QuotaExceededError'))" } }),
             });
         }        await Task.Delay(500);
-        await page.EvaluateAsync("async name => (await (await caches.open((await caches.keys())[0])).delete(new URL(name, document.baseURI)))", victim);
+        await page.EvaluateAsync("async name => (await (await caches.open((await caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))))[0])).delete(new URL(name, document.baseURI)))", victim);
         await page.ReloadAsync();
         await Ready();
-        Check(!await page.EvaluateAsync<bool>("async name => !!(await (await caches.open((await caches.keys())[0])).match(new URL(name, document.baseURI)))", victim), "the failed write left the entry absent while the editor still started.");
+        Check(!await page.EvaluateAsync<bool>("async name => !!(await (await caches.open((await caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))))[0])).match(new URL(name, document.baseURI)))", victim), "the failed write left the entry absent while the editor still started.");
 
         // 10. Kill switch: caches removed, worker unregistered, pages reloaded, and the client does not register again.
         // The kill switch must not reload a tab with unsaved edits (here also with recovery reported off, as for encrypted input).
@@ -416,7 +416,7 @@ static partial class EditorServiceWorker
             catch (TimeoutException) { { File.WriteAllLines(Path.Combine(output, "slow-timeline.txt"), timeline); throw new Exception($"Slow 4G first visit never became ready ({responses} responses, {gzipped} gzip): " + await slow.Locator("#status").TextContentAsync()); } }
             var first = await slow.EvaluateAsync<double>("performance.now()");
             if (worker) await slow.EvaluateAsync("navigator.serviceWorker.ready.then(() => true)");
-            if (worker) await slow.WaitForFunctionAsync("caches.keys().then(async k => k.length === 1 && (await (await caches.open(k[0])).keys()).length > 0)");
+            if (worker) await slow.WaitForFunctionAsync("caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))).then(async k => k.length === 1 && (await (await caches.open(k[0])).keys()).length > 0)");
             if (worker) await Task.Delay(5000);
             await slow.ReloadAsync();
             await slow.WaitForFunctionAsync("document.getElementById(\"status\")?.textContent.startsWith(\"Ready.\")");
