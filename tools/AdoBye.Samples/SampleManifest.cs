@@ -13,6 +13,7 @@ public sealed record SampleEntry(string Name, string File, string Title, string 
 public static class SampleManifest
 {
     public const string FullCollection = "27-full-collection";
+    public const string Showcase = "28-benchmarks-brand-spec";
     static readonly Regex SampleFile = new(@"^\d\d-[a-z0-9-]+\.pdf$", RegexOptions.CultureInvariant);
     static readonly Dictionary<string, string> Passwords = new() { ["17-"] = "user123", ["18-"] = "owner123" };
 
@@ -65,8 +66,7 @@ public static class SampleManifest
             entries.Add(new SampleEntry(Path.GetFileNameWithoutExtension(file), file, title, description, bytes.LongLength, doc.Pages.Count,
                 Convert.ToHexStringLower(SHA256.HashData(bytes)), doc.File.IsEncrypted, requiresPassword));
         }
-        // The full collection is the one-click entry, so it leads; the rest keep numeric order.
-        return entries.OrderBy(e => e.Name == FullCollection ? 0 : 1).ThenBy(e => e.Name, StringComparer.Ordinal).ToList();
+        return entries.OrderBy(e => e.Name == Showcase ? 0 : e.Name == FullCollection ? 1 : 2).ThenBy(e => e.Name, StringComparer.Ordinal).ToList();
     }
 
     public static string ToJson(IEnumerable<SampleEntry> entries)

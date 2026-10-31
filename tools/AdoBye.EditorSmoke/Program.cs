@@ -219,7 +219,7 @@ try
     {
         await EditorSamples.Run(page, address, root, network);
         Check(errors.All(EditorSamples.ExpectedError), "No unexpected browser errors: " + string.Join("\n", errors));
-        Console.WriteLine("PASS: one-click full collection (lazy same-origin fetch, failure/Retry, 50 pages, outline/labels, rendered first page), File > Open sample, replace confirmation, Resume/Discard interplay, #sample=/?sample= deep links, no uploads or external requests.");
+        Console.WriteLine("PASS: primary showcase (18 tagged pages, distinct nonblank 96dpi renders, save, desktop/mobile welcome), secondary full collection (failure/Retry, 50 pages, outline/labels), showcase-first menu/manifest ordering, replace confirmation, Resume/Discard, #sample=28 and collection deep links, no uploads or external requests.");
         return;
     }
     if (cryptoPerfOnly)

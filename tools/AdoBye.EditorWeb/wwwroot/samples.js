@@ -2,6 +2,7 @@
 // Samples are same-origin static files listed by samples/manifest.json. Bytes are size- and sha256-verified before
 // they reach the editor's normal open path, so the privacy invariant (no uploads, no third parties) is unchanged.
 export const FULL_COLLECTION = '27-full-collection';
+export const SHOWCASE = '28-benchmarks-brand-spec';
 const NAME = /^\d\d-[a-z0-9-]+$/;
 
 export const esc = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -73,7 +74,8 @@ export async function fetchVerified(entry, { base = document.baseURI, fetchImpl 
 
 const css = `
 .sample-cta { margin-top: 10px; height: 38px; padding: 0 20px; font-size: 14px; }
-.sample-hint { font-size: 12px; }
+.sample-secondary { border-color: var(--line-2); }
+.sample-hint { font-size: 12px; max-width: 42ch; padding: 0 12px; }
 .sample-load { position: fixed; right: 16px; bottom: 44px; z-index: 60; width: min(24rem, calc(100vw - 32px)); display: grid; gap: 8px; padding: 12px 14px;
   background: var(--raised, #1b1e25); color: var(--fg, #e8eaf0); border: 1px solid var(--line-2, #333845); border-radius: var(--r-lg, 10px); box-shadow: 0 8px 28px #0008; }
 .sample-load progress { width: 100%; }
@@ -172,20 +174,22 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
     } finally { if (active === control) { active = null; renderCta(); } }
   }
 
-  let cta = null, hint = null;
+  let cta = null, collection = null, hint = null;
   function renderCta() {
     const empty = doc.getElementById('empty');
     if (!empty) return;
     if (!cta?.isConnected) {
       cta = doc.createElement('button'); cta.type = 'button'; cta.id = 'sampleOpen'; cta.className = 'primary sample-cta';
-      cta.textContent = 'Open the full sample collection'; cta.onclick = () => load(FULL_COLLECTION);
+      cta.textContent = 'Open the showcase'; cta.onclick = () => load(SHOWCASE);
+      collection = doc.createElement('button'); collection.type = 'button'; collection.id = 'sampleCollection'; collection.className = 'sample-secondary';
+      collection.textContent = 'Open the full sample collection'; collection.onclick = () => load(FULL_COLLECTION);
       hint = doc.createElement('span'); hint.className = 'sample-hint';
-      empty.append(cta, hint);
+      empty.append(cta, collection, hint);
     }
-    const full = entries && findSample(entries, FULL_COLLECTION);
-    hint.textContent = full ? `${full.pages} pages, ${formatSize(full.size)}. Downloaded from this site only when you click; nothing is uploaded.`
+    const showcase = entries && findSample(entries, SHOWCASE);
+    hint.textContent = showcase ? `Showcase: ${showcase.pages} pages, ${formatSize(showcase.size)}. Downloaded from this site only when you click; nothing is uploaded.`
       : 'Downloaded from this site only when you click; nothing is uploaded.';
-    cta.disabled = !!active; cta.setAttribute('aria-busy', String(!!active));
+    for (const button of [cta, collection]) { button.disabled = !!active; button.setAttribute('aria-busy', String(!!active)); }
   }
   new MutationObserver(renderCta).observe(doc.getElementById('view'), { childList: true });
   renderCta();
@@ -194,14 +198,13 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
 
   function menuEntries() {
     ensureManifest().catch(() => {});
-    if (!entries) return [{ label: 'Full sample collection', run: () => load(FULL_COLLECTION) }, '-', { label: 'Other samples load after the list is ready', disabled: true }];
+    if (!entries) return [{ label: '28 Benchmarks, brand and spec parity', run: () => load(SHOWCASE) }, { label: 'Full sample collection', run: () => load(FULL_COLLECTION) }, '-', { label: 'Other samples load after the list is ready', disabled: true }];
     const item = e => {
       const off = blocked(e);
       return { label: esc(e.name === FULL_COLLECTION ? `${e.title} (${e.pages} pages)` : `${e.name.slice(0, 2)} ${e.title}`) + (off ? ' — requires password support' : ''),
         key: formatSize(e.size), disabled: off, run: () => load(e.name) };
     };
-    const [full, rest] = [entries.filter(e => e.name === FULL_COLLECTION), entries.filter(e => e.name !== FULL_COLLECTION)];
-    return [...full.map(item), full.length && rest.length ? '-' : null, ...rest.map(item)];
+    return entries.flatMap((e, i) => i === 2 ? ['-', item(e)] : [item(e)]);
   }
 
   async function deepLink() {

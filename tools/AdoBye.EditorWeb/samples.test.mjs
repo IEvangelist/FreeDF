@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { fetchVerified, parseManifest, deepLinkName, findSample, stripDeepLink, formatSize, esc } from './wwwroot/samples.js';
+import { fetchVerified, parseManifest, deepLinkName, findSample, stripDeepLink, formatSize, esc, SHOWCASE, FULL_COLLECTION } from './wwwroot/samples.js';
 
 const base = 'https://example.test/csharp-pdf/';
 const bytes = new TextEncoder().encode('%PDF-1.7 sample bytes');
@@ -42,9 +42,11 @@ test('manifest entries are validated', () => {
 test('deep links resolve from hash or query and are removed after use', () => {
   const at = (hash = '', search = '') => ({ hash, search });
   assert.equal(deepLinkName(at('#sample=27-full-collection')), '27-full-collection');
+  assert.equal(deepLinkName(at('#sample=28')), '28');
   assert.equal(deepLinkName(at('', '?sample=27-full-collection.pdf')), '27-full-collection');
   assert.equal(deepLinkName(at('#other=1')), null);
-  const entries = [{ name: '27-full-collection' }, { name: '01-spec-showcase' }];
+  const entries = [{ name: SHOWCASE }, { name: FULL_COLLECTION }, { name: '01-spec-showcase' }];
+  assert.equal(findSample(entries, '28').name, SHOWCASE);
   assert.equal(findSample(entries, '27').name, '27-full-collection');
   assert.equal(findSample(entries, '../x'), undefined);
   assert.equal(stripDeepLink(base + '?sample=27&keep=1#sample=27&x=2'), base + '?keep=1#x=2');

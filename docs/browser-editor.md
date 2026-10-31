@@ -25,6 +25,15 @@ opening or creating a document clears the clipboard and pending upload files.
 
 ## Publishing
 
+The welcome screen's primary **Open the showcase** button opens the tagged,
+18-page benchmarks, brand and spec showcase (`28-benchmarks-brand-spec.pdf`).
+It also leads **File > Open sample** and the published manifest. Share
+**https://ievangelist.github.io/csharp-pdf/#sample=28** to open it directly.
+**Open the full sample collection** remains a secondary welcome action:
+sample 27 still contains only samples 01-26 (50 pages). Both PDFs and the sample
+manifest are fetched only on demand from this site, never precached; size and
+SHA256 are verified before opening. Nothing is uploaded.
+
 After merging, enable **Settings > Pages > Build and deployment > Source:
 GitHub Actions**. If the `github-pages` environment has branch protection rules,
 allow the repository's default branch (`main`). No secret or personal token is

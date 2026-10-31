@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using Microsoft.Playwright;
 using PortableDocument.Document;
 
@@ -6,6 +7,7 @@ using PortableDocument.Document;
 static class EditorSamples
 {
     const string Full = "27-full-collection.pdf";
+    const string Showcase = "28-benchmarks-brand-spec.pdf";
     static void Check(bool ok, string message) { if (!ok) throw new Exception("Samples: " + message); }
     static Task Opened(IPage page, string name) => page.WaitForFunctionAsync(
         "name => document.getElementById('name').textContent === name && document.getElementById('base')?.naturalWidth > 0 && document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl", name);
@@ -24,6 +26,21 @@ static class EditorSamples
 
         // Lazy: nothing about the samples is fetched by startup.
         Check(!requests.Any(r => r.Url.Contains("/samples/")), "Startup does not fetch the manifest or any PDF.");
+        await Welcome(page);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Open the showcase", Exact = true }).ClickAsync();
+        await Opened(page, Showcase);
+        Check(await Pages(page) == 18 && Samples(Showcase) == 1 && Samples(Full) == 0, "The primary action lazily opens only the 18-page showcase.");
+        await ShowcasePixels(page);
+        await page.Locator("#dl").ClickAsync();
+        await page.Locator("#sn").FillAsync("showcase-copy.pdf");
+        var showcaseDownload = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
+        var showcaseCopy = PdfDocument.Open(await showcaseDownload.PathAsync() ?? throw new Exception("No showcase download."));
+        Check(showcaseCopy.Pages.Count == 18 && showcaseCopy.Structure is not null && showcaseCopy.GetOutlines().Count == 6, "The downloaded showcase retains tagging, pages and outline.");
+        await page.Locator(".mdl").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await Durable(page);
+        await page.ReloadAsync();
+        var initialRecovery = page.GetByRole(AriaRole.Dialog, new() { Name = "Resume previous edit", Exact = true });
+        await initialRecovery.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         var button = page.GetByRole(AriaRole.Button, new() { Name = "Open the full sample collection" });
         await button.WaitForAsync();
         Check(await page.EvaluateAsync<bool>("document.getElementById('empty').contains(document.getElementById('sampleOpen'))"), "The primary button lives on the empty state.");
@@ -82,7 +99,7 @@ static class EditorSamples
         await Opened(page, "sample-copy.pdf");
         Check(await Pages(page) == 50, "Resume restores the sample.");
 
-        // File > Open sample: full collection first, then 01-26 and 28; encrypted ones are visibly unavailable; replace confirmation when dirty.
+        // File > Open sample: showcase, collection, then 01-26; replace confirmation when dirty.
         await page.Locator("#rr").ClickAsync();
         await EditorHeader.State(page, true);
         await page.RunAndWaitForResponseAsync(() => page.Locator("#fileBtn").HoverAsync(), r => r.Url.EndsWith("/samples/manifest.json"));
@@ -90,7 +107,7 @@ static class EditorSamples
         await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.HoverAsync();
         await page.Locator(".cm.sub .cm-i").Filter(new() { HasTextString = "Full sample collection" }).First.WaitForAsync();
         var items = await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.Locator(".cm.sub > .cm-i").AllInnerTextsAsync();
-        Check(items.Count == 28 && items[0].StartsWith("Full sample collection (50 pages)") && items[1].StartsWith("01 ") && items[^1].StartsWith("28 "), "Menu lists the full collection first, then 01-26 and 28 (" + items.Count + ").");
+        Check(items.Count == 28 && items[0].StartsWith("28 Benchmarks, brand and spec parity") && items[1].StartsWith("Full sample collection (50 pages)") && items[2].StartsWith("01 ") && items[^1].StartsWith("26 "), "Menu lists the showcase first, collection second, then 01-26 (" + items.Count + ").");
         var disabled = await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.Locator(".cm.sub > .cm-i:disabled").AllInnerTextsAsync();
         Check(disabled.Count == 0, "openEncrypted is advertised before the menu renders, so 17 and 18 are offered: " + string.Join(", ", disabled));
         var asked = 0;
@@ -126,6 +143,14 @@ static class EditorSamples
         await Opened(page, Full);
         Check(await Pages(page) == 50, "?sample= loads the collection.");
 
+        await Durable(page);
+        await page.GotoAsync("about:blank");
+        await page.GotoAsync(address + "/csharp-pdf/#sample=28");
+        await prompt.WaitForAsync();
+        await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
+        await Opened(page, Showcase);
+        Check(await Pages(page) == 18 && !page.Url.Contains("sample="), "The documented #sample=28 opens the showcase and is consumed.");
+
         // Encrypted samples: 18 (empty user password) is attempted, either opening or reporting the precise limitation; 17 needs a password.
         await Durable(page);
         await page.GotoAsync("about:blank");
@@ -147,5 +172,52 @@ static class EditorSamples
         Check(network.IsEmpty, "No uploads or external requests: " + string.Join(", ", network));
         Check(requests.All(r => r.Url.StartsWith(address + "/")), "Every request stays on the editor's origin.");
         Check(requests.Where(r => r.Url.Contains("/samples/")).All(r => r.Method == "GET"), "Samples are only read, never sent.");
+    }
+
+    static async Task Welcome(IPage page)
+    {
+        var original = page.ViewportSize!;
+        foreach (var (width, height) in new[] { (1440, 1000), (390, 844) })
+        {
+            await page.SetViewportSizeAsync(width, height);
+            Check(await page.EvaluateAsync<bool>("""
+                () => {
+                  const buttons = [...document.querySelectorAll('#empty button')];
+                  return buttons.length === 2 && buttons[0].id === 'sampleOpen'
+                    && buttons[0].classList.contains('primary') && buttons[1].id === 'sampleCollection'
+                    && buttons.every(b => { const r = b.getBoundingClientRect();
+                      return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })
+                    && document.documentElement.scrollWidth <= innerWidth;
+                }
+                """), $"Primary showcase and secondary collection fit the {width}px welcome screen.");
+            var output = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
+            if (output is not null)
+            {
+                Directory.CreateDirectory(output);
+                await page.ScreenshotAsync(new() { Path = Path.Combine(output, $"welcome-{width}.png") });
+            }
+        }
+        await page.SetViewportSizeAsync(original.Width, original.Height);
+    }
+
+    static async Task ShowcasePixels(IPage page)
+    {
+        var hashes = new HashSet<string>();
+        var output = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");
+        for (var i = 0; i < 18; i++)
+        {
+            var data = await page.EvaluateAsync<string>("i => pdfHost.image(`/api/page/${i}.png?dpi=96`)", i);
+            var png = Convert.FromBase64String(data[(data.IndexOf(',') + 1)..]);
+            var image = global::PortableDocument.Render.PngWriter.Decode(png);
+            Check(image.W is > 700 and < 850 && image.H is > 1000 and < 1200, $"Showcase page {i + 1} has A4 dimensions at 96 dpi.");
+            var ink = 0;
+            for (var p = 0; p < image.Rgba.Length; p += 4)
+                if (image.Rgba[p] < 235 || image.Rgba[p + 1] < 235 || image.Rgba[p + 2] < 235) ink++;
+            Check(ink > 2000, $"Showcase page {i + 1} is not blank.");
+            var hash = Convert.ToHexString(SHA256.HashData(image.Rgba));
+            Check(hashes.Add(hash), $"Showcase page {i + 1} has distinct rendered content.");
+            Console.WriteLine($"Showcase page {i + 1}: {image.W}x{image.H}, ink={ink}, decoded SHA256={hash}");
+            if (output is not null) await File.WriteAllBytesAsync(Path.Combine(output, $"showcase-{i + 1:D2}.png"), png);
+        }
     }
 }

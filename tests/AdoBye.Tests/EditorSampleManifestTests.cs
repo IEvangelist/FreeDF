@@ -9,13 +9,15 @@ namespace AdoBye.Tests;
 public class EditorSampleManifestTests(GeneratedSamples gen) : IClassFixture<GeneratedSamples>
 {
     [Fact]
-    public void ManifestLeadsWithTheFullCollectionAndDescribesEveryFile()
+    public void ManifestLeadsWithTheShowcaseThenFullCollectionAndDescribesEveryFile()
     {
         var entries = SampleManifest.Entries(gen.Dir);
         Assert.Equal(28, entries.Count);
-        Assert.Equal("27-full-collection", entries[0].Name);
-        Assert.Equal(50, entries[0].Pages);
-        Assert.Equal(entries.Skip(1).Select(e => e.Name).Order(StringComparer.Ordinal), entries.Skip(1).Select(e => e.Name));
+        Assert.Equal("28-benchmarks-brand-spec", entries[0].Name);
+        Assert.Equal(18, entries[0].Pages);
+        Assert.Equal("27-full-collection", entries[1].Name);
+        Assert.Equal(50, entries[1].Pages);
+        Assert.Equal(entries.Skip(2).Select(e => e.Name).Order(StringComparer.Ordinal), entries.Skip(2).Select(e => e.Name));
         foreach (var e in entries)
         {
             var bytes = File.ReadAllBytes(Path.Combine(gen.Dir, e.File));

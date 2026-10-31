@@ -22,7 +22,7 @@ $html = [IO.File]::ReadAllText($index).Replace('<head>', "<head>`n<base href=`"$
 foreach ($asset in @('editor.css', 'editor.js', 'annotations.js', 'form-fields.js', 'host.js', 'worker.js', 'pool.js', 'scheduler.js', 'replica-worker.js', 'recovery.js', 'samples.js', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
     if (!(Test-Path (Join-Path $site $asset))) { throw "Missing site asset: $asset" }
 }
-# Lazily fetched sample PDFs (never part of the startup payload): 01-26 are committed, 27 is generated deterministically in a scratch folder.
+# Lazily fetched sample PDFs (never part of startup): 01-26 and 28 are committed; 27 is generated in a scratch folder.
 if (!$SkipSamples) {
     $sampleSource = Join-Path $PSScriptRoot '..\samples'
     $work = Join-Path ([IO.Path]::GetTempPath()) ('pages-samples-' + [Guid]::NewGuid().ToString('N'))
