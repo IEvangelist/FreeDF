@@ -3,7 +3,9 @@ param(
     [string] $BasePath = '/csharp-pdf/',
     [switch] $Aot,
     [switch] $Trim,
-    [string] $ArtifactsPath
+    [switch] $KillServiceWorker,
+    [string] $ArtifactsPath,
+    [string[]] $MsbuildArgs = @()
 )
 $ErrorActionPreference = 'Stop'
 if ($BasePath -notmatch '^/([A-Za-z0-9._-]+/)*$') { throw 'BasePath must start and end with / and contain only path segments.' }
@@ -11,6 +13,7 @@ $project = Join-Path $PSScriptRoot 'AdoBye.EditorWasm\AdoBye.EditorWasm.csproj'
 $publishArgs = @('publish', $project, '-c', 'Release', '-o', $Output, '--nologo')
 if ($Aot) { $publishArgs += @('-p:RunAOTCompilation=true', '-p:PublishTrimmed=true', '-p:WasmEnableSIMD=true') }
 if ($Trim -and !$Aot) { $publishArgs += '-p:PublishTrimmed=true' }
+$publishArgs += $MsbuildArgs
 if ($ArtifactsPath) { $publishArgs += @('--artifacts-path', $ArtifactsPath) }
 if (Test-Path (Join-Path $Output 'wwwroot')) { Remove-Item (Join-Path $Output 'wwwroot') -Recurse -Force }
 dotnet @publishArgs
@@ -35,6 +38,8 @@ foreach ($file in $wasm) {
         }
     } finally { $stream.Dispose() }
 }
+# Only the ICU data selected by applicationCulture=en-US is ever fetched; do not ship or precache the CJK/other bundles.
+Get-ChildItem (Join-Path $site '_framework') -Filter 'icudt_*' | Where-Object { $_.Name -notlike 'icudt_EFIGS*' } | Remove-Item
 # Versioned precache manifest: exact file set and digests of this build, embedded in the service worker.
 $swPath = Join-Path $site 'sw.js'
 $siteRoot = (Resolve-Path $site).Path.TrimEnd('\') + '\'
@@ -47,7 +52,7 @@ $template = [IO.File]::ReadAllText($swPath)
 if (!$template.Contains('const MANIFEST = null; /* __PRECACHE_MANIFEST__ */')) { throw 'sw.js is missing the precache manifest placeholder.' }
 $identity = $template + (($precache | ForEach-Object { "$($_.url) $($_.hash)" }) -join "`n")
 $version = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($identity))).Replace('-', '').ToLowerInvariant()).Substring(0, 16)
-$manifest = [ordered]@{ version = $version; files = $precache } | ConvertTo-Json -Depth 4 -Compress
+$manifest = if ($KillServiceWorker) { '{"kill":true}' } else { [ordered]@{ version = $version; files = $precache } | ConvertTo-Json -Depth 4 -Compress }
 [IO.File]::WriteAllText($swPath, $template.Replace('const MANIFEST = null; /* __PRECACHE_MANIFEST__ */', "const MANIFEST = $manifest;"))
 Write-Host "Service worker precache: $($precache.Count) files, version $version"
 Write-Host "Pages site: $site ($($wasm.Count) valid WASM artifacts; base $BasePath)"

@@ -33,6 +33,12 @@ if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline")
     return;
 }
 
+if (args.Length == 2 && args[0] == "--culture")
+{
+    await EditorCulture.Run(args[1]);
+    return;
+}
+
 if (args.Length == 3 && args[0] == "--service-worker")
 {
     await EditorServiceWorker.Run(args[1], args[2]);

@@ -2,13 +2,19 @@
 export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
   const url = new URL('sw.js', document.baseURI);
+  // Off switch: a build published with MANIFEST.kill removes every cache and registration and is never re-registered.
+  const script = await fetch(url, { cache: 'no-store' }).then(r => r.ok ? r.text() : '', () => '');
+  if (/const MANIFEST = \{\s*"kill"\s*:\s*true\s*\}/.test(script)) {
+    for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+    for (const name of await caches.keys()) if (name.startsWith('adobye-editor-')) await caches.delete(name);
+    return;
+  }
   let registration;
   try { registration = await navigator.serviceWorker.register(url, { scope: new URL('./', url).pathname, updateViaCache: 'none' }); }
   catch (error) { console.warn('[PDF boot] offline cache unavailable:', error.message); return; }
-  let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) location.reload();
-  });
+  // Any controlled tab reloads when a new version takes over, so no tab keeps an older build under the new worker.
+  const controlled = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (controlled) location.reload(); });
   const offer = worker => {
     if (!navigator.serviceWorker.controller || document.getElementById('update-banner')) return;
     const banner = document.createElement('div');
@@ -18,7 +24,7 @@ export async function registerServiceWorker() {
     text.textContent = 'A new version of the editor is ready.';
     const reload = document.createElement('button');
     reload.type = 'button'; reload.textContent = 'Reload'; reload.className = 'primary';
-    reload.onclick = () => { reloading = true; worker.postMessage({ type: 'SKIP_WAITING' }); };
+    reload.onclick = () => { worker.postMessage({ type: 'SKIP_WAITING' }); };
     const later = document.createElement('button');
     later.type = 'button'; later.textContent = 'Later';
     later.onclick = () => banner.remove();

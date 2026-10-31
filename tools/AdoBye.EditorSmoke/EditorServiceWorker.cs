@@ -69,7 +69,17 @@ static partial class EditorServiceWorker
         var files = new PhysicalFileProvider(site);
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".dat"] = "application/octet-stream";
-        var gzipped = new ConcurrentDictionary<string, byte[]>();
+        var gzipped = new ConcurrentDictionary<string, Lazy<byte[]>>();
+        byte[] Gzip(string relative, IFileInfo info, string etag) => gzipped.GetOrAdd(relative + etag, _ => new Lazy<byte[]>(() =>
+        {
+            using var output = new MemoryStream();
+            using (var zip = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Optimal, true))
+            {
+                using var input = info.CreateReadStream();
+                input.CopyTo(zip);
+            }
+            return output.ToArray();
+        })).Value;
         // Pages-like delivery: gzip on the wire, ETag revalidation.
         app.Use(async (context, next) =>
         {
@@ -80,21 +90,21 @@ static partial class EditorServiceWorker
             context.Response.Headers.ETag = etag;
             context.Response.Headers.CacheControl = "no-cache";
             if (context.Request.Headers.IfNoneMatch == etag) { context.Response.StatusCode = 304; return; }
-            var body = gzipped.GetOrAdd(relative + etag, _ =>
-            {
-                using var output = new MemoryStream();
-                using (var zip = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Optimal, true))
-                {
-                    using var input = info.CreateReadStream();
-                    input.CopyTo(zip);
-                }
-                return output.ToArray();
-            });
+            var body = Gzip(relative, info, etag);
+
             context.Response.ContentType = type;
             context.Response.Headers.ContentEncoding = "gzip";
             context.Response.ContentLength = body.Length;
             await context.Response.Body.WriteAsync(body);
         });
+        // Compress once up front so first-request latency is not part of the measured transfer.
+        foreach (var path in Directory.EnumerateFiles(site, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(site, path).Replace('\\', '/');
+            var info = files.GetFileInfo(relative);
+            if (!info.Exists) continue;
+            Gzip(relative, info, $"\"{info.Length:x}-{info.LastModified.UtcTicks:x}\"");
+        }
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
@@ -194,6 +204,13 @@ static partial class EditorServiceWorker
         var cssWhileWaiting = await page.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())");
         Check(!cssWhileWaiting.Contains("build B", StringComparison.Ordinal), "waiting version does not leak into the running page.");
         Check(await Version() == manifestA.Version, "old worker still active before accepting.");
+        // A second tab on the old build must follow the first tab to the new one, never run old code under the new worker.
+        var second = await context.NewPageAsync();
+        second.SetDefaultTimeout(90000);
+        await second.GotoAsync(url);
+        await second.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
+        await second.WaitForFunctionAsync("!!document.getElementById('update-banner')");
+        await second.EvaluateAsync("window.__stale = true");
         await page.ReloadAsync();
         await Ready();
         Check(await Version() == manifestA.Version, "a plain reload does not swap versions.");
@@ -201,6 +218,11 @@ static partial class EditorServiceWorker
         await WaitFor("!!document.getElementById('update-banner')", "update banner after reload");
         await AcceptUpdate();
         await WaitFor("!!navigator.serviceWorker.controller", "controller");
+        await second.WaitForFunctionAsync("window.__stale === undefined");
+        await second.WaitForFunctionAsync("document.getElementById('status')?.textContent.startsWith('Ready.')");
+        Check((await second.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("build B", StringComparison.Ordinal), "the other tab reloaded onto the new build.");
+        Check(await second.EvaluateAsync<bool>("navigator.serviceWorker.controller !== null"), "the other tab is controlled by the new worker.");
+        await second.CloseAsync();
         Check(await Version() == "bbbbbbbbbbbbbbbb", "accepting activates the new version.");
         Check((await CacheNames()).Single() == "adobye-editor-bbbbbbbbbbbbbbbb", "old cache removed after activation.");
         Check((await page.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("build B", StringComparison.Ordinal), "new version serves new assets.");
@@ -225,6 +247,37 @@ static partial class EditorServiceWorker
         Check((await CacheNames()).Single() == "adobye-editor-" + manifestA.Version, "rollback leaves exactly the original cache.");
         Check(!(await page.EvaluateAsync<string>("fetch('editor.css').then(r => r.text())")).Contains("/* build ", StringComparison.Ordinal), "rollback serves the original assets.");
 
+        // 8. Range requests are never answered from the cache.
+        var rangeStatus = await page.EvaluateAsync<int>("async name => (await fetch(name, { headers: { Range: 'bytes=0-9' } })).status", native);
+        Check(rangeStatus == 206, $"range requests pass through to the network (status {rangeStatus}).");
+
+        // 9. A failing cache write (quota/eviction) must not fail bytes that already matched the digest.
+        // Playwright .NET has no service worker handle, so patch Cache.put through the browser's DevTools target API.
+        await using var browserCdp = await browser.NewBrowserCDPSessionAsync();
+        var targets = (await browserCdp.SendAsync("Target.getTargets"))!.Value.GetProperty("targetInfos").EnumerateArray().ToArray();
+        foreach (var target in targets.Where(t => t.GetProperty("type").GetString() == "service_worker" && t.GetProperty("url").GetString()!.EndsWith("/sw.js", StringComparison.Ordinal)).ToArray())
+        {
+            var attached = (await browserCdp.SendAsync("Target.attachToTarget", new Dictionary<string, object> { ["targetId"] = target.GetProperty("targetId").GetString()!, ["flatten"] = false }))!.Value;
+            await browserCdp.SendAsync("Target.sendMessageToTarget", new Dictionary<string, object>
+            {
+                ["sessionId"] = attached.GetProperty("sessionId").GetString()!,
+                ["message"] = JsonSerializer.Serialize(new { id = 1, method = "Runtime.evaluate", @params = new { expression = "Cache.prototype.put = () => Promise.reject(new DOMException('full', 'QuotaExceededError'))" } }),
+            });
+        }        await Task.Delay(500);
+        await page.EvaluateAsync("async name => (await (await caches.open((await caches.keys())[0])).delete(new URL(name, document.baseURI)))", victim);
+        await page.ReloadAsync();
+        await Ready();
+        Check(!await page.EvaluateAsync<bool>("async name => !!(await (await caches.open((await caches.keys())[0])).match(new URL(name, document.baseURI)))", victim), "the failed write left the entry absent while the editor still started.");
+
+        // 10. Kill switch: caches removed, worker unregistered, pages reloaded, and the client does not register again.
+        File.WriteAllText(Path.Combine(site, "sw.js"), ManifestPattern().Replace(originalSw, "const MANIFEST = {\"kill\":true};"));
+        await page.EvaluateAsync("navigator.serviceWorker.getRegistration().then(r => r.update())");
+        await WaitFor("navigator.serviceWorker.getRegistration().then(r => !r)", "kill switch unregistration");
+        await Ready();
+        await Task.Delay(4000);
+        Check(await page.EvaluateAsync<bool>("navigator.serviceWorker.getRegistration().then(r => !r)"), "client does not re-register while the kill switch is published.");
+        Check((await CacheNames()).Length == 0, "kill switch removed every editor cache.");
+        File.WriteAllText(Path.Combine(site, "sw.js"), originalSw);
         // Control: the same repeat visit with no worker, i.e. whatever the browser HTTP cache gives for free.
         await using var plain = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, ViewportSize = new() { Width = 1440, Height = 1000 } });
         var plainPage = await plain.NewPageAsync();
@@ -249,11 +302,18 @@ static partial class EditorServiceWorker
             var cdp = await slowContext.NewCDPSessionAsync(slow);
             await cdp.SendAsync("Network.enable");
             await cdp.SendAsync("Network.emulateNetworkConditions", new Dictionary<string, object> { ["offline"] = false, ["latency"] = 150, ["downloadThroughput"] = 1_600_000 / 8, ["uploadThroughput"] = 750_000 / 8 });
+            var timeline = new ConcurrentQueue<string>();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            string Short(string u) => new Uri(u).AbsolutePath.Split('/')[^1];
+            slowContext.Request += (_, r) => timeline.Enqueue($"{clock.ElapsedMilliseconds,6} req  {Short(r.Url)}");
+            slowContext.Response += (_, r) => timeline.Enqueue($"{clock.ElapsedMilliseconds,6} head {Short(r.Url)} {r.Status}");
+            slowContext.RequestFinished += (_, r) => timeline.Enqueue($"{clock.ElapsedMilliseconds,6} done {Short(r.Url)}");
+            slowContext.RequestFailed += (_, r) => timeline.Enqueue($"{clock.ElapsedMilliseconds,6} FAIL {Short(r.Url)} {r.Failure}");
             int responses = 0, gzipped = 0;
             slowContext.Response += (_, response) => { responses++; if (response.Headers.TryGetValue("content-encoding", out var enc) && enc == "gzip") gzipped++; };
             await slow.GotoAsync(url);
             try { await slow.WaitForFunctionAsync("document.getElementById(\"status\")?.textContent.startsWith(\"Ready.\")", null, new() { Timeout = 150000 }); }
-            catch (TimeoutException) { throw new Exception($"Slow 4G first visit never became ready ({responses} responses, {gzipped} gzip): " + await slow.Locator("#status").TextContentAsync()); }
+            catch (TimeoutException) { { File.WriteAllLines(Path.Combine(output, "slow-timeline.txt"), timeline); throw new Exception($"Slow 4G first visit never became ready ({responses} responses, {gzipped} gzip): " + await slow.Locator("#status").TextContentAsync()); } }
             var first = await slow.EvaluateAsync<double>("performance.now()");
             if (worker) await slow.EvaluateAsync("navigator.serviceWorker.ready.then(() => true)");
             if (worker) await slow.WaitForFunctionAsync("caches.keys().then(async k => k.length === 1 && (await (await caches.open(k[0])).keys()).length > 0)");
@@ -269,6 +329,6 @@ static partial class EditorServiceWorker
         Check(errors.IsEmpty, "no page errors: " + string.Join(" | ", errors));
         var report = new { coldMs, coldBoot, warmBoot, warmMs = warm, offlineMs, slow4g = new { firstVisitMs = slowWorker.Cold, workerRepeatMs = slowWorker.Repeat, httpRevalidateRepeatMs = slowHttp.Repeat }, httpCacheRepeatMs = httpRepeat, httpBoot, precachedFiles = manifestA.Urls.Length, version = manifestA.Version };
         File.WriteAllText(Path.Combine(output, "service-worker.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
-        Console.WriteLine($"PASS: service worker precache ({manifestA.Urls.Length} files), controlled repeat visits with zero asset requests, offline start, repair, update prompt, plain-reload consistency, corrupt build rejection and rollback. cold {coldMs:F0} ms, repeat {string.Join("/", warm.Select(w => w.ToString("F0")))} ms, offline {offlineMs:F0} ms, slow4G first {slowWorker.Cold:F0} ms, repeat with worker {slowWorker.Repeat:F0} ms, repeat without worker (revalidating) {slowHttp.Repeat:F0} ms; no-worker repeat {string.Join("/", httpRepeat.Select(w => w.ToString("F0")))} ms. boot cold {coldBoot} warm {warmBoot} stages {warmStages} no-worker boot {httpBoot}");
+        Console.WriteLine($"PASS: service worker precache ({manifestA.Urls.Length} files), controlled repeat visits with zero asset requests, offline start, repair, update prompt, plain-reload consistency, corrupt build rejection, rollback, two-tab update, range pass-through, failed cache write and kill switch. cold {coldMs:F0} ms, repeat {string.Join("/", warm.Select(w => w.ToString("F0")))} ms, offline {offlineMs:F0} ms, slow4G first {slowWorker.Cold:F0} ms, repeat with worker {slowWorker.Repeat:F0} ms, repeat without worker (revalidating) {slowHttp.Repeat:F0} ms; no-worker repeat {string.Join("/", httpRepeat.Select(w => w.ToString("F0")))} ms. boot cold {coldBoot} warm {warmBoot} stages {warmStages} no-worker boot {httpBoot}");
     }
 }

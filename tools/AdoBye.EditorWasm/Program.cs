@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
@@ -8,6 +10,8 @@ return;
 [SupportedOSPlatform("browser")]
 public static partial class BrowserEditor
 {
+    // Browser locale must never reach PDF output (decimal commas, Turkish casing); ICU stays loaded for Unicode normalization.
+    static readonly CultureInfo Culture = UseInvariantCulture();
     static readonly EditorSession Session = new(new FontCatalog(), new BrowserFontFallback());
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public sealed record Command(string Method, string Path, Dictionary<string, string> Query, string? Body, string? FileName);
@@ -48,8 +52,29 @@ public static partial class BrowserEditor
         }
     }
 
+    static CultureInfo UseInvariantCulture()
+    {
+        var culture = CultureInfo.InvariantCulture;
+        CultureInfo.DefaultThreadCurrentCulture = culture;
+        CultureInfo.DefaultThreadCurrentUICulture = culture;
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        return culture;
+    }
+
+    static string Diagnostics() => JsonSerializer.Serialize(new
+    {
+        culture = CultureInfo.CurrentCulture.Name,
+        decimalFormat = 1234.5.ToString("0.##"),
+        normalizesDecomposed = "e\u0301".Normalize(NormalizationForm.FormC) == "\u00e9",
+        decomposes = "\u00e9".Normalize(NormalizationForm.FormD) == "e\u0301",
+        upper = "i".ToUpper(),
+        invariantGlobalization = AppContext.TryGetSwitch("System.Globalization.Invariant", out var invariant) && invariant,
+    }, Json);
+
     static string Execute(Command c, byte[]? body)
     {
+        if (c.Path == "/api/_diagnostics") return JsonSerializer.Serialize(new { data = Convert.ToBase64String(Encoding.UTF8.GetBytes(Diagnostics())), contentType = "application/json" }, Json);
         try
         {
             var reply = Session.Handle(c.Method, c.Path, c.Query, body, c.FileName);

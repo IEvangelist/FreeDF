@@ -4,7 +4,9 @@
 const MANIFEST = null; /* __PRECACHE_MANIFEST__ */
 const PREFIX = 'adobye-editor-';
 const scope = self.registration.scope;
-const cacheName = MANIFEST ? PREFIX + MANIFEST.version : null;
+// MANIFEST.kill is the documented off switch: the worker removes every cache, unregisters itself and reloads its pages.
+const kill = MANIFEST?.kill === true;
+const cacheName = MANIFEST && !kill ? PREFIX + MANIFEST.version : null;
 const entries = new Map((MANIFEST?.files ?? []).map(file => [new URL(file.url, scope).href, file.hash]));
 const indexUrl = new URL('index.html', scope).href;
 
@@ -24,7 +26,7 @@ async function fetchVerified(url, mode) {
 }
 
 async function precache() {
-  if (!MANIFEST) return;
+  if (!cacheName) return;
   const cache = await caches.open(cacheName);
   const queue = [...entries.keys()];
   const worker = async () => {
@@ -40,14 +42,19 @@ async function precache() {
   await Promise.all(Array.from({ length: 6 }, worker));
 }
 
-self.addEventListener('install', event => event.waitUntil(precache().catch(async error => {
+self.addEventListener('install', event => kill ? event.waitUntil(self.skipWaiting()) : event.waitUntil(precache().catch(async error => {
   if (cacheName) await caches.delete(cacheName);
   throw error;
 })));
 
+// Old caches may be removed immediately: every controlled page reloads on controllerchange (sw-client.js),
+// so no page keeps running an older build under this worker.
 self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const name of await caches.keys())
     if (name.startsWith(PREFIX) && name !== cacheName) await caches.delete(name);
+  if (!kill) return;
+  await self.registration.unregister();
+  for (const client of await self.clients.matchAll({ type: 'window' })) client.navigate(client.url).catch(() => {});
 })()));
 
 self.addEventListener('message', event => {
@@ -64,7 +71,8 @@ async function serve(request, key) {
   try {
     const result = await fetchVerified(key, bypass ? 'reload' : 'no-cache');
     if (result.ok) {
-      await cache.put(key, result.copy.clone());
+      // A full or evicted cache must not fail a response whose bytes already matched the build digest.
+      await cache.put(key, result.copy.clone()).catch(() => {});
       return result.copy;
     }
   } catch (error) {
@@ -77,8 +85,9 @@ async function serve(request, key) {
 
 self.addEventListener('fetch', event => {
   const { request } = event;
-  if (!cacheName || request.method !== 'GET') return;
+  if (!cacheName || request.method !== 'GET' || request.headers.has('range')) return;
   const url = new URL(request.url);
+  // Cross-origin requests and partial-content (Range) requests are never answered from, or stored in, the cache.
   if (url.origin !== location.origin) return;
   const bare = url.origin + url.pathname;
   if (request.mode === 'navigate') {

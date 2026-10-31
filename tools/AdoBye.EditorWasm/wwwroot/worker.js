@@ -21,12 +21,12 @@ async function loadRuntime() {
   }
 }
 
-// The 15 s limit applies to connecting and receiving headers, and restarts whenever any asset's headers arrive:
-// on a slow or HTTP/1.1 link requests legitimately queue behind other downloads while the page is making progress.
+// A fetch with integrity only resolves once its whole body has arrived, so this is an idle limit on the whole boot:
+// it restarts whenever any asset completes. Large assets on slow links legitimately take far longer than 15 s.
 const waiting = new Map();
 const arm = controller => {
   clearTimeout(waiting.get(controller));
-  waiting.set(controller, setTimeout(() => controller.abort(new DOMException('Timed out waiting for response headers.', 'TimeoutError')), 15000));
+  waiting.set(controller, setTimeout(() => controller.abort(new DOMException('No asset finished downloading for 45 seconds.', 'TimeoutError')), 45000));
 };
 const progressed = () => { for (const controller of waiting.keys()) arm(controller); };
 
@@ -71,8 +71,9 @@ try {
   const dotnet = await loadRuntime();
   const t1 = performance.now();
   const runtime = await dotnet
-    // Own the retry budget instead of multiplying it by the runtime's two immediate retries.
-    .withConfig({ enableDownloadRetry: false })
+    // Own the retry budget instead of multiplying it by the runtime's two immediate retries. A fixed application
+    // culture always selects the one ICU data file we publish (browser language must not change what is downloaded).
+    .withConfig({ enableDownloadRetry: false, applicationCulture: 'en-US' })
     .withResourceLoader((type, name, uri, integrity) =>
       type === 'dotnetjs' ? undefined : loadResource(name, uri, integrity))
     .create();

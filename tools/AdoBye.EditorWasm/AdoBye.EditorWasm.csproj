@@ -8,8 +8,7 @@
     <!-- The shared editor uses reflection-based JSON for its anonymous UI payloads. -->
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <PublishTrimmed>false</PublishTrimmed>
-    <!-- Startup payload: no ICU data, no debug/diagnostic features the static editor never uses. -->
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Startup payload: no debug/diagnostic features the static editor never uses. ICU stays: redaction needs Unicode normalization. -->
     <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
     <EventSourceSupport>false</EventSourceSupport>
     <DebuggerSupport>false</DebuggerSupport>
@@ -24,6 +23,16 @@
   <ItemGroup Condition="'$(RunAOTCompilation)' == 'true' or '$(PublishTrimmed)' == 'true'">
     <!-- Preserve reflection-based editor payloads while trimming the framework for AOT. -->
     <TrimmerRootAssembly Include="$(AssemblyName);PortableDocument.Core;PortableDocument.Document;PortableDocument.Content;PortableDocument.Render" />
+  </ItemGroup>
+  <!-- AOT keeps rarely hot BCL assemblies in the interpreter: measured -13% gzip / -4.4 MB native with no profile change (see docs/performance). Override: -p:EditorAotInterpret=none|rare|bcl. -->
+  <PropertyGroup Condition="'$(RunAOTCompilation)' == 'true' and '$(EditorAotInterpret)' == ''">
+    <EditorAotInterpret>bcl</EditorAotInterpret>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(EditorAotInterpret)' == 'rare' or '$(EditorAotInterpret)' == 'bcl'">
+    <_AOT_InternalForceInterpretAssemblies Include="System.Private.Xml.dll;System.Net.Http.dll;System.Security.Cryptography.Pkcs.dll;System.Formats.Asn1.dll;System.Text.Encoding.CodePages.dll;System.Security.Cryptography.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(EditorAotInterpret)' == 'bcl'">
+    <_AOT_InternalForceInterpretAssemblies Include="System.Text.RegularExpressions.dll;System.Runtime.Numerics.dll;System.IO.Compression.dll;System.Private.Uri.dll;System.Text.Json.dll;System.Linq.dll;System.Collections.dll;System.Collections.Concurrent.dll;System.Memory.dll;System.Collections.Immutable.dll;System.Runtime.InteropServices.JavaScript.dll;System.Linq.AsyncEnumerable.dll" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\..\samples\_gen\fonts\Vera.ttf" LogicalName="Vera.ttf" />
