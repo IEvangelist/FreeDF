@@ -43,6 +43,8 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 | `17-encrypted-user-password.pdf` | `user123` | `owner-user123` |
 | `18-encrypted-owner-restricted.pdf` | *(none — opens freely)* | `owner123` |
 
+**Try them in the browser editor.** Open `17` and the editor asks for the password (use `user123`; `owner-user123` opens it with owner rights, which unlocks "Remove protection" under Save as). Open `18` and it opens immediately but print, copy, modify and annotate actions are refused with a message; supply `owner123` through `PdfDocument.Load(bytes, "owner123")` or the server editor to lift that. Save as on a protected document writes an AES-256 (R6) copy with the passwords and permission checkboxes you choose. Passwords are used once and never stored, and encrypted documents never write recovery copies. See [docs/browser-encryption.md](../docs/browser-encryption.md).
+
 ## The full collection
 
 **Where is it?** Three places, all the same bytes (generation is deterministic):

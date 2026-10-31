@@ -894,8 +894,66 @@ async function act(fn, onError = reportError) {
   } catch (e) { onError(e); }
 }
 const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); return post(url, fd); };
+// Passwords live only in these closures: they are sent once with the open request and never stored, logged or kept for recovery.
+const askPassword = (name, wrong) => new Promise(resolve => {
+  const o = modal('Password required', `<p class="dnote">${esc(name)} is password-protected. The password is used once to open it and is never saved or logged.</p><label>Password<input id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="pwe"></label><p id="pwe" data-error role="alert">${wrong ? 'That password is not correct. Try again.' : ''}</p>`, 'Open', o => {
+    const input = o.querySelector('#pw'), value = input.value; if (!value) { o.querySelector('[data-error]').textContent = 'Enter the password.'; return false; }
+    input.value = ''; resolve(value);
+  });
+  o.querySelector('.dlg').setAttribute('aria-modal', 'true');
+  new MutationObserver((_, observer) => { if (!o.isConnected) { observer.disconnect(); resolve(null); } }).observe(document.body, { childList: true });
+});
+async function openPdf(file) {
+  let password = '';
+  for (;;) {
+    try { return await post('/api/open' + (password ? '?password=' + encodeURIComponent(password) : ''), formOf(file)); }
+    catch (e) {
+      const code = /^password-(required|incorrect):/.exec(e.message)?.[1]; if (!code) throw e;
+      password = await askPassword(file.name, code === 'incorrect');
+      if (password === null) { status('Open cancelled.'); return; }
+    }
+  }
+}
+const announceProtection = () => {
+  const p = state.protection; if (!p) return;
+  const denied = [['print', 'print'], ['copy', 'copy'], ['modify', 'modify'], ['annotate', 'annotate'], ['fillForms', 'fill forms'], ['assemble', 'reorganize pages']].filter(([k]) => !p[k]).map(([, l]) => l);
+  status(p.owner ? 'Opened with the owner password: all actions are allowed. Use Save as to keep or remove protection.' : denied.length ? 'Protected PDF. Not allowed: ' + denied.join(', ') + '. Open with the owner password to lift restrictions.' : 'Protected PDF opened. Use Save as to keep it protected.');
+};
+function protectDialog(markSaved) {
+  if (!state.pageCount) return;
+  const p = state.protection, locked = p && !p.owner;
+  const perms = [['print', 'Printing', 'print'], ['copy', 'Copying text and images', 'copy'], ['modify', 'Changing the document', 'modify'], ['annotate', 'Comments and annotations', 'annotate'], ['fill', 'Filling in forms', 'fillForms'], ['assemble', 'Inserting, deleting and rotating pages', 'assemble']];
+  const box = ([id, label, key]) => { const can = !p || p[key]; return `<label class="chk"><input type="checkbox" data-perm="${id}" ${can ? 'checked' : 'disabled'}> ${label}</label>`; };
+  const field = (id, label) => `<label>${label}<input id="${id}" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>`;
+  const o = modal(p ? 'Save protected PDF' : 'Protect PDF', `<label>File name<input id="pn" value="${esc(state.fileName.replace(/^(edited|protected)-/, ''))}"></label>
+    ${p?.owner ? '<label class="chk"><input type="checkbox" id="prm"> Remove protection (save an unprotected copy)</label>' : ''}
+    <div id="pf">${field('pu', 'Open password')}${field('pc', 'Confirm open password')}${field('po', 'Owner password (needed to enforce permissions)')}
+    <fieldset><legend>Allow</legend>${perms.map(box).join('')}</fieldset></div>
+    <p class="dnote">AES-256 encryption. ${locked ? 'You opened this PDF without the owner password, so permissions can only be kept or tightened. ' : ''}Passwords are used once to create the file and are never saved; keep the owner password safe.</p><p data-error role="alert"></p>`, 'Save', async o => {
+    const v = id => o.querySelector('#' + id), err = m => { o.querySelector('[data-error]').textContent = m; return false; };
+    let n = v('pn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
+    let q = 'name=' + encodeURIComponent(n);
+    if (v('prm')?.checked) q += '&remove=1';
+    else {
+      const user = v('pu').value, owner = v('po').value;
+      if (user !== v('pc').value) return err('The open passwords do not match.');
+      if (!user && !owner && p) return err('Enter a password to keep this PDF protected, or choose Remove protection.');
+      if (user || owner) {
+        const granted = [...o.querySelectorAll('[data-perm]')].filter(c => c.checked).map(c => c.dataset.perm);
+        if (granted.length < perms.length && !owner) return err('Enter an owner password so the restrictions can be enforced.');
+        q += '&user=' + encodeURIComponent(user) + '&owner=' + encodeURIComponent(owner);
+        if (granted.length < perms.length) q += '&perms=' + (granted.includes('print') ? granted.concat('highprint') : granted).concat('access').join(',');
+      }
+    }
+    await dlUrl('/api/export/secure?' + q);
+    for (const i of o.querySelectorAll('input[type=password]')) i.value = '';
+    if (markSaved) { await post('/api/saved?name=' + encodeURIComponent(n)); await refreshDirty(); }
+  });
+  o.querySelector('.dlg').setAttribute('aria-modal', 'true');
+  const toggle = o.querySelector('#prm'); if (toggle) toggle.onchange = () => { o.querySelector('#pf').hidden = toggle.checked; };
+}
 
-$('open').onchange = e => e.target.files[0] && act(() => upload('/api/open', e.target.files[0]));
+$('open').onchange = e => e.target.files[0] && act(() => openPdf(e.target.files[0])).then(announceProtection);
 $('merge').onchange = e => { const files = [...e.target.files]; if (files.length) mergeDialog?.isConnected ? mergeDialog.addFiles(files) : mergePdfs(files); };
 $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/270`));
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
@@ -1005,7 +1063,9 @@ $('fq').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { e.preve
 
 // Print: renders every page at 150 dpi into a hidden frame and invokes the browser print dialog.
 async function printDoc() {
-  if (!state.pageCount) return; await flush();
+  if (!state.pageCount) return;
+  if (state.protection && !state.protection.print) return status('This PDF\'s permissions do not allow printing. Open it with the owner password to print.');
+  await flush();
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
   const imgs = (await Promise.all(state.pages.map(async (p, i) => {
     const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
@@ -1160,6 +1220,7 @@ async function saveDoc() {
 }
 function saveAs() {
   if (!state.pageCount) return;
+  if (state.protection) return protectDialog(true);
   flush().then(() => modal('Save as', `<label>File name<input id="sn" value="${esc(state.fileName.replace(/^edited-/, ''))}"></label><p class="dnote">The PDF is downloaded to your browser's download folder.</p>`, 'Save', async o => {
     let n = o.querySelector('#sn').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
     await dlUrl(`/api/export/pdf?name=${encodeURIComponent(n)}`); await post(`/api/saved?name=${encodeURIComponent(n)}`); await refreshDirty();
@@ -1178,13 +1239,7 @@ function exportImages() {
   }));
 }
 const exportText = () => state.pageCount && flush().then(() => dlUrl('/api/export/text'));
-const exportSecure = () => {
-  if (!state.pageCount) return;
-  if (host) return flush().then(() => dlUrl('/api/export/secure'));
-  const u = prompt('Open password (leave empty for compressed, unprotected copy)', ''); if (u === null) return;
-  const o = u ? prompt('Owner password (blank = same as open password)', '') : ''; if (o === null) return;
-  flush().then(() => dlUrl('/api/export/secure?user=' + encodeURIComponent(u) + '&owner=' + encodeURIComponent(o)));
-};
+const exportSecure = () => state.pageCount && flush().then(() => protectDialog(false));
 async function closeDoc() { if (!confirmDiscard()) return; await act(() => post('/api/close')); }
 const pickFile = id => { const i = $(id); i.value = ''; i.click(); };
 function openFileMenu() {
@@ -1203,7 +1258,7 @@ function openFileMenu() {
       { label: 'Duplicate current page', run: () => act(() => post(`/api/duplicate/${sel}`)).then(() => goPage(sel + 1)) }, '-',
       { label: 'Pages from another PDF…', run: () => pickFile('merge') }] },
     { label: 'Export', disabled: !has, sub: [
-      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }, { label: host ? 'Compressed PDF (no password)' : 'Compressed / password-protected PDF…', run: exportSecure }] },
+      { label: 'Pages as PDF…', run: exportPdf }, { label: 'Pages as images…', run: exportImages }, { label: 'Text (.txt)', run: exportText }, { label: 'Compressed / password-protected PDF…', run: exportSecure }] },
     '-',
     { label: 'Print…', key: mod + 'P', disabled: !has, run: printDoc },
     { label: 'Document properties…', disabled: !has, run: docProps },
@@ -1254,7 +1309,7 @@ addEventListener('drop', e => {
   const files = [...e.dataTransfer.files];
   if (mergeDialog?.isConnected) mergeDialog.addFiles(files);
   else if (state.pageCount) mergePdfs(files);
-  else act(() => upload('/api/open', files[0])).then(() => files.length > 1 && state.pageCount && mergePdfs(files.slice(1)));
+  else act(() => openPdf(files[0])).then(() => { announceProtection(); return files.length > 1 && state.pageCount && !state.protection && mergePdfs(files.slice(1)); });
 });
 function setPanel(side, open, user) {
   const m = document.querySelector('main'), b = $(side === 'l' ? 'tl' : 'tr');
@@ -1492,7 +1547,7 @@ async function startEditor() {
     await refresh(retainedUndo);
     document.querySelector('main').inert = false;
     document.querySelector('header').inert = false;
-    status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password protection requires the server editor.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
+    status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password-protected PDFs open and save here too; passwords are never stored.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
     // Samples are fetched only on demand; a missing samples.js (older publish) just leaves the feature off.
     if (!samples) import(new URL('samples.js', document.baseURI)).then(m => {
       samples = m.createSamples({ open: file => act(() => upload('/api/open', file), e => { throw e; }), isDirty: () => state.dirty, confirmReplace: confirmDiscard, status });
