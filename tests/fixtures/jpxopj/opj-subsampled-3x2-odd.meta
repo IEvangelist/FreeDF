@@ -1,0 +1,15 @@
+{
+ "tolerance": 0,
+ "components": 4,
+ "commands": [
+  "opj_compress.exe -i <tmp>\\in.raw -F 67,45,4,8,u@1x1:3x2:3x2:1x1 -o <tmp>\\case.j2k -mct 0 -t 30,28 -n 3",
+  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+ ],
+ "depth": 8,
+ "signed": false,
+ "lossless": true,
+ "expect": "decode",
+ "opjEqualsEncoderInput": false,
+ "reference": "opj_decompress",
+ "note": " Input-equality not asserted: OpenJPEG decoded plane dims/values differ from the generator model for subsampled raw input; the reference is opj_decompress output."
+}

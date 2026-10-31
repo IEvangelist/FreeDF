@@ -1,1 +1,1 @@
-L 24 16 1 derived
+L 24 16 1 openjpeg-samples+rule native 24-bit samples from opj_decompress; decoder keeps the top 16 bits (x >> 8) then scales to 8 bit; tolerance 1 for float precision

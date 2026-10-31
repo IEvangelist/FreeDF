@@ -1,0 +1,296 @@
+{
+ "cases": {
+  "mx-lrcp-53-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-lrcp-97-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 2,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-rlcp-53-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-rlcp-97-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 2,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-rpcl-53-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-rpcl-97-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 2,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-pcrl-53-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-pcrl-97-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 2,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-cprl-53-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-cprl-97-tiles-offsets-layers": {
+   "mode": "RGB",
+   "tolerance": 2,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "mx-depth1-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth2-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth3-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth5-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth7-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth9-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth11-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth13-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth15-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native samples from opj_decompress (PGX), scaled to 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-signed12-lossless": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "signed native samples from opj_decompress; PDF has no signed samples so the decoder displays x+2^(b-1) (DC level shift), then 8 bit with round(x*255/max) (decoder's PDF sample-scaling rule)"
+  },
+  "mx-depth20-lossless": {
+   "mode": "L",
+   "tolerance": 1,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native 20-bit samples from opj_decompress; decoder keeps the top 16 bits (x >> 4) then scales to 8 bit; tolerance 1 for float precision"
+  },
+  "mx-depth24-lossless": {
+   "mode": "L",
+   "tolerance": 1,
+   "provenance": "openjpeg-samples+rule",
+   "reason": "native 24-bit samples from opj_decompress; decoder keeps the top 16 bits (x >> 8) then scales to 8 bit; tolerance 1 for float precision"
+  },
+  "ct-extra-boxes": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-extra-boxes-xlbox": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-codestream-box-to-eof": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-colr-unsupported-methods-first": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-colr-method-4-only": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-cdef-bgr-reordered": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-alpha-straight": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-alpha-premultiplied-cdef": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "premultiplied opacity (cdef type 2 / SMaskInData 2) is un-premultiplied with c = min(255, (c*255 + a/2) // a) for 0 < a < 255; OpenJPEG does not un-premultiply; underlying samples confirmed by opj_decompress"
+  },
+  "ct-alpha-ignored-smaskindata0": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "/SMaskInData 0: the embedded opacity channel is ignored (alpha 255); underlying samples confirmed by opj_decompress"
+  },
+  "pdf-smaskindata1-nocdef": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "/SMaskInData 1 without cdef: the fourth channel is straight opacity; underlying samples confirmed by opj_decompress"
+  },
+  "pdf-smaskindata2-nocdef": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "/SMaskInData 2 without cdef: premultiplied opacity (cdef type 2 / SMaskInData 2) is un-premultiplied with c = min(255, (c*255 + a/2) // a) for 0 < a < 255; OpenJPEG does not un-premultiply; underlying samples confirmed by opj_decompress"
+  },
+  "pdf-smaskindata2-overrides-cdef-straight": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "/SMaskInData 2 overrides a cdef that declares straight opacity: premultiplied opacity (cdef type 2 / SMaskInData 2) is un-premultiplied with c = min(255, (c*255 + a/2) // a) for 0 < a < 255; OpenJPEG does not un-premultiply; underlying samples confirmed by opj_decompress"
+  },
+  "pdf-smaskindata0-nocdef": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "/SMaskInData 0 with colr enumerated RGB and an unassociated fourth channel: alpha ignored; underlying samples confirmed by opj_decompress"
+  },
+  "pdf-mask-colorkey-with-smaskindata": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "colour-key /Mask zeroes alpha of matching pixels, other pixels keep the SMaskInData 1 opacity; underlying samples confirmed by opj_decompress"
+  },
+  "ct-palette-3col": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-palette-4col-alpha": {
+   "mode": "RGBA",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-palette-mixed-depth": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "pdf-indexed-ignores-pclr": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "PDF /Indexed supplies the palette; the JP2 pclr is ignored and the codestream samples are the indices; underlying samples confirmed by opj_decompress"
+  },
+  "ct-colr-sycc": {
+   "mode": "RGB",
+   "tolerance": 1,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-colr-esrgb": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "ct-colr-greyscale": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "openjpeg",
+   "reason": "pixels decoded by opj_decompress"
+  },
+  "pdf-colorspace-gray-over-rgb": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "PDF /ColorSpace DeviceGray names fewer components than the JPX has: the first channel is used (undefined by OpenJPEG); underlying samples confirmed by opj_decompress"
+  },
+  "pdf-colorspace-rgb-over-gray-component-mismatch": {
+   "mode": "L",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "PDF /ColorSpace DeviceRGB on a one-component JPX is a component-count mismatch; this decoder falls back to gray (undefined by OpenJPEG); underlying samples confirmed by opj_decompress"
+  },
+  "pdf-decode-inverted-rgb": {
+   "mode": "RGB",
+   "tolerance": 0,
+   "provenance": "derived",
+   "reason": "/Decode [1 0 1 0 1 0] inverts samples: 255 - x; underlying samples confirmed by opj_decompress"
+  },
+  "pdf-decode-subrange-gray": {
+   "mode": "L",
+   "tolerance": 1,
+   "provenance": "derived",
+   "reason": "/Decode [0.25 0.75]: round((0.25 + x/255*0.5)*255); tolerance 1 for float rounding; underlying samples confirmed by opj_decompress"
+  }
+ },
+ "openjpeg_decoder": {
+  "version": "2.5.4.",
+  "opj_decompress_sha256": "03057d12eee9882ffb9d6add3a4e815c1830910d20d3871c7b08055b02453ced",
+  "command": "opj_decompress -i <fixture codestream/jp2> -o o.pgx (reference channels at native depth)"
+ },
+ "encoders": {
+  "pillow": "12.1.1",
+  "pillow_openjpeg": "2.5.4",
+  "imagecodecs": "2026.10.10"
+ }
+}

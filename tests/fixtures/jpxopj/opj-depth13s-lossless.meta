@@ -1,0 +1,14 @@
+{
+ "tolerance": 0,
+ "components": 1,
+ "commands": [
+  "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,13,s -o <tmp>\\case.j2k -n 4",
+  "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+ ],
+ "depth": 13,
+ "signed": true,
+ "lossless": true,
+ "expect": "decode",
+ "opjEqualsEncoderInput": true,
+ "reference": "opj_decompress"
+}

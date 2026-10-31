@@ -1,1 +1,1 @@
-RGBA 40 30 0 derived
+RGBA 40 30 0 derived /SMaskInData 0 with colr enumerated RGB and an unassociated fourth channel: alpha ignored; underlying samples confirmed by opj_decompress

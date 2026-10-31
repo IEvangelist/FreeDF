@@ -1,1 +1,1 @@
-L 40 30 0 derived
+L 40 30 0 derived PDF /ColorSpace DeviceGray names fewer components than the JPX has: the first channel is used (undefined by OpenJPEG); underlying samples confirmed by opj_decompress

@@ -1,1 +1,1 @@
-RGBA 40 30 0 derived
+RGBA 40 30 0 derived /SMaskInData 0: the embedded opacity channel is ignored (alpha 255); underlying samples confirmed by opj_decompress

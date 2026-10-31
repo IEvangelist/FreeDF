@@ -1,1 +1,1 @@
-RGB 40 30 0 derived
+RGB 40 30 0 derived /Decode [1 0 1 0 1 0] inverts samples: 255 - x; underlying samples confirmed by opj_decompress

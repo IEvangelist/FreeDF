@@ -1,1 +1,1 @@
-RGBA 40 30 0 derived
+RGBA 40 30 0 derived /SMaskInData 2 overrides a cdef that declares straight opacity: premultiplied opacity (cdef type 2 / SMaskInData 2) is un-premultiplied with c = min(255, (c*255 + a/2) // a) for 0 < a < 255; OpenJPEG does not un-premultiply; underlying samples confirmed by opj_decompress

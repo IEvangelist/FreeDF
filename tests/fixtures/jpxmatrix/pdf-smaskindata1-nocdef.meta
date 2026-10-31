@@ -1,1 +1,1 @@
-RGBA 40 30 0 derived
+RGBA 40 30 0 derived /SMaskInData 1 without cdef: the fourth channel is straight opacity; underlying samples confirmed by opj_decompress

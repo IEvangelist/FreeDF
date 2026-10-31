@@ -1,0 +1,1928 @@
+{
+ "cases": {
+  "opj-lrcp-53-prec-tiles-offsets-layers": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p LRCP -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-lrcp-97-prec-tiles-offsets-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p LRCP -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1 -I",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-rlcp-53-prec-tiles-offsets-layers": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p RLCP -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-rlcp-97-prec-tiles-offsets-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p RLCP -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1 -I",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-rpcl-53-prec-tiles-offsets-layers": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p RPCL -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-rpcl-97-prec-tiles-offsets-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p RPCL -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1 -I",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-pcrl-53-prec-tiles-offsets-layers": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p PCRL -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-pcrl-97-prec-tiles-offsets-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p PCRL -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1 -I",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cprl-53-prec-tiles-offsets-layers": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p CPRL -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cprl-97-prec-tiles-offsets-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -p CPRL -n 4 -c [32,32],[16,16],[16,16],[8,8] -t 40,32 -d 5,7 -T 3,4 -r 8,3,1 -I",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-lrcp-lossless-precincts": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u -o <tmp>\\case.j2k -p LRCP -n 5 -c [64,64],[32,16],[16,32],[8,8] -t 34,30 -r 20,5,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-rlcp-lossless-precincts": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u -o <tmp>\\case.j2k -p RLCP -n 5 -c [64,64],[32,16],[16,32],[8,8] -t 34,30 -r 20,5,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-rpcl-lossless-precincts": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u -o <tmp>\\case.j2k -p RPCL -n 5 -c [64,64],[32,16],[16,32],[8,8] -t 34,30 -r 20,5,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-pcrl-lossless-precincts": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u -o <tmp>\\case.j2k -p PCRL -n 5 -c [64,64],[32,16],[16,32],[8,8] -t 34,30 -r 20,5,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cprl-lossless-precincts": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u -o <tmp>\\case.j2k -p CPRL -n 5 -c [64,64],[32,16],[16,32],[8,8] -t 34,30 -r 20,5,1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-degenerate-1px-tile-column": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u -o <tmp>\\case.j2k -n 5 -t 33,29",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress",
+   "note": "Degenerate geometry: OpenJPEG 2.5.4 does not reproduce its own lossless input at x=66 (opjEqualsEncoderInput=false); both decoders agree within 2 there, so the tolerance is 2 and the reference is still opj_decompress"
+  },
+  "opj-cblk-style-1": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-1-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 1 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-2": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 2 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-2-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 2 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-4": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 4 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-4-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 4 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-8": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 8 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-8-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 8 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-16": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 16 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-16-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 16 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-32": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 32 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-32-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 32 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-3": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 3 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-3-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 3 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-5": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 5 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-5-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 5 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-9": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 9 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-9-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 9 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-17": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 17 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-17-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 17 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-33": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 33 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-33-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 33 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-6": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 6 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-6-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 6 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-12": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 12 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-12-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 12 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-38": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 38 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-38-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 38 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-13": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 13 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-13-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 13 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-21": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 21 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-21-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 21 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-63": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -M 63 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-style-63-lossy97-layers": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -M 63 -I -r 10,4,1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-size-4x64": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -b 4,64",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-size-64x4": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -b 64,4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-size-8x32": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -b 8,32",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-size-16x16": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -b 16,16",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-size-32x128": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -b 32,32",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-cblk-size-128x32": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,1,8,u -o <tmp>\\case.j2k -b 32,32",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-markers-sop": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -SOP",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-markers-eph": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -EPH",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-markers-sop-eph": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -SOP -EPH",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-markers-plt": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -PLT",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-markers-tlm": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -TLM",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-markers-tlm-plt-sop-eph": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -TLM -PLT -SOP -EPH",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-tileparts-R": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -TP R -TLM -PLT",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-tileparts-R-rpcl-sop-eph": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -p RPCL -TP R -SOP -EPH",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-tileparts-L": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -TP L -TLM -PLT",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-tileparts-L-rpcl-sop-eph": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -p RPCL -TP L -SOP -EPH",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-tileparts-C": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -r 6,2,1 -TP C -TLM -PLT",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-tileparts-C-rpcl-sop-eph": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -t 40,32 -n 4 -p RPCL -TP C -SOP -EPH",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-poc-two-ranges": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -n 4 -POC T0=0,0,1,2,3,RLCP/T0=2,0,1,4,3,CPRL",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-poc-tiled": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -n 4 -t 40,32 -POC T0=0,0,1,2,3,RLCP/T0=2,0,1,4,3,CPRL/T1=0,0,1,4,3,LRCP",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "reject",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress",
+   "note": "opj_compress keeps only the first tile POC (res 0-2 of 4): the stream omits packets. OpenJPEG decodes it leniently; this decoder rejects POC ranges that do not cover every packet (T.800 B.12.2)"
+  },
+  "opj-roi-c1-u3": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -ROI c=1,U=3 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-roi-c1-u9": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -ROI c=1,U=9 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-roi-c1-u20": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -ROI c=1,U=20 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-97-mct": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -I -r 12",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-97-nomct-3comp": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -I -mct 0 -r 12",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-53-nomct": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -mct 0",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-53-rct": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 70,50,3,8,u -o <tmp>\\case.j2k -mct 1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-image-offset-only": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 50,40,3,8,u -o <tmp>\\case.j2k -d 13,11",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-tile-offset-large": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 50,40,3,8,u -o <tmp>\\case.j2k -d 20,25 -T 11,9 -t 17,17 -n 3",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-one-resolution": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 33,21,3,8,u -o <tmp>\\case.j2k -n 1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-max-resolutions": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 130,100,1,8,u -o <tmp>\\case.j2k -n 7",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth1u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,1,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 1,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth2u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,2,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 2,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth2s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,2,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 2,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth3u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,3,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 3,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth3s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,3,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 3,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth4u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,4,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 4,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth4s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,4,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 4,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth5u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,5,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 5,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth5s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,5,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 5,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth7u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,7,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 7,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth7s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,7,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 7,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth8u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,8,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth8s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,8,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth9u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,9,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 9,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth9s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,9,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 9,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth10u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,10,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 10,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth10s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,10,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 10,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth11u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,11,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 11,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth11s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,11,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 11,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth12u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,12,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 12,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth12s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,12,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 12,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth13u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,13,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 13,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth13s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,13,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 13,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth14u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,14,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 14,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth14s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,14,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 14,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth15u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,15,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 15,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth15s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,15,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 15,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth16u-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,16,u -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 16,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth16s-lossless": {
+   "tolerance": 0,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,16,s -o <tmp>\\case.j2k -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 16,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-depth10u-97": {
+   "tolerance": 4,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,10,u -o <tmp>\\case.j2k -I -r 6 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 10,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-depth10s-97": {
+   "tolerance": 4,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,10,s -o <tmp>\\case.j2k -I -r 6 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 10,
+   "signed": true,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-depth12u-97": {
+   "tolerance": 16,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,12,u -o <tmp>\\case.j2k -I -r 6 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 12,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-depth12s-97": {
+   "tolerance": 16,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,12,s -o <tmp>\\case.j2k -I -r 6 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 12,
+   "signed": true,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-depth16u-97": {
+   "tolerance": 256,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,16,u -o <tmp>\\case.j2k -I -r 6 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 16,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-depth16s-97": {
+   "tolerance": 256,
+   "components": 1,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,1,16,s -o <tmp>\\case.j2k -I -r 6 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 16,
+   "signed": true,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-depth12s-rgb-rct": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 40,24,3,12,s -o <tmp>\\case.j2k -mct 1 -n 4",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 12,
+   "signed": true,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-subsampled-420": {
+   "tolerance": 0,
+   "components": 4,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 66,46,4,8,u@1x1:2x2:2x2:1x1 -o <tmp>\\case.j2k -mct 0",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-subsampled-422": {
+   "tolerance": 0,
+   "components": 4,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 66,46,4,8,u@1x1:2x1:2x1:1x1 -o <tmp>\\case.j2k -mct 0",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-subsampled-3x2-odd": {
+   "tolerance": 0,
+   "components": 4,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,4,8,u@1x1:3x2:3x2:1x1 -o <tmp>\\case.j2k -mct 0 -t 30,28 -n 3",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress",
+   "note": " Input-equality not asserted: OpenJPEG decoded plane dims/values differ from the generator model for subsampled raw input; the reference is opj_decompress output."
+  },
+  "opj-subsampled-mixed-offsets": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 67,45,3,8,u@2x1:3x3:1x5 -o <tmp>\\case.j2k -mct 0 -d 5,3 -T 2,1 -n 3",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-subsampled-255": {
+   "tolerance": 0,
+   "components": 2,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 300,300,2,8,u@1x1:255x255 -o <tmp>\\case.j2k -mct 0 -n 2",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress",
+   "note": " Input-equality not asserted: OpenJPEG decoded plane dims/values differ from the generator model for subsampled raw input; the reference is opj_decompress output."
+  },
+  "opj-subsampled-prog-rpcl": {
+   "tolerance": 0,
+   "components": 4,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 66,46,4,8,u@1x1:2x2:2x1:1x1 -o <tmp>\\case.j2k -mct 0 -p RPCL -c [16,16],[8,8] -n 3",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-subsampled-prog-pcrl": {
+   "tolerance": 0,
+   "components": 4,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 66,46,4,8,u@1x1:2x2:2x1:1x1 -o <tmp>\\case.j2k -mct 0 -p PCRL -c [16,16],[8,8] -n 3",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-subsampled-prog-cprl": {
+   "tolerance": 0,
+   "components": 4,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 66,46,4,8,u@1x1:2x2:2x1:1x1 -o <tmp>\\case.j2k -mct 0 -p CPRL -c [16,16],[8,8] -n 3",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-comps-300": {
+   "tolerance": 0,
+   "components": 300,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 8,6,300,8,u -o <tmp>\\case.j2k -mct 0 -n 2",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-comps-16384": {
+   "tolerance": 0,
+   "components": 16384,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 4,4,16384,8,u -o <tmp>\\case.j2k -mct 0 -n 1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-surgery-coc-qcc-identity": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -n 4",
+    "marker surgery: add_coc_qcc_identity",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress",
+   "note": "COC/QCC repeat COD/QCD for every component"
+  },
+  "opj-surgery-coc-qcc-identity-97": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -I -r 10",
+    "marker surgery: add_coc_qcc_identity",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress"
+  },
+  "opj-surgery-coc-qcc-identity-300comps": {
+   "tolerance": 0,
+   "components": 300,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 8,6,300,8,u -o <tmp>\\case.j2k -mct 0 -n 2",
+    "marker surgery: add_coc_qcc_identity",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-surgery-crg": {
+   "tolerance": 0,
+   "components": 4,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,4,8,u@1x1:2x2:2x2:1x1 -o <tmp>\\case.j2k -mct 0 -n 3",
+    "marker surgery: add_crg",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": true,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  },
+  "opj-surgery-derived-quant": {
+   "tolerance": 2,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -I -r 10 -n 3",
+    "marker surgery: derived_quant",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress",
+   "note": "syntactically valid scalar-derived QCD over a stream coded with expounded steps (step sizes and Mb change); output is whatever OpenJPEG decodes"
+  },
+  "opj-surgery-guard-bits+1": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -n 3",
+    "marker surgery: guard_bits_+1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress",
+   "note": "guard-bit field rewritten after encoding (changes Mb); output is whatever OpenJPEG decodes"
+  },
+  "opj-surgery-guard-bits-1": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -n 3",
+    "marker surgery: guard_bits_-1",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": false,
+   "reference": "opj_decompress",
+   "note": "guard-bit field rewritten after encoding (changes Mb); output is whatever OpenJPEG decodes"
+  },
+  "opj-surgery-poc-whole-image": {
+   "tolerance": 0,
+   "components": 3,
+   "commands": [
+    "opj_compress.exe -i <tmp>\\in.raw -F 64,48,3,8,u -o <tmp>\\case.j2k -n 3 -r 6,2,1 -PLT",
+    "marker surgery: add_poc",
+    "opj_decompress.exe -i <tmp>\\case.j2k -o <tmp>\\ref.pgx"
+   ],
+   "depth": 8,
+   "signed": false,
+   "lossless": false,
+   "expect": "decode",
+   "opjEqualsEncoderInput": true,
+   "reference": "opj_decompress"
+  }
+ },
+ "outOfScope": {
+  "depth>16": "opj_compress RAW input is limited to 16 bits per sample; a >16-bit PGX writer would be needed (no OpenJPEG-produced >16-bit codestream is available here), so >16-bit handling is covered only by hand-built codestreams in JpxConformanceTests.",
+  "PLM": "no OpenJPEG encoder option; decoders ignore it. Covered by tests/fixtures/jpx (see make_jpx_fixtures.py).",
+  "PPM/PPT multi-tile/multi-part": "covered by tests/fixtures/jpx fixtures (decoded by OpenJPEG through Pillow); only the single-tile forms are regenerated here.",
+  "fewer layers/resolutions decode": "the decoder API always decodes every layer/resolution (PDF requires it); opj_decompress -l/-r references would have no counterpart.",
+  "JPX Part 2 extensions": "must fail gracefully; no OpenJPEG encoder exists. Out of scope for generated fixtures.",
+  "scalar-derived/guard-bits as encoder output": "opj_compress always writes none (5/3) or expounded (9/7) with 2 guard bits; the derived/guard variants are marker surgery whose pixels are still decoded by opj_decompress."
+ },
+ "skipped": {
+  "opj-surgery-ppm": "marker surgery pack_packet_headers_ppm not applicable: fixture must encode one complete code-block packet",
+  "opj-surgery-ppt": "marker surgery pack_packet_headers_ppt not applicable: fixture must encode one complete code-block packet"
+ },
+ "openjpeg": {
+  "version": "2.5.4.",
+  "source": "official release openjpeg-v2.5.4-windows-x64.zip (github.com/uclouvain/openjpeg)",
+  "opj_compress_sha256": "f09fa59016677a6dd42b244d40ff01cd17f1fabab7b7730c7c42c25fcd8176df",
+  "opj_decompress_sha256": "03057d12eee9882ffb9d6add3a4e815c1830910d20d3871c7b08055b02453ced"
+ }
+}

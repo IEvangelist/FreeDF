@@ -1,1 +1,1 @@
-RGB 40 30 0 derived
+RGB 40 30 0 derived PDF /Indexed supplies the palette; the JP2 pclr is ignored and the codestream samples are the indices; underlying samples confirmed by opj_decompress
