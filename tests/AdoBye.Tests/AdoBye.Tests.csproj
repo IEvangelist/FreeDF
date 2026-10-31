@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.Signing.Http\PortableDocument.Signing.Http.csproj" />
     <ProjectReference Include="..\..\src\PortableDocument.FallbackFonts\PortableDocument.FallbackFonts.csproj" />
     <ProjectReference Include="..\..\tools\AdoBye.Samples\AdoBye.Samples.csproj" />
     <ProjectReference Include="..\..\tools\AdoBye.EditorWeb\AdoBye.EditorWeb.csproj" ReferenceOutputAssembly="false" />

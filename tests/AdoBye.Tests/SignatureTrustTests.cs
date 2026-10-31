@@ -5,6 +5,7 @@ using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using PortableDocument.Core;
 using PortableDocument.Document;
+using PortableDocument.Signing.Http;
 using Xunit;
 
 namespace AdoBye.Tests;
