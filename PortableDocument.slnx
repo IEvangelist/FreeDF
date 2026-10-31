@@ -24,5 +24,6 @@
     <Project Path="tools/AdoBye.AotSmoke/AdoBye.AotSmoke.csproj" />
     <Project Path="tools/AdoBye.RenderCompare/AdoBye.RenderCompare.csproj" />
     <Project Path="tools/AdoBye.FontPack/AdoBye.FontPack.csproj" />
+    <Project Path="tools/AdoBye.Profile/AdoBye.Profile.csproj" />
   </Folder>
 </Solution>
