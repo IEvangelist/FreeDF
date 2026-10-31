@@ -575,7 +575,12 @@ async function setField(name, value, quiet = false) {
     document.querySelectorAll('.thumb img').forEach((im, k) => queueThumbnail(im, `/api/page/${k}.png?dpi=40&v=${state.version}`));
   } catch (e) { reportError(e); }
 }
-const commitField = (w, value) => { pushUndo(); return setField(w.name, value); };
+let fieldSave = Promise.resolve();
+const commitField = (w, value) => {
+  const save = () => { pushUndo(); return setField(w.name, value); };
+  fieldSave = fieldSave.then(save, save);
+  return fieldSave;
+};
 
 // Fillable widgets sit above every other layer object; the container persists across repaints so typing keeps focus.
 function paintWidgets(layer) {
@@ -770,6 +775,7 @@ function setTool(t) {
 
 function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null), fv: widgetState() })); if (undo.length > 100) undo.shift(); }
 async function doUndo() {
+  await fieldSave;
   if (!undo.length) return pageHistoryStep('undo');
   const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null; curSpan = null;
   const changed = [];
@@ -873,6 +879,8 @@ function objProps() {
 let itemSave = Promise.resolve();
 function queueSave(delay = 300) { clearTimeout(saveT); saveT = setTimeout(flush, delay); recovery?.pending(); }
 async function flush() {
+  let pendingFields;
+  do { pendingFields = fieldSave; await pendingFields; } while (pendingFields !== fieldSave);
   try { await itemSave; } catch (e) { if (!saveT) throw e; }
   let pending;
   do { pending = objectSave; await pending; } while (pending !== objectSave);

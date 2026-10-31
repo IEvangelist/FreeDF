@@ -92,12 +92,30 @@ static class EditorForms
         await page.Locator("#layer .wgt.text").FillAsync("Ada"); await page.Keyboard.PressAsync("Tab");
         await page.Locator("#layer .wgt.check").CheckAsync();
         await page.Locator("#layer .wgt.radio").Nth(1).CheckAsync();
+        // Hold one reply until the next field's input event so undo snapshots cannot pass only on a fast worker.
+        await page.EvaluateAsync("""
+            () => {
+              const original = pdfHost.request.bind(pdfHost);
+              let release;
+              const completion = new Promise(resolve => { release = resolve; });
+              window.releaseFieldReply = () => { release(); delete window.releaseFieldReply; };
+              pdfHost.request = async (url, options) => {
+                const delay = url.startsWith('/api/field?') && new URL(url, location.href).searchParams.get('n') === 'Tags';
+                if (delay) pdfHost.request = original;
+                const response = await original(url, options);
+                if (delay) await completion;
+                return response;
+              };
+            }
+            """);
         await page.Locator("#layer .wgt.list").SelectOptionAsync(["b", "c"]);
         await page.Locator("#layer .wgt.combo").FillAsync("Zurich"); await page.Keyboard.PressAsync("Tab");
+        await page.EvaluateAsync("window.releaseFieldReply()");
         var expected = new Dictionary<string, string> { ["Name"] = "Ada", ["Agree"] = "Yes", ["Size"] = "M", ["City"] = "Zurich" };
         await Poll(async () => { var values = await Values(page); return expected.All(kv => FieldValue(JsonDocument.Parse(values).RootElement, kv.Key) == kv.Value); }, name + ": UI edits reach the document");
 
-        await page.Locator("body").PressAsync("Control+z");
+        await page.Locator("#form-mode button[aria-pressed=true]").FocusAsync();
+        await page.Keyboard.PressAsync("Control+z");
         await Poll(async () => FieldValue(JsonDocument.Parse(await Values(page)).RootElement, "City") == "", name + ": undo restores the previous combo value");
 
         await page.Locator("#dl").ClickAsync();

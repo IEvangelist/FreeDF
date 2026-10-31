@@ -114,6 +114,8 @@ resizing and authoring fields. Choose **Fill out** to type values or operate
 checkboxes and other form controls without moving them. The mode stays selected
 while navigating or saving that document; changing mode does not modify the PDF,
 its dirty state or undo history. `--forms` covers both modes and their toggle.
+Rapid on-page field edits commit in order; editor undo and save wait for queued
+values so undoing one field cannot restore stale values in another.
 `--annotations` checks real note creation, property editing and save/reopen.
 The experimental render-replica pool remains opt-in with `?pool=1`; replicas do
 not yet share lazy fallback-font assets, so it is not the default editor path.
