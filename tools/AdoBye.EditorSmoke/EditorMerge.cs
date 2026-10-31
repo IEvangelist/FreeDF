@@ -12,6 +12,7 @@ static class EditorMerge
         var entries = errors.ToArray();
         string[] stack =
         [
+            "   at EditorSession.HandleCore(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)",
             "   at EditorSession.Handle(String method, String path, IReadOnlyDictionary`2 query, Byte[] body, String uploadName)",
             "   at BrowserEditor.Execute(Command c, Byte[] body)",
         ];

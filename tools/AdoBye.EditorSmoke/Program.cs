@@ -50,7 +50,8 @@ var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
 var saveOverlapOnly = args.Length == 2 && args[0] == "--save-overlap";
-if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap] <published-wwwroot>");
+var protectionOnly = args.Length == 2 && args[0] == "--protection";
+if (args.Length != 1 && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !protectionOnly) throw new ArgumentException("Usage: AdoBye.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--protection] <published-wwwroot>");
 var root = Path.GetFullPath(args[^1]);
 if (!File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
@@ -170,6 +171,13 @@ try
         await EditorMerge.Run(page);
         Check(network.IsEmpty && EditorMerge.ExpectedErrors(errors, ExpectedRecoveryError), "No outbound PDF traffic or unexpected browser errors: " + System.Text.Json.JsonSerializer.Serialize(errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: keyboard merge controls/focus/Escape, inline server rejection with retained choices, direct later-frame rejection preserving state/history/assets and undo, multi-file order/range/insertion, render/save/reopen.");
+        return;
+    }
+    if (protectionOnly)
+    {
+        await EditorProtection.Run(page);
+        Check(network.IsEmpty && errors.All(e => EditorProtection.ExpectedError(e) || ExpectedRecoveryError(e)), "No outbound PDF traffic or unexpected browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
+        Console.WriteLine("PASS: encrypted samples open through the accessible password dialog (cancel, wrong password retry), nothing persisted, permissions enforced, protected save (AES-256) and owner protection removal in WASM.");
         return;
     }
     if (recoveryOnly)

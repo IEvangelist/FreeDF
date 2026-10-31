@@ -43,6 +43,8 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 | `17-encrypted-user-password.pdf` | `user123` | `owner-user123` |
 | `18-encrypted-owner-restricted.pdf` | *(none — opens freely)* | `owner123` |
 
+**Try them in the browser editor.** Open `17` and the editor asks for the password (use `user123`; `owner-user123` opens it with owner rights, which unlocks "Remove protection" under Save as). Open `18` and it opens immediately but print, copy, modify and annotate actions are refused with a message; supply `owner123` through `PdfDocument.Load(bytes, "owner123")` or the server editor to lift that. Save as on a protected document writes an AES-256 (R6) copy with the passwords and permission checkboxes you choose. Passwords are used once and never stored, and encrypted documents never write recovery copies. See [docs/browser-encryption.md](../docs/browser-encryption.md).
+
 ## The full collection
 
 `27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26, and `.gitignore` excludes it); `tools/Validate-Samples.ps1` or `AdoBye.Samples generate samples 27-` creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.

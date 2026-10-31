@@ -65,10 +65,11 @@ public static partial class BrowserEditor
     {
         if (e is System.Security.Cryptography.CryptographicException or PlatformNotSupportedException && c?.Method == "POST" && c.Path is "/api/open" or "/api/import" or "/api/inspect")
         {
-            var message = "Encrypted PDFs require the server editor. This browser cannot open this protection; no decrypted recovery copy was stored. " + e.Message;
+            var message = "This PDF uses encryption the browser editor cannot process; no decrypted recovery copy was stored. " + e.Message;
             Console.Error.WriteLine(message);
             return JsonSerializer.Serialize(new { error = message }, Json);
         }
+        if (e is ArgumentException && e.Message.StartsWith("password-", StringComparison.Ordinal)) return JsonSerializer.Serialize(new { error = e.Message }, Json);
         Console.Error.WriteLine(e is NotSupportedException ? e.Message : e);
         return JsonSerializer.Serialize(new { error = e.Message }, Json);
     }
