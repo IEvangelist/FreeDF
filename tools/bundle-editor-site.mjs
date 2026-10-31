@@ -43,28 +43,48 @@ for (const match of cssLinks.slice(1)) html = html.replace(match[0], '');
 // Classic scripts, in document order.
 const classic = [...html.matchAll(/<script src="([^"]+\.js)" defer><\/script>\n?/g)];
 if (classic.map(match => match[1]).join() !== 'editor.js,ui.js') fail('expected deferred classic scripts editor.js then ui.js, found ' + classic.map(match => match[1]).join());
-const dynamicImport = /import\(new URL\('([A-Za-z0-9._-]+\.js)', document\.baseURI\)\)/g;
+const dynamicImport = /import\(new URL\('([A-Za-z0-9._-]+\.m?js)', document\.baseURI\)\)/g;
 const viaRegistry = text => text.replace(dynamicImport, (_, name) => `__editorImport('${name}')`);
 const editorJs = viaRegistry(read('editor.js')) + '\n;\n' + viaRegistry(read('ui.js'));
 rmSync(join(site, 'ui.js'));
 write('editor.js', editorJs);
 html = html.replace(classic[1][0], '');
 
-// Module members.
-const members = ['host.js', 'pool.js', 'scheduler.js', 'sw-client.js', 'recovery.js', 'annotations.js', 'form-fields.js', 'samples.js'];
+// Module members: everything reachable from the page's dynamic imports and host.js through static or dynamic imports.
+// Discovery (not a fixed list) means a new lazily imported module is bundled automatically instead of being dropped.
+const NAME = '[A-Za-z0-9._-]+\\.m?js';
+const dynamicRef = new RegExp(`import\\(new URL\\('(${NAME})', document\\.baseURI\\)\\)`, 'g');
+const staticImport = new RegExp(`^import\\s+(?:(\\*\\s+as\\s+[A-Za-z_$][\\w$]*)|\\{([^}]*)\\})\\s+from\\s+'\\./(${NAME})';?[ \\t]*$`, 'gm');
+const siblingDynamic = new RegExp(`import\\('\\./(${NAME})'\\)`, 'g');
+const members = [];
+const registryRef = new RegExp(`__editorImport\\('(${NAME})'\\)`, 'g');
+const queue = ['host.js', ...[html, editorJs].flatMap(text => [...text.matchAll(dynamicRef), ...text.matchAll(registryRef)].map(match => match[1]))];
+while (queue.length) {
+  const name = queue.shift();
+  if (members.includes(name)) continue;
+  if (!existsSync(join(site, name))) fail(`imported module ${name} is not part of the published site.`);
+  members.push(name);
+  const source = read(name);
+  for (const match of source.matchAll(staticImport)) queue.push(match[3]);
+  for (const match of source.matchAll(siblingDynamic)) queue.push(match[1]);
+}
 const transform = (name, source) => {
   const exported = [];
   let text = source.replace(/^export\s+(async\s+function|function|class|const|let)\s+([A-Za-z_$][\w$]*)/gm, (_, kind, id) => { exported.push(id); return `${kind} ${id}`; });
-  text = text.replace(/^import\s+\{([^}]*)\}\s+from\s+'\.\/([A-Za-z0-9._-]+\.js)';?[ \t]*$/gm, (_, names, from) => {
+  text = text.replace(/^export\s+\{([^}]*)\};?[ \t]*$/gm, (_, list) => {
+    for (const item of list.split(',').map(part => part.trim()).filter(Boolean)) {
+      const [local, alias = local] = item.split(/\s+as\s+/);
+      exported.push(local === alias ? local : `${alias}: ${local}`);
+    }
+    return '';
+  });
+  text = text.replace(staticImport, (_, namespace, names, from) => {
     if (!members.includes(from)) fail(`${name} imports ${from}, which is not part of the bundle.`);
-    return `const {${names}} = __require('${from}');`;
+    return namespace ? `const ${namespace.replace(/\*\s+as\s+/, '')} = __require('${from}');` : `const {${names.replace(/\s+as\s+/g, ': ')}} = __require('${from}');`;
   });
-  text = text.replace(/import\('\.\/([A-Za-z0-9._-]+\.js)'\)/g, (_, from) => {
-    if (!members.includes(from)) fail(`${name} dynamically imports ${from}, which is not part of the bundle.`);
-    return `__import('${from}')`;
-  });
-  text = text.replace(dynamicImport, (_, from) => `__import('${from}')`);
-  if (/^(import|export)\b/m.test(text)) fail(`${name} still contains an unhandled import/export statement.`);
+  text = text.replace(siblingDynamic, (_, from) => `__import('${from}')`);
+  text = text.replace(dynamicRef, (_, from) => `__import('${from}')`);
+  if (/^(import|export)\b/m.test(text)) fail(`${name} still contains an unhandled import/export statement (default and re-exports are not supported).`);
   if (/^(await|for await)\b/m.test(text)) fail(`${name} uses top-level await, which cannot be wrapped.`);
   return { exported, text };
 };

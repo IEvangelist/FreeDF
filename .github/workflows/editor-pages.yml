@@ -48,6 +48,8 @@ jobs:
             Aot = $env:EDITOR_AOT -eq 'true'
           }
           ./tools/Publish-EditorPages.ps1 @options
+      - name: Verify the publish-time bundler
+        run: node --test tools/bundle-editor-site.test.mjs
       - name: Verify worker cache and scheduling invariants
         run: |
           node --test tools/AdoBye.EditorWasm/tests/*.test.mjs
