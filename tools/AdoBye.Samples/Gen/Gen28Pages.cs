@@ -160,8 +160,8 @@ sealed partial class Gen28
         [
             ("3", "Library: open and extract"), ("4", "Library: extract and allocations"), ("5", "Library: render stages"),
             ("6", "Editor: before and after"), ("7", "Editor: JIT vs AOT"), ("8", "Editor: goals vs reality"), ("9", "Editor: worker pool"),
-            ("10", "Brand: names and marks"), ("11", "Brand: palettes and contrast"), ("12", "Brand: type pairings"), ("13", "Brand: mock applications"),
-            ("14", "Spec parity: overview"), ("15", "Spec parity: parser"), ("16", "Spec parity: renderer, editor"), ("17", "Method and provenance"),
+            ("10", "Brand: names and marks"), ("11", "Brand: Caret due diligence"), ("12", "Brand: palettes and contrast"), ("13", "Brand: type pairings"), ("14", "Brand: mock applications"),
+            ("15", "Spec parity: overview"), ("16", "Spec parity: parser"), ("17", "Spec parity: renderer, editor"), ("18", "Method and provenance"),
         ];
         var ty = y - 24;
         foreach (var (pg, title) in entries)

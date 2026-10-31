@@ -18,6 +18,11 @@ sealed partial class Gen28
         "In the API" => ("#E0E7FF", "#312E81"),
         "Legacy" => ("#F1F5F9", "#334155"),
         "Cancelled" => ("#FFE4E6", "#881337"),
+        "Unclaimed" => ("#D1FAE5", "#064E3B"),
+        "Taken" => ("#FFE4E6", "#881337"),
+        "Risk" => ("#FFE4E6", "#881337"),
+        "Unverified" => ("#FEF3C7", "#78350F"),
+        "Noise" => ("#F1F5F9", "#334155"),
         _ => ("#E0E7FF", "#312E81"),
     };
 

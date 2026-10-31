@@ -80,6 +80,7 @@ sealed partial class Gen28
         GoalsPage();
         PoolPage();
         BrandNamesPage();
+        BrandCaretPage();
         BrandPalettePage();
         BrandTypePage();
         BrandApplicationsPage();

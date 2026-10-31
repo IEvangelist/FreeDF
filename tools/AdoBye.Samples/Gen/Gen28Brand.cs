@@ -127,6 +127,65 @@ sealed partial class Gen28
         });
     }
 
+    // ---- Caret due diligence ---------------------------------------------------------------------------------------------------
+
+    void BrandCaretPage()
+    {
+        var y = ContentPage("Part 2  /  Brand ideas", Violet2, "Caret: name due diligence",
+            "If the project took the Caret direction, here is what a quick check on 2026-10-31 found. Not legal advice, and not a clearance: it is a first look.",
+            "Brand: Caret due diligence");
+        y -= 10;
+        Fig(Marks[3].Alt, () =>
+        {
+            Box(_pg, M, y - 74, 74, 74, fill: "#E2E8F0", r: 10);
+            Mark(3, M + 9, y - 65, 56);
+        });
+        T("P", () => Para(_t.Sans, 9.4, M + 92, y - 14, W - 92, "Caret is the editor's core gesture: the insertion point where text changes. It is also the PDF annotation subtype /Subtype /Caret, so the name ties to the format itself. Both facts cut two ways, as below.", Ink, 13.2));
+        y -= 92;
+        SubHeading(y, "Name due diligence (2026-10-31, not legal advice)", Violet2);
+        string[][] rows =
+        [
+            ["NuGet", "Ids Caret and Caret.Pdf returned 404. Nearby ids such as WpfCaret exist.", "Unclaimed"],
+            ["npm", "caret is taken: a tiny package that inserts a caret and text beneath a string.", "Taken"],
+            ["GitHub", "A user or organisation named caret already exists.", "Taken"],
+            ["caret.io", "An established Markdown and text editor (Caret.io Ltd.; Mac, Windows, Linux; winget package Caret). Same broad category, text editing: the biggest trademark and discoverability risk.", "Risk"],
+            ["caretpdf.com", "Does not resolve. That is not proof it is available; WHOIS has not been checked.", "Unverified"],
+            ["getcaret.com", "Resolves, so presumably taken.", "Taken"],
+            ["Search noise", "caret is a well-known R machine-learning package, and /Subtype /Caret is a PDF annotation name. That hurts search, but also ties to the insertion-caret mark.", "Noise"],
+        ];
+        var yb = DataTable(M, y - 8, [new("Where", 92, true), new("What the check found", W - 92 - 84), new("Reading", 84, false, true)], rows,
+            "Availability checks for the name Caret: where it was checked, what was found and a reading.", 24);
+        y = yb - 24;
+        SubHeading(y, "Recommended next steps", Violet2);
+        string[] steps =
+        [
+            "Run a formal trademark search (USPTO and EUIPO), with counsel, focused on software and text-editing classes because of caret.io.",
+            "Check domain availability with WHOIS before relying on caretpdf.com or any variant.",
+            "Reserve the NuGet package ids (Caret, Caret.Pdf) and the npm scope, and consider a GitHub organisation, if the name is chosen.",
+            "Weigh the alternatives on the previous page: a compound such as Caret.Pdf may separate it from caret.io, but that is a legal question, not a design one.",
+        ];
+        var list = new Node("L", _sec);
+        var yy = y - 22;
+        foreach (var st in steps)
+        {
+            var li = new Node("LI", list);
+            var lbl = new Node("Lbl", li);
+            var body = new Node("LBody", li);
+            var y0 = yy;
+            Mc(lbl, () => Dot(M + 4, y0 + 3.5, 2.2, Violet2));
+            Mc(body, () => Para(_t.Sans, 9.2, M + 16, y0, W - 20, st, Ink, 12.8));
+            yy -= ParaH(_t.Sans, 9.2, W - 20, st, 12.8) + 7;
+        }
+        var note = "Checked by hand on 2026-10-31 against public registries and sites. Results can change; nothing here is a trademark opinion, and no name has been chosen.";
+        var nh = ParaH(_t.Sans, 9, W - 40, note, 12.6) + 22;
+        Art(() => { Box(_pg, M, yy - 6 - nh, W, nh, fill: "#F5F3FF", stroke: "#DDD6FE", r: 9); Box(_pg, M, yy - 6 - nh + 6, 3, nh - 12, fill: Violet2, r: 1.5); });
+        T("P", () =>
+        {
+            Tx(_t.SansB, 8, M + 16, yy - 20, "STATUS OF THIS CHECK", Violet2, tracking: 1.3);
+            Para(_t.Sans, 9, M + 16, yy - 33, W - 40, note, Ink, 12.6);
+        });
+    }
+
     // ---- 11: palettes ----------------------------------------------------------------------------------------------------------------
 
     sealed record Swatch(string Name, string Hex);

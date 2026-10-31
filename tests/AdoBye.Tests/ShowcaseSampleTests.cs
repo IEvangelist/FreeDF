@@ -31,10 +31,10 @@ public class ShowcaseSampleTests(GeneratedSamples gen) : IClassFixture<Generated
     }
 
     [Fact]
-    public void HasSeventeenA4PagesWithTitleLanguageAndOutline()
+    public void HasEighteenA4PagesWithTitleLanguageAndOutline()
     {
         var doc = Doc();
-        Assert.Equal(17, doc.Pages.Count);
+        Assert.Equal(18, doc.Pages.Count);
         Assert.All(doc.Pages, p => { Assert.InRange(p.MediaBox.Width, 595.2, 595.4); Assert.InRange(p.MediaBox.Height, 841.8, 842.0); });
         Assert.Contains("Measured, named, mapped", doc.Info("Title"));
         var catalog = (PdfDictionary)doc.File.Resolve(doc.File.Trailer.Get("Root"))!;
@@ -42,8 +42,8 @@ public class ShowcaseSampleTests(GeneratedSamples gen) : IClassFixture<Generated
         Assert.True(((PdfDictionary)doc.File.Resolve(catalog.Get("ViewerPreferences"))!).Get("DisplayDocTitle") is PdfBoolean { Value: true });
         var outline = doc.GetOutlines();
         Assert.Equal(["Cover", "Read this first", "Part 1: Benchmarks", "Part 2: Brand ideas", "Part 3: Spec parity", "Method and provenance"], outline.Select(o => o.Title));
-        Assert.Equal([0, 1, 2, 9, 13, 16], outline.Select(o => o.PageIndex));
-        Assert.Equal([7, 4, 3], outline.Skip(2).Take(3).Select(o => o.Children.Count));
+        Assert.Equal([0, 1, 2, 9, 14, 17], outline.Select(o => o.PageIndex));
+        Assert.Equal([7, 5, 3], outline.Skip(2).Take(3).Select(o => o.Children.Count));
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class ShowcaseSampleTests(GeneratedSamples gen) : IClassFixture<Generated
         var figures = all.Where(e => e.StandardType == "Figure").ToList();
         Assert.True(figures.Count >= 30);
         Assert.All(figures, f => Assert.False(string.IsNullOrWhiteSpace(f.Alt), "figure without alternative text"));
-        Assert.Equal(17, all.Count(e => e.StandardType == "H1"));
+        Assert.Equal(18, all.Count(e => e.StandardType == "H1"));
         Assert.Contains(all, e => e.StandardType == "Table");
         Assert.Contains(all, e => e.StandardType == "TH");
         Assert.Contains(all, e => e.StandardType == "L");
@@ -129,7 +129,7 @@ public class ShowcaseSampleTests(GeneratedSamples gen) : IClassFixture<Generated
             }
             else if (section == "## Editor" && cells.Length > 2 && cells[2].StartsWith("Partial", StringComparison.Ordinal)) editorPartial++;
         }
-        var pills = Enumerable.Range(14, 2).SelectMany(p => DocumentRenderer.ExtractText(doc.Pages[p]).Select(s => s.Text)).ToList();
+        var pills = Enumerable.Range(15, 2).SelectMany(p => DocumentRenderer.ExtractText(doc.Pages[p]).Select(s => s.Text)).ToList();
         Assert.Equal(done, pills.Count(t => t == "Done"));
         Assert.Equal(partial + editorPartial, pills.Count(t => t == "Partial"));
         Assert.Equal(15, partial + editorPartial);
