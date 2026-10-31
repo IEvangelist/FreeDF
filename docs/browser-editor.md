@@ -117,7 +117,7 @@ zero overhead or of public-network performance.
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
 | Redaction | Same content-removing redactor: arbitrary paths/strokes/clips, rotated content, per-invocation shared/nested Forms, partial inline/stencil image blanking and hidden optional content; not a painted-cover substitute |
-| Forms: text, button and choice fields | Same field-value edits; existing UI represents choice values as text |
+| Forms: text, button and choice fields | Select mode exposes on-page text/comb/multiline, combo/list, checkbox and radio controls with native Tab/Space interaction; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
 | Page rotate/delete/reorder/duplicate; blank insert; merge/import | Same page editor |
 | Title/document metadata; search/case matching/highlights | Same local session |
 | Save / Save as / Download; PDF page-range extraction | Downloads a copy; cannot overwrite the original filesystem path |
@@ -140,6 +140,13 @@ The existing PDF engine's format/coverage limitations still apply (see
 `spec-matrix.md`). Complex or large documents and high-DPI multi-page exports
 can take substantial worker time or exhaust browser memory. This host deliberately uses
 single-threaded WASM in a dedicated module worker for Pages compatibility.
+
+On-page form controls sit above content selection. Page-sized backgrounds and
+imported page groups (at least 90% of the page area) require Alt+click to select;
+plain clicks no longer select the whole page accidentally. Run
+`--forms <published-wwwroot-or-url>` for the focused UI/save/reopen regression
+against the AcroForm sample and a locally merged collection. This does not claim
+JavaScript/Submit/Reset action execution or form filling in Preview mode.
 The local publish script defaults to untrimmed/non-AOT and needs no `wasm-tools`;
 `-Aot` and the Pages workflow trim the framework while preserving application
 reflection roots for shared editor JSON payloads. The Pages workflow selects
