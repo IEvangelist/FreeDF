@@ -10,6 +10,7 @@ all of the above -> validated (single gate) -> package (manifest verified) -> de
 
 - **Build once.** The published site is cached by a hash of every input that can change it; an exact hit skips the AOT publish. Misses restore incremental intermediates and otherwise fall back to a full build. The site is uploaded as the `editor-site` artifact with a SHA-256 manifest; smoke jobs and `package` verify it, so deploy ships exactly the validated bytes.
 - **Isolation.** Each smoke chunk has its own runner, browser and artifact folder. Timing gates are not part of the blocking pipeline (see Performance).
+- **Concurrency.** Runs are grouped by Git ref. A new run cancels older runs on the same ref, but feature-branch validation cannot cancel a `main` deployment or another branch's checks.
 - **Gate.** `validated` fails unless every planned job succeeded. Partial (single-chunk) runs never package or deploy.
 
 ## Run one chunk

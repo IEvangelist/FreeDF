@@ -12,7 +12,7 @@ public sealed partial class EditorSession
             ?? throw new NotSupportedException($"No editor JSON metadata for {typeof(T)}."));
 
     sealed record EmptyReply;
-    sealed record PageDetails(int Index, int Id, int Rotation, double X0, double Top, double Width, double Height);
+    sealed record PageDetails(int Index, int Id, int Rotation, double X0, double Top, double Width, double Height, double UserUnit);
     sealed record ProtectionDetails(bool Owner, string Method, bool PublicKey, bool Print, bool Copy, bool Modify,
         bool Annotate, bool FillForms, bool Assemble);
     sealed record StateReply(int Version, string FileName, int PageCount, IEnumerable<PageDetails> Pages, bool Dirty,

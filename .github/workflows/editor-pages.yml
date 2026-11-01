@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: editor-pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  group: editor-pages-${{ github.ref }}
   cancel-in-progress: true
 
 env:

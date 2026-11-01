@@ -744,7 +744,7 @@ public sealed partial class EditorSession(FontCatalog catalog, IFontFallback? fo
             {
                 case "state":
                     var doc = editor.PageCount == 0 ? null : BaseSnap();
-                    var pages = doc?.Pages.Select((pg, i) => new PageDetails(i, editor.PageId(i), pg.Rotate, pg.CropBox.Left, pg.CropBox.Top, pg.CropBox.Width, pg.CropBox.Height)) ?? [];
+                    var pages = doc?.Pages.Select((pg, i) => new PageDetails(i, editor.PageId(i), pg.Rotate, pg.CropBox.Left, pg.CropBox.Top, pg.CropBox.Width, pg.CropBox.Height, pg.UserUnit)) ?? [];
                     return AsJson(new StateReply(version, fileName, editor.PageCount, pages, version != savedVersion, savePath is not null, recoverySupported, pageUndo.Count, pageRedo.Count, ProtectionState()));
                 case "recovery": return CaptureRecovery();
                 case "snapshot": return SnapshotBytes(Q("bare") == "true");
