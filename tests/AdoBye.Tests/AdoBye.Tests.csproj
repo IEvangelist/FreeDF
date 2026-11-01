@@ -32,6 +32,7 @@
     <Compile Include="..\..\tools\AdoBye.EditorWeb\FormObjectEditPolicy.cs" Link="EditorWeb\FormObjectEditPolicy.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\EditorSession.cs" Link="EditorWeb\EditorSession.cs" />
     <Compile Include="..\..\tools\AdoBye.EditorWeb\EditorForms.cs" Link="EditorWeb\EditorForms.cs" />
+    <Compile Include="..\..\tools\AdoBye.EditorSmoke\MergeErrorClassifier.cs" Link="EditorSmoke\MergeErrorClassifier.cs" />
   </ItemGroup>
 
   <ItemGroup>
