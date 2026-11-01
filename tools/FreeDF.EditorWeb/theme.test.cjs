@@ -17,12 +17,33 @@ function boot(saved = {}) {
     doc, document: { documentElement: doc, querySelector: () => meta }, localStorage,
     q: () => meta, store: { get: localStorage.getItem, set: (k, v) => v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) },
     window: {}, toast() {}, say() {}, setTheme() {}, setMotion() {}, setFullMotion() {},
+    dispatchEvent() {}, Event: class { constructor(type) { this.type = type; } },
   });
   vm.runInContext(head, context);
+  vm.runInContext(html.match(/<script>(try\{for\(const \[key,values\].*?)<\/script>/s)[1], context);
   const before = { ...doc.dataset, meta: meta.content };
   vm.runInContext(colors, context);
-  return { api: context.window.editorUi, doc, meta, values, before };
+  return { api: context.window.editorUi, doc, meta, values, before, context };
 }
+
+test('layout settings persist independently before paint, reject invalid values and reset only density', () => {
+  let state = boot({ 'editor.theme': 'dark', 'editor.primary': 'cyan' });
+  vm.runInContext("setLayout('menuDensity', 'compact'); setLayout('sidebarDensity', 'comfortable'); setLayout('textSize', 'large');", state.context);
+  state = boot(Object.fromEntries(state.values));
+  assert.equal(state.before.menuDensity, 'compact');
+  assert.equal(state.before.sidebarDensity, 'comfortable');
+  assert.equal(state.before.textSize, 'large');
+  assert.throws(() => vm.runInContext("setLayout('textSize', 'invalid')", state.context), /Unsupported layout/);
+  vm.runInContext("for (const key of Object.keys(layoutChoices)) setLayout(key, 'default')", state.context);
+  assert.equal(state.values.has('editor.menuDensity'), false);
+  assert.equal(state.values.has('editor.sidebarDensity'), false);
+  assert.equal(state.values.has('editor.textSize'), false);
+  assert.equal(state.values.get('editor.theme'), 'dark');
+  assert.equal(state.values.get('editor.primary'), 'cyan');
+  state = boot({ 'editor.menuDensity': 'invalid', 'editor.textSize': '__proto__' });
+  assert.equal(state.before.menuDensity, undefined);
+  assert.equal(state.before.textSize, undefined);
+});
 
 test('primary and accent shade persist, reset and apply before paint', () => {
   let state = boot();

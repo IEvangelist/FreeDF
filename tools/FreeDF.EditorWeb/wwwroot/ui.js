@@ -40,6 +40,14 @@
     if (role === 'primary') { const meta = q('meta[name="theme-color"]'); if (meta) meta.content = COLORS.find(x => x[0] === v)[2]; }
   };
   const setPrimary = v => setColor('primary', v, 'pink'), setAccent = v => setColor('accent', v, 'medium');
+  const spacing = [['compact', 'Compact'], ['default', 'Default'], ['comfortable', 'Comfortable']];
+  const layoutChoices = { menuDensity: spacing, sidebarDensity: spacing, textSize: [['small', 'Small'], ['default', 'Default'], ['large', 'Large']] };
+  const setLayout = (key, value) => {
+    if (!layoutChoices[key]?.some(([v]) => v === value)) throw new Error('Unsupported layout preference.');
+    store.set('editor.' + key, value === 'default' ? null : value);
+    value === 'default' ? delete doc.dataset[key] : doc.dataset[key] = value;
+    dispatchEvent(new Event('editor-layout-change'));
+  };
   // Before v2 the accent also drove primary actions. Retain that primary for saved choices.
   if (!store.get('editor.colors.v2') && !store.get('editor.primary') && validColor(store.get('editor.accent'))) doc.dataset.primary = store.get('editor.accent');
   setPrimary(primary()); setAccent(accent()); store.set('editor.colors.v2', '1');
@@ -58,7 +66,7 @@
   }
   function trapTab(root, e) {
     if (e.key !== 'Tab') return;
-    const c = qa('button, input, a[href], [tabindex]:not([tabindex="-1"])', root).filter(x => !x.disabled && x.getClientRects().length);
+    const c = qa('button, input, select, a[href], [tabindex]:not([tabindex="-1"])', root).filter(x => !x.disabled && x.getClientRects().length);
     if (!c.length) return;
     const i = c.indexOf(document.activeElement), n = i + (e.shiftKey ? -1 : 1);
     if (n < 0 || n >= c.length) { e.preventDefault(); c[(n + c.length) % c.length].focus(); }
@@ -134,6 +142,29 @@
   }
 
   // Appearance menu reuses the editor's .cm menu styling and keyboard handling.
+  function layoutSettings() {
+    overlay('pal-scrim', 'Layout and density', (box, close) => {
+      box.classList.add('layout-settings');
+      const body = el('div', { className: 'dbody' });
+      body.append(el('p', { textContent: 'Saved on this device. PDF content and text are not changed.' }));
+      for (const [key, name] of [['menuDensity', 'Menus and toolbars'], ['sidebarDensity', 'Sidebars and controls'], ['textSize', 'Interface text size']]) {
+        const select = el('select', { id: nextId('layout') });
+        for (const [value, textContent] of layoutChoices[key]) select.append(el('option', { value, textContent }));
+        select.value = doc.dataset[key] || 'default';
+        select.onchange = () => setLayout(key, select.value);
+        const label = el('label', { htmlFor: select.id, textContent: name });
+        body.append(label, select);
+      }
+      const reset = el('button', { type: 'button', textContent: 'Reset density', onclick: () => {
+        for (const key of Object.keys(layoutChoices)) setLayout(key, 'default');
+        for (const select of qa('select', body)) select.value = 'default';
+      } });
+      const done = el('button', { type: 'button', className: 'primary', textContent: 'Done', onclick: close });
+      box.append(el('h2', { textContent: 'Layout and density' }), body, el('div', { className: 'dfoot' }, reset, done));
+      q('select', body).focus();
+    });
+  }
+
   function appearanceMenu(anchor) {
     if (!anchor.getClientRects().length) anchor = $('more') || anchor;
     lastOutside = anchor;
@@ -158,6 +189,7 @@
       el('div', { className: 'cm-sep' }), el('div', { className: 'cm-h', textContent: 'Primary color' }), swatches('Primary color', primary(), setPrimary, COLORS),
       el('div', { className: 'cm-h', textContent: 'Accent shade' }), swatches('Accent shade', accent(), setAccent, SHADES),
       item('menuitem', 'Reset PinkInk colors', false, () => { setPrimary('pink'); setAccent('medium'); }),
+      el('div', { className: 'cm-sep' }), item('menuitem', 'Layout and density\u2026', false, layoutSettings),
       el('div', { className: 'cm-sep' }), item('menuitem', 'Commands\u2026', false, palette), item('menuitem', 'Keyboard shortcuts and about\u2026', false, about));
     document.body.append(m); const r = anchor.getBoundingClientRect();
     m.style.maxHeight = Math.max(0, innerHeight - r.bottom - 8) + 'px';
@@ -334,16 +366,30 @@
   // Resizable side panels; the grid already reads --lw and --rw, so this only writes those properties.
   function resizers() {
     const main = q('main'); if (!main || q('.rz')) return;
+    const tools = $('tools');
+    const toolHeight = () => main.style.setProperty('--tools-height', tools.offsetHeight + 'px');
+    new ResizeObserver(toolHeight).observe(tools); toolHeight();
     for (const [side, prop, min, max, def] of [['l', '--lw', 160, 420, 208], ['r', '--rw', 220, 520, 280]]) {
+      const panel = $(side === 'l' ? 'left' : 'props');
       const key = `panel-w-${side}`, h = el('div', { className: `rz ${side}`, tabIndex: 0 });
       h.setAttribute('role', 'separator'); h.setAttribute('aria-orientation', 'vertical'); h.setAttribute('aria-label', side === 'l' ? 'Resize pages panel' : 'Resize properties panel');
+      h.title = 'Drag or use arrow keys to resize. Double-click to reset.';
       h.setAttribute('aria-valuemin', min); h.setAttribute('aria-valuemax', max);
-      const apply = w => { w = Math.max(min, Math.min(max, Math.round(w))); doc.style.setProperty(prop, w + 'px'); h.setAttribute('aria-valuenow', w); h.style[side === 'l' ? 'left' : 'right'] = w + 'px'; return w; };
-      const saved = +store.get(key); apply(saved || def);
-      h.onpointerdown = e => { e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add('drag'); };
-      h.onpointermove = e => { if (!h.hasPointerCapture(e.pointerId)) return; const r = main.getBoundingClientRect(); apply(side === 'l' ? e.clientX - r.left : r.right - e.clientX); };
+      const position = () => { h.style[side === 'l' ? 'left' : 'right'] = panel.getBoundingClientRect().width + 'px'; };
+      const apply = w => { w = Math.max(min, Math.min(max, Math.round(w))); doc.style.setProperty(prop, w + 'px'); h.setAttribute('aria-valuenow', w); position(); return w; };
+      const saved = Number(store.get(key)); apply(Number.isFinite(saved) && saved > 0 ? saved : def);
+      new ResizeObserver(position).observe(panel);
+      let startX = 0, startWidth = 0;
+      h.onpointerdown = e => { if (e.button !== 0) return; e.preventDefault(); startX = e.clientX; startWidth = panel.getBoundingClientRect().width; h.setPointerCapture(e.pointerId); h.classList.add('drag'); };
+      h.onpointermove = e => { if (!h.hasPointerCapture(e.pointerId)) return; apply(startWidth + (e.clientX - startX) * (side === 'l' ? 1 : -1)); };
       h.onpointerup = h.onlostpointercapture = () => { h.classList.remove('drag'); store.set(key, h.getAttribute('aria-valuenow')); };
-      h.onkeydown = e => { const d = { ArrowLeft: -16, ArrowRight: 16 }[e.key]; if (!d) return; e.preventDefault(); e.stopPropagation(); store.set(key, apply(+h.getAttribute('aria-valuenow') + d * (side === 'l' ? 1 : -1))); };
+      h.onpointercancel = () => { h.classList.remove('drag'); };
+      h.onkeydown = e => {
+        const d = { ArrowLeft: -16, ArrowRight: 16 }[e.key];
+        if (!d && e.key !== 'Home' && e.key !== 'End') return;
+        e.preventDefault(); e.stopPropagation();
+        store.set(key, apply(e.key === 'Home' ? min : e.key === 'End' ? max : +h.getAttribute('aria-valuenow') + d * (side === 'l' ? 1 : -1)));
+      };
       h.ondblclick = () => { apply(def); store.set(key, null); };
       main.append(h);
     }
@@ -390,7 +436,8 @@
   function panelsOnDocChange() { const e = isEmpty(); if (e !== wasEmpty) { if (!e) { userPanel.l = userPanel.r = false; } wasEmpty = e; } syncPanels(); }
 
   // Floating page pager: pinned to the bottom-right of the page viewport; drives the existing prev/next controls.
-  let pager = null;
+  let pager = null, progress = null, pageState = null;
+  addEventListener('editor-page-change', e => { pageState = e.detail; updatePager(); });
   function makePager() {
     const host = $('center'); if (!host || pager) return;
     const mk = (id, label, d) => { const b = el('button', { type: 'button', id, className: 'icon' }); b.setAttribute('aria-label', label); b.innerHTML = `<svg class="i" aria-hidden="true"><use href="#i-${d}"/></svg>`; return b; };
@@ -398,13 +445,21 @@
     prev.onclick = () => { if (!$('pp').disabled) $('pp').click(); }; next.onclick = () => { if (!$('np').disabled) $('np').click(); };
     pager = el('div', { id: 'pager' }, prev, count, next); pager.setAttribute('role', 'group'); pager.setAttribute('aria-label', 'Page navigation (floating)');
     pager.dataset.show = 'false'; pager.inert = true; host.append(pager);
+    progress = el('div', { id: 'pageProgress', hidden: true }, el('div', { className: 'page-progress-fill' }));
+    progress.setAttribute('role', 'progressbar'); progress.setAttribute('aria-label', 'Document paging progress'); progress.setAttribute('aria-valuemin', '0');
+    host.append(progress);
   }
   function updatePager() {
     makePager(); if (!pager) return;
-    const n = +$('pn')?.value || 0, total = +(/\d+/.exec($('pt')?.textContent ?? '')?.[0] ?? 0), show = !isEmpty() && total > 0;
+    const n = pageState?.page ?? (+$('pn')?.value || 0), total = pageState?.total ?? +(/\d+/.exec($('pt')?.textContent ?? '')?.[0] ?? 0), show = !isEmpty() && total > 0;
     if (show !== (pager.dataset.show === 'true')) { pager.dataset.show = show; pager.inert = !show; }
     const [prev, next, count] = [pager.children[0], pager.children[2], pager.children[1]];
     count.textContent = show ? `${n} / ${total}` : ''; prev.disabled = !show || n <= 1; next.disabled = !show || n >= total;
+    progress.hidden = !show || total <= 1;
+    progress.setAttribute('aria-valuemax', total || 1); progress.setAttribute('aria-valuenow', show ? n : 0);
+    progress.setAttribute('aria-valuetext', show ? `Page ${n} of ${total}` : 'No document');
+    progress.title = show ? `Page ${n} of ${total}` : '';
+    progress.firstChild.style.width = `${show ? n / total * 100 : 0}%`;
     const v = $('view'); pager.style.setProperty('--sbw', (v.offsetWidth - v.clientWidth) + 'px'); pager.style.setProperty('--sbh', (v.offsetHeight - v.clientHeight) + 'px');
   }
 

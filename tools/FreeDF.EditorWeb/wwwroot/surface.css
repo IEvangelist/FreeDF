@@ -222,6 +222,74 @@ main::before { backdrop-filter: none; }
 }
 :root[data-accent="light"] { --accent: var(--shade-light); }
 :root[data-accent="dark"] { --accent: var(--shade-dark); }
+
+/* Persistent layout preferences affect application chrome, not the PDF canvas. */
+:root { --menu-height: 30px; --menu-padding: 6px; --sidebar-padding: 14px; --sidebar-gap: 10px; --sidebar-control: 28px; --outline-row-height: 28px; }
+:root[data-menu-density="compact"] { --h: 26px; --menu-height: 26px; --menu-padding: 4px; }
+:root[data-menu-density="comfortable"] { --h: 38px; --menu-height: 38px; --menu-padding: 10px; }
+:root[data-sidebar-density="compact"] { --sidebar-padding: 8px; --sidebar-gap: 6px; --sidebar-control: 24px; --outline-row-height: 24px; }
+:root[data-sidebar-density="comfortable"] { --sidebar-padding: 20px; --sidebar-gap: 14px; --sidebar-control: 36px; --outline-row-height: 36px; }
+:root[data-text-size="small"] { font-size: 14px; }
+:root[data-text-size="large"] { font-size: 18px; }
+header .brand strong, #props h2 { font-size: var(--text-base); }
+#props h3, #props h2 em, .ct-p, #dstate { font-size: var(--text-xs); }
+#props .hint, #pages { font-size: var(--text-sm); }
+.cm-i { min-height: var(--menu-height); height: auto; padding-block: var(--menu-padding); }
+.seg button, .seg label.btn { height: var(--h); }
+#props section { padding: var(--sidebar-padding); gap: var(--sidebar-gap); }
+#thumbs { padding: var(--sidebar-padding); gap: var(--sidebar-gap); }
+#ltabs button { height: var(--sidebar-control); }
+#props :is(input[type=text], input[type=number], select) { height: var(--sidebar-control); font-size: var(--text-base); }
+.ct-row { height: var(--outline-row-height); }
+.layout-settings { max-width: min(420px, calc(100vw - 24px)); overflow-y: auto; }
+.layout-settings h2 { margin: 0; padding: 16px 20px 0; font-size: var(--text-xl); }
+.layout-settings .dbody { padding: 12px 20px; display: grid; gap: 8px; }
+.layout-settings .dbody label { margin-top: 8px; }
+.layout-settings select { width: 100%; min-height: 36px; font: inherit; }
+
+/* The second row spans the editor, so panel toggles stay reachable when panels collapse. */
+main { position: relative; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: min(var(--lw, 208px), 30vw) minmax(0, 1fr) min(var(--rw, 280px), 35vw); }
+#tools { grid-column: 1 / -1; grid-row: 1; height: auto; min-height: 44px; padding-block: 5px; flex-wrap: wrap; overflow: visible; }
+#left { grid-column: 1; grid-row: 2; }
+#center { grid-column: 2; grid-row: 2; }
+#props { grid-column: 3; grid-row: 2; }
+#tools #tl { order: -1; }
+#tools #tr { order: 10; margin-left: auto; }
+.rz { top: var(--tools-height, 44px); bottom: 0; height: auto; width: 12px; margin: 0 -6px; }
+.rz::after { top: 0; bottom: 0; left: 5px; width: 2px; opacity: .35; }
+.rz:hover::after, .rz:focus-visible::after, .rz.drag::after { opacity: 1; width: 4px; left: 4px; }
+#pageProgress { flex: none; height: 6px; background: var(--line-2); }
+#pageProgress[hidden] { display: none; }
+.page-progress-fill { height: 100%; background: var(--accent); }
+#pager { bottom: calc(var(--sbh, 0px) + 24px + env(safe-area-inset-bottom)); }
+@media (max-width: 760px) {
+  main { grid-template-columns: minmax(0, 1fr); }
+  #center { grid-column: 1; grid-row: 2; }
+  #tools { z-index: 30; }
+  #tools #tl { order: 0; }
+  #tools #tr { order: 0; }
+  #tools .seg { order: 1; }
+  #tools #zoomControls { order: 6; flex: 1 1 100%; justify-content: space-between; }
+  main #left, main #props, main:not(.hide-l) #left, main:not(.hide-r) #props { top: var(--tools-height, 44px); width: min(var(--lw, 208px), 88vw); }
+  main #props, main:not(.hide-r) #props { width: min(var(--rw, 280px), 88vw); }
+  main::before, main:not(.hide-l)::before, main:not(.hide-r)::before { top: var(--tools-height, 44px); }
+  .rz { display: block; }
+  #props { grid-column: 1; }
+}
+@media (max-width: 720px), (pointer: coarse) {
+  :root[data-menu-density] { --h: 44px; }
+  .seg button, .seg label.btn { height: 44px; }
+  .cm-i { min-height: 44px; }
+}
+@media (min-width: 600px) and (max-width: 760px) {
+  #tools #tl { order: -1; }
+  #tools #tr { order: 0; margin-left: 0; }
+  #tools .seg { order: 0; flex: 1 1 calc(100% - 104px); width: auto; }
+}
+@media (forced-colors: active) {
+  #pageProgress { background: Canvas; border-top: 1px solid CanvasText; }
+  .page-progress-fill { background: Highlight; forced-color-adjust: none; }
+}
 #appBtn[hidden], [data-app-open][hidden] { display: none; }
 body { background: radial-gradient(1200px 500px at 50% -120px, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%), var(--bg); }
 .logo { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); box-shadow: 0 1px 0 #ffffff55 inset, 0 3px 8px -2px color-mix(in srgb, var(--primary) 60%, transparent); }

@@ -1,12 +1,13 @@
 // Contents (document outline) panel: a virtualized ARIA tree that follows the active page.
 import { buildOutlineIndex, currentOutlineItem, ancestorsOf, visibleRows, initiallyExpanded } from './outline-map.mjs';
 
-const ROW = 28;
 const OVERSCAN = 6;
 
 export function createOutlinePanel({ tabPages, tabContents, thumbs, contents, load, goTo }) {
   contents.innerHTML = '<div class="ct-empty" role="status" hidden></div><div class="ct-tree" role="tree" tabindex="0" aria-label="Document contents"><div class="ct-spacer"></div></div>';
   const empty = contents.querySelector('.ct-empty'), tree = contents.querySelector('.ct-tree'), spacer = tree.firstElementChild;
+  const rowHeight = () => parseFloat(getComputedStyle(contents).getPropertyValue('--outline-row-height')) || 28;
+  let ROW = rowHeight();
 
   let index = buildOutlineIndex([]), expanded = new Set(), rows = [], rowPos = new Map();
   let page = 0, pageCount = 0, version = null, loadedVersion = null, loading = 0;
@@ -83,6 +84,7 @@ export function createOutlinePanel({ tabPages, tabContents, thumbs, contents, lo
     forceReveal = false;
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(apply); };
+  addEventListener('editor-layout-change', () => { ROW = rowHeight(); setRows(); forceReveal = true; schedule(); });
 
   const show = (items) => {
     index = buildOutlineIndex(items); expanded = initiallyExpanded(index); pinned = -1; focusId = -1; current = -1; pool.clear();

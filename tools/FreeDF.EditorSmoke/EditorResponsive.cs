@@ -13,6 +13,10 @@ static class EditorResponsive
           const h = document.querySelector('header');
           if (h.scrollWidth > h.clientWidth + 1) p.push(`header content is cut off or scrolls (${h.scrollWidth} > ${h.clientWidth})`);
           if (h.getBoundingClientRect().height > 64) p.push(`header wraps (${Math.round(h.getBoundingClientRect().height)}px tall)`);
+          for (const id of ['tl', 'tr']) {
+            const e = document.getElementById(id);
+            if (e.closest('header') || !e.closest('#tools') || e.getBoundingClientRect().top < h.getBoundingClientRect().bottom) p.push(`${id} is not on the second toolbar row`);
+          }
           for (const sel of ['#dl', '#fileBtn', '#tl', '#tr', '#status', '#sponsor', '#doc']) {
             const e = document.querySelector(sel); if (!e) continue; const r = e.getBoundingClientRect();
             if (r.width === 0 || getComputedStyle(e).visibility === 'hidden') continue;
@@ -44,6 +48,7 @@ static class EditorResponsive
     public static async Task Run(IBrowser browser, string site, byte[] pdf, string? artifacts)
     {
         if (artifacts is not null) Directory.CreateDirectory(artifacts);
+        await LayoutPreferences(browser, site);
         var problems = new List<string>();
         var rows = new List<string>();
         var sizes = new (int W, int H)[] { (320, 568), (375, 667), (390, 844), (768, 1024), (820, 1180), (1024, 768), (1280, 800), (1440, 900), (1920, 1080), (2560, 1440) };
@@ -53,6 +58,83 @@ static class EditorResponsive
             foreach (var dpr in new[] { 1f, 2f }) matrix.Add((w, h, dpr, 1f, "portrait-or-native"));
             if (w < 1024) matrix.Add((h, w, 2f, 1f, "landscape"));
             else foreach (var zoom in new[] { 1.5f, 2f, 4f }) if (w / zoom >= 320) matrix.Add((w, h, 1f, zoom, "zoom"));
+        }
+
+        static async Task LayoutPreferences(IBrowser browser, string site)
+        {
+            var pdf = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "12-navigation.pdf"));
+            await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 1000 } });
+            var page = await context.NewPageAsync();
+            page.SetDefaultTimeout(90000);
+            var errors = new List<string>();
+            page.PageError += (_, error) => errors.Add(error);
+            async Task Open()
+            {
+                await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = "layout.pdf", MimeType = "application/pdf", Buffer = pdf });
+                await page.WaitForFunctionAsync("document.getElementById('name').title === 'layout.pdf' && !document.getElementById('view').inert && document.getElementById('base')?.naturalWidth > 0");
+            }
+            async Task Check(string expression, string message)
+            {
+                if (!await page.EvaluateAsync<bool>(expression)) throw new Exception("Layout preferences: " + message);
+            }
+            await page.GotoAsync(site);
+            await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+            await Check("document.getElementById('pageProgress').hidden", "progress must be hidden without a document");
+            await Open();
+            foreach (var (side, panel, delta) in new[] { ("l", "#left", 60), ("r", "#props", -60) })
+            {
+                var handle = page.Locator(".rz." + side);
+                var box = await handle.BoundingBoxAsync() ?? throw new Exception("Missing resize handle");
+                var initial = await page.Locator(panel).BoundingBoxAsync() ?? throw new Exception("Missing panel");
+                var hitX = box.X + box.Width / 2;
+                var hitY = box.Y + box.Height / 2;
+                await page.Mouse.MoveAsync(hitX, hitY);
+                await page.Mouse.DownAsync();
+                await page.Mouse.MoveAsync(hitX + delta, hitY, new() { Steps = 8 });
+                await page.Mouse.UpAsync();
+                var resized = await page.Locator(panel).BoundingBoxAsync() ?? throw new Exception("Missing resized panel");
+                if (Math.Abs(resized.Width - initial.Width - 60) > 2) throw new Exception("Panel drag did not resize " + side);
+                await handle.FocusAsync();
+                await page.Keyboard.PressAsync(side == "l" ? "ArrowRight" : "ArrowLeft");
+                await Check($"Number(localStorage.getItem('panel-w-{side}')) === {Math.Round(initial.Width) + 76}", "keyboard resize must persist");
+            }
+            await page.Locator("#appearance").ClickAsync();
+            await page.GetByRole(AriaRole.Menuitem, new() { Name = "Layout and density" }).ClickAsync();
+            await page.GetByLabel("Menus and toolbars", new() { Exact = true }).SelectOptionAsync("comfortable");
+            await page.GetByLabel("Sidebars and controls", new() { Exact = true }).SelectOptionAsync("compact");
+            await page.GetByLabel("Interface text size", new() { Exact = true }).SelectOptionAsync("large");
+            await Check("getComputedStyle(document.documentElement).fontSize === '18px' && getComputedStyle(document.querySelector('#props section')).paddingTop === '8px' && getComputedStyle(document.getElementById('tl')).height === '38px'", "density must change actual text, sidebar and toolbar geometry independently");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Done", Exact = true }).ClickAsync();
+            var total = await page.EvaluateAsync<int>("Number(document.getElementById('pt').textContent.replace(/\\D/g,''))");
+            if (total <= 1) throw new Exception("Layout fixture must have multiple pages");
+            await page.Locator("#np").ClickAsync();
+            await page.WaitForFunctionAsync("document.getElementById('pageProgress').getAttribute('aria-valuenow') === '2'");
+            await Check($"!document.getElementById('pageProgress').hidden && document.getElementById('pageProgress').getAttribute('aria-valuemax') === '{total}' && Math.abs(parseFloat(document.querySelector('.page-progress-fill').style.width) - 200 / {total}) < .01", "progress must reflect the page fraction");
+            await page.Locator("#pn").FillAsync(total.ToString());
+            await page.Locator("#pn").PressAsync("Enter");
+            await page.WaitForFunctionAsync("document.querySelector('.page-progress-fill').style.width === '100%'");
+            await page.Locator("#tl").ClickAsync();
+            await page.SetViewportSizeAsync(820, 1000);
+            await page.SetViewportSizeAsync(1440, 1000);
+            await Check("localStorage.getItem('panel-l') === '0' && document.querySelector('main').classList.contains('hide-l')", "viewport changes must not clear collapsed state");
+            await page.ReloadAsync();
+            await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
+            await Open();
+            await Check("document.documentElement.dataset.menuDensity === 'comfortable' && document.documentElement.dataset.sidebarDensity === 'compact' && document.documentElement.dataset.textSize === 'large' && document.querySelector('main').classList.contains('hide-l') && document.querySelector('.rz.l').getAttribute('aria-valuenow') === '284' && document.querySelector('.rz.r').getAttribute('aria-valuenow') === '356'", "reload must preserve widths, collapsed state and independent density choices");
+            await page.Locator("#tl").ClickAsync();
+            await page.Locator("#tabContents").ClickAsync();
+            await page.WaitForFunctionAsync("document.querySelectorAll('.ct-row').length > 1");
+            await Check("Math.abs(document.querySelectorAll('.ct-row')[1].getBoundingClientRect().top - document.querySelectorAll('.ct-row')[0].getBoundingClientRect().top - 24) < 1 && getComputedStyle(document.querySelector('.ct-row')).height === '24px'", "virtualized outline rows must use the selected sidebar density");
+            await page.Locator("#appearance").ClickAsync();
+            await page.GetByRole(AriaRole.Menuitem, new() { Name = "Layout and density" }).ClickAsync();
+            await page.GetByLabel("Sidebars and controls", new() { Exact = true }).SelectOptionAsync("comfortable");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Done", Exact = true }).ClickAsync();
+            await page.WaitForFunctionAsync("getComputedStyle(document.querySelector('.ct-row')).height === '36px' && Math.abs(document.querySelectorAll('.ct-row')[1].getBoundingClientRect().top - document.querySelectorAll('.ct-row')[0].getBoundingClientRect().top - 36) < 1");
+            await page.Keyboard.PressAsync("Alt+n");
+            await page.Locator(".dlg .dok").ClickAsync();
+            await page.WaitForFunctionAsync("document.getElementById('pt').textContent === '/ 1' && document.getElementById('pageProgress').hidden");
+            if (errors.Count > 0) throw new Exception("Layout preferences browser errors: " + string.Join("\n", errors));
+            Console.WriteLine("Layout preferences: second-row toggles, drag/keyboard resize, persistence, density, virtualized outline and paging progress ok.");
         }
         foreach (var zoom in new[] { 1.5f, 2f }) matrix.Add((1280, 800, 2f, zoom, "zoom+dpr2"));
 

@@ -41,6 +41,21 @@ the default Medium shade.
 **Reset PinkInk colors** restores the defaults without resetting theme or motion.
 These settings affect only the editor UI, never PDF colors or exported content.
 
+**Appearance > Layout and density** independently configures menus/toolbars and
+sidebars/controls (Compact, Default or Comfortable), plus interface text size
+(Small, Default or Large). Choices apply immediately and persist in localStorage
+before first paint. **Reset density** resets only these settings. Touch controls
+retain their minimum target sizes, and PDF text and exports are unchanged.
+
+The panel toggles live on the second toolbar row, not the primary header.
+Drag either panel's visible inner edge to resize it, use the focused separator's
+Left/Right keys (Home/End for limits), or double-click to restore its default
+width. Panel widths and collapsed state persist on this device across reloads
+and window resizing. Narrow screens use resizable overlay sheets.
+Multi-page PDFs show a bottom progress strip reflecting the current page out
+of the total; it follows all paging controls and disappears for single-page or
+closed documents. The existing floating previous/next pager remains available.
+
 The welcome screen's primary **Open the showcase** button opens the tagged,
 18-page benchmarks, brand and spec showcase (`28-benchmarks-brand-spec.pdf`).
 It also leads **File > Open sample** and the published manifest. Share

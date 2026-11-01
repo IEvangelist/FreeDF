@@ -19,6 +19,7 @@
 <meta name="color-scheme" content="light dark">
 <script>try{var d=document.documentElement,t=localStorage.getItem('editor.theme'),m=localStorage.getItem('editor.motion'),a=localStorage.getItem('editor.accent'),p=localStorage.getItem('editor.primary'),v=localStorage.getItem('editor.colors.v2'),colors={pink:'#be185d',cyan:'#0e7490',magenta:'#a21caf',blue:'#2563eb',violet:'#6d28d9',green:'#15803d',orange:'#c2410c',red:'#b91c1c',teal:'#0f766e'};if(!v&&!p)p=a;if(['light','medium','dark'].includes(a))d.dataset.accent=a;if(Object.hasOwn(colors,p)){d.dataset.primary=p;document.querySelector('meta[name="theme-color"]').content=colors[p]}if(t)d.dataset.theme=t;if(m)d.dataset.motion=m}catch(e){}</script>
 <script>window.pdfEditorCapabilities = { openEncrypted: true };</script>
+<script>try{for(const [key,values] of [['menuDensity',['compact','default','comfortable']],['sidebarDensity',['compact','default','comfortable']],['textSize',['small','default','large']]]){const v=localStorage.getItem('editor.'+key);if(values.includes(v))document.documentElement.dataset[key]=v}}catch(e){}</script>
 <script src="editor.js" defer></script>
 <script src="ui.js" defer></script>
 </head>
@@ -70,7 +71,6 @@
   <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
 </defs></svg>
 <header>
-  <button id="tl" class="icon toggle on" title="Toggle pages panel ([)" aria-pressed="true"><svg class="i"><use href="#i-sidel"/></svg></button>
   <div class="brand"><span class="logo" aria-hidden="true">F</span><strong>FreeDF</strong><h1 class="sr-only">FreeDF PDF editor</h1></div>
   <div class="group">
     <button id="fileBtn" title="File menu" aria-haspopup="menu"><svg class="i"><use href="#i-open"/></svg><span class="lbl">File</span><svg class="i"><use href="#i-down"/></svg></button>
@@ -95,16 +95,10 @@
   </div>
   <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg><span class="lbl">Download</span></button>
   <a id="ghLink" class="gh" href="https://github.com/IEvangelist/csharp-pdf" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
-  <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
 </header>
 <main>
-  <div id="left">
-    <div id="ltabs" role="tablist" aria-label="Sidebar"><button id="tabPages" role="tab" aria-selected="true" aria-controls="thumbs">Pages</button><button id="tabContents" role="tab" aria-selected="false" aria-controls="contents" tabindex="-1">Contents</button></div>
-    <div id="thumbs" role="tabpanel" aria-labelledby="tabPages"></div>
-    <div id="contents" role="tabpanel" aria-labelledby="tabContents" hidden></div>
-  </div>
-  <div id="center">
     <div id="tools">
+      <button id="tl" class="icon toggle on" title="Toggle pages panel ([)" aria-pressed="true"><svg class="i"><use href="#i-sidel"/></svg></button>
       <div class="seg" role="toolbar" aria-label="Tools">
         <button data-tool="select" class="on icon" title="Select and move (V)"><svg class="i"><use href="#i-select"/></svg></button>
         <button data-tool="text" class="icon" title="Add text (T)"><svg class="i"><use href="#i-text"/></svg></button>
@@ -125,12 +119,19 @@
         <button id="np" class="icon" title="Next page (PageDown)"><svg class="i"><use href="#i-down"/></svg></button>
       </div>
       <span class="sp"></span>
-      <div class="group">
+      <div class="group" id="zoomControls">
         <button id="fw" class="icon" title="Fit width (Ctrl+9)"><svg class="i"><use href="#i-fitw"/></svg></button>
         <button id="fp" class="icon" title="Fit page (Ctrl+0)"><svg class="i"><use href="#i-fitp"/></svg></button>
         <button id="zo" class="icon" title="Zoom out (Ctrl+-)"><svg class="i"><use href="#i-zoomout"/></svg></button><button id="zv" title="Zoom presets (Ctrl+1 = 100%)">100%</button><button id="zi" class="icon" title="Zoom in (Ctrl++)"><svg class="i"><use href="#i-zoomin"/></svg></button>
       </div>
+      <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
     </div>
+  <div id="left">
+    <div id="ltabs" role="tablist" aria-label="Sidebar"><button id="tabPages" role="tab" aria-selected="true" aria-controls="thumbs">Pages</button><button id="tabContents" role="tab" aria-selected="false" aria-controls="contents" tabindex="-1">Contents</button></div>
+    <div id="thumbs" role="tabpanel" aria-labelledby="tabPages"></div>
+    <div id="contents" role="tabpanel" aria-labelledby="tabContents" hidden></div>
+  </div>
+  <div id="center">
     <div id="findbar" hidden>
       <svg class="i"><use href="#i-search"/></svg><input id="fq" placeholder="Find in document" autocomplete="off"><span id="fc"></span>
       <button id="fcs" class="icon" title="Match case">Aa</button>
@@ -1247,6 +1248,7 @@ async function refreshDirty() {
 function navUpdate() {
   $('pn').value = state.pageCount ? sel + 1 : ''; $('pt').textContent = '/ ' + (state.pageCount || 0);
   $('pp').disabled = sel <= 0; $('np').disabled = sel >= state.pageCount - 1;
+  dispatchEvent(new CustomEvent('editor-page-change', { detail: { page: state.pageCount ? sel + 1 : 0, total: state.pageCount || 0 } }));
 }
 async function goPage(i) {
   if (!state.pageCount) return;
@@ -1609,7 +1611,7 @@ function autoPanels() {
 $('tl').onclick = () => setPanel('l', document.querySelector('main').classList.contains('hide-l'), true);
 $('tr').onclick = () => setPanel('r', document.querySelector('main').classList.contains('hide-r'), true);
 let lastW = innerWidth;
-addEventListener('resize', () => { if ((lastW >= 1000) !== (innerWidth >= 1000) || (lastW >= 760) !== (innerWidth >= 760)) { localStorage.removeItem('panel-l'); localStorage.removeItem('panel-r'); autoPanels(); } lastW = innerWidth; });
+addEventListener('resize', () => { if ((lastW >= 1000) !== (innerWidth >= 1000) || (lastW >= 760) !== (innerWidth >= 760)) autoPanels(); lastW = innerWidth; });
 autoPanels();
 
 // ---- Font picker ----
