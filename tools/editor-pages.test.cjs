@@ -61,3 +61,21 @@ test('published assets default to the deployment directory, not an obsolete repo
   const chunks = fs.readFileSync(path.join(__dirname, 'Invoke-EditorChunk.ps1'), 'utf8');
   assert.match(chunks, /Smoke @\('--shell', \$Site,/);
 });
+
+test('non-default branches never package Pages or deploy, even with deploy=true', () => {
+  const state = { plan: { result: 'success', outputs: { code: 'true' } }, build: { result: 'success' }, package: { result: 'success' } };
+  for (const defaultBranch of ['main', 'release']) {
+    for (const event_name of ['push', 'workflow_dispatch', 'pull_request']) {
+      for (const ref_name of [defaultBranch, 'feature']) {
+        const github = { event_name, ref_name, event: { repository: { default_branch: defaultBranch } } };
+        const expected = ref_name === defaultBranch && event_name !== 'pull_request';
+        assert.equal(allowed('package', state, github, { deploy: true, chunk: 'all' }), expected);
+        assert.equal(allowed('deploy', state, github, { deploy: true, chunk: 'all' }), expected);
+      }
+    }
+  }
+});
+
+test('feature runs cannot cancel default-branch deployment', () => {
+  assert.match(workflow, /group: editor-pages-\$\{\{ github\.ref \}\}/);
+});
