@@ -31,6 +31,7 @@
     <Compile Include="..\..\tools\FreeDF.EditorWeb\OverlayBuilder.cs" Link="EditorWeb\OverlayBuilder.cs" />
     <Compile Include="..\..\tools\FreeDF.EditorWeb\FormObjectEditPolicy.cs" Link="EditorWeb\FormObjectEditPolicy.cs" />
     <Compile Include="..\..\tools\FreeDF.EditorWeb\EditorSession.cs" Link="EditorWeb\EditorSession.cs" />
+    <Compile Include="..\..\tools\FreeDF.EditorWeb\EditorSession.Json.cs" Link="EditorWeb\EditorSession.Json.cs" />
     <Compile Include="..\..\tools\FreeDF.EditorWeb\EditorForms.cs" Link="EditorWeb\EditorForms.cs" />
     <Compile Include="..\..\tools\FreeDF.EditorSmoke\MergeErrorClassifier.cs" Link="EditorSmoke\MergeErrorClassifier.cs" />
   </ItemGroup>

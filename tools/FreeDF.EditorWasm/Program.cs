@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
@@ -15,11 +16,21 @@ public static partial class BrowserEditor
     // Fallback fonts and CJK glyph chunks are fetched by the host on first use (see worker.js) and handed over through ProvideFontAsset.
     static readonly ProvidedAssetSource FontAssets = new();
     static readonly EditorSession Session = new(new FontCatalog(), new BundledFontFallback(FontAssets, new BrowserFontFallback()));
-    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public sealed record Command(string Method, string Path, Dictionary<string, string> Query, string? Body, string? FileName);
+    sealed record DiagnosticsReply(string Culture, string DecimalFormat, bool NormalizesDecomposed, bool Decomposes,
+        string Upper, bool InvariantGlobalization);
+    sealed record BinaryReply(string Data, string ContentType, string? FileName, EditorSession.RenderMetrics? Performance);
+    sealed record ErrorReply(string Error);
+
+    [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, GenerationMode = JsonSourceGenerationMode.Metadata)]
+    [JsonSerializable(typeof(Command))]
+    [JsonSerializable(typeof(DiagnosticsReply))]
+    [JsonSerializable(typeof(BinaryReply))]
+    [JsonSerializable(typeof(ErrorReply))]
+    sealed partial class BrowserJsonContext : JsonSerializerContext;
 
     [JSExport]
-    public static string TakeFontRequests() => JsonSerializer.Serialize(FontAssets.TakeRequests(), Json);
+    public static string TakeFontRequests() => JsonSerializer.Serialize(FontAssets.TakeRequests(), EditorSession.JsonType<string[]>());
 
     [JSExport]
     public static void ProvideFontAsset(string path, JSObject body)
@@ -44,7 +55,7 @@ public static partial class BrowserEditor
         Command? c = null;
         try
         {
-            c = JsonSerializer.Deserialize<Command>(command, Json) ?? throw new ArgumentException("Missing editor command.");
+            c = JsonSerializer.Deserialize(command, BrowserJsonContext.Default.Command) ?? throw new ArgumentException("Missing editor command.");
             return Execute(c, c.Body is null ? null : Convert.FromBase64String(c.Body));
         }
         catch (Exception e)
@@ -60,7 +71,7 @@ public static partial class BrowserEditor
         using var metadata = exchange;
         try
         {
-            c = new(method, path, JsonSerializer.Deserialize<Dictionary<string, string>>(query, Json) ?? [], null, fileName);
+            c = new(method, path, JsonSerializer.Deserialize(query, EditorSession.JsonType<Dictionary<string, string>>()) ?? [], null, fileName);
             var bytes = body is null ? metadata.GetPropertyAsByteArray("bytes") : Encoding.UTF8.GetBytes(body);
             var reply = path == "/api/_diagnostics"
                 ? new EditorSession.Reply(Encoding.UTF8.GetBytes(Diagnostics()), "application/json")
@@ -68,7 +79,7 @@ public static partial class BrowserEditor
             metadata.SetProperty("contentType", reply.ContentType);
             metadata.SetProperty("fileName", reply.FileName);
             if (Session.LastRenderMetrics is { } metrics)
-                metadata.SetProperty("performance", JsonSerializer.Serialize(metrics, Json));
+                metadata.SetProperty("performance", JsonSerializer.Serialize(metrics, EditorSession.JsonType<EditorSession.RenderMetrics>()));
             return reply.Data;
         }
         catch (Exception e)
@@ -90,7 +101,7 @@ public static partial class BrowserEditor
         using var requestBody = body;
         try
         {
-            c = new(method, path, JsonSerializer.Deserialize<Dictionary<string, string>>(query, Json) ?? [], null, fileName);
+            c = new(method, path, JsonSerializer.Deserialize(query, EditorSession.JsonType<Dictionary<string, string>>()) ?? [], null, fileName);
             return Execute(c, requestBody.GetPropertyAsByteArray("bytes") ?? throw new ArgumentException("Missing binary request body."));
         }
         catch (Exception e)
@@ -99,15 +110,14 @@ public static partial class BrowserEditor
         }
     }
 
-    static string Diagnostics() => JsonSerializer.Serialize(new
-    {
-        culture = CultureInfo.CurrentCulture.Name,
-        decimalFormat = 1234.5.ToString("0.##"),
-        normalizesDecomposed = "e\u0301".Normalize(NormalizationForm.FormC) == "\u00e9",
-        decomposes = "\u00e9".Normalize(NormalizationForm.FormD) == "e\u0301",
-        upper = "i".ToUpper(),
-        invariantGlobalization = AppContext.TryGetSwitch("System.Globalization.Invariant", out var invariant) && invariant,
-    }, Json);
+    static string Diagnostics() => JsonSerializer.Serialize(new DiagnosticsReply(
+        CultureInfo.CurrentCulture.Name,
+        1234.5.ToString("0.##"),
+        "e\u0301".Normalize(NormalizationForm.FormC) == "\u00e9",
+        "\u00e9".Normalize(NormalizationForm.FormD) == "e\u0301",
+        "i".ToUpper(),
+        AppContext.TryGetSwitch("System.Globalization.Invariant", out var invariant) && invariant),
+        BrowserJsonContext.Default.DiagnosticsReply);
 
     static string Execute(Command c, byte[]? body)
     {
@@ -116,7 +126,7 @@ public static partial class BrowserEditor
             var reply = c.Path == "/api/_diagnostics"
                 ? new EditorSession.Reply(Encoding.UTF8.GetBytes(Diagnostics()), "application/json")
                 : Session.Handle(c.Method, c.Path, c.Query, body, c.FileName);
-            return JsonSerializer.Serialize(new { data = Convert.ToBase64String(reply.Data), contentType = reply.ContentType, fileName = reply.FileName, performance = Session.LastRenderMetrics }, Json);
+            return JsonSerializer.Serialize(new BinaryReply(Convert.ToBase64String(reply.Data), reply.ContentType, reply.FileName, Session.LastRenderMetrics), BrowserJsonContext.Default.BinaryReply);
         }
 
         catch (Exception e)
@@ -131,11 +141,11 @@ public static partial class BrowserEditor
         {
             var message = "This PDF uses encryption the browser editor cannot process; no decrypted recovery copy was stored. " + e.Message;
             Console.Error.WriteLine(message);
-            return JsonSerializer.Serialize(new { error = message }, Json);
+            return JsonSerializer.Serialize(new ErrorReply(message), BrowserJsonContext.Default.ErrorReply);
         }
-        if (e is ArgumentException && e.Message.StartsWith("password-", StringComparison.Ordinal)) return JsonSerializer.Serialize(new { error = e.Message }, Json);
+        if (e is ArgumentException && e.Message.StartsWith("password-", StringComparison.Ordinal)) return JsonSerializer.Serialize(new ErrorReply(e.Message), BrowserJsonContext.Default.ErrorReply);
         Console.Error.WriteLine(e is NotSupportedException ? e.Message : e);
-        return JsonSerializer.Serialize(new { error = e.Message }, Json);
+        return JsonSerializer.Serialize(new ErrorReply(e.Message), BrowserJsonContext.Default.ErrorReply);
     }
 }
 

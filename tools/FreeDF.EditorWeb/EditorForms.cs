@@ -23,7 +23,13 @@ public sealed record FormPasteDto(int Page, double Dx, double Dy, List<FormField
 /// <summary>HTTP-style form-authoring commands over <see cref="PdfEditor"/>. Nothing here executes scripts or touches the network.</summary>
 public static class EditorForms
 {
-    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    internal sealed record WidgetReply(string Name, int Widget);
+    internal sealed record RemovedReply(int Removed);
+    internal sealed record MovedReply(int Moved);
+    internal sealed record PasteReply(List<WidgetReply> Created);
+    internal sealed record EmptyReply;
+    internal sealed record FlattenReply(int Flattened, int Kept);
+    internal sealed record ImportReply(int Applied, IReadOnlyList<string> Skipped, bool Truncated);
     static readonly Dictionary<string, PdfFormFieldKind> Kinds = new()
     {
         ["text"] = PdfFormFieldKind.Text, ["multiline"] = PdfFormFieldKind.MultilineText, ["comb"] = PdfFormFieldKind.CombText,
@@ -102,7 +108,7 @@ public static class EditorForms
         for (var i = 2; ; i++) if (Free(taken, stem + i)) return stem + i;
     }
 
-    static T Body<T>(byte[]? body) where T : class => JsonSerializer.Deserialize<T>(body ?? [], Json) ?? throw new ArgumentException("Missing form data.");
+    static T Body<T>(byte[]? body) where T : class => JsonSerializer.Deserialize(body ?? [], EditorSession.JsonType<T>()) ?? throw new ArgumentException("Missing form data.");
 
     /// <summary>Executes one mutating form command and returns the JSON reply.</summary>
     public static object Handle(PdfEditor editor, string verb, IReadOnlyDictionary<string, string> query, byte[]? body, Func<int, PdfRect> cropOf)
@@ -118,7 +124,7 @@ public static class EditorForms
                     var spec = ToSpec(dto, cropOf(dto.Page));
                     if (string.IsNullOrWhiteSpace(spec.Name)) spec = spec with { Name = UniqueName(taken, Prefix(spec.Kind) + "1") };
                     var handle = editor.AddFormField(spec);
-                    return new { name = handle.FullName, widget = handle.WidgetIndex };
+                    return new WidgetReply(handle.FullName, handle.WidgetIndex);
                 }
             case "update":
                 {
@@ -126,7 +132,7 @@ public static class EditorForms
                     var spec = ToSpec(dto, cropOf(dto.Page));
                     var old = Q("n") ?? throw new ArgumentException("Missing field name.");
                     editor.UpdateFormField(old, spec, Int("i", 0));
-                    return new { name = spec.Name, widget = Int("i", 0) };
+                    return new WidgetReply(spec.Name, Int("i", 0));
                 }
             case "remove":
                 {
@@ -134,7 +140,7 @@ public static class EditorForms
                     var removed = 0;
                     foreach (var n in names) if (editor.RemoveFormField(n)) removed++;
                     if (removed == 0) throw new ArgumentException("Form field not found.");
-                    return new { removed };
+                    return new RemovedReply(removed);
                 }
             case "move":
                 {
@@ -147,13 +153,13 @@ public static class EditorForms
                         var left = crop.Left + m.X; var top = crop.Top - m.Y;
                         editor.UpdateFormField(m.Name, e.Spec with { Rect = new PdfRect(left, top - m.H, left + m.W, top) }, m.Widget);
                     }
-                    return new { moved = moves.Count };
+                    return new MovedReply(moves.Count);
                 }
             case "paste":
                 {
                     var paste = Body<FormPasteDto>(body);
                     var renamed = new Dictionary<string, string>(StringComparer.Ordinal);
-                    var created = new List<object>();
+                    var created = new List<WidgetReply>();
                     foreach (var item in paste.Items)
                     {
                         var dto = item with { Page = paste.Page, X = item.X + paste.Dx, Y = item.Y + paste.Dy };
@@ -164,26 +170,26 @@ public static class EditorForms
                         }
                         var spec = ToSpec(dto with { Name = name }, cropOf(paste.Page));
                         var handle = editor.AddFormField(spec);
-                        created.Add(new { name = handle.FullName, widget = handle.WidgetIndex });
+                        created.Add(new(handle.FullName, handle.WidgetIndex));
                     }
-                    return new { created };
+                    return new PasteReply(created);
                 }
             case "tab":
                 editor.SetPageTabOrder(Int("page", 0), Q("mode") switch { "row" => PdfFormTabOrder.Row, "column" => PdfFormTabOrder.Column, "structure" => PdfFormTabOrder.Structure, _ => PdfFormTabOrder.Unspecified });
-                return new { };
+                return new EmptyReply();
             case "order":
                 editor.ReorderFormWidgets(Int("page", 0), Body<FormNamesDto>(body).Names ?? []);
-                return new { };
+                return new EmptyReply();
             case "flatten":
                 {
                     var scope = Q("scope") switch { "selected" => PdfFlattenScope.Selected, "readonly" => PdfFlattenScope.ReadOnly, _ => PdfFlattenScope.All };
                     var result = editor.FlattenForm(new PdfFlattenOptions(scope, scope == PdfFlattenScope.Selected ? Body<FormNamesDto>(body).Names ?? [] : null));
-                    return new { flattened = result.Flattened, kept = result.Kept };
+                    return new FlattenReply(result.Flattened, result.Kept);
                 }
             case "import":
                 {
                     var result = editor.ImportFormData(body ?? throw new ArgumentException("Choose an FDF or XFDF file."));
-                    return new { applied = result.Applied, skipped = result.Skipped, truncated = result.Truncated };
+                    return new ImportReply(result.Applied, result.Skipped, result.Truncated);
                 }
             default: throw new ArgumentException("Unknown form command.");
         }
