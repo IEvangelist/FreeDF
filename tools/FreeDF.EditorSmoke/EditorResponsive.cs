@@ -105,6 +105,9 @@ static class EditorResponsive
             await page.GetByLabel("Interface text size", new() { Exact = true }).SelectOptionAsync("large");
             await Check("getComputedStyle(document.documentElement).fontSize === '18px' && getComputedStyle(document.querySelector('#props section')).paddingTop === '8px' && getComputedStyle(document.getElementById('tl')).height === '38px'", "density must change actual text, sidebar and toolbar geometry independently");
             await page.GetByRole(AriaRole.Button, new() { Name = "Done", Exact = true }).ClickAsync();
+            await page.Locator("#appearance").ClickAsync();
+            await Check("getComputedStyle(document.querySelector('.cm-i')).paddingTop === '10px' && document.querySelector('.cm-i').getBoundingClientRect().height >= 38", "menu density must survive the complete stylesheet cascade");
+            await page.Keyboard.PressAsync("Escape");
             var total = await page.EvaluateAsync<int>("Number(document.getElementById('pt').textContent.replace(/\\D/g,''))");
             if (total <= 1) throw new Exception("Layout fixture must have multiple pages");
             await page.Locator("#np").ClickAsync();
@@ -195,6 +198,10 @@ static class EditorResponsive
                     await page.WaitForTimeoutAsync(300);
                     var sheet = await page.EvaluateAsync<string>("p => { const e = document.querySelector(p), s = getComputedStyle(e), r = e.getBoundingClientRect(); return s.position === 'absolute' && r.width <= innerWidth * .9 + 1 && r.left >= -1 && r.right <= innerWidth + 1 && getComputedStyle(document.querySelector('main'), '::before').content !== 'none' ? '' : `not a sheet: position ${s.position}, width ${Math.round(r.width)} of ${innerWidth}, scrim ${getComputedStyle(document.querySelector('main'), '::before').content}`; }", panel);
                     if (sheet != "") issues.Add($"[{panel}] {sheet}");
+                    var placement = await page.EvaluateAsync<string>("p => { const r = document.querySelector(p).getBoundingClientRect(), t = document.getElementById('tools').getBoundingClientRect(), m = document.querySelector('main').getBoundingClientRect(); return Math.abs(r.top - t.bottom) <= 1 && Math.abs(r.bottom - m.bottom) <= 1 ? '' : `sheet bounds ${Math.round(r.top)}..${Math.round(r.bottom)} should span toolbar bottom ${Math.round(t.bottom)} to main bottom ${Math.round(m.bottom)}`; }", panel);
+                    if (placement != "") issues.Add($"[{panel}] {placement}");
+                    var width = await page.EvaluateAsync<string>("p => { const r = document.querySelector(p).getBoundingClientRect(), h = document.querySelector(p === '#left' ? '.rz.l' : '.rz.r'); const expected = Math.min(Number(h.getAttribute('aria-valuenow')), innerWidth * .88); return Math.abs(r.width - expected) <= 1 ? '' : `sheet width ${Math.round(r.width)} should use saved resize width ${Math.round(expected)}`; }", panel);
+                    if (width != "") issues.Add($"[{panel}] {width}");
                     await Check($"{panel} sheet open");
                     if (!open) await Click(page, toggle);
                 }

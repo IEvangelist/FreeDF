@@ -255,27 +255,27 @@ main { position: relative; grid-template-rows: auto minmax(0, 1fr); grid-templat
 #props { grid-column: 3; grid-row: 2; }
 #tools #tl { order: -1; }
 #tools #tr { order: 10; margin-left: auto; }
-.rz { top: var(--tools-height, 44px); bottom: 0; height: auto; width: 12px; margin: 0 -6px; }
-.rz::after { top: 0; bottom: 0; left: 5px; width: 2px; opacity: .35; }
-.rz:hover::after, .rz:focus-visible::after, .rz.drag::after { opacity: 1; width: 4px; left: 4px; }
+.rz { top: var(--tools-height, 44px); bottom: 0; height: auto; width: 24px; margin: 0 -12px; }
+.rz::after { top: 0; bottom: 0; left: 11px; width: 2px; opacity: .35; }
+.rz:hover::after, .rz:focus-visible::after, .rz.drag::after { opacity: 1; width: 4px; left: 10px; }
 #pageProgress { flex: none; height: 6px; background: var(--line-2); }
 #pageProgress[hidden] { display: none; }
 .page-progress-fill { height: 100%; background: var(--accent); }
 #pager { bottom: calc(var(--sbh, 0px) + 24px + env(safe-area-inset-bottom)); }
 @media (max-width: 760px) {
-  main { grid-template-columns: minmax(0, 1fr); }
+  main { grid-template-columns: minmax(0, 1fr); --lw: inherit; --rw: inherit; }
   #center { grid-column: 1; grid-row: 2; }
   #tools { z-index: 30; }
   #tools #tl { order: 0; }
   #tools #tr { order: 0; }
   #tools .seg { order: 1; }
   #tools #zoomControls { order: 6; flex: 1 1 100%; justify-content: space-between; }
-  main #left, main #props, main:not(.hide-l) #left, main:not(.hide-r) #props { top: var(--tools-height, 44px); width: min(var(--lw, 208px), 88vw); }
+  main #left, main #props, main:not(.hide-l) #left, main:not(.hide-r) #props { grid-area: auto; top: var(--tools-height, 44px); width: min(var(--lw, 208px), 88vw); }
   main #props, main:not(.hide-r) #props { width: min(var(--rw, 280px), 88vw); }
   main::before, main:not(.hide-l)::before, main:not(.hide-r)::before { top: var(--tools-height, 44px); }
   .rz { display: block; }
-  #props { grid-column: 1; }
 }
+@media (max-width: 720px) { #dstate { font-size: 0; } }
 @media (max-width: 720px), (pointer: coarse) {
   :root[data-menu-density] { --h: 44px; }
   .seg button, .seg label.btn { height: 44px; }
@@ -310,6 +310,8 @@ header .group button.icon, #tools .group button.icon, header button.icon, #tools
 
 /* ---- Menus: reserved check column, even padding, no overlap ---- */
 .cm-i { padding: 7px 12px; gap: 20px; min-height: 32px; }
+:root[data-menu-density] .cm-i { min-height: var(--menu-height); padding-block: var(--menu-padding); }
+@media (max-width: 720px), (pointer: coarse) { :root[data-menu-density] .cm-i { min-height: 44px; } }
 .cm.has-check { max-height: calc(100dvh - 16px); overflow-y: auto; min-width: 232px; }
 .cm.has-check .cm-i { padding-left: 34px; position: relative; }
 .cm.has-check .cm-i::before { content: ""; position: absolute; left: 12px; top: 50%; width: 14px; height: 14px; margin-top: -7px; opacity: 0; }
