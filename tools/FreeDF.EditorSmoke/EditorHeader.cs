@@ -29,10 +29,30 @@ static class EditorHeader
         var where = mobile ? "mobile" : "desktop";
         await Order(page, where);
         await State(page, false);
-        Check(await page.EvaluateAsync<bool>("""
+        var openStatus = await page.EvaluateAsync<bool>("""
             mobile => { const n = document.getElementById('name'), s = document.getElementById('dstate');
               return !document.getElementById('doc').classList.contains('empty') && n.title === n.textContent && n.textContent.length > 0 && !s.hidden && s.getBoundingClientRect().width >= 6 && ['Saved', 'Unsaved'].includes(s.textContent) && (mobile ? getComputedStyle(s).fontSize === '0px' : getComputedStyle(s).fontSize !== '0px'); }
-            """, mobile), where + ": open document shows its name with tooltip and a saved/unsaved status (dot only on mobile)");
+            """, mobile);
+        if (!openStatus)
+        {
+            var state = await page.EvaluateAsync<string>("""
+                () => { const n = document.getElementById('name'), s = document.getElementById('dstate');
+                  return JSON.stringify({ viewport: innerWidth, empty: document.getElementById('doc').classList.contains('empty'),
+                    name: n.textContent, title: n.title, status: s.textContent, hidden: s.hidden,
+                    statusWidth: s.getBoundingClientRect().width, fontSize: getComputedStyle(s).fontSize }); }
+                """);
+            throw new Exception($"FAIL: {where}: document name/title and status must be visible, with status font-size {(mobile ? "0px (dot only)" : "greater than 0px (text and dot)")}. Actual: {state}");
+        }
+        foreach (var size in new[] { "small", "large" })
+        {
+            await page.EvaluateAsync("size => document.documentElement.dataset.textSize = size", size);
+            Check(await page.EvaluateAsync<bool>("""
+                mobile => { const s = document.getElementById('dstate');
+                  return !s.hidden && s.getBoundingClientRect().width >= 6
+                    && (mobile ? getComputedStyle(s).fontSize === '0px' : getComputedStyle(s).fontSize !== '0px'); }
+                """, mobile), where + $": {size} chrome text preserves the saved/unsaved status presentation");
+        }
+        await page.EvaluateAsync("() => delete document.documentElement.dataset.textSize");
         if (!mobile) return;
         const string longName = "a-very-long-quarterly-board-report-with-appendices-and-redlines-final-final-v12.pdf";
         await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = longName, MimeType = "application/pdf", Buffer = pdf });

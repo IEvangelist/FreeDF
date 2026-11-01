@@ -232,7 +232,8 @@ main::before { backdrop-filter: none; }
 :root[data-text-size="small"] { font-size: 14px; }
 :root[data-text-size="large"] { font-size: 18px; }
 header .brand strong, #props h2 { font-size: var(--text-base); }
-#props h3, #props h2 em, .ct-p, #dstate { font-size: var(--text-xs); }
+#props h3, #props h2 em, .ct-p { font-size: var(--text-xs); }
+@media (min-width: 721px) { #dstate { font-size: var(--text-xs); } }
 #props .hint, #pages { font-size: var(--text-sm); }
 .cm-i { min-height: var(--menu-height); height: auto; padding-block: var(--menu-padding); }
 .seg button, .seg label.btn { height: var(--h); }
@@ -255,9 +256,9 @@ main { position: relative; grid-template-rows: auto minmax(0, 1fr); grid-templat
 #props { grid-column: 3; grid-row: 2; }
 #tools #tl { order: -1; }
 #tools #tr { order: 10; margin-left: auto; }
-.rz { top: var(--tools-height, 44px); bottom: 0; height: auto; width: 12px; margin: 0 -6px; }
-.rz::after { top: 0; bottom: 0; left: 5px; width: 2px; opacity: .35; }
-.rz:hover::after, .rz:focus-visible::after, .rz.drag::after { opacity: 1; width: 4px; left: 4px; }
+.rz { top: var(--tools-height, 44px); bottom: 0; height: auto; width: 24px; margin: 0 -12px; }
+.rz::after { top: 0; bottom: 0; left: 11px; width: 2px; opacity: .35; }
+.rz:hover::after, .rz:focus-visible::after, .rz.drag::after { opacity: 1; width: 4px; left: 10px; }
 #pageProgress { flex: none; height: 6px; background: var(--line-2); }
 #pageProgress[hidden] { display: none; }
 .page-progress-fill { height: 100%; background: var(--accent); }
