@@ -59,6 +59,8 @@ and window resizing. Narrow screens use resizable overlay sheets.
 Multi-page PDFs show a bottom progress strip reflecting the current page out
 of the total; it follows all paging controls and disappears for single-page or
 closed documents. The existing floating previous/next pager remains available.
+Background redraws and layout changes preserve a focused page-number entry.
+Enter submits it; leaving the field restores the actual current page number.
 
 The welcome screen's primary **Open the showcase** button opens the tagged,
 18-page benchmarks, brand and spec showcase (`28-benchmarks-brand-spec.pdf`).

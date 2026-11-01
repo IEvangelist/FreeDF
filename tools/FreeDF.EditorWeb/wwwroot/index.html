@@ -1246,7 +1246,8 @@ async function refreshDirty() {
   setDocLabel(s);
 }
 function navUpdate() {
-  $('pn').value = state.pageCount ? sel + 1 : ''; $('pt').textContent = '/ ' + (state.pageCount || 0);
+  if (document.activeElement !== $('pn')) $('pn').value = state.pageCount ? sel + 1 : '';
+  $('pt').textContent = '/ ' + (state.pageCount || 0);
   $('pp').disabled = sel <= 0; $('np').disabled = sel >= state.pageCount - 1;
   dispatchEvent(new CustomEvent('editor-page-change', { detail: { page: state.pageCount ? sel + 1 : 0, total: state.pageCount || 0 } }));
 }

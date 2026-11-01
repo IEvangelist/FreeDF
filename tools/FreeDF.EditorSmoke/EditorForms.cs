@@ -211,10 +211,22 @@ static class EditorForms
         if (formPage > 0)
         {
             // Undo history is per page: leaving the page discards it, so Ctrl+Z elsewhere cannot touch field edits or pop a stale entry.
-            await page.Locator("#pn").FillAsync("1"); await page.Locator("#pn").PressAsync("Enter");
-            await page.WaitForFunctionAsync("document.getElementById('pn').value === '1' && document.getElementById('base')?.naturalWidth > 0");
+            // Delay selection data so navigation cannot pass on the previous page's loaded image.
+            await page.EvaluateAsync("""
+                () => {
+                  const original = pdfHost.request.bind(pdfHost);
+                  pdfHost.request = async (url, options) => {
+                    const delay = url === '/api/page/0/selection';
+                    if (delay) pdfHost.request = original;
+                    const response = await original(url, options);
+                    if (delay) await new Promise(resolve => setTimeout(resolve, 300));
+                    return response;
+                  };
+                }
+                """);
+            await GoPage(page, 1);
             await page.Locator("body").PressAsync("Control+z");
-            await page.Locator("#pn").FillAsync((formPage + 1).ToString()); await page.Locator("#pn").PressAsync("Enter");
+            await GoPage(page, formPage + 1);
             await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && document.querySelectorAll('#layer .wgt').length > 0", formPage + 1);
             var current = (await Widgets(page, formPage)).Where(w => w.Kind == "text").ToDictionary(w => w.Name, w => w.Value);
             Check(expected.Where(kv => current.ContainsKey(kv.Key)).All(kv => current[kv.Key] == kv.Value), name + ": cross-page Ctrl+Z must leave field edits intact");
@@ -248,10 +260,7 @@ static class EditorForms
         await page.WaitForFunctionAsync("name => document.getElementById('name').textContent === name && document.getElementById('status').textContent.startsWith('Ready.') && document.getElementById('base')?.naturalWidth > 0", name);
         await page.Locator("[data-tool=select]").ClickAsync();
         if (formPage > 0)
-        {
-            await page.Locator("#pn").FillAsync((formPage + 1).ToString());
-            await page.Locator("#pn").PressAsync("Enter");
-        }
+            await GoPage(page, formPage + 1);
         await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && !document.getElementById('view').inert && document.querySelectorAll('#layer .ffbox').length > 0", formPage + 1);
         var fill = page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Fill out", Exact = true });
         Check(await page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).GetAttributeAsync("aria-pressed") == "true", name + ": document defaults to Edit");
@@ -266,6 +275,50 @@ static class EditorForms
         Check(await fill.GetAttributeAsync("aria-pressed") == "true" && (await page.Locator("#status").TextContentAsync())!.StartsWith("Fill out form:"), name + ": keyboard toggle updates pressed state and announces Fill out");
         if (name == "27-full-collection.pdf" && artifacts is not null)
             await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "collection-fill.png") });
+    }
+
+    static async Task GoPage(IPage page, int number)
+    {
+        await page.Locator("#pn").FillAsync(number.ToString());
+        await page.EvaluateAsync("""
+            async () => {
+              const refreshed = new Promise(resolve => addEventListener('editor-page-change', resolve, { once: true }));
+              dispatchEvent(new Event('resize'));
+              await refreshed;
+            }
+            """);
+        Check(await page.Locator("#pn").InputValueAsync() == number.ToString(),
+            "Background layout refresh must preserve the page number being entered");
+        await page.Locator("#pn").PressAsync("Enter");
+        try
+        {
+            await page.WaitForFunctionAsync("""
+                p => {
+                  const image = document.getElementById('base');
+                  return document.getElementById('pn').value === String(p)
+                    && !document.getElementById('view').inert && image?.naturalWidth > 0
+                    && image.dataset.loadedUrl?.includes(`/api/page/${p - 1}.png?`);
+                }
+                """, number);
+        }
+        catch (TimeoutException error)
+        {
+            var snapshot = await page.EvaluateAsync<string>("""
+                () => {
+                  const image = document.getElementById('base');
+                  return JSON.stringify({
+                    page: document.getElementById('pn').value,
+                    inert: document.getElementById('view').inert,
+                    loaded: image?.dataset.loadedUrl, target: image?.dataset.targetUrl,
+                    status: document.getElementById('status').textContent,
+                    active: document.activeElement?.id,
+                    widgets: document.querySelectorAll('#layer .wgt').length,
+                    mode: document.querySelector('#form-mode [aria-pressed=true]')?.textContent
+                  });
+                }
+                """);
+            throw new Exception($"Form navigation to page {number} did not settle: {snapshot}", error);
+        }
     }
 
     static async Task<List<Widget>> Widgets(IPage page, int index) =>
