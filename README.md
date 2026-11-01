@@ -1,48 +1,148 @@
 # FreeDF
 
-Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to the paywall.
+**A free PDF editor and PDF 2.0 engine written in C#/.NET.** Open, inspect,
+render, edit, and save PDFs with FreeDF's browser editor, or use the
+`PortableDocument.*` libraries directly in your .NET application.
 
-- `src/` core, document, content and render libraries (`PortableDocument.*`)
-- `tools/FreeDF.EditorWeb` browser editor: `dotnet run -c Release --project tools/FreeDF.EditorWeb -- file.pdf`
-- `tools/FreeDF.EditorWasm` static, browser-local WebAssembly editor with automatic GitHub Pages publishing; see [browser editor setup, operations and smoke checks](docs/browser-editor.md)
-- `samples/` 26 example PDFs, see `samples/README.md`
-- `docs/spec-matrix.md` spec coverage and known gaps
+[![Open FreeDF in your browser](https://img.shields.io/badge/try-FreeDF%20editor-be185d)](https://ievangelist.github.io/FreeDF/)
+[![PDF 2.0 coverage](https://img.shields.io/badge/PDF-2.0%20in%20progress-0e7490)](docs/spec-matrix.md)
 
-Build and test: `dotnet build PortableDocument.slnx -c Release` then `dotnet test PortableDocument.slnx -c Release`.
+## Try the editor
 
-The browser editor can select image and simple vector paint objects inside uniquely used indirect Form XObjects invoked directly from page content. Shared or repeated Forms (including hidden layer invocations) remain group-editable, without rewriting shared children. Ownership checks are conservative: unused resource aliases and streams containing inline images can also disable child edits. While Form child edits exist, graphic-group edits and page import/delete/reorder/rotate/insert/duplicate return a visible conflict; reset the child edits, or save and reopen before those operations. This is not a copy-on-write, arbitrary nested-Form, or general complex-path/clipping editor.
+**[Open the browser editor](https://ievangelist.github.io/FreeDF/)** and try
+the [18-page showcase](https://ievangelist.github.io/FreeDF/#sample=28).
+The app also includes a set of small sample PDFs covering forms, annotations,
+layers, encryption, accessible documents, typography, images, charts, and more;
+see the [sample index](samples/README.md).
 
-The HTTP editor regression runs with `dotnet test tests/FreeDF.Tests/FreeDF.Tests.csproj --filter FullyQualifiedName~FormObjectHttpTests`. It builds the editor, starts a test-owned localhost server for each case, verifies save/reopen output and rejected operations, and stops each server afterward.
+The GitHub Pages editor runs as WebAssembly in your browser. Your PDFs are
+opened and processed on your device; they are not uploaded to a PDF service.
+The installable PWA caches the app for offline reuse. For architecture,
+privacy, offline behavior, and editor details, see
+[docs/browser-editor.md](docs/browser-editor.md).
 
-`PortableDocument.slnx` is the canonical solution. Package versions are managed centrally in root `Directory.Packages.props`; project `PackageReference` entries omit versions. Change dependency versions there, while keeping tool-only dependencies referenced only by the relevant tools.
+## The app
 
-NativeAOT: production libraries enable compatibility analysis; see `tools/FreeDF.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.
+These are screenshots of FreeDF itself, with two real sample documents opened
+in the editor. GitHub selects the matching image for light or dark mode.
 
-## Library API
+**A dashboard of charts, sparklines, and KPIs**
 
-The library projects, assemblies, and namespaces are `PortableDocument.Core`, `PortableDocument.Document`, `PortableDocument.Content`, and `PortableDocument.Render`. The existing static entry class is now `PortableDocument.Render.PortableDocument`, replacing `PdfRenderer` without changing its methods or behavior:
+![FreeDF editor in light mode with the dashboard charts sample open](docs/images/editor-dashboard-light.png#gh-light-mode-only)
+![FreeDF editor in dark mode with the dashboard charts sample open](docs/images/editor-dashboard-dark.png#gh-dark-mode-only)
+
+**A filled, interactive event-registration form**
+
+![FreeDF editor in light mode with the AcroForm event-registration sample open](docs/images/editor-form-light.png#gh-light-mode-only)
+![FreeDF editor in dark mode with the AcroForm event-registration sample open](docs/images/editor-form-dark.png#gh-dark-mode-only)
+
+In the editor you can:
+
+- Open and render PDFs; navigate pages and outlines, search text, and inspect
+  document properties.
+- Edit supported page text and graphic objects; add text, shapes, images, and
+  annotations; fill and edit AcroForms.
+- Insert, duplicate, delete, rotate, reorder, and merge pages; undo changes,
+  preview the rendered page, and download the result.
+- Export pages as PDFs or images, extract text, and create compressed or
+  password-protected PDFs.
+- Work with encrypted documents using a password prompt. Passwords are not
+  stored, and the browser build does not save decrypted recovery copies.
+- Choose light/dark/system appearance, adjust the interface layout, and install
+  the PWA for offline use.
+
+Editing is intentionally scoped: it is not a general-purpose vector design
+program, and some complex PDF structures have conservative or unsupported edit
+paths. See the [editor operation inventory](docs/browser-editor.md#editor-operation-inventory)
+and [PDF 2.0 coverage matrix](docs/spec-matrix.md) for implementation details
+and known gaps.
+
+## Run locally
+
+The local HTTP editor is useful for development and opens an optional PDF on
+startup:
+
+```powershell
+dotnet run -c Release --project tools/FreeDF.EditorWeb
+dotnet run -c Release --project tools/FreeDF.EditorWeb -- .\samples\25-dashboard-charts.pdf
+```
+
+By default, the editor is available at `http://localhost:5080`. To choose a
+different port, pass `--port 5081`. This local host serves the editor UI and
+its PDF API from your machine; it is separate from the browser-local WebAssembly
+deployment described above.
+
+## Use the .NET libraries
+
+The libraries are split by responsibility: PDF file structure and writing,
+document-level features, content interpretation, and rendering. For example:
 
 ```csharp
 using PortableDocument.Document;
 using Pdf = PortableDocument.Render.PortableDocument;
 
 var document = PdfDocument.Load(bytes);
-var spans = Pdf.ExtractText(document.Pages[0]);
-var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
+var text = Pdf.ExtractText(document.Pages[0]);
+var renderedPage = Pdf.RenderPage(document.Pages[0], dpi: 96);
 ```
 
-Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. **FreeDF** names the editor, PWA, repository, and `FreeDF.*` projects and tools. The repository is [IEvangelist/FreeDF](https://github.com/IEvangelist/FreeDF), and the editor is published at [ievangelist.github.io/FreeDF/](https://ievangelist.github.io/FreeDF/). The `PortableDocument.*` API remains unchanged. Existing browser data is migrated locally, and historical benchmark reports retain their original tool identities and measurements.
+`PdfDocument` loads and exposes a PDF; `PortableDocument.Render.PortableDocument`
+provides the rendering and text-extraction entry points. The alias keeps that
+class distinct from the `PortableDocument` root namespace.
 
-### Inert remote go-to actions
+**FreeDF** names the editor, PWA, repository, and `FreeDF.*` projects and tools.
+The repository is [IEvangelist/FreeDF](https://github.com/IEvangelist/FreeDF).
+The `PortableDocument.*` library API is unchanged by the repository rename.
+Existing browser data is migrated locally; historical benchmark reports retain
+their original tool identities and measurements.
 
-`document.GetActions()` retains each original action `Dictionary`. For `/S /GoToR`, `RemoteGoToDetails` also exposes the `/F` file specification (string or dictionary), `/D` destination (name, byte string, or array), optional `/SD` structure destination array, and nullable `/NewWindow` boolean. Only indirect references within the source PDF are dereferenced; external files, embedded file contents, and remote destinations are never opened, loaded, or executed.
+| Project | What it provides |
+| --- | --- |
+| `PortableDocument.Core` | PDF objects, parsing, file structure, filters, writing, encryption, and signature primitives |
+| `PortableDocument.Document` | Document/page models, editing and page import, annotations, forms, metadata, navigation, structure, and validation |
+| `PortableDocument.Content` | PDF page-content interpretation, fonts and text shaping, color spaces, images, graphics, and optional-content layers |
+| `PortableDocument.Render` | Software page rendering, structured text extraction, annotation tools, and redaction |
+| `PortableDocument.FallbackFonts` | Bundled font fallback assets used by the browser editor |
+| `PortableDocument.Signing.Http` | HTTP RFC 3161 timestamp-authority client |
 
-These are inspection values, not validated navigation targets (ISO 32000-2:2020, 12.6.4.3, Table 203; file specifications in 7.11). Missing or wrong-type entries are null in the typed view and remain available in the raw dictionary. Nested dictionaries and arrays are preserved without validation or normalisation. Explicit remote destination page numbers are zero-based, not local page references; a missing `/NewWindow` remains null rather than defaulting to false.
+PDF actions and embedded content are inspected as data; parsing a PDF does not
+execute its JavaScript, launch actions, or open remote destinations. Validation
+and signature/trust APIs report what they can establish; they are not a
+substitute for a qualified PDF/A or PDF/UA certification workflow.
 
-### Interactive optional-content layers
+## What's in this repository
 
-`PortableDocument.Content.OptionalContentState` provides reusable, in-memory layer state for a document's default or named configuration. Its `Groups`, `RadioButtonGroups`, and `IsLocked` expose registered layers and configuration rules. Pass a registered group dictionary to `SetVisibility`, then render with `new PdfRenderOptions { OptionalContentState = state }`. State and `OptionalContentConfigurationName` are mutually exclusive.
+- `src/` — the `PortableDocument.*` libraries above.
+- `tools/FreeDF.EditorWeb/` — local HTTP-hosted PDF editor.
+- `tools/FreeDF.EditorWasm/` — browser-local WebAssembly editor used by the
+  static GitHub Pages app.
+- `tools/FreeDF.Samples/` and `samples/` — C# sample-PDF generators and the
+  committed example documents. The [sample README](samples/README.md) explains
+  each document, the encrypted samples, and how to generate the full collection.
+- `tests/FreeDF.Tests/` — parser, document, rendering, editor, conformance, and
+  regression tests, with PDF fixtures under `tests/fixtures/`.
+- `tools/FreeDF.EditorSmoke/` — Chromium editor, accessibility, responsive,
+  offline, and performance smoke checks.
+- `bench/` and `docs/performance/` — benchmark tooling and recorded results.
+- `docs/spec-matrix.md` — current ISO 32000-2 coverage and known gaps.
 
-Selecting a radio-group member hides its peers; turning it off does not select a replacement. A locked target, or a visible locked peer that would need to turn off, rejects the entire change with `InvalidOperationException`. Supply the current render event and zoom to `SetVisibility` when usage applications affect locked peers. User overrides take precedence over usage applications; untouched layers continue to follow the render event and zoom.
+## Build and test
 
-Omitted `/RBGroups` in a named configuration inherits the default configuration's groups; `[]` clears them. `/Locked` does not inherit. These rules do not normalize initial visibility or prevent configuration/usage-driven changes. Malformed rule references are ignored with warnings available on the state and rendered page. Changes do not modify or persist PDF dictionaries; existing editor saves preserve the original rules. This API never runs embedded actions or scripts.
+Requires the .NET SDK version pinned in [`global.json`](global.json).
+`PortableDocument.slnx` is the canonical solution:
+
+```powershell
+dotnet build PortableDocument.slnx -c Release
+dotnet test PortableDocument.slnx -c Release
+```
+
+Package versions are centrally managed in `Directory.Packages.props`.
+
+## Project status
+
+This is an actively developed PDF 2.0 implementation, not a claim of complete
+ISO 32000-2 parity. The coverage matrix marks implemented clauses as Done,
+Partial, or Todo and links to the remaining gaps. See
+[docs/spec-matrix.md](docs/spec-matrix.md) and
+[docs/spec-backlog.md](docs/spec-backlog.md) before relying on a feature for a
+particular class of PDFs.
