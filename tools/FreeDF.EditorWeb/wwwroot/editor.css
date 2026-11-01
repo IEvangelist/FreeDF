@@ -68,13 +68,15 @@ a.sponsor-badge { display: inline-flex; align-items: center; gap: 5px; flex: non
 a.sponsor-badge svg.i { width: 13px; height: 13px; fill: currentColor; }
 a.sponsor-badge:hover { background: #db61a24d; color: #fff; }
 a.sponsor-badge:active { background: #db61a266; }
-@media (max-width: 600px) { a.sponsor-badge, a#ghLink { display: none; } a.gh.gh-foot { width: 44px; height: 44px; } }
+@media (max-width: 600px) { a.sponsor-badge { display: none; } }
 a.gh { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: var(--h); height: var(--h); border-radius: var(--r); color: var(--fg-2); }
 a.gh svg { width: 18px; height: 18px; fill: currentColor; }
 a.gh:hover { background: var(--hover); color: var(--fg); }
 a.gh:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-a.gh-foot { width: 20px; height: 20px; }
-a.gh-foot svg { width: 16px; height: 16px; }
+#developerCredit { display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap; color: var(--fg-2); font-size: var(--text-xs); }
+#developerLink { display: inline-flex; align-items: center; min-height: 24px; padding: 0 4px; color: var(--accent); text-underline-offset: 2px; }
+#developerLink:hover { color: var(--accent-2); }
+#developerLink:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: var(--r); }
 footer #keys { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 footer #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 footer #recovery { height: 22px; min-height: 0; flex: none; }
@@ -82,6 +84,8 @@ footer #recovery { height: 22px; min-height: 0; flex: none; }
 @media (max-width: 900px) { header .lbl { display: none; } header .btn, header button.primary { padding: 0; width: var(--h); justify-content: center; } .doc #pages { display: none; } }
 @media (max-width: 720px) { .doc { flex: none; margin-right: 0; padding: 0 8px; } .doc > svg.i { display: none; } #name { max-width: 28vw; } #dstate { font-size: 0; } #dstate::before { margin-right: 0; width: 7px; height: 7px; } header .sp { flex: 1; height: auto; background: none; margin: 0; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
 @media (max-width: 600px) {
+  footer { flex-wrap: wrap; }
+  #developerCredit { margin-left: auto; }
   main { --lw: 0px; --rw: 0px; position: relative; }
   #left, #props { visibility: hidden; }
   main:not(.hide-l) #left, main:not(.hide-r) #props { position: absolute; top: 44px; bottom: 0; width: min(280px, 85vw); z-index: 20; visibility: visible; }

@@ -47,6 +47,10 @@ sidebars/controls (Compact, Default or Comfortable), plus interface text size
 before first paint. **Reset density** resets only these settings. Touch controls
 retain their minimum target sizes, and PDF text and exports are unchanged.
 
+The footer credits **Developed by David Pine**, linking to
+**https://davidpine.dev/**. The GitHub source link appears only in the header,
+including on mobile, rather than being duplicated in the footer.
+
 The panel toggles live on the second toolbar row, not the primary header.
 Drag either panel's visible inner edge to resize it, use the focused separator's
 Left/Right keys (Home/End for limits), or double-click to restore its default

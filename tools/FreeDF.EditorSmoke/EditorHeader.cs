@@ -55,15 +55,15 @@ static class EditorHeader
               const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
               const url = 'https://github.com/sponsors/IEvangelist?frequency=one-time', mobile = innerWidth <= 600;
               const plain = a => a.tagName === 'A' && a.href === url && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer' && a.getAttribute('aria-label') === 'Sponsor (one-time) on GitHub';
-              const h = document.getElementById('sponsor'), b = document.getElementById('sponsorBadge'), f = document.querySelector('footer'), fr = f.getBoundingClientRect(), br = b.getBoundingClientRect();
+              const h = document.getElementById('sponsor'), b = document.getElementById('sponsorBadge'), f = document.querySelector('footer'), fr = f.getBoundingClientRect(), br = b.getBoundingClientRect(), credit = document.getElementById('developerCredit').getBoundingClientRect();
               const bg = el => getComputedStyle(el).backgroundColor;
               const okBadge = mobile ? getComputedStyle(b).display === 'none'
-                : plain(b) && br.right <= fr.right && fr.right - br.right <= 16 + 32 && br.top >= fr.top + 2 && br.bottom <= fr.bottom - 2 && br.height >= 18
+                : plain(b) && br.right <= credit.left && credit.right <= fr.right && br.top >= fr.top + 2 && br.bottom <= fr.bottom - 2 && br.height >= 18
                   && ['status', 'recovery', 'keys'].every(id => { const e = document.getElementById(id); return e.hidden || getComputedStyle(e).display === 'none' || e.getBoundingClientRect().right <= br.left + 1; })
                   && ratio(getComputedStyle(b).color, bg(f)) >= 4.5;
               return plain(h) && ratio(getComputedStyle(h).color, bg(document.querySelector('header'))) >= 3 && okBadge
                 && !document.querySelector('link[rel=preconnect],link[rel=prefetch],link[rel=dns-prefetch]'); }
-            """), where + ": header heart and footer Sponsor badge are plain one-time anchors with AA contrast; badge is right-aligned in the status bar without overlapping status/recovery/hints and hidden on narrow screens");
+            """), where + ": header heart and footer Sponsor badge are plain one-time anchors with AA contrast; badge precedes the developer credit without overlapping status/recovery/hints and is hidden on narrow screens");
         Check(await page.EvaluateAsync<bool>("""
             () => { const a = document.getElementById('sponsor'), r = a.getBoundingClientRect(), mobile = innerWidth <= 720;
               return a.title === a.getAttribute('aria-label')
@@ -71,21 +71,22 @@ static class EditorHeader
                 && before(document.getElementById('fs'), a) && before(a, document.getElementById('dl')); function before(x, y) { return !!(x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING); } }
             """), where + ": header Sponsor heart keeps its tooltip, hit target and position beside the right-hand actions");
         Check(await page.EvaluateAsync<bool>("""
-            () => { const url = 'https://github.com/IEvangelist/FreeDF', mobile = innerWidth <= 600, q = id => document.getElementById(id);
+            () => { const url = 'https://github.com/IEvangelist/FreeDF', mobile = innerWidth <= 720, q = id => document.getElementById(id);
               const plain = a => a.tagName === 'A' && a.href === url && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer' && a.getAttribute('aria-label') === 'View source on GitHub' && a.title === 'View source on GitHub';
-              const h = q('ghLink'), f = q('ghFooter'), dl = q('dl').getBoundingClientRect(), hr = h.getBoundingClientRect(), b = q('sponsorBadge').getBoundingClientRect(), fr = f.getBoundingClientRect(), foot = document.querySelector('footer').getBoundingClientRect();
+              const h = q('ghLink'), dl = q('dl').getBoundingClientRect(), hr = h.getBoundingClientRect(), c = q('developerCredit'), a = q('developerLink'), cr = c.getBoundingClientRect(), ar = a.getBoundingClientRect(), foot = document.querySelector('footer').getBoundingClientRect();
               const mid = r => (r.top + r.bottom) / 2;
-              const okHeader = mobile ? getComputedStyle(h).display === 'none' : plain(h) && hr.left >= dl.right - 1 && hr.left - dl.right <= 12 && Math.abs(mid(hr) - mid(dl)) < 8 && hr.width >= 30 && hr.height >= 30 && hr.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;
-              const okFooter = mobile ? plain(f) && fr.width >= 44 && fr.height >= 44 && fr.right <= innerWidth && fr.top >= foot.top && fr.bottom <= foot.bottom && document.documentElement.scrollWidth <= innerWidth : plain(f) && fr.left >= b.right - 1 && fr.left - b.right <= 12 && fr.right <= foot.right && padOk() && Math.abs(fr.height - b.height) < .5 && Math.abs(mid(fr) - mid(b)) < 1 && b.top >= foot.top + 2 && b.bottom <= foot.bottom - 2;
-              function padOk() { const el = q('sponsorBadge'), s = getComputedStyle(el), e = el.getBoundingClientRect(); return (e.height - parseFloat(s.borderTopWidth) - parseFloat(s.borderBottomWidth) - parseFloat(s.lineHeight)) / 2 >= 3; }
+              const okHeader = plain(h) && getComputedStyle(h).display !== 'none' && hr.left >= dl.right - 1 && hr.left - dl.right <= 12 && Math.abs(mid(hr) - mid(dl)) < 8 && hr.width >= (mobile ? 44 : 30) && hr.height >= (mobile ? 44 : 30) && hr.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;
+              const okFooter = c.textContent.trim().replace(/\s+/g, ' ') === 'Developed by David Pine' && a.textContent === 'David Pine' && a.href === 'https://davidpine.dev/' && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer'
+                && ar.width >= 24 && ar.height >= 24 && cr.left >= foot.left && cr.right <= foot.right && cr.top >= foot.top && cr.bottom <= foot.bottom && !q('ghFooter') && !document.querySelector('footer a[href="' + url + '"]');
               return okHeader && okFooter; }
-            """), where + ": GitHub mark links open the repository in a new tab; desktop: right of Download and right of the Sponsor badge (inset, centred, padded); mobile: header link collapses, 44px status-bar link remains");
+            """), where + ": source link remains in the header on desktop and mobile; footer has only the visible developer credit linking to davidpine.dev, with no duplicate GitHub link");
         Check(await page.EvaluateAsync<bool>("""
             () => { const lum = c => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
               const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
               return ratio(getComputedStyle(document.getElementById('ghLink')).color, getComputedStyle(document.querySelector('header')).backgroundColor) >= 3
-                && ratio(getComputedStyle(document.getElementById('ghFooter')).color, getComputedStyle(document.querySelector('footer')).backgroundColor) >= 3; }
-            """), where + ": GitHub mark links meet 3:1 contrast");
+                && ratio(getComputedStyle(document.getElementById('developerCredit')).color, getComputedStyle(document.querySelector('footer')).backgroundColor) >= 4.5
+                && ratio(getComputedStyle(document.getElementById('developerLink')).color, getComputedStyle(document.querySelector('footer')).backgroundColor) >= 4.5; }
+            """), where + ": header GitHub mark meets 3:1 contrast and developer credit/link meet 4.5:1 contrast");
         Check(await page.EvaluateAsync<bool>("""
             () => { const q = id => document.getElementById(id); return !!(q('dl').compareDocumentPosition(q('ghLink')) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(q('ghLink').compareDocumentPosition(q('tr')) & Node.DOCUMENT_POSITION_FOLLOWING); }
             """), where + ": header GitHub link follows Download in focus order");

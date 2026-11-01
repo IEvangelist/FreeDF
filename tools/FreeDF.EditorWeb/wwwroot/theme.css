@@ -234,7 +234,6 @@ header button, header a, header .group { flex-shrink: 0; }
 /* Status bar targets meet the 24px WCAG 2.2 minimum. */
 body { grid-template-rows: 48px minmax(0, 1fr) 30px; }
 a.sponsor-badge { height: 24px; border-radius: 12px; }
-a.gh-foot { width: 24px; height: 24px; }
 footer #recovery { height: 24px; }
 @media (max-width: 760px) { body { grid-template-rows: 48px minmax(0, 1fr) auto; } }
 

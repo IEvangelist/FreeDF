@@ -226,7 +226,7 @@ static class EditorA11y
             await Open(page, pdf);
             var small = await page.EvaluateAsync<string[]>(TargetProbe);
             Expect(small.Length == 0, $"WCAG 2.2 target size >= 24x24 [{theme} {w}x{h}] {string.Join(", ", small)}");
-            var ring = await page.EvaluateAsync<string[]>(FocusProbe, "header button, #tools button, #pn, #fileBtn, a.sponsor, #sponsorBadge, #props button, #thumbs .thumb, #view");
+            var ring = await page.EvaluateAsync<string[]>(FocusProbe, "header button, #tools button, #pn, #fileBtn, a.sponsor, #sponsorBadge, #developerLink, #props button, #thumbs .thumb, #view");
             Expect(ring.Length == 0, $"visible focus ring >= 2px and 3:1 [{theme} {w}x{h}] {string.Join(", ", ring)}");
             await page.AddStyleTagAsync(new() { Content = SpacingStyle }); await page.WaitForTimeoutAsync(200);
             var clipped = await page.EvaluateAsync<string[]>(ClipProbe);
