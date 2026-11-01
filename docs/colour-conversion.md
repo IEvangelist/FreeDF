@@ -11,7 +11,7 @@ ISO 32000-2 gives `R = 1 - min(1, C + K)` only as a device-dependent fallback; v
 * **Why:** the previous pdf.js polynomial rendered pure yellow as (255, 235, 61) where Acrobat/PDFium give (255, 241, 1)
   (625-colour swatch grid vs PDFium: mean max-channel delta 9.7, max 60, 48% of colours off by more than 8 levels).
 * **Provenance and licence:** values were measured by rendering the 6,561 grid colours with PDFium (via `pypdfium2`; PDFium is BSD-3-Clause,
-  the same engine as Chrome and the reference of `tools/AdoBye.RenderCompare`). PDFium's table is in `core/fxge/dib/cfx_cmyk_to_srgb.cpp`
+  the same engine as Chrome and the reference of `tools/FreeDF.RenderCompare`). PDFium's table is in `core/fxge/dib/cfx_cmyk_to_srgb.cpp`
   ("Original code copyright 2014 Foxit Software Inc."), under PDFium's BSD-3-Clause licence; the notice ships in `THIRD-PARTY-NOTICES.md`.
   PDFium calls the conversion `AdobeCMYK_to_sRGB` and its values look like Adobe SWOP swatches, but upstream states no data source or other licence;
   that is an unverified residual risk and the `.bin` can be swapped for an independently licensed characterisation. No ICC profile is redistributed.
@@ -36,7 +36,7 @@ only `09-images.pdf` changed (`33D9F80F...` -> `5A3B5223...`, re-baselined; the 
 01/03/20 and the 12-page fixture (same first page as 20) are unchanged. This used the native renderer, which is the engine the editor runs; the WASM/browser
 profile run itself was not repeated.
 
-Accuracy against Chrome (Edge/PDFium via `AdoBye.RenderCompare`, 96 dpi, bad-pixel fraction / mean abs, before -> after):
+Accuracy against Chrome (Edge/PDFium via `FreeDF.RenderCompare`, 96 dpi, bad-pixel fraction / mean abs, before -> after):
 08-colour-spaces 0.31% / 4.93 -> 0.26% / 4.60; 09-images 0.26% / 6.30 -> 0.26% / 6.26; 21-brochure and 24-poster unchanged (0.11%, 0.02%).
 The residual difference is dominated by anti-aliasing and text, not colour.
 * Tests: `ColorPrintEdgeTests.DeviceCmyk_*` (14 PDFium reference colours, monotonicity, clamping/NaN).

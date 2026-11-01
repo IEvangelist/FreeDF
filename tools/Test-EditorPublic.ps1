@@ -35,7 +35,7 @@ try {
     if (Test-Path $Output) { throw "Use a fresh output directory: $Output" }
     New-Item -ItemType Directory -Path $Output | Out-Null
     $createdOutput = $true
-    $entryPoint = Get-Content (Join-Path $PSScriptRoot 'AdoBye.EditorSmoke\Program.cs') -Raw
+    $entryPoint = Get-Content (Join-Path $PSScriptRoot 'FreeDF.EditorSmoke\Program.cs') -Raw
     foreach ($feature in $FeatureSmoke) {
         if ($feature -notmatch '^--[a-z][a-z0-9-]*$' -or !$entryPoint.Contains("args[0] == `"$feature`"")) {
             throw "Unsupported feature smoke selector in this checkout: $feature"
@@ -44,7 +44,7 @@ try {
     $sha = & git rev-parse --verify "$TargetCommit^{commit}"
     if ($LASTEXITCODE -ne 0) { throw "Unknown target commit: $TargetCommit" }
     $result.target = $sha
-    & git diff --exit-code $sha -- src tools/AdoBye.EditorWeb tools/AdoBye.EditorWasm samples
+    & git diff --exit-code $sha -- src tools/FreeDF.EditorWeb tools/FreeDF.EditorWasm samples
     if ($LASTEXITCODE -ne 0) { throw 'Check out the target runtime/source before running public acceptance.' }
     $siteUri = [uri] $Url
     if (!$siteUri.IsAbsoluteUri -or $siteUri.Scheme -notin @('http', 'https') -or $siteUri.AbsolutePath -ne '/csharp-pdf/') {
@@ -108,8 +108,8 @@ try {
             Start-Sleep 15
         }
     }
-    Invoke-Checked 'dotnet' @('build', (Join-Path $PSScriptRoot 'AdoBye.EditorSmoke'), '-c', 'Release', '-t:Rebuild', '--nologo', '-v', 'quiet') (Join-Path $Output 'build.log')
-    $runner = Join-Path $PSScriptRoot 'AdoBye.EditorSmoke\bin\Release\net10.0\AdoBye.EditorSmoke.dll'
+    Invoke-Checked 'dotnet' @('build', (Join-Path $PSScriptRoot 'FreeDF.EditorSmoke'), '-c', 'Release', '-t:Rebuild', '--nologo', '-v', 'quiet') (Join-Path $Output 'build.log')
+    $runner = Join-Path $PSScriptRoot 'FreeDF.EditorSmoke\bin\Release\net10.0\FreeDF.EditorSmoke.dll'
     $env:EDITOR_SMOKE_TRANSIENT_BOOT = $null
     $env:EDITOR_SMOKE_SITE_ROOT = $site
     $checks = @(

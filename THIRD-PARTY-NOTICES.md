@@ -63,7 +63,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Octicons (GitHub mark icon)
 
-The browser editor's "View source on GitHub" links use the `mark-github` glyph from [Octicons](https://github.com/primer/octicons), inlined as an SVG symbol in `tools/AdoBye.EditorWeb/wwwroot/index.html`.
+The browser editor's "View source on GitHub" links use the `mark-github` glyph from [Octicons](https://github.com/primer/octicons), inlined as an SVG symbol in `tools/FreeDF.EditorWeb/wwwroot/index.html`.
 
 Licence: MIT - <https://github.com/primer/octicons/blob/main/LICENSE>
 

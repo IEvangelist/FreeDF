@@ -1,5 +1,5 @@
 {
-  "name": "adobye-editor-tools",
+  "name": "freedf-editor-tools",
   "private": true,
   "description": "Publish-time tooling for the static editor (bundling/minification).",
   "devDependencies": { "esbuild": "0.25.0" }

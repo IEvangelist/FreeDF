@@ -55,7 +55,7 @@ test('discovers lazily imported modules (including .mjs with static imports) and
 });
 
 test('preserves PWA identity, scoped file handling and maskable installation icons', () => {
-  const manifest = JSON.parse(readFileSync(new URL('./AdoBye.EditorWeb/wwwroot/site.webmanifest', import.meta.url), 'utf8'));
+  const manifest = JSON.parse(readFileSync(new URL('./FreeDF.EditorWeb/wwwroot/site.webmanifest', import.meta.url), 'utf8'));
   const dir = fixture({ 'site.webmanifest': JSON.stringify(manifest) });
   bundle(dir);
   const published = JSON.parse(readFileSync(join(dir, 'site.webmanifest'), 'utf8'));

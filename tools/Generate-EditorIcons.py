@@ -3,7 +3,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 root = Path(__file__).resolve().parent.parent
-output = root / "tools" / "AdoBye.EditorWeb" / "wwwroot"
+output = root / "tools" / "FreeDF.EditorWeb" / "wwwroot"
 size = 1024
 image = Image.new("RGBA", (size, size))
 draw = ImageDraw.Draw(image)

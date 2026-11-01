@@ -84,10 +84,10 @@ def vera(path, part):
 
 
 def ours(files):
-    proj = os.path.join(ROOT, "tools", "AdoBye.UaDump", "AdoBye.UaDump.csproj")
+    proj = os.path.join(ROOT, "tools", "FreeDF.UaDump", "FreeDF.UaDump.csproj")
     run = subprocess.run(["dotnet", "run", "-c", "Release", "--project", proj, "--", *files], capture_output=True, text=True)
     if run.returncode != 0:
-        sys.exit(f"AdoBye.UaDump failed with exit code {run.returncode}; refusing to report a partial matrix:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
+        sys.exit(f"FreeDF.UaDump failed with exit code {run.returncode}; refusing to report a partial matrix:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
     res = {}
     for line in run.stdout.splitlines():
         if line.startswith("{"):

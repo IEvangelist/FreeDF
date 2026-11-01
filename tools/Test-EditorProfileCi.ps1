@@ -4,7 +4,7 @@ param(
     [string] $Policy = (Join-Path $PSScriptRoot '..\docs\performance\editor-ci-known-misses.v1.json')
 )
 $ErrorActionPreference = 'Stop'
-$runner = Join-Path $PSScriptRoot 'AdoBye.EditorSmoke\bin\Release\net10.0\AdoBye.EditorSmoke.dll'
+$runner = Join-Path $PSScriptRoot 'FreeDF.EditorSmoke\bin\Release\net10.0\FreeDF.EditorSmoke.dll'
 New-Item $Output -ItemType Directory -Force | Out-Null
 # Synthetic controls must be independent of real timing regressions in the input run.
 # Only timings are normalized; missing groups, allocations and pixel evidence remain intact.

@@ -1,6 +1,6 @@
 """Validates library-produced signature samples with pyHanko (tested 0.38.0).
 
-1. PDF_SECURITY_OUT=<dir> dotnet test tests/AdoBye.Tests -c Release --filter FullyQualifiedName~Export_docmdp_samples
+1. PDF_SECURITY_OUT=<dir> dotnet test tests/FreeDF.Tests -c Release --filter FullyQualifiedName~Export_docmdp_samples
 2. python validate_with_pyhanko.py <dir>
 
 Trust roots are the sample certificates themselves; nothing is fetched. For each signature it prints pyHanko's integrity,

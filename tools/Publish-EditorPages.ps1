@@ -1,5 +1,5 @@
 param(
-    [string] $Output = (Join-Path $PSScriptRoot 'AdoBye.EditorWasm\bin\pages'),
+    [string] $Output = (Join-Path $PSScriptRoot 'FreeDF.EditorWasm\bin\pages'),
     [string] $BasePath = '/csharp-pdf/',
     [switch] $Aot,
     [switch] $SkipSamples,
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $elapsed = [Diagnostics.Stopwatch]::StartNew()
 if ($BasePath -notmatch '^/([A-Za-z0-9._-]+/)*$') { throw 'BasePath must start and end with / and contain only path segments.' }
-$project = Join-Path $PSScriptRoot 'AdoBye.EditorWasm\AdoBye.EditorWasm.csproj'
+$project = Join-Path $PSScriptRoot 'FreeDF.EditorWasm\FreeDF.EditorWasm.csproj'
 $publishArgs = @('publish', $project, '-c', 'Release', '-o', $Output, '--nologo')
 if ($Aot) { $publishArgs += @('-p:RunAOTCompilation=true', '-p:PublishTrimmed=true', '-p:WasmEnableSIMD=true') }
 if ($Trim -and !$Aot) { $publishArgs += '-p:PublishTrimmed=true' }
@@ -27,7 +27,7 @@ $engine = '<script>{const w=new Worker(new URL("worker.js",document.baseURI),{ty
 $html = [IO.File]::ReadAllText($index).Replace('<head>', "<head>`n<base href=`"$BasePath`">`n<meta name=`"editor-host`" content=`"wasm`">`n$engine")
 [IO.File]::WriteAllText($index, $html)
 [IO.File]::WriteAllText((Join-Path $site '.nojekyll'), '')
-foreach ($asset in @('editor.css', 'theme.css', 'surface.css', 'ui.js', 'pwa.js', 'favicon.svg', 'favicon-32.png', 'favicon.ico', 'apple-touch-icon.png', 'site.webmanifest', 'editor.js', 'annotations.js', 'form-fields.js', 'host.js', 'worker.js', 'pool.js', 'scheduler.js', 'replica-worker.js', 'recovery.js', 'samples.js', 'sw.js', 'sw-client.js', 'fileaccess.js', 'localfonts.js', 'outline-map.mjs', 'outline-panel.mjs', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
+foreach ($asset in @('editor.css', 'theme.css', 'surface.css', 'ui.js', 'pwa.js', 'favicon.svg', 'favicon-32.png', 'favicon.ico', 'apple-touch-icon.png', 'site.webmanifest', 'editor.js', 'annotations.js', 'form-fields.js', 'host.js', 'worker.js', 'pool.js', 'scheduler.js', 'replica-worker.js', 'recovery.js', 'storage.js', 'samples.js', 'sw.js', 'sw-client.js', 'fileaccess.js', 'localfonts.js', 'outline-map.mjs', 'outline-panel.mjs', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
     if (!(Test-Path (Join-Path $site $asset))) { throw "Missing site asset: $asset" }
 }
 # Lazily fetched sample PDFs (never part of startup): 01-26 and 28 are committed; 27 is generated in a scratch folder.
@@ -36,15 +36,15 @@ if (!$SkipSamples) {
     $work = Join-Path ([IO.Path]::GetTempPath()) ('pages-samples-' + [Guid]::NewGuid().ToString('N'))
     $tool = Join-Path $work 'tool'
     $inputDir = Join-Path $work 'input'
-    $samplesProject = Join-Path $PSScriptRoot 'AdoBye.Samples\AdoBye.Samples.csproj'
+    $samplesProject = Join-Path $PSScriptRoot 'FreeDF.Samples\FreeDF.Samples.csproj'
     try {
         New-Item -ItemType Directory -Path $inputDir | Out-Null
         dotnet build $samplesProject -c Release -o $tool --nologo -v q
         if ($LASTEXITCODE -ne 0) { throw 'Building the sample generator failed.' }
         Get-ChildItem $sampleSource -Filter '*.pdf' | Where-Object { $_.Name -match '^\d\d-' -and $_.Name -notmatch '^27-' } | Copy-Item -Destination $inputDir
-        dotnet (Join-Path $tool 'AdoBye.Samples.dll') generate $inputDir 27-
+        dotnet (Join-Path $tool 'FreeDF.Samples.dll') generate $inputDir 27-
         if ($LASTEXITCODE -ne 0) { throw 'Generating 27-full-collection.pdf failed.' }
-        dotnet (Join-Path $tool 'AdoBye.Samples.dll') publish-assets $inputDir (Join-Path $site 'samples')
+        dotnet (Join-Path $tool 'FreeDF.Samples.dll') publish-assets $inputDir (Join-Path $site 'samples')
         if ($LASTEXITCODE -ne 0) { throw 'Publishing sample assets failed.' }
     } finally { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
     $sampleFiles = @(Get-ChildItem (Join-Path $site 'samples') -File)

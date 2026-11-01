@@ -5,7 +5,7 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/bench/">
-    <Project Path="bench/AdoBye.Bench/AdoBye.Bench.csproj" />
+    <Project Path="bench/FreeDF.Bench/FreeDF.Bench.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/PortableDocument.Content/PortableDocument.Content.csproj" />
@@ -16,15 +16,15 @@
     <Project Path="src/PortableDocument.Render/PortableDocument.Render.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/AdoBye.Tests/AdoBye.Tests.csproj" />
+    <Project Path="tests/FreeDF.Tests/FreeDF.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
-    <Project Path="tools/AdoBye.EditorWeb/AdoBye.EditorWeb.csproj" />
-    <Project Path="tools/AdoBye.EditorWasm/AdoBye.EditorWasm.csproj" />
-    <Project Path="tools/AdoBye.EditorSmoke/AdoBye.EditorSmoke.csproj" />
-    <Project Path="tools/AdoBye.AotSmoke/AdoBye.AotSmoke.csproj" />
-    <Project Path="tools/AdoBye.RenderCompare/AdoBye.RenderCompare.csproj" />
-    <Project Path="tools/AdoBye.FontPack/AdoBye.FontPack.csproj" />
-    <Project Path="tools/AdoBye.Profile/AdoBye.Profile.csproj" />
+    <Project Path="tools/FreeDF.EditorWeb/FreeDF.EditorWeb.csproj" />
+    <Project Path="tools/FreeDF.EditorWasm/FreeDF.EditorWasm.csproj" />
+    <Project Path="tools/FreeDF.EditorSmoke/FreeDF.EditorSmoke.csproj" />
+    <Project Path="tools/FreeDF.AotSmoke/FreeDF.AotSmoke.csproj" />
+    <Project Path="tools/FreeDF.RenderCompare/FreeDF.RenderCompare.csproj" />
+    <Project Path="tools/FreeDF.FontPack/FreeDF.FontPack.csproj" />
+    <Project Path="tools/FreeDF.Profile/FreeDF.Profile.csproj" />
   </Folder>
 </Solution>

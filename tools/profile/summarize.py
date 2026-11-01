@@ -8,12 +8,13 @@ for p in sys.argv[1:]:
     for line in open(p, encoding="utf-8-sig"):
         try: rows.append(json.loads(line))
         except Exception: pass
-engines = ["adobye", "pdfpig", "pdfium", "mupdf", "pikepdf"]
+engines = ["freedf", "pdfpig", "pdfium", "mupdf", "pikepdf"]
 by = collections.defaultdict(dict)
 size = {}
 for r in rows:
     size[r["file"]] = r.get("bytes", 0)
-    by[(r["file"], r["op"])][r["engine"]] = r
+    engine = "freedf" if r["engine"] == "adobye" else r["engine"]
+    by[(r["file"], r["op"])][engine] = r
 for op in sorted({k[1] for k in by}):
     print(f"\n### {op} (median ms; `first` in parentheses for open/text; ERR = error)\n")
     print("| file | MB | " + " | ".join(engines) + " |\n|---|---:|" + "---:|" * len(engines))
@@ -37,7 +38,7 @@ for f in sorted(size, key=lambda x: size[x]):
         v = [r["peak_ws_mb"] for (ff, op), d in by.items() if ff == f for ee, r in d.items() if ee == e and r.get("peak_ws_mb")]
         cells.append(f"{max(v):.0f}" if v else "")
     print(f"| {f} | " + " | ".join(cells) + " |")
-errs = [(r["file"], r["engine"], r["op"], r["error"]) for r in rows if r.get("error")]
+errs = [(r["file"], "freedf" if r["engine"] == "adobye" else r["engine"], r["op"], r["error"]) for r in rows if r.get("error")]
 if errs:
     print("\n### errors\n")
     for e in errs: print("-", *e)

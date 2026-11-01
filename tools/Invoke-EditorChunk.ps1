@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory)]
     [ValidateSet('node', 'dotnet-editor', 'dotnet-codecs', 'dotnet-render', 'default', 'forms', 'authoring', 'boot', 'viewport', 'a11y', 'responsive', 'profile-invariants', 'perf')]
     [string] $Chunk,
-    [string] $Site = (Join-Path $PSScriptRoot 'AdoBye.EditorWasm\bin\pages\wwwroot'),
+    [string] $Site = (Join-Path $PSScriptRoot 'FreeDF.EditorWasm\bin\pages\wwwroot'),
     [string] $Work = (Join-Path ([IO.Path]::GetTempPath()) 'editor-chunks')
 )
 # One CI validation chunk. CI (.github/workflows/editor-pages.yml) and local/agent runs share this
@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $repo
-$smokeProject = 'tools/AdoBye.EditorSmoke'
+$smokeProject = 'tools/FreeDF.EditorSmoke'
 $samples = Join-Path $repo 'samples'
 function Run([string] $What, [scriptblock] $Block) {
     Write-Host "::group::$What"
@@ -30,14 +30,14 @@ $unitFilters = @{
     'dotnet-render' = 'FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests'
 }
 if ($unitFilters.ContainsKey($Chunk)) {
-    Run $Chunk { dotnet test tests/AdoBye.Tests -c Release --filter $unitFilters[$Chunk] }
+    Run $Chunk { dotnet test tests/FreeDF.Tests -c Release --filter $unitFilters[$Chunk] }
     return
 }
 if ($Chunk -eq 'node') {
-    Run 'worker cache and scheduling invariants' { node --test (Get-ChildItem tools/AdoBye.EditorWasm/tests -Filter *.test.mjs).FullName }
-    $cjs = @(Get-ChildItem tools/AdoBye.EditorWasm, tools/AdoBye.EditorWeb -Filter *.test.cjs | Where-Object Name -notlike 'e2e_*')
+    Run 'worker cache and scheduling invariants' { node --test (Get-ChildItem tools/FreeDF.EditorWasm/tests -Filter *.test.mjs).FullName }
+    $cjs = @(Get-ChildItem tools/FreeDF.EditorWasm, tools/FreeDF.EditorWeb -Filter *.test.cjs | Where-Object Name -notlike 'e2e_*')
     if ($cjs) { Run 'host, worker and selection invariants' { node --test $cjs.FullName } }
-    Run 'sample, outline and publish bundle integrity' { node --test tools/AdoBye.EditorWeb/samples.test.mjs tools/AdoBye.EditorWeb/outline_map.test.mjs tools/bundle-editor-site.test.mjs }
+    Run 'sample, outline and publish bundle integrity' { node --test tools/FreeDF.EditorWeb/samples.test.mjs tools/FreeDF.EditorWeb/outline_map.test.mjs tools/bundle-editor-site.test.mjs }
     return
 }
 Prepare
@@ -58,9 +58,15 @@ switch ($Chunk) {
         Run 'annotation authoring' { Smoke @('--annotations', $Site) }
         Run 'object transformations and styling' { Smoke @('--object-breadth', $Site) }
         Run 'local file saving and font access' { Smoke @('--file-access', $Site) }
+        Run 'previous-version local data migration' { Smoke @('--storage-migration', $Site) }
         Run 'Contents panel and active page' { Smoke @('--outline', $Site) }
     }
-    'boot' { Run 'cold boot and injected resource failures' { Smoke @('--boot', $Site, (WorkDir 'editor-boot')) } }
+    'boot' {
+        Run 'cold boot and injected resource failures' { Smoke @('--boot', $Site, (WorkDir 'editor-boot')) }
+        $workerWork = WorkDir 'editor-worker-migration'
+        Run 'offline worker migration and rollback' { Smoke @('--service-worker-migration', $Site, $workerWork) }
+        Remove-Item -LiteralPath (Join-Path $workerWork 'site') -Recurse -Force
+    }
     'viewport' {
         $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-viewport'
         Run 'viewport fit and window scrolling' { Smoke @('--viewport', $Site, $repacked) }
@@ -68,7 +74,7 @@ switch ($Chunk) {
     }
     'a11y' {
         $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-a11y'
-        Run 'axe-core tooling (test-only, never published)' { npm ci --prefix tools/AdoBye.EditorSmoke/a11y }
+        Run 'axe-core tooling (test-only, never published)' { npm ci --prefix tools/FreeDF.EditorSmoke/a11y }
         Run 'accessibility' { Smoke @('--a11y', $Site, $showcase) }
     }
     'responsive' {

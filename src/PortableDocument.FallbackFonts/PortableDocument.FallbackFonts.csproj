@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PortableDocument.Content\PortableDocument.Content.csproj" />
-    <InternalsVisibleTo Include="AdoBye.Tests" />
+    <InternalsVisibleTo Include="FreeDF.Tests" />
   </ItemGroup>
 
   <ItemGroup>

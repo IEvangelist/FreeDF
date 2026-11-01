@@ -4,7 +4,7 @@ namespace PortableDocument.Content;
 /// DeviceCMYK to sRGB for on-screen output. ISO 32000-2 10.3.5 only gives the naive R = 1 - min(1, C + K) formula as a
 /// device-dependent fallback; every conforming viewer substitutes a press-like characterisation (Acrobat: SWOP). This uses a
 /// 9x9x9x9 grid (node values 0, 32, ... 224, 255 per component) interpolated multilinearly, which matches PDFium/Chrome (the
-/// reference renderer of tools/AdoBye.RenderCompare) to a mean of under one 8-bit level; see docs/colour-conversion.md for
+/// reference renderer of tools/FreeDF.RenderCompare) to a mean of under one 8-bit level; see docs/colour-conversion.md for
 /// provenance, licence and measured error. The grid is an embedded resource, so it is trimming/AOT/browser safe, and the
 /// conversion is allocation-free.
 /// </summary>

@@ -16,7 +16,7 @@ Its five-digit bound, comments, token boundary and failed-lookahead position
 remain unchanged.
 
 Method: Windows x64, .NET SDK 10.0.403, Release, default GC. Separate old/new
-processes using the same `AdoBye.Profile` harness and identical generated PDF:
+processes using the same `FreeDF.Profile` harness and identical generated PDF:
 788,102 bytes, 10,000 empty pages, classic xref, one root inheritance dictionary.
 The old binaries were copied before editing. Each process performed 30 opens,
 then the harness's warmed `alloc_split` measurement. Allocation split uses
@@ -42,8 +42,8 @@ Reproduce with no Python dependencies:
 
 ```powershell
 python tools\profile\gen_page_tree.py page-tree-10000.pdf
-dotnet build tools\AdoBye.Profile -c Release
-dotnet tools\AdoBye.Profile\bin\Release\net10.0\AdoBye.Profile.dll page-tree-10000.pdf --ops open,alloc_split,fingerprint --iters 30 --budget 30
+dotnet build tools\FreeDF.Profile -c Release
+dotnet tools\FreeDF.Profile\bin\Release\net10.0\FreeDF.Profile.dll page-tree-10000.pdf --ops open,alloc_split,fingerprint --iters 30 --budget 30
 ```
 
 Use separately built baseline/current binaries on the same PDF; do not rebuild

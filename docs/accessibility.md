@@ -1,6 +1,6 @@
 # Editor accessibility, theming and motion
 
-This page records how the browser editor (`tools/AdoBye.EditorWeb/wwwroot`) is
+This page records how the browser editor (`tools/FreeDF.EditorWeb/wwwroot`) is
 built for accessibility, what is verified automatically, and what was checked by
 hand. Automated checks are **partial**: axe-core finds roughly a third of WCAG
 failures, so the sections below separate what a tool asserts from what a person
@@ -52,10 +52,10 @@ loops and no parallax.
 
 ## What is asserted automatically (`--a11y`)
 
-`dotnet run --project tools/AdoBye.EditorSmoke -- --a11y <site> <sample.pdf>`
+`dotnet run --project tools/FreeDF.EditorSmoke -- --a11y <site> <sample.pdf>`
 injects axe-core (WCAG 2.0/2.1/2.2 A and AA plus best-practice rules) into a
 real Chromium page. axe-core is a **dev/test-only** dependency: install it with
-`npm ci --prefix tools/AdoBye.EditorSmoke/a11y`; it is not part of the Pages
+`npm ci --prefix tools/FreeDF.EditorSmoke/a11y`; it is not part of the Pages
 payload. The mode fails on any serious or critical violation.
 
 Screens run in light and dark: welcome, document open, File menu and submenu,

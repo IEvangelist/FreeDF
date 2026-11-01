@@ -3,8 +3,8 @@
 Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to the paywall.
 
 - `src/` core, document, content and render libraries (`PortableDocument.*`)
-- `tools/AdoBye.EditorWeb` browser editor: `dotnet run -c Release --project tools/AdoBye.EditorWeb -- file.pdf`
-- `tools/AdoBye.EditorWasm` static, browser-local WebAssembly editor with automatic GitHub Pages publishing; see [browser editor setup, operations and smoke checks](docs/browser-editor.md)
+- `tools/FreeDF.EditorWeb` browser editor: `dotnet run -c Release --project tools/FreeDF.EditorWeb -- file.pdf`
+- `tools/FreeDF.EditorWasm` static, browser-local WebAssembly editor with automatic GitHub Pages publishing; see [browser editor setup, operations and smoke checks](docs/browser-editor.md)
 - `samples/` 26 example PDFs, see `samples/README.md`
 - `docs/spec-matrix.md` spec coverage and known gaps
 
@@ -12,11 +12,11 @@ Build and test: `dotnet build PortableDocument.slnx -c Release` then `dotnet tes
 
 The browser editor can select image and simple vector paint objects inside uniquely used indirect Form XObjects invoked directly from page content. Shared or repeated Forms (including hidden layer invocations) remain group-editable, without rewriting shared children. Ownership checks are conservative: unused resource aliases and streams containing inline images can also disable child edits. While Form child edits exist, graphic-group edits and page import/delete/reorder/rotate/insert/duplicate return a visible conflict; reset the child edits, or save and reopen before those operations. This is not a copy-on-write, arbitrary nested-Form, or general complex-path/clipping editor.
 
-The HTTP editor regression runs with `dotnet test tests/AdoBye.Tests/AdoBye.Tests.csproj --filter FullyQualifiedName~FormObjectHttpTests`. It builds the editor, starts a test-owned localhost server for each case, verifies save/reopen output and rejected operations, and stops each server afterward.
+The HTTP editor regression runs with `dotnet test tests/FreeDF.Tests/FreeDF.Tests.csproj --filter FullyQualifiedName~FormObjectHttpTests`. It builds the editor, starts a test-owned localhost server for each case, verifies save/reopen output and rejected operations, and stops each server afterward.
 
 `PortableDocument.slnx` is the canonical solution. Package versions are managed centrally in root `Directory.Packages.props`; project `PackageReference` entries omit versions. Change dependency versions there, while keeping tool-only dependencies referenced only by the relevant tools.
 
-NativeAOT: production libraries enable compatibility analysis; see `tools/AdoBye.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.
+NativeAOT: production libraries enable compatibility analysis; see `tools/FreeDF.AotSmoke/README.md` for the native publish/run validation and optional, experimental host-level GC notes.
 
 ## Library API
 
@@ -31,7 +31,7 @@ var spans = Pdf.ExtractText(document.Pages[0]);
 var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
 ```
 
-Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. **FreeDF** is the public product name. Internal `AdoBye.*` project/tool names, the `IEvangelist/csharp-pdf` repository, and existing browser storage keys remain stable for compatibility. Historical benchmark reports retain their original tool identities and measurements.
+Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. **FreeDF** names the editor, PWA, and `FreeDF.*` projects and tools. The `IEvangelist/csharp-pdf` repository and `PortableDocument.*` API remain unchanged. Existing browser data is migrated locally, and historical benchmark reports retain their original tool identities and measurements.
 
 ### Inert remote go-to actions
 

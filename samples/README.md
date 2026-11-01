@@ -1,6 +1,6 @@
 # FreeDF sample PDFs
 
-Twenty-seven committed example documents (plus a generated collection numbered 27) that exercise as much of ISO 32000-2 (PDF 2.0) as possible. Every file is generated from raw PDF operators by this repo's own C# tooling (`tools/AdoBye.Samples`), so the examples are valid, small (about 2.4 MB in total for 01-26; `28` adds about 0.37 MB) and free of stock images. Start with **[Open the showcase](https://ievangelist.github.io/csharp-pdf/#sample=28)**: `28-benchmarks-brand-spec.pdf` is the primary one-click browser sample, a tagged 18-page showcase of measured benchmarks, FreeDF's official identity alongside archived brand studies, and the honest parity map. `01-spec-showcase.pdf` links to the individual fixtures; generate `27-full-collection.pdf` for samples 01-26 in one file. Sample 28 sits beside the collection rather than inside it.
+Twenty-seven committed example documents (plus a generated collection numbered 27) that exercise as much of ISO 32000-2 (PDF 2.0) as possible. Every file is generated from raw PDF operators by this repo's own C# tooling (`tools/FreeDF.Samples`), so the examples are valid, small (about 2.4 MB in total for 01-26; `28` adds about 0.37 MB) and free of stock images. Start with **[Open the showcase](https://ievangelist.github.io/csharp-pdf/#sample=28)**: `28-benchmarks-brand-spec.pdf` is the primary one-click browser sample, a tagged 18-page showcase of measured benchmarks, FreeDF's official identity alongside archived brand studies, and the honest parity map. `01-spec-showcase.pdf` links to the individual fixtures; generate `27-full-collection.pdf` for samples 01-26 in one file. Sample 28 sits beside the collection rather than inside it.
 
 Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro (code), all embedded as OpenType/CFF subsets; an indigo / teal / amber / rose palette on a 54 pt margin grid.
 
@@ -51,14 +51,14 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 **Where is it?** Three places, all the same bytes (generation is deterministic):
 
 * **Public site:** the browser editor loads it with one click: the **Open the full sample collection** button on the empty state, **File > Open sample > Full sample collection**, or the deep link `#sample=27-full-collection` / `?sample=27` (for example `https://ievangelist.github.io/csharp-pdf/#sample=27-full-collection`). The Pages publish (`tools/Publish-EditorPages.ps1`) generates it and ships `samples/27-full-collection.pdf`, `samples/01-…26-….pdf` and `samples/manifest.json` (name, title, description, size, pages, sha256) as static files. They are fetched only on demand (never at startup, not precached), same-origin, and the loader verifies size and sha256 against the manifest before opening. Publish with `-SkipSamples` to omit them; the editor then works as before and the button reports that the collection is not published.
-* **Local HTTP host:** `dotnet run --project tools/AdoBye.EditorWeb` serves the same `/samples/manifest.json` and `/samples/*.pdf` from this folder (generate 27 first, below).
+* **Local HTTP host:** `dotnet run --project tools/FreeDF.EditorWeb` serves the same `/samples/manifest.json` and `/samples/*.pdf` from this folder (generate 27 first, below).
 * **On disk:** it is not committed (`.gitignore`). Generate it into this folder with
 
   ```powershell
-  dotnet run --project tools/AdoBye.Samples -c Release -- generate samples 27-
+  dotnet run --project tools/FreeDF.Samples -c Release -- generate samples 27-
   ```
 
-`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26); `tools/Validate-Samples.ps1` or the command above creates it. It is built by `tools/AdoBye.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
+`27-full-collection.pdf` is every other sample in one file (all 26, 50 pages, about 2.3 MB). It is **generated on demand and not committed** (it is a pure function of 01-26); `tools/Validate-Samples.ps1` or the command above creates it. It is built by `tools/FreeDF.Samples` through this repo's `PdfEditor.ImportPages`/`ImportValue` (real merged pages, no screenshots), never includes itself, and is always generated last.
 
 * **Navigation:** one collapsed bookmark per sample (`NN  Title`) that lands on the sample's first page and nests that sample's own bookmarks (`12` and `20`/`26` have them); page labels read `NN · label` (sample `12` keeps its roman / decimal / `A-` labels under the prefix); `PageMode UseOutlines`.
 * **Links:** the `GoToR` tiles of `01` are rewritten to plain `GoTo` destinations so they jump inside the merged file.
@@ -68,14 +68,14 @@ Design system: Source Serif 4 (headings), Source Sans 3 (text), Source Code Pro 
 
 ## Regenerating
 
-Everything is authored in C# with this repo's own library: the generators in `tools/AdoBye.Samples/Gen` use a small raw-object kit (`Kit/`) whose object bodies are parsed by `PdfLexer` and serialized (and AES-256 encrypted) by `PdfWriter`, so each sample can use any feature without a high-level library getting in the way. Output is reproducible: `SamplesTests`/`GeneratedSamplesTests` regenerate everything and require byte-for-byte equality with the committed files, including the encrypted ones (`PdfEncryption.RandomBytes` is fed a fixed-seed generator and `PdfWriteOptions.FileId` is fixed; constant randomness is for fixtures only and must never be used to protect real documents).
+Everything is authored in C# with this repo's own library: the generators in `tools/FreeDF.Samples/Gen` use a small raw-object kit (`Kit/`) whose object bodies are parsed by `PdfLexer` and serialized (and AES-256 encrypted) by `PdfWriter`, so each sample can use any feature without a high-level library getting in the way. Output is reproducible: `SamplesTests`/`GeneratedSamplesTests` regenerate everything and require byte-for-byte equality with the committed files, including the encrypted ones (`PdfEncryption.RandomBytes` is fed a fixed-seed generator and `PdfWriteOptions.FileId` is fixed; constant randomness is for fixtures only and must never be used to protect real documents).
 
 ```powershell
-dotnet build tools/AdoBye.Samples -c Release
-dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples          # all 28
-dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples 28-      # sample 28 only
-dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll generate samples 12-nav   # a subset (file-name fragment)
-dotnet tools/AdoBye.Samples/bin/Release/net10.0/AdoBye.Samples.dll validate samples --out compare-out/samples
+dotnet build tools/FreeDF.Samples -c Release
+dotnet tools/FreeDF.Samples/bin/Release/net10.0/FreeDF.Samples.dll generate samples          # all 28
+dotnet tools/FreeDF.Samples/bin/Release/net10.0/FreeDF.Samples.dll generate samples 28-      # sample 28 only
+dotnet tools/FreeDF.Samples/bin/Release/net10.0/FreeDF.Samples.dll generate samples 12-nav   # a subset (file-name fragment)
+dotnet tools/FreeDF.Samples/bin/Release/net10.0/FreeDF.Samples.dll validate samples --out compare-out/samples
 ```
 
 Layout: `Kit/Doc.cs` (document, pages, content streams, form XObjects, resources), `Kit/Fonts.cs` + `Kit/FontFile.cs` (standard 14 metrics and OpenType/TrueType reading, kerning and glyph subsetting), `Kit/Raster.cs` (procedural images, baseline JPEG encoder, sRGB profile), `Kit/Theme.cs` (palette and page furniture), one `Gen/GenNN.cs` per sample (`Gen26` repacks `20` with `PdfEditor`, `Gen27` is the merge). `_gen/fonts/` holds the OFL/Bitstream fonts (see `LICENSES.txt`; also used by the browser editor). Sample-suite authoring no longer requires Python; independent test-fixture generators elsewhere are separate from this migration.
@@ -96,10 +96,10 @@ independent comparison evidence below.
   Run everything with `tools/Validate-Samples.ps1` (needs `pip install pikepdf pypdfium2 numpy`).
 * **Our renderer**: all pages of all samples render with zero warnings.
 * **Size**: the regenerated files are 12-25% larger than the Python ones (2.4 MB vs 2.05 MB for 01-26). The growth is entirely in the embedded font subsets (about 2.7 KB more per font: our CFF subsetter inlines subroutines instead of re-optimising them); content streams are the same size.
-* **Edge (PDFium) comparison** (`tools/AdoBye.RenderCompare`, 2 % tolerance): page 1 of every sample passes (under 1 % differing pixels) except the two harness-related cases below.
+* **Edge (PDFium) comparison** (`tools/FreeDF.RenderCompare`, 2 % tolerance): page 1 of every sample passes (under 1 % differing pixels) except the two harness-related cases below.
 
 ```powershell
-dotnet run --project tools/AdoBye.RenderCompare -c Release -- samples/24-poster.pdf --out compare-out
+dotnet run --project tools/FreeDF.RenderCompare -c Release -- samples/24-poster.pdf --out compare-out
 ```
 
 Known differences and notes:

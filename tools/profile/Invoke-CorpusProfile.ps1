@@ -7,14 +7,14 @@ param(
     [Parameter(Mandatory)] [string] $Corpus,
     [Parameter(Mandatory)] [string] $Out,
     [string] $Session = $env:COMPUTERNAME,
-    [string[]] $Engines = @('adobye', 'pdfpig', 'pdfium', 'mupdf', 'pikepdf'),
+    [string[]] $Engines = @('freedf', 'pdfpig', 'pdfium', 'mupdf', 'pikepdf'),
     [string] $Ops = 'open,text,render,thumb,save',
     [int] $Iters = 5, [int] $Pages = 8, [int] $Budget = 60,
     [string] $Slot = 'E:\GitHub\copilot-worktrees\.validation-slot',
     [string] $Filter = '*.pdf', [int] $Affinity = 0
 )
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
-$exe = Join-Path $root 'tools\AdoBye.Profile\bin\Release\net10.0\AdoBye.Profile.exe'
+$exe = Join-Path $root 'tools\FreeDF.Profile\bin\Release\net10.0\FreeDF.Profile.exe'
 $py = Join-Path $PSScriptRoot 'profile_engines.py'
 
 function Use-Slot([scriptblock] $Body) {
@@ -31,7 +31,7 @@ Get-ChildItem $Corpus -Recurse -Filter $Filter -File | Sort-Object Length | ForE
     $f = $_.FullName
     foreach ($e in $Engines) {
         Use-Slot {
-            $p = if ($e -in 'adobye', 'pdfpig') {
+            $p = if ($e -in 'freedf', 'pdfpig') {
                 $a = @($f, '--engine', $e, '--ops', $Ops, '--iters', $Iters, '--pages', $Pages, '--budget', $Budget)
                 if ($e -eq 'pdfpig' -and $Ops -notlike '*text_all*') { $a[4] = 'open,text' }
                 Start-Process $exe -ArgumentList $a -NoNewWindow -PassThru -RedirectStandardOutput "$Out.tmp"

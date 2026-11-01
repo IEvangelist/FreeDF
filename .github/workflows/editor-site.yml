@@ -29,10 +29,10 @@ jobs:
         shell: bash
         run: |
           # Everything that can change published bytes, minus tests, build outputs and workflows.
-          echo "site=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/**', 'tools/AdoBye.EditorWasm/**', 'tools/AdoBye.EditorWeb/**', 'tools/AdoBye.Samples/**', 'tools/Publish-EditorPages.ps1', '!**/bin/**', '!**/obj/**', '!tools/AdoBye.EditorWasm/tests/**', '!**/*.test.*', '!tools/AdoBye.EditorWeb/e2e_*') }}" >> "$GITHUB_OUTPUT"
+          echo "site=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/**', 'tools/FreeDF.EditorWasm/**', 'tools/FreeDF.EditorWeb/**', 'tools/FreeDF.Samples/**', 'tools/Publish-EditorPages.ps1', 'tools/bundle-editor-site.mjs', 'tools/package.json', 'tools/package-lock.json', '!**/bin/**', '!**/obj/**', '!tools/FreeDF.EditorWasm/tests/**', '!**/*.test.*', '!tools/FreeDF.EditorWeb/e2e_*') }}" >> "$GITHUB_OUTPUT"
           # Inputs of the compile/AOT step only; static web assets (html/css/js) are excluded so
           # an asset-only change reuses the incremental AOT intermediates.
-          echo "compile=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/_gen/fonts/**', 'tools/AdoBye.EditorWasm/*.cs', 'tools/AdoBye.EditorWasm/*.csproj', 'tools/AdoBye.EditorWeb/*.cs', 'tools/AdoBye.EditorWeb/*.csproj', '!**/bin/**', '!**/obj/**') }}" >> "$GITHUB_OUTPUT"
+          echo "compile=${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.*', 'src/**', 'samples/_gen/fonts/**', 'tools/FreeDF.EditorWasm/*.cs', 'tools/FreeDF.EditorWasm/*.csproj', 'tools/FreeDF.EditorWeb/*.cs', 'tools/FreeDF.EditorWeb/*.csproj', '!**/bin/**', '!**/obj/**') }}" >> "$GITHUB_OUTPUT"
       - name: Restore published site (exact input match)
         id: site-cache
         uses: actions/cache@v6

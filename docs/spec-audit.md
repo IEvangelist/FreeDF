@@ -10,7 +10,7 @@ replace `docs/spec-matrix.md`.
 (font fallback/CJK, OpenType shaping, image codecs, signatures, browser crypto, colour/overprint/halftones, 3D/multimedia/
 XFA/JS, editor, performance) are listed only where they intersect an audited clause.
 
-Everything below was verified against the tree at the time of writing; "tests" names are files in `tests/AdoBye.Tests`.
+Everything below was verified against the tree at the time of writing; "tests" names are files in `tests/FreeDF.Tests`.
 
 ## 1. Validator cross-check against veraPDF
 
@@ -18,7 +18,7 @@ Method (reproducible, see `tools/validation/`):
 
 1. `PDF_VALIDATION_DUMP=<dir> dotnet test --filter Validation|StructureTests` exports every validation fixture (the
    `ObjPdf.Build` hook is new; 386 files).
-2. `tools/AdoBye.ValidateDump` writes our PDF/A-1b/2b/3b and PDF/UA-1 verdicts for `samples/`, `tests/fixtures/` and the
+2. `tools/FreeDF.ValidateDump` writes our PDF/A-1b/2b/3b and PDF/UA-1 verdicts for `samples/`, `tests/fixtures/` and the
    fixtures (595 files).
 3. veraPDF 1.30.3 CLI (`--format mrr`, flavours `1b 2b 3b ua1`) is run on the same files; `tools/validation/compare.py`
    joins both and writes `docs/validation-compat.md`.

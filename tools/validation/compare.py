@@ -1,4 +1,4 @@
-"""Compare our PDF/A and PDF/UA verdicts (AdoBye.ValidateDump) with veraPDF MRR reports.
+"""Compare our PDF/A and PDF/UA verdicts (FreeDF.ValidateDump) with veraPDF MRR reports.
 
 Usage: compare.py <ours.jsonl> <vera-dir> [out.md]
   <vera-dir> holds vera-<flavour>.xml (or vera-<flavour>-partN.xml) for flavours 1b, 2b, 3b, ua1 (verapdf --format mrr).

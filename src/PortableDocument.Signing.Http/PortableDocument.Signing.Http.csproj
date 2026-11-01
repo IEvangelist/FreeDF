@@ -3,7 +3,7 @@
   <!-- Opt-in network assembly: the only place HttpClient is used. Not referenced by the Document/Core libraries, the WASM editor or the guard tests. -->
   <ItemGroup>
     <ProjectReference Include="..\PortableDocument.Document\PortableDocument.Document.csproj" />
-    <InternalsVisibleTo Include="AdoBye.Tests" />
+    <InternalsVisibleTo Include="FreeDF.Tests" />
   </ItemGroup>
 
   <PropertyGroup>

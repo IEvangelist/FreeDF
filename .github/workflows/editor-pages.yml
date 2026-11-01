@@ -116,7 +116,7 @@ jobs:
         shell: pwsh
         run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256' -Verify
       - name: Build browser smoke runner
-        run: dotnet build tools/AdoBye.EditorSmoke -c Release
+        run: dotnet build tools/FreeDF.EditorSmoke -c Release
       - name: Restore Playwright browsers
         uses: actions/cache@v6
         with:
@@ -124,7 +124,7 @@ jobs:
           key: playwright-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('Directory.Packages.props') }}
       - name: Install Chromium
         shell: pwsh
-        run: ./tools/AdoBye.EditorSmoke/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+        run: ./tools/FreeDF.EditorSmoke/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - name: Run ${{ matrix.chunk }}
         shell: pwsh
         run: ./tools/Invoke-EditorChunk.ps1 -Chunk '${{ matrix.chunk }}' -Site '${{ runner.temp }}/editor-pages/wwwroot' -Work '${{ runner.temp }}/editor-chunks'

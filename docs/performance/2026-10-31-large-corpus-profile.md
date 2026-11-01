@@ -1,6 +1,6 @@
 # Large-corpus profile: 2026-10-31
 
-Baseline: `origin/main` `2908aa7a`. Optimised: commits `72bf8968` and `22df9972` (Core parser). Corpus, harness and raw data are in this repository (`tools/profile`, `tools/AdoBye.Profile`, `docs/performance/data`); the PDFs are not.
+Baseline: `origin/main` `2908aa7a`. Optimised: commits `72bf8968` and `22df9972` (Core parser). Corpus, harness and raw data are in this repository (`tools/profile`, `tools/FreeDF.Profile`, `docs/performance/data`); the PDFs are not.
 
 **Goals not met.** The target of being about 5x faster than the public editor numbers is **not met** for rendering or for open on large files. Rendering is still roughly 5-10x *slower* than PDFium/MuPDF on ordinary pages (details below). This report contains one large, measured parser fix, several measured and ranked opportunities, and the areas I could not measure.
 
@@ -46,7 +46,7 @@ This table is from the baseline run on `2908aa7a`. PDFium and MuPDF open lazily 
 
 Whole-document text extraction, median ms (fresh open + all pages, 2 iterations; includes cold JIT in the first iteration, shown as the median only because n=2 means median = the larger of two):
 
-| file (pages) | AdoBye | PdfPig | PDFium | MuPDF |
+| file (pages) | FreeDF | PdfPig | PDFium | MuPDF |
 |---|---:|---:|---:|---:|
 | irs-p17 (142) | 1497 | 2322 | 956 | 710 |
 | 911report (585) | 1177 | 1394 | 929 | 749 |
@@ -75,7 +75,7 @@ I did not collect allocation-type profiles for the page-walk allocations (only p
 
 | commit | change | evidence |
 |---|---|---|
-| `72f8642d` | Profiling tooling (`tools/AdoBye.Profile`, `tools/profile/*`) | reproducible corpus run |
+| `72f8642d` | Profiling tooling (`tools/FreeDF.Profile`, `tools/profile/*`) | reproducible corpus run |
 | `72bf8968` | Core: byte-scan recovery; skip stream copies during recovery; lazy object-stream members; fixed-width xref entries; no LINQ in xref-stream rows | damaged open 15.9 s -> 0.25 s (64x, median) / 0.98 s (cold single process); object-stream mix 316 -> 98-142 ms; nasa open 22 -> 17 ms; xref hash identical on 235 files; 2218/2218 tests |
 | `22df9972` | Core: presize xref dictionary | allocation opening nasa-sp-4029, 20 opens: 468 -> 346 MB (deterministic) |
 | `6686783b` | Manifest + downloader + raw data | `Get-Corpus.ps1` verified all nine hashes |
@@ -98,7 +98,7 @@ Impact is relative to the measured gap, effort S/M/L, risk L/M/H.
 | 8 | Regression gate: run `Invoke-CorpusProfile.ps1` (synthetic subset: damaged recovery, objstm, 2000 text pages, thumbnails) in CI with generous budgets (damaged open < 2 s, objstm open < 250 ms) | recovery regression went unnoticed (15 s) | prevents order-of-magnitude regressions | S | L |
 | 9 | Remove unused `GregsEx` reference from Core (and the `Directory.Packages.props` entry) | no source file uses it after `72bf8968` | smaller payload/dependency surface (size not measured) | S | L |
 | 10 | Developer loop: incremental `dotnet build` of Profile/tools takes 1.7-7 s; the full suite is 34-36 s. Keep the slot-lock helper (`tools/profile/Invoke-Locked.ps1`) and run corpus A/B with `base-bin` copies to avoid rebuilding over running benchmarks | build/test timings above; two benchmark runs were nearly corrupted by rebuilds over a running exe | saves minutes per iteration | S | L |
-| 11 | Text path: remaining 1.0-2.1x gap to MuPDF on whole-document extraction (glyph metadata retention per `bench/AdoBye.Bench/README.md`) | table above | 1.0-2.1x | M | L |
+| 11 | Text path: remaining 1.0-2.1x gap to MuPDF on whole-document extraction (glyph metadata retention per `bench/FreeDF.Bench/README.md`) | table above | 1.0-2.1x | M | L |
 
 ## Not measured / not verified
 
@@ -115,7 +115,7 @@ Impact is relative to the measured gap, effort S/M/L, risk L/M/H.
 ```powershell
 python tools\profile\gen_synthetic.py $env:CORPUS\syn
 .\tools\profile\Get-Corpus.ps1 -OutDir $env:CORPUS\real
-dotnet build tools\AdoBye.Profile -c Release
+dotnet build tools\FreeDF.Profile -c Release
 .\tools\profile\Invoke-CorpusProfile.ps1 -Corpus $env:CORPUS -Out results.jsonl -Session <your-session>
 python tools\profile\summarize.py results.jsonl
 ```

@@ -17,14 +17,14 @@ all of the above -> validated (single gate) -> package (manifest verified) -> de
 CI: Actions -> "Publish browser PDF editor" -> Run workflow -> choose `chunk` (e.g. `forms`); or
 `gh workflow run editor-pages.yml --ref <branch> -f chunk=forms`.
 
-Locally (site published first with `tools/Publish-EditorPages.ps1 -Output <dir>`; Chromium installed via the Playwright script in `tools/AdoBye.EditorSmoke/bin/Release/net10.0/playwright.ps1`):
+Locally (site published first with `tools/Publish-EditorPages.ps1 -Output <dir>`; Chromium installed via the Playwright script in `tools/FreeDF.EditorSmoke/bin/Release/net10.0/playwright.ps1`):
 
 ```powershell
 ./tools/Invoke-EditorChunk.ps1 -Chunk forms -Site <dir>/wwwroot
 ./tools/Invoke-EditorChunk.ps1 -Chunk dotnet-editor
 ```
 
-Chunks: `node` (worker/selection invariants, sample/outline modules and publish bundler), `dotnet-editor`, `dotnet-codecs`, `dotnet-render`, `default`, `forms`, `authoring` (merge, samples, annotations, object styling, local file/font access and Contents), `boot`, `viewport` (viewport, page-image), `a11y`, `responsive`, `profile-invariants` (blocking: runs the profile with timing misses report-only, so functional invariants such as overlay-only bare-page pixel exactness still fail), `perf` (non-blocking, see below).
+Chunks: `node` (worker/selection invariants, sample/outline modules and publish bundler), `dotnet-editor`, `dotnet-codecs`, `dotnet-render`, `default`, `forms`, `authoring` (merge, samples, annotations, object styling, local file/font access, storage migration and Contents), `boot` (cold boot, injected failures and offline worker migration/rollback), `viewport` (viewport, page-image), `a11y`, `responsive`, `profile-invariants` (blocking: runs the profile with timing misses report-only, so functional invariants such as overlay-only bare-page pixel exactness still fail), `perf` (non-blocking, see below).
 
 ## Change detection
 

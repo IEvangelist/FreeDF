@@ -1,8 +1,0 @@
-{
-  "name": "adobye-editor-a11y",
-  "private": true,
-  "description": "Dev/test-only tooling for the --a11y smoke. Nothing here is published to GitHub Pages.",
-  "devDependencies": {
-    "axe-core": "4.14.0"
-  }
-}

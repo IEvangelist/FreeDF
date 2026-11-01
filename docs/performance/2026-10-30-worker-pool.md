@@ -1,6 +1,6 @@
 # Worker pool and tiled rendering, 2026-10-30
 
-Non-AOT Release publish (`Publish-EditorPages.ps1`), headless Chromium via `AdoBye.EditorSmoke --pool`, `navigator.hardwareConcurrency` overridden to 4
+Non-AOT Release publish (`Publish-EditorPages.ps1`), headless Chromium via `FreeDF.EditorSmoke --pool`, `navigator.hardwareConcurrency` overridden to 4
 (3 render replicas). Fixture: 20-report.pdf + 6 x 09-images.pdf page (12 pages). Times are `pdfHost.image()` wall time in ms. Every scenario's decoded RGBA SHA-256
 (240/239 dpi pages, 137 dpi pages, 12 thumbnails, 12 print pages at 150 dpi) equals the single-worker hashes; the run fails otherwise.
 

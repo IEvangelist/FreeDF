@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WasmEnableThreads>false</WasmEnableThreads>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- The shared editor uses reflection-based JSON for its anonymous UI payloads. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <PublishTrimmed>false</PublishTrimmed>
+    <!-- Startup payload: no debug/diagnostic features the static editor never uses. ICU stays: redaction needs Unicode normalization. -->
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <DebuggerSupport>false</DebuggerSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <WasmEmitSymbolMap>false</WasmEmitSymbolMap>
+    <WasmNativeDebugSymbols>false</WasmNativeDebugSymbols>
+    <WasmStripILAfterAOT>true</WasmStripILAfterAOT>
+    <CompressionEnabled>false</CompressionEnabled>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RunAOTCompilation)' == 'true' or '$(PublishTrimmed)' == 'true'">
+    <!-- Preserve reflection-based editor payloads while trimming the framework for AOT. -->
+    <TrimmerRootAssembly Include="$(AssemblyName);PortableDocument.Core;PortableDocument.Document;PortableDocument.Content;PortableDocument.Render" />
+  </ItemGroup>
+  <!-- AOT keeps rarely hot BCL assemblies in the interpreter: measured -13% gzip / -4.4 MB native with no profile change (see docs/performance). Override: -p:EditorAotInterpret=none|rare|bcl. -->
+  <PropertyGroup Condition="'$(RunAOTCompilation)' == 'true' and '$(EditorAotInterpret)' == ''">
+    <EditorAotInterpret>bcl</EditorAotInterpret>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(EditorAotInterpret)' == 'rare' or '$(EditorAotInterpret)' == 'bcl'">
+    <_AOT_InternalForceInterpretAssemblies Include="System.Private.Xml.dll;System.Net.Http.dll;System.Security.Cryptography.Pkcs.dll;System.Formats.Asn1.dll;System.Text.Encoding.CodePages.dll;System.Security.Cryptography.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(EditorAotInterpret)' == 'bcl'">
+    <_AOT_InternalForceInterpretAssemblies Include="System.Text.RegularExpressions.dll;GregsEx.dll;System.Runtime.Numerics.dll;System.IO.Compression.dll;System.Private.Uri.dll;System.Text.Json.dll;System.Linq.dll;System.Collections.dll;System.Collections.Concurrent.dll;System.Memory.dll;System.Collections.Immutable.dll;System.Runtime.InteropServices.JavaScript.dll;System.Linq.AsyncEnumerable.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\samples\_gen\fonts\Vera.ttf" LogicalName="Vera.ttf" />
+    <EmbeddedResource Include="..\..\samples\_gen\fonts\VeraBd.ttf" LogicalName="VeraBd.ttf" />
+    <Content Include="..\..\samples\_gen\fonts\bitstream-vera-license.txt" Link="wwwroot\bitstream-vera-license.txt" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
+    <ProjectReference Include="..\..\src\PortableDocument.FallbackFonts\PortableDocument.FallbackFonts.csproj" />
+    <!-- Served same-origin and fetched on first use; nothing from this folder is part of the startup payload. -->
+    <Content Include="..\..\src\PortableDocument.FallbackFonts\fallback-fonts\**" Link="wwwroot\fallback-fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <TrimmerRootAssembly Include="PortableDocument.FallbackFonts" Condition="'$(RunAOTCompilation)' == 'true'" />
+    <Compile Include="..\FreeDF.EditorWeb\EditorSession.cs" Link="EditorSession.cs" />
+    <Compile Include="..\FreeDF.EditorWeb\EditorForms.cs" Link="EditorForms.cs" />
+    <Compile Include="..\FreeDF.EditorWeb\FormObjectEditPolicy.cs" Link="FormObjectEditPolicy.cs" />
+    <Compile Include="..\FreeDF.EditorWeb\OverlayBuilder.cs" Link="OverlayBuilder.cs" />
+    <Compile Include="..\FreeDF.EditorWeb\FontCatalog.cs" Link="FontCatalog.cs" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\pwa.js" Link="wwwroot\pwa.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\editor.css" Link="wwwroot\editor.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\theme.css" Link="wwwroot\theme.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\favicon.svg" Link="wwwroot\favicon.svg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\favicon-32.png" Link="wwwroot\favicon-32.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\favicon.ico" Link="wwwroot\favicon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\apple-touch-icon.png" Link="wwwroot\apple-touch-icon.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\icon-192.png" Link="wwwroot\icon-192.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\icon-512.png" Link="wwwroot\icon-512.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\site.webmanifest" Link="wwwroot\site.webmanifest" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\surface.css" Link="wwwroot\surface.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\ui.js" Link="wwwroot\ui.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\editor.js" Link="wwwroot\editor.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\samples.js" Link="wwwroot\samples.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\form-fields.js" Link="wwwroot\form-fields.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\annotations.js" Link="wwwroot\annotations.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\outline-map.mjs" Link="wwwroot\outline-map.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FreeDF.EditorWeb\wwwroot\outline-panel.mjs" Link="wwwroot\outline-panel.mjs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

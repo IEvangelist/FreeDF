@@ -4,7 +4,7 @@
   python tools/validate_samples.py compare <old-dir> <new-dir> [name-fragment] [--dpi 40]
                                                                 page count / boxes / structure counts / pixel difference between two sample sets
 
-These tools only VALIDATE; the samples themselves are authored by tools/AdoBye.Samples (C#).
+These tools only VALIDATE; the samples themselves are authored by tools/FreeDF.Samples (C#).
 """
 import glob
 import io

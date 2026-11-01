@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="AdoBye.Tests" />
+    <InternalsVisibleTo Include="FreeDF.Tests" />
     <EmbeddedResource Include="Resources\std14-widths.bin" LogicalName="PortableDocument.Content.Resources.std14-widths.bin" />
     <EmbeddedResource Include="Resources\std14-notice.txt" LogicalName="PortableDocument.Content.Resources.std14-notice.txt" />
     <EmbeddedResource Include="Resources\predefined-cmaps.bin" LogicalName="PortableDocument.Content.Resources.predefined-cmaps.bin" />

@@ -1,7 +1,7 @@
 # FreeDF browser editor and GitHub Pages
 
 FreeDF's Pages build runs the **same editor UI and C# PDF engine** as
-`tools/AdoBye.EditorWeb`, entirely in browser WebAssembly. There is no PDF API
+`tools/FreeDF.EditorWeb`, entirely in browser WebAssembly. There is no PDF API
 server. Opening a PDF reads a local `File`; parsing, rendering, edits and exports
 stay in a dedicated local browser worker. Downloads use local blobs. There is no telemetry,
 external font request or PDF upload. A same-origin service worker caches
@@ -114,7 +114,7 @@ The SDK already limits downloads to 16 concurrent requests; its former retries
 used the same cache policy with only a short final delay. Asset bundling and concurrency are unchanged. The later measured AOT publish
 trims framework assemblies with application reflection roots preserved.
 
-`AdoBye.EditorSmoke --boot <published-wwwroot> <evidence-directory>` measures
+`FreeDF.EditorSmoke --boot <published-wwwroot> <evidence-directory>` measures
 three fresh-context cold starts and injects transient HTTP 503/network/module
 failures, permanent failures, missing resources and corrupted integrity payloads.
 It also simulates a worker that never becomes ready. It checks recovery,
@@ -225,9 +225,9 @@ browser is online. An **Install app** action uses the browser's installation
 prompt only after an explicit click. Where that prompt is unavailable, the
 dialog explains browser-menu installation and Safari's
 **Share > Add to Home Screen** flow. Installation is optional; editing in a
-browser remains supported. The public name is FreeDF; internal project names
-and storage/cache identifiers remain stable, so the rebrand does not delete
-existing installations, saved preferences, file handles or local recovery.
+browser remains supported. FreeDF project names and local storage use the new
+identity; the manifest identity and repository path remain unchanged, so
+existing installations and preferences continue to work.
 PNG/ICO icons can be regenerated with `python tools\Generate-EditorIcons.py`
 using Pillow and the sample suite's local Source Sans 3 font.
 
@@ -291,16 +291,27 @@ Changing font family/style deliberately selects the chosen replacement font.
 Existing vertical/rotated-text eligibility limits remain. Changed text is
 re-encoded: original per-pair TJ kerning is not a general shaping engine.
 
-`AdoBye.EditorSmoke --text-selection <published-wwwroot>` uses the embedded-font
+`FreeDF.EditorSmoke --text-selection <published-wwwroot>` uses the embedded-font
 typography sample and a sheared/scaled variant. It checks untouched state,
 unchanged input/cancel, exact save/reopen PNGs and every text run's geometry,
 then verifies supported actual edits retain embedded font, baseline and matrix.
 
 ## Local recovery
 
-The browser retains one editable session in the origin's `adobye-editor`
+The browser retains one editable session in the origin's `freedf-editor`
 IndexedDB database. Startup shows **Resume previous edit** with **Resume** and
 **Discard and clear**, without opening or rendering the retained document.
+Existing recovery records, file handles and installed-font metadata are copied
+from the previous storage names on first use without replacing newer FreeDF data.
+When both generations contain different file handles, Resume leaves both intact
+and requires Save as to choose the file to update rather than guessing.
+The previous records remain available to older versions; clearing a retained
+edit or forgetting a file also clears its previous-version record. Migration
+errors are reported without deleting the original data. Offline build pins are
+carried forward for open tabs and mirrored when needed for safe rollback.
+Migration is one-time: edits saved later by an older tab or a rolled-back version
+remain in the previous storage and are not merged automatically. Save or
+download those edits before switching back or clearing recovery.
 Blank startup cannot overwrite that record. Resume restores the unflattened
 source PDF, pending overlay/original-text and graphic/Form-child edits, page
 operations, field values, metadata, filename/dirty state, current page's undo
@@ -343,7 +354,7 @@ unused replaced resource references are removed. Glyph/outline matching still
 depends on extracted Unicode and geometry; this is not a document-wide search
 for every copy of a secret or a purge of undo/clipboard/recovery storage.
 
-`AdoBye.EditorSmoke --recovery <absolute-published-wwwroot>` checks real embedded-
+`FreeDF.EditorSmoke --recovery <absolute-published-wwwroot>` checks real embedded-
 font text edits and exact resumed raster pixels, image delete/undo/clipboard
 paste across reload, prompt gating, durable writes/deletes, encrypted-input
 limitations, corrupt-record retention and quota failure/retry. Pointer movement
@@ -617,9 +628,9 @@ the public site does not upload documents or call an editor server.
 ```powershell
 $pdfs = '01-spec-showcase.pdf', '03-typography-embedded.pdf', '09-images.pdf', '20-report.pdf' |
     ForEach-Object { (Resolve-Path (Join-Path samples $_)).Path }
-$site = (Resolve-Path tools\AdoBye.EditorWasm\bin\pages\wwwroot).Path
-dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --profile https://ievangelist.github.io/csharp-pdf/ "$env:TEMP\editor-live.json" @pdfs
-dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --profile $site "$env:TEMP\editor-local.json" @pdfs
+$site = (Resolve-Path tools\FreeDF.EditorWasm\bin\pages\wwwroot).Path
+dotnet run --no-build -c Release --project tools\FreeDF.EditorSmoke -- --profile https://ievangelist.github.io/csharp-pdf/ "$env:TEMP\editor-live.json" @pdfs
+dotnet run --no-build -c Release --project tools\FreeDF.EditorSmoke -- --profile $site "$env:TEMP\editor-local.json" @pdfs
 ```
 
 The live `7fb432d` baseline and integrated local Release baseline both showed
@@ -727,7 +738,7 @@ reduced-motion support, and an accessibility layer; see
 
 - `--a11y <site> <sample.pdf>`: axe-core on every screen/theme/viewport plus
   keyboard, focus, target-size and text-spacing assertions. Install the test-only
-  dependency first: `npm ci --prefix tools/AdoBye.EditorSmoke/a11y`.
+  dependency first: `npm ci --prefix tools/FreeDF.EditorSmoke/a11y`.
 - `--responsive <site> <sample.pdf>`: overflow, clipping, dialogs, menus, sheets
   and touch gestures across 10 viewports x DPR 1/2 x orientation x browser zoom
   100-400 %. Set `EDITOR_SMOKE_ARTIFACTS` to keep the screenshot matrix.
@@ -772,12 +783,12 @@ Use the SDK declared in root `global.json`:
 
 ```powershell
 .\tools\Publish-EditorPages.ps1
-dotnet test tests\AdoBye.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform"
-dotnet build tools\AdoBye.EditorSmoke -c Release
-.\tools\AdoBye.EditorSmoke\bin\Release\net10.0\playwright.ps1 install chromium
-$site = (Resolve-Path tools\AdoBye.EditorWasm\bin\pages\wwwroot).Path
-dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- $site
-dotnet run --no-build -c Release --project tools\AdoBye.EditorSmoke -- --merge $site
+dotnet test tests\FreeDF.Tests -c Release --filter "FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform"
+dotnet build tools\FreeDF.EditorSmoke -c Release
+.\tools\FreeDF.EditorSmoke\bin\Release\net10.0\playwright.ps1 install chromium
+$site = (Resolve-Path tools\FreeDF.EditorWasm\bin\pages\wwwroot).Path
+dotnet run --no-build -c Release --project tools\FreeDF.EditorSmoke -- $site
+dotnet run --no-build -c Release --project tools\FreeDF.EditorSmoke -- --merge $site
 ```
 
 The publish script checks required static assets and WASM magic bytes, rejects
@@ -791,8 +802,8 @@ For an explicit AOT comparison, install the pinned SDK and `wasm-tools` in a
 user-writable dotnet root, set `DOTNET_ROOT`/`PATH` only for that command, then:
 
 ```powershell
-.\tools\Publish-EditorPages.ps1 -Aot -Output "$env:TEMP\adobye-aot-pages" -ArtifactsPath "$env:TEMP\adobye-aot-build"
-.\tools\Publish-EditorPages.ps1 -Output "$env:TEMP\adobye-control-pages" -ArtifactsPath "$env:TEMP\adobye-control-build"
+.\tools\Publish-EditorPages.ps1 -Aot -Output "$env:TEMP\freedf-aot-pages" -ArtifactsPath "$env:TEMP\freedf-aot-build"
+.\tools\Publish-EditorPages.ps1 -Output "$env:TEMP\freedf-control-pages" -ArtifactsPath "$env:TEMP\freedf-control-build"
 ```
 
 Keep intermediates separate: reusing the default `obj` across AOT and non-AOT
@@ -827,7 +838,7 @@ the published static site and one or more local sample PDFs:
 ```powershell
 $sample = (Resolve-Path samples\26-repacked-object-streams.pdf).Path
 $artifacts = Join-Path $env:TEMP 'pdf-page-image'
-dotnet run -c Release --project tools\AdoBye.EditorSmoke -- --page-image $site $sample $artifacts
+dotnet run -c Release --project tools\FreeDF.EditorSmoke -- --page-image $site $sample $artifacts
 ```
 
 It samples the displayed page image on every animation frame while zooming,
@@ -840,7 +851,7 @@ repeated with other sample paths; keep PDFs local to the browser.
 The original server host remains available:
 
 ```powershell
-dotnet run -c Release --project tools\AdoBye.EditorWeb -- file.pdf
+dotnet run -c Release --project tools\FreeDF.EditorWeb -- file.pdf
 ```
 
 It uses the same `EditorSession` under its HTTP adapter, retains installed

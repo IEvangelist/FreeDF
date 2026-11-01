@@ -20,7 +20,7 @@ focus passes 364 tests; the subsequent full Release suite passes 2,540 tests,
 including the 317-page sequential/threaded golden checks. This does not
 establish a new browser speedup.
 
-Measured with `bench/AdoBye.Bench` (`--raster-bench 240 <iterations> <baseline.tsv>`; `ADOBYE_SEQ=1` forces the single-threaded paths that the browser uses),
+Measured with `bench/FreeDF.Bench` (`--raster-bench 240 <iterations> <baseline.tsv>`; `FREEDF_SEQ=1` forces the single-threaded paths that the browser uses),
 .NET 10 Release, one benchmark at a time under the shared validation lock. Every row's RGBA SHA-256 matched the pre-change baseline (`same`), i.e. output is bit-identical.
 Times are best-of-4 wall ms for rendering **all pages** of the file at 240 dpi (warm, hashing excluded).
 
