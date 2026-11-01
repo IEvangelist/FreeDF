@@ -73,7 +73,7 @@ static class EditorOutline
     static async Task Load(IPage page, string path, string name)
     {
         await page.Locator("#open").SetInputFilesAsync(path);
-        await page.WaitForFunctionAsync("n => document.getElementById('name').textContent === n && document.getElementById('base')?.naturalWidth > 0", name);
+        await page.WaitForFunctionAsync("n => document.getElementById('name').textContent === n && document.getElementById('base')?.naturalWidth > 0 && !document.getElementById('view').inert && document.getElementById('status').textContent.startsWith('Ready.')", name);
         await page.EvaluateAsync("window.__scroll = [document.scrollingElement.scrollTop, document.scrollingElement.scrollLeft]");
     }
 
@@ -161,7 +161,29 @@ static class EditorOutline
         }
 
         await page.SetViewportSizeAsync(1440, 1000);
-        await Load(page, collection, "27-full-collection.pdf");
+        await page.EvaluateAsync("""
+            () => {
+              const original = pdfHost.request;
+              window.__outlineOpenDone = false;
+              window.__restoreOutlineRequest = () => { pdfHost.request = original; };
+              pdfHost.request = async (...args) => {
+                if (args[0].split('?')[0] !== '/api/open') return original(...args);
+                await new Promise(resolve => setTimeout(resolve, 250));
+                const response = await original(...args);
+                window.__outlineOpenDone = true;
+                return response;
+              };
+            }
+            """);
+        try
+        {
+            await Load(page, collection, "27-full-collection.pdf");
+            Check(await page.EvaluateAsync<bool>("window.__outlineOpenDone"), "same-named document has finished reopening");
+        }
+        finally
+        {
+            await page.EvaluateAsync("window.__restoreOutlineRequest(); delete window.__restoreOutlineRequest; delete window.__outlineOpenDone");
+        }
         await OpenContents(page, false);
         await Large(page);
         await Empty(page);

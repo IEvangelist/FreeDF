@@ -1172,7 +1172,11 @@ function protectDialog(markSaved) {
   const toggle = o.querySelector('#prm'); if (toggle) toggle.onchange = () => { o.querySelector('#pf').hidden = toggle.checked; };
 }
 
-$('open').onchange = e => e.target.files[0] && openWith(e.target.files[0]);
+$('open').onchange = e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) openWith(file);
+};
 // A picked or dropped file keeps its handle so Save can overwrite it; opening without one forgets the previous handle.
 async function openWith(file, handle = null) {
   let opened = false;

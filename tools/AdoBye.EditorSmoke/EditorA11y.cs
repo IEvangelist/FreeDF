@@ -310,8 +310,10 @@ static class EditorA11y
             }
             """);
         expect(contrastErrors.Length == 0, "colors: every primary/shade pair passes focus and selected-text contrast in both themes: " + string.Join(", ", contrastErrors));
+        await page.EvaluateAsync("() => { window.__resizeObserved = new Promise(resolve => addEventListener('resize', resolve, { once: true })); }");
         await page.SetViewportSizeAsync(320, 568);
-        await click(page, "#more");
+        await page.EvaluateAsync("async () => { await window.__resizeObserved; delete window.__resizeObserved; }");
+        await page.Locator("#more").ClickAsync();
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Appearance and motion", Exact = true }).ClickAsync();
         expect(await page.EvaluateAsync<bool>("() => { const r = document.querySelector('.cm.has-check').getBoundingClientRect(), a = document.getElementById('more').getBoundingClientRect(); return r.top >= a.bottom && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; }"), "colors: small-screen menu anchors to More and fits the viewport");
         await page.Keyboard.PressAsync("Escape");
