@@ -27,7 +27,7 @@ $engine = '<script>{const w=new Worker(new URL("worker.js",document.baseURI),{ty
 $html = [IO.File]::ReadAllText($index).Replace('<head>', "<head>`n<base href=`"$BasePath`">`n<meta name=`"editor-host`" content=`"wasm`">`n$engine")
 [IO.File]::WriteAllText($index, $html)
 [IO.File]::WriteAllText((Join-Path $site '.nojekyll'), '')
-foreach ($asset in @('editor.css', 'theme.css', 'surface.css', 'ui.js', 'favicon.svg', 'favicon-32.png', 'favicon.ico', 'apple-touch-icon.png', 'site.webmanifest', 'editor.js', 'annotations.js', 'form-fields.js', 'host.js', 'worker.js', 'pool.js', 'scheduler.js', 'replica-worker.js', 'recovery.js', 'samples.js', 'sw.js', 'sw-client.js', 'fileaccess.js', 'localfonts.js', 'outline-map.mjs', 'outline-panel.mjs', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
+foreach ($asset in @('editor.css', 'theme.css', 'surface.css', 'ui.js', 'pwa.js', 'favicon.svg', 'favicon-32.png', 'favicon.ico', 'apple-touch-icon.png', 'site.webmanifest', 'editor.js', 'annotations.js', 'form-fields.js', 'host.js', 'worker.js', 'pool.js', 'scheduler.js', 'replica-worker.js', 'recovery.js', 'samples.js', 'sw.js', 'sw-client.js', 'fileaccess.js', 'localfonts.js', 'outline-map.mjs', 'outline-panel.mjs', 'bitstream-vera-license.txt', '_framework\dotnet.js')) {
     if (!(Test-Path (Join-Path $site $asset))) { throw "Missing site asset: $asset" }
 }
 # Lazily fetched sample PDFs (never part of startup): 01-26 and 28 are committed; 27 is generated in a scratch folder.

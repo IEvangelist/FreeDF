@@ -252,7 +252,7 @@ export function createAnnotations(ctx) {
     dock.replaceChildren(
       el('header', {}, el('h2', {}, 'Annotate'), btn('Undo', undoStep, { title: 'Undo last annotation change' }), btn('Redo', redoStep), btn('Close', () => toggle(false), { 'aria-label': 'Close annotations' })),
       el('div', { class: 'body' }, bar,
-        el('div', { class: 'row' }, label('Colour', ctl('color', 'color')), label('Opacity', ctl('range', 'opacity', { min: 0.1, max: 1, step: 0.05 })), label('Width', ctl('number', 'width', { min: 0, max: 40, step: 0.5, style: 'width:64px' }))),
+        el('div', { class: 'row' }, label('Color', ctl('color', 'color')), label('Opacity', ctl('range', 'opacity', { min: 0.1, max: 1, step: 0.05 })), label('Width', ctl('number', 'width', { min: 0, max: 40, step: 0.5, style: 'width:64px' }))),
         el('div', { class: 'row' }, label('Fill', el('span', {}, fillClear, fillInput)), label('Font size', ctl('number', 'font', { min: 6, max: 96, style: 'width:64px' })), label('Stamp', stampSel), label('Note icon', iconSel)),
         el('div', { class: 'row' }, label('Author', ctl('text', 'author')), label('Subject', ctl('text', 'subject'))),
         label('Replacement text (Replace tool)', el('input', { type: 'text', id: 'annot-replacement' })),
@@ -302,7 +302,7 @@ export function createAnnotations(ctx) {
     box.replaceChildren(
       el('h3', {}, `${s.subtype} #${a.number}`),
       label('Comment', text), label('Subject', subj),
-      el('div', { class: 'row' }, label('Colour', col), label('Opacity', op), label('Width', bw)),
+      el('div', { class: 'row' }, label('Color', col), label('Opacity', op), label('Width', bw)),
       el('div', { class: 'row' },
         el('button', { type: 'button', onclick: () => mutate(`/api/annot-update?page=${a.page}&n=${a.number}`, { contents: text.value, subject: subj.value, color: rgb(col.value), opacity: +op.value, borderWidth: +bw.value }, 'Annotation updated.').catch(fail) }, 'Apply'),
         el('button', { type: 'button', onclick: () => remove(a) }, 'Delete')),

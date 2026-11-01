@@ -49,9 +49,9 @@ static class Gen27
         editor.SetCatalogEntry("PageLabels", BuildPageLabels(parts));
         editor.SetCatalogEntry("PageMode", new PdfName("UseOutlines"));
         editor.SetCatalogEntry("Lang", new PdfString(Encoding.ASCII.GetBytes("en-US")));
-        editor.SetInfo("Title", "csharp-pdf sample collection");
+        editor.SetInfo("Title", "FreeDF sample collection");
         editor.SetInfo("Subject", $"All {parts.Count} sample documents merged into one file ({editor.PageCount} pages)");
-        editor.SetInfo("Producer", "AdoBye.Samples (PdfEditor)");
+        editor.SetInfo("Producer", "FreeDF (PdfEditor)");
         File.WriteAllBytes(path, editor.Save(options: new PdfWriteOptions { Compress = true, ObjectStreams = true, FileId = hash.Hash }));
     }
 

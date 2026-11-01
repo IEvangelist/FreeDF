@@ -51,7 +51,25 @@ test('discovers lazily imported modules (including .mjs with static imports) and
   assert.match(html, /__editorImport\('panel\.mjs'\)/);
   assert.doesNotMatch(html, /import\(new URL/);
   assert.match(html, /<script type="module" src="host\.js"/);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'site.webmanifest'), 'utf8')).icons, [{ src: 'icon-512.png', sizes: '192x192 512x512' }]);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'site.webmanifest'), 'utf8')).icons, [{ src: 'data:image/png;base64,cG5n' }, { src: 'icon-512.png' }]);
+});
+
+test('preserves PWA identity, scoped file handling and maskable installation icons', () => {
+  const manifest = JSON.parse(readFileSync(new URL('./AdoBye.EditorWeb/wwwroot/site.webmanifest', import.meta.url), 'utf8'));
+  const dir = fixture({ 'site.webmanifest': JSON.stringify(manifest) });
+  bundle(dir);
+  const published = JSON.parse(readFileSync(join(dir, 'site.webmanifest'), 'utf8'));
+  assert.equal(published.name, 'FreeDF PDF Editor');
+  assert.equal(published.short_name, 'FreeDF');
+  assert.equal(published.id, './');
+  assert.equal(published.start_url, './');
+  assert.equal(published.scope, './');
+  assert.equal(published.theme_color, '#be185d');
+  assert.deepEqual(published.file_handlers, [{ action: './', accept: { 'application/pdf': ['.pdf'] } }]);
+  assert.deepEqual(published.icons.map(icon => icon.sizes), ['192x192', '512x512']);
+  assert.equal(published.icons[0].src, 'data:image/png;base64,cG5n');
+  assert.ok(existsSync(join(dir, published.icons[1].src)));
+  assert.equal(published.icons[1].purpose, 'any maskable');
 });
 
 test('fails the publish instead of shipping a partial bundle', () => {

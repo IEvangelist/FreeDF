@@ -49,6 +49,7 @@
     <Compile Include="..\AdoBye.EditorWeb\OverlayBuilder.cs" Link="OverlayBuilder.cs" />
     <Compile Include="..\AdoBye.EditorWeb\FontCatalog.cs" Link="FontCatalog.cs" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AdoBye.EditorWeb\wwwroot\pwa.js" Link="wwwroot\pwa.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\editor.css" Link="wwwroot\editor.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\theme.css" Link="wwwroot\theme.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\AdoBye.EditorWeb\wwwroot\favicon.svg" Link="wwwroot\favicon.svg" CopyToOutputDirectory="PreserveNewest" />

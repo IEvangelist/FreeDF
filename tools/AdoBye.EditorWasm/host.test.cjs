@@ -32,7 +32,7 @@ async function harness(reply = () => ({ bytes: new Uint8Array([1, 2, 3]), conten
     performance, setTimeout, clearTimeout, console,
     createRenderPool: pool,
     location: { href: 'https://editor.test/', search: pool ? '?pool=1' : '?pool=0' },
-    window: {},
+    window: { requestIdleCallback() {} },
   });
   const script = source.replace("await import('./pool.js')", '({ createRenderPool: globalThis.createRenderPool })');
   return { host: await vm.runInContext(`${script}\nstart()`, context), requests };
@@ -50,6 +50,21 @@ test('versioned Blob images coalesce and canonicalize query order and transient 
   assert.equal(requests.length, 1);
   await host.imageBlob('/api/page/0.png?v=2&dpi=40');
   assert.equal(requests.length, 2);
+});
+
+test('queued and active worker requests remain busy until completion or failure', async () => {
+  let finish;
+  const { host } = await harness(() => new Promise(resolve => { finish = resolve; }));
+  const task = host.request('/api/state');
+  assert.equal(host.busy, true, 'queued work is busy before dispatch');
+  await new Promise(setImmediate);
+  assert.equal(host.busy, true, 'dispatched work is busy');
+  finish({ bytes: new Uint8Array([1]), contentType: 'application/octet-stream' });
+  await task;
+  assert.equal(host.busy, false);
+  const failing = await harness(() => { throw new Error('Failed command'); });
+  await assert.rejects(failing.host.request('/api/state'), /Failed command/);
+  assert.equal(failing.host.busy, false);
 });
 
 test('image failures are visible and retryable; eviction does not disturb other keys', async () => {

@@ -70,7 +70,7 @@ app.MapMethods("/api/{**path}", ["GET", "POST", "PUT"], async (HttpRequest reque
         return Results.BadRequest(e.Message);
     }
 });
-Console.WriteLine($"AdoBye editor running at http://localhost:{port}");
+Console.WriteLine($"FreeDF editor running at http://localhost:{port}");
 app.Run();
 
 static string? SamplesDirectory()

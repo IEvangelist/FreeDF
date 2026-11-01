@@ -30,7 +30,9 @@ static class EditorA11y
         sel => {
           const out = [];
           const lum = c => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
-          const rgb = s => { const m = s.match(/rgba?\(([^)]+)\)/); if (m) { const p = m[1].split(/[ ,\/]+/).map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; } return null; };
+          const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          const rgb = s => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = s; ctx.fillRect(0, 0, 1, 1); const p = [...ctx.getImageData(0, 0, 1, 1).data]; return [p[0], p[1], p[2], p[3] / 255]; };
           const bgOf = e => { for (let n = e; n; n = n.parentElement) { const c = rgb(getComputedStyle(n).backgroundColor); if (c && c[3] > .5) return c; } return [255, 255, 255, 1]; };
           for (const e of document.querySelectorAll(sel)) {
             e.focus({ focusVisible: true }); if (document.activeElement !== e) continue;
@@ -138,6 +140,9 @@ static class EditorA11y
         {
             var (context, page) = await Fresh(theme);
             await Axe(page, "welcome", theme);
+            await Click(page, "#appBtn"); await Axe(page, "app and offline status", theme);
+            Expect(!await page.Locator("[data-app-open]").IsVisibleAsync(), "App hides Open received PDFs when no files are pending");
+            await Esc(page);
             await Open(page, pdf);
             await Axe(page, "document open", theme);
             await Click(page, "#fileBtn"); await Axe(page, "file menu", theme);
@@ -245,6 +250,7 @@ static class EditorA11y
     {
         var (context, page) = await fresh("light", 1440, 900, false, null, null);
         await page.Keyboard.PressAsync("Tab");
+        expect(await page.EvaluateAsync<bool>("() => document.title === 'FreeDF - PDF Editor' && document.querySelector('.brand strong').textContent === 'FreeDF' && document.querySelector('h1').textContent === 'FreeDF PDF editor'"), "branding: FreeDF title, wordmark and accessible heading");
         expect(await page.EvaluateAsync<bool>("() => document.activeElement.className === 'skip'"), "keyboard: first Tab stop is the skip link");
         await page.Keyboard.PressAsync("Enter");
         expect(await page.EvaluateAsync<bool>("() => document.activeElement.id === 'view'"), "keyboard: skip link moves focus to the document region");
@@ -256,12 +262,61 @@ static class EditorA11y
         expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.theme === 'dark' && !document.querySelector('header').inert && localStorage.getItem('editor.theme') === 'dark'"), "keyboard: palette switches theme, persists it and restores the background");
         await page.EvaluateAsync("() => window.editorUi.setTheme('system')");
 
-        expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.accent === undefined && getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() === '#be185d' && document.querySelector('meta[name=theme-color]').content === '#db2777'"), "accent: the default is pink");
-        await page.EvaluateAsync("() => window.editorUi.setAccent('teal')");
+        expect(await page.EvaluateAsync<bool>("() => window.editorUi.primary() === 'pink' && window.editorUi.accent() === 'medium' && getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() === '#be185d' && document.querySelector('meta[name=theme-color]').content === '#be185d'"), "colors: default pink primary and Medium accent shade");
+        await click(page, "#appearance");
+        var primaryRow = page.GetByRole(AriaRole.Group, new() { Name = "Primary color", Exact = true });
+        var accentRow = page.GetByRole(AriaRole.Group, new() { Name = "Accent shade", Exact = true });
+        await primaryRow.GetByRole(AriaRole.Menuitemradio, new() { Name = "Magenta", Exact = true }).FocusAsync();
+        await page.Keyboard.PressAsync("Space");
+        await accentRow.GetByRole(AriaRole.Menuitemradio, new() { Name = "Dark", Exact = true }).FocusAsync();
+        await page.Keyboard.PressAsync("Enter");
+        expect(await primaryRow.GetByRole(AriaRole.Menuitemradio, new() { Name = "Magenta", Exact = true }).GetAttributeAsync("aria-checked") == "true", "colors: keyboard activation changes independent primary role");
+        await page.Keyboard.PressAsync("Escape");
         await page.ReloadAsync(); await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
-        expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.accent === 'teal' && getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() === '#0f766e' && localStorage.getItem('editor.accent') === 'teal'"), "accent: the selection persists across reloads and drives --primary before first paint");
-        await page.EvaluateAsync("() => window.editorUi.setAccent('pink')");
-        expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.accent === undefined && localStorage.getItem('editor.accent') === null"), "accent: choosing pink returns to the default");
+        expect(await page.EvaluateAsync<bool>("() => document.documentElement.dataset.accent === 'dark' && document.documentElement.dataset.primary === 'magenta' && getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() === '#a21caf' && localStorage.getItem('editor.accent') === 'dark' && localStorage.getItem('editor.primary') === 'magenta' && document.querySelector('meta[name=theme-color]').content === '#a21caf'"), "colors: primary and shade persist across reloads");
+        expect(await page.EvaluateAsync<bool>("() => { const sw = document.createElement('span'); sw.style.color = 'var(--accent)'; document.body.append(sw); const before = getComputedStyle(sw).color; window.editorUi.setPrimary('cyan'); const changed = before !== getComputedStyle(sw).color && window.editorUi.accent() === 'dark'; sw.remove(); return changed; }"), "colors: changing primary recolors the accent without changing shade");
+        await click(page, "#appearance");
+        await page.GetByRole(AriaRole.Menuitem, new() { Name = "Reset PinkInk colors", Exact = true }).ClickAsync();
+        expect(await page.EvaluateAsync<bool>("() => window.editorUi.primary() === 'pink' && window.editorUi.accent() === 'medium' && localStorage.getItem('editor.primary') === null && localStorage.getItem('editor.accent') === null"), "colors: reset restores PinkInk defaults");
+        var contrastErrors = await page.EvaluateAsync<string[]>("""
+            () => {
+              const probe = document.createElement('span'), canvas = document.createElement('canvas');
+              canvas.width = canvas.height = 1; document.body.append(probe);
+              const ctx = canvas.getContext('2d'), errors = [];
+              const resolve = value => { probe.style.color = value; return getComputedStyle(probe).color; };
+              const pixel = (...layers) => {
+                ctx.clearRect(0, 0, 1, 1);
+                for (const layer of layers) { ctx.fillStyle = resolve(layer); ctx.fillRect(0, 0, 1, 1); }
+                return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+              };
+              const lum = rgb => rgb.map(v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; })
+                .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+              const ratio = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
+              for (const theme of ['light', 'dark']) {
+                editorUi.setTheme(theme);
+                for (const primary of ['pink', 'cyan', 'magenta', 'blue', 'violet', 'green', 'orange', 'red', 'teal']) {
+                  editorUi.setPrimary(primary);
+                  for (const shade of ['light', 'medium', 'dark']) {
+                    editorUi.setAccent(shade);
+                    if (ratio(pixel('var(--ring)'), pixel('var(--panel)')) < 3)
+                      errors.push(`${theme}/${primary}/${shade}: focus contrast`);
+                    if (ratio(pixel('var(--accent-2)'), pixel('var(--panel)', 'var(--accent-bg)')) < 4.5)
+                      errors.push(`${theme}/${primary}/${shade}: selected text contrast`);
+                  }
+                }
+              }
+              probe.remove(); editorUi.setPrimary('pink'); editorUi.setAccent('medium'); editorUi.setTheme('system');
+              return errors;
+            }
+            """);
+        expect(contrastErrors.Length == 0, "colors: every primary/shade pair passes focus and selected-text contrast in both themes: " + string.Join(", ", contrastErrors));
+        await page.SetViewportSizeAsync(320, 568);
+        await click(page, "#more");
+        await page.GetByRole(AriaRole.Menuitem, new() { Name = "Appearance and motion", Exact = true }).ClickAsync();
+        expect(await page.EvaluateAsync<bool>("() => { const r = document.querySelector('.cm.has-check').getBoundingClientRect(), a = document.getElementById('more').getBoundingClientRect(); return r.top >= a.bottom && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; }"), "colors: small-screen menu anchors to More and fits the viewport");
+        await page.Keyboard.PressAsync("Escape");
+        expect(await page.EvaluateAsync<bool>("() => document.activeElement.id === 'more'"), "colors: small-screen menu restores focus to More");
+        await page.SetViewportSizeAsync(1440, 900);
 
         await open(page, pdf, "keys.pdf");
         await page.Locator("#fileBtn").FocusAsync(); await page.Keyboard.PressAsync("Enter");

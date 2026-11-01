@@ -150,6 +150,7 @@ static partial class EditorServiceWorker
                 external.Enqueue(request.Url);
         };
         await context.AddInitScriptAsync("window.profileWorkerStages = [];");
+        await context.AddInitScriptAsync("Object.defineProperty(window, 'launchQueue', { configurable: true, value: { setConsumer(callback) { window.testFileLaunch = callback; } } });");
         var page = await context.NewPageAsync();
         page.SetDefaultTimeout(90000);
         var errors = new ConcurrentQueue<string>();
@@ -200,6 +201,14 @@ static partial class EditorServiceWorker
         var cachedUrls = await page.EvaluateAsync<string[]>("caches.keys().then(k => k.filter(n => n.startsWith(\"adobye-editor-\"))).then(async k => (await (await caches.open(k[0])).keys()).map(r => new URL(r.url).pathname))");
         Check(cachedUrls.All(u => u.StartsWith("/csharp-pdf/", StringComparison.Ordinal) && !u.Contains("/api/")) && cachedUrls.Length == manifestA.Urls.Length, "only manifest assets are cached.");
         Check(manifestA.LazyUrls.All(url => !cachedUrls.Contains("/csharp-pdf/" + url)), "samples and fallback font assets are not precached.");
+        await WaitFor("window.editorOffline?.state === 'ready' && !!window.editorPwa && !!window.testFileLaunch", "PWA integration and offline readiness");
+        var manifestSession = await context.NewCDPSessionAsync(page);
+        var appManifest = await manifestSession.SendAsync("Page.getAppManifest");
+        Check(appManifest is { } parsedManifest && parsedManifest.GetProperty("errors").GetArrayLength() == 0, "the browser parses the installation manifest without errors.");
+        var installation = await manifestSession.SendAsync("Page.getInstallabilityErrors");
+        Check(installation is { } eligibility && eligibility.GetProperty("installabilityErrors").GetArrayLength() == 0,
+            "the published app meets Chromium installation requirements: " + installation);
+        await manifestSession.DetachAsync();
 
         var native = manifestA.Urls.First(u => u.Contains("dotnet.native.", StringComparison.Ordinal) && u.EndsWith(".wasm", StringComparison.Ordinal));
         var gzipRatio = await page.EvaluateAsync<double>("async name => { const href = new URL(name, document.baseURI).href; await (await fetch(href, { cache: \"reload\" })).arrayBuffer(); const e = performance.getEntriesByName(href).at(-1); return e.encodedBodySize / e.decodedBodySize; }", native);
@@ -226,6 +235,54 @@ static partial class EditorServiceWorker
         await context.SetOfflineAsync(true);
         await page.ReloadAsync();
         var offlineMs = await Ready();
+        await page.Locator("#appBtn").ClickAsync();
+        await page.Locator("[data-app-state]").WaitForAsync();
+        Check((await page.Locator("[data-app-state]").TextContentAsync())?.StartsWith("Offline. App ready", StringComparison.Ordinal) == true, "App reports offline cache readiness without a network request.");
+        await page.Keyboard.PressAsync("Escape");
+        await page.SetInputFilesAsync("#open", new FilePayload { Name = "offline.pdf", MimeType = "application/pdf", Buffer = MinimalPdf() });
+        await page.WaitForFunctionAsync("document.getElementById('name').title === 'offline.pdf' && document.getElementById('base')?.naturalWidth > 0");
+        await page.Locator("#rr").ClickAsync();
+        await page.WaitForFunctionAsync("document.getElementById('dstate').dataset.dirty === 'true'");
+        var download = page.WaitForDownloadAsync();
+        await page.Locator("#dl").ClickAsync();
+        await page.Locator(".dok").ClickAsync();
+        var saved = await download;
+        var savedPath = Path.Combine(output, "offline-edited.pdf");
+        await saved.SaveAsAsync(savedPath);
+        Check(PortableDocument.Document.PdfDocument.Load(await File.ReadAllBytesAsync(savedPath)).Pages[0].Rotate == 90, "offline editing and download preserve a real page rotation.");
+        await page.WaitForFunctionAsync("!document.querySelector('.mdl') && document.getElementById('dstate').dataset.dirty === 'false'");
+        async Task CloseDocument()
+        {
+            await page.Locator("#fileBtn").ClickAsync();
+            await page.GetByRole(AriaRole.Menuitem, new() { Name = "Close document", Exact = true }).ClickAsync();
+            await page.WaitForFunctionAsync("document.getElementById('doc').classList.contains('empty')");
+        }
+        await CloseDocument();
+        // Real local file handles stand in for OS-delivered launch handles; no document enters the asset cache.
+        await page.EvaluateAsync("""
+            async base64 => {
+              const root = await navigator.storage.getDirectory();
+              const handle = await root.getFileHandle('launched.pdf', { create: true });
+              const stream = await handle.createWritable();
+              await stream.write(Uint8Array.from(atob(base64), c => c.charCodeAt(0))); await stream.close();
+              window.testLaunchHandle = handle;
+              await window.testFileLaunch({ files: [handle] });
+            }
+            """, Convert.ToBase64String(MinimalPdf()));
+        await page.WaitForFunctionAsync("document.getElementById('name').title === 'launched.pdf'");
+        await page.Locator("#rr").ClickAsync();
+        await page.WaitForFunctionAsync("document.getElementById('dstate').dataset.dirty === 'true'");
+        await page.EvaluateAsync("window.testFileLaunch({ files: [window.testLaunchHandle] })");
+        Check(await page.EvaluateAsync<bool>("window.editorPwa.pendingCount === 1 && document.getElementById('dstate').dataset.dirty === 'true'"), "a second OS launch stays pending and preserves unsaved edits.");
+        await page.Keyboard.PressAsync("Control+s");
+        await page.WaitForFunctionAsync("document.getElementById('dstate').dataset.dirty === 'false'");
+        var localBytes = await page.EvaluateAsync<byte[]>("async () => Array.from(new Uint8Array(await (await window.testLaunchHandle.getFile()).arrayBuffer()))");
+        Check(PortableDocument.Document.PdfDocument.Load(localBytes).Pages[0].Rotate == 90, "Save writes the edited PDF back to its launch handle while offline.");
+        await CloseDocument();
+        await page.Locator("#appBtn").ClickAsync();
+        await page.Locator("[data-app-open]").ClickAsync();
+        await page.WaitForFunctionAsync("window.editorPwa.pendingCount === 0 && document.getElementById('name').title === 'launched.pdf'");
+        await CloseDocument();
         await context.SetOfflineAsync(false);
 
         // 4. Evicted entry: the worker refetches only bytes that match the build digest and repairs the cache.

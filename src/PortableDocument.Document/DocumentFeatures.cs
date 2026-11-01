@@ -667,7 +667,7 @@ public static class DocumentFeatures
         if (d is PdfString or PdfName)
         {
             var key = d is PdfName n ? n.Value : ((PdfString)d).Text;
-            return DestToPage(doc, pages, LookupNamedDest(doc, key), depth + 1);
+            return DestToPage(doc, pages, LookupNamedDest(f, key), depth + 1);
         }
         if (d is PdfDictionary dd) return DestToPage(doc, pages, dd.Get("D"), depth + 1);
         if (d is PdfArray arr && arr.Count > 0)
@@ -678,18 +678,17 @@ public static class DocumentFeatures
         return null;
     }
 
-    static PdfObject? LookupNamedDest(PdfDocument doc, string key)
+    internal static PdfObject? LookupNamedDest(PdfFile f, string key)
     {
-        var f = doc.File;
         if (f.Resolve(f.Catalog.Get("Dests")) is PdfDictionary old && old.Get(key) is { } v) return v;
         if (f.Resolve(f.Catalog.Get("Names")) is PdfDictionary names && f.Resolve(names.Get("Dests")) is PdfDictionary tree)
-            return SearchNameTree(f, tree, key, 0);
+            return SearchNameTree(f, tree, key, 0, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance));
         return null;
     }
 
-    static PdfObject? SearchNameTree(PdfFile f, PdfDictionary node, string key, int depth)
+    static PdfObject? SearchNameTree(PdfFile f, PdfDictionary node, string key, int depth, HashSet<PdfDictionary> seen)
     {
-        if (depth > MaxDepth) return null;
+        if (depth > MaxDepth || !seen.Add(node)) return null;
         if (f.Resolve(node.Get("Names")) is PdfArray pairs)
         {
             for (var i = 0; i + 1 < pairs.Count; i += 2)
@@ -697,7 +696,7 @@ public static class DocumentFeatures
         }
         if (f.Resolve(node.Get("Kids")) is PdfArray kids)
             foreach (var k in kids.Items)
-                if (f.Resolve(k) is PdfDictionary kd && SearchNameTree(f, kd, key, depth + 1) is { } r) return r;
+                if (f.Resolve(k) is PdfDictionary kd && SearchNameTree(f, kd, key, depth + 1, seen) is { } r) return r;
         return null;
     }
 

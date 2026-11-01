@@ -41,9 +41,22 @@ public class ShowcaseSampleTests(GeneratedSamples gen) : IClassFixture<Generated
         Assert.Equal("en-US", ((PdfString)catalog.Get("Lang")!).Text);
         Assert.True(((PdfDictionary)doc.File.Resolve(catalog.Get("ViewerPreferences"))!).Get("DisplayDocTitle") is PdfBoolean { Value: true });
         var outline = doc.GetOutlines();
-        Assert.Equal(["Cover", "Read this first", "Part 1: Benchmarks", "Part 2: Brand ideas", "Part 3: Spec parity", "Method and provenance"], outline.Select(o => o.Title));
+        Assert.Equal(["Cover", "Read this first", "Part 1: Benchmarks", "Part 2: FreeDF brand", "Part 3: Spec parity", "Method and provenance"], outline.Select(o => o.Title));
         Assert.Equal([0, 1, 2, 9, 14, 17], outline.Select(o => o.PageIndex));
         Assert.Equal([7, 5, 3], outline.Skip(2).Take(3).Select(o => o.Children.Count));
+    }
+
+    [Fact]
+    public void UsesTheOfficialFreeDfIdentityWithoutUndecidedBranding()
+    {
+        var doc = Doc();
+        Assert.Contains("FreeDF", doc.Info("Title"));
+        Assert.Equal("FreeDF", doc.Info("Producer"));
+        Assert.Contains("FreeDF", PageText(doc, 9));
+        Assert.Contains("Official", PageText(doc, 9));
+        var text = string.Join("\n", Enumerable.Range(0, doc.Pages.Count).Select(page => PageText(doc, page)));
+        Assert.DoesNotContain("undecided", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Ab tile", text, StringComparison.Ordinal);
     }
 
     [Fact]

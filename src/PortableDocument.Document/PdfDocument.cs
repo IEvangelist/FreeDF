@@ -104,11 +104,17 @@ public sealed class PdfDocument
     void Walk(PdfDictionary node, Dictionary<string, PdfObject> inh, HashSet<PdfDictionary> seen, int depth)
     {
         if (depth > MaxTreeDepth || !seen.Add(node)) return;
-        var next = new Dictionary<string, PdfObject>(inh);
-        foreach (var k in Inheritable) if (node.Get(k) is { } v) next[k] = v;
         var type = File.Resolve(node.Get("Type")).AsName();
         if (File.Resolve(node.Get("Kids")) is PdfArray kids && type != "Page")
         {
+            // Inheritance snapshots are shared until a branch actually overrides an attribute.
+            var next = inh;
+            foreach (var k in Inheritable)
+                if (node.Get(k) is { } v)
+                {
+                    if (ReferenceEquals(next, inh)) next = new Dictionary<string, PdfObject>(inh);
+                    next[k] = v;
+                }
             foreach (var k in kids.Items)
                 if (File.Resolve(k) is PdfDictionary kd) Walk(kd, next, seen, depth + 1);
         }

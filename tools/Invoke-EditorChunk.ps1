@@ -25,7 +25,7 @@ function Prepare {
     if ($LASTEXITCODE) { throw 'Building the smoke runner failed.' }
 }
 $unitFilters = @{
-    'dotnet-editor' = 'FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform'
+    'dotnet-editor' = 'FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~PageTreeTests|FullyQualifiedName~NamedDestinationTests|FullyQualifiedName~LexerKeywordTests'
     'dotnet-codecs' = 'FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx'
     'dotnet-render' = 'FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests'
 }

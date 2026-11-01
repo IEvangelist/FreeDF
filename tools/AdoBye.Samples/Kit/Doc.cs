@@ -298,7 +298,7 @@ public class Doc
             kids.Add($"{p.Ref} 0 R");
         }
         Put(pagesRef, $"<< /Type /Pages /Kids [{string.Join(" ", kids)}] /Count {kids.Count} {pageTreeExtra} >>");
-        var info = Add($"<< /Title {K.Utf16(Title)} /Author {K.Utf16(Author)} /Subject {K.Utf16(Subject)} /Keywords {K.Utf16(Keywords)} /Creator (csharp-pdf samples generator) /Producer (AdoBye.Samples) >>");
+        var info = Add($"<< /Title {K.Utf16(Title)} /Author {K.Utf16(Author)} /Subject {K.Utf16(Subject)} /Keywords {K.Utf16(Keywords)} /Creator (FreeDF samples generator) /Producer (FreeDF) >>");
         var lang = Lang != null ? $" /Lang {K.PStr(Lang)}" : "";
         var root = Add($"<< /Type /Catalog /Pages {pagesRef} 0 R{lang} {string.Join(" ", Cat)} >>");
 

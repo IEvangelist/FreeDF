@@ -31,9 +31,9 @@ sealed partial class Gen28
                 for (var i = 0; i < 3; i++) Box(_pg, px + 0.13 * s, y + 0.20 * s + i * 0.15 * s, widths[i] * s, 0.055 * s, fill: White, r: 0.027 * s);
                 break;
             }
-            case 2: // "Ab" tile, as shipped in the editor header
-                GradRect(x, y, s, s, s * 0.22, "#4C8DFF", "#2F5FD0");
-                Tx(_t.SansB, s * 0.46, x + s / 2, y + s * 0.29, "Ab", White, 'c');
+            case 2: // FreeDF's editor and app icon
+                GradRect(x, y, s, s, s * 0.22, "#BE185D", "#9D174D");
+                Tx(_t.SansB, s * 0.66, x + s / 2, y + s * 0.27, "F", White, 'c');
                 break;
             case 3: // lines of text with a caret
                 Box(_pg, x, y, s, s, fill: Ink, r: s * 0.22);
@@ -67,7 +67,7 @@ sealed partial class Gen28
     [
         ("Quire", "Idea", "A quire is a gathered set of sheets. The overlapping squares already appear on the sample covers.", "Two overlapping rounded squares in indigo and violet, like two stacked sheets."),
         ("Folio", "Idea", "A folded sheet with text lines. Reads as \u201Cdocument\u201D at 16 px and carries a gradient well.", "A page with a folded top-right corner, filled with an indigo to violet gradient and three white text lines."),
-        ("AdoBye", "In use", "The editor header today: an \u201CAb\u201D tile on a blue gradient. A legacy codename, kept here for comparison.", "A rounded blue square with the letters Ab in white."),
+        ("FreeDF", "Official", "The selected public identity: a white F on the PinkInk-inspired pink primary. Used by the editor and installed app.", "A rounded pink square with a white F."),
         ("Caret", "Idea", "Text lines and an amber insertion caret: the editor's core gesture of changing existing text.", "A dark rounded square with three white text lines and an amber text caret."),
         ("Xref", "Idea", "Five linked nodes, the object graph and cross-reference table underneath every PDF.", "A dark teal rounded square showing five linked nodes, the central one in amber."),
         ("csharp-pdf", "In use", "A sharp sign on a page. Literal and nerdy, and tied to the current repository name.", "A white rounded square with an indigo outline and an indigo sharp sign, tilted like italic type."),
@@ -77,16 +77,16 @@ sealed partial class Gen28
 
     void BrandNamesPage()
     {
-        var y = ContentPage("Part 2  /  Brand ideas", Violet2, "Names and marks: ideas, not decisions",
-            "The project name is still undecided. A rename to editPDF was considered and cancelled because editpdf.io exists. Everything below is exploration.",
-            "Brand: names and marks", "Part 2: Brand ideas");
+        var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "FreeDF: the official name and mark",
+            "FreeDF is the selected public identity. The repository and internal project names stay stable. Other directions remain archived design studies, not pending renames.",
+            "Brand: names and marks", "Part 2: FreeDF brand");
         y -= 12;
         SubHeading(y, "Names already in the repository", Violet2);
         string[][] rows =
         [
-            ["csharp-pdf", "Repository IEvangelist/csharp-pdf and the Pages path /csharp-pdf/", "Working name"],
+            ["csharp-pdf", "Repository IEvangelist/csharp-pdf and the Pages path /csharp-pdf/", "Repository"],
             ["PortableDocument", "Assemblies and namespaces PortableDocument.*, and the static render API", "In the API"],
-            ["AdoBye", "tools/AdoBye.*, benchmark output and the editor header (\u201CAb\u201D tile)", "Legacy"],
+            ["FreeDF", "Public editor and PWA; internal tools/AdoBye.* stay stable", "Official"],
             ["editPDF", "Considered as a rename, then cancelled: editpdf.io already exists", "Cancelled"],
         ];
         var yb = DataTable(M, y - 8, [new("Name", 120, true), new("Where it appears today", W - 200), new("Status", 80, false, true)], rows,
@@ -111,18 +111,18 @@ sealed partial class Gen28
             T("H3", () => Tx(_t.SerifB, 13.5, x + 12, top - 106, m.Name, Ink));
             T("P", () =>
             {
-                var (bg, fg) = m.Status == "In use" ? ((Color)"#D1FAE5", (Color)"#064E3B") : ((Color)"#E0E7FF", (Color)"#312E81");
+                var (bg, fg) = m.Status is "In use" or "Official" ? ((Color)"#D1FAE5", (Color)"#064E3B") : ((Color)"#E0E7FF", (Color)"#312E81");
                 Pill(x + cw - 12 - (_t.SansB.Width(m.Status, 7.6) + 14), top - 112, _t.SansB.Width(m.Status, 7.6) + 14, 14, m.Status, bg, fg, 7.6);
                 Para(_t.Sans, 8.3, x + 12, top - 121, cw - 24, m.Why, Slate, 11.4);
             });
         }
         var by = y - 12 - 2 * (ch + 14) - 4;
-        var note = "Unvetted: no trademark, domain, package-name or app-store search has been done for any name on this page. \u201CIn use\u201D marks are shown for comparison, not as the recommendation.";
+        var note = "FreeDF is the selected product name, not a claim of trademark, domain or app-store clearance. Other names and marks remain unvetted, archived explorations.";
         var nh = ParaH(_t.Sans, 9, W - 40, note, 12.6) + 22;
         Art(() => { Box(_pg, M, by - nh, W, nh, fill: "#F5F3FF", stroke: "#DDD6FE", r: 9); Box(_pg, M, by - nh + 6, 3, nh - 12, fill: Violet2, r: 1.5); });
         T("P", () =>
         {
-            Tx(_t.SansB, 8, M + 16, by - 14, "BEFORE ANY OF THIS BECOMES A DECISION", Violet2, tracking: 1.3);
+            Tx(_t.SansB, 8, M + 16, by - 14, "IDENTITY AND CLEARANCE ARE DIFFERENT", Violet2, tracking: 1.3);
             Para(_t.Sans, 9, M + 16, by - 27, W - 40, note, Ink, 12.6);
         });
     }
@@ -131,8 +131,8 @@ sealed partial class Gen28
 
     void BrandCaretPage()
     {
-        var y = ContentPage("Part 2  /  Brand ideas", Violet2, "Caret: name due diligence",
-            "If the project took the Caret direction, here is what a quick check on 2026-10-31 found. Not legal advice, and not a clearance: it is a first look.",
+        var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "Caret: archived name study",
+            "An archived check from 2026-10-31, before FreeDF was selected. Not legal advice or a clearance; this is not a proposal to rename the product.",
             "Brand: Caret due diligence");
         y -= 10;
         Fig(Marks[3].Alt, () =>
@@ -198,9 +198,9 @@ sealed partial class Gen28
         [
             new("Ink", "#0F172A"), new("Indigo deep", "#312E81"), new("Indigo", "#4F46E5"), new("Violet", "#7C3AED"), new("Teal", "#0D9488"), new("Amber", "#F59E0B"),
         ]),
-        new("Editor midnight", "In use: web editor", "Dark UI tokens from editor.css and the \u201CAb\u201D logo gradient.",
+        new("FreeDF midnight", "In use: web editor", "PinkInk primary and a lighter related accent in dark mode.",
         [
-            new("Background", "#0E1013"), new("Raised", "#1B1E25"), new("Accent", "#4C8DFF"), new("Accent deep", "#2F5FD0"), new("Text", "#E8EAF0"), new("Success", "#3ECF8E"),
+            new("Background", "#0E1013"), new("Raised", "#1B1E25"), new("Primary", "#BE185D"), new("Accent", "#E5A3BE"), new("Text", "#E8EAF0"), new("Success", "#3ECF8E"),
         ]),
         new("Vermilion and paper", "Exploratory", "Warm editorial: ink on paper with one hot accent.",
         [
@@ -216,7 +216,7 @@ sealed partial class Gen28
 
     void BrandPalettePage()
     {
-        var y = ContentPage("Part 2  /  Brand ideas", Violet2, "Palettes, with measured contrast",
+        var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "Palettes, with measured contrast",
             "Four palettes. Each swatch shows its WCAG 2.x contrast against white and against ink (#0F172A), computed by this generator.",
             "Brand: palettes and contrast");
         y -= 14;
@@ -298,7 +298,7 @@ sealed partial class Gen28
 
     void BrandTypePage()
     {
-        var y = ContentPage("Part 2  /  Brand ideas", Violet2, "Type pairings from fonts we already ship",
+        var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "Type pairings from fonts we already ship",
             "Only faces whose licences are already in samples/_gen/fonts: Source Serif 4, Source Sans 3, Source Code Pro (SIL OFL 1.1) and Bitstream Vera Sans.",
             "Brand: type pairings");
         y -= 12;
@@ -373,7 +373,7 @@ sealed partial class Gen28
 
     void BrandApplicationsPage()
     {
-        var y = ContentPage("Part 2  /  Brand ideas", Violet2, "Mock applications",
+        var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "Mock applications",
             "The Folio mark and the Ink and Indigo palette on surfaces a project actually needs. The wordmark uses today's repository name; any name from the previous pages drops in.",
             "Brand: mock applications");
         y -= 12;
@@ -469,12 +469,12 @@ sealed partial class Gen28
         var ey = ry - bh - 36;
         var ew = W / 2 - 6;
         var ex = M + ew + 12;
-        Fig("Mock editor header bar in the dark editor theme: the Ab tile, the name, File, Edit and View menus and a green Saved pill.", () =>
+        Fig("FreeDF editor header in the dark theme: the pink F tile, product name, File, Edit and View menus and a green Saved pill.", () =>
         {
             Shadow(M, ey - 50, ew, 50, 8, 0.16, 3, 6);
             Box(_pg, M, ey - 50, ew, 50, fill: "#0E1013", stroke: "#252932", r: 8);
             Mark(2, M + 12, ey - 37, 26);
-            Tx(_t.SansB, 10, M + 46, ey - 26, "AdoBye", "#E8EAF0");
+            Tx(_t.SansB, 10, M + 46, ey - 26, "FreeDF", "#E8EAF0");
             Tx(_t.Sans, 8.4, M + 46, ey - 40, "File    Edit    View", "#B4BAC8");
             Pill(M + ew - 56, ey - 31, 46, 15, "Saved", "#143D2B", "#3ECF8E", 7.8);
         });

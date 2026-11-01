@@ -4,6 +4,17 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/AdoBye.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-01 named-destination consistency
+
+Outline/link inspection and outline import now share cycle-aware named-destination
+lookup. Merge previously stopped at depth 16, losing valid targets that inspection
+could resolve; both paths now use the existing depth-64 bound. Regressions cover
+20/64-level trees, cycles followed by valid siblings, dictionary-wrapped `/D`,
+full/incremental preservation and imported page remapping. This closes a selected
+12.3.2/12.3.3 editing gap, not complete destination conformance: raw byte-name
+matching, arbitrary-depth trees, remote/embedded target resolution and general
+catalog-preserving merges remain outside this slice. No action is executed.
+
 ## Editor-pipeline recovery and current-main integration
 
 Main `6b474b18`, the binary/Blob pipeline and reviewed default-on worker pool

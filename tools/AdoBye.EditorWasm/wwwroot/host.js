@@ -2,7 +2,7 @@ export async function start() {
   // The published shell starts the engine worker from <head> so it boots while the UI parses and paints.
   const early = window.pdfEngine;
   const worker = early?.worker ?? new Worker(new URL('worker.js', import.meta.url), { type: 'module', name: 'PDF engine' });
-  let nextId = 0, failed = null, bootRetries = 0, bootTimings = null, sequence = Promise.resolve();
+  let nextId = 0, failed = null, bootRetries = 0, bootTimings = null, queued = 0, sequence = Promise.resolve();
   const pending = new Map();
   const imageCache = new Map();
   const imagePending = new Map();
@@ -64,7 +64,8 @@ export async function start() {
     });
   };
   const enqueue = operation => {
-    const result = sequence.then(operation);
+    queued++;
+    const result = sequence.then(operation).finally(() => { queued--; });
     sequence = result.catch(() => {});
     return result;
   };
@@ -132,6 +133,7 @@ export async function start() {
   };
   return {
     execution: 'worker',
+    get busy() { return queued > 0 || pending.size > 0; },
     bootRetries,
     get renderPool() { return renderPool; },
     bootTimings,

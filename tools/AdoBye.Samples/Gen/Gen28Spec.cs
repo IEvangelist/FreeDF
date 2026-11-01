@@ -235,7 +235,7 @@ sealed partial class Gen28
             ["docs/performance/2026-10-30-aot-budgets.json", "The six strict-goal misses", "2026-10-30"],
             ["docs/performance/2026-10-30-worker-pool.md", "Worker pool and band rendering", "2026-10-30"],
             ["docs/spec-matrix.md, docs/spec-backlog.md", "Parity rows and caveats", "aa127037"],
-            ["tools/AdoBye.EditorWeb/wwwroot (editor.css, index.html)", "Editor palette and \u201CAb\u201D mark", "aa127037"],
+            ["tools/AdoBye.EditorWeb/wwwroot (surface.css, index.html)", "FreeDF palette and F mark", "Current source"],
             ["samples/_gen/fonts/LICENSES.txt", "Font licences", "aa127037"],
         ];
         var yb = DataTable(M, y - 8, [new("File", 232, true, false, 8), new("Used for", W - 294, false, false, 8), new("Version", 62, false, false, 8)], src,

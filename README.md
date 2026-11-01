@@ -1,4 +1,4 @@
-# AdoBye
+# FreeDF
 
 Free, fast PDF parser, renderer and editor in C# (ISO 32000-2). Say goodbye to the paywall.
 
@@ -31,7 +31,7 @@ var spans = Pdf.ExtractText(document.Pages[0]);
 var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
 ```
 
-Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. Product/tool names remain unchanged while the product name is undecided. Historical benchmark reports retain their original identities and measurements.
+Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. **FreeDF** is the public product name. Internal `AdoBye.*` project/tool names, the `IEvangelist/csharp-pdf` repository, and existing browser storage keys remain stable for compatibility. Historical benchmark reports retain their original tool identities and measurements.
 
 ### Inert remote go-to actions
 

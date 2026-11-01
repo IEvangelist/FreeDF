@@ -27,14 +27,23 @@
     toasts.append(t);
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, kind === 'error' ? 6000 : 3500);
   }
-  const ACCENTS = [['pink', 'Pink', '#db2777'], ['blue', 'Blue', '#2563eb'], ['violet', 'Violet', '#7c3aed'], ['green', 'Green', '#16a34a'], ['orange', 'Orange', '#ea580c'], ['red', 'Red', '#dc2626'], ['teal', 'Teal', '#0d9488']];
-  const accent = () => { const a = store.get('editor.accent'); return ACCENTS.some(x => x[0] === a) ? a : 'pink'; };
-  const setAccent = v => {
-    if (!ACCENTS.some(x => x[0] === v)) v = 'pink';
-    store.set('editor.accent', v === 'pink' ? null : v); v === 'pink' ? delete doc.dataset.accent : doc.dataset.accent = v;
-    const meta = q('meta[name="theme-color"]'); if (meta) meta.content = ACCENTS.find(x => x[0] === v)[2];
+  const COLORS = [['pink', 'Pink', '#be185d'], ['cyan', 'Cyan', '#0e7490'], ['magenta', 'Magenta', '#a21caf'], ['blue', 'Blue', '#2563eb'], ['violet', 'Violet', '#6d28d9'], ['green', 'Green', '#15803d'], ['orange', 'Orange', '#c2410c'], ['red', 'Red', '#b91c1c'], ['teal', 'Teal', '#0f766e']];
+  const SHADES = [['light', 'Light', 'var(--shade-light)'], ['medium', 'Medium', 'var(--shade-medium)'], ['dark', 'Dark', 'var(--shade-dark)']];
+  const validColor = v => COLORS.some(x => x[0] === v);
+  const validShade = v => SHADES.some(x => x[0] === v);
+  const primary = () => validColor(doc.dataset.primary) ? doc.dataset.primary : 'pink';
+  const accent = () => validShade(doc.dataset.accent) ? doc.dataset.accent : 'medium';
+  const setColor = (role, v, fallback) => {
+    if (!(role === 'primary' ? validColor(v) : validShade(v))) v = fallback;
+    store.set('editor.' + role, v === fallback ? null : v);
+    v === fallback ? delete doc.dataset[role] : doc.dataset[role] = v;
+    if (role === 'primary') { const meta = q('meta[name="theme-color"]'); if (meta) meta.content = COLORS.find(x => x[0] === v)[2]; }
   };
-  window.editorUi = { toast, say, setTheme, setMotion, setFullMotion, setAccent, accent };
+  const setPrimary = v => setColor('primary', v, 'pink'), setAccent = v => setColor('accent', v, 'medium');
+  // Before v2 the accent also drove primary actions. Retain that primary for saved choices.
+  if (!store.get('editor.colors.v2') && !store.get('editor.primary') && validColor(store.get('editor.accent'))) doc.dataset.primary = store.get('editor.accent');
+  setPrimary(primary()); setAccent(accent()); store.set('editor.colors.v2', '1');
+  window.editorUi = { toast, say, setTheme, setMotion, setFullMotion, setPrimary, primary, setAccent, accent };
 
   // Focus handling shared by the palette and About dialogs.
   // Only elements this layer made inert are released again; the editor's own inert states (startup, recovery gating) are never overwritten.
@@ -115,7 +124,7 @@
       const dl = el('dl'); for (const [k, v] of rows) dl.append(el('dt', { textContent: k }), el('dd', {}, el('kbd', { textContent: v })));
       const done = el('button', { type: 'button', className: 'btn-outline', textContent: 'Close', onclick: close });
       box.classList.add('about');
-      box.append(el('h2', { textContent: 'AdoBye PDF editor', style: 'margin:0;padding:16px 20px 0;font-size:1.0625rem' }),
+      box.append(el('h2', { textContent: 'FreeDF PDF editor', style: 'margin:0;padding:16px 20px 0;font-size:1.0625rem' }),
         el('div', { className: 'dbody', style: 'padding:12px 20px' }, el('p', { textContent: 'Documents are opened and edited in this browser tab. Nothing is uploaded.' }), dl,
           el('p', {}, 'Open source on ', el('a', { href: 'https://github.com/IEvangelist/csharp-pdf', target: '_blank', rel: 'noopener noreferrer', textContent: 'GitHub' }), '. ',
             el('a', { href: 'https://github.com/sponsors/IEvangelist?frequency=one-time', target: '_blank', rel: 'noopener noreferrer', textContent: 'Sponsor the project' }), '.')),
@@ -126,6 +135,8 @@
 
   // Appearance menu reuses the editor's .cm menu styling and keyboard handling.
   function appearanceMenu(anchor) {
+    if (!anchor.getClientRects().length) anchor = $('more') || anchor;
+    lastOutside = anchor;
     q('.cm')?.remove();
     const m = el('div', { className: 'cm has-check' }); m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'Appearance');
     const item = (role, label, checked, run, disabled) => {
@@ -133,16 +144,23 @@
       b.onclick = () => { m.remove(); run(); anchor.focus(); }; return b;
     };
     const t = theme();
-    const sw = el('div', { className: 'cm-sw' }); sw.setAttribute('role', 'group'); sw.setAttribute('aria-label', 'Accent colour'); const cur = accent();
-    for (const [v, label, hex] of ACCENTS) {
-      const b = el('button', { type: 'button', title: label }); b.setAttribute('role', 'menuitemradio'); b.setAttribute('aria-checked', v === cur); b.setAttribute('aria-label', label); b.style.setProperty('--sw', hex);
-      b.onclick = () => { setAccent(v); for (const o of qa('button', sw)) o.setAttribute('aria-checked', o === b); };
-      sw.append(b);
-    }
+    const swatches = (label, current, set, choices) => {
+      const sw = el('div', { className: 'cm-sw' }); sw.setAttribute('role', 'group'); sw.setAttribute('aria-label', label);
+      for (const [v, name, hex] of choices) {
+        const b = el('button', { type: 'button', title: name }); b.setAttribute('role', 'menuitemradio'); b.setAttribute('aria-checked', v === current); b.setAttribute('aria-label', name); b.style.setProperty('--sw', hex);
+        b.onclick = () => { set(v); for (const o of qa('button', sw)) o.setAttribute('aria-checked', o === b); };
+        sw.append(b);
+      }
+      return sw;
+    };
     m.append(el('div', { className: 'cm-h', textContent: 'Theme' }), ...[['system', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => item('menuitemradio', l, t === v, () => setTheme(v))), el('div', { className: 'cm-sep' }),
       osReduced.matches ? item('menuitemcheckbox', 'Allow animations (system asks to reduce)', doc.dataset.motion === 'full', () => setFullMotion(doc.dataset.motion !== 'full')) : item('menuitemcheckbox', 'Reduce motion', doc.dataset.motion === 'reduce', () => setMotion(doc.dataset.motion !== 'reduce')),
-      el('div', { className: 'cm-sep' }), el('div', { className: 'cm-h', textContent: 'Accent colour' }), sw, el('div', { className: 'cm-sep' }), item('menuitem', 'Commands\u2026', false, palette), item('menuitem', 'Keyboard shortcuts and about\u2026', false, about));
+      el('div', { className: 'cm-sep' }), el('div', { className: 'cm-h', textContent: 'Primary color' }), swatches('Primary color', primary(), setPrimary, COLORS),
+      el('div', { className: 'cm-h', textContent: 'Accent shade' }), swatches('Accent shade', accent(), setAccent, SHADES),
+      item('menuitem', 'Reset PinkInk colors', false, () => { setPrimary('pink'); setAccent('medium'); }),
+      el('div', { className: 'cm-sep' }), item('menuitem', 'Commands\u2026', false, palette), item('menuitem', 'Keyboard shortcuts and about\u2026', false, about));
     document.body.append(m); const r = anchor.getBoundingClientRect();
+    m.style.maxHeight = Math.max(0, innerHeight - r.bottom - 8) + 'px';
     m.style.left = Math.max(4, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 4)) + 'px'; m.style.top = r.bottom + 4 + 'px';
     (q('[aria-checked="true"]', m) || q('.cm-i', m)).focus();
   }
@@ -169,7 +187,7 @@
       if (s) { document.activeElement.dataset.open = ''; document.activeElement.dispatchEvent(new PointerEvent('pointerenter')); items(s)[0]?.focus(); }
     } else if (k === 'ArrowLeft' && menu.classList.contains('sub')) {
       e.preventDefault(); e.stopImmediatePropagation(); const p = menu.parentElement; delete p.dataset.open; p.focus();
-    } else if (k.length === 1 && /\S/.test(k)) {
+    }     else if (k !== 'Enter' && k !== ' ' && k.length === 1 && /\S/.test(k)) {
       e.preventDefault(); e.stopImmediatePropagation();
       const n = list.findIndex((b, j) => j > i && b.textContent.trim().toLowerCase().startsWith(k.toLowerCase())), w = n < 0 ? list.findIndex(b => b.textContent.trim().toLowerCase().startsWith(k.toLowerCase())) : n;
       if (w >= 0) list[w].focus();
@@ -242,7 +260,7 @@
     const base = $('base'), alt = `${text}, ${$('name')?.textContent ?? 'document'}`; if (base && text && base.alt !== alt) base.alt = alt;
     if (text && text !== lastPage && lastPage) say(text); lastPage = text;
     const name = $('name')?.textContent, has = name && !$('doc')?.classList.contains('empty');
-    const title = has ? `${name} - AdoBye` : 'AdoBye - PDF Editor'; if (document.title !== title) document.title = title;
+    const title = has ? `${name} - FreeDF` : 'FreeDF - PDF Editor'; if (document.title !== title) document.title = title;
   }
   const welcome = () => {
       const e = $('empty'); if (!e || e.dataset.ui) return; e.dataset.ui = '1';
@@ -333,7 +351,7 @@
 
   // Narrow screens: secondary header actions move into one overflow menu instead of scrolling the header sideways.
   function overflow() {
-    const ids = ['rl', 'rr', 'del', 'title', 'pr', 'fb', 'fs', 'appearance'], dl = $('dl'); if (!dl || $('more')) return;
+    const ids = ['rl', 'rr', 'del', 'title', 'pr', 'fb', 'fs', 'appearance', 'appBtn'], dl = $('dl'); if (!dl || $('more')) return;
     for (const id of ids) $(id)?.classList.add('hdr2');
     const more = el('button', { id: 'more', type: 'button', className: 'icon', title: 'More actions' }); more.setAttribute('aria-haspopup', 'menu');
     more.innerHTML = '<svg class="i"><use href="#i-more"/></svg>'; more.setAttribute('aria-label', 'More actions');
@@ -341,7 +359,7 @@
       q('.cm')?.remove();
       const m = el('div', { className: 'cm' }); m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'More actions');
       for (const id of ids) {
-        const b = $(id); if (!b) continue; const t = (b.dataset.tip || b.title || b.getAttribute('aria-label') || id).replace(/\s*\(.*\)$/, '');
+        const b = $(id); if (!b || b.hidden) continue; const t = (b.dataset.tip || b.title || b.getAttribute('aria-label') || id).replace(/\s*\(.*\)$/, '');
         const i = el('button', { type: 'button', className: 'cm-i', disabled: b.disabled }, el('span', { textContent: t })); i.setAttribute('role', 'menuitem');
         i.onclick = () => { m.remove(); id === 'appearance' ? appearanceMenu(more) : b.click(); }; m.append(i);
       }
@@ -402,7 +420,6 @@
   const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(sweep); } };
 
   function init() {
-    setAccent(accent());
     document.body.append(live, toasts);
     const skip = el('a', { className: 'skip', href: '#view', textContent: 'Skip to document' }); skip.onclick = e => { e.preventDefault(); $('view')?.focus(); };
     document.body.prepend(skip);

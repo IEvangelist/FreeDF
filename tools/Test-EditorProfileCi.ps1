@@ -6,6 +6,23 @@ param(
 $ErrorActionPreference = 'Stop'
 $runner = Join-Path $PSScriptRoot 'AdoBye.EditorSmoke\bin\Release\net10.0\AdoBye.EditorSmoke.dll'
 New-Item $Output -ItemType Directory -Force | Out-Null
+# Synthetic controls must be independent of real timing regressions in the input run.
+# Only timings are normalized; missing groups, allocations and pixel evidence remain intact.
+$control = @(Get-Content $Profile -Raw | ConvertFrom-Json)
+foreach ($r in $control) {
+    if ($r.PSObject.Properties['inputAckMs'] -and $null -ne $r.inputAckMs) { $r.inputAckMs = 1 }
+    if (!$r.PSObject.Properties['result']) { continue }
+    $result = $r.result
+    if ($result.PSObject.Properties['ms']) { $result.ms = 1 }
+    foreach ($field in @('interactions', 'presentation', 'longTasks')) {
+        if ($result.PSObject.Properties[$field]) { foreach ($entry in $result.$field) { $entry.ms = 1 } }
+    }
+    if ($result.PSObject.Properties['heartbeatDelays']) { $result.heartbeatDelays = @($result.heartbeatDelays | ForEach-Object { 1 }) }
+}
+$controlPath = Join-Path $Output 'control.json'
+$control | ConvertTo-Json -Depth 100 | Set-Content $controlPath
+& dotnet $runner --profile-ci $controlPath $Policy *> "$controlPath.log"
+if ($LASTEXITCODE -ne 0) { throw "Synthetic control failed before fault injection. See $controlPath.log" }
 $cases = @{
     'new-timing' = 'CI timing regression: 03-typography-embedded.pdf cached-zoom'
     'known-timing' = 'CI timing regression: 01-spec-showcase.pdf open'
@@ -19,7 +36,7 @@ $cases = @{
     'two-outliers' = 'CI timing regression: 09-images.pdf save-download event-frame-max-ms'
 }
 foreach ($name in $cases.Keys) {
-    $records = @(Get-Content $Profile -Raw | ConvertFrom-Json)
+    $records = @(Get-Content $controlPath -Raw | ConvertFrom-Json)
     foreach ($r in $records) {
         switch ($name) {
             'new-timing' { if ($r.document -eq '03-typography-embedded.pdf' -and $r.phase -eq 'cached-zoom') { $r.result.ms = 1000 } }

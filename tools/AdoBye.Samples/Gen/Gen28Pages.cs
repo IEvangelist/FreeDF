@@ -40,7 +40,7 @@ sealed partial class Gen28
             for (var i = 0; i < 5; i++) { _pg.Save(); _pg.Gs(("CA", 0.05)); Line(0, 200 + i * 42, PW, 200 + i * 42, "#FFFFFF", 0.6); _pg.Restore(); }
         });
 
-        T("P", () => Tx(_t.SansB, 9, 48, PH - 70, "CSHARP-PDF  /  SAMPLE 28", mint, tracking: 2.2));
+        T("P", () => Tx(_t.SansB, 9, 48, PH - 70, "FREEDF  /  SAMPLE 28", mint, tracking: 2.2));
         T("H1", () =>
         {
             Tx(_t.SerifB, 64, 44, PH - 150, "Measured.", lav);
@@ -48,7 +48,7 @@ sealed partial class Gen28
             Tx(_t.SerifB, 64, 44, PH - 286, "Mapped.", sun);
         });
         T("P", () => Para(_t.Sans, 15, 48, PH - 330, 330,
-            "Benchmark results drawn as vector charts, brand directions for a project that does not have a final name yet, and an honest map of ISO 32000-2 parity.", soft, 21));
+            "FreeDF's benchmark results drawn as vector charts, its official public identity alongside archived brand studies, and an honest map of ISO 32000-2 parity.", soft, 21));
 
         var (omin, omax) = Range(Open);
         var (emin, emax) = Range(OpenExtract);
@@ -80,7 +80,7 @@ sealed partial class Gen28
         (string No, string Title, string Line, Color C)[] parts =
         [
             ("01", "Benchmarks", "Library vs PdfPig, renderer stages, editor before / after, AOT, worker pool.", mint),
-            ("02", "Brand ideas", "Marks, names, palettes with contrast ratios, type pairings, mock applications.", lav),
+            ("02", "FreeDF brand", "Official name and mark, palettes with contrast ratios, archived studies.", lav),
             ("03", "Spec parity", "ISO 32000-2 area by area: Done, Partial, and what is still open.", sun),
         ];
         for (var i = 0; i < 3; i++)
@@ -183,7 +183,7 @@ sealed partial class Gen28
             ("Traceable", "Each chart carries a strip naming its source file, run date, hardware and build mode."),
             ("Misses stay visible", "Unmet goals are drawn in rose; slower results point right, not hidden."),
             ("No favourable rounding", "Values are as reported. Ratios are computed from reported means, to two decimals."),
-            ("Names are ideas", "The project name is undecided. editPDF was considered and cancelled because editpdf.io exists."),
+            ("FreeDF is the name", "FreeDF is the official public identity. Internal project names and the repository path stay stable."),
             ("Parity is not complete", "Partial rows stay Partial here. Validators are heuristic, not certification."),
         ];
         var ry = y - 22;

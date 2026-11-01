@@ -138,29 +138,12 @@ public sealed partial class PdfEditor
         return new PdfDictionary(result);
     }
 
-    static PdfObject? NamedDestination(PdfFile f, string name)
-    {
-        PdfObject? Unwrap(PdfObject? v) => f.Resolve(v) is PdfDictionary d ? f.Resolve(d.Get("D")) : f.Resolve(v);
-        var catalog = f.Catalog;
-        if (f.Resolve(catalog.Get("Dests")) is PdfDictionary legacy && legacy.Get(name) is { } lv) return Unwrap(lv);
-        PdfObject? Search(PdfObject? node, int depth)
-        {
-            if (depth > 16 || f.Resolve(node) is not PdfDictionary d) return null;
-            if (f.Resolve(d.Get("Names")) is PdfArray pairs)
-                for (var i = 0; i + 1 < pairs.Count; i += 2)
-                    if (f.Resolve(pairs[i]) is PdfString key && key.Text == name) return Unwrap(pairs[i + 1]);
-            if (f.Resolve(d.Get("Kids")) is PdfArray kids)
-                foreach (var k in kids.Items) if (Search(k, depth + 1) is { } hit) return hit;
-            return null;
-        }
-        return f.Resolve(catalog.Get("Names")) is PdfDictionary names ? Search(names.Get("Dests"), 0) : null;
-    }
-
     static PdfArray? ImportedDestination(PdfFile f, PdfDictionary item, Dictionary<int, int> pageMap)
     {
         var raw = f.Resolve(item.Get("Dest"));
         if (raw is null && f.Resolve(item.Get("A")) is PdfDictionary action && f.Resolve(action.Get("S")).AsName() == "GoTo") raw = f.Resolve(action.Get("D"));
-        raw = raw switch { PdfString s => NamedDestination(f, s.Text), PdfName n => NamedDestination(f, n.Value), _ => raw };
+        raw = raw switch { PdfString s => DocumentFeatures.LookupNamedDest(f, s.Text), PdfName n => DocumentFeatures.LookupNamedDest(f, n.Value), _ => raw };
+        raw = f.Resolve(raw);
         if (raw is PdfDictionary wrapper) raw = f.Resolve(wrapper.Get("D"));
         return raw is PdfArray { Count: > 0 } arr && arr[0] is PdfRef pr && pageMap.TryGetValue(pr.Number, out var dst)
             ? new PdfArray([new PdfRef(dst, 0), .. arr.Items.Skip(1)]) : null;

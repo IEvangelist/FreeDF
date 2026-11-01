@@ -5,6 +5,30 @@ namespace AdoBye.Tests;
 
 public class LexerKeywordTests
 {
+    [Theory]
+    [InlineData("42 00000 R", 0)]
+    [InlineData("42 65535 R", 65535)]
+    [InlineData("42% comment\n99999% comment\nR", 99999)]
+    public void Reference_generations_preserve_digits_comments_and_boundaries(string input, int generation)
+    {
+        var lexer = new PdfLexer(Encoding.ASCII.GetBytes(input + "/Next"));
+        Assert.Equal(new PdfRef(42, generation), lexer.ReadObject());
+        Assert.Equal(input.Length, lexer.Pos);
+        Assert.Equal(new PdfName("Next"), lexer.ReadObject());
+    }
+
+    [Theory]
+    [InlineData("42 000000 R")]
+    [InlineData("42 3 RG")]
+    [InlineData("42 /Name")]
+    public void Failed_reference_lookahead_restores_the_position(string input)
+    {
+        var lexer = new PdfLexer(Encoding.ASCII.GetBytes(input));
+        Assert.Equal(new PdfInteger(42), lexer.ReadObject());
+        Assert.Equal(2, lexer.Pos);
+        Assert.NotNull(lexer.ReadObject());
+    }
+
     const string Operators =
         "q Q cm w J j M d ri i gs m l c v y h re S s f F f* B B* b b* n W W* " +
         "BT ET Tc Tw Tz TL Tf Tr Ts Td TD Tm T* Tj TJ ' \" d0 d1 " +

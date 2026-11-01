@@ -51,10 +51,10 @@ sealed partial class Gen28
 
     Gen28()
     {
-        _d = new Doc("Measured, named, mapped: csharp-pdf benchmarks, brand directions and ISO 32000-2 parity",
-            author: "csharp-pdf contributors",
-            subject: "Benchmark charts from the checked-in 2026-10-30 reports, exploratory brand directions and the current ISO 32000-2 coverage matrix. Parity is not complete.",
-            keywords: "benchmarks, branding, ISO 32000-2, PDF/UA, tagged PDF, csharp-pdf, PortableDocument",
+        _d = new Doc("Measured, named, mapped: FreeDF benchmarks, brand identity and ISO 32000-2 parity",
+            author: "FreeDF contributors",
+            subject: "Benchmark charts from the checked-in 2026-10-30 reports, the FreeDF identity and archived brand explorations, and the current ISO 32000-2 coverage matrix. Parity is not complete.",
+            keywords: "FreeDF, benchmarks, branding, ISO 32000-2, PDF/UA, tagged PDF, csharp-pdf, PortableDocument",
             lang: "en-US");
         _t = new Faces(_d);
         _vera = _d.Font("Vera.ttf");
@@ -180,7 +180,7 @@ sealed partial class Gen28
             "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\">" +
             $"<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">{xmpTitle}</rdf:li></rdf:Alt></dc:title>" +
             "<dc:language><rdf:Bag><rdf:li>en-US</rdf:li></rdf:Bag></dc:language>" +
-            "<dc:creator><rdf:Seq><rdf:li>csharp-pdf contributors</rdf:li></rdf:Seq></dc:creator>" +
+            "<dc:creator><rdf:Seq><rdf:li>FreeDF contributors</rdf:li></rdf:Seq></dc:creator>" +
             "<pdfuaid:part>1</pdfuaid:part></rdf:Description></rdf:RDF></x:xmpmeta>\n<?xpacket end=\"w\"?>";
         var xmpRef = _d.Stream("/Type /Metadata /Subtype /XML", System.Text.Encoding.UTF8.GetBytes(xmp), compress: false);
 
@@ -320,7 +320,7 @@ sealed partial class Gen28
             _pg.Sh(Axial(0, 0, PW, 0, [(0, Indigo), (0.5, Violet), (1, TealL)]));
             _pg.Restore();
             Tx(_t.SansB, 8, M, PH - 34, part.ToUpperInvariant(), partColour, tracking: 1.6);
-            Tx(_t.Sans, 8, PW - M, PH - 34, "csharp-pdf  /  sample 28", Slate, 'r');
+            Tx(_t.Sans, 8, PW - M, PH - 34, "FreeDF  /  sample 28", Slate, 'r');
             Rule(_pg, M, PH - 44, PW - M, Line_);
             Rule(_pg, M, 40, PW - M, Line_);
             Tx(_t.Sans, 8, M, 26, "Exploratory edition. Figures are copied from checked-in reports; nothing here is a marketing claim.", Slate);

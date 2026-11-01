@@ -1,11 +1,20 @@
 {
-  "name": "AdoBye PDF Editor",
-  "short_name": "AdoBye",
+  "name": "FreeDF PDF Editor",
+  "short_name": "FreeDF",
+  "id": "./",
+  "description": "Open, edit, merge and save PDFs on your device, online or offline.",
+  "lang": "en",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0e1013",
-  "theme_color": "#db2777",
+  "theme_color": "#be185d",
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": { "application/pdf": [".pdf"] }
+    }
+  ],
   "icons": [
     {
       "src": "icon-192.png",
@@ -15,7 +24,8 @@
     {
       "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "favicon.svg",

@@ -308,8 +308,8 @@ export function createFormFields(ctx) {
     if (k === 'button') h += txt('caption', 'Caption', f);
     h += '</section>';
     if (k !== 'signature' && k !== 'checkbox' && k !== 'radio' && k !== 'button' || k === 'button')
-      h += `<section><h3>Text</h3><div class="row">${sel1('fontName', 'Font', f, FONTS)}${num('fontSize', 'Size (0 = auto)', f, 0.5, 0)}</div>${colour('textColor', 'Colour', f)}${k === 'button' ? '' : sel1('alignment', 'Alignment', f, [[0, 'Left'], [1, 'Centre'], [2, 'Right']])}</section>`;
-    else if (k === 'checkbox' || k === 'radio') h += `<section><h3>Mark</h3>${colour('textColor', 'Colour', f)}</section>`;
+      h += `<section><h3>Text</h3><div class="row">${sel1('fontName', 'Font', f, FONTS)}${num('fontSize', 'Size (0 = auto)', f, 0.5, 0)}</div>${colour('textColor', 'Color', f)}${k === 'button' ? '' : sel1('alignment', 'Alignment', f, [[0, 'Left'], [1, 'Centre'], [2, 'Right']])}</section>`;
+    else if (k === 'checkbox' || k === 'radio') h += `<section><h3>Mark</h3>${colour('textColor', 'Color', f)}</section>`;
     h += `<section><h3>Appearance</h3>${colour('borderColor', 'Border', f, true)}${colour('backgroundColor', 'Background', f, true)}<div class="row">${num('borderWidth', 'Border width', f, 0.5, 0)}${sel1('borderStyle', 'Style', f, STYLES)}</div></section>`;
     h += `<section><h3>Position</h3><div class="row">${num('x', 'X', f)}${num('y', 'Y', f)}</div><div class="row">${num('w', 'Width', f)}${num('h', 'Height', f)}</div></section>`;
     const pos = list.indexOf(f) + 1;

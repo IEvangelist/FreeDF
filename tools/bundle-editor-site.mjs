@@ -133,17 +133,17 @@ for (const [name, file] of [['host.js', 'host.mjs'], ['editor.js', 'editor.cjs']
 // HTML: registry before any consumer, inline dynamic imports, bundle script, inlined favicons.
 const icon = (file, type) => `data:${type};base64,${readFileSync(join(site, file)).toString('base64')}`;
 const inline = [['favicon.svg', 'image/svg+xml'], ['favicon-32.png', 'image/png'], ['favicon.ico', 'image/x-icon']];
-// One 512px icon serves every size (the OS scales it): the manifest declares it for 192 and 512, and the 180px
-// apple-touch copy and the 192px file are dropped (two fewer startup files).
+// iOS scales the opaque 512px maskable icon. Embed the real 192px image in the manifest to keep the startup file budget.
 if (!html.includes('href="apple-touch-icon.png"')) fail('index.html does not link apple-touch-icon.png.');
 html = html.replace('href="apple-touch-icon.png"', 'href="icon-512.png"');
 rmSync(join(site, 'apple-touch-icon.png'));
 const manifest = JSON.parse(read('site.webmanifest'));
 const big = manifest.icons?.find(entry => entry.src === 'icon-512.png');
-if (!big || !manifest.icons.some(entry => entry.src === 'icon-192.png')) fail('site.webmanifest must list icon-192.png and icon-512.png.');
-big.sizes = '192x192 512x512';
+const small = manifest.icons?.find(entry => entry.src === 'icon-192.png');
+if (!big || !small) fail('site.webmanifest must list icon-192.png and icon-512.png.');
+small.src = icon('icon-192.png', 'image/png');
 // favicon.svg is inlined into the page, so the manifest must not reference a file that is no longer published.
-manifest.icons = manifest.icons.filter(entry => entry.src === 'icon-512.png');
+manifest.icons = manifest.icons.filter(entry => entry.src !== 'favicon.svg');
 write('site.webmanifest', JSON.stringify(manifest));
 rmSync(join(site, 'icon-192.png'));
 for (const [file, type] of inline) {
@@ -162,4 +162,4 @@ write('index.html', html);
 
 const left = ['theme.css', 'surface.css', 'ui.js', ...members.filter(name => name !== 'host.js'), ...inline.map(entry => entry[0])].filter(name => existsSync(join(site, name)));
 if (left.length) fail('bundled files still published: ' + left.join(', '));
-console.log(`Bundled shell: editor.css (${css.length} sheets), editor.js (2 scripts), host.js (${members.length} modules), ${inline.length} inlined icons, icon-192/apple-touch dropped in favour of icon-512.png.`);
+console.log(`Bundled shell: editor.css (${css.length} sheets), editor.js (2 scripts), host.js (${members.length} modules), ${inline.length} inlined favicons, installation icons preserved.`);

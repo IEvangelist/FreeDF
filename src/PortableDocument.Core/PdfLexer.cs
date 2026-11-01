@@ -104,7 +104,8 @@ public sealed class PdfLexer
         while (Pos < _d.Length && _d[Pos] is >= (byte)'0' and <= (byte)'9') Pos++;
         if (Pos > s && Pos - s < 6)
         {
-            var gen = int.Parse(Encoding.ASCII.GetString(_d, s, Pos - s));
+            var gen = 0;
+            for (var i = s; i < Pos; i++) gen = gen * 10 + _d[i] - '0';
             SkipWhite();
             if (Pos < _d.Length && _d[Pos] == 'R' && (Pos + 1 >= _d.Length || !IsRegular(_d[Pos + 1])))
             {

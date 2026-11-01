@@ -1,6 +1,6 @@
-# Browser editor and GitHub Pages
+# FreeDF browser editor and GitHub Pages
 
-The Pages build runs the **same editor UI and C# PDF engine** as
+FreeDF's Pages build runs the **same editor UI and C# PDF engine** as
 `tools/AdoBye.EditorWeb`, entirely in browser WebAssembly. There is no PDF API
 server. Opening a PDF reads a local `File`; parsing, rendering, edits and exports
 stay in a dedicated local browser worker. Downloads use local blobs. There is no telemetry,
@@ -25,6 +25,21 @@ removal; replacing the clipboard releases its previous reference. Successfully
 opening or creating a document clears the clipboard and pending upload files.
 
 ## Publishing
+
+### Appearance
+
+The header's **Appearance** menu has **Primary color** (actions) and
+**Accent shade** (selection and focus) selectors. The default is PinkInk-inspired
+pink with Medium accents. Primary choices include pink, cyan, magenta, blue,
+violet, green, orange, red and teal. Accent options are Light, Medium and Dark
+variations of the selected primary, tuned for contrast in each theme. Changing
+the primary automatically recolors the accents without resetting the shade.
+Light/dark/system theme and reduced-motion choices remain independent.
+Selections stay in local browser storage and apply before first paint; old
+saved legacy accent colors retain their previous primary/action color and adopt
+the default Medium shade.
+**Reset PinkInk colors** restores the defaults without resetting theme or motion.
+These settings affect only the editor UI, never PDF colors or exported content.
 
 The welcome screen's primary **Open the showcase** button opens the tagged,
 18-page benchmarks, brand and spec showcase (`28-benchmarks-brand-spec.pdf`).
@@ -135,8 +150,8 @@ fall back to the primary worker; pool smoke checks compare decoded pixels.
 |---|---|
 | New document, paper sizes/orientation; open picker; PDF drop | Local; dropping onto an open document imports its pages, as in EditorWeb |
 | Rendered pages/thumbnails; navigation; fit width/page; zoom | C# software renderer in WASM; no PDF.js or remote rendering |
-| Select/move/resize/delete/recolour existing editable graphics | Same content-rewriter operations, including object transforms and reset |
-| Select existing editable text; add text; typography/colour/alignment/spacing | Selection/focus/cancel does not replace PDF content. Actual text changes reuse supported original embedded glyphs and text transforms; the PDF renderer paints edited originals rather than approximate browser fonts |
+| Select/move/resize/delete/recolor existing editable graphics | Same content-rewriter operations, including object transforms and reset |
+| Select existing editable text; add text; typography/color/alignment/spacing | Selection/focus/cancel does not replace PDF content. Actual text changes reuse supported original embedded glyphs and text transforms; the PDF renderer paints edited originals rather than approximate browser fonts |
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
 | Redaction | Same content-removing redactor: arbitrary paths/strokes/clips, rotated content, per-invocation shared/nested Forms, partial inline/stencil image blanking and hidden optional content; not a painted-cover substitute |
@@ -199,10 +214,53 @@ Unsaved edits, inline edits and in-flight requests defer update reloads.
 `Publish-EditorPages.ps1 -KillServiceWorker` publishes a rollback that removes
 the editor cache and client pins without discarding unsaved edits.
 
+### Installed app and offline use
+
+FreeDF's Pages/WASM editor is an installable PWA with a stable, repository-scoped
+manifest identity, standalone window, a real 192px icon embedded in the published
+manifest and an opaque 512px icon usable as both a normal and maskable icon.
+**App and offline status** in the header (inside **More** on small screens)
+shows whether the app cache is preparing, ready, or unavailable and whether the
+browser is online. An **Install app** action uses the browser's installation
+prompt only after an explicit click. Where that prompt is unavailable, the
+dialog explains browser-menu installation and Safari's
+**Share > Add to Home Screen** flow. Installation is optional; editing in a
+browser remains supported. The public name is FreeDF; internal project names
+and storage/cache identifiers remain stable, so the rebrand does not delete
+existing installations, saved preferences, file handles or local recovery.
+PNG/ICO icons can be regenerated with `python tools\Generate-EditorIcons.py`
+using Pillow and the sample suite's local Source Sans 3 font.
+
+Wait for **App ready for offline use** after the first online visit. The core
+editor can then start, open local PDFs, edit, merge and save/download without a
+network connection. Samples and fallback fonts are only available offline after
+their first successful online use. Browser storage can be evicted or cleared;
+installation is not a backup. Download or save important PDFs separately.
+The app-asset service worker never caches local PDF bytes; local edit
+recovery and chosen file handles remain separate.
+
+On browsers/operating systems supporting the File Handling API, installation
+registers PDF files with the app. A launch waits for engine/recovery readiness
+and retains the received local handle for **Save**. Existing documents,
+unsaved edits and active dialogs are never replaced automatically: received
+files wait behind **App > Open received PDFs**, with the existing discard
+confirmation. Multiple files open the first PDF and offer the rest in the
+existing merge dialog. Unsupported browsers retain the picker/drop/download
+flows; OS file association is browser-controlled. A server-side share target,
+push notifications and background PDF processing are not advertised.
+
+**Check for updates** checks only this app's registration. Updates still use
+the multi-tab dirty-work gate and version-pinned caches; unopened received PDFs
+also defer activation so an update cannot discard a pending launch. The publisher's kill
+switch unregisters only this app's scope, and a forced reload of a dirty tab
+requires an explicit discard confirmation. Installation readiness, offline
+open/edit/download, local launch-handle Save and deferred launches are exercised
+by the `--service-worker` browser smoke.
+
 `Test-EditorPayload.ps1` checks the published startup files against
 `performance/editor-startup-budget.v1.json`, separately reporting the genuinely
 deferred samples and fonts. Those numeric ceilings are unchanged. The integrated
-AOT candidate currently exceeds the startup ceilings; successful publishing or
+AOT build must pass these unchanged ceilings; successful publishing or
 non-AOT browser smokes alone do not make it release-ready.
 
 The shared session preserves unique indirect Form-child editing. Shared,

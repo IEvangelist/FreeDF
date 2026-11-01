@@ -2,19 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>AdoBye - PDF Editor</title>
+<title>FreeDF - PDF Editor</title>
+<meta name="application-name" content="FreeDF">
+<meta name="apple-mobile-web-app-title" content="FreeDF">
+<meta name="description" content="FreeDF is a free PDF editor. Open, edit, merge and save PDFs on your device, online or offline.">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="alternate icon" href="favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
-<meta name="theme-color" content="#db2777">
+<meta name="theme-color" content="#be185d">
 <link rel="stylesheet" href="editor.css">
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="surface.css">
 <meta name="color-scheme" content="light dark">
-<script>try{var d=document.documentElement,t=localStorage.getItem('editor.theme'),m=localStorage.getItem('editor.motion'),a=localStorage.getItem('editor.accent');if(a)d.dataset.accent=a;if(t)d.dataset.theme=t;if(m)d.dataset.motion=m}catch(e){}</script>
+<script>try{var d=document.documentElement,t=localStorage.getItem('editor.theme'),m=localStorage.getItem('editor.motion'),a=localStorage.getItem('editor.accent'),p=localStorage.getItem('editor.primary'),v=localStorage.getItem('editor.colors.v2'),colors={pink:'#be185d',cyan:'#0e7490',magenta:'#a21caf',blue:'#2563eb',violet:'#6d28d9',green:'#15803d',orange:'#c2410c',red:'#b91c1c',teal:'#0f766e'};if(!v&&!p)p=a;if(['light','medium','dark'].includes(a))d.dataset.accent=a;if(Object.hasOwn(colors,p)){d.dataset.primary=p;document.querySelector('meta[name="theme-color"]').content=colors[p]}if(t)d.dataset.theme=t;if(m)d.dataset.motion=m}catch(e){}</script>
 <script>window.pdfEditorCapabilities = { openEncrypted: true };</script>
 <script src="editor.js" defer></script>
 <script src="ui.js" defer></script>
@@ -68,7 +71,7 @@
 </defs></svg>
 <header>
   <button id="tl" class="icon toggle on" title="Toggle pages panel ([)" aria-pressed="true"><svg class="i"><use href="#i-sidel"/></svg></button>
-  <div class="brand"><span class="logo">Ab</span><strong>AdoBye</strong><h1 class="sr-only">AdoBye PDF editor</h1></div>
+  <div class="brand"><span class="logo" aria-hidden="true">F</span><strong>FreeDF</strong><h1 class="sr-only">FreeDF PDF editor</h1></div>
   <div class="group">
     <button id="fileBtn" title="File menu" aria-haspopup="menu"><svg class="i"><use href="#i-open"/></svg><span class="lbl">File</span><svg class="i"><use href="#i-down"/></svg></button>
     <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" multiple hidden>
@@ -87,6 +90,7 @@
     <button id="fb" class="icon" title="Find (Ctrl+F)"><svg class="i"><use href="#i-search"/></svg></button>
     <button id="fs" class="icon" title="Full screen (F11)"><svg class="i"><use href="#i-full"/></svg></button>
     <button id="appearance" class="icon" title="Appearance and motion" aria-haspopup="menu"><svg class="i"><use href="#i-theme"/></svg></button>
+    <button id="appBtn" class="icon" title="App and offline status" aria-haspopup="dialog" hidden><svg class="i" aria-hidden="true"><use href="#i-download"/></svg></button>
     <a id="sponsor" class="sponsor" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg></a>
   </div>
   <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg><span class="lbl">Download</span></button>
@@ -250,7 +254,7 @@ function spanProps() {
     <p class="hint">Selection does not change the PDF. Changing the content reuses the original font and text transform; characters missing from that font use a fallback. The page shows the PDF engine's actual output.</p></section>
     <section><h3>Typography</h3><p>${esc(s.font)}</p><div class="row"><button type="button" class="fpb" data-original-font>Change font</button>${number('size', 'Size')}</div>
     <div class="row"><label class="tgl" title="Bold"><input type="checkbox" data-original="bold" ${draft.bold ? 'checked' : ''}>${ic('bold')}</label><label class="tgl" title="Italic"><input type="checkbox" data-original="italic" ${draft.italic ? 'checked' : ''}>${ic('italic')}</label></div>
-    <label class="fld"><span>Colour</span><input type="color" data-original="color" value="${s.color}"></label></section>
+    <label class="fld"><span>Color</span><input type="color" data-original="color" value="${s.color}"></label></section>
     <section><h3>Position</h3><div class="row">${number('x', 'X')}${number('y', 'Y')}</div></section>`;
   const change = (key, value) => { if (draft[key] === value) return; const it = convertSpan(s); it[key] = value; paint(); props(); };
   p.querySelectorAll('[data-original]').forEach(el => el.oninput = () =>
@@ -1051,9 +1055,9 @@ function props() {
     <section><h3>Typography</h3>${it.orig != null ? `<p class="hint">Original font: ${esc(it.originalFont || 'from PDF')}. Unchanged family/style reuses its glyphs and transform; unavailable glyphs use fallback fonts. PDF rendering, not browser fonts, is shown on the page.</p>` : ''}<div class="row"><label class="fld"><span>Font</span><button type="button" class="fpb" id="fpb" style="font-family:${esc(famCss(it.font))}"><b>${esc(it.font)}</b><i>▾</i></button></label>${n('size', 'Size', 0.5)}</div>
     <div class="row"><label class="tgl" title="Bold"><input type="checkbox" data-k="bold" ${it.bold ? 'checked' : ''}>${ic('bold')}</label><label class="tgl" title="Italic"><input type="checkbox" data-k="italic" ${it.italic ? 'checked' : ''}>${ic('italic')}</label><label class="tgl tx" title="Underline"><input type="checkbox" data-k="underline" ${it.underline ? 'checked' : ''}><u>U</u></label><label class="tgl tx" title="Strikethrough"><input type="checkbox" data-k="strike" ${it.strike ? 'checked' : ''}><s>S</s></label><span class="grow"></span></div>
     <div class="row seg al" role="group" aria-label="Alignment">${[['left', 'M4 6h16M4 10h10M4 14h16M4 18h10'], ['center', 'M4 6h16M7 10h10M4 14h16M7 18h10'], ['right', 'M4 6h16M10 10h10M4 14h16M10 18h10']].map(([a, d]) => `<button type="button" class="icon${(it.align || 'left') === a ? ' on' : ''}" data-al="${a}" title="Align ${a}"><svg class="i"><path d="${d}"/></svg></button>`).join('')}</div>
-    <div class="row">${n('spacing', 'Letter spacing', 0.1)}${n('lineHeight', 'Line height ×', 0.05)}</div>${colour('color', 'Colour')}</section>`;
+    <div class="row">${n('spacing', 'Letter spacing', 0.1)}${n('lineHeight', 'Line height ×', 0.05)}</div>${colour('color', 'Color')}</section>`;
   if (it.type === 'rect' || it.type === 'ellipse') h += `<section><h3>Appearance</h3>${colour('fill', 'Fill', true)}${colour('stroke', 'Stroke', true)}${n('strokeWidth', 'Stroke width', 0.5)}</section>`;
-  if (it.type === 'line') h += `<section><h3>Appearance</h3>${colour('stroke', 'Colour')}${n('strokeWidth', 'Width', 0.5)}</section>`;
+  if (it.type === 'line') h += `<section><h3>Appearance</h3>${colour('stroke', 'Color')}${n('strokeWidth', 'Width', 0.5)}</section>`;
   h += '<section><h3>Position</h3>' + (it.type !== 'line' ? `<div class="row">${n('x', 'X')}${n('y', 'Y')}</div>` + (it.type !== 'text' ? `<div class="row">${n('w', 'Width')}${n('h', 'Height')}</div>` : `<div class="row">${n('w', 'Box width (0 = auto)')}</div>`)
     : `<div class="row">${n('x', 'X1')}${n('y', 'Y1')}</div><div class="row">${n('x2', 'X2')}${n('y2', 'Y2')}</div>`) + '</section>';
   h += `${it.type === 'redact' ? '' : `<section><h3>Opacity</h3><div class="range"><input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"><output>${Math.round(it.opacity * 100)}%</output></div></section>`}
@@ -1175,6 +1179,7 @@ async function openWith(file, handle = null) {
   await act(async () => { opened = !!(await openPdf(file)); });
   if (opened) await fa?.adopt(handle);
   announceProtection();
+  return opened;
 }
 const openPicker = () => fa?.supported ? fa.pick().then(r => r && openWith(r.file, r.handle)).catch(reportError) : pickFile('open');
 $('merge').onchange = e => { const files = [...e.target.files]; if (files.length) mergeDialog?.isConnected ? mergeDialog.addFiles(files) : mergePdfs(files); };
@@ -1190,7 +1195,7 @@ const applyLock = () => {
   b.querySelector('use').setAttribute('href', locked ? '#i-lock' : '#i-unlock');
   document.body.classList.toggle('locked', locked); localStorage.setItem('lock-geom', locked ? '1' : '0');
 };
-const toggleLock = () => { locked = !locked; applyLock(); status(locked ? 'Positions and sizes locked: edit text, images and colours freely.' : 'Positions and sizes unlocked.'); paint(); props(); };
+const toggleLock = () => { locked = !locked; applyLock(); status(locked ? 'Positions and sizes locked: edit text, images and colors freely.' : 'Positions and sizes unlocked.'); paint(); props(); };
 $('lock').onclick = toggleLock; applyLock();
 addEventListener('keydown', e => { if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleLock(); } });
 $('prev').onclick = async () => { await flush(); preview = !preview; $('prev').classList.toggle('on', preview); state.version++; build(); };
@@ -1881,12 +1886,15 @@ async function initFileAccess() {
     };
   } catch (error) { console.warn('File access and local fonts are unavailable:', error); fa = null; localFonts = null; }
 }
+let finishPwaReady;
+const pwaReady = new Promise(resolve => { finishPwaReady = resolve; });
 async function startEditor() {
   const ready = async retainedUndo => {
     await refresh(retainedUndo);
     document.querySelector('main').inert = false;
     document.querySelector('header').inert = false;
     status(host ? 'Ready. PDFs stay on this device. Standard PDF fonts and embedded originals are available; password-protected PDFs open and save here too; passwords are never stored.' : 'Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.');
+    finishPwaReady();
     // Samples are fetched only on demand; a missing samples.js (older publish) just leaves the feature off.
     if (!samples) import(new URL('samples.js', document.baseURI)).then(m => {
       samples = m.createSamples({ open: file => act(() => openPdf(file), e => { throw e; }).then(announceProtection), isDirty: () => state.dirty, confirmReplace: confirmDiscard, status });
@@ -1966,6 +1974,13 @@ async function startEditor() {
   };
   prompt.querySelector('.dok').focus();
 }
+if (host) import(new URL('pwa.js', document.baseURI)).then(module => {
+  window.editorPwa = module.createPwa({
+    ready: pwaReady, open: openWith, merge: mergePdfs, hasDocument: () => !!state.pageCount,
+    busy: () => host.busy || !!document.querySelector('.mdl, .pal-scrim, [contenteditable]:not([contenteditable="false"])'),
+    confirmReplace: confirmDiscard, dialog: modal, status, onError: reportError,
+  });
+}).catch(error => reportError(new Error(`App integration unavailable: ${error.message}`)));
 startEditor().catch(reportError);
 }, { once: true });
 </script>

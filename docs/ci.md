@@ -33,3 +33,20 @@ The plan job diffs the PR/push range. If every changed file is under docs/, ack
 ## Performance (non-blocking)
 
 .github/workflows/editor-perf.yml runs nightly (and on workflow_dispatch) on its own runner: save-overlap ceiling, full profile, profile-ci and the synthetic regression check, with unchanged thresholds. It reports via job summary, artifacts and a single `Editor performance regression` issue (opened/commented on failure, closed on recovery). Locally: `./tools/Invoke-EditorChunk.ps1 -Chunk perf`. The site build is shared via the reusable `editor-site.yml`.
+
+Synthetic fault-injection checks use a timing-normalized copy of the input
+profile, validated before injecting faults. Real timing regressions still fail
+the preceding `profile-ci` check; they no longer contaminate passing synthetic
+controls such as the single-repeat outlier. Pixel hashes, allocations, raster
+counts and required groups are never normalized. `dotnet-editor` also includes
+page-tree inheritance, named-destination import and lexer-token regressions;
+`node` discovers the theme persistence/contrast and PWA install/offline/launch
+checks automatically. The service-worker smoke also verifies manifest
+installability, real offline edit/download, and Save through a received local
+file handle.
+
+Raster goldens cover the fixed fixture/committed-sample corpus, not the optional
+generated `27-full-collection.pdf`. Generating that local collection must not
+change which pages the golden gate compares. The FreeDF rebrand refreshes only
+sample 28's 18 intentional branding changes; all other page hashes retain the
+pre-optimization renderer baseline.
