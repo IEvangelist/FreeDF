@@ -11,7 +11,7 @@ using DocumentRenderer = global::PortableDocument.Render.PortableDocument;
 using FreeDF.EditorWeb;
 
 /// <summary>The editor's in-memory operations, shared by the HTTP and browser hosts.</summary>
-public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallback = null, TimeProvider? timeProvider = null)
+public sealed partial class EditorSession(FontCatalog catalog, IFontFallback? fontFallback = null, TimeProvider? timeProvider = null)
 {
     public sealed record Reply(byte[] Data, string ContentType = "application/json", string? FileName = null);
     /// <summary>How the opened source was protected; the password itself is never kept.</summary>
@@ -19,7 +19,6 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     public sealed record RenderMetrics(double SnapshotMs, double RasterMs, double PngEncodeMs, double TotalMs,
         long AllocatedBytes, int Gen0Collections, bool CacheHit);
     public RenderMetrics? LastRenderMetrics { get; private set; }
-    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     PdfEditor editor = PdfEditor.Create();
     int version, savedVersion;
     PdfDocument? snapshot, baseSnapshot, pristine;
@@ -52,8 +51,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
     const long FormSpan = 10_000_000;
     static readonly string[] InfoKeys = ["Title", "Author", "Subject", "Keywords", "Creator", "Producer"];
     static long SpanKey(ContentInterpreter.TextSpan s) => s.Form == 0 ? s.Index : s.Form * FormSpan + s.Index;
-    static Reply AsJson<T>(T value) => new(JsonSerializer.SerializeToUtf8Bytes(value, Json));
-    static readonly Reply Ok = AsJson(new { });
+    static Reply AsJson<T>(T value) => new(JsonSerializer.SerializeToUtf8Bytes(value, JsonType<T>()));
+    static readonly Reply Ok = AsJson(new EmptyReply());
 
     public void OpenFile(string path)
     {
@@ -582,7 +581,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             if (page is null || page.Id != restored.editor.PageId(i) || page.Items is null || page.Objects is null || page.History is null)
                 throw new InvalidDataException("A recovery page is invalid.");
             foreach (var (index, edit) in page.Objects)
-                restored.Handle("PUT", $"/api/page/{i}/objects/{index}", new Dictionary<string, string>(), JsonSerializer.SerializeToUtf8Bytes(edit, Json));
+                restored.Handle("PUT", $"/api/page/{i}/objects/{index}", new Dictionary<string, string>(), JsonSerializer.SerializeToUtf8Bytes(edit, JsonType<ObjEdit>()));
         }
         foreach (var form in data.Forms)
         {
@@ -591,7 +590,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 .Where(x => x.obj.Form == pristineForm && x.obj.Start == form.Start && x.obj.End == form.End).ToList();
             if (matches.Count != 1) throw new InvalidDataException("A recovery Form edit is ambiguous or missing.");
             var match = matches[0];
-            restored.Handle("PUT", $"/api/page/{match.page}/objects/{match.index}", new Dictionary<string, string>(), JsonSerializer.SerializeToUtf8Bytes(form.Edit, Json));
+            restored.Handle("PUT", $"/api/page/{match.page}/objects/{match.index}", new Dictionary<string, string>(), JsonSerializer.SerializeToUtf8Bytes(form.Edit, JsonType<ObjEdit>()));
         }
         for (var i = 0; i < data.Pages.Count; i++)
         {
@@ -655,7 +654,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         catch { to.Remove(current); throw; }
         from.RemoveAt(from.Count - 1);
         PruneAssets();
-        return AsJson(new { label = entry.Label, undo = pageUndo.Count, redo = pageRedo.Count });
+        return AsJson(new PageHistoryReply(entry.Label, pageUndo.Count, pageRedo.Count));
     }
 
     /// <summary>Dispatches a local command. Neither this method nor the WASM host performs network I/O.</summary>
@@ -669,12 +668,10 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         catch (FormatException) { throw new ArgumentException("Malformed password header."); }
     }
 
-    object? ProtectionState() => protection is not { } p ? null : new
-    {
-        owner = p.Owner, method = p.Method.ToString(), publicKey = p.PublicKey,
-        print = Allowed(PdfPermissions.Print), copy = Allowed(PdfPermissions.Copy), modify = Allowed(PdfPermissions.Modify),
-        annotate = Allowed(PdfPermissions.Annotate), fillForms = Allowed(PdfPermissions.FillForms), assemble = Allowed(PdfPermissions.Assemble),
-    };
+    ProtectionDetails? ProtectionState() => protection is not { } p ? null : new(
+        p.Owner, p.Method.ToString(), p.PublicKey,
+        Allowed(PdfPermissions.Print), Allowed(PdfPermissions.Copy), Allowed(PdfPermissions.Modify),
+        Allowed(PdfPermissions.Annotate), Allowed(PdfPermissions.FillForms), Allowed(PdfPermissions.Assemble));
 
     bool Allowed(PdfPermissions flag) => protection is not { } p || p.Owner || (p.Permissions & flag) == flag;
 
@@ -736,7 +733,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         string? Q(string key) => query.GetValueOrDefault(key);
         int Int(string key, int fallback) => int.TryParse(Q(key), out var n) ? n : fallback;
         double? Number(string key) => double.TryParse(Q(key), CultureInfo.InvariantCulture, out var n) ? n : null;
-        T? Read<T>() => JsonSerializer.Deserialize<T>(body ?? [], Json);
+        T? Read<T>() => JsonSerializer.Deserialize(body ?? [], JsonType<T>());
         Reply Pdf(byte[] bytes, string name) => new(bytes, "application/pdf", name);
         var p = path.Trim('/').Split('/');
         if (p[0] != "api") throw new ArgumentException("Unknown editor command.");
@@ -747,13 +744,13 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
             {
                 case "state":
                     var doc = editor.PageCount == 0 ? null : BaseSnap();
-                    var pages = doc?.Pages.Select((pg, i) => new { index = i, id = editor.PageId(i), rotation = pg.Rotate, x0 = pg.CropBox.Left, top = pg.CropBox.Top, width = pg.CropBox.Width, height = pg.CropBox.Height }) ?? [];
-                    return AsJson(new { version, fileName, pageCount = editor.PageCount, pages, dirty = version != savedVersion, canSave = savePath is not null, recoverySupported, pageUndo = pageUndo.Count, pageRedo = pageRedo.Count, protection = ProtectionState() });
+                    var pages = doc?.Pages.Select((pg, i) => new PageDetails(i, editor.PageId(i), pg.Rotate, pg.CropBox.Left, pg.CropBox.Top, pg.CropBox.Width, pg.CropBox.Height)) ?? [];
+                    return AsJson(new StateReply(version, fileName, editor.PageCount, pages, version != savedVersion, savePath is not null, recoverySupported, pageUndo.Count, pageRedo.Count, ProtectionState()));
                 case "recovery": return CaptureRecovery();
                 case "snapshot": return SnapshotBytes(Q("bare") == "true");
                 case "outlines": return editor.PageCount == 0 ? AsJson(Array.Empty<int>()) : OutlinesJson(BaseSnap().GetOutlines());
                 case "fonts": return AsJson(catalog.List());
-                case "fields": return AsJson(editor.PageCount == 0 ? [] : Pristine().GetFormFields().Where(f => f.FieldType is "Tx" or "Btn" or "Ch").Select(f => new { name = f.FullName, type = f.FieldType, value = f.Value ?? "" }));
+                case "fields": return AsJson(editor.PageCount == 0 ? [] : Pristine().GetFormFields().Where(f => f.FieldType is "Tx" or "Btn" or "Ch").Select(f => new FieldDetails(f.FullName, f.FieldType, f.Value ?? "")));
                 case "forms": return AsJson(editor.PageCount == 0 ? [] : EditorForms.List(editor, page => Pristine().Pages[page].CropBox, Int("page", -1)));
                 case "form" when p.ElementAtOrDefault(2) == "export":
                     {
@@ -819,7 +816,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     return AsJson(TextDetailsFor(i));
                 case "selection" when method == "GET":
                     if (!selectionReplies.TryGetValue(id, out var selection))
-                        selectionReplies[id] = selection = AsJson(new { spans = TextDetailsFor(i), objects = ObjectDetailsFor(i) });
+                        selectionReplies[id] = selection = AsJson(new SelectionReply(TextDetailsFor(i), ObjectDetailsFor(i)));
                     return selection;
                 case "objects":
                     if (method == "GET")
@@ -863,8 +860,8 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     if (opened.File.IsEncrypted) encryptedSource = body;
                     fileName = uploadName ?? "document.pdf"; return Ok;
                 case "recovery":
-                    return AsJson(new { originalForms = RestoreRecovery(Read<RecoveryData>() ?? throw new InvalidDataException("Missing local recovery record."),
-                        Q("forms") is { } historyForms ? JsonSerializer.Deserialize<List<int>>(historyForms) : null) });
+                    return AsJson(new RecoveryReply(RestoreRecovery(Read<RecoveryData>() ?? throw new InvalidDataException("Missing local recovery record."),
+                        Q("forms") is { } historyForms ? JsonSerializer.Deserialize(historyForms, JsonType<List<int>>()) : null)));
                 case "import":
                     CheckPageMutation();
                     RequireAllowed(PdfPermissions.Assemble, "insert pages");
@@ -873,12 +870,12 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     var firstNew = ImportPosition(Q("at"));
                     editor.ImportPages(imported, chosen, firstNew, PdfImportOptions.Merge(BookmarkTitle(uploadName)));
                     recoverySupported &= !imported.File.IsEncrypted;
-                    PruneAssets(); Changed(); return AsJson(new { first = firstNew, count = chosen.Count });
+                    PruneAssets(); Changed(); return AsJson(new ImportReply(firstNew, chosen.Count));
                 case "import-batch":
                     {
                         CheckPageMutation();
                         var frames = ReadFrames(body ?? throw new ArgumentException("Choose at least one PDF."));
-                        var names = Q("names") is { } namesJson ? JsonSerializer.Deserialize<List<string>>(namesJson, Json) ?? [] : [];
+                        var names = Q("names") is { } namesJson ? JsonSerializer.Deserialize(namesJson, JsonType<List<string>>()) ?? [] : [];
                         var ranges = (Q("ranges") ?? "").Split('|');
                         var batch = new List<(PdfDocument, List<int>, PdfImportOptions)>();
                         var encrypted = false;
@@ -892,11 +889,11 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                         var start = ImportPosition(Q("at"));
                         editor.ImportBatch(batch, start);
                         recoverySupported &= !encrypted;
-                        PruneAssets(); Changed(); return AsJson(new { first = start, count = batch.Sum(b => b.Item2.Count), files = batch.Count });
+                        PruneAssets(); Changed(); return AsJson(new BatchImportReply(start, batch.Sum(b => b.Item2.Count), batch.Count));
                     }
                 case "inspect":
                     var probe = LoadImport(body ?? throw new ArgumentException("Choose a PDF."), uploadName ?? "This PDF");
-                    return AsJson(new { pageCount = probe.Pages.Count, encrypted = probe.File.IsEncrypted });
+                    return AsJson(new InspectReply(probe.Pages.Count, probe.File.IsEncrypted));
                 case "asset":
                     var bytes = body ?? [];
                     var mime = bytes.Length > 2 && bytes[0] == 0xff && bytes[1] == 0xd8 ? "image/jpeg" : "image/png";
@@ -913,7 +910,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                         assets[key] = new(bytes, mime);
                     }
                     unclaimedAssets[key] = clock.GetUtcNow();
-                    return AsJson(new { id = key, w, h });
+                    return AsJson(new AssetReply(key, w, h));
                 case "asset-clipboard":
                     clipboardAssets = (Read<List<string>>() ?? throw new ArgumentException("Missing clipboard asset references.")).ToHashSet();
                     PruneAssets(); return Ok;
@@ -934,7 +931,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     editor.SetRotation(i, ((Snap().Pages[i].Rotate + int.Parse(p[3], CultureInfo.InvariantCulture)) % 360 + 360) % 360); break;
                 case "title": editor.SetInfo("Title", Q("t") ?? ""); break;
                 case "field":
-                    if (!(Q("m") == "1" ? editor.SetFieldValues(Q("n") ?? "", JsonSerializer.Deserialize<List<string>>(Q("v") ?? "[]", Json) ?? []) : editor.SetFieldValue(Q("n") ?? "", Q("v") ?? ""))) throw new ArgumentException("Form field not found.");
+                    if (!(Q("m") == "1" ? editor.SetFieldValues(Q("n") ?? "", JsonSerializer.Deserialize(Q("v") ?? "[]", JsonType<List<string>>()) ?? []) : editor.SetFieldValue(Q("n") ?? "", Q("v") ?? ""))) throw new ArgumentException("Form field not found.");
                     break;
                 case "form":
                     {
@@ -971,10 +968,10 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     editor.ImportPages(Snap(), [index], index + 1); break;
                 case "save":
                     RequirePages(); RequireFontsLoaded();
-                    if (savePath is null) return AsJson(new { saved = false });
+                    if (savePath is null) return AsJson(new SaveUnavailableReply(false));
                     if (protection is not null) throw new NotSupportedException("This PDF is protected; saving over it would drop its protection. Use Save as.");
                     Snap(); File.WriteAllBytes(savePath, snapshotBytes!); savedVersion = version;
-                    return AsJson(new { saved = true, path = savePath });
+                    return AsJson(new SaveReply(true, savePath));
                 case "saved":
                     // The version captured before the bytes were exported keeps edits made during the write unsaved.
                     savedVersion = int.TryParse(Q("version"), out var exportedVersion) && exportedVersion < version ? exportedVersion : version;
@@ -983,7 +980,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                 case "require-fonts":
                     requiredFonts.Clear();
                     foreach (var family in Read<List<string>>() ?? []) requiredFonts.Add(family);
-                    return AsJson(new { missing = MissingRequiredFonts() });
+                    return AsJson(new MissingFontsReply(MissingRequiredFonts()));
                 case "replace-font":
                     {
                         var from = Q("from") ?? throw new ArgumentException("Missing font."); var to = Q("to") ?? "Helvetica";
@@ -992,11 +989,11 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                         foreach (var pageId in items.Keys.ToArray())
                             items[pageId] = items[pageId].Select(i => { if (i.Font != from) return i; changed++; return i with { Font = to, OStyle = null }; }).ToList();
                         if (changed > 0) Changed(baseChanged: false);
-                        return AsJson(new { changed, missing = MissingRequiredFonts() });
+                        return AsJson(new ReplaceFontReply(changed, MissingRequiredFonts()));
                     }
                 case "font":
                     var registered = catalog.Register(body ?? throw new ArgumentException("Choose a font."), Q("ps"));
-                    return AsJson(new { accepted = registered.Accepted, family = registered.Family, bold = registered.Bold, italic = registered.Italic, reason = registered.Reason, substitute = registered.Substitute });
+                    return AsJson(registered);
                 default: throw new ArgumentException("Unknown editor command.");
             }
             Changed(); return Ok;
@@ -1006,7 +1003,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
 
     Reply AnnotationList()
     {
-        if (editor.PageCount == 0) return AsJson(Array.Empty<object>());
+        if (editor.PageCount == 0) return AsJson(Enumerable.Empty<PdfAnnotationInfo>());
         return AsJson(Enumerable.Range(0, editor.PageCount).SelectMany(page => editor.ListAnnotations(page)));
     }
 
@@ -1015,7 +1012,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         RequirePages();
         var doc = BaseSnap();
         var runs = AnnotationTools.SelectText(doc.Pages[page], new Redactor.BoxRect(x, y, w, h));
-        return AsJson(new { runs, quads = AnnotationTools.QuadsFromRuns(doc.Pages[page], runs), text = string.Join(" ", runs.Select(r => r.Text)) });
+        return AsJson(new AnnotationTextReply(runs, AnnotationTools.QuadsFromRuns(doc.Pages[page], runs), string.Join(" ", runs.Select(r => r.Text))));
     }
 
     sealed record AnnotationReplyRequest(string? Author, string? Text, string? State, string? StateModel);
@@ -1026,28 +1023,28 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
         RequirePages();
         int Int(string key, int fallback) => int.TryParse(query.GetValueOrDefault(key), out var n) ? n : fallback;
         double Num(string key, double fallback) => double.TryParse(query.GetValueOrDefault(key), CultureInfo.InvariantCulture, out var n) ? n : fallback;
-        T Read<T>() => JsonSerializer.Deserialize<T>(body ?? [], Json) ?? throw new ArgumentException("Missing annotation payload.");
+        T Read<T>() => JsonSerializer.Deserialize(body ?? [], JsonType<T>()) ?? throw new ArgumentException("Missing annotation payload.");
         var page = Int("page", 0);
         var now = clock.GetUtcNow();
-        Reply Done(object result) { Changed(); return AsJson(result); }
+        Reply Done<T>(T result) { Changed(); return AsJson(result); }
         switch (command)
         {
-            case "annot-add": return Done(new { number = editor.AddAnnotation(page, Read<PdfAnnotationSpec>(), now).Number });
-            case "annot-update": editor.UpdateAnnotation(page, Int("n", 0), Read<PdfAnnotationSpec>(), now); return Done(new { });
-            case "annot-transform": editor.TransformAnnotation(page, Int("n", 0), Num("sx", 1), Num("sy", 1), Num("tx", 0), Num("ty", 0), now); return Done(new { });
-            case "annot-delete": return Done(new { removed = editor.DeleteAnnotation(page, Int("n", 0)) });
+            case "annot-add": return Done(new AnnotationNumberReply(editor.AddAnnotation(page, Read<PdfAnnotationSpec>(), now).Number));
+            case "annot-update": editor.UpdateAnnotation(page, Int("n", 0), Read<PdfAnnotationSpec>(), now); return Done(new EmptyReply());
+            case "annot-transform": editor.TransformAnnotation(page, Int("n", 0), Num("sx", 1), Num("sy", 1), Num("tx", 0), Num("ty", 0), now); return Done(new EmptyReply());
+            case "annot-delete": return Done(new AnnotationRemovedReply(editor.DeleteAnnotation(page, Int("n", 0))));
             case "annot-reply":
                 var reply = Read<AnnotationReplyRequest>();
-                return Done(new { number = editor.ReplyToAnnotation(page, Int("n", 0), reply.Author ?? "", reply.Text ?? "", reply.State, reply.StateModel, now).Number });
+                return Done(new AnnotationNumberReply(editor.ReplyToAnnotation(page, Int("n", 0), reply.Author ?? "", reply.Text ?? "", reply.State, reply.StateModel, now).Number));
             case "annot-replace":
                 var replace = Read<AnnotationReplaceRequest>();
                 var (strike, caret) = editor.AddReplaceText(page, replace.QuadPoints, replace.Text ?? "", replace.Author ?? "", now);
-                return Done(new { strikeOut = strike.Number, caret = caret.Number });
-            case "annot-import": return Done(new { created = PdfXfdf.Import(editor, System.Text.Encoding.UTF8.GetString(body ?? []), null, now) });
+                return Done(new AnnotationReplaceReply(strike.Number, caret.Number));
+            case "annot-import": return Done(new AnnotationCreatedReply(PdfXfdf.Import(editor, System.Text.Encoding.UTF8.GetString(body ?? []), null, now)));
             case "annot-flatten":
                 var pages = page < 0 ? Enumerable.Range(0, editor.PageCount).ToArray() : [page];
                 foreach (var target in pages) RequireNoContentEdits(target);
-                return Done(new { flattened = pages.Sum(target => editor.FlattenAnnotations(target)) });
+                return Done(new AnnotationFlattenedReply(pages.Sum(target => editor.FlattenAnnotations(target))));
             case "annot-redact-apply":
                 // Marks become ordinary redaction items so the existing Redactor pipeline, undo and recovery handle them.
                 var id = editor.PageId(page);
@@ -1064,7 +1061,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     editor.DeleteAnnotation(page, mark.Number);
                 }
                 items[id] = list;
-                return Done(new { applied = marks.Count });
+                return Done(new AnnotationAppliedReply(marks.Count));
             default: throw new ArgumentException("Unknown editor command.");
         }
     }
@@ -1146,7 +1143,7 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
 
     Reply Find(string q, bool matchCase)
     {
-        if (editor.PageCount == 0 || q.Length == 0) return AsJson(Array.Empty<object>());
+        if (editor.PageCount == 0 || q.Length == 0) return AsJson(new List<FindHit>());
         if (findCache is null || findVersion != version)
         {
             var doc = Snap(); findCache = [];
@@ -1155,13 +1152,13 @@ public sealed class EditorSession(FontCatalog catalog, IFontFallback? fontFallba
                     findCache.Add((page, span));
             findVersion = version;
         }
-        var hits = new List<object>();
+        var hits = new List<FindHit>();
         var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         foreach (var (page, s) in findCache)
             for (var at = s.Text.IndexOf(q, cmp); at >= 0 && hits.Count < 2000; at = s.Text.IndexOf(q, at + q.Length, cmp))
             {
                 var len = Math.Max(s.Text.Length, 1);
-                hits.Add(new { page, x = s.X + s.Width * at / len, y = s.Y, w = s.Width * q.Length / len, size = s.Size, angle = s.Angle });
+                hits.Add(new(page, s.X + s.Width * at / len, s.Y, s.Width * q.Length / len, s.Size, s.Angle));
             }
         return AsJson(hits);
     }

@@ -22,7 +22,7 @@ public static partial class BrowserReplica
     static readonly PdfRenderOptions Options = new() { FontFallback = new BundledFontFallback(FontAssets, new BrowserFontFallback()), ImageCache = new ImageDecodeCache() };
 
     [JSExport]
-    public static string TakeFontRequests() => JsonSerializer.Serialize(FontAssets.TakeRequests());
+    public static string TakeFontRequests() => JsonSerializer.Serialize(FontAssets.TakeRequests(), EditorSession.JsonType<string[]>());
 
     [JSExport]
     public static void ProvideFontAsset(string path, JSObject body)

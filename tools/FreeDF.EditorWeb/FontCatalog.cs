@@ -8,6 +8,8 @@ public sealed record FontFace(string Family, bool Bold, bool Italic, string Path
     public string Key => Face < 0 ? Path : $"{Path}#{Face}";
 }
 
+public sealed record FontFamilyDto(string Family, bool Standard, bool Bold, bool Italic);
+
 /// <summary>Installed system fonts grouped by family (name ID 1), found by reading only each file's table directory, name, head and OS/2 tables.</summary>
 public sealed class FontCatalog
 {
@@ -44,10 +46,10 @@ public sealed class FontCatalog
     }
 
     /// <summary>Family names with the variants each offers, standard PDF fonts first.</summary>
-    public IEnumerable<object> List() =>
-        Standard.Select(s => (object)new { family = s, standard = true, bold = s != "Symbol" && s != "ZapfDingbats", italic = s != "Symbol" && s != "ZapfDingbats" })
+    public IEnumerable<FontFamilyDto> List() =>
+        Standard.Select(s => new FontFamilyDto(s, true, s != "Symbol" && s != "ZapfDingbats", s != "Symbol" && s != "ZapfDingbats"))
         .Concat(_families.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(k => (object)new { family = k.Key, standard = false, bold = k.Value.Any(v => v.Bold), italic = k.Value.Any(v => v.Italic) }));
+            .Select(k => new FontFamilyDto(k.Key, false, k.Value.Any(v => v.Bold), k.Value.Any(v => v.Italic))));
 
     public bool Has(string? family) => family is not null && _families.ContainsKey(family);
 

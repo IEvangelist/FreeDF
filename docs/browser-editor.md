@@ -127,7 +127,7 @@ HTTP 200 on direct checks; default Chromium later succeeded too. This supports
 transient delivery failure, but does **not** establish HTTP/2 stream exhaustion.
 The SDK already limits downloads to 16 concurrent requests; its former retries
 used the same cache policy with only a short final delay. Asset bundling and concurrency are unchanged. The later measured AOT publish
-trims framework assemblies with application reflection roots preserved.
+trims framework assemblies while retaining the PDF engine surface.
 
 `FreeDF.EditorSmoke --boot <published-wwwroot> <evidence-directory>` measures
 three fresh-context cold starts and injects transient HTTP 503/network/module
@@ -206,9 +206,12 @@ against the AcroForm sample, a locally merged collection and a rotated,
 CropBox-offset form with missing appearances and multiple/export values. This does not claim
 JavaScript/Submit/Reset action execution or form filling in Preview mode.
 The local publish script defaults to untrimmed/non-AOT and needs no `wasm-tools`;
-`-Aot` and the Pages workflow trim the framework while preserving application
-reflection roots for shared editor JSON payloads. The Pages workflow selects
-AOT by default after the measured comparison; no threads or reduced final
+`-Aot` and the Pages workflow trim the framework while retaining the PDF engine
+surface. Browser commands and shared editor payloads use source-generated JSON
+metadata; reflection fallback is disabled in the WASM host. New payload types
+must be registered in `EditorSession.Json.cs` or the browser command context.
+The WASM build enables trim/AOT analyzers and treats IL2026/IL3050 as errors.
+The Pages workflow selects AOT by default after the measured comparison; no threads or reduced final
 render quality are introduced.
 
 The WebAssembly runtime boots in an engine worker while the document is being
@@ -822,9 +825,9 @@ user-writable dotnet root, set `DOTNET_ROOT`/`PATH` only for that command, then:
 ```
 
 Keep intermediates separate: reusing the default `obj` across AOT and non-AOT
-can mix trimmed and untrimmed artifacts. AOT requires trimming; the opt-in roots
-all five application assemblies for reflection-based editor payloads, retains
-globalization and enables SIMD without enabling threads. Run the same full,
+can mix trimmed and untrimmed artifacts. AOT requires trimming; the opt-in retains
+the existing application assembly roots for the PDF engine, not JSON reflection,
+keeps globalization and enables SIMD without enabling threads. Run the same full,
 boot, merge, page-image and profile checks against both outputs before changing
 production publishing.
 
