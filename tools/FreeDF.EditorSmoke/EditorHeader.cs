@@ -71,7 +71,7 @@ static class EditorHeader
                 && before(document.getElementById('fs'), a) && before(a, document.getElementById('dl')); function before(x, y) { return !!(x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING); } }
             """), where + ": header Sponsor heart keeps its tooltip, hit target and position beside the right-hand actions");
         Check(await page.EvaluateAsync<bool>("""
-            () => { const url = 'https://github.com/IEvangelist/csharp-pdf', mobile = innerWidth <= 600, q = id => document.getElementById(id);
+            () => { const url = 'https://github.com/IEvangelist/FreeDF', mobile = innerWidth <= 600, q = id => document.getElementById(id);
               const plain = a => a.tagName === 'A' && a.href === url && a.target === '_blank' && a.rel.split(' ').sort().join() === 'noopener,noreferrer' && a.getAttribute('aria-label') === 'View source on GitHub' && a.title === 'View source on GitHub';
               const h = q('ghLink'), f = q('ghFooter'), dl = q('dl').getBoundingClientRect(), hr = h.getBoundingClientRect(), b = q('sponsorBadge').getBoundingClientRect(), fr = f.getBoundingClientRect(), foot = document.querySelector('footer').getBoundingClientRect();
               const mid = r => (r.top + r.bottom) / 2;

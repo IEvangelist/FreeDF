@@ -134,7 +134,7 @@
       box.classList.add('about');
       box.append(el('h2', { textContent: 'FreeDF PDF editor', style: 'margin:0;padding:16px 20px 0;font-size:1.0625rem' }),
         el('div', { className: 'dbody', style: 'padding:12px 20px' }, el('p', { textContent: 'Documents are opened and edited in this browser tab. Nothing is uploaded.' }), dl,
-          el('p', {}, 'Open source on ', el('a', { href: 'https://github.com/IEvangelist/csharp-pdf', target: '_blank', rel: 'noopener noreferrer', textContent: 'GitHub' }), '. ',
+          el('p', {}, 'Open source on ', el('a', { href: 'https://github.com/IEvangelist/FreeDF', target: '_blank', rel: 'noopener noreferrer', textContent: 'GitHub' }), '. ',
             el('a', { href: 'https://github.com/sponsors/IEvangelist?frequency=one-time', target: '_blank', rel: 'noopener noreferrer', textContent: 'Sponsor the project' }), '.')),
         el('div', { className: 'dfoot' }, done));
       done.focus();

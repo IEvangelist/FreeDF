@@ -21,7 +21,7 @@ static class EditorSamples
     {
         var requests = new ConcurrentQueue<(string Method, string Url)>();
         page.Request += (_, r) => requests.Enqueue((r.Method, r.Url));
-        int Samples(string file) => requests.Count(r => r.Url == address + "/csharp-pdf/samples/" + file);
+        int Samples(string file) => requests.Count(r => r.Url == address + "/FreeDF/samples/" + file);
         var source = PdfDocument.Open(Path.Combine(root, "samples", Full));
 
         // Lazy: nothing about the samples is fetched by startup.
@@ -47,7 +47,7 @@ static class EditorSamples
 
         // Failure then Retry (keyboard).
         var failing = true;
-        await page.RouteAsync("**/csharp-pdf/samples/" + Full, async route =>
+        await page.RouteAsync("**/FreeDF/samples/" + Full, async route =>
         {
             if (failing) await route.FulfillAsync(new() { Status = 503, ContentType = "text/plain", Body = "offline" });
             else await route.ContinueAsync();
@@ -129,7 +129,7 @@ static class EditorSamples
         before = Samples(Full);
         await Durable(page);
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=27-full-collection");
+        await page.GotoAsync(address + "/FreeDF/#sample=27-full-collection");
         await prompt.WaitForAsync();
         await page.WaitForTimeoutAsync(500);
         Check(Samples(Full) == before && await page.Locator("#base").CountAsync() == 0, "A deep link does not load behind the Resume/Discard prompt.");
@@ -137,7 +137,7 @@ static class EditorSamples
         await Opened(page, Full);
         Check(await Pages(page) == 50 && !page.Url.Contains("sample="), "#sample= loads the collection and is removed from the URL.");
         await Durable(page);
-        await page.GotoAsync(address + "/csharp-pdf/?sample=27");
+        await page.GotoAsync(address + "/FreeDF/?sample=27");
         await prompt.WaitForAsync();
         await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await Opened(page, Full);
@@ -145,7 +145,7 @@ static class EditorSamples
 
         await Durable(page);
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=28");
+        await page.GotoAsync(address + "/FreeDF/#sample=28");
         await prompt.WaitForAsync();
         await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await Opened(page, Showcase);
@@ -154,7 +154,7 @@ static class EditorSamples
         // Encrypted samples: 18 (empty user password) is attempted, either opening or reporting the precise limitation; 17 needs a password.
         await Durable(page);
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=18");
+        await page.GotoAsync(address + "/FreeDF/#sample=18");
         await prompt.WaitForAsync();
         await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await page.WaitForFunctionAsync("document.getElementById('name').textContent === '18-encrypted-owner-restricted.pdf' || document.querySelector('.sample-load [role=alert]')?.textContent");
@@ -164,11 +164,11 @@ static class EditorSamples
             "#sample=18 opens, or states the precise limitation: " + limitation);
         Console.WriteLine("Sample 18 on the WASM host: " + (limitation ?? "opened"));
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=17");
+        await page.GotoAsync(address + "/FreeDF/#sample=17");
         if (await prompt.IsVisibleAsync() || await WaitsFor(prompt)) await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Dialog, new() { Name = "Password required" }).WaitForAsync();
 
-        await page.UnrouteAsync("**/csharp-pdf/samples/" + Full);
+        await page.UnrouteAsync("**/FreeDF/samples/" + Full);
         Check(network.IsEmpty, "No uploads or external requests: " + string.Join(", ", network));
         bool SameOrigin(string url) => url.StartsWith(address + "/") || url.StartsWith("blob:" + address + "/");
         Check(requests.All(r => SameOrigin(r.Url)), "Every request stays on the editor's origin (same-origin blob: image URLs are local): " + string.Join(", ", requests.Where(r => !SameOrigin(r.Url)).Select(r => r.Url[..Math.Min(r.Url.Length, 80)]).Distinct()));

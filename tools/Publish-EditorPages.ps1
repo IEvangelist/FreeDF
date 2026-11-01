@@ -1,6 +1,6 @@
 param(
     [string] $Output = (Join-Path $PSScriptRoot 'FreeDF.EditorWasm\bin\pages'),
-    [string] $BasePath = '/csharp-pdf/',
+    [string] $BasePath = '/FreeDF/',
     [switch] $Aot,
     [switch] $SkipSamples,
     [switch] $NoBundle,

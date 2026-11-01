@@ -2,8 +2,8 @@
 param(
     [Parameter(Mandatory)][string] $TargetCommit,
     [Parameter(Mandatory)][string] $ValidationLock,
-    [string] $Url = 'https://ievangelist.github.io/csharp-pdf/',
-    [string] $Repository = 'IEvangelist/csharp-pdf',
+    [string] $Url = 'https://ievangelist.github.io/FreeDF/',
+    [string] $Repository = 'IEvangelist/FreeDF',
     [long] $RunId,
     [string] $Output = (Join-Path ([IO.Path]::GetTempPath()) "editor-public-$([guid]::NewGuid().ToString('N'))"),
     [string[]] $FeatureSmoke = @()
@@ -47,8 +47,8 @@ try {
     & git diff --exit-code $sha -- src tools/FreeDF.EditorWeb tools/FreeDF.EditorWasm samples
     if ($LASTEXITCODE -ne 0) { throw 'Check out the target runtime/source before running public acceptance.' }
     $siteUri = [uri] $Url
-    if (!$siteUri.IsAbsoluteUri -or $siteUri.Scheme -notin @('http', 'https') -or $siteUri.AbsolutePath -ne '/csharp-pdf/') {
-        throw 'Url must be an absolute HTTP(S) URL ending in /csharp-pdf/.'
+    if (!$siteUri.IsAbsoluteUri -or $siteUri.Scheme -notin @('http', 'https') -or $siteUri.AbsolutePath -ne '/FreeDF/') {
+        throw 'Url must be an absolute HTTP(S) URL ending in /FreeDF/.'
     }
     if (!$RunId) {
         $runs = Read-GitHub @('run', 'list', '--repo', $Repository, '--workflow', 'editor-pages.yml',

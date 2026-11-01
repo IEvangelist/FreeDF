@@ -19,13 +19,13 @@ static class EditorBoot
         await using var app = builder.Build();
         var remote = Uri.TryCreate(root, UriKind.Absolute, out var remoteUri) && remoteUri.Scheme is "http" or "https";
         using var files = new PhysicalFileProvider(remote ? AppContext.BaseDirectory : Path.GetFullPath(root));
-        app.UsePathBase("/csharp-pdf");
+        app.UsePathBase("/FreeDF");
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".dat"] = "application/octet-stream";
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
-        var url = remote ? root : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/csharp-pdf/";
+        var url = remote ? root : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/FreeDF/";
         using var pw = await Playwright.CreateAsync();
         await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
         var results = new List<object>();

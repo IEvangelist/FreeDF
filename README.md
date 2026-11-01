@@ -31,7 +31,7 @@ var spans = Pdf.ExtractText(document.Pages[0]);
 var raster = Pdf.RenderPage(document.Pages[0], dpi: 96);
 ```
 
-Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. **FreeDF** names the editor, PWA, and `FreeDF.*` projects and tools. The `IEvangelist/csharp-pdf` repository and `PortableDocument.*` API remain unchanged. Existing browser data is migrated locally, and historical benchmark reports retain their original tool identities and measurements.
+Update old library references/usings to the corresponding `PortableDocument.*` names. The local `Pdf` alias avoids confusion between the root namespace and the static entry class; it is not another facade. **FreeDF** names the editor, PWA, repository, and `FreeDF.*` projects and tools. The repository is [IEvangelist/FreeDF](https://github.com/IEvangelist/FreeDF), and the editor is published at [ievangelist.github.io/FreeDF/](https://ievangelist.github.io/FreeDF/). The `PortableDocument.*` API remains unchanged. Existing browser data is migrated locally, and historical benchmark reports retain their original tool identities and measurements.
 
 ### Inert remote go-to actions
 

@@ -23,13 +23,13 @@ static class EditorPageImage
                 builder.Logging.SetMinimumLevel(LogLevel.Warning);
                 app = builder.Build();
                 files = new PhysicalFileProvider(Path.GetFullPath(source));
-                app.UsePathBase("/csharp-pdf");
+                app.UsePathBase("/FreeDF");
                 var types = new FileExtensionContentTypeProvider();
                 types.Mappings[".dat"] = "application/octet-stream";
                 app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
                 app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
                 await app.StartAsync();
-                source = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/csharp-pdf/";
+                source = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/FreeDF/";
             }
 
             using var playwright = await Playwright.CreateAsync();
@@ -47,7 +47,7 @@ static class EditorPageImage
                 var url = new Uri(request.Url);
                 if (url.Scheme is not ("http" or "https")) return;
                 if (request.Method != "GET" || url.GetLeftPart(UriPartial.Authority) != site.GetLeftPart(UriPartial.Authority) ||
-                    (!url.AbsolutePath.StartsWith("/csharp-pdf/", StringComparison.Ordinal) && url.AbsolutePath != "/favicon.ico") ||
+                    (!url.AbsolutePath.StartsWith("/FreeDF/", StringComparison.Ordinal) && url.AbsolutePath != "/favicon.ico") ||
                     url.AbsolutePath.Contains("/api/", StringComparison.Ordinal))
                     unexpectedRequests.Add(request.Method + " " + request.Url);
             };

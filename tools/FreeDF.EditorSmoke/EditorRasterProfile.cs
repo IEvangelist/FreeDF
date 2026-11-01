@@ -19,7 +19,7 @@ static class EditorRasterProfile
         using var files = new PhysicalFileProvider(Path.GetFullPath(root));
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".dat"] = "application/octet-stream";
-        app.UsePathBase("/csharp-pdf");
+        app.UsePathBase("/FreeDF");
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
@@ -39,7 +39,7 @@ static class EditorRasterProfile
                 { ["categories"] = "devtools.timeline,v8,disabled-by-default-v8.compile", ["transferMode"] = "ReturnAsStream" });
             await main.SendAsync("Profiler.enable");
             await main.SendAsync("Profiler.start");
-            await page.GotoAsync(address + "/csharp-pdf/");
+            await page.GotoAsync(address + "/FreeDF/");
             await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
             var startup = (await main.SendAsync("Profiler.stop"))!.Value;
             await File.WriteAllTextAsync(Path.Combine(output, "startup.cpuprofile"), startup.GetProperty("profile").GetRawText());
