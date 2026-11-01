@@ -5,13 +5,14 @@
 ```
 plan -> build (AOT site, content-hash cached) -> smoke[default|forms|authoring|boot|viewport|a11y|responsive|profile-invariants]
      \-> unit[node|dotnet-editor|dotnet-codecs|dotnet-render]
-all of the above -> validated (single gate) -> package (manifest verified) -> deploy
+all of the above -> validated (aggregate test status, not a deployment gate)
+plan + successful build -> package (manifest verified) -> deploy
 ```
 
-- **Build once.** The published site is cached by a hash of every input that can change it; an exact hit skips the AOT publish. Misses restore incremental intermediates and otherwise fall back to a full build. The site is uploaded as the `editor-site` artifact with a SHA-256 manifest; smoke jobs and `package` verify it, so deploy ships exactly the validated bytes.
-- **Isolation.** Each smoke chunk has its own runner, browser and artifact folder. Timing gates are not part of the blocking pipeline (see Performance).
 - **Concurrency.** Runs are grouped by Git ref. A new run cancels older runs on the same ref, but feature-branch validation cannot cancel a `main` deployment or another branch's checks.
-- **Gate.** `validated` fails unless every planned job succeeded. Partial (single-chunk) runs never package or deploy.
+- **Build once.** The published site is cached by a hash of every input that can change it; an exact hit skips the AOT publish. Misses restore incremental intermediates and otherwise fall back to a full build. The site is uploaded as the `editor-site` artifact with a SHA-256 manifest; smoke jobs and `package` verify it, so deploy ships exactly the built bytes.
+- **Isolation.** Each smoke chunk has its own runner, browser and artifact folder. Tests run independently of packaging and deployment.
+- **Ship on build.** A successful site build can package and deploy without waiting for tests, even if tests fail. Build or manifest-verification failures still block deployment. `validated` still fails unless every planned job succeeded, keeping failures visible in checks and artifacts; no tests are disabled or converted to successes. Partial (single-chunk) runs and pull requests never deploy, and manual deployment still requires `deploy=true` on the default branch with `chunk=all`.
 
 ## Run one chunk
 

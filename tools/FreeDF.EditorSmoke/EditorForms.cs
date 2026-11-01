@@ -227,7 +227,23 @@ static class EditorForms
             await GoPage(page, 1);
             await page.Locator("body").PressAsync("Control+z");
             await GoPage(page, formPage + 1);
-            await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && document.querySelectorAll('#layer .wgt').length > 0", formPage + 1);
+            try
+            {
+                await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && !document.getElementById('view').inert && document.querySelectorAll('#layer .wgt').length > 0", formPage + 1);
+            }
+            catch (TimeoutException e)
+            {
+                var state = await page.EvaluateAsync<string>("""
+                    () => { const base = document.getElementById('base');
+                      return JSON.stringify({ page: document.getElementById('pn').value,
+                        viewInert: document.getElementById('view').inert,
+                        widgets: document.querySelectorAll('#layer .wgt').length,
+                        loadedUrl: base?.dataset.loadedUrl, targetUrl: base?.dataset.targetUrl,
+                        imageWidth: base?.naturalWidth, status: document.getElementById('status').textContent,
+                        focused: document.activeElement?.id }); }
+                    """);
+                throw new Exception($"{name}: returning to form page {formPage + 1} after cross-page Ctrl+Z did not show widget overlays. Page/render state: {state}", e);
+            }
             var current = (await Widgets(page, formPage)).Where(w => w.Kind == "text").ToDictionary(w => w.Name, w => w.Value);
             Check(expected.Where(kv => current.ContainsKey(kv.Key)).All(kv => current[kv.Key] == kv.Value), name + ": cross-page Ctrl+Z must leave field edits intact");
         }

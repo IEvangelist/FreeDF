@@ -89,9 +89,11 @@ The expected address after a successful deployment is
 **https://ievangelist.github.io/FreeDF/**. Adding the workflow does not itself
 mean the site is live. The implementation session does not push or deploy.
 
-The app's `<base href="/FreeDF/">` is inserted by
+The app's `<base href="./">` is inserted by
 `tools/Publish-EditorPages.ps1`. Styles, bootstrap scripts and `_framework`
-assets resolve beneath it. The editor has one document route; there is no
+assets resolve beneath the actual deployment directory, including after a repository
+rename. An explicit `-BasePath` still overrides it. The boot chunk also checks
+desktop/mobile styling and WASM startup under `/FreeDF/`. The editor has one document route; there is no
 history-based router requiring a Pages 404 rewrite. No special MIME overrides,
 cross-origin isolation headers, threads, COOP/COEP, or server configuration are
 required on Pages. `.nojekyll` preserves the `_framework` folder.

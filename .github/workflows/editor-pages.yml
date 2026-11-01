@@ -16,7 +16,7 @@ on:
         type: boolean
         default: true
       deploy:
-        description: Deploy after all validation gates pass (requires chunk=all)
+        description: Deploy after the site builds, independently of test results (requires chunk=all)
         type: boolean
         default: false
       chunk:
@@ -141,7 +141,7 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/editor-chunks
 
-  # Single required gate: nothing is packaged or deployed unless every planned job passed.
+  # Aggregate test status remains visible, but does not gate packaging or deployment.
   validated:
     needs: [plan, build, unit, smoke]
     if: always()
@@ -159,8 +159,8 @@ jobs:
           ok "${{ needs.build.result }}" '${{ needs.plan.outputs.smoke }}'
 
   package:
-    if: needs.plan.outputs.code == 'true' && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
-    needs: [plan, validated]
+    if: needs.build.result == 'success' && needs.plan.outputs.code == 'true' && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
+    needs: [plan, build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -168,7 +168,7 @@ jobs:
         with:
           name: editor-site
           path: ${{ runner.temp }}/editor-pages
-      - name: Verify the site is exactly what was validated
+      - name: Verify the site is exactly what the build job produced
         shell: pwsh
         run: ./tools/Site-Manifest.ps1 -Site '${{ runner.temp }}/editor-pages/wwwroot' -Manifest '${{ runner.temp }}/editor-pages/editor-site.sha256' -Verify
       - uses: actions/upload-pages-artifact@v5

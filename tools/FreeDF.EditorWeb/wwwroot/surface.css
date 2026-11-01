@@ -232,7 +232,8 @@ main::before { backdrop-filter: none; }
 :root[data-text-size="small"] { font-size: 14px; }
 :root[data-text-size="large"] { font-size: 18px; }
 header .brand strong, #props h2 { font-size: var(--text-base); }
-#props h3, #props h2 em, .ct-p, #dstate { font-size: var(--text-xs); }
+#props h3, #props h2 em, .ct-p { font-size: var(--text-xs); }
+@media (min-width: 721px) { #dstate { font-size: var(--text-xs); } }
 #props .hint, #pages { font-size: var(--text-sm); }
 .cm-i { min-height: var(--menu-height); height: auto; padding-block: var(--menu-padding); }
 .seg button, .seg label.btn { height: var(--h); }

@@ -1,6 +1,6 @@
 param(
     [string] $Output = (Join-Path $PSScriptRoot 'FreeDF.EditorWasm\bin\pages'),
-    [string] $BasePath = '/FreeDF/',
+    [string] $BasePath = './',
     [switch] $Aot,
     [switch] $SkipSamples,
     [switch] $NoBundle,
@@ -11,7 +11,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $elapsed = [Diagnostics.Stopwatch]::StartNew()
-if ($BasePath -notmatch '^/([A-Za-z0-9._-]+/)*$') { throw 'BasePath must start and end with / and contain only path segments.' }
+if ($BasePath -ne './' -and $BasePath -notmatch '^/([A-Za-z0-9._-]+/)*$') { throw 'BasePath must be ./ or start and end with / and contain only path segments.' }
 $project = Join-Path $PSScriptRoot 'FreeDF.EditorWasm\FreeDF.EditorWasm.csproj'
 $publishArgs = @('publish', $project, '-c', 'Release', '-o', $Output, '--nologo')
 if ($Aot) { $publishArgs += @('-p:RunAOTCompilation=true', '-p:PublishTrimmed=true', '-p:WasmEnableSIMD=true') }

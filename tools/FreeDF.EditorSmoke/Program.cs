@@ -33,9 +33,9 @@ if (args is ["--profile-summary", var profile])
     return;
 }
 
-if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline")
+if (args.Length == 3 && args[0] is "--boot" or "--boot-baseline" or "--shell")
 {
-    await EditorBoot.Run(args[1], args[2], args[0] == "--boot-baseline");
+    await EditorBoot.Run(args[1], args[2], args[0] == "--boot-baseline", shellOnly: args[0] == "--shell");
     return;
 }
 
