@@ -59,7 +59,7 @@ closed documents. The existing floating previous/next pager remains available.
 The welcome screen's primary **Open the showcase** button opens the tagged,
 18-page benchmarks, brand and spec showcase (`28-benchmarks-brand-spec.pdf`).
 It also leads **File > Open sample** and the published manifest. Share
-**https://ievangelist.github.io/csharp-pdf/#sample=28** to open it directly.
+**https://ievangelist.github.io/FreeDF/#sample=28** to open it directly.
 **Open the full sample collection** remains a secondary welcome action:
 sample 27 still contains only samples 01-26 (50 pages). Both PDFs and the sample
 manifest are fetched only on demand from this site, never precached; size and
@@ -80,12 +80,15 @@ Pages artifact/deployment actions and only the deploy job gets `pages: write`
 and `id-token: write`; all jobs have `contents: read`.
 
 The expected address after a successful deployment is
-**https://ievangelist.github.io/csharp-pdf/**. Adding the workflow does not itself
+**https://ievangelist.github.io/FreeDF/**. Adding the workflow does not itself
 mean the site is live. The implementation session does not push or deploy.
 
-The app's `<base href="/csharp-pdf/">` is inserted by
+The app's `<base href="./">` is inserted by
 `tools/Publish-EditorPages.ps1`. Styles, bootstrap scripts and `_framework`
-assets resolve beneath it. The editor has one document route; there is no
+assets resolve beneath the actual deployment directory, including after a repository
+rename. An explicit `-BasePath` still overrides it. The boot chunk also checks
+desktop/mobile styling and WASM startup under `/FreeDF/`, rather than only the
+legacy local smoke path. The editor has one document route; there is no
 history-based router requiring a Pages 404 rewrite. No special MIME overrides,
 cross-origin isolation headers, threads, COOP/COEP, or server configuration are
 required on Pages. `.nojekyll` preserves the `_framework` folder.
@@ -660,7 +663,7 @@ the public site does not upload documents or call an editor server.
 $pdfs = '01-spec-showcase.pdf', '03-typography-embedded.pdf', '09-images.pdf', '20-report.pdf' |
     ForEach-Object { (Resolve-Path (Join-Path samples $_)).Path }
 $site = (Resolve-Path tools\FreeDF.EditorWasm\bin\pages\wwwroot).Path
-dotnet run --no-build -c Release --project tools\FreeDF.EditorSmoke -- --profile https://ievangelist.github.io/csharp-pdf/ "$env:TEMP\editor-live.json" @pdfs
+dotnet run --no-build -c Release --project tools\FreeDF.EditorSmoke -- --profile https://ievangelist.github.io/FreeDF/ "$env:TEMP\editor-live.json" @pdfs
 dotnet run --no-build -c Release --project tools\FreeDF.EditorSmoke -- --profile $site "$env:TEMP\editor-local.json" @pdfs
 ```
 

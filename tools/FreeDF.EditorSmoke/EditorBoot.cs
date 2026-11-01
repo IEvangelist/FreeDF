@@ -10,7 +10,7 @@ static class EditorBoot
 {
     static void Check(bool ok, string message) { if (!ok) throw new Exception("Boot: " + message); }
 
-    public static async Task Run(string root, string output, bool baseline)
+    public static async Task Run(string root, string output, bool baseline, bool shellOnly = false)
     {
         Directory.CreateDirectory(output);
         var builder = WebApplication.CreateBuilder();
@@ -19,18 +19,24 @@ static class EditorBoot
         await using var app = builder.Build();
         var remote = Uri.TryCreate(root, UriKind.Absolute, out var remoteUri) && remoteUri.Scheme is "http" or "https";
         using var files = new PhysicalFileProvider(remote ? AppContext.BaseDirectory : Path.GetFullPath(root));
-        app.UsePathBase("/csharp-pdf");
+        var pathBase = shellOnly ? "/FreeDF" : "/csharp-pdf";
+        app.UsePathBase(pathBase);
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.PathBase != pathBase) { context.Response.StatusCode = 404; return; }
+            await next();
+        });
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".dat"] = "application/octet-stream";
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
-        var url = remote ? root : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/csharp-pdf/";
+        var url = remote ? root : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + pathBase + "/";
         using var pw = await Playwright.CreateAsync();
         await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
         var results = new List<object>();
         var coldStarts = new List<double>();
-        foreach (var scenario in baseline ? new[] { "cold", "cold", "cold" } : ["cold", "cold", "cold", "transient", "permanent", "missing", "integrity", "module", "stalled-worker"])
+        foreach (var scenario in shellOnly ? new[] { "cold" } : baseline ? ["cold", "cold", "cold"] : ["cold", "cold", "cold", "transient", "permanent", "missing", "integrity", "module", "stalled-worker"])
         {
             await using var context = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, ViewportSize = new() { Width = 1440, Height = 1000 }, DeviceScaleFactor = 1 });
             var unexpected = new ConcurrentQueue<string>();
@@ -74,11 +80,43 @@ static class EditorBoot
             page.SetDefaultTimeout(90000);
             var errors = new ConcurrentQueue<string>();
             page.PageError += (_, error) => errors.Enqueue(error);
+            if (shellOnly)
+            {
+                context.Response += (_, response) => { if (!response.Ok) errors.Enqueue($"HTTP {response.Status}: {response.Url}"); };
+                context.RequestFailed += (_, request) => errors.Enqueue($"Request failed: {request.Url}: {request.Failure}");
+            }
             var cdp = await context.NewCDPSessionAsync(page);
             await cdp.SendAsync("Performance.enable");
             await cdp.SendAsync("Network.enable");
             await cdp.SendAsync("Network.setCacheDisabled", new Dictionary<string, object> { ["cacheDisabled"] = true });
             await page.GotoAsync(url);
+            if (shellOnly)
+            {
+                var resolvedBase = await page.EvaluateAsync<string>("document.baseURI");
+                Check(resolvedBase == url, $"Shell base URL must match its deployment: {resolvedBase} != {url}.");
+                foreach (var mobile in new[] { false, true })
+                {
+                    await page.SetViewportSizeAsync(mobile ? 390 : 1440, mobile ? 844 : 1000);
+                    var state = await page.EvaluateAsync<string>("""
+                        () => {
+                          const body = getComputedStyle(document.body), header = document.querySelector('header'),
+                            button = document.getElementById('fileBtn'), icon = button.querySelector('svg'),
+                            bounds = icon.getBoundingClientRect();
+                          return JSON.stringify({ display: body.display, margin: body.margin,
+                            header: getComputedStyle(header).display, iconWidth: bounds.width,
+                            iconHeight: bounds.height, overflow: document.documentElement.scrollHeight > innerHeight + 1,
+                            styled: body.display === 'grid' && body.margin === '0px' &&
+                              getComputedStyle(header).display === 'flex' && bounds.width <= 32 &&
+                              bounds.height <= 32 && bounds.width > 0 &&
+                              document.documentElement.scrollHeight <= innerHeight + 1 });
+                        }
+                        """);
+                    using var document = JsonDocument.Parse(state);
+                    Check(document.RootElement.GetProperty("styled").GetBoolean(),
+                        $"{(mobile ? "Mobile" : "Desktop")} shell CSS failed at {url}: {state}; {string.Join(", ", errors)}");
+                    await page.ScreenshotAsync(new() { Path = Path.Combine(output, mobile ? "shell-mobile.png" : "shell-desktop.png") });
+                }
+            }
             if (scenario == "stalled-worker")
             {
                 await workerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -129,9 +167,9 @@ static class EditorBoot
             Check(unexpected.IsEmpty, "Static GETs only, including worker resources: " + string.Join(", ", unexpected));
             results.Add(new { scenario, attempts, retryCount, errors, unexpected });
         }
-        var medianMs = coldStarts.Order().ElementAt(1);
-        await File.WriteAllTextAsync(Path.Combine(output, baseline ? "boot-baseline.json" : "boot-resilience.json"),
+        var medianMs = coldStarts.Order().ElementAt(coldStarts.Count / 2);
+        await File.WriteAllTextAsync(Path.Combine(output, shellOnly ? "shell.json" : baseline ? "boot-baseline.json" : "boot-resilience.json"),
             JsonSerializer.Serialize(new { coldStarts, medianMs, results }, new JsonSerializerOptions { WriteIndented = true }));
-        Console.WriteLine($"PASS: {(baseline ? "baseline cold boot" : "cold boot, transient 503/network/module recovery, permanent/404/integrity errors, silent-worker deadline and keyboard reload")}; cold-start median {medianMs:F1} ms; no outbound requests.");
+        Console.WriteLine($"PASS: {(shellOnly ? "deployment-relative assets, desktop/mobile shell CSS and WASM startup" : baseline ? "baseline cold boot" : "cold boot, transient 503/network/module recovery, permanent/404/integrity errors, silent-worker deadline and keyboard reload")}; cold-start median {medianMs:F1} ms; no outbound requests.");
     }
 }

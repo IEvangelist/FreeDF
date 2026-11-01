@@ -54,3 +54,10 @@ test('validation still reports all planned failures instead of suppressing them'
   assert.match(jobs.validated, /ok "\$\{\{ needs\.smoke\.result \}\}"/);
   assert.doesNotMatch(jobs.unit + jobs.smoke + jobs.validated, /continue-on-error:\s*true/);
 });
+
+test('published assets default to the deployment directory, not an obsolete repository name', () => {
+  const publish = fs.readFileSync(path.join(__dirname, 'Publish-EditorPages.ps1'), 'utf8');
+  assert.match(publish, /\[string\] \$BasePath = '\.\/'/);
+  const chunks = fs.readFileSync(path.join(__dirname, 'Invoke-EditorChunk.ps1'), 'utf8');
+  assert.match(chunks, /Smoke @\('--shell', \$Site,/);
+});

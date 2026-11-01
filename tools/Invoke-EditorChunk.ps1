@@ -63,6 +63,7 @@ switch ($Chunk) {
         Run 'Contents panel and active page' { Smoke @('--outline', $Site) }
     }
     'boot' {
+        Run 'deployment path and styled desktop/mobile shell' { Smoke @('--shell', $Site, (WorkDir 'editor-shell')) }
         Run 'cold boot and injected resource failures' { Smoke @('--boot', $Site, (WorkDir 'editor-boot')) }
         $workerWork = WorkDir 'editor-worker-migration'
         Run 'offline worker migration and rollback' { Smoke @('--service-worker-migration', $Site, $workerWork) }
