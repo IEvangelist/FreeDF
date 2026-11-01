@@ -1338,11 +1338,14 @@ async function printDoc() {
   if (state.protection && !state.protection.print) return status('This PDF\'s permissions do not allow printing. Open it with the owner password to print.');
   await flush();
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-99px';
+  const pageRules = [];
   const imgs = (await Promise.all(state.pages.map(async (p, i) => {
-    const sw = p.rotation % 180 !== 0, w = sw ? p.height : p.width, h = sw ? p.width : p.height;
-    return `<section style="width:${w}pt;height:${h}pt"><img src="${await imageUrl(`/api/page/${i}.png?dpi=150&v=${state.version}&bare=false`)}"></section>`;
+    const sw = p.rotation % 180 !== 0, unit = p.userUnit ?? 1;
+    const w = (sw ? p.height : p.width) * unit, h = (sw ? p.width : p.height) * unit;
+    pageRules.push(`@page pdf${i}{size:${w}pt ${h}pt;margin:0}`);
+    return `<section style="page:pdf${i};width:${w}pt;height:${h}pt"><img src="${await imageUrl(`/api/page/${i}.png?dpi=150&v=${state.version}&bare=false`)}"></section>`;
   }))).join('');
-  f.srcdoc = `<!doctype html><style>@page{margin:0}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{width:100%;height:100%;display:block}</style>${imgs}`;
+  f.srcdoc = `<!doctype html><style>@page{margin:0}${pageRules.join('')}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{width:100%;height:100%;object-fit:contain;display:block}</style>${imgs}`;
   f.onload = async () => {
     const d = f.contentDocument; await Promise.all([...d.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; })));
     f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => f.remove(), 60000);

@@ -177,6 +177,19 @@ fall back to the primary worker; pool smoke checks compare decoded pixels.
 | Reload / previous edit recovery | Explicit Resume previous edit or Discard and clear; unencrypted editable state, undo and clipboard remain local in IndexedDB |
 | PNG, all-pages PNG ZIP, text, compressed PDF exports | Local downloads |
 | Print, fullscreen, keyboard shortcuts, panels | Browser APIs and existing editor UI; printing uses locally rendered page images |
+
+Printing renders each page at 150 dpi and requests its own paper size from the
+PDF CropBox, rotation and UserUnit, including landscape and mixed-size documents.
+Images retain their aspect ratio. The browser/printer can still override paper
+size or impose non-printable margins; choose matching paper and fit to the
+printable area when printing to a device without borderless support.
+The focused Chromium regression checks actual print-to-PDF page sizes, page
+count and unclipped corner markers:
+
+```powershell
+dotnet run -c Release --project tools\FreeDF.EditorSmoke -- --print-layout `
+  "$PWD\tools\FreeDF.EditorWeb\wwwroot\index.html"
+```
 | Password-protected export | The protection dialog writes AES-256 (R6) with open/owner passwords and permission checks; protection is not silently dropped. See [browser-encryption.md](browser-encryption.md) |
 | Password/certificate-protected input | Supported password-encrypted PDFs open through an accessible password prompt with cancel/retry; unsupported certificate input remains an explicit limitation. Encrypted input disables recovery; decrypted bytes and passwords are never cached for recovery |
 | Installed fonts and system font fallback | Local Font Access browsers offer permission-based search/preview and embed a chosen eligible font; only metadata is cached, not font bytes. Restricted embedding is refused with an explicit substitute choice. Unsupported browsers retain standard families and original embedded fonts. Non-embedded font substitution remains bounded; see [fallback-fonts.md](fallback-fonts.md) |

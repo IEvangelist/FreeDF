@@ -7,6 +7,12 @@ using Microsoft.Playwright;
 using PortableDocument.Document;
 using Pdf = PortableDocument.Render.PortableDocument;
 
+if (args is ["--print-layout", var printHtml])
+{
+    await EditorPrint.Run(printHtml);
+    return;
+}
+
 if (args is ["--raster-profile", var rasterSite, var rasterOutput, var rasterPdf])
 {
     await EditorRasterProfile.Run(rasterSite, rasterOutput, rasterPdf);
