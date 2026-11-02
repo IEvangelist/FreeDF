@@ -37,8 +37,19 @@ static class EditorTextSelection
             if (!await page.EvaluateAsync<bool>("document.querySelector('main').classList.contains('hide-r')"))
                 await page.Locator("#tr").ClickAsync();
             await page.WaitForFunctionAsync("document.querySelector('main').classList.contains('hide-r')");
+            Check(await page.EvaluateAsync<bool>("""
+                () => {
+                  const status = document.getElementById('status'), original = status.textContent;
+                  status.textContent = 'Ready.';
+                  const before = document.getElementById('view').getBoundingClientRect().height;
+                  status.textContent = 'Drag to move. Open Properties (]) for exact position and other controls.';
+                  const after = document.getElementById('view').getBoundingClientRect().height;
+                  status.textContent = original;
+                  return before === after;
+                }
+                """), name + ": status hints must not resize the mobile canvas during selection");
             await page.Locator("#layer .span").First.DblClickAsync();
-            var drawer = await page.EvaluateAsync<string>("""() => JSON.stringify({classes: document.querySelector('main').className, active: document.activeElement?.outerHTML, width: document.getElementById('props').getBoundingClientRect().width, viewport: innerWidth, pref: localStorage.getItem('panel-r')})""");
+            var drawer = await page.EvaluateAsync<string>("""() => JSON.stringify({classes: document.querySelector('main').className, active: document.activeElement?.id, width: document.getElementById('props').getBoundingClientRect().width, viewport: innerWidth, pref: localStorage.getItem('panel-r')})""");
             Check(await page.EvaluateAsync<bool>("!document.querySelector('main').classList.contains('hide-r') && document.activeElement?.matches('#props [data-original-text]') && document.getElementById('props').getBoundingClientRect().width >= 200"),
                 name + ": double-click opens a usable Properties drawer on narrow screens: " + drawer);
             await page.Keyboard.PressAsync("Escape");
@@ -111,11 +122,19 @@ static class EditorTextSelection
         await page.EvaluateAsync("""
             () => {
               window.textSelectionResize = new Promise(resolve =>
-                addEventListener('resize', () => requestAnimationFrame(resolve), { once: true }));
+                addEventListener('resize', () =>
+                  addEventListener('editor-page-change', resolve, { once: true }), { once: true }));
             }
             """);
         await page.SetViewportSizeAsync(width, height);
         await page.EvaluateAsync("async () => { await window.textSelectionResize; delete window.textSelectionResize; }");
+        await page.WaitForFunctionAsync("""
+            () => {
+              const image = document.getElementById('base');
+              return !document.getElementById('view').inert && image?.naturalWidth > 0
+                && image.dataset.loadedUrl === image.dataset.targetUrl;
+            }
+            """);
     }
 
     static async Task AddedText(IPage page)

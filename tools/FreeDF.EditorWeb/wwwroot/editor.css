@@ -84,8 +84,11 @@ footer #recovery { height: 22px; min-height: 0; flex: none; }
 @media (max-width: 900px) { header .lbl { display: none; } header .btn, header button.primary { padding: 0; width: var(--h); justify-content: center; } .doc #pages { display: none; } }
 @media (max-width: 720px) { .doc { flex: none; margin-right: 0; padding: 0 8px; } .doc > svg.i { display: none; } #name { max-width: 28vw; } #dstate { font-size: 0; } #dstate::before { margin-right: 0; width: 7px; height: 7px; } header .sp { flex: 1; height: auto; background: none; margin: 0; } #prev { font-size: 0; gap: 0; padding: 0; width: var(--h); justify-content: center; } }
 @media (max-width: 600px) {
-  footer { flex-wrap: wrap; }
-  #developerCredit { margin-left: auto; }
+  body > footer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: 24px 24px; }
+  footer::before { grid-column: 1; grid-row: 1; }
+  footer #status { grid-column: 2; grid-row: 1; }
+  footer #recovery { grid-column: 3; grid-row: 1; }
+  #developerCredit { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
   main { position: relative; }
   #left, #props { visibility: hidden; }
   main:not(.hide-l) #left, main:not(.hide-r) #props { position: absolute; top: 44px; bottom: 0; width: min(280px, 85vw); z-index: 20; visibility: visible; }

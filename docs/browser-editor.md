@@ -50,6 +50,8 @@ retain their minimum target sizes, and PDF text and exports are unchanged.
 The footer credits **Developed by David Pine**, linking to
 **https://davidpine.dev/**. The GitHub source link appears only in the header,
 including on mobile, rather than being duplicated in the footer.
+On narrow screens, status and attribution use separate fixed-height rows so
+selection hints do not move the canvas while clicking or editing.
 
 The panel toggles live on the second toolbar row, not the primary header.
 Drag either panel's visible inner edge to resize it, use the focused separator's
