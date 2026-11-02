@@ -460,7 +460,8 @@ function applyPageLayout(r, dw, dh, Lw, Lh, fitP) {
   layer.onpointerdown = layerDown;
   geom = { r, dw, dh, Lw, Lh };
   $('zv').textContent = Math.round(S * 72 / 96 * 100) + '%'; fitP0 = fitP; navUpdate();
-  paint(); props();
+  paint();
+  if (!$('props').contains(document.activeElement)) props();
 }
 
 async function pagePresentationReady(current) {
@@ -593,11 +594,14 @@ function setObjectAffordance(el, o) {
 
 function paint() {
   const layer = $('layer'); if (!layer) return;
+  const activeEditor = editing && document.activeElement?.parentNode === layer &&
+    document.activeElement.isContentEditable && items.includes(document.activeElement._it) ? document.activeElement : null;
   const keepWidgets = widgetEl?.parentNode === layer && widgetKey === `${widgetStamp}|${S}|${tool}` &&
     tool === 'select' && widgets.length && !formUi?.editing();
-  const content = document.createDocumentFragment(), imageLoads = [];
-  if (keepWidgets) {
-    for (const child of [...layer.childNodes]) if (child !== widgetEl) child.remove();
+  let content = document.createDocumentFragment();
+  const beforeEditor = content, afterEditor = activeEditor ? document.createDocumentFragment() : null, imageLoads = [];
+  if (keepWidgets || activeEditor) {
+    for (const child of [...layer.childNodes]) if (child !== activeEditor && (!keepWidgets || child !== widgetEl)) child.remove();
   } else layer.replaceChildren();
   paintFind(content);
   if (tool === 'select') {
@@ -652,11 +656,12 @@ function paint() {
       if (it === cur) lineHandles(content, it);
       continue;
     }
-    const e = document.createElement('div'); e._it = it;
+    const e = activeEditor?._it === it ? activeEditor : document.createElement('div'); e._it = it;
     e.className = 'it' + (it === cur ? ' on' : '') + (it.type === 'text' ? ' txt' : '') + (it.type === 'redact' ? ' redact' : '');
     e.style.left = it.x * S + 'px'; e.style.top = it.y * S + 'px'; e.style.opacity = it.opacity;
     if (it.type === 'text') {
-      e.textContent = it.text; e.style.fontSize = it.size * S + 'px'; e.style.color = it.color || '#000';
+      if (e !== activeEditor) e.textContent = it.text;
+      e.style.fontSize = it.size * S + 'px'; e.style.color = it.color || '#000';
       e.style.fontFamily = famCss(it.font); e.style.fontWeight = it.bold ? 700 : 400; e.style.fontStyle = it.italic ? 'italic' : 'normal';
       e.style.textAlign = it.align || 'left'; e.style.whiteSpace = 'pre';
       e.style.textDecoration = [it.underline && 'underline', it.strike && 'line-through'].filter(Boolean).join(' ') || 'none';
@@ -674,13 +679,15 @@ function paint() {
         e.style.boxSizing = 'border-box'; if (it.type === 'ellipse') e.style.borderRadius = '50%';
       }
     }
+    if (e === activeEditor) { content = afterEditor; continue; }
     e.onpointerdown = ev => { if (tool === 'select' && !e.isContentEditable) startMove(ev, it); };
     if (it.type === 'text') e.ondblclick = () => editText(e, it);
     if (it === cur && !editing) boxHandles(e, it);
     content.appendChild(e);
     if (it.type === 'image') imageLoads.push([e.querySelector('img'), `/api/asset/${it.asset}`]);
   }
-  layer.insertBefore(content, keepWidgets ? widgetEl : null);
+  layer.insertBefore(beforeEditor, activeEditor || (keepWidgets ? widgetEl : null));
+  if (afterEditor) layer.insertBefore(afterEditor, keepWidgets ? widgetEl : null);
   for (const [image, url] of imageLoads) setImage(image, url).catch(reportError);
   formUi?.paint(layer);
   if (!formUi?.editing()) paintWidgets(layer);

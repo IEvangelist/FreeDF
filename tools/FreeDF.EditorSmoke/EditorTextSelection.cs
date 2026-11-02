@@ -24,6 +24,8 @@ static class EditorTextSelection
             await page.Locator("#layer .span").First.DblClickAsync();
             Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#props [data-original-text]')"),
                 name + ": double-clicking original text focuses its editor");
+            if (name == "embedded.pdf")
+                await RetainEditingOnResize(page, "#props [data-original-text]", name);
             await page.Keyboard.PressAsync("Escape");
             await page.Locator("#lock").ClickAsync();
             await page.Locator("#layer .span").First.DblClickAsync();
@@ -110,10 +112,15 @@ static class EditorTextSelection
         await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 80, Y = 80 } });
         var editor = page.Locator("#layer [contenteditable='plaintext-only']");
         await editor.FillAsync("Added text");
+        await RetainEditingOnResize(page, "#layer [contenteditable='plaintext-only']", "added text");
         await editor.PressAsync("Escape");
+        await page.Locator("[data-tool=rect]").ClickAsync();
+        await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 240, Y = 250 } });
+        Check(await page.Locator("#layer > .it").CountAsync() == 2, "added text: fixture includes a second object after the text");
         await page.Locator("#layer .it.txt").DblClickAsync();
         Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#layer .it.txt[contenteditable=\"plaintext-only\"]')"),
             "added text: double-click reopens inline editing");
+        await RetainEditingOnResize(page, "#layer [contenteditable='plaintext-only']", "added text with another object");
         await page.Keyboard.PressAsync("Escape");
         var text = page.Locator("#layer .it.txt");
         var box = await text.BoundingBoxAsync() ?? throw new Exception("Added text has no bounding box.");
@@ -130,6 +137,42 @@ static class EditorTextSelection
             "added text: locking geometry does not prevent inline editing");
         await page.Keyboard.PressAsync("Escape");
         await page.Locator("#lock").ClickAsync();
+    }
+
+    static async Task RetainEditingOnResize(IPage page, string selector, string name)
+    {
+        var viewport = page.ViewportSize ?? throw new Exception("No editor viewport.");
+        await page.EvaluateAsync("""
+            selector => {
+              const el = document.querySelector(selector);
+              if (!el || document.activeElement !== el) throw new Error('Text editor is not focused');
+              const offset = Math.min(3, el.isContentEditable ? el.textContent.length : el.value.length);
+              if (el.isContentEditable) {
+                const range = document.createRange(), selection = getSelection();
+                range.setStart(el.firstChild, offset); range.collapse(true);
+                selection.removeAllRanges(); selection.addRange(range);
+              } else el.setSelectionRange(offset, offset);
+              const state = window.__editingResize = { el, offset, layouts: 0, order: [...document.querySelectorAll('#layer > .it')].map(item => item._it.id) };
+              state.observer = new MutationObserver(() => state.layouts++);
+              state.observer.observe(document.getElementById('layer'), { attributes: true, attributeFilter: ['style'] });
+            }
+            """, selector);
+        foreach (var height in new[] { viewport.Height - 200, viewport.Height })
+        {
+            await page.EvaluateAsync("window.__editingResize.layouts = 0");
+            await page.SetViewportSizeAsync(viewport.Width, height);
+            await page.WaitForFunctionAsync("window.__editingResize.layouts > 0");
+            Check(await page.EvaluateAsync<bool>("""
+                () => {
+                  const { el, offset, order } = window.__editingResize, selection = getSelection();
+                  const currentOrder = [...document.querySelectorAll('#layer > .it')].map(item => item._it.id);
+                  return JSON.stringify(order) === JSON.stringify(currentOrder) && el.isConnected && document.activeElement === el && (el.isContentEditable
+                    ? selection.anchorNode === el.firstChild && selection.anchorOffset === offset && selection.isCollapsed
+                    : el.selectionStart === offset && el.selectionEnd === offset);
+                }
+                """), name + ": layout repaint retains the focused editor and caret");
+        }
+        await page.EvaluateAsync("window.__editingResize.observer.disconnect(); delete window.__editingResize");
     }
 
     static async Task<double> AddedTextX(IPage page, double? after = null)
