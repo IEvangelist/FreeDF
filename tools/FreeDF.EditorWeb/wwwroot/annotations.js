@@ -263,6 +263,7 @@ export function createAnnotations(ctx) {
         el('div', { class: 'row' }, btn('Flatten page', flatten), btn('Flatten all', () => flatten(true)), btn('Apply redactions', applyRedactions)),
         el('div', { class: 'row' }, btn('Export XFDF', exportXfdf), btn('Import XFDF…', importXfdf))),
       live);
+    window.editorUi.enhanceSelects(dock);
   }
 
   function setTool(id) {
@@ -308,6 +309,7 @@ export function createAnnotations(ctx) {
         el('button', { type: 'button', onclick: () => remove(a) }, 'Delete')),
       el('div', { class: 'row' }, label('Reply', replyText), label('Status', state),
         el('button', { type: 'button', onclick: () => mutate(`/api/annot-reply?page=${a.page}&n=${a.number}`, { author: prefs.author, text: replyText.value, state: state.value || undefined }, 'Reply added.').catch(fail) }, 'Reply')));
+    window.editorUi.enhanceSelects(box);
   }
 
   async function remove(a) { await mutate(`/api/annot-delete?page=${a.page}&n=${a.number}`, undefined, 'Annotation deleted.'); selected = 0; props(); }
@@ -328,7 +330,7 @@ export function createAnnotations(ctx) {
   function renderList() {
     const lb = $('annot-list'); if (!lb) return;
     const authors = [...new Set(list.map(a => a.spec.author).filter(Boolean))], fa = $('annot-filter-author');
-    if (fa) { const cur = fa.value; fa.replaceChildren(el('option', { value: '' }, 'All authors'), ...authors.map(x => el('option', { value: x }, x))); fa.value = authors.includes(cur) ? cur : ''; filter.author = fa.value; }
+    if (fa) { const cur = fa.value; fa.replaceChildren(el('option', { value: '' }, 'All authors'), ...authors.map(x => el('option', { value: x }, x))); fa.value = authors.includes(cur) ? cur : ''; filter.author = fa.value; window.editorUi.refreshSelect(fa); }
     const rows = [];
     for (const a of visible()) { rows.push(a); rows.push(...list.filter(r => r.parentNumber === a.number)); }
     lb.replaceChildren(...rows.map(a => el('li', { role: 'option', id: 'annot-opt-' + a.number, class: a.parentNumber != null ? 'reply' : '', 'aria-selected': a.number === selected, 'data-n': a.number, onclick: () => select(a.number, true) }, describe(a))));

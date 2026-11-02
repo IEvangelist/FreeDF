@@ -62,6 +62,17 @@ test('published assets default to the deployment directory, not an obsolete repo
   assert.match(chunks, /Smoke @\('--shell', \$Site,/);
 });
 
+test('public acceptance uses the current Pages URL and the exact build artifact', () => {
+  const build = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'editor-site.yml'), 'utf8');
+  const acceptance = fs.readFileSync(path.join(__dirname, 'Test-EditorPublic.ps1'), 'utf8');
+  assert.match(build, /name: editor-site\s/);
+  assert.match(acceptance, /\$Url = 'https:\/\/ievangelist\.github\.io\/FreeDF\/'/);
+  assert.match(acceptance, /\$Repository = 'IEvangelist\/FreeDF'/);
+  assert.match(acceptance, /'--name', 'editor-site'/);
+  assert.match(acceptance, /\$site = Join-Path \$artifact 'wwwroot'/);
+  assert.match(acceptance, /Site-Manifest\.ps1.*editor-site\.sha256.*-Verify/);
+});
+
 test('non-default branches never package Pages or deploy, even with deploy=true', () => {
   const state = { plan: { result: 'success', outputs: { code: 'true' } }, build: { result: 'success' }, package: { result: 'success' } };
   for (const defaultBranch of ['main', 'release']) {

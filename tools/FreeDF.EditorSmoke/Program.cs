@@ -70,6 +70,7 @@ if (args.Length == 4 && args[0] == "--page-image")
 }
 
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
+var choicesOnly = args.Length == 2 && args[0] == "--choices";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
@@ -88,21 +89,21 @@ var a11yOnly = args.Length == 3 && args[0] == "--a11y";
 var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
 var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !choicesOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--choices|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
 var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
-if (publicSite && publicUri!.AbsolutePath != "/csharp-pdf/")
-    throw new ArgumentException("The public editor URL must end in /csharp-pdf/.");
+if (publicSite && publicUri!.AbsolutePath != "/FreeDF/")
+    throw new ArgumentException("The public editor URL must end in /FreeDF/.");
 var root = publicSite ? Path.GetFullPath(Environment.GetEnvironmentVariable("EDITOR_SMOKE_SITE_ROOT") ?? AppContext.BaseDirectory) : Path.GetFullPath(source);
 if (!publicSite && !File.Exists(Path.Combine(root, "index.html"))) throw new FileNotFoundException("Publish the Pages site first.");
 var builder = WebApplication.CreateBuilder();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 await using var app = builder.Build();
-app.UsePathBase("/csharp-pdf");
+app.UsePathBase("/FreeDF");
 app.Use(async (context, next) =>
 {
-    if (context.Request.PathBase != "/csharp-pdf") { context.Response.StatusCode = 404; return; }
+    if (context.Request.PathBase != "/FreeDF") { context.Response.StatusCode = 404; return; }
     await next();
 });
 var files = new PhysicalFileProvider(root);
@@ -128,7 +129,7 @@ try
     var bootSuccesses = new ConcurrentDictionary<string, bool>();
     var booting = true;
     string ResourceKey(string url) => new Uri(url).GetLeftPart(UriPartial.Path);
-    bool Framework(string url) => url.StartsWith(address + "/csharp-pdf/_framework/", StringComparison.Ordinal);
+    bool Framework(string url) => url.StartsWith(address + "/FreeDF/_framework/", StringComparison.Ordinal);
     page.PageError += (_, error) => errors.Enqueue(error);
     page.Console += (_, message) =>
     {
@@ -141,7 +142,7 @@ try
     {
         if (request.Method == "GET" && request.Url.StartsWith("blob:" + address + "/", StringComparison.Ordinal)) return;
         if (!request.Url.StartsWith("http:", StringComparison.Ordinal) && !request.Url.StartsWith("https:", StringComparison.Ordinal)) return;
-        if (!request.Url.StartsWith(address + "/csharp-pdf/", StringComparison.Ordinal) || request.Method != "GET" || new Uri(request.Url).AbsolutePath.Contains("/api/"))
+        if (!request.Url.StartsWith(address + "/FreeDF/", StringComparison.Ordinal) || request.Method != "GET" || new Uri(request.Url).AbsolutePath.Contains("/api/"))
             network.Enqueue(request.Method + " " + request.Url);
     };
     context.Response += (_, response) =>
@@ -180,7 +181,7 @@ try
         });
     if (fileAccessOnly || storageMigrationOnly) await EditorFileAccess.Install(page);
     if (storageMigrationOnly) await EditorStorageMigration.Install(page);
-    await page.GotoAsync(address + "/csharp-pdf/");
+    await page.GotoAsync(address + "/FreeDF/");
     try { await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')"); }
     catch (TimeoutException)
     {
@@ -193,7 +194,7 @@ try
     Check(!injectBootRetry || injectedBootFailure && recovered, "Injected transient delivery failure is recorded and recovered.");
     foreach (var error in bootConsole) if (!recovered) errors.Enqueue(error);
     Console.WriteLine($"PDF boot retries: {bootRetries}; recovered resource failures: {bootFailures.Count}.");
-    Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/csharp-pdf/", "Repository base path");
+    Check(await page.EvaluateAsync<string>("document.baseURI") == address + "/FreeDF/", "Repository base path");
     Check(await page.EvaluateAsync<bool>("!!window.pdfHost"), "WASM transport");
     Check(await page.EvaluateAsync<bool>("pdfHost.execution === 'worker' && !crossOriginIsolated && !window.Blazor"), "Single worker PDF runtime without shared-memory isolation or a main-thread Blazor runtime");
     if (objectBreadthOnly)
@@ -204,37 +205,37 @@ try
     }
     if (pageHistoryOnly)
     {
-        await EditorPageHistory.Run(page, address + "/csharp-pdf/");
+        await EditorPageHistory.Run(page, address + "/FreeDF/");
         Check(network.IsEmpty && errors.IsEmpty, "No outbound traffic or browser errors during page history.");
         return;
     }
     if (viewportOnly)
     {
-        await EditorViewport.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
+        await EditorViewport.Run(browser, address + "/FreeDF/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
         Console.WriteLine("PASS: app shell fits the viewport and the window never scrolls across viewport/DPR/zoom/panel/menu configurations.");
         return;
     }
     if (a11yOnly)
     {
-        await EditorA11y.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
+        await EditorA11y.Run(browser, address + "/FreeDF/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
         Check(network.IsEmpty, "No outbound traffic during the accessibility sweep: " + string.Join("\n", network));
         Console.WriteLine("PASS: zero serious/critical axe violations and all keyboard/target/focus/spacing assertions across screens, themes, forced colors, zoom and mobile widths.");
         return;
     }
     if (responsiveOnly)
     {
-        await EditorResponsive.Run(browser, address + "/csharp-pdf/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
+        await EditorResponsive.Run(browser, address + "/FreeDF/", await File.ReadAllBytesAsync(args[2]), Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS"));
         Console.WriteLine("PASS: no overflow, clipping or unreachable controls across the responsive matrix.");
         return;
     }
     if (saveOverlapOnly)
     {
-        await EditorSaveOverlap.Run(browser, address + "/csharp-pdf/");
+        await EditorSaveOverlap.Run(browser, address + "/FreeDF/");
         return;
     }
     if (jsonSafetyOnly)
     {
-        await EditorJsonSafety.Run(context, address + "/csharp-pdf/");
+        await EditorJsonSafety.Run(context, address + "/FreeDF/");
         Check(network.IsEmpty && errors.IsEmpty, "No unexpected JSON-safety browser errors or traffic.");
         return;
     }
@@ -263,6 +264,12 @@ try
     {
         await EditorTextSelection.Run(page);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
+        return;
+    }
+    if (choicesOnly)
+    {
+        await EditorChoices.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors));
         return;
     }
     if (mergeOnly)
@@ -300,7 +307,7 @@ try
     }
     if (storageMigrationOnly)
     {
-        await EditorStorageMigration.Run(page, address + "/csharp-pdf/");
+        await EditorStorageMigration.Run(page, address + "/FreeDF/");
         Check(network.IsEmpty && errors.All(error => error.Contains("simulated migration quota failure", StringComparison.Ordinal)),
             "No external requests or unexpected browser errors during storage migration: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         return;
@@ -447,6 +454,8 @@ try
     await page.Locator("#zi").ClickAsync();
     await page.Locator("#zi").ClickAsync();
     await page.Locator("#zo").ClickAsync();
+    if (await page.EvaluateAsync<bool>("document.querySelector('main').classList.contains('hide-l')"))
+        await page.Locator("#tl").ClickAsync();
     await page.Locator(".thumb").Nth(1).ClickAsync();
     await page.Locator(".thumb").First.ClickAsync();
     await page.EvaluateAsync("async () => { await window.renderProbe; }");
@@ -483,11 +492,11 @@ try
     Check(await page.GetByRole(AriaRole.Menuitem, new() { Name = "New…", Exact = false }).IsVisibleAsync(), "Mobile file controls");
     await page.Keyboard.PressAsync("Escape");
     if (artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, "editor-mobile.png") });
-    await EditorJsonSafety.Run(context, address + "/csharp-pdf/");
-    await EditorSaveOverlap.Run(browser, address + "/csharp-pdf/");
+    await EditorJsonSafety.Run(context, address + "/FreeDF/");
+    await EditorSaveOverlap.Run(browser, address + "/FreeDF/");
     Check(network.IsEmpty, "No uploads, API requests, external requests or root-relative assets: " + string.Join(", ", network));
     Check(errors.IsEmpty, "No browser errors: " + string.Join(", ", errors));
-    Console.WriteLine("PASS: WASM startup, /csharp-pdf/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo and clipboard paste after navigation/history release, error recovery, mobile layout, and no outbound PDF traffic.");
+    Console.WriteLine("PASS: WASM startup, /FreeDF/ assets, local PDF open, real UI text edit/preview/save/reopen, rotation/find, PNG/ZIP/text/compressed exports, image decode/delete/undo and clipboard paste after navigation/history release, error recovery, mobile layout, and no outbound PDF traffic.");
 }
 finally { await app.StopAsync(); files.Dispose(); }
 

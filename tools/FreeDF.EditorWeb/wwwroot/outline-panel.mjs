@@ -11,7 +11,7 @@ export function createOutlinePanel({ tabPages, tabContents, thumbs, contents, lo
 
   let index = buildOutlineIndex([]), expanded = new Set(), rows = [], rowPos = new Map();
   let page = 0, pageCount = 0, version = null, loadedVersion = null, loading = 0;
-  let current = -1, pinned = -1, focusId = -1, frame = 0, forceReveal = false, shown = false, signature = '';
+  let current = -1, pinned = -1, focusId = -1, frame = 0, forceReveal = false, shown = false, signature = '', activation = 0;
   const pool = new Map();
 
   const setRows = () => {
@@ -119,9 +119,12 @@ export function createOutlinePanel({ tabPages, tabContents, thumbs, contents, lo
     focusId = id; reveal(id); renderWindow();
   };
   const activate = async id => {
-    const n = index.nodes[id];
+    const n = index.nodes[id], attempt = ++activation;
     focusId = id;
-    if (n.page >= 0) { pinned = id; await goTo(n.page); } else if (n.first >= 0) toggle(id, !expanded.has(id));
+    if (n.page >= 0) {
+      await goTo(n.page);
+      if (attempt === activation && index.nodes[id] === n && page === n.page) pinned = id;
+    } else if (n.first >= 0) toggle(id, !expanded.has(id));
     schedule();
   };
 

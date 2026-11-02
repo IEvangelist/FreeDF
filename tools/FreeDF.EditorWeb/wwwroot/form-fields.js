@@ -25,7 +25,7 @@ body:not(.ff-off) #layer .ffbox.live{pointer-events:auto;cursor:move}
 
 export function createFormFields(ctx) {
   const style = document.createElement('style'); style.textContent = fieldCss; document.head.appendChild(style);
-  let list = [], selected = new Set(), armed = null, showTabs = false, focusKey = null, clip = null, busy = Promise.resolve(), editing = true;
+  let list = [], selected = new Set(), armed = null, showTabs = false, focusKey = null, clip = null, busy = Promise.resolve(), editing = true, loadEpoch = 0;
   const pending = new Map(); let moveTimer = 0;
   const mode = document.createElement('div');
   mode.id = 'form-mode'; mode.className = 'form-mode'; mode.hidden = true;
@@ -55,8 +55,11 @@ export function createFormFields(ctx) {
   const json = r => r.json();
 
   async function load(p = page()) {
+    const epoch = ++loadEpoch, document = ctx.documentEpoch();
     if (!ctx.pageCount()) { list = []; selected.clear(); updateMode(); return; }
-    list = await (await ctx.request('/api/forms?page=' + p)).json();
+    const next = await (await ctx.request('/api/forms?page=' + p)).json();
+    if (epoch !== loadEpoch || document !== ctx.documentEpoch() || p !== page()) return;
+    list = next;
     list.sort((a, b) => a.tab - b.tab);
     for (const k of [...selected]) if (!byKey(k)) selected.delete(k);
     updateMode();

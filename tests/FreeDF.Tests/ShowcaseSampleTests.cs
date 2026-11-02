@@ -54,8 +54,16 @@ public class ShowcaseSampleTests(GeneratedSamples gen) : IClassFixture<Generated
         Assert.Equal("FreeDF", doc.Info("Producer"));
         Assert.Contains("FreeDF", PageText(doc, 9));
         Assert.Contains("Official", PageText(doc, 9));
+        Assert.Contains("IEvangelist/FreeDF", PageText(doc, 9));
+        Assert.Contains("/FreeDF/", PageText(doc, 9));
+        Assert.DoesNotContain("IEvangelist/csharp-pdf", PageText(doc, 9));
+        var applications = PageText(doc, 13);
+        Assert.Contains("archived", applications, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("former", applications, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FreeDF", applications);
         var text = string.Join("\n", Enumerable.Range(0, doc.Pages.Count).Select(page => PageText(doc, page)));
         Assert.DoesNotContain("undecided", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("today's repository name", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Ab tile", text, StringComparison.Ordinal);
     }
 

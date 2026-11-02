@@ -2,8 +2,8 @@
 param(
     [Parameter(Mandatory)][string] $TargetCommit,
     [Parameter(Mandatory)][string] $ValidationLock,
-    [string] $Url = 'https://ievangelist.github.io/csharp-pdf/',
-    [string] $Repository = 'IEvangelist/csharp-pdf',
+    [string] $Url = 'https://ievangelist.github.io/FreeDF/',
+    [string] $Repository = 'IEvangelist/FreeDF',
     [long] $RunId,
     [string] $Output = (Join-Path ([IO.Path]::GetTempPath()) "editor-public-$([guid]::NewGuid().ToString('N'))"),
     [string[]] $FeatureSmoke = @()
@@ -47,8 +47,8 @@ try {
     & git diff --exit-code $sha -- src tools/FreeDF.EditorWeb tools/FreeDF.EditorWasm samples
     if ($LASTEXITCODE -ne 0) { throw 'Check out the target runtime/source before running public acceptance.' }
     $siteUri = [uri] $Url
-    if (!$siteUri.IsAbsoluteUri -or $siteUri.Scheme -notin @('http', 'https') -or $siteUri.AbsolutePath -ne '/csharp-pdf/') {
-        throw 'Url must be an absolute HTTP(S) URL ending in /csharp-pdf/.'
+    if (!$siteUri.IsAbsoluteUri -or $siteUri.Scheme -notin @('http', 'https') -or $siteUri.AbsolutePath -ne '/FreeDF/') {
+        throw 'Url must be an absolute HTTP(S) URL ending in /FreeDF/.'
     }
     if (!$RunId) {
         $runs = Read-GitHub @('run', 'list', '--repo', $Repository, '--workflow', 'editor-pages.yml',
@@ -69,8 +69,9 @@ try {
     }
     $result.run = $run.url
     $artifact = Join-Path $Output 'deployment'
-    Invoke-Checked 'gh' @('run', 'download', "$RunId", '--repo', $Repository, '--name', 'editor-validation-aot', '--dir', $artifact) (Join-Path $Output 'artifact.log')
-    $site = Join-Path $artifact 'editor-pages\wwwroot'
+    Invoke-Checked 'gh' @('run', 'download', "$RunId", '--repo', $Repository, '--name', 'editor-site', '--dir', $artifact) (Join-Path $Output 'artifact.log')
+    $site = Join-Path $artifact 'wwwroot'
+    & (Join-Path $PSScriptRoot 'Site-Manifest.ps1') -Site $site -Manifest (Join-Path $artifact 'editor-site.sha256') -Verify
     $native = @(Get-ChildItem (Join-Path $site '_framework') -Filter 'dotnet.native*.wasm')
     if ($native.Count -ne 1) { throw 'Expected exactly one AOT native WASM asset in the deployed artifact.' }
     $assets = @(Get-ChildItem $site -Recurse -File)

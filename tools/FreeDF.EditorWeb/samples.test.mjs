@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { fetchVerified, parseManifest, deepLinkName, findSample, stripDeepLink, formatSize, esc, SHOWCASE, FULL_COLLECTION } from './wwwroot/samples.js';
 
-const base = 'https://example.test/csharp-pdf/';
+const base = 'https://example.test/FreeDF/';
 const bytes = new TextEncoder().encode('%PDF-1.7 sample bytes');
 const entry = { name: '27-full-collection', file: '27-full-collection.pdf', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
 const serve = (body, init) => async url => { serve.last = String(url); return new Response(body, init); };

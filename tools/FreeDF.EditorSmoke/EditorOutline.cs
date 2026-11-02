@@ -160,6 +160,7 @@ static class EditorOutline
             }
         }
 
+        await CheckDelayedNavigation(page);
         await page.SetViewportSizeAsync(1440, 1000);
         await page.EvaluateAsync("""
             () => {
@@ -187,6 +188,37 @@ static class EditorOutline
         await OpenContents(page, false);
         await Large(page);
         await Empty(page);
+    }
+
+    static async Task CheckDelayedNavigation(IPage page)
+    {
+        var current = await page.EvaluateAsync<string>("""
+            async () => {
+              const { createOutlinePanel } = window.__editorImport
+                ? await window.__editorImport('outline-panel.mjs')
+                : await import('./outline-panel.mjs');
+              const host = document.createElement('div');
+              host.style.cssText = 'position:fixed;left:0;top:0;width:300px;height:240px;z-index:9000';
+              host.innerHTML = '<button>Pages</button><button>Contents</button><div></div><div style="height:200px;display:flex;flex-direction:column"></div>';
+              document.body.append(host);
+              try {
+                const [tabPages, tabContents, thumbs, contents] = host.children, state = { version: 1, pageCount: 3 };
+                const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                let release, panel;
+                panel = createOutlinePanel({
+                  tabPages, tabContents, thumbs, contents,
+                  load: async () => [{ title: 'Target parent', page: 2, open: true, children: [{ title: 'Same-page child', page: 2 }] }, { title: 'Current', page: 0 }],
+                  goTo: async target => { await new Promise(resolve => { release = resolve; }); panel.update(state, target); }
+                });
+                panel.update(state, 0); tabContents.click(); await frame();
+                contents.querySelector('[data-id="0"] .ct-t').click();
+                contents.querySelector('.ct-tree').dispatchEvent(new Event('scroll'));
+                await frame(); release(); await frame();
+                return contents.querySelector('[aria-current="location"] .ct-t')?.textContent ?? '';
+              } finally { host.remove(); }
+            }
+            """);
+        Check(current == "Target parent", "a delayed navigation keeps the chosen same-page outline entry pinned");
     }
 
     static async Task Large(IPage page)

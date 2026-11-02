@@ -76,7 +76,23 @@ static class EditorForms
         var tags = widgets.Single(w => w.Name == "Tags");
         Check(tags.Multi && tags.Values!.SequenceEqual(["a", "c"]), name + ": multi-select list exposes every selected value");
         Check(widgets.Single(w => w.Name == "City").Edit, name + ": editable combo exposes the Edit flag");
-        Check(await page.Locator("#layer select.wgt.list[multiple]").CountAsync() == 1 && await page.Locator("#layer input.wgt.combo[list]").CountAsync() == 1, name + ": multi list is <select multiple> and editable combo is input+datalist");
+        Check(await page.Locator("#layer select.wgt.list[multiple]").CountAsync() == 1 &&
+            await page.Locator("#layer input.wgt.combo[role=combobox][aria-autocomplete=list]:not([list])").CountAsync() == 1,
+            name + ": the multi-select list is preserved and the editable combo uses custom suggestions");
+        var city = page.Locator("#layer input.wgt.combo");
+        await city.FillAsync("San");
+        Check(await page.Locator(".select-popup [role=option]").CountAsync() == 1,
+            name + ": typing opens and filters editable combo suggestions");
+        await city.PressAsync("Escape");
+        Check(await city.EvaluateAsync<bool>("el => document.activeElement === el && el.getAttribute('aria-expanded') === 'false'"),
+            name + ": Escape closes suggestions without blurring the editable combo");
+        await city.FillAsync("San F");
+        await page.GetByRole(AriaRole.Option, new() { Name = "San Francisco", Exact = true }).ClickAsync();
+        await Poll(async () => FieldValue(JsonDocument.Parse(await Values(page)).RootElement, "City") == "sf", name + ": choosing an editable combo suggestion saves its export value");
+        Check(await city.EvaluateAsync<bool>("el => document.activeElement === el"), name + ": choosing an editable combo suggestion keeps focus");
+        await city.FillAsync("");
+        await city.PressAsync("Tab");
+        await Poll(async () => FieldValue(JsonDocument.Parse(await Values(page)).RootElement, "City") == "", name + ": editable combos still accept free text");
 
         // Page-sized background: plain click passes through with a hint, Alt+click and Tab+Enter select it.
         var big = page.Locator("#layer .obj[tabindex]").First;
@@ -138,6 +154,7 @@ static class EditorForms
         var original = PdfDocument.Load(bytes);
         var formPage = Enumerable.Range(0, original.Pages.Count).First(i => original.Pages[i].GetAnnotations().Any(a => a.Subtype == "Widget"));
         await Open(page, name, bytes, formPage);
+        if (name == "27-full-collection.pdf") await OutOfOrderFormLoads(page, formPage);
         var widgets = await Widgets(page, formPage);
         Check(widgets.Any(w => w.Kind == "text") && widgets.Any(w => w.Kind == "combo") && widgets.Any(w => w.Kind == "list") && widgets.Any(w => w.Kind == "check") && widgets.Any(w => w.Kind == "radio") && widgets.Any(w => w.Kind == "push"),
             name + ": widget listing must expose every field type: " + string.Join(",", widgets.Select(w => w.Kind)));
@@ -145,6 +162,21 @@ static class EditorForms
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .wgt').length === n", live.Count);
         Check(await page.Locator("#layer .wgt").CountAsync() == live.Count, name + ": one overlay per fillable widget");
         Check(await page.EvaluateAsync<int>("document.querySelectorAll('.wgt.push, .wgt button').length") == 0, name + ": push buttons get no interactive overlay");
+
+        Check(await page.EvaluateAsync<bool>("""
+            () => new Promise(resolve => {
+              const layer = document.getElementById('layer'), input = layer.querySelector('.wgt.text');
+              input.focus();
+              const start = input.selectionStart, end = input.selectionEnd;
+              const observer = new MutationObserver(() => {
+                observer.disconnect();
+                resolve(input.isConnected && document.activeElement === input &&
+                  input.selectionStart === start && input.selectionEnd === end);
+              });
+              observer.observe(layer, { childList: true });
+              window.dispatchEvent(new Event('resize'));
+            })
+            """), name + ": repainting unchanged form geometry preserves the focused input and caret");
 
         // A plain click on a widget edits it; it must not select a page-level group.
         var firstText = page.Locator("#layer .wgt.text").First;
@@ -176,9 +208,12 @@ static class EditorForms
                     expected[w.Name] = text; break;
                 case "combo" when w.Edit:
                     await el.FillAsync("Custom"); await el.PressAsync("Tab"); expected[w.Name] = "Custom"; break;
-                case "combo": case "list":
+                case "combo":
                     var pick = w.Options!.Select(o => o.Value).First(v => v != w.Value);
-                    await el.SelectOptionAsync(pick); expected[w.Name] = pick; break;
+                    await EditorChoices.Choose(page, el, pick); expected[w.Name] = pick; break;
+                case "list":
+                    var listPick = w.Options!.Select(o => o.Value).First(v => v != w.Value);
+                    await el.SelectOptionAsync(listPick); expected[w.Name] = listPick; break;
                 case "check":
                     var on = w.Checked ? "Off" : w.On!;
                     if (!toggledKeyboard)
@@ -198,7 +233,8 @@ static class EditorForms
         // Keyboard: Tab moves between overlays in document order.
         await page.Locator("#layer .wgt").First.FocusAsync();
         await page.Keyboard.PressAsync("Tab");
-        Check(await page.EvaluateAsync<string>("document.activeElement.getAttribute('aria-label')") == live[1].Name, name + ": Tab moves to the next field");
+        var focused = await page.EvaluateAsync<string?>("document.activeElement?.getAttribute('aria-label')");
+        Check(focused == live[1].Name, name + ": Tab moves to the next field (expected " + live[1].Name + ", focused " + (focused ?? "<none>") + ")");
 
         await Poll(async () =>
         {
@@ -263,17 +299,104 @@ static class EditorForms
         Check(stateBefore == stateAfter, name + ": mode toggle leaves version, dirty and undo/redo unchanged");
     }
 
+    static async Task OutOfOrderFormLoads(IPage page, int formPage)
+    {
+        await page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
+        await page.EvaluateAsync("""
+            () => {
+              const original = pdfHost.request;
+              let release, finished;
+              const pending = new Promise(resolve => { release = resolve; });
+              window.__formLoadFinished = new Promise(resolve => { finished = resolve; });
+              window.__releaseFormLoad = release;
+              window.__originalFormRequest = original;
+              pdfHost.request = async (...args) => {
+                const response = await original(...args);
+                if (args[0] === '/api/forms?page=0') {
+                  pdfHost.request = original;
+                  window.__formLoadHeld = true;
+                  const read = response.json.bind(response);
+                  response.json = async () => { const data = await read(); setTimeout(finished, 0); return data; };
+                  await pending;
+                }
+                return response;
+              };
+            }
+            """);
+        try
+        {
+            await page.Locator("#pn").FillAsync("1");
+            await page.Locator("#pn").PressAsync("Enter");
+            await page.WaitForFunctionAsync("window.__formLoadHeld === true");
+            await page.Locator("#pn").FillAsync((formPage + 1).ToString());
+            await page.Locator("#pn").PressAsync("Enter");
+            await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && !document.getElementById('view').inert && document.querySelectorAll('#layer .ffbox').length > 0", formPage + 1);
+            await page.EvaluateAsync("async () => { window.__releaseFormLoad(); await window.__formLoadFinished; }");
+            await page.Locator("#lock").ClickAsync();
+            Check(await page.Locator("#layer .ffbox").CountAsync() > 0, "A delayed previous-page form load must not replace the current page's fields.");
+            await page.Locator("#lock").ClickAsync();
+            await page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Fill out", Exact = true }).ClickAsync();
+        }
+        finally
+        {
+            await page.EvaluateAsync("""
+                () => {
+                  window.__releaseFormLoad?.();
+                  pdfHost.request = window.__originalFormRequest;
+                  delete window.__formLoadHeld; delete window.__formLoadFinished;
+                  delete window.__releaseFormLoad; delete window.__originalFormRequest;
+                }
+                """);
+        }
+    }
+
     static async Task Open(IPage page, string name, byte[] bytes, int formPage)
     {
         await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = name, MimeType = "application/pdf", Buffer = bytes });
-        await page.WaitForFunctionAsync("name => document.getElementById('name').textContent === name && document.getElementById('status').textContent.startsWith('Ready.') && document.getElementById('base')?.naturalWidth > 0", name);
+        try { await page.WaitForFunctionAsync("name => document.getElementById('name').textContent === name && document.getElementById('status').textContent.startsWith('Ready.') && document.getElementById('base')?.naturalWidth > 0", name); }
+        catch (TimeoutException e)
+        {
+            var state = await page.EvaluateAsync<string>("() => JSON.stringify({ name: document.getElementById('name').textContent, status: document.getElementById('status').textContent, baseWidth: document.getElementById('base')?.naturalWidth })");
+            throw new Exception($"{name}: opening did not reach Ready. State: {state}", e);
+        }
         await page.Locator("[data-tool=select]").ClickAsync();
         if (formPage > 0)
         {
             await page.Locator("#pn").FillAsync((formPage + 1).ToString());
+            Check(await page.EvaluateAsync<bool>("""
+                () => new Promise(resolve => {
+                  const input = document.getElementById('pn'), value = input.value;
+                  const observer = new MutationObserver(() => {
+                    observer.disconnect();
+                    resolve(document.activeElement === input && input.value === value);
+                  });
+                  observer.observe(document.getElementById('layer'), { childList: true });
+                  window.dispatchEvent(new Event('resize'));
+                })
+                """), name + ": repainting preserves a page number being entered");
             await page.Locator("#pn").PressAsync("Enter");
         }
-        await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && !document.getElementById('view').inert && document.querySelectorAll('#layer .ffbox').length > 0", formPage + 1);
+        try
+        {
+            await page.WaitForFunctionAsync("p => document.getElementById('pn').value === String(p) && !document.getElementById('view').inert && document.querySelectorAll('#layer .ffbox').length > 0", formPage + 1);
+        }
+        catch (TimeoutException e)
+        {
+            var state = await page.EvaluateAsync<string>("""
+                async p => {
+                  const base = document.getElementById('base');
+                  const forms = await (await pdfHost.request(`/api/forms?page=${p}`)).json();
+                  return JSON.stringify({ name: document.getElementById('name').textContent,
+                    page: document.getElementById('pn').value, status: document.getElementById('status').textContent,
+                    viewInert: document.getElementById('view').inert,
+                    formBoxes: document.querySelectorAll('#layer .ffbox').length,
+                    widgets: document.querySelectorAll('#layer .wgt').length, forms: forms.length,
+                    mode: [...document.querySelectorAll('#form-mode button')].map(b => [b.textContent, b.getAttribute('aria-pressed')]),
+                    loadedUrl: base?.dataset.loadedUrl, targetUrl: base?.dataset.targetUrl });
+                }
+                """, formPage);
+            throw new Exception($"{name}: form page {formPage + 1} did not finish loading. Page/render state: {state}", e);
+        }
         var fill = page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Fill out", Exact = true });
         Check(await page.Locator("#form-mode").GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).GetAttributeAsync("aria-pressed") == "true", name + ": document defaults to Edit");
         var artifacts = Environment.GetEnvironmentVariable("EDITOR_SMOKE_ARTIFACTS");

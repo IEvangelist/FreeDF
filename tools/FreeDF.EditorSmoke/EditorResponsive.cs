@@ -100,9 +100,9 @@ static class EditorResponsive
             }
             await page.Locator("#appearance").ClickAsync();
             await page.GetByRole(AriaRole.Menuitem, new() { Name = "Layout and density" }).ClickAsync();
-            await page.GetByLabel("Menus and toolbars", new() { Exact = true }).SelectOptionAsync("comfortable");
-            await page.GetByLabel("Sidebars and controls", new() { Exact = true }).SelectOptionAsync("compact");
-            await page.GetByLabel("Interface text size", new() { Exact = true }).SelectOptionAsync("large");
+            await EditorChoices.Choose(page, page.GetByRole(AriaRole.Combobox, new() { Name = "Menus and toolbars", Exact = true }), "comfortable");
+            await EditorChoices.Choose(page, page.GetByRole(AriaRole.Combobox, new() { Name = "Sidebars and controls", Exact = true }), "compact");
+            await EditorChoices.Choose(page, page.GetByRole(AriaRole.Combobox, new() { Name = "Interface text size", Exact = true }), "large");
             await Check("getComputedStyle(document.documentElement).fontSize === '18px' && getComputedStyle(document.querySelector('#props section')).paddingTop === '8px' && getComputedStyle(document.getElementById('tl')).height === '38px'", "density must change actual text, sidebar and toolbar geometry independently");
             await page.GetByRole(AriaRole.Button, new() { Name = "Done", Exact = true }).ClickAsync();
             var total = await page.EvaluateAsync<int>("Number(document.getElementById('pt').textContent.replace(/\\D/g,''))");
@@ -127,7 +127,7 @@ static class EditorResponsive
             await Check("Math.abs(document.querySelectorAll('.ct-row')[1].getBoundingClientRect().top - document.querySelectorAll('.ct-row')[0].getBoundingClientRect().top - 24) < 1 && getComputedStyle(document.querySelector('.ct-row')).height === '24px'", "virtualized outline rows must use the selected sidebar density");
             await page.Locator("#appearance").ClickAsync();
             await page.GetByRole(AriaRole.Menuitem, new() { Name = "Layout and density" }).ClickAsync();
-            await page.GetByLabel("Sidebars and controls", new() { Exact = true }).SelectOptionAsync("comfortable");
+            await EditorChoices.Choose(page, page.GetByRole(AriaRole.Combobox, new() { Name = "Sidebars and controls", Exact = true }), "comfortable");
             await page.GetByRole(AriaRole.Button, new() { Name = "Done", Exact = true }).ClickAsync();
             await page.WaitForFunctionAsync("getComputedStyle(document.querySelector('.ct-row')).height === '36px' && Math.abs(document.querySelectorAll('.ct-row')[1].getBoundingClientRect().top - document.querySelectorAll('.ct-row')[0].getBoundingClientRect().top - 36) < 1");
             await page.Keyboard.PressAsync("Alt+n");
@@ -172,6 +172,7 @@ static class EditorResponsive
             // Dialogs fit and their buttons stay reachable.
             foreach (var (state, open) in new (string, Func<Task>)[]
             {
+                ("new dialog", () => page.Keyboard.PressAsync("Alt+n")),
                 ("save dialog", () => Click(page, "#dl")),
                 ("properties dialog", async () => { await Click(page, "#fileBtn"); await page.GetByRole(AriaRole.Menuitem, new() { Name = "Document properties" }).First.EvaluateAsync("e => e.click()"); }),
                 ("merge dialog", () => page.Locator("#merge").SetInputFilesAsync(new[] { new FilePayload { Name = "a.pdf", MimeType = "application/pdf", Buffer = pdf }, new FilePayload { Name = "b.pdf", MimeType = "application/pdf", Buffer = pdf } })),
@@ -180,7 +181,8 @@ static class EditorResponsive
                 await open(); await page.Locator(".dlg").WaitForAsync(); await page.WaitForTimeoutAsync(350);
                 if (await page.EvaluateAsync<string>(Fits, ".dlg") is { Length: > 0 } fit) issues.Add($"[{state}] {fit}");
                 if (!await page.EvaluateAsync<bool>("() => { const b = document.querySelector('.dlg .dok'), r = b.getBoundingClientRect(); return r.bottom <= innerHeight + 1 && r.right <= innerWidth + 1 && r.top >= -1; }")) issues.Add($"[{state}] primary button is not reachable without scrolling the page");
-                if (state == "save dialog" && artifacts is not null) await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, name + "-dialog.png") });
+                if (state is "new dialog" or "save dialog" && artifacts is not null)
+                    await page.ScreenshotAsync(new() { Path = Path.Combine(artifacts, name + "-" + state.Replace(' ', '-') + ".png") });
                 await page.Keyboard.PressAsync("Escape"); await page.WaitForTimeoutAsync(100);
             }
 
@@ -193,7 +195,7 @@ static class EditorResponsive
                     var open = await page.EvaluateAsync<bool>("p => !document.querySelector('main').classList.contains(p === '#left' ? 'hide-l' : 'hide-r')", panel);
                     if (!open) await Click(page, toggle);
                     await page.WaitForTimeoutAsync(300);
-                    var sheet = await page.EvaluateAsync<string>("p => { const e = document.querySelector(p), s = getComputedStyle(e), r = e.getBoundingClientRect(); return s.position === 'absolute' && r.width <= innerWidth * .9 + 1 && r.left >= -1 && r.right <= innerWidth + 1 && getComputedStyle(document.querySelector('main'), '::before').content !== 'none' ? '' : `not a sheet: position ${s.position}, width ${Math.round(r.width)} of ${innerWidth}, scrim ${getComputedStyle(document.querySelector('main'), '::before').content}`; }", panel);
+                    var sheet = await page.EvaluateAsync<string>("p => { const e = document.querySelector(p), s = getComputedStyle(e), r = e.getBoundingClientRect(); return s.position === 'absolute' && r.width >= Math.min(120, innerWidth / 2) && r.width <= innerWidth * .9 + 1 && r.left >= -1 && r.right <= innerWidth + 1 && getComputedStyle(document.querySelector('main'), '::before').content !== 'none' ? '' : `not a sheet: position ${s.position}, width ${Math.round(r.width)} of ${innerWidth}, scrim ${getComputedStyle(document.querySelector('main'), '::before').content}`; }", panel);
                     if (sheet != "") issues.Add($"[{panel}] {sheet}");
                     await Check($"{panel} sheet open");
                     if (!open) await Click(page, toggle);

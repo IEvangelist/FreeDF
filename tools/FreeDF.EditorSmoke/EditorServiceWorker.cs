@@ -165,7 +165,7 @@ static partial class EditorServiceWorker
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         await using var app = builder.Build();
         var served = new ConcurrentQueue<string>();
-        app.UsePathBase("/csharp-pdf");
+        app.UsePathBase("/FreeDF");
         app.Use(async (context, next) =>
         {
             served.Enqueue(context.Request.Path.Value!);
@@ -215,7 +215,7 @@ static partial class EditorServiceWorker
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
-        var url = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/csharp-pdf/";
+        var url = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/FreeDF/";
         using var pw = await Playwright.CreateAsync();
         await using var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
         await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 1000 }, DeviceScaleFactor = 1 });
@@ -283,8 +283,8 @@ static partial class EditorServiceWorker
         await WaitFor($"caches.keys().then(k => k.filter(n => n.startsWith(\"freedf-editor-\"))).then(async k => k.length === 1 && (await (await caches.open(k[0])).keys()).length === {manifestA.Urls.Length})", "precache completion");
         Check((await CacheNames()).Single() == "freedf-editor-" + manifestA.Version, "one versioned cache.");
         var cachedUrls = await page.EvaluateAsync<string[]>("caches.keys().then(k => k.filter(n => n.startsWith(\"freedf-editor-\"))).then(async k => (await (await caches.open(k[0])).keys()).map(r => new URL(r.url).pathname))");
-        Check(cachedUrls.All(u => u.StartsWith("/csharp-pdf/", StringComparison.Ordinal) && !u.Contains("/api/")) && cachedUrls.Length == manifestA.Urls.Length, "only manifest assets are cached.");
-        Check(manifestA.LazyUrls.All(url => !cachedUrls.Contains("/csharp-pdf/" + url)), "samples and fallback font assets are not precached.");
+        Check(cachedUrls.All(u => u.StartsWith("/FreeDF/", StringComparison.Ordinal) && !u.Contains("/api/")) && cachedUrls.Length == manifestA.Urls.Length, "only manifest assets are cached.");
+        Check(manifestA.LazyUrls.All(url => !cachedUrls.Contains("/FreeDF/" + url)), "samples and fallback font assets are not precached.");
         await WaitFor("window.editorOffline?.state === 'ready' && !!window.editorPwa && !!window.testFileLaunch", "PWA integration and offline readiness");
         var manifestSession = await context.NewCDPSessionAsync(page);
         var appManifest = await manifestSession.SendAsync("Page.getAppManifest");

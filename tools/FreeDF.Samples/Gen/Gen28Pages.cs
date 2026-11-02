@@ -183,7 +183,7 @@ sealed partial class Gen28
             ("Traceable", "Each chart carries a strip naming its source file, run date, hardware and build mode."),
             ("Misses stay visible", "Unmet goals are drawn in rose; slower results point right, not hidden."),
             ("No favourable rounding", "Values are as reported. Ratios are computed from reported means, to two decimals."),
-            ("FreeDF is the name", "FreeDF names the editor and its tools. The repository path and PortableDocument APIs stay stable."),
+            ("FreeDF is the name", "FreeDF names the editor, repository and tools. PortableDocument APIs stay stable."),
             ("Parity is not complete", "Partial rows stay Partial here. Validators are heuristic, not certification."),
         ];
         var ry = y - 22;

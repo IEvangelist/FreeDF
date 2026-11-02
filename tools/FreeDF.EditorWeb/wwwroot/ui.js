@@ -51,7 +51,181 @@
   // Before v2 the accent also drove primary actions. Retain that primary for saved choices.
   if (!store.get('editor.colors.v2') && !store.get('editor.primary') && validColor(store.get('editor.accent'))) doc.dataset.primary = store.get('editor.accent');
   setPrimary(primary()); setAccent(accent()); store.set('editor.colors.v2', '1');
-  window.editorUi = { toast, say, setTheme, setMotion, setFullMotion, setPrimary, primary, setAccent, accent };
+  window.editorUi = { toast, say, setTheme, setMotion, setFullMotion, setPrimary, primary, setAccent, accent,
+    enhanceSelect, enhanceSelects, refreshSelect, enhanceEditableCombo };
+
+  const enhancedSelects = new WeakMap();
+  let choicePopup = null;
+  function closeChoices() {
+    if (!choicePopup) return;
+    const { owner, list } = choicePopup;
+    owner.control.setAttribute('aria-expanded', 'false');
+    owner.control.removeAttribute('aria-controls');
+    owner.control.removeAttribute('aria-activedescendant');
+    list.remove(); choicePopup = null;
+  }
+  function positionChoices() {
+    if (!choicePopup) return;
+    const { owner, list } = choicePopup;
+    if (!owner.control.isConnected) return closeChoices();
+    const r = owner.control.getBoundingClientRect(), width = Math.min(Math.max(r.width, 140), innerWidth - 16);
+    list.style.width = width + 'px';
+    list.style.left = Math.max(8, Math.min(r.left, innerWidth - width - 8)) + 'px';
+    const below = innerHeight - r.bottom - 8, above = r.top - 8, up = below < 160 && above > below;
+    list.style.maxHeight = Math.max(40, Math.min(256, up ? above : below)) + 'px';
+    list.style.top = up ? Math.max(8, r.top - list.offsetHeight - 4) + 'px' : r.bottom + 4 + 'px';
+  }
+  function setActiveChoice(i, scroll = true) {
+    const p = choicePopup;
+    p.list.children[p.active]?.setAttribute('aria-selected', 'false');
+    p.active = i;
+    const row = p.list.children[i];
+    if (row) { row.setAttribute('aria-selected', 'true'); p.owner.control.setAttribute('aria-activedescendant', row.id); }
+    else p.owner.control.removeAttribute('aria-activedescendant');
+    if (scroll) row?.scrollIntoView({ block: 'nearest' });
+  }
+  function drawChoices() {
+    if (!choicePopup) return;
+    const p = choicePopup, options = p.owner.options();
+    p.active = Math.max(-1, Math.min(p.active, options.length - 1));
+    p.list.replaceChildren(...options.map((option, i) => {
+      const row = el('div', { className: 'select-option', textContent: option.label });
+      row.id = `${p.list.id}-${i}`; row.dataset.value = option.value; row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', i === p.active);
+      if (option.disabled) row.setAttribute('aria-disabled', 'true');
+      row.onpointerdown = e => e.preventDefault();
+      row.onpointermove = () => { if (!option.disabled && p.active !== i) setActiveChoice(i, false); };
+      row.onclick = () => { if (!option.disabled) chooseOption(i); };
+      return row;
+    }));
+    if (p.active >= 0) p.owner.control.setAttribute('aria-activedescendant', `${p.list.id}-${p.active}`);
+    else p.owner.control.removeAttribute('aria-activedescendant');
+    positionChoices();
+    p.list.children[p.active]?.scrollIntoView({ block: 'nearest' });
+  }
+  function openChoices(owner, query = '') {
+    if (owner.control.disabled) return;
+    if (choicePopup?.owner === owner) return;
+    closeChoices();
+    owner.query = query;
+    const list = el('div', { className: 'select-popup', id: owner.listId });
+    list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', `${owner.control.getAttribute('aria-label')} options`);
+    const options = owner.options(), selected = options.findIndex(o => !o.disabled && (o.selected ?? o.value === owner.value()));
+    choicePopup = { owner, list, active: selected >= 0 ? selected : options.findIndex(o => !o.disabled) };
+    owner.control.setAttribute('aria-controls', owner.listId);
+    owner.control.setAttribute('aria-expanded', 'true');
+    (owner.control.closest('[role=dialog]') || document.body).append(list); drawChoices();
+  }
+  function chooseOption(i) {
+    const p = choicePopup, option = p?.owner.options()[i];
+    if (!option || option.disabled) return;
+    closeChoices(); p.owner.choose(option);
+    if (p.owner.control.isConnected) p.owner.control.focus();
+  }
+  function choiceKeys(owner, editable = false) {
+    let typed = '', typedAt = 0;
+    owner.control.addEventListener('keydown', e => {
+      const open = choicePopup?.owner === owner, key = e.key;
+      if (key === 'Escape' && open) { e.preventDefault(); e.stopImmediatePropagation(); closeChoices(); return; }
+      if (key === 'Tab') { if (open) closeChoices(); return; }
+      if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' && !editable || key === 'End' && !editable) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (!open) openChoices(owner);
+        if (open || key === 'Home' || key === 'End') {
+          const options = owner.options(), step = key === 'ArrowUp' || key === 'End' ? -1 : 1;
+          let i = key === 'Home' ? 0 : key === 'End' ? options.length - 1 : choicePopup.active + step;
+          while (i >= 0 && i < options.length && options[i].disabled) i += step;
+          if (i >= 0 && i < options.length) setActiveChoice(i);
+        }
+        return;
+      }
+      if ((key === 'Enter' || key === ' ' && !editable) && (open || !editable)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (open) chooseOption(choicePopup.active); else openChoices(owner);
+        return;
+      }
+      if (!editable && key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (!open) { openChoices(owner); typed = ''; }
+        typed = performance.now() - typedAt > 700 ? key : typed + key; typedAt = performance.now();
+        const options = owner.options(), i = options.findIndex(o => !o.disabled && o.label.toLowerCase().startsWith(typed.toLowerCase()));
+        if (i >= 0) setActiveChoice(i);
+      }
+    }, true);
+  }
+  function selectLabel(select) {
+    const explicit = select.getAttribute('aria-label');
+    if (explicit) return explicit;
+    const label = select.labels?.[0]?.cloneNode(true);
+    label?.querySelectorAll('select, input, button').forEach(e => e.remove());
+    return label?.textContent.trim() || select.title || 'Choose an option';
+  }
+  function refreshSelect(select) {
+    const owner = enhancedSelects.get(select);
+    if (!owner) return;
+    owner.valueLabel.textContent = select.selectedOptions[0]?.textContent ?? 'Choose an option';
+    owner.control.disabled = select.disabled;
+    if (choicePopup?.owner === owner) drawChoices();
+  }
+  function enhanceSelect(select) {
+    if (enhancedSelects.has(select) || select.multiple || select.size > 1) return;
+    const widget = select.classList.contains('wgt'), shell = el('span', { className: 'select-shell' + (widget ? ' select-widget' : '') });
+    const control = el('button', { type: 'button', className: 'select-trigger' + (widget ? ' wgt combo' : '') });
+    const valueLabel = el('span', { className: 'select-value' }); control.append(valueLabel);
+    control.setAttribute('role', 'combobox'); control.setAttribute('aria-label', selectLabel(select));
+    const owner = { control, valueLabel, listId: nextId('select-list'), value: () => select.value,
+      options: () => [...select.options].map((o, index) => ({ index, value: o.value, label: o.textContent, selected: o.selected, disabled: o.disabled || o.parentElement?.disabled })),
+      choose: o => {
+        if (select.selectedIndex === o.index) return;
+        select.selectedIndex = o.index; refreshSelect(select);
+        select.dispatchEvent(new Event('input', { bubbles: true }));
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      } };
+    control.setAttribute('aria-haspopup', 'listbox'); control.setAttribute('aria-expanded', 'false');
+    if (widget) { shell.style.cssText = select.style.cssText; select.removeAttribute('style'); select.classList.remove('wgt', 'combo'); }
+    select.before(shell); shell.append(select, control); select.hidden = true; select.tabIndex = -1; select.setAttribute('aria-hidden', 'true');
+    enhancedSelects.set(select, owner); select.addEventListener('change', () => refreshSelect(select)); refreshSelect(select);
+    control.onpointerdown = e => e.stopPropagation();
+    control.onclick = () => choicePopup?.owner === owner ? closeChoices() : openChoices(owner);
+    choiceKeys(owner);
+  }
+  function enhanceSelects(root) { root.querySelectorAll('select').forEach(enhanceSelect); }
+  function enhanceEditableCombo(input, list) {
+    const shell = el('span', { className: 'select-edit-widget' }), toggle = el('button', { type: 'button', className: 'select-edit-toggle', tabIndex: -1 });
+    const options = [...list.options].map(o => ({ value: o.value, label: o.label || o.value, disabled: o.disabled }));
+    shell.style.cssText = input.style.cssText; input.removeAttribute('style'); input.removeAttribute('list');
+    input.before(shell); shell.append(input, toggle); list.remove();
+    toggle.disabled = input.disabled;
+    toggle.setAttribute('aria-label', `Show ${input.getAttribute('aria-label')} options`);
+    input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list');
+    const owner = { control: input, listId: nextId('select-list'), query: '', value: () => input.value,
+      options: () => options.filter(o => !owner.query || o.label.toLowerCase().includes(owner.query.toLowerCase()) || o.value.toLowerCase().includes(owner.query.toLowerCase())),
+      choose: o => {
+        if (input.value === o.value) return;
+        owner.accepting = true;
+        try {
+          input.value = o.value; input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        } finally { owner.accepting = false; }
+      } };
+    input.setAttribute('aria-haspopup', 'listbox'); input.setAttribute('aria-expanded', 'false');
+    toggle.onpointerdown = e => { e.preventDefault(); e.stopPropagation(); };
+    toggle.onclick = () => { input.focus(); choicePopup?.owner === owner ? closeChoices() : openChoices(owner); };
+    input.addEventListener('input', () => {
+      if (owner.accepting) return;
+      owner.query = input.value;
+      const options = owner.options();
+      if (!options.length) { if (choicePopup?.owner === owner) closeChoices(); return; }
+      if (choicePopup?.owner !== owner) openChoices(owner, input.value);
+      else { choicePopup.active = options.findIndex(o => !o.disabled); drawChoices(); }
+    });
+    choiceKeys(owner, true);
+  }
+  document.addEventListener('pointerdown', e => {
+    if (choicePopup && !choicePopup.list.contains(e.target) && !choicePopup.owner.control.contains(e.target) && !e.target.closest?.('.select-edit-toggle')) closeChoices();
+  }, true);
+  document.addEventListener('scroll', positionChoices, true);
+  addEventListener('resize', positionChoices);
 
   // Focus handling shared by the palette and About dialogs.
   // Only elements this layer made inert are released again; the editor's own inert states (startup, recovery gating) are never overwritten.
@@ -134,7 +308,7 @@
       box.classList.add('about');
       box.append(el('h2', { textContent: 'FreeDF PDF editor', style: 'margin:0;padding:16px 20px 0;font-size:1.0625rem' }),
         el('div', { className: 'dbody', style: 'padding:12px 20px' }, el('p', { textContent: 'Documents are opened and edited in this browser tab. Nothing is uploaded.' }), dl,
-          el('p', {}, 'Open source on ', el('a', { href: 'https://github.com/IEvangelist/csharp-pdf', target: '_blank', rel: 'noopener noreferrer', textContent: 'GitHub' }), '. ',
+          el('p', {}, 'Open source on ', el('a', { href: 'https://github.com/IEvangelist/FreeDF', target: '_blank', rel: 'noopener noreferrer', textContent: 'GitHub' }), '. ',
             el('a', { href: 'https://github.com/sponsors/IEvangelist?frequency=one-time', target: '_blank', rel: 'noopener noreferrer', textContent: 'Sponsor the project' }), '.')),
         el('div', { className: 'dfoot' }, done));
       done.focus();
@@ -157,11 +331,11 @@
       }
       const reset = el('button', { type: 'button', textContent: 'Reset density', onclick: () => {
         for (const key of Object.keys(layoutChoices)) setLayout(key, 'default');
-        for (const select of qa('select', body)) select.value = 'default';
+        for (const select of qa('select', body)) { select.value = 'default'; refreshSelect(select); }
       } });
       const done = el('button', { type: 'button', className: 'primary', textContent: 'Done', onclick: close });
       box.append(el('h2', { textContent: 'Layout and density' }), body, el('div', { className: 'dfoot' }, reset, done));
-      q('select', body).focus();
+      enhanceSelects(body); q('[role=combobox]', body).focus();
     });
   }
 
@@ -510,7 +684,7 @@
   addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); e.stopImmediatePropagation(); q('.pal-scrim') ? 0 : palette(); }
     else if (e.key === '?' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && !document.activeElement?.isContentEditable && !q('.mdl, .pal-scrim')) { e.preventDefault(); about(); }
-    else if (e.key === 'Escape' && matchMedia('(max-width: 760px)').matches && !q('.cm, .mdl, .pal-scrim')) {
+    else if (e.key === 'Escape' && !choicePopup && matchMedia('(max-width: 760px)').matches && !q('.cm, .mdl, .pal-scrim')) {
       const m = q('main'); for (const [c, b] of [['hide-l', 'tl'], ['hide-r', 'tr']]) if (!m.classList.contains(c) && document.activeElement?.closest(c === 'hide-l' ? '#left' : '#props')) { e.preventDefault(); $(b).click(); $(b).focus(); }
     }
   }, true);

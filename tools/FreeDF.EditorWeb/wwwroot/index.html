@@ -94,7 +94,7 @@
     <a id="sponsor" class="sponsor" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg></a>
   </div>
   <button id="dl" class="primary" title="Download the edited PDF"><svg class="i"><use href="#i-download"/></svg><span class="lbl">Download</span></button>
-  <a id="ghLink" class="gh" href="https://github.com/IEvangelist/csharp-pdf" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
+  <a id="ghLink" class="gh" href="https://github.com/IEvangelist/FreeDF" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
 </header>
 <main>
     <div id="tools">
@@ -143,7 +143,7 @@
   </div>
   <aside id="props"></aside>
 </main>
-<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><button id="recovery" hidden disabled aria-live="polite">No local recovery</button><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span><a id="sponsorBadge" class="sponsor-badge" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg>Sponsor</a><a id="ghFooter" class="gh gh-foot" href="https://github.com/IEvangelist/csharp-pdf" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a></footer>
+<footer><span id="status" role="status" aria-live="polite">Pick a tool and drag on the page. Click page text to edit it. Ctrl+Z undoes.</span><span class="sp"></span><button id="recovery" hidden disabled aria-live="polite">No local recovery</button><span id="keys"><kbd>Shift</kbd> square / lock axis <kbd>Alt</kbd> from centre <kbd>[</kbd> <kbd>]</kbd> panels <kbd>Ctrl+D</kbd> duplicate</span><a id="sponsorBadge" class="sponsor-badge" href="https://github.com/sponsors/IEvangelist?frequency=one-time" target="_blank" rel="noopener noreferrer" title="Sponsor (one-time) on GitHub" aria-label="Sponsor (one-time) on GitHub"><svg class="i"><use href="#i-heart"/></svg>Sponsor</a><a id="ghFooter" class="gh gh-foot" href="https://github.com/IEvangelist/FreeDF" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a></footer>
 <script>
 addEventListener('editor-ready', () => {
 const host = window.pdfHost;
@@ -245,7 +245,37 @@ function convertSpan(s, text = s.text) {
   return it;
 }
 
-function selectSpan(s) { curSpan = s; cur = null; curObj = null; paint(); props(); }
+function selectionHint() {
+  if (document.querySelector('main').classList.contains('hide-r'))
+    status(locked ? 'Position is locked. Open Properties (]) to edit this selection.' : 'Drag to move. Open Properties (]) for exact position and other controls.');
+}
+
+function markSelection(target, it) {
+  const layer = $('layer');
+  layer.querySelectorAll('.span.on, .it.on, .obj.on').forEach(el => {
+    el.classList.remove('on');
+    if (el.classList.contains('span')) el.style.outline = '';
+    if (el._obj) setObjectAffordance(el, el._obj);
+  });
+  layer.querySelectorAll('.hd').forEach(el => el.remove());
+  if (target.classList.contains('span')) {
+    target.classList.add('on');
+    target.style.outline = '1px solid var(--accent, #7c5cff)';
+  } else if (target.classList.contains('it')) {
+    target.classList.add('on');
+    if (!editing) boxHandles(target, it);
+  } else if (it?.type === 'line') lineHandles(layer, it);
+}
+
+function selectSpan(s, target) {
+  curSpan = s; cur = null; curObj = null;
+  markSelection(target); props(); selectionHint();
+}
+
+function focusTextProperties(selector) {
+  if (document.querySelector('main').classList.contains('hide-r')) setPanel('r', true, true);
+  $('props').querySelector(selector)?.focus();
+}
 
 function spanProps() {
   const s = curSpan, p = $('props'), draft = spanItem(s);
@@ -549,27 +579,42 @@ function toLayer(cx, cy) {
   return r === 0 ? [x, y] : r === 90 ? [y, dw - x] : r === 180 ? [dw - x, dh - y] : [dh - y, x];
 }
 
+function setObjectAffordance(el, o) {
+  const big = pageSized(o) && o !== curObj;
+  el.title = big ? `Alt+click, or focus and press Enter, to select this ${o.kind === 'form' ? 'whole page' : 'page-sized ' + o.kind}` :
+    `Move or resize this ${o.kind}${o.inForm ? ' inside its graphic group' : ''}`;
+  if (big) {
+    el.tabIndex = 0; el.setAttribute('role', 'button'); el.setAttribute('aria-label', 'Select whole-page content (Enter)');
+    el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectObj(o); } };
+  } else {
+    el.removeAttribute('tabindex'); el.removeAttribute('role'); el.removeAttribute('aria-label'); el.onkeydown = null;
+  }
+}
+
 function paint() {
   const layer = $('layer'); if (!layer) return;
-  layer.innerHTML = '';
-  paintFind(layer);
+  const keepWidgets = widgetEl?.parentNode === layer && widgetKey === `${widgetStamp}|${S}|${tool}` &&
+    tool === 'select' && widgets.length && !formUi?.editing();
+  const content = document.createDocumentFragment(), imageLoads = [];
+  if (keepWidgets) {
+    for (const child of [...layer.childNodes]) if (child !== widgetEl) child.remove();
+  } else layer.replaceChildren();
+  paintFind(content);
   if (tool === 'select') {
     for (const o of objs) {
       if (o.edit?.delete) continue;
       const [x0, y0, x1, y1] = oBox(o);
-      const e = document.createElement('div'); e.className = 'obj' + (o === curObj ? ' on' : ''); e.title = `Move or resize this ${o.kind}${o.inForm ? ' inside its graphic group' : ''}`;
+      const e = document.createElement('div'); e._obj = o; e.className = 'obj' + (o === curObj ? ' on' : '');
       e.style.left = x0 * S + 'px'; e.style.top = y0 * S + 'px'; e.style.width = Math.max(x1 - x0, 1) * S + 'px'; e.style.height = Math.max(y1 - y0, 1) * S + 'px';
-      const big = pageSized(o) && o !== curObj;
-      e.title = big ? `Alt+click, or focus and press Enter, to select this ${o.kind === 'form' ? 'whole page' : 'page-sized ' + o.kind}` : e.title;
-      if (big) { e.tabIndex = 0; e.setAttribute('role', 'button'); e.setAttribute('aria-label', 'Select whole-page content (Enter)'); e.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectObj(o); } }; }
+      setObjectAffordance(e, o);
       e.onpointerdown = ev => {
         if (tool !== 'select') return;
-        if (!big || ev.altKey) startObjMove(ev, o);
+        if (o === curObj || !pageSized(o) || ev.altKey) startObjMove(ev, o);
         else if (pageHint !== $('name').textContent) { pageHint = $('name').textContent; status('Plain clicks pass through page-sized content. Alt+click, or Tab to it and press Enter, to select the whole page.'); }
       };
       if (o === curObj) for (const [k, x, y, c] of [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']])
         handle(e, k, x, y, c, ev => startObjResize(ev, o, k));
-      layer.appendChild(e);
+      content.appendChild(e);
     }
   }
   if (tool === 'select') {
@@ -581,17 +626,17 @@ function paint() {
       b.style.left = s.x * S + 'px'; b.style.top = (s.y - 0.9 * s.size) * S + 'px';
       b.style.width = Math.max(s.width, 2) * S + 'px'; b.style.height = 1.15 * s.size * S + 'px';
       b.onpointerdown = ev => {
-        if (locked) { ev.stopPropagation(); selectSpan(s); return; }
+        if (locked) { ev.stopPropagation(); selectSpan(s, b); return; }
         let it;
-        drag(ev, () => selectSpan(s), (point, start, event) => {
+        drag(ev, () => selectSpan(s, b), (point, start, event) => {
           if (!it) { it = spanItem(s); items.push(it); cur = it; curSpan = null; }
           let dx = (point[0] - start[0]) / S, dy = (point[1] - start[1]) / S;
           if (event?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
           it.x = s.x + dx; it.y = s.y - .95 * s.size + dy; paint();
         });
       };
-      b.ondblclick = () => $('props').querySelector('[data-original-text]')?.focus();
-      layer.appendChild(b);
+      b.ondblclick = () => focusTextProperties('[data-original-text]');
+      content.appendChild(b);
     }
   }
   for (const it of items) {
@@ -603,8 +648,8 @@ function paint() {
       l.setAttribute('x1', it.x * S); l.setAttribute('y1', it.y * S); l.setAttribute('x2', it.x2 * S); l.setAttribute('y2', it.y2 * S);
       l.setAttribute('stroke', it.stroke || '#000'); l.setAttribute('stroke-width', Math.max(it.strokeWidth * S, 1)); l.setAttribute('opacity', it.opacity);
       l.onpointerdown = e => startMove(e, it); l._it = it;
-      svg.appendChild(l); layer.appendChild(svg);
-      if (it === cur) lineHandles(layer, it);
+      svg.appendChild(l); content.appendChild(svg);
+      if (it === cur) lineHandles(content, it);
       continue;
     }
     const e = document.createElement('div'); e._it = it;
@@ -632,9 +677,11 @@ function paint() {
     e.onpointerdown = ev => { if (tool === 'select' && !e.isContentEditable) startMove(ev, it); };
     if (it.type === 'text') e.ondblclick = () => editText(e, it);
     if (it === cur && !editing) boxHandles(e, it);
-    layer.appendChild(e);
-    if (it.type === 'image') setImage(e.querySelector('img'), `/api/asset/${it.asset}`).catch(reportError);
+    content.appendChild(e);
+    if (it.type === 'image') imageLoads.push([e.querySelector('img'), `/api/asset/${it.asset}`]);
   }
+  layer.insertBefore(content, keepWidgets ? widgetEl : null);
+  for (const [image, url] of imageLoads) setImage(image, url).catch(reportError);
   formUi?.paint(layer);
   if (!formUi?.editing()) paintWidgets(layer);
   annot?.pageChanged();
@@ -678,18 +725,19 @@ const commitField = (w, value) => {
 function paintWidgets(layer) {
   const key = `${widgetStamp}|${S}|${tool}`;
   if (tool !== 'select' || !widgets.length) { widgetEl = null; widgetKey = ''; return; }
-  if (widgetEl && widgetKey === key) { layer.appendChild(widgetEl); return; }
+  if (widgetEl && widgetKey === key) { if (widgetEl.parentNode !== layer) layer.appendChild(widgetEl); return; }
   widgetKey = key; widgetEl = document.createElement('div'); widgetEl.className = 'wgts';
   for (const w of widgets) {
     if (w.kind === 'push') continue;
     const h = (w.y1 - w.y0) * S, c = (w.kind === 'check' || w.kind === 'radio');
     const el = document.createElement(w.kind === 'list' || (w.kind === 'combo' && !w.edit) ? 'select' : w.multiline ? 'textarea' : 'input');
+    let suggestions = null;
     el.className = 'wgt ' + w.kind; el.setAttribute('aria-label', w.name);
     el.style.left = w.x0 * S + 'px'; el.style.top = w.y0 * S + 'px'; el.style.width = Math.max(w.x1 - w.x0, 4) * S + 'px'; el.style.height = Math.max(h, 4) + 'px';
     el.style.fontSize = Math.max(8, Math.min(w.size > 0 ? w.size * S : h * 0.7, 28 * S)) + 'px';
     if (w.readOnly) el.disabled = true;
     el.onpointerdown = ev => ev.stopPropagation();
-    el.onkeydown = ev => { if (ev.key === 'Escape') el.blur(); ev.stopPropagation(); };
+    el.onkeydown = ev => { if (ev.key === 'Escape' && el.getAttribute('aria-expanded') !== 'true') el.blur(); ev.stopPropagation(); };
     if (c) {
       el.type = w.kind === 'radio' ? 'radio' : 'checkbox'; el.checked = w.checked; if (w.kind === 'radio') el.name = w.name;
       el.title = w.name; el.onchange = () => commitField(w, el.checked ? w.on : 'Off');
@@ -704,16 +752,25 @@ function paintWidgets(layer) {
     } else {
       if (el.tagName === 'INPUT') el.type = w.password ? 'password' : 'text';
       if (w.kind === 'combo') {
-        const list = document.createElement('datalist'); list.id = `dl-${widgetStamp}-${widgets.indexOf(w)}`;
-        list.innerHTML = (w.options ?? []).map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
-        el.setAttribute('list', list.id); widgetEl.appendChild(list);
+        suggestions = document.createElement('datalist');
+        suggestions.innerHTML = (w.options ?? []).map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+        widgetEl.appendChild(suggestions);
       }
       if (w.maxLen > 0) el.maxLength = w.maxLen;
       if (w.comb) { el.style.fontFamily = 'monospace'; el.style.letterSpacing = Math.max(0, (w.x1 - w.x0) * S / w.maxLen - h * 0.42) + 'px'; }
       el.style.textAlign = ['left', 'center', 'right'][w.align] ?? 'left';
-      el.value = w.value; el.onchange = () => commitField(w, el.value);
+      el.value = w.value;
+      if (w.kind === 'combo') {
+        let committed = el.value;
+        const commit = () => { if (el.value !== committed) { committed = el.value; commitField(w, committed); } };
+        el.onchange = commit; el.onblur = commit;
+      } else el.onchange = () => commitField(w, el.value);
     }
     widgetEl.appendChild(el);
+    if (w.kind === 'combo') {
+      if (suggestions) window.editorUi.enhanceEditableCombo(el, suggestions);
+      else window.editorUi.enhanceSelect(el);
+    }
   }
   layer.appendChild(widgetEl);
 }
@@ -775,9 +832,9 @@ function constrainBox(b0, k, dx, dy, e, lockRatio) {
 
 function startMove(ev, it) {
   curSpan = null;
-  if (locked) { ev.stopPropagation(); cur = it; curObj = null; paint(); props(); return; }
+  if (locked) { ev.stopPropagation(); cur = it; curObj = null; markSelection(ev.currentTarget, it); props(); selectionHint(); return; }
   cur = it; curObj = null; let o;
-  drag(ev, () => { o = { ...it }; paint(); props(); },
+  drag(ev, () => { o = { ...it }; markSelection(ev.currentTarget, it); props(); selectionHint(); },
     (p, s, e) => {
       let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
       if (e?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
@@ -838,7 +895,7 @@ function layerDown(ev) {
 }
 
 function editText(el, it) {
-  if (it.orig != null) { $('props').querySelector('[data-k=text]')?.focus(); return; }
+  if (it.orig != null) { focusTextProperties('[data-k=text]'); return; }
   if (!el) return;
   editing = true; el.contentEditable = 'plaintext-only'; el.focus();
   getSelection().selectAllChildren(el);
@@ -918,7 +975,7 @@ function saveObj(o) {
   });
   return objectSave;
 }
-function selectObj(o) { cur = null; curSpan = null; curObj = o; paint(); props(); }
+function selectObj(o) { cur = null; curSpan = null; curObj = o; paint(); props(); selectionHint(); }
 
 function startObjMove(ev, o) {
   if (locked) { ev.stopPropagation(); selectObj(o); return; }
@@ -1030,7 +1087,7 @@ async function flush() {
 
 function props() {
   const p = $('props');
-  if (!cur && !curObj && !curSpan && formUi?.props(p)) return;
+  if (!cur && !curObj && !curSpan && formUi?.props(p)) { window.editorUi.enhanceSelects(p); return; }
   if (curSpan) return spanProps();
   if (!cur && curObj) return objProps();
   if (!cur) {
@@ -1246,7 +1303,8 @@ async function refreshDirty() {
   setDocLabel(s);
 }
 function navUpdate() {
-  $('pn').value = state.pageCount ? sel + 1 : ''; $('pt').textContent = '/ ' + (state.pageCount || 0);
+  if (document.activeElement !== $('pn')) $('pn').value = state.pageCount ? sel + 1 : '';
+  $('pt').textContent = '/ ' + (state.pageCount || 0);
   $('pp').disabled = sel <= 0; $('np').disabled = sel >= state.pageCount - 1;
   dispatchEvent(new CustomEvent('editor-page-change', { detail: { page: state.pageCount ? sel + 1 : 0, total: state.pageCount || 0 } }));
 }
@@ -1385,18 +1443,39 @@ function modal(title, body, okLabel, onOk) {
     }
     e.stopPropagation();
   };
-  document.body.appendChild(o); (o.querySelector('input,textarea,select') || o.querySelector('button'))?.focus();
+  document.body.appendChild(o); window.editorUi.enhanceSelects(o);
+  (o.querySelector('input,textarea,[role=combobox],select:not([hidden])') || o.querySelector('button'))?.focus();
   return o;
 }
 const PAGE_SIZES = { A4: [595.276, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.276], Letter: [612, 792], Legal: [612, 1008], Tabloid: [792, 1224] };
 const confirmDiscard = () => !state.dirty || confirm('You have unsaved changes. Discard them?');
 function newDoc() {
   if (!confirmDiscard()) return;
-  modal('New document', `<label>Page size<select id="nps">${Object.keys(PAGE_SIZES).map(k => `<option>${k}</option>`).join('')}</select></label>
-    <label>Orientation<select id="nor"><option>Portrait</option><option>Landscape</option></select></label>`, 'Create', o => {
-    let [w, h] = PAGE_SIZES[o.querySelector('#nps').value]; if (o.querySelector('#nor').value === 'Landscape') [w, h] = [h, w];
+  const o = modal('New document', `<div class="new-doc-layout"><div class="new-doc-controls">
+    <label>Page size<select id="nps">${Object.keys(PAGE_SIZES).map(k => `<option>${k}</option>`).join('')}</select></label>
+    <label>Orientation<select id="nor"><option>Portrait</option><option>Landscape</option></select></label>
+    </div><section class="new-doc-preview" aria-label="Page preview">
+      <div class="new-preview-heading"><strong>Page preview</strong><span>Blank page</span></div>
+      <div class="new-page-stage" aria-hidden="true"><div id="npage" class="new-page-paper"></div></div>
+      <div id="npreview-facts" class="new-preview-facts" aria-live="polite"></div>
+      <p class="new-preview-note">Shown to scale across page sizes.</p>
+    </section></div>`, 'Create', o => {
+    const [w, h] = dimensions();
     return act(() => post(`/api/new?w=${w}&h=${h}`)).then(() => { sel = 0; });
   });
+  o.querySelector('.dlg').classList.add('new-document-dialog');
+  const size = o.querySelector('#nps'), orientation = o.querySelector('#nor'), paper = o.querySelector('#npage');
+  function dimensions() {
+    const [w, h] = PAGE_SIZES[size.value];
+    return orientation.value === 'Landscape' ? [h, w] : [w, h];
+  }
+  function updatePreview() {
+    const [w, h] = dimensions(), scale = 176 / Math.max(...Object.values(PAGE_SIZES).flat());
+    paper.style.width = w * scale + 'px'; paper.style.height = h * scale + 'px';
+    const mm = n => +(n * 25.4 / 72).toFixed(1), inches = n => +(n / 72).toFixed(2);
+    o.querySelector('#npreview-facts').textContent = `${size.value} · ${orientation.value}\n${mm(w)} × ${mm(h)} mm\n${inches(w)} × ${inches(h)} in`;
+  }
+  size.addEventListener('change', updatePreview); orientation.addEventListener('change', updatePreview); updatePreview();
 }
 function insertBlank(at) { return act(() => post(`/api/blank/${at}`)).then(() => goPage(at)); }
 let mergeDialog = null;
@@ -1831,7 +1910,7 @@ addEventListener('keydown', e => {
 import(new URL('form-fields.js', document.baseURI)).then(m => {
   formUi = m.createFormFields({
     request, post, flush, status, esc, ic, modal, buildMenu, openMenuAt, toLayer, locked: () => locked, tool: () => tool, scale: () => S,
-    pageIndex: () => sel, pageCount: () => state.pageCount, pageGeometry: () => state.pages[sel], layer: () => $('layer'),
+    pageIndex: () => sel, pageCount: () => state.pageCount, documentEpoch: () => documentEpoch, pageGeometry: () => state.pages[sel], layer: () => $('layer'),
     repaint: () => paint(), props: () => props(), otherSelection: () => !!(cur || curObj || curSpan), clearOtherSelection: () => { cur = null; curObj = null; curSpan = null; },
     download: u => flush().then(() => dlUrl(u)),
     toolbar: () => { const g = document.createElement('div'); g.className = 'group'; document.querySelector('#tools .seg').after(g); return g; },

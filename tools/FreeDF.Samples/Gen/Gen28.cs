@@ -54,7 +54,7 @@ sealed partial class Gen28
         _d = new Doc("Measured, named, mapped: FreeDF benchmarks, brand identity and ISO 32000-2 parity",
             author: "FreeDF contributors",
             subject: "Benchmark charts from the checked-in 2026-10-30 reports, the FreeDF identity and archived brand explorations, and the current ISO 32000-2 coverage matrix. Parity is not complete.",
-            keywords: "FreeDF, benchmarks, branding, ISO 32000-2, PDF/UA, tagged PDF, csharp-pdf, PortableDocument",
+            keywords: "FreeDF, benchmarks, branding, ISO 32000-2, PDF/UA, tagged PDF, PortableDocument",
             lang: "en-US");
         _t = new Faces(_d);
         _vera = _d.Font("Vera.ttf");

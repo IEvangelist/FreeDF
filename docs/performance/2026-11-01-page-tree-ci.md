@@ -53,7 +53,7 @@ isolation, duplicate/cyclic Kids and full-save preservation.
 
 ## CI findings and fix
 
-The latest scheduled [run](https://github.com/IEvangelist/csharp-pdf/actions/runs/41311004728)
+The latest scheduled [run](https://github.com/IEvangelist/FreeDF/actions/runs/41311004728)
 reported a real showcase-open regression: median 907.7 ms versus its 825.0 ms
 relative median ceiling (repeat tail 907.7 versus 833.8 ms). It also claimed that
 the synthetic single-repeat-outlier control failed. The latter was contaminated
@@ -68,7 +68,7 @@ are untouched. All ten controls pass against that same scheduled-run artifact,
 including visible single-outlier warning/maximum and two-outlier rejection.
 The real `profile-ci` check still sees the unmodified profile and still rejects
 the showcase regression. Neither budgets nor known-miss allowlists changed.
-The open regression remains tracked in [#4](https://github.com/IEvangelist/csharp-pdf/issues/4).
+The open regression remains tracked in [#4](https://github.com/IEvangelist/FreeDF/issues/4).
 
 The earlier merge-stack failure was already fixed by `46bb8f65`; that classifier
 is unchanged. No claim is made here that hosted deployment CI is green.

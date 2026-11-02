@@ -26,7 +26,7 @@ static class EditorPool
         using var files = new PhysicalFileProvider(Path.GetFullPath(root));
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".dat"] = "application/octet-stream";
-        app.UsePathBase("/csharp-pdf");
+        app.UsePathBase("/FreeDF");
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
@@ -66,7 +66,7 @@ static class EditorPool
                 }
                 page.Console += (_, m) => { if (m.Type is "warning" or "error") Console.WriteLine($"  [{s.Name}] {m.Text}"); };
                 page.SetDefaultTimeout(180000);
-                await page.GotoAsync(address + "/csharp-pdf/" + s.Query);
+                await page.GotoAsync(address + "/FreeDF/" + s.Query);
                 await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
                 await page.Locator("#open").SetInputFilesAsync(fixture);
                 await page.WaitForFunctionAsync("document.getElementById('base')?.naturalWidth > 0 && document.getElementById('status').textContent.startsWith('Ready.')");

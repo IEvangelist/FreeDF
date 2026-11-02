@@ -4,13 +4,13 @@
 render, edit, and save PDFs with FreeDF's browser editor, or use the
 `PortableDocument.*` libraries directly in your .NET application.
 
-[![Open FreeDF in your browser](https://img.shields.io/badge/try-FreeDF%20editor-be185d)](https://ievangelist.github.io/csharp-pdf/)
+[![Open FreeDF in your browser](https://img.shields.io/badge/try-FreeDF%20editor-be185d)](https://ievangelist.github.io/FreeDF/)
 [![PDF 2.0 coverage](https://img.shields.io/badge/PDF-2.0%20in%20progress-0e7490)](docs/spec-matrix.md)
 
 ## Try the editor
 
-**[Open the browser editor](https://ievangelist.github.io/csharp-pdf/)** and try
-the [18-page showcase](https://ievangelist.github.io/csharp-pdf/#sample=28).
+**[Open the browser editor](https://ievangelist.github.io/FreeDF/)** and try
+the [18-page showcase](https://ievangelist.github.io/FreeDF/#sample=28).
 The app also includes a set of small sample PDFs covering forms, annotations,
 layers, encryption, accessible documents, typography, images, charts, and more;
 see the [sample index](samples/README.md).

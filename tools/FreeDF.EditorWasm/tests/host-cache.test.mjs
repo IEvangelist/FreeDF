@@ -18,7 +18,7 @@ test('duplicate in-flight image keys replace their byte accounting before evicti
     Object.defineProperties(globalThis, {
       Worker: { configurable: true, value: Worker },
       window: { configurable: true, value: { dispatchEvent() {}, requestIdleCallback() {} } },
-      location: { configurable: true, value: { href: 'https://example.test/csharp-pdf/', search: '' } },
+      location: { configurable: true, value: { href: 'https://example.test/FreeDF/', search: '' } },
     });
     const host = await start();
     const small = '/api/page/0.png?v=1';

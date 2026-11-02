@@ -19,7 +19,7 @@ static class EditorBoot
         await using var app = builder.Build();
         var remote = Uri.TryCreate(root, UriKind.Absolute, out var remoteUri) && remoteUri.Scheme is "http" or "https";
         using var files = new PhysicalFileProvider(remote ? AppContext.BaseDirectory : Path.GetFullPath(root));
-        var pathBase = shellOnly ? "/FreeDF" : "/csharp-pdf";
+        const string pathBase = "/FreeDF";
         app.UsePathBase(pathBase);
         app.Use(async (context, next) =>
         {

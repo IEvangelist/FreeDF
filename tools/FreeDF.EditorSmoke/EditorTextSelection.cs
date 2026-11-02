@@ -11,6 +11,7 @@ static class EditorTextSelection
         var transformed = PdfEditor.Open(source);
         transformed.SetContentOverride(0, Encoding.Latin1.GetBytes("q 1.15 0 0.18 0.85 12 20 cm\n")
             .Concat(PdfDocument.Load(source).Pages[0].GetContents()).Concat(Encoding.Latin1.GetBytes("\nQ")).ToArray());
+        await AddedText(page);
         foreach (var (name, bytes) in new[] { ("embedded.pdf", source), ("transformed.pdf", transformed.Save()) })
         {
             await page.Locator("#open").SetInputFilesAsync(new FilePayload { Name = name, MimeType = "application/pdf", Buffer = bytes });
@@ -20,6 +21,26 @@ static class EditorTextSelection
             await page.WaitForFunctionAsync("document.querySelector('#base')?.dataset.loadedUrl === document.querySelector('#base')?.dataset.targetUrl");
             var before = await BasePixelHash(page);
             var state = await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/state')).json())");
+            await page.Locator("#layer .span").First.DblClickAsync();
+            Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#props [data-original-text]')"),
+                name + ": double-clicking original text focuses its editor");
+            await page.Keyboard.PressAsync("Escape");
+            await page.Locator("#lock").ClickAsync();
+            await page.Locator("#layer .span").First.DblClickAsync();
+            Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#props [data-original-text]') && document.querySelector('#props [data-original=x]').disabled"),
+                name + ": locked text remains editable while position controls are disabled");
+            await page.Keyboard.PressAsync("Escape");
+            await page.Locator("#lock").ClickAsync();
+            await page.SetViewportSizeAsync(390, 800);
+            if (!await page.EvaluateAsync<bool>("document.querySelector('main').classList.contains('hide-r')"))
+                await page.Locator("#tr").ClickAsync();
+            await page.WaitForFunctionAsync("document.querySelector('main').classList.contains('hide-r')");
+            await page.Locator("#layer .span").First.DblClickAsync();
+            Check(await page.EvaluateAsync<bool>("!document.querySelector('main').classList.contains('hide-r') && document.activeElement?.matches('#props [data-original-text]') && document.getElementById('props').getBoundingClientRect().width >= 200"),
+                name + ": double-click opens a usable Properties drawer on narrow screens");
+            await page.Keyboard.PressAsync("Escape");
+            await page.SetViewportSizeAsync(1440, 1000);
+            await page.Keyboard.PressAsync("Escape");
             await page.Locator("#layer .span").First.ClickAsync();
             var input = page.Locator("[data-original-text]");
             await input.WaitForAsync();
@@ -57,12 +78,15 @@ static class EditorTextSelection
                 s.Text.EnumerateRunes().All(r => s.Font.TryEncode(r.Value, out _, out _)));
             Check(supported >= 0, name + ": fixture must include editable embedded glyphs");
             var prior = editableSpans[supported];
-            await page.Locator("#layer .span").Nth(supported).ClickAsync();
+            await page.Locator("#layer .span").Nth(supported).DblClickAsync();
             var edited = prior.Text + prior.Text.EnumerateRunes().First();
             await page.Locator("[data-original-text]").FillAsync(edited);
             await page.WaitForFunctionAsync("async text => (await (await pdfHost.request('/api/page/0/items')).json()).some(item => item.text === text)", edited);
             Check(await page.Locator("#layer .it.txt").First.EvaluateAsync<string>("el => getComputedStyle(el).color") == "rgba(0, 0, 0, 0)",
                 name + ": edited originals use the PDF renderer, never an approximate browser font");
+            await page.Locator("#layer .it.txt").First.DblClickAsync();
+            Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#props [data-k=text]')"),
+                name + ": double-clicking an edited original reopens its Properties editor");
             await page.Locator("#dl").ClickAsync();
             var editDownload = await page.RunAndWaitForDownloadAsync(() => page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync());
             await page.Locator(".mdl").WaitForAsync(new() { State = WaitForSelectorState.Detached });
@@ -74,7 +98,54 @@ static class EditorTextSelection
                 name + ": actual edit retains the original embedded font, baseline, size and shear");
             await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 3, Y = 3 } });
         }
-        Console.WriteLine("PASS: embedded/transformed original text selection, unchanged input/cancel, exact save/reopen pixels and geometry, actual-edit font/matrix retention.");
+        Console.WriteLine("PASS: original and added text double-click, mobile and locked editing, dragging, non-mutating selection, exact save/reopen pixels and original font/matrix retention.");
+    }
+
+    static async Task AddedText(IPage page)
+    {
+        await page.Keyboard.PressAsync("Alt+n");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
+        await page.WaitForFunctionAsync("document.getElementById('base')?.naturalWidth > 0 && !document.getElementById('view').inert");
+        await page.Locator("[data-tool=text]").ClickAsync();
+        await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 80, Y = 80 } });
+        var editor = page.Locator("#layer [contenteditable='plaintext-only']");
+        await editor.FillAsync("Added text");
+        await editor.PressAsync("Escape");
+        await page.Locator("#layer .it.txt").DblClickAsync();
+        Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#layer .it.txt[contenteditable=\"plaintext-only\"]')"),
+            "added text: double-click reopens inline editing");
+        await page.Keyboard.PressAsync("Escape");
+        var text = page.Locator("#layer .it.txt");
+        var box = await text.BoundingBoxAsync() ?? throw new Exception("Added text has no bounding box.");
+        var before = await AddedTextX(page);
+        await page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
+        await page.Mouse.DownAsync();
+        await page.Mouse.MoveAsync(box.X + box.Width / 2 + 24, box.Y + box.Height / 2 + 12, new() { Steps = 4 });
+        await page.Mouse.UpAsync();
+        await AddedTextX(page, before);
+        Check(await page.Locator("#props [data-k=x]").CountAsync() == 1, "added text: exact position remains available after dragging");
+        await page.Locator("#lock").ClickAsync();
+        await page.Locator("#layer .it.txt").DblClickAsync();
+        Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#layer .it.txt[contenteditable=\"plaintext-only\"]') && document.querySelector('#props [data-k=x]').disabled"),
+            "added text: locking geometry does not prevent inline editing");
+        await page.Keyboard.PressAsync("Escape");
+        await page.Locator("#lock").ClickAsync();
+    }
+
+    static async Task<double> AddedTextX(IPage page, double? after = null)
+    {
+        var x = await page.EvaluateAsync<double?>("""
+            async after => {
+              const deadline = performance.now() + 30000;
+              do {
+                const item = (await (await pdfHost.request('/api/page/0/items')).json()).find(item => item.text === 'Added text');
+                if (item && (after === null || item.x > after)) return item.x;
+                await new Promise(resolve => setTimeout(resolve, 100));
+              } while (performance.now() < deadline);
+              return null;
+            }
+            """, after);
+        return x ?? throw new Exception("FAIL: added text was not saved at the expected position");
     }
 
     public static Task<string> BasePixelHash(IPage page) => page.EvaluateAsync<string>("async () => {" +

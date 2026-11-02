@@ -70,7 +70,7 @@ sealed partial class Gen28
         ("FreeDF", "Official", "The selected public identity: a white F on the PinkInk-inspired pink primary. Used by the editor and installed app.", "A rounded pink square with a white F."),
         ("Caret", "Idea", "Text lines and an amber insertion caret: the editor's core gesture of changing existing text.", "A dark rounded square with three white text lines and an amber text caret."),
         ("Xref", "Idea", "Five linked nodes, the object graph and cross-reference table underneath every PDF.", "A dark teal rounded square showing five linked nodes, the central one in amber."),
-        ("csharp-pdf", "In use", "A sharp sign on a page. Literal and nerdy, and tied to the current repository name.", "A white rounded square with an indigo outline and an indigo sharp sign, tilted like italic type."),
+        ("csharp-pdf", "Archived", "The former repository mark, retained as a historical design study.", "A white rounded square with an indigo outline and an indigo sharp sign, tilted like italic type."),
     ];
 
     // ---- 10: names and marks ----------------------------------------------------------------------------------------------------
@@ -78,15 +78,15 @@ sealed partial class Gen28
     void BrandNamesPage()
     {
         var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "FreeDF: the official name and mark",
-            "FreeDF names the editor and its tools. The repository path and PortableDocument APIs stay stable. Other directions remain archived design studies, not pending renames.",
+            "FreeDF names the editor, repository and tools. PortableDocument APIs stay stable. Other directions remain archived design studies, not pending renames.",
             "Brand: names and marks", "Part 2: FreeDF brand");
         y -= 12;
         SubHeading(y, "Names already in the repository", Violet2);
         string[][] rows =
         [
-            ["csharp-pdf", "Repository IEvangelist/csharp-pdf and the Pages path /csharp-pdf/", "Repository"],
+            ["csharp-pdf", "Former repository and Pages path; the mark is an archived study", "Former"],
             ["PortableDocument", "Assemblies and namespaces PortableDocument.*, and the static render API", "In the API"],
-            ["FreeDF", "Editor, PWA and FreeDF.* project and tool names", "Official"],
+            ["FreeDF", "Repository IEvangelist/FreeDF, Pages /FreeDF/, editor and tools", "Official"],
             ["editPDF", "Considered as a rename, then cancelled: editpdf.io already exists", "Cancelled"],
         ];
         var yb = DataTable(M, y - 8, [new("Name", 120, true), new("Where it appears today", W - 200), new("Status", 80, false, true)], rows,
@@ -373,14 +373,14 @@ sealed partial class Gen28
 
     void BrandApplicationsPage()
     {
-        var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "Mock applications",
-            "The Folio mark and the Ink and Indigo palette on surfaces a project actually needs. The wordmark uses today's repository name; any name from the previous pages drops in.",
-            "Brand: mock applications");
+        var y = ContentPage("Part 2  /  FreeDF brand", Violet2, "Archived mock applications",
+            "An archived Folio and Ink and Indigo study. The wordmark shows the former csharp-pdf name; FreeDF is the official identity.",
+            "Brand: archived mock applications");
         y -= 12;
         // row 1: cover, letterhead, social card
         var top = y;
         double cw = 122, chh = 172;
-        Fig("Mock report cover: a dark indigo and teal gradient, the Folio mark, the words Measured, Named and Mapped in three colours and the csharp-pdf wordmark.", () =>
+        Fig("Mock report cover from the archived Folio study: a dark indigo and teal gradient, the words Measured, Named and Mapped in three colors and the former csharp-pdf wordmark.", () =>
         {
             Shadow(M, top - chh, cw, chh, 6, 0.16, 4, 8);
             Glow(M, top - chh, cw, chh, 6, "#1E1B4B", "#042F2E");

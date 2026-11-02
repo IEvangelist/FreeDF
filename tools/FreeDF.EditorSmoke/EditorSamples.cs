@@ -21,7 +21,7 @@ static class EditorSamples
     {
         var requests = new ConcurrentQueue<(string Method, string Url)>();
         page.Request += (_, r) => requests.Enqueue((r.Method, r.Url));
-        int Samples(string file) => requests.Count(r => r.Url == address + "/csharp-pdf/samples/" + file);
+        int Samples(string file) => requests.Count(r => r.Url == address + "/FreeDF/samples/" + file);
         var source = PdfDocument.Open(Path.Combine(root, "samples", Full));
 
         // Lazy: nothing about the samples is fetched by startup.
@@ -30,6 +30,7 @@ static class EditorSamples
         await page.GetByRole(AriaRole.Button, new() { Name = "Open the showcase", Exact = true }).ClickAsync();
         await Opened(page, Showcase);
         Check(await Pages(page) == 18 && Samples(Showcase) == 1 && Samples(Full) == 0, "The primary action lazily opens only the 18-page showcase.");
+        await PageSizedSelection(page);
         await ShowcasePixels(page);
         await page.Locator("#dl").ClickAsync();
         await page.Locator("#sn").FillAsync("showcase-copy.pdf");
@@ -47,7 +48,7 @@ static class EditorSamples
 
         // Failure then Retry (keyboard).
         var failing = true;
-        await page.RouteAsync("**/csharp-pdf/samples/" + Full, async route =>
+        await page.RouteAsync("**/FreeDF/samples/" + Full, async route =>
         {
             if (failing) await route.FulfillAsync(new() { Status = 503, ContentType = "text/plain", Body = "offline" });
             else await route.ContinueAsync();
@@ -129,7 +130,7 @@ static class EditorSamples
         before = Samples(Full);
         await Durable(page);
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=27-full-collection");
+        await page.GotoAsync(address + "/FreeDF/#sample=27-full-collection");
         await prompt.WaitForAsync();
         await page.WaitForTimeoutAsync(500);
         Check(Samples(Full) == before && await page.Locator("#base").CountAsync() == 0, "A deep link does not load behind the Resume/Discard prompt.");
@@ -137,7 +138,7 @@ static class EditorSamples
         await Opened(page, Full);
         Check(await Pages(page) == 50 && !page.Url.Contains("sample="), "#sample= loads the collection and is removed from the URL.");
         await Durable(page);
-        await page.GotoAsync(address + "/csharp-pdf/?sample=27");
+        await page.GotoAsync(address + "/FreeDF/?sample=27");
         await prompt.WaitForAsync();
         await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await Opened(page, Full);
@@ -145,7 +146,7 @@ static class EditorSamples
 
         await Durable(page);
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=28");
+        await page.GotoAsync(address + "/FreeDF/#sample=28");
         await prompt.WaitForAsync();
         await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await Opened(page, Showcase);
@@ -154,7 +155,7 @@ static class EditorSamples
         // Encrypted samples: 18 (empty user password) is attempted, either opening or reporting the precise limitation; 17 needs a password.
         await Durable(page);
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=18");
+        await page.GotoAsync(address + "/FreeDF/#sample=18");
         await prompt.WaitForAsync();
         await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await page.WaitForFunctionAsync("document.getElementById('name').textContent === '18-encrypted-owner-restricted.pdf' || document.querySelector('.sample-load [role=alert]')?.textContent");
@@ -164,11 +165,11 @@ static class EditorSamples
             "#sample=18 opens, or states the precise limitation: " + limitation);
         Console.WriteLine("Sample 18 on the WASM host: " + (limitation ?? "opened"));
         await page.GotoAsync("about:blank");
-        await page.GotoAsync(address + "/csharp-pdf/#sample=17");
+        await page.GotoAsync(address + "/FreeDF/#sample=17");
         if (await prompt.IsVisibleAsync() || await WaitsFor(prompt)) await prompt.GetByRole(AriaRole.Button, new() { Name = "Discard and clear", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Dialog, new() { Name = "Password required" }).WaitForAsync();
 
-        await page.UnrouteAsync("**/csharp-pdf/samples/" + Full);
+        await page.UnrouteAsync("**/FreeDF/samples/" + Full);
         Check(network.IsEmpty, "No uploads or external requests: " + string.Join(", ", network));
         bool SameOrigin(string url) => url.StartsWith(address + "/") || url.StartsWith("blob:" + address + "/");
         Check(requests.All(r => SameOrigin(r.Url)), "Every request stays on the editor's origin (same-origin blob: image URLs are local): " + string.Join(", ", requests.Where(r => !SameOrigin(r.Url)).Select(r => r.Url[..Math.Min(r.Url.Length, 80)]).Distinct()));
@@ -199,6 +200,43 @@ static class EditorSamples
             }
         }
         await page.SetViewportSizeAsync(original.Width, original.Height);
+    }
+
+    static async Task PageSizedSelection(IPage page)
+    {
+        await page.WaitForFunctionAsync("document.querySelector('#layer .obj[tabindex]') && document.querySelector('#layer .span')");
+        await page.Locator("#layer .obj[tabindex]").Last.FocusAsync();
+        await page.Keyboard.PressAsync("Enter");
+        Check(await page.Locator("#layer .obj.on").CountAsync() == 1, "Keyboard selects page-sized content.");
+        await page.EvaluateAsync("window.__pageObjectSelectionTest = document.querySelector('#layer .obj.on')");
+        await page.Locator("#layer .span").First.DblClickAsync();
+        Check(await page.EvaluateAsync<bool>("""
+            () => {
+              const e = window.__pageObjectSelectionTest;
+              return document.activeElement?.matches('#props [data-original-text]') && e.isConnected
+                && e.matches('[tabindex="0"][role="button"]') && e.title.includes('Alt+click');
+            }
+            """), "Double-clicking text restores the deselected page-sized object's keyboard and pointer affordances.");
+        await page.EvaluateAsync("window.__pageObjectSelectionTest.focus()");
+        await page.Keyboard.PressAsync("Enter");
+        Check(await page.Locator("#layer .obj.on").CountAsync() == 1, "A deselected page-sized object remains keyboard-selectable.");
+        await page.EvaluateAsync("window.__pageObjectSelectionTest = document.querySelector('#layer .obj.on')");
+        await page.Locator("#layer .span").First.DblClickAsync();
+        var spot = await page.EvaluateAsync<double[]?>("""
+            () => {
+              const e = window.__pageObjectSelectionTest, b = e.getBoundingClientRect();
+              for (let fy = .025; fy < .975; fy += .05)
+                for (let fx = .025; fx < .975; fx += .05) {
+                  const x = b.left + b.width * fx, y = b.top + b.height * fy;
+                  if (document.elementFromPoint(x, y) === e) return [x, y];
+                }
+              return null;
+            }
+            """);
+        Check(spot is not null, "A visible point reaches the deselected page-sized object.");
+        await page.Mouse.ClickAsync((float)spot![0], (float)spot[1]);
+        Check(await page.Locator("#layer .obj.on").CountAsync() == 0, "A plain click does not reselect deselected page-sized content.");
+        await page.EvaluateAsync("delete window.__pageObjectSelectionTest");
     }
 
     static async Task ShowcasePixels(IPage page)

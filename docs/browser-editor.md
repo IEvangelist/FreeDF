@@ -56,6 +56,20 @@ Multi-page PDFs show a bottom progress strip reflecting the current page out
 of the total; it follows all paging controls and disappears for single-page or
 closed documents. The existing floating previous/next pager remains available.
 
+Select an object to drag it, or open **Properties** (`]`) for exact position,
+size and styling controls. On narrow screens the Properties button opens a
+sheet; a selected object's status hint points to it when it is closed.
+Double-click original text to open and focus its Properties editor, or
+double-click added text to edit it in place. Locking geometry prevents moving
+and resizing without preventing text editing.
+
+**File > New** shows a live, proportionally scaled page preview beside the
+paper size and orientation choices, including dimensions in millimeters and
+inches. Editor drop-downs use themed, keyboard-accessible lists: use arrow
+keys, Home/End, typeahead and Enter to choose, or Escape to close the list
+without changing its value. Editable PDF combo boxes also allow free text;
+multi-select PDF list boxes retain their list behavior.
+
 The welcome screen's primary **Open the showcase** button opens the tagged,
 18-page benchmarks, brand and spec showcase (`28-benchmarks-brand-spec.pdf`).
 It also leads **File > Open sample** and the published manifest. Share
@@ -81,17 +95,17 @@ and `id-token: write`; all jobs have `contents: read`.
 
 The expected address after a successful deployment is
 **https://ievangelist.github.io/FreeDF/**. Adding the workflow does not itself
-mean the site is live. The implementation session does not push or deploy.
+mean the site is live.
 
 The app's `<base href="./">` is inserted by
 `tools/Publish-EditorPages.ps1`. Styles, bootstrap scripts and `_framework`
 assets resolve beneath the actual deployment directory, including after a repository
-rename. An explicit `-BasePath` still overrides it. The boot chunk also checks
-desktop/mobile styling and WASM startup under `/FreeDF/`, rather than only the
-legacy local smoke path. The editor has one document route; there is no
-history-based router requiring a Pages 404 rewrite. No special MIME overrides,
-cross-origin isolation headers, threads, COOP/COEP, or server configuration are
-required on Pages. `.nojekyll` preserves the `_framework` folder.
+rename. An explicit `-BasePath` still overrides it. Browser smoke tests check
+desktop/mobile styling and WASM startup under `/FreeDF/`. The editor has one
+document route; there is no history-based router requiring a Pages 404 rewrite.
+No special MIME overrides, cross-origin isolation headers, threads, COOP/COEP,
+or server configuration are required on Pages. `.nojekyll` preserves the
+`_framework` folder.
 
 ### Startup failures
 
@@ -166,14 +180,14 @@ fall back to the primary worker; pool smoke checks compare decoded pixels.
 
 | Existing editor action | Browser host |
 |---|---|
-| New document, paper sizes/orientation; open picker; PDF drop | Local; dropping onto an open document imports its pages, as in EditorWeb |
+| New document, paper sizes/orientation; open picker; PDF drop | Local; New previews the selected size and orientation before creation. Dropping onto an open document imports its pages, as in EditorWeb |
 | Rendered pages/thumbnails; navigation; fit width/page; zoom | C# software renderer in WASM; no PDF.js or remote rendering |
 | Select/move/resize/delete/recolor existing editable graphics | Same content-rewriter operations, including object transforms and reset |
 | Select existing editable text; add text; typography/color/alignment/spacing | Selection/focus/cancel does not replace PDF content. Actual text changes reuse supported original embedded glyphs and text transforms; the PDF renderer paints edited originals rather than approximate browser fonts |
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
 | Redaction | Same content-removing redactor: arbitrary paths/strokes/clips, rotated content, per-invocation shared/nested Forms, partial inline/stencil image blanking and hidden optional content; not a painted-cover substitute |
-| Forms: text, button and choice fields | The in-page Fill out / Edit toggle defaults to Edit for layout authoring. Fill out in Select mode exposes text/comb/multiline, editable combo/multi-select list, checkbox and radio controls with native Tab/Space interaction and field undo; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
+| Forms: text, button and choice fields | The in-page Fill out / Edit toggle defaults to Edit for layout authoring. Fill out in Select mode exposes text/comb/multiline, themed editable and select-only combo boxes, multi-select lists, checkbox and radio controls with keyboard interaction and field undo; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
 | Page rotate/delete/reorder/duplicate; blank insert; merge/import | Same page editor |
 | Title/document metadata; search/case matching/highlights | Same local session |
 | Save / Save as / Download; PDF page-range extraction | File System Access browsers can save to an explicitly chosen local handle after permission checks; other browsers download a copy. Protected Save / Save as retain the protection dialog rather than entering the plain file-picker path. Stored handles contain no PDF bytes or passwords |
@@ -259,9 +273,11 @@ browser is online. An **Install app** action uses the browser's installation
 prompt only after an explicit click. Where that prompt is unavailable, the
 dialog explains browser-menu installation and Safari's
 **Share > Add to Home Screen** flow. Installation is optional; editing in a
-browser remains supported. FreeDF project names and local storage use the new
-identity; the manifest identity and repository path remain unchanged, so
-existing installations and preferences continue to work.
+browser remains supported. The repository rename changed the Pages path from
+`/csharp-pdf/` to `/FreeDF/`, so it also changed the PWA's manifest identity and
+scope. Open the new address and install it again if desired. Preferences and
+recovery are stored by browser origin, but browser profiles or installed-app
+storage may be separate; save important work before removing an old installation.
 PNG/ICO icons can be regenerated with `python tools\Generate-EditorIcons.py`
 using Pillow and the sample suite's local Source Sans 3 font.
 
@@ -780,7 +796,7 @@ reduced-motion support, and an accessibility layer; see
 ### Public release acceptance
 
 Publish each reviewed, green integration batch independently rather than waiting
-for a larger release. After the gated Pages deployment succeeds, run:
+for a larger release. After Pages deployment and validation both succeed, run:
 
 ```powershell
 .\tools\Test-EditorPublic.ps1 -TargetCommit <deployed-main-sha> `
@@ -788,13 +804,14 @@ for a larger release. After the gated Pages deployment succeeds, run:
 ```
 
 The command finds the successful deployment for that exact commit (or accepts
-`-RunId`), downloads `editor-validation-aot`, and compares the public native WASM
+`-RunId`), verifies the downloaded `editor-site` artifact against its build
+manifest, and compares the public native WASM
 **and UI entry assets** with it before and after acceptance. It rejects a site
 at or above 1,000,000,000 bytes. It builds the existing smoke runner once, then
 runs full editor/JSON/recovery/Save-overlap, merge, sample26 page-image and boot
 injection checks in default-transport Chromium against the public URL.
 Context-wide request monitors reject uploads, API calls and external requests.
-Use `-Url` for another host serving `/csharp-pdf/`, and `-Output` for a fresh
+Use `-Url` for another host serving `/FreeDF/`, and `-Output` for a fresh
 evidence directory; logs and `acceptance.json` retain the commit, run, checksums,
 payload size and result. The supplied shared validation lock is acquired
 atomically, waited for without interrupting its owner, and released only by its
@@ -856,7 +873,7 @@ hosted-runner duration is not yet measured. Full, merge, boot, page-image,
 trim-safe JSON round trips and the profile CI gates all target the AOT output.
 `--json-safety <site>` runs just the JSON round trips for focused validation.
 
-The Chromium runner hosts **only static files** under `/csharp-pdf/`, with no
+The Chromium runner hosts **only static files** under `/FreeDF/`, with no
 editor API and no custom response headers. It exercises the real UI for
 document creation, text editing, preview (including a nonblank-glyph pixel
 assertion), save/download, file-picker reopen, rotation and search. It also
