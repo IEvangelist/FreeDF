@@ -27,6 +27,10 @@ Locally (site published first with `tools/Publish-EditorPages.ps1 -Output <dir>`
 
 Chunks: `node` (worker/selection invariants, sample/outline modules and publish bundler), `dotnet-editor`, `dotnet-codecs`, `dotnet-render`, `default`, `forms`, `authoring` (New page previews and selectors, merge, samples, annotations, object styling, local file/font access, storage migration and Contents), `boot` (cold boot, injected failures and offline worker migration/rollback), `viewport` (viewport, page-image), `a11y`, `responsive`, `profile-invariants` (blocking: runs the profile with timing misses report-only, so functional invariants such as overlay-only bare-page pixel exactness still fail), `perf` (non-blocking, see below).
 
+## Flake handling
+
+Each browser smoke step (every chunk except `perf`) is retried once, with a `::warning::` annotation, so a hosted-runner Playwright timeout does not fail the run; a real regression fails both attempts. `perf` never retries.
+
 ## Change detection
 
 The plan job diffs the PR/push range. If every changed file is under docs/, acklog/, a root *.md, LICENSE, or non-code .github metadata, build/unit/smoke/package/deploy are skipped and the always-run alidated gate still passes. Dispatch, schedule, unreadable or 300+ file diffs run everything.

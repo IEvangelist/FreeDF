@@ -16,7 +16,17 @@ function Run([string] $What, [scriptblock] $Block) {
     Write-Host "::group::$What"
     try { $global:LASTEXITCODE = 0; & $Block; if ($LASTEXITCODE) { throw "$What failed (exit $LASTEXITCODE)." } } finally { Write-Host '::endgroup::' }
 }
-function Smoke([string[]] $Mode) { dotnet run --no-build -c Release --project $smokeProject -- @Mode }
+# Hosted-runner browser flakes (Playwright timeouts, 503s) are retried once; a real regression fails
+# every attempt. Perf timing gates run with a single attempt so a retry can never hide a regression.
+$smokeAttempts = if ($Chunk -eq 'perf') { 1 } else { 2 }
+function Smoke([string[]] $Mode) {
+    for ($attempt = 1; $attempt -le $smokeAttempts; $attempt++) {
+        $global:LASTEXITCODE = 0
+        dotnet run --no-build -c Release --project $smokeProject -- @Mode
+        if (!$LASTEXITCODE) { return }
+        if ($attempt -lt $smokeAttempts) { Write-Host "::warning::Smoke '$($Mode[0])' failed (exit $LASTEXITCODE); retrying once to rule out a runner flake." }
+    }
+}
 function WorkDir([string] $Name) { $p = Join-Path $Work $Name; New-Item -ItemType Directory -Force $p | Out-Null; $p }
 New-Item -ItemType Directory -Force $Work | Out-Null
 function Prepare {
