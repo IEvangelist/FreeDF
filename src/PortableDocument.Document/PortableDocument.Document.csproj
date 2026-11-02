@@ -6,6 +6,8 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <PackageId>PortableDocument.Document</PackageId>
+    <Description>PDF document model, page editing, forms, annotations, metadata, navigation, structure, and validation.</Description>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

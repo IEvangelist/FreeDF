@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <PackageId>PortableDocument.FallbackFonts</PackageId>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -18,7 +19,7 @@
     <EmbeddedResource Include="Resources\cjk-index.bin" LogicalName="PortableDocument.FallbackFonts.cjk-index.bin" />
     <EmbeddedResource Include="fallback-fonts\licenses\manifest.json" LogicalName="PortableDocument.FallbackFonts.licenses.json" />
     <!-- Desktop hosts get the data next to their binaries; browser hosts serve the same folder from wwwroot. -->
-    <None Include="fallback-fonts\**" Link="fallback-fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles\any\any\fallback-fonts\" />
+    <None Include="fallback-fonts\**" Link="fallback-fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles\any\any\fallback-fonts\" PackageCopyToOutput="true" />
   </ItemGroup>
 
 </Project>

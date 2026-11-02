@@ -1,0 +1,120 @@
+name: Publish NuGet packages
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-nuget.yml'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'src/**'
+      - 'tests/**'
+      - 'README.md'
+      - 'LICENSE'
+      - 'THIRD-PARTY-NOTICES.md'
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          version="0.1.0-preview.1"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            git merge-base --is-ancestor HEAD origin/main || {
+              echo "::error::Release tags must point to a commit on main."
+              exit 1
+            }
+          fi
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::Release tag must be vMAJOR.MINOR.PATCH with an optional prerelease suffix."
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Test
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: dotnet test tests/FreeDF.Tests/FreeDF.Tests.csproj -c Release -p:Version="$VERSION"
+      - name: Pack libraries
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/nuget-packages"
+          for project in \
+            src/PortableDocument.Core/PortableDocument.Core.csproj \
+            src/PortableDocument.Document/PortableDocument.Document.csproj \
+            src/PortableDocument.Content/PortableDocument.Content.csproj \
+            src/PortableDocument.Render/PortableDocument.Render.csproj \
+            src/PortableDocument.FallbackFonts/PortableDocument.FallbackFonts.csproj \
+            src/PortableDocument.Signing.Http/PortableDocument.Signing.Http.csproj
+          do
+            dotnet pack "$project" -c Release --no-build \
+              -p:Version="$VERSION" \
+              -p:ContinuousIntegrationBuild=true \
+              -p:IncludeSymbols=true \
+              -p:SymbolPackageFormat=snupkg \
+              --output "$RUNNER_TEMP/nuget-packages"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nuget-packages
+          path: ${{ runner.temp }}/nuget-packages
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: pack
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v7
+        with:
+          name: nuget-packages
+          path: artifacts/nuget
+      - name: Verify NuGet username is configured
+        env:
+          NUGET_USER: ${{ vars.NUGET_USER }}
+        run: |
+          if [ -z "$NUGET_USER" ]; then
+            echo "::error::Set the NUGET_USER repository variable to the NuGet.org account username."
+            exit 1
+          fi
+      - name: NuGet login (OIDC)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Push packages
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push "artifacts/nuget/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate

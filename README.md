@@ -137,6 +137,8 @@ dotnet test PortableDocument.slnx -c Release
 ```
 
 Package versions are centrally managed in `Directory.Packages.props`.
+The .NET libraries are packaged for NuGet; see
+[NuGet packages and trusted publishing](docs/nuget-publishing.md).
 
 ## Project status
 
