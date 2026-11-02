@@ -72,6 +72,21 @@ test('preserves PWA identity, scoped file handling and maskable installation ico
   assert.equal(published.icons[1].purpose, 'any maskable');
 });
 
+test('inlines the editor header logo before removing the standalone favicon', () => {
+  const index = readFileSync(new URL('./FreeDF.EditorWeb/wwwroot/index.html', import.meta.url), 'utf8');
+  const logo = index.match(/<img\b[^>]*class="logo"[^>]*>/)?.[0];
+  assert.ok(logo, 'the editor header must include its logo image');
+  const dir = fixture();
+  writeFileSync(join(dir, 'index.html'), readFileSync(join(dir, 'index.html'), 'utf8')
+    .replace('<body>', `<body>${logo}`));
+  bundle(dir);
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  const expected = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`;
+  assert.ok(html.includes(logo.replace('src="favicon.svg"', `src="${expected}"`)));
+  assert.doesNotMatch(html, /(?:src|href)="favicon\.svg"/);
+  assert.equal(existsSync(join(dir, 'favicon.svg')), false);
+});
+
 test('fails the publish instead of shipping a partial bundle', () => {
   assert.throws(() => bundle(fixture({ 'map.mjs': 'export default 1;' })), /unhandled import\/export/);
   assert.throws(() => bundle(fixture({ 'map.mjs': 'await Promise.resolve();\nexport const project = 1;' })), /top-level await/);
