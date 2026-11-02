@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#be185d"/><stop offset="1" stop-color="#9d174d"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#g)"/><text x="32" y="45" font-family="Source Sans 3,Segoe UI,Arial,Helvetica,sans-serif" font-size="42" font-weight="600" text-anchor="middle" fill="#fff">F</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#be185d"/>
+  <defs>
+    <clipPath id="p-profile">
+      <path d="M14.7 16.5H28C33 16.5 35 19 35 25.5V28.5C35 34 32.5 37.4 25.5 37.4V52H14.7Z"/>
+    </clipPath>
+  </defs>
+  <g transform="translate(3.2 0) scale(.9 1)" font-family="Arial, Helvetica, sans-serif" font-weight="700" fill="#fff">
+    <g transform="translate(-13 0)" clip-path="url(#p-profile)">
+      <g transform="translate(14.7 0) scale(.42 1) translate(-14.7 0)">
+        <text transform="translate(25.3 52) rotate(-90)" textLength="9" lengthAdjust="spacingAndGlyphs" font-size="14.5" stroke="#fff" stroke-width=".65" stroke-linejoin="round">F</text>
+        <text transform="translate(25.5 43) rotate(-90)" textLength="4.7" lengthAdjust="spacingAndGlyphs" font-size="14.5" stroke="#fff" stroke-width=".45" stroke-linejoin="round">R</text>
+      </g>
+      <path d="M14.7 25.5H18.8V34.4H23V32.3H26.5V34.4H31V25.5H35V37.4H14.7Z"/>
+      <path d="M14.7 21.2Q24.85 17.2 35 21.2V23.45Q24.85 19.45 14.7 23.45ZM14.7 17.65H18.8V22H14.7ZM23 17.65H26.5V20.5H23ZM31 17.65H35V22H31Z"/>
+    </g>
+  </g>
+  <g transform="translate(3.2 0) scale(.9 1)" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" fill="#fff">
+    <text x="24" y="52" textLength="20" lengthAdjust="spacingAndGlyphs">D</text>
+    <text x="44" y="52" textLength="20" lengthAdjust="spacingAndGlyphs">F</text>
+  </g>
+</svg>
