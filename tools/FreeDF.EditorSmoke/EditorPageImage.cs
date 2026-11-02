@@ -47,7 +47,7 @@ static class EditorPageImage
                 var url = new Uri(request.Url);
                 if (url.Scheme is not ("http" or "https")) return;
                 if (request.Method != "GET" || url.GetLeftPart(UriPartial.Authority) != site.GetLeftPart(UriPartial.Authority) ||
-                    (!url.AbsolutePath.StartsWith("/FreeDF/", StringComparison.Ordinal) && url.AbsolutePath != "/favicon.ico") ||
+                    (!url.AbsolutePath.StartsWith(site.AbsolutePath, StringComparison.Ordinal) && url.AbsolutePath != "/favicon.ico") ||
                     url.AbsolutePath.Contains("/api/", StringComparison.Ordinal))
                     unexpectedRequests.Add(request.Method + " " + request.Url);
             };

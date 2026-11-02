@@ -70,6 +70,7 @@ if (args.Length == 4 && args[0] == "--page-image")
 }
 
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
+var choicesOnly = args.Length == 2 && args[0] == "--choices";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
 var jsonSafetyOnly = args.Length == 2 && args[0] == "--json-safety";
@@ -88,7 +89,7 @@ var a11yOnly = args.Length == 3 && args[0] == "--a11y";
 var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
 var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !browserOnly && !textSelectionOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !choicesOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--choices|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
 var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/FreeDF/")
@@ -265,6 +266,12 @@ try
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors.");
         return;
     }
+    if (choicesOnly)
+    {
+        await EditorChoices.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors));
+        return;
+    }
     if (mergeOnly)
     {
         await EditorMerge.Run(page);
@@ -356,6 +363,7 @@ try
     await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
     await page.Locator("#fb").ClickAsync(); await page.Locator("#fq").FillAsync("round trip");
     await page.WaitForFunctionAsync("document.getElementById('fc').textContent.includes('1')");
+    await page.Locator("#fx").ClickAsync();
     // PNG, ZIP, text, compression and image insertion use the same local dispatcher.
     await page.EvaluateAsync("""
         async () => {
@@ -447,6 +455,8 @@ try
     await page.Locator("#zi").ClickAsync();
     await page.Locator("#zi").ClickAsync();
     await page.Locator("#zo").ClickAsync();
+    if (await page.EvaluateAsync<bool>("document.querySelector('main').classList.contains('hide-l')"))
+        await page.Locator("#tl").ClickAsync();
     await page.Locator(".thumb").Nth(1).ClickAsync();
     await page.Locator(".thumb").First.ClickAsync();
     await page.EvaluateAsync("async () => { await window.renderProbe; }");

@@ -109,7 +109,7 @@ static class Gen23
         }
         y -= 120;
         MainHead(y, "Selected projects");
-        var projects = new[] { ("csharp-pdf", "A from-scratch PDF parser, renderer and editor in C#."), ("inkwell", "Font subsetter and CFF-to-glyf converter."), ("loupe", "Pixel-diff harness for cross-renderer comparison.") };
+        var projects = new[] { ("FreeDF", "A from-scratch PDF parser, renderer and editor in C#."), ("inkwell", "Font subsetter and CFF-to-glyf converter."), ("loupe", "Pixel-diff harness for cross-renderer comparison.") };
         for (var j = 0; j < projects.Length; j++)
         {
             var yy = y - 26 - j * 20;

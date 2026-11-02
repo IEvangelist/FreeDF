@@ -54,6 +54,7 @@ switch ($Chunk) {
     }
     'forms' { Run 'on-page form filling and field authoring' { Smoke @('--forms', $Site) } }
     'authoring' {
+        Run 'New document preview and choice controls' { Smoke @('--choices', $Site) }
         Run 'Merge PDFs flow' { Smoke @('--merge', $Site) }
         Run 'one-click sample collection' { Smoke @('--samples', $Site) }
         Run 'annotation authoring' { Smoke @('--annotations', $Site) }

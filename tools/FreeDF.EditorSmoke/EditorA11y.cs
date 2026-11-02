@@ -69,6 +69,7 @@ static class EditorA11y
 
     public static async Task Run(IBrowser browser, string site, byte[] pdf, string? artifacts)
     {
+        if (artifacts is not null) Directory.CreateDirectory(artifacts);
         var axePath = FindAxe() ?? throw new Exception("axe-core is not installed. Run `npm ci` in tools/FreeDF.EditorSmoke/a11y (dev/test only), or set EDITOR_AXE_PATH.");
         var axeSource = await File.ReadAllTextAsync(axePath);
         var rows = new List<Row>();
@@ -154,8 +155,12 @@ static class EditorA11y
             await Click(page, "#fb"); await Axe(page, "find bar", theme); await Esc(page);
             await Click(page, "#dl"); await Axe(page, "save dialog", theme); await Esc(page);
             await FileMenu(page, "Document properties"); await Axe(page, "document properties dialog", theme); await Esc(page);
-            await FileMenu(page, "New"); await Axe(page, "new document dialog", theme); await Esc(page);
-            await SubMenu(page, "Export", "Pages as images"); await Axe(page, "export images dialog", theme); await Esc(page);
+            await FileMenu(page, "New"); await Axe(page, "new document dialog", theme);
+            await page.GetByRole(AriaRole.Combobox, new() { Name = "Page size", Exact = true }).ClickAsync();
+            await Axe(page, "new document choices open", theme); await Esc(page); await Esc(page);
+            await SubMenu(page, "Export", "Pages as images"); await Axe(page, "export images dialog", theme);
+            await page.GetByRole(AriaRole.Combobox, new() { Name = "Resolution", Exact = true }).ClickAsync();
+            await Axe(page, "export choices open", theme); await Esc(page); await Esc(page);
             await SubMenu(page, "Export", "password-protected"); await Axe(page, "protect dialog", theme); await Esc(page);
             await page.Locator("#merge").SetInputFilesAsync(new[] { new FilePayload { Name = "a.pdf", MimeType = "application/pdf", Buffer = pdf }, new FilePayload { Name = "b.pdf", MimeType = "application/pdf", Buffer = pdf } });
             await page.Locator(".mdl").WaitForAsync(); await Axe(page, "merge dialog", theme); await Esc(page);
@@ -184,6 +189,9 @@ static class EditorA11y
             await Axe(page, "document open", "forced", true);
             await Click(page, "#fileBtn"); await Axe(page, "file menu", "forced", true); await Esc(page);
             await Click(page, "#dl"); await Axe(page, "save dialog", "forced", true); await Esc(page);
+            await FileMenu(page, "New");
+            await page.GetByRole(AriaRole.Combobox, new() { Name = "Page size", Exact = true }).ClickAsync();
+            await Axe(page, "new document choices open", "forced", true); await Esc(page); await Esc(page);
             await context.CloseAsync();
         }
 
@@ -321,6 +329,27 @@ static class EditorA11y
         await page.SetViewportSizeAsync(1440, 900);
 
         await open(page, pdf, "keys.pdf");
+        var initialZoom = await page.Locator("#zv").TextContentAsync();
+        await page.EvaluateAsync("""
+            () => {
+              const button = document.getElementById('zv'), observations = [];
+              const observer = new MutationObserver(() => observations.push({ text: button.textContent, name: button.getAttribute('aria-label') }));
+              observer.observe(button, { childList: true, characterData: true, subtree: true });
+              window.__zoomLabels = { observer, observations };
+            }
+            """);
+        await click(page, "#zi");
+        await page.WaitForFunctionAsync("window.__zoomLabels.observations.length > 0");
+        var zoomLabelErrors = await page.EvaluateAsync<string[]>("""
+            () => {
+              const { observer, observations } = window.__zoomLabels;
+              observer.disconnect(); delete window.__zoomLabels;
+              return observations.filter(o => o.name !== `Zoom ${o.text}`).map(o => `${o.text}: ${o.name}`);
+            }
+            """);
+        expect(zoomLabelErrors.Length == 0, "zoom: accessible name matches the displayed value as it changes: " + string.Join(", ", zoomLabelErrors));
+        await click(page, "#fp");
+        await page.WaitForFunctionAsync("text => document.getElementById('zv').textContent === text", initialZoom);
         await page.Locator("#fileBtn").FocusAsync(); await page.Keyboard.PressAsync("Enter");
         await page.Keyboard.PressAsync("ArrowDown"); await page.Keyboard.PressAsync("ArrowDown");
         expect(await page.EvaluateAsync<bool>("() => document.activeElement.textContent.includes('Open sample')"), "keyboard: arrow keys move through the File menu");

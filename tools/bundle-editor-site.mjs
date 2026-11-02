@@ -148,7 +148,9 @@ write('site.webmanifest', JSON.stringify(manifest));
 rmSync(join(site, 'icon-192.png'));
 for (const [file, type] of inline) {
   if (!html.includes(`href="${file}"`)) fail(`index.html does not link ${file}.`);
-  html = html.replace(`href="${file}"`, `href="${icon(file, type)}"`);
+  const data = icon(file, type);
+  html = html.replaceAll(`href="${file}"`, `href="${data}"`)
+    .replaceAll(`src="${file}"`, `src="${data}"`);
   rmSync(join(site, file));
 }
 html = viaRegistry(html);

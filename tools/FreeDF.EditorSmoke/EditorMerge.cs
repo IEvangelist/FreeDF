@@ -63,7 +63,7 @@ static class EditorMerge
         Check(await dialog.CountAsync() == 1, "The dialog stays open after a bad range.");
         Check(await page.EvaluateAsync<int>("async () => (await (await pdfHost.request('/api/state')).json()).pageCount") == baseDoc.Pages.Count, "A bad range in a later file leaves the document untouched (all-or-nothing).");
         await dialog.Locator(".mrow").Nth(1).Locator(".mr").FillAsync("");
-        await dialog.Locator("#mat").SelectOptionAsync("1");
+        await EditorChoices.Choose(page, dialog.GetByRole(AriaRole.Combobox, new() { Name = "Insert at", Exact = true }), "1");
         await page.EvaluateAsync("""
             () => {
               window.mergeRequest = pdfHost.request;

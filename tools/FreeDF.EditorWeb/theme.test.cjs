@@ -14,10 +14,10 @@ function boot(saved = {}) {
   const values = new Map(Object.entries(saved)), doc = { dataset: {} }, meta = { content: '#be185d' };
   const localStorage = { getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v), removeItem: k => values.delete(k) };
   const context = vm.createContext({
-    doc, document: { documentElement: doc, querySelector: () => meta }, localStorage,
+    doc, document: { documentElement: doc, querySelector: () => meta, addEventListener() {} }, localStorage,
     q: () => meta, store: { get: localStorage.getItem, set: (k, v) => v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) },
     window: {}, toast() {}, say() {}, setTheme() {}, setMotion() {}, setFullMotion() {},
-    dispatchEvent() {}, Event: class { constructor(type) { this.type = type; } },
+    addEventListener() {}, dispatchEvent() {}, Event: class { constructor(type) { this.type = type; } },
   });
   vm.runInContext(head, context);
   vm.runInContext(html.match(/<script>(try\{for\(const \[key,values\].*?)<\/script>/s)[1], context);

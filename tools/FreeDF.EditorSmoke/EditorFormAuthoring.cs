@@ -67,6 +67,12 @@ static class EditorFormAuthoring
             await page.Locator("#props [data-ff=name]").WaitForAsync();
             await SetField(page, "[data-ff=name]", name, name);
             if (value is not null) await SetField(page, "[data-ff=value]", value, name);
+            if (label == "Text field")
+            {
+                await EditorChoices.Choose(page, page.Locator("#props").GetByRole(AriaRole.Combobox, new() { Name = "Alignment", Exact = true }), "2");
+                await Updated(page, name);
+                Check(await page.Locator("#props [data-ff=alignment]").InputValueAsync() == "2", "custom alignment choice updates field properties");
+            }
             if (label == "Check box")
             {
                 await page.Locator("#props [data-ffcheck]").CheckAsync();

@@ -83,7 +83,6 @@ kbd { background: var(--bg); border-color: var(--line-2); color: var(--fg-2); bo
 
 /* Header, tool bar, status bar */
 header { background: var(--panel); border-bottom-color: var(--line); }
-.logo { background: linear-gradient(135deg, #4c8dff, #2f5fd0); color: #fff; box-shadow: var(--shadow-sm); }
 .brand strong { font-weight: 650; }
 .doc { background: var(--bg); border-color: var(--line); color: var(--fg-2); }
 #dstate[data-dirty="true"] { color: var(--warn); }

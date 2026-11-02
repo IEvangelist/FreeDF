@@ -39,7 +39,7 @@ button.on { background: var(--accent-bg); color: var(--accent-2); border-color: 
 /* Header */
 header { display: flex; align-items: center; gap: 6px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; }
 .brand { display: flex; align-items: center; gap: 9px; margin-right: 6px; }
-.logo { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(135deg, #4c8dff, #2f5fd0); color: #fff; font-weight: 700; font-size: 11px; letter-spacing: -.02em; }
+.logo { display: block; width: 26px; height: 26px; border-radius: 7px; object-fit: cover; }
 .brand strong { font-size: 13px; font-weight: 650; letter-spacing: -.005em; }
 .doc { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 auto 0 4px; padding: 0 10px; height: 28px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--fg-2); }
 .doc svg.i { color: var(--mut); width: 14px; height: 14px; }
@@ -86,7 +86,7 @@ footer #recovery { height: 22px; min-height: 0; flex: none; }
 @media (max-width: 600px) {
   footer { flex-wrap: wrap; }
   #developerCredit { margin-left: auto; }
-  main { --lw: 0px; --rw: 0px; position: relative; }
+  main { position: relative; }
   #left, #props { visibility: hidden; }
   main:not(.hide-l) #left, main:not(.hide-r) #props { position: absolute; top: 44px; bottom: 0; width: min(280px, 85vw); z-index: 20; visibility: visible; }
   #left { left: 0; } #props { right: 0; }

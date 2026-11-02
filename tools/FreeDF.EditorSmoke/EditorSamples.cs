@@ -30,6 +30,7 @@ static class EditorSamples
         await page.GetByRole(AriaRole.Button, new() { Name = "Open the showcase", Exact = true }).ClickAsync();
         await Opened(page, Showcase);
         Check(await Pages(page) == 18 && Samples(Showcase) == 1 && Samples(Full) == 0, "The primary action lazily opens only the 18-page showcase.");
+        await PageSizedSelection(page);
         await ShowcasePixels(page);
         await page.Locator("#dl").ClickAsync();
         await page.Locator("#sn").FillAsync("showcase-copy.pdf");
@@ -199,6 +200,43 @@ static class EditorSamples
             }
         }
         await page.SetViewportSizeAsync(original.Width, original.Height);
+    }
+
+    static async Task PageSizedSelection(IPage page)
+    {
+        await page.WaitForFunctionAsync("document.querySelector('#layer .obj[tabindex]') && document.querySelector('#layer .span')");
+        await page.Locator("#layer .obj[tabindex]").Last.FocusAsync();
+        await page.Keyboard.PressAsync("Enter");
+        Check(await page.Locator("#layer .obj.on").CountAsync() == 1, "Keyboard selects page-sized content.");
+        await page.EvaluateAsync("window.__pageObjectSelectionTest = document.querySelector('#layer .obj.on')");
+        await page.Locator("#layer .span").First.DblClickAsync();
+        Check(await page.EvaluateAsync<bool>("""
+            () => {
+              const e = window.__pageObjectSelectionTest;
+              return document.activeElement?.matches('#props [data-original-text]') && e.isConnected
+                && e.matches('[tabindex="0"][role="button"]') && e.title.includes('Alt+click');
+            }
+            """), "Double-clicking text restores the deselected page-sized object's keyboard and pointer affordances.");
+        await page.EvaluateAsync("window.__pageObjectSelectionTest.focus()");
+        await page.Keyboard.PressAsync("Enter");
+        Check(await page.Locator("#layer .obj.on").CountAsync() == 1, "A deselected page-sized object remains keyboard-selectable.");
+        await page.EvaluateAsync("window.__pageObjectSelectionTest = document.querySelector('#layer .obj.on')");
+        await page.Locator("#layer .span").First.DblClickAsync();
+        var spot = await page.EvaluateAsync<double[]?>("""
+            () => {
+              const e = window.__pageObjectSelectionTest, b = e.getBoundingClientRect();
+              for (let fy = .025; fy < .975; fy += .05)
+                for (let fx = .025; fx < .975; fx += .05) {
+                  const x = b.left + b.width * fx, y = b.top + b.height * fy;
+                  if (document.elementFromPoint(x, y) === e) return [x, y];
+                }
+              return null;
+            }
+            """);
+        Check(spot is not null, "A visible point reaches the deselected page-sized object.");
+        await page.Mouse.ClickAsync((float)spot![0], (float)spot[1]);
+        Check(await page.Locator("#layer .obj.on").CountAsync() == 0, "A plain click does not reselect deselected page-sized content.");
+        await page.EvaluateAsync("delete window.__pageObjectSelectionTest");
     }
 
     static async Task ShowcasePixels(IPage page)
