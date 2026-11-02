@@ -43,6 +43,8 @@ static class EditorTextSelection
             await page.Keyboard.PressAsync("Escape");
             await page.SetViewportSizeAsync(1440, 1000);
             await page.Keyboard.PressAsync("Escape");
+            if (await page.EvaluateAsync<bool>("document.querySelector('main').classList.contains('hide-r')"))
+                await page.Locator("#tr").ClickAsync();
             await page.Locator("#layer .span").First.ClickAsync();
             var input = page.Locator("[data-original-text]");
             await input.WaitForAsync();
@@ -106,8 +108,11 @@ static class EditorTextSelection
     static async Task AddedText(IPage page)
     {
         await page.Keyboard.PressAsync("Alt+n");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
-        await page.WaitForFunctionAsync("document.getElementById('base')?.naturalWidth > 0 && !document.getElementById('view').inert");
+        var dialog = page.GetByRole(AriaRole.Dialog, new() { Name = "New document", Exact = true });
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
+        await dialog.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await page.WaitForFunctionAsync("document.getElementById('name').textContent === 'Untitled.pdf' && document.getElementById('base')?.naturalWidth > 0 && !document.getElementById('view').inert");
+        await page.Locator("#fp").ClickAsync();
         await page.Locator("[data-tool=text]").ClickAsync();
         await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 80, Y = 80 } });
         var editor = page.Locator("#layer [contenteditable='plaintext-only']");
@@ -117,11 +122,13 @@ static class EditorTextSelection
         await page.Locator("[data-tool=rect]").ClickAsync();
         await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 240, Y = 250 } });
         Check(await page.Locator("#layer > .it").CountAsync() == 2, "added text: fixture includes a second object after the text");
+        await page.Locator("#fw").ClickAsync();
         await page.Locator("#layer .it.txt").DblClickAsync();
         Check(await page.EvaluateAsync<bool>("document.activeElement?.matches('#layer .it.txt[contenteditable=\"plaintext-only\"]')"),
             "added text: double-click reopens inline editing");
         await RetainEditingOnResize(page, "#layer [contenteditable='plaintext-only']", "added text with another object");
         await page.Keyboard.PressAsync("Escape");
+        await page.Locator("#fp").ClickAsync();
         var text = page.Locator("#layer .it.txt");
         var box = await text.BoundingBoxAsync() ?? throw new Exception("Added text has no bounding box.");
         var before = await AddedTextX(page);
@@ -152,14 +159,16 @@ static class EditorTextSelection
                 range.setStart(el.firstChild, offset); range.collapse(true);
                 selection.removeAllRanges(); selection.addRange(range);
               } else el.setSelectionRange(offset, offset);
-              const state = window.__editingResize = { el, offset, layouts: 0, order: [...document.querySelectorAll('#layer > .it')].map(item => item._it.id) };
-              state.observer = new MutationObserver(() => state.layouts++);
-              state.observer.observe(document.getElementById('layer'), { attributes: true, attributeFilter: ['style'] });
+              const state = window.__editingResize = { el, offset, layouts: 0, resized: false, order: [...document.querySelectorAll('#layer > .it')].map(item => item._it.id) };
+              state.onResize = () => { state.resized = true; };
+              addEventListener('resize', state.onResize);
+              state.observer = new MutationObserver(() => { if (state.resized) state.layouts++; });
+              state.observer.observe(document.getElementById('zv'), { childList: true });
             }
             """, selector);
         foreach (var height in new[] { viewport.Height - 200, viewport.Height })
         {
-            await page.EvaluateAsync("window.__editingResize.layouts = 0");
+            await page.EvaluateAsync("window.__editingResize.layouts = 0; window.__editingResize.resized = false");
             await page.SetViewportSizeAsync(viewport.Width, height);
             await page.WaitForFunctionAsync("window.__editingResize.layouts > 0");
             Check(await page.EvaluateAsync<bool>("""
@@ -172,7 +181,7 @@ static class EditorTextSelection
                 }
                 """), name + ": layout repaint retains the focused editor and caret");
         }
-        await page.EvaluateAsync("window.__editingResize.observer.disconnect(); delete window.__editingResize");
+        await page.EvaluateAsync("window.__editingResize.observer.disconnect(); removeEventListener('resize', window.__editingResize.onResize); delete window.__editingResize");
     }
 
     static async Task<double> AddedTextX(IPage page, double? after = null)

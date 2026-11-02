@@ -363,6 +363,7 @@ try
     await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Ready.')");
     await page.Locator("#fb").ClickAsync(); await page.Locator("#fq").FillAsync("round trip");
     await page.WaitForFunctionAsync("document.getElementById('fc').textContent.includes('1')");
+    await page.Locator("#fx").ClickAsync();
     // PNG, ZIP, text, compression and image insertion use the same local dispatcher.
     await page.EvaluateAsync("""
         async () => {

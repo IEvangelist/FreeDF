@@ -329,6 +329,27 @@ static class EditorA11y
         await page.SetViewportSizeAsync(1440, 900);
 
         await open(page, pdf, "keys.pdf");
+        var initialZoom = await page.Locator("#zv").TextContentAsync();
+        await page.EvaluateAsync("""
+            () => {
+              const button = document.getElementById('zv'), observations = [];
+              const observer = new MutationObserver(() => observations.push({ text: button.textContent, name: button.getAttribute('aria-label') }));
+              observer.observe(button, { childList: true, characterData: true, subtree: true });
+              window.__zoomLabels = { observer, observations };
+            }
+            """);
+        await click(page, "#zi");
+        await page.WaitForFunctionAsync("window.__zoomLabels.observations.length > 0");
+        var zoomLabelErrors = await page.EvaluateAsync<string[]>("""
+            () => {
+              const { observer, observations } = window.__zoomLabels;
+              observer.disconnect(); delete window.__zoomLabels;
+              return observations.filter(o => o.name !== `Zoom ${o.text}`).map(o => `${o.text}: ${o.name}`);
+            }
+            """);
+        expect(zoomLabelErrors.Length == 0, "zoom: accessible name matches the displayed value as it changes: " + string.Join(", ", zoomLabelErrors));
+        await click(page, "#fp");
+        await page.WaitForFunctionAsync("text => document.getElementById('zv').textContent === text", initialZoom);
         await page.Locator("#fileBtn").FocusAsync(); await page.Keyboard.PressAsync("Enter");
         await page.Keyboard.PressAsync("ArrowDown"); await page.Keyboard.PressAsync("ArrowDown");
         expect(await page.EvaluateAsync<bool>("() => document.activeElement.textContent.includes('Open sample')"), "keyboard: arrow keys move through the File menu");

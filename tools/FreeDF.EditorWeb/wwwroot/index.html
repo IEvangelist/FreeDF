@@ -122,7 +122,7 @@
       <div class="group" id="zoomControls">
         <button id="fw" class="icon" title="Fit width (Ctrl+9)"><svg class="i"><use href="#i-fitw"/></svg></button>
         <button id="fp" class="icon" title="Fit page (Ctrl+0)"><svg class="i"><use href="#i-fitp"/></svg></button>
-        <button id="zo" class="icon" title="Zoom out (Ctrl+-)"><svg class="i"><use href="#i-zoomout"/></svg></button><button id="zv" title="Zoom presets (Ctrl+1 = 100%)">100%</button><button id="zi" class="icon" title="Zoom in (Ctrl++)"><svg class="i"><use href="#i-zoomin"/></svg></button>
+        <button id="zo" class="icon" title="Zoom out (Ctrl+-)"><svg class="i"><use href="#i-zoomout"/></svg></button><button id="zv" title="Zoom presets (Ctrl+1 = 100%)" aria-label="Zoom 100%">100%</button><button id="zi" class="icon" title="Zoom in (Ctrl++)"><svg class="i"><use href="#i-zoomin"/></svg></button>
       </div>
       <button id="tr" class="icon toggle on" title="Toggle properties panel (])" aria-pressed="true"><svg class="i"><use href="#i-sider"/></svg></button>
     </div>
@@ -459,7 +459,9 @@ function applyPageLayout(r, dw, dh, Lw, Lh, fitP) {
   layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
   layer.onpointerdown = layerDown;
   geom = { r, dw, dh, Lw, Lh };
-  $('zv').textContent = Math.round(S * 72 / 96 * 100) + '%'; fitP0 = fitP; navUpdate();
+  const zoomText = Math.round(S * 72 / 96 * 100) + '%', zoomButton = $('zv');
+  zoomButton.textContent = zoomText; zoomButton.setAttribute('aria-label', `Zoom ${zoomText}`);
+  fitP0 = fitP; navUpdate();
   paint();
   if (!$('props').contains(document.activeElement)) props();
 }

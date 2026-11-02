@@ -429,7 +429,6 @@
       const text = b.textContent.trim(), name = b.getAttribute('aria-label');
       if (text && name === b.title && !name.toLowerCase().includes(text.toLowerCase())) b.setAttribute('aria-label', `${text}, ${name}`);
     }
-    const zv = $('zv'); if (zv && zv.getAttribute('aria-label') !== `Zoom ${zv.textContent}`) zv.setAttribute('aria-label', `Zoom ${zv.textContent}`);
     for (const c of qa('#props :is(input, textarea, select):not([aria-label]):not([aria-labelledby]):not([type=hidden])', root)) {
       if (c.labels?.length) continue;
       const name = c.title || q('h3', c.closest('section'))?.textContent || c.dataset.k || c.name; if (name) c.setAttribute('aria-label', name);
@@ -665,7 +664,6 @@
     mo.observe($('view'), { childList: true });
     for (const id of ['thumbs', 'props']) mo.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     $('view').addEventListener('focusin', e => { if (e.target === $('view')) rove(); });
-    mo.observe($('zv'), { childList: true, characterData: true, subtree: true });
     mo.observe($('doc') || document.body, { childList: true, subtree: true, characterData: true });
     new MutationObserver(onStatus).observe($('status'), { childList: true, characterData: true, subtree: true });
     new MutationObserver(recs => {
