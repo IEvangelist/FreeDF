@@ -159,7 +159,7 @@ jobs:
           ok "${{ needs.build.result }}" '${{ needs.plan.outputs.smoke }}'
 
   package:
-    if: needs.build.result == 'success' && needs.plan.outputs.code == 'true' && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
+    if: needs.build.result == 'success' && needs.plan.outputs.code == 'true' && github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && (github.event_name != 'workflow_dispatch' || (inputs.deploy && inputs.chunk == 'all'))
     needs: [plan, build]
     runs-on: ubuntu-24.04
     steps:
