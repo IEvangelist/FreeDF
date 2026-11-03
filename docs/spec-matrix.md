@@ -170,6 +170,18 @@ matrices, packed multi-component references, strict container fallback/depth
 checks and `SMaskInData=2` coverage. The combined JBIG2/JPX/image focus passes
 392 tests. Neither addition promotes the overall codec row to Done.
 
+Validation evidence is historical, not a fresh run against the current tree.
+The [repository-fixture compatibility report](validation-compat.md) records
+PDF/A-1b/2b/3b verdict agreement on 551/551/549 comparable files, without a
+veraPDF-clean PDF/A positive fixture; its UA-1 figures predate the separate
+[2026-10-31 public-corpus reconciliation](spec-backlog.md#tagged-pdf-and-pdfua-reconciliation-2026-10-31).
+That later comparison reports 297 UA-1 and 138 UA-2 files with no corpus
+exclusions, 0 false positives, and 17/11 missed failing files respectively.
+Sample exclusions are separate from those public-corpus denominators.
+Mapped-rule overlap does not establish coverage for unmapped rules or turn
+file-verdict agreement into certification. See the [audit chronology](spec-audit.md)
+for superseded findings.
+
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
 | 7.2-7.3 | Lexical conventions, all object types | Done | Names `#xx`, literal/hex strings, tolerant numbers |
