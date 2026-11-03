@@ -343,6 +343,19 @@ by these rules, matching the published controls. Media is never accessed,
 decoded or played. UA-2 is unchanged; broader media conformance and dated
 corpus-wide remeasurement remain open.
 
+PDF/UA-2 clause 8.8 page-destination detection also follows named destinations
+and `/SD`/`/D` dictionaries, catalog `/OpenAction`, and GoTo actions reached
+through the existing inert action-trigger walk (including `/Next` and additional
+actions). It reuses the bounded local target resolver from Link grouping;
+destination-reference cycles/depth and action-walk truncation report
+`PDFUA2-DEST-INCOMPLETE`. Self-authored `PdfUaDestinationTests` cover the
+new paths and preserve UA-1/remote-action behavior. Both public 8.8 negative
+controls still fail their exact mapped rules against veraPDF 1.30.3 (2 compared,
+0 excluded); these controls were already detected, not new corpus misses
+closed. Exhaustive destination validity, named-tree boundary diagnostics and
+all possible action-bearing objects remain open. No navigation or target
+access occurs, and dated corpus-wide counts are unchanged.
+
 Closed (editor): structure tree editing, `RebuildParentTree` (page, `/Stm`, OBJR owners; unique keys kept, clashes reassigned) and conservative `AutoTagUntagged` (text and text-painting Forms -> P, images -> Figure without alt, vector paths -> Artifact; catalog set `/Suspects true`; render-equality tested; result reports figure/artifact counts and `NeedsReview`). `RebuildParentTree` refuses (throws, writes nothing) beyond the depth/size bounds and clears keys of owners that left the tree.
 
 Still open: arbitrary owner graphs and external (`/Stm`) streams in text extraction; per-invocation tagging of reused Form XObjects (UA-1 7.20-2 is only a heuristic `PDFUA-FORM-REUSED-TAGGED`); editing `/Stm` content, structure namespaces and role maps in the editor; auto-tagging of links/forms/figures/tables/headings and alternate text; veraPDF misses listed above (font-program completeness 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clips, 8.2.5.20-2 link targets, Table 5 nesting matrix); logical-order checks against an independent renderer/reader for malformed or reused forms. Empirical, not spec-derived: `PDFUA-TABLE-HEADER-CONNECTION`. Status stays Partial.
