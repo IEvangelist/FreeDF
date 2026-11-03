@@ -75,6 +75,19 @@ jobs:
               -p:SymbolPackageFormat=snupkg \
               --output "$RUNNER_TEMP/nuget-packages"
           done
+      - name: Verify installed packages
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          dotnet restore tests/FreeDF.PackageSmoke/FreeDF.PackageSmoke.csproj \
+            -p:Version="$VERSION" \
+            --source "$RUNNER_TEMP/nuget-packages" \
+            --source https://api.nuget.org/v3/index.json \
+            --packages "$RUNNER_TEMP/package-smoke-cache"
+          dotnet run --project tests/FreeDF.PackageSmoke/FreeDF.PackageSmoke.csproj \
+            -c Release --no-restore -p:Version="$VERSION" \
+            -- samples/03-typography-embedded.pdf
       - uses: actions/upload-artifact@v7
         with:
           name: nuget-packages

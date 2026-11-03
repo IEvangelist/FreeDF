@@ -19,7 +19,7 @@
     <EmbeddedResource Include="Resources\cjk-index.bin" LogicalName="PortableDocument.FallbackFonts.cjk-index.bin" />
     <EmbeddedResource Include="fallback-fonts\licenses\manifest.json" LogicalName="PortableDocument.FallbackFonts.licenses.json" />
     <!-- Desktop hosts get the data next to their binaries; browser hosts serve the same folder from wwwroot. -->
-    <None Include="fallback-fonts\**" Link="fallback-fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles\any\any\fallback-fonts\" PackageCopyToOutput="true" />
+    <None Include="fallback-fonts\**" Link="fallback-fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles\any\any\%(Identity)" PackageCopyToOutput="true" />
   </ItemGroup>
 
 </Project>

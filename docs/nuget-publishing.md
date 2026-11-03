@@ -58,6 +58,9 @@ host-independent raster golden hashes. Fuzz fixture names use `/` separators
 so Windows and Linux exercise the same deterministic mutations.
 JBIG2 text regions are limited to 1,000,000 symbol instances; exceeding that
 limit produces a render warning rather than unbounded decoding work.
+Before publishing, a separate package consumer restores all six libraries
+from the packed artifacts into an isolated cache, builds, extracts PDF text,
+and verifies that Latin and CJK font assets are copied to its output.
 
 For a local package build, pass an explicit version:
 
