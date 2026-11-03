@@ -206,6 +206,11 @@ targeted color-rule evidence only, not full PDF/A conformance.
 | Robustness | Fuzz/truncation tests | Done | Deterministic mutation of all fixtures (400-seed run green): only PdfException (or NotSupported for unsupported filters), timeouts enforced. Caps added: lexer nesting 200, inflate 1 GiB, raster 100M px, JBIG2/CCITT budgets |
 | Perf | Hot paths | Partial | Rasterizer/JPEG already tuned earlier; added static system-font cache and bounded immutable lexer operator-token reuse. On identical base `60107c7`, already-open vector rendering was 9.4–16.1% faster across two run orders with about 15.5% fewer managed allocations; fresh-vector and text CPU gains were not reliable. Six-document decoded-byte/token hashes matched. Existing results: text.pdf 96dpi render 107→98 ms, vector.pdf 246→243 ms; load scales linearly (1000 pages ≈12 ms) |
 
+PDF/UA Link-parent validation applies the profile-specific rule: UA-1 requires
+Link; UA-2 accepts Link or Reference, including role-mapped types (ISO 14289-2
+8.2.5.20; veraPDF 8.2.5.20-1). The separate UA-2 different-target grouping check
+8.2.5.20-2 remains open; this focused correction does not update corpus counts.
+
 The clause-12 action model also exposes inert typed local `/GoTo` metadata through `GoToDetails`: `/D` names, byte strings, and explicit arrays are retained without navigation, named-destination lookup, or array-element resolution. Missing and wrong-type destinations remain null in the typed view while the original dictionary is preserved; array contents are not conformance-validated.
 
 Typed `/Named` metadata exposes `/N` through `NamedDetails`, retaining standard and unrecognised names and the original action dictionary without dispatching actions. Missing or wrong-type names are null in the typed view.

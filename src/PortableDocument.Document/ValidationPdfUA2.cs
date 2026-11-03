@@ -58,13 +58,18 @@ internal static class PdfUA2Checks
     /// <summary>Where a (type, namespace) pair ends after role mapping: a PDF 1.7 or PDF 2.0 standard type, a circular chain, or nowhere.</summary>
     enum RoleOutcome { Standard, Circular, Unmapped }
 
-    static RoleOutcome Resolve(PdfFile f, StructureTree tree, string type, PdfDictionary? nsDict, string? ns)
+    static RoleOutcome Resolve(PdfFile f, StructureTree tree, string type, PdfDictionary? nsDict, string? ns, out string? standardType)
     {
+        standardType = null;
         var seen = new HashSet<(string, string?)>();
         for (var depth = 0; depth < MaxRoleDepth; depth++)
         {
-            if ((ns is null || ns == Pdf17Namespace) && StructureTree.IsPdf17StandardType(type) && !tree.RoleMap.ContainsKey(type)) return RoleOutcome.Standard;
-            if (ns == Pdf2Namespace && StructureTree.IsStandardType(type)) return RoleOutcome.Standard;
+            if (((ns is null || ns == Pdf17Namespace) && StructureTree.IsPdf17StandardType(type) && !tree.RoleMap.ContainsKey(type))
+                || ns == Pdf2Namespace && StructureTree.IsStandardType(type))
+            {
+                standardType = type;
+                return RoleOutcome.Standard;
+            }
             if (ns == MathMlNamespace) return RoleOutcome.Standard;
             if (!seen.Add((type, ns))) return RoleOutcome.Circular;
             if (nsDict is not null && ns is not null && ns != Pdf17Namespace && ns != Pdf2Namespace)
@@ -87,6 +92,12 @@ internal static class PdfUA2Checks
         return RoleOutcome.Circular;
     }
 
+    internal static string? StandardType(ValidationContext c, StructureTree tree, StructElement element)
+    {
+        Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type);
+        return type;
+    }
+
     static void Roles(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
@@ -96,7 +107,7 @@ internal static class PdfUA2Checks
         {
             if (e.Namespace is { } uri && e.NamespaceDict is { } nd) namespaces.TryAdd(uri, nd);
             if (!reported.Add((e.Type, e.Namespace))) continue;
-            switch (Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace))
+            switch (Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out _))
             {
                 case RoleOutcome.Circular:
                     c.Add("PDFUA2-ROLEMAP-CIRCULAR", ValidationSeverity.Error, $"structure type /{e.Type} has a circular role mapping", "ISO 14289-2 8.2.4", e.PageIndex);

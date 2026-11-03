@@ -468,8 +468,9 @@ internal static partial class PdfUAChecks
                     var hasContents = f.Resolve(ad.Get("Contents")) is PdfString { Bytes.Length: > 0 };
                     if (!hasContents && (c.Part == 1 || parent?.Alt is not { Length: > 0 }))
                         c.Add("PDFUA-LINK-DESCRIPTION", c.Part == 1 ? ValidationSeverity.Error : ValidationSeverity.Warning, c.Part == 1 ? "Link annotation has no /Contents" : "Link annotation has no /Contents and its structure element has no /Alt (advisory: veraPDF's PDFUA-2 profile has no counterpart)", Clause(c, "7.18.5", "8.9"), i);
-                    if (parent is not null && parent.StandardType != "Link")
-                        c.Add("PDFUA-LINK-STRUCT", ValidationSeverity.Error, $"Link annotation is nested in /{parent.Type}, expected Link", Clause(c, "7.18.5", "8.9"), i);
+                    var parentType = parent is null ? null : c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, parent) : parent.StandardType;
+                    if (parent is not null && parentType != "Link" && !(c.Part == 2 && parentType == "Reference"))
+                        c.Add("PDFUA-LINK-STRUCT", ValidationSeverity.Error, $"Link annotation is nested in /{parent.Type}, expected {(c.Part == 2 ? "Link or Reference" : "Link")}", Clause(c, "7.18.5", "8.2.5.20"), i);
                 }
                 else if (sub == "Widget")
                 {

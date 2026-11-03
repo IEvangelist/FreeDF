@@ -54,6 +54,73 @@ public class AnnotationStructureValidationTests
     }
 
     [Theory]
+    [InlineData(1, "Link", false)]
+    [InlineData(1, "Reference", true)]
+    [InlineData(1, "Span", true)]
+    [InlineData(2, "Link", false)]
+    [InlineData(2, "Reference", false)]
+    [InlineData(2, "Span", true)]
+    public void LinkStructureParentsFollowTheApplicableUaProfile(int part, string role, bool invalid)
+    {
+        var doc = Load(part,
+            (8, Element.Replace("/S /Annot", $"/S /{role}")),
+            (9, Annotation.Replace("/Subtype /Stamp", "/Subtype /Link")));
+
+        var report = Validate(doc, part);
+        Assert.Equal(invalid, report.Has("PDFUA-LINK-STRUCT"));
+        if (invalid)
+        {
+            var finding = Assert.Single(report.Findings, f => f.RuleId == "PDFUA-LINK-STRUCT");
+            Assert.Equal(ValidationSeverity.Error, finding.Severity);
+            Assert.Equal(part == 1 ? "ISO 14289-1 7.18.5" : "ISO 14289-2 8.2.5.20", finding.Clause);
+        }
+        else
+            Assert.True(report.IsCompliant, string.Join("\n", report.Findings));
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public void RoleMappedReferenceLinkParentsFollowTheApplicableUaProfile(int part, bool invalid)
+    {
+        var doc = Load(part,
+            (5, "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /RoleMap << /Citation /Reference >> >>"),
+            (8, Element.Replace("/S /Annot", "/S /Citation")),
+            (9, Annotation.Replace("/Subtype /Stamp", "/Subtype /Link")));
+
+        Assert.Equal("Reference", doc.Structure!.ElementFor(Assert.IsType<PdfDictionary>(doc.File.GetObject(8)))!.StandardType);
+        Assert.Equal(invalid, Validate(doc, part).Has("PDFUA-LINK-STRUCT"));
+    }
+
+    [Theory]
+    [InlineData("Link", false)]
+    [InlineData("Reference", false)]
+    [InlineData("Span", true)]
+    public void Ua2LinkParentsResolveNamespaceRoleMappings(string target, bool invalid)
+    {
+        var doc = Load(2,
+            (8, Element.Replace("/S /Annot", "/S /Citation /NS 13 0 R")),
+            (9, Annotation.Replace("/Subtype /Stamp", "/Subtype /Link")),
+            (13, $"<< /Type /Namespace /NS (urn:test) /RoleMapNS << /Citation [/{target} 14 0 R] >> >>"));
+
+        var report = Validate(doc, 2);
+        Assert.False(report.Has("PDFUA2-ROLEMAP-MISSING"));
+        Assert.Equal(invalid, report.Has("PDFUA-LINK-STRUCT"));
+        if (!invalid) Assert.True(report.IsCompliant, string.Join("\n", report.Findings));
+    }
+
+    [Fact]
+    public void Ua2MathMlTypeNamesDoNotImpersonatePdfLinkParents()
+    {
+        var doc = Load(2,
+            (8, Element.Replace("/S /Annot", "/S /Reference /NS 13 0 R")),
+            (9, Annotation.Replace("/Subtype /Stamp", "/Subtype /Link")),
+            (13, "<< /Type /Namespace /NS (http://www.w3.org/1998/Math/MathML) >>"));
+
+        Assert.True(Validate(doc, 2).Has("PDFUA-LINK-STRUCT"));
+    }
+
+    [Theory]
     [InlineData(1)]
     [InlineData(2)]
     public void ParentTreeAndDirectObjrIdentifyTheAnnotation(int part)
