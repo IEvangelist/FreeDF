@@ -4,6 +4,44 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## PDF/A image/Form dictionary policies
+
+Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects
+reject non-null `/OPI` or `/PS` and explicit `/Subtype2 /PS`. Image
+`BitsPerComponent`, when present/non-null, must be an integer in 1/2/4/8 for
+PDF/A-1b or 1/2/4/8/16 for PDF/A-2b/3b; an image mask permits only 1.
+Absent/null BPC is not rejected by these conditional rules (including the JPX
+omission case); general required-field/filter-sample consistency is separate.
+Null and indirect-null banned keys retain ordinary absent-entry semantics.
+Each rule emits at most one finding per document. No PostScript is executed.
+
+Clauses: image rules use ISO 19005-1 6.2.4 or ISO 19005-2/3 6.2.8.
+Form OPI uses 19005-1 6.2.4; Form PS/Subtype2 uses 19005-1 6.2.5;
+both use 19005-2/3 6.2.9. The pinned v1.30.3 profiles supply the corresponding
+image tests 1/2/4/5 and Form test 1. Base-standard mask semantics are independently
+confirmed in [ISO 32000-1:2008](https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf),
+8.9.5, the image-dictionary BPC entry on printed page 207 (PDF page 215):
+an explicitly specified mask BPC must be 1, including standalone stencils.
+
+Fifty-one independent controls are incremental derivatives of the same pinned
+public image positive used below. They preserve the original source objects,
+replace the page/image/Form dictionaries with a one-pixel unfiltered image or
+Form wrapper, supply calibrated DefaultGray/DefaultRGB, and select matching
+1b/2b/3b metadata. They cover clean dictionaries, null keys, Alternates, OPI,
+Form PS/Subtype2, BPC 3/16 and standalone/attached mask BPC 1/2.
+FreeDF baseline `6b7e6d39` missed all 22 failures reported by veraPDF 1.30.3.
+The correction closes those 22 and agrees on 48/51 whole-file verdicts,
+zero exclusions. Three explicit disagreements remain: veraPDF accepts standalone
+two-bit stencils while rejecting equivalent attached two-bit masks at image
+test 5; FreeDF rejects both, following the explicit base-standard one-bit
+constraint. These are not hidden exclusions or a claim of perfect agreement.
+FreeDF accepts 26 controls and rejects 25.
+
+See `PdfAXObjectPolicyTests.cs`. Inline-image parsing, standalone PostScript
+XObject bans, general image/Form validity and unresolved-reference completeness
+remain open. Rendering is unchanged; no external PDF/ICC/report is bundled,
+and historical corpus measurements are not replaced with these targeted totals.
+
 ## PDF/A painted-device-colour OutputIntents
 
 DeviceGray does not require a Gray OutputIntent profile: any PDF/A OutputIntent

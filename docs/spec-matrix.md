@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
+profile-invalid image/mask bit depths. Fifty-one independent controls close
+22 reference-reported misses; agreement is 48/51, with three explicitly recorded
+standalone-stencil disagreements where FreeDF enforces the base standard's
+one-bit constraint. Null-key controls remain accepted. See
+[dictionary-policy evidence and limits](spec-backlog.md#pdfa-imageform-dictionary-policies);
+inline parsing, general image validity and standalone PS XObjects remain open.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

@@ -203,20 +203,43 @@ internal static class PdfAChecks
     {
         var f = c.F;
         var reportedLzw = false; var reportedJpx = false; var reportedAction = false; var reportedObjStm = false; var reportedFile = false; var reportedAf = false;
-        var reportedInterpolation = false;
+        var reportedXObjects = new HashSet<string>(StringComparer.Ordinal);
+        void XObjectFinding(string rule, string message, string part1, string part23)
+        {
+            if (reportedXObjects.Add(rule))
+                c.Add(rule, ValidationSeverity.Error, message, Clause(c, part1, part23, part23));
+        }
         foreach (var o in c.AllObjects())
         {
             var dict = o switch { PdfStream s => s.Dict, PdfDictionary d => d, _ => null };
             if (dict is null) continue;
-            if (!reportedInterpolation && o is PdfStream && f.Resolve(dict.Get("Subtype")).AsName() == "Image"
-                && f.Resolve(dict.Get("Interpolate")) is PdfBoolean { Value: true })
-            {
-                reportedInterpolation = true;
-                c.Add("PDFA-IMAGE-INTERPOLATE", ValidationSeverity.Error, "an image XObject requests interpolation; PDF/A requires /Interpolate to be false",
-                    Clause(c, "6.2.4", "6.2.8", "6.2.8"));
-            }
             if (o is PdfStream st)
             {
+                var subtype = f.Resolve(dict.Get("Subtype")).AsName();
+                if (subtype == "Image")
+                {
+                    if (f.Resolve(dict.Get("Interpolate")) is PdfBoolean { Value: true })
+                        XObjectFinding("PDFA-IMAGE-INTERPOLATE", "an image XObject requests interpolation; PDF/A requires /Interpolate to be false", "6.2.4", "6.2.8");
+                    if (f.Resolve(dict.Get("Alternates")) is not null and not PdfNull)
+                        XObjectFinding("PDFA-IMAGE-ALTERNATES", "an image XObject contains /Alternates", "6.2.4", "6.2.8");
+                    if (f.Resolve(dict.Get("OPI")) is not null and not PdfNull)
+                        XObjectFinding("PDFA-IMAGE-OPI", "an image XObject contains /OPI", "6.2.4", "6.2.8");
+                    var bits = f.Resolve(dict.Get("BitsPerComponent"));
+                    if (bits is not null and not PdfNull)
+                    {
+                        if (bits is not PdfInteger bpc || !(bpc.Value is 1 or 2 or 4 or 8 || c.Part > 1 && bpc.Value == 16))
+                            XObjectFinding("PDFA-IMAGE-BPC", "an image XObject has a BitsPerComponent value not permitted by this PDF/A profile", "6.2.4", "6.2.8");
+                        if (f.Resolve(dict.Get("ImageMask")) is PdfBoolean { Value: true } && bits is not PdfInteger { Value: 1 })
+                            XObjectFinding("PDFA-IMAGE-MASK-BPC", "an image mask's /BitsPerComponent must be 1 when present", "6.2.4", "6.2.8");
+                    }
+                }
+                else if (subtype == "Form")
+                {
+                    if (f.Resolve(dict.Get("OPI")) is not null and not PdfNull)
+                        XObjectFinding("PDFA-FORM-OPI", "a Form XObject contains /OPI", "6.2.4", "6.2.9");
+                    if (f.Resolve(dict.Get("PS")) is not null and not PdfNull || f.Resolve(dict.Get("Subtype2")).AsName() == "PS")
+                        XObjectFinding("PDFA-FORM-POSTSCRIPT", "a Form XObject contains /PS or /Subtype2 /PS", "6.2.5", "6.2.9");
+                }
                 foreach (var name in FilterNames(f, st.Dict))
                 {
                     if (name is "LZWDecode" or "LZW" && !reportedLzw) { reportedLzw = true; c.Add("PDFA-FILTER-LZW", ValidationSeverity.Error, "LZWDecode filter is not permitted", Clause(c, "6.1.10", "6.1.10", "6.1.10")); }

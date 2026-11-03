@@ -23,6 +23,9 @@ replacement detection is independently implemented in `ValidationContext.cs`.
 The same clause facts inform painted RGB/CMYK OutputIntent matching and Gray
 acceptance of any PDF/A OutputIntent, independently implemented in
 `ValidationContext.cs` and `ValidationPdfA.cs`.
+The image Alternates/OPI and BPC/mask conditions (image tests 1/2/4/5), and Form
+OPI/PS/Subtype2 bans (19005-1 6.2.4/6.2.5; 19005-2/3 6.2.9), were likewise
+cross-checked against those CC BY 4.0 profiles and independently implemented.
 
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
