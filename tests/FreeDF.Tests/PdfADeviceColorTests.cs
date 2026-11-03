@@ -26,7 +26,7 @@ public class PdfADeviceColorTests
     static ValidationReport Validate(byte[] pdf, PdfValidationProfile profile) =>
         PdfValidator.Validate(PdfDocument.Load(pdf), profile);
 
-    static string Icc(string colorSpace)
+    internal static string Icc(string colorSpace)
     {
         var bytes = new char[132];
         bytes[3] = (char)bytes.Length;
@@ -138,7 +138,7 @@ public class PdfADeviceColorTests
     }
 
     [Fact]
-    public void ImplicitGrayTextPaintingRequiresDeviceIndependentGrayOrGrayOutputIntent()
+    public void ImplicitGrayTextPaintingRequiresDeviceIndependentGrayOrPdfAOutputIntent()
     {
         Assert.True(Validate(Pdf("BT (text) Tj ET"), PdfValidationProfile.PdfA2b).Has("PDFA-OUTPUTINTENT-MISSING"));
         Assert.False(Validate(Pdf("BT 3 Tr (text) Tj ET"), PdfValidationProfile.PdfA2b).Has("PDFA-OUTPUTINTENT-MISSING"));
@@ -147,7 +147,7 @@ public class PdfADeviceColorTests
         Assert.False(Validate(grayIntent, PdfValidationProfile.PdfA2b).Has("PDFA-OUTPUTINTENT-MISSING"));
 
         var rgbIntent = Pdf("10 10 80 80 re f", catalogExtra: Intent, extras: ObjPdf.Stream(Icc("RGB "), "/N 3"));
-        Assert.True(Validate(rgbIntent, PdfValidationProfile.PdfA2b).Has("PDFA-OUTPUTINTENT-MISSING"));
+        Assert.False(Validate(rgbIntent, PdfValidationProfile.PdfA2b).Has("PDFA-OUTPUTINTENT-MISSING"));
 
         var rgbPainting = Pdf("1 0 0 rg 10 10 80 80 re f", catalogExtra: Intent, extras: ObjPdf.Stream(Icc("RGB "), "/N 3"));
         Assert.False(Validate(rgbPainting, PdfValidationProfile.PdfA2b).Has("PDFA-OUTPUTINTENT-MISSING"));

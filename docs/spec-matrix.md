@@ -11,9 +11,17 @@ and the separate baseline-reproduced public-positive OutputIntent rejection is
 now corrected by honoring CalRGB/ICCBased DefaultRGB and ICCBased DefaultCMYK.
 Twelve matching-profile RGB controls agree with veraPDF (six positives/six
 negatives); CMYK controls are authored, not an independent comparison.
-Lab/DeviceN replacements and broader OutputIntent matching remain open;
+Lab/DeviceN replacements and exhaustive colour-use/completeness remain open;
 see [the scoped evidence and remaining disagreements](spec-backlog.md#pdfa-image-xobject-interpolation-policy).
 Historical corpus totals are unchanged.
+
+Painted DeviceRGB/CMYK now require matching OutputIntent profiles when no
+supported default replaces them; DeviceGray accepts any PDF/A OutputIntent,
+correcting the earlier Gray-only restriction. Eighteen authored controls with
+real public ICC data agree with veraPDF 1.30.3 (twelve positives/six exact-rule
+negatives, zero exclusions). Unused resources do not create the new mismatch
+finding. Shading/pattern/inline usage and complete colour-use analysis remain
+open; see [the scoped OutputIntent evidence](spec-backlog.md#pdfa-painted-device-colour-outputintents).
 
 The editor-pipeline/current-main integration retains **15 Partial / 0 Todo**
 and the limited redaction/signature Done rows. Binary transport, cached
@@ -194,7 +202,7 @@ file-verdict agreement into certification. See the [audit chronology](spec-audit
 for superseded findings.
 
 Targeted PDF/A color regressions now detect implicit initial DeviceGray text and
-path painting, honor calibrated `DefaultGray` resources, and require a Gray
+path painting, honor calibrated `DefaultGray` resources, and require a PDF/A
 OutputIntent when no usable default applies. CalRGB, DefaultGray, and authored
 Type 3 text-with-DefaultGray fixtures are accepted by veraPDF 1.30.3 for their
 matching profiles; corresponding Gray negatives fail. These controls are

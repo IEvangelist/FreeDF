@@ -20,6 +20,9 @@ It is independently implemented in C#; inline-image coverage remains deferred.
 The same profiles were used to cross-check device-colour replacement conditions
 (PDF/A-1b 6.2.3.3 and PDF/A-2b/3b 6.2.4.3). Resource-scoped calibrated/ICCBased
 replacement detection is independently implemented in `ValidationContext.cs`.
+The same clause facts inform painted RGB/CMYK OutputIntent matching and Gray
+acceptance of any PDF/A OutputIntent, independently implemented in
+`ValidationContext.cs` and `ValidationPdfA.cs`.
 
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 

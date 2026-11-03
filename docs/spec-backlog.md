@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## PDF/A painted-device-colour OutputIntents
+
+DeviceGray does not require a Gray OutputIntent profile: any PDF/A OutputIntent
+qualifies, subject to the separate profile-validity checks. Painted DeviceRGB
+and DeviceCMYK instead require matching RGB and CMYK destination profiles unless
+a supported device-independent default replaces that space.
+`PDFA-OUTPUTINTENT-COLORSPACE` rejects mismatches at ISO 19005-1 6.2.3.3 or
+ISO 19005-2/3 6.2.4.3. This corrects the former over-strict Gray assertion in
+the tests/documentation; it is not a relaxation of the standard.
+
+The new mismatch decision follows actual path/text/image-XObject painting,
+including q/Q restoration, text rendering modes and stencil fill colour.
+Unused resource entries, unpainted colour setters and invisible text do not
+create a mismatch. Form invocation memoization distinguishes Gray/RGB/CMYK
+and inherited resource contexts, so a prior invocation cannot hide later
+painting under a different colour/default-space state.
+
+Eighteen authored matching-profile controls use real ICC data extracted from
+the pinned public image pass (RGB) and
+`PDF_A-1b/6.2 Graphics/6.2.3.3 Uncalibrated color space/veraPDF test suite
+6-2-3-3-t02-pass-a.pdf` (CMYK), corpus commit
+`bb75f4f0073d9350dfd058c0162a367e6fadf25e`. Each 1b/2b/3b control has a
+single Gray/RGB/CMYK painted rectangle and an RGB or CMYK OutputIntent,
+matching XMP identification and a valid xref/trailer. veraPDF 1.30.3 accepts
+twelve and rejects six for the exact RGB/CMYK rule. FreeDF baseline
+`f2547e29` disagrees on twelve (six false rejections, six missed failures);
+the correction agrees on all eighteen, zero exclusions.
+See `PdfAOutputIntentColorTests.cs`. Synthetic unit-test ICC headers are not
+the complete profiles used in these external controls.
+
+This is not exhaustive colour-use analysis: shading/pattern usage,
+binary-safe inline images, unsupported replacement spaces, general malformed
+colour-space validation and traversal completeness remain open. The existing
+no-OutputIntent resource/operator heuristic is not made actual-use-complete
+by the new painted-colour mismatch check. No external PDF/ICC/report is bundled;
+historical corpus totals remain unchanged.
+
 ## PDF/A default RGB/CMYK replacements
 
 The device-colour scan now honors resource-local `/DefaultRGB` with CalRGB
@@ -33,8 +70,8 @@ comparison. See `PdfADefaultDeviceColorTests.cs`; its synthetic ICC headers
 are not claimed to be complete ICC-positive files.
 
 Lab/DeviceN replacements, binary-safe inline-image handling, exhaustive
-colour-use/traversal completeness and OutputIntent colour-space matching
-(including the existing over-strict Gray-profile policy) remain open.
+colour-use/traversal completeness remain open. Basic painted-colour
+OutputIntent matching is recorded above.
 External PDFs/reports are not bundled; historical corpus totals are unchanged.
 
 ## PDF/A image-XObject interpolation policy
@@ -228,7 +265,7 @@ validation; the existing mid-import rollback test checks prior source import map
 | 7.10–7.11 — File specifications, embedded files, related structures | Inert file specs, recursive RF and AF owners, typed collection schema/view/sort/folders/navigators and opaque CI/FS/Thumb/EP remain available. Bounded name/number-tree diagnostics now cover ordering, limits, duplicates, malformed pairs and cycles; embedded-file diagnostics validate specified size/MD5 checksum, and metadata strings survive encrypted saves. Continue with broader tree-boundary, attachment and full/incremental preservation combinations. | `src/PortableDocument.Document/DocumentFeatures.cs`, `TreeDiagnostics.cs`; `tests/FreeDF.Tests/DocumentFeatureTests.cs`, `FileSpecificationMetadataTests.cs`, `EditorTests.cs`. Retain unknown raw dictionaries/streams; never execute payloads or open external targets. |
 | 12 — Annotations, forms, and actions | Typed inert action subtypes, scope-specific triggers and link PA now supplement existing dictionary/Next traversal. Common/markup/subtype annotation metadata and inherited form-field flags/options/signature lock/seed/XFA details are exposed with explicit truncation. Continue with exhaustive object/trigger coverage, annotation appearances and complete field semantics. Prior GoToDp limitations remain: local indirect DPart dictionary only, no DPartRoot search, Start/End resolution or navigation. | `src/PortableDocument.Document/SafeContentFeatures.cs`, `ActionSubtypeFeatures.cs`, `AnnotationDetailFeatures.cs`, `FormFieldDetailFeatures.cs`; `tests/FreeDF.Tests/ActionAnnotationFormDetailTests.cs` plus existing action/editor/security tests. Prove opening, listing, saving and rendering do not execute actions, process XFA or access remote targets. |
 | 14 — Tagged PDF and logical structure | Page/Form MCIDs and selected local annotation MCRs retain stream/owner scoping. Whole-object OBJR now extracts locally attributed annotation/Form text with bounded nested discovery, page-scoped roots and MCR/Artifact duplicate suppression. Added parse/parent/duplicate/ParentTree diagnostics and one-pass bounded indexing. Continue with external streams, arbitrary owner graphs, per-invocation tagging and independently checked malformed/reused-form logical order. Plain ExtractText/Analyze remain annotation-free; diagnostics are not accessibility certification. | `src/PortableDocument.Document/Structure.cs`, `src/PortableDocument.Render/StructuredTextExtractor.cs`, `src/PortableDocument.Content/ContentInterpreter.cs`; `tests/FreeDF.Tests/ObjectReferenceTextTests.cs`, `FormStructureTests.cs`, `StreamOwnerStructureTests.cs`, `StructureValidationTests.cs`. Add independently checked page/Form/appearance ordering and alternate-text fixtures. |
-| 14.8 / PDF/A and PDF/UA — Validation | Added deep PDF/A checks for ICC profile header/version/class/space/components, XMP packet and extension metadata, PDF/A-1 Info/XMP equivalence, font widths/encoding/CIDSystemInfo, form NeedAppearances, named actions, and a bounded content scan for implicit initial DeviceGray text/path painting. DeviceGray checks honor calibrated page/Form `/DefaultGray` spaces and require a Gray PDF/A OutputIntent when no usable default applies. Authored CalRGB, calibrated DefaultGray, and Type 3 text-with-DefaultGray fixtures pass veraPDF 1.30.3 for matching PDF/A-1b/2b/3b profiles; implicit/explicit Gray negatives fail the corresponding rules. These are narrow controls, not general font/ICC output-profile coverage; keep the validators heuristic and Partial. The historical repository-fixture comparison in [validation-compat.md](validation-compat.md) records PDF/A-1b/2b/3b verdict agreement on 551/551/549 comparable files; its older UA-1 results are not the later public-corpus results. The [2026-10-31 reconciliation](#tagged-pdf-and-pdfua-reconciliation-2026-10-31) records the separate PDF/UA-1/2 corpus comparison, exclusions, misses, and unmapped-rule limitations. File-verdict agreement does not establish per-rule coverage or certification. Unconfirmed rules and heuristics remain as listed in the matrix; expand tagged-content/font edge cases without visual/semantic inference. | `src/PortableDocument.Document/ValidationPdfA.cs`, `ValidationContext.cs`, `ValidationPdfADeep.cs`, `ValidationPdfUADeep.cs`, `ValidationPdfUA.cs`, and `tests/FreeDF.Tests/PdfADeviceColorTests.cs`, `DeepValidationTests.cs`, `StructureValidationTests.cs`; [targeted color evidence](validation-compat.md#2026-11-03-targeted-pdfa-color-fixtures), [historical compatibility report](validation-compat.md), [audit](spec-audit.md#1-validator-cross-check-against-verapdf), and `tools/ua_crosscheck.py`. The corpus measurements remain historical; distinguish mapped-rule evidence from file verdicts and color-only controls. |
+| 14.8 / PDF/A and PDF/UA — Validation | Added deep PDF/A checks for ICC profile header/version/class/space/components, XMP packet and extension metadata, PDF/A-1 Info/XMP equivalence, font widths/encoding/CIDSystemInfo, form NeedAppearances, named actions, and a bounded content scan for implicit initial DeviceGray text/path painting. DeviceGray checks honor calibrated page/Form `/DefaultGray` spaces and require a PDF/A OutputIntent when no usable default applies; its profile need not be Gray. Painted RGB/CMYK require matching profiles unless a supported default replaces the device space, as detailed above. Authored CalRGB, calibrated DefaultGray, and Type 3 text-with-DefaultGray fixtures pass veraPDF 1.30.3 for matching PDF/A-1b/2b/3b profiles; implicit/explicit Gray negatives fail the corresponding rules. These are narrow controls, not general font/ICC output-profile coverage; keep the validators heuristic and Partial. The historical repository-fixture comparison in [validation-compat.md](validation-compat.md) records PDF/A-1b/2b/3b verdict agreement on 551/551/549 comparable files; its older UA-1 results are not the later public-corpus results. The [2026-10-31 reconciliation](#tagged-pdf-and-pdfua-reconciliation-2026-10-31) records the separate PDF/UA-1/2 corpus comparison, exclusions, misses, and unmapped-rule limitations. File-verdict agreement does not establish per-rule coverage or certification. Unconfirmed rules and heuristics remain as listed in the matrix; expand tagged-content/font edge cases without visual/semantic inference. | `src/PortableDocument.Document/ValidationPdfA.cs`, `ValidationContext.cs`, `ValidationPdfADeep.cs`, `ValidationPdfUADeep.cs`, `ValidationPdfUA.cs`, and `tests/FreeDF.Tests/PdfADeviceColorTests.cs`, `DeepValidationTests.cs`, `StructureValidationTests.cs`; [targeted color evidence](validation-compat.md#2026-11-03-targeted-pdfa-color-fixtures), [historical compatibility report](validation-compat.md), [audit](spec-audit.md#1-validator-cross-check-against-verapdf), and `tools/ua_crosscheck.py`. The corpus measurements remain historical; distinguish mapped-rule evidence from file verdicts and color-only controls. |
 | Performance — Hot paths (non-conformance work) | A bounded immutable lexer operator-token reuse change shows a repeatable already-open vector result; fresh-vector and text CPU gains were not reliable. Continue selecting representative hot paths from measured results and record repeatable before/after results before optimizing. | `bench/FreeDF.Bench/README.md` and checked-in dated report/CSV. Do not treat noisy short-iteration cases as ranking evidence or weaken correctness tests for speed. |
 
 Local `/GoTo` action metadata (12.6.4.2, Table 202) is also exposed through `GoToDetails`, retaining `/D` names, byte strings, and explicit arrays without navigation, named-destination lookup, or resolving array elements. `tests/FreeDF.Tests/GoToActionTests.cs` covers direct/indirect entries, destination modes, malformed values, and cyclic `/Next` chains. This is inert inspection, not destination conformance validation or navigation.
