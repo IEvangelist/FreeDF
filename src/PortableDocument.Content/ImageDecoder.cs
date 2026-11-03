@@ -18,6 +18,7 @@ public static class ImageDecoder
         var imageIntent = R(d.Get("Intent")) is PdfName name ? RenderingIntentNames.Parse(name.Value) : intent;
         int w = (int)(R(d.Get("Width")).AsNumber() ?? 0), h = (int)(R(d.Get("Height")).AsNumber() ?? 0);
         isMask = R(d.Get("ImageMask")) is PdfBoolean { Value: true };
+        var interpolate = R(d.Get("Interpolate")) is PdfBoolean { Value: true };
         if (w <= 0 || h <= 0 || (long)w * h > 200_000_000) return null;
         var data = f.DecodeStream(xs, out var codec, out var parms);
         var bpc = isMask ? 1 : (int)(R(d.Get("BitsPerComponent")).AsNumber() ?? 8);
@@ -91,7 +92,7 @@ public static class ImageDecoder
                     var paint = invert ? bit == 1 : bit == 0;
                     rgba[(y * w + x) * 4 + 3] = (byte)(paint ? 255 : 0);
                 }
-            return new ImageData(w, h, rgba, true);
+            return new ImageData(w, h, rgba, true) { Interpolate = interpolate };
         }
 
         var rowBytes = (w * nc * bpc + 7) / 8;
@@ -168,6 +169,17 @@ public static class ImageDecoder
             }
         }
 
+        var image = new ImageData(w, h, rgba) { Interpolate = interpolate };
+        void Mask(ImageData mask, bool useLuma, byte[]? matte = null)
+        {
+            if (interpolate || mask.Interpolate)
+                image = image with
+                {
+                    UnmaskedImage = image with { Rgba = (byte[])rgba.Clone() },
+                    OpacityMask = mask, MaskUsesLuminosity = useLuma, Matte = matte
+                };
+            ApplyAlpha(rgba, w, h, mask, useLuma, matte: matte);
+        }
         if (depth == 0)
         {
             if (R(d.Get("SMask")) is PdfStream sm && Decode(f, sm, res, out _, out _, intent, blackPointCompensation, depth + 1) is { } smi)
@@ -179,12 +191,12 @@ public static class ImageDecoder
                     var mcol = cs.ToRgb(mc, imageIntent, blackPointCompensation);
                     matte = [(byte)Math.Round(mcol.R * 255), (byte)Math.Round(mcol.G * 255), (byte)Math.Round(mcol.B * 255)];
                 }
-                ApplyAlpha(rgba, w, h, smi, true, matte: matte);
+                Mask(smi, true, matte);
             }
             else if (R(d.Get("Mask")) is PdfStream mk && Decode(f, mk, res, out var mkMask, out _, intent, blackPointCompensation, depth + 1) is { } mki)
-                ApplyAlpha(rgba, w, h, mki, !mkMask);
+                Mask(mki, !mkMask);
         }
-        return new ImageData(w, h, rgba);
+        return image;
     }
 
     /// <summary>Applies a soft mask (gray luminosity) or stencil mask (alpha channel) scaled to the image size. A <paramref name="matte"/> colour un-premultiplies the image (ISO 32000-2 11.6.5.3).</summary>
@@ -198,7 +210,12 @@ public static class ImageDecoder
                 var mx = Math.Min(mask.Width - 1, x * mask.Width / w);
                 var mp = (my * mask.Width + mx) * 4;
                 int a;
-                if (useLuma) a = mask.Rgba[mp];
+                if (mask.Interpolate)
+                {
+                    var sample = mask.SamplePremultiplied((x + 0.5) * mask.Width / w, (y + 0.5) * mask.Height / h);
+                    a = (int)Math.Round(useLuma ? sample.R : invertStencil ? 255 - sample.A : sample.A);
+                }
+                else if (useLuma) a = mask.Rgba[mp];
                 else a = invertStencil ? 255 - mask.Rgba[mp + 3] : mask.Rgba[mp + 3];
                 var p = (y * w + x) * 4;
                 if (matte is not null && a > 0)

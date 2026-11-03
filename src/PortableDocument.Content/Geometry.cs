@@ -112,7 +112,63 @@ public enum LineJoin { Miter, Round, Bevel }
 
 public sealed record StrokeStyle(double Width, LineCap Cap, LineJoin Join, double MiterLimit, double[] Dash, double DashPhase);
 
-public sealed record ImageData(int Width, int Height, byte[] Rgba, bool IsMask = false);
+public sealed record ImageData(int Width, int Height, byte[] Rgba, bool IsMask = false)
+{
+    /// <summary>Requests pixel-centred bilinear interpolation; false retains the renderer's default sampling.</summary>
+    public bool Interpolate { get; init; }
+
+    // Rgba remains the flattened image for consumers such as redaction. Rendering retains native mask grids
+    // only when interpolation is requested, so a mask's interpolation flag is independent of its parent's.
+    internal ImageData? UnmaskedImage { get; init; }
+    internal ImageData? OpacityMask { get; init; }
+    internal bool MaskUsesLuminosity { get; init; }
+    internal byte[]? Matte { get; init; }
+    internal Func<RgbColor, RgbColor>? SamplingTransfer { get; init; }
+    public bool RequiresInterpolatedSampling => Interpolate || OpacityMask?.Interpolate == true;
+    public long DecodedByteLength => Rgba.LongLength + (UnmaskedImage?.DecodedByteLength ?? 0) + (OpacityMask?.DecodedByteLength ?? 0);
+
+    /// <summary>Samples in pixel-edge coordinates, returning premultiplied RGB and alpha in [0,255]. Edge samples are extended, not the image footprint.</summary>
+    public (double R, double G, double B, double A) SamplePremultiplied(double x, double y)
+    {
+        if (UnmaskedImage is { } source && OpacityMask is { } mask)
+        {
+            var (r, g, b, a) = source.SamplePremultiplied(x, y);
+            var m = mask.SamplePremultiplied(x * mask.Width / Width, y * mask.Height / Height);
+            var ma = MaskUsesLuminosity ? m.R : m.A;
+            if (a <= 0 || ma <= 0) return default;
+            r *= 255 / a; g *= 255 / a; b *= 255 / a;
+            if (Matte is { } matte)
+            {
+                r = Math.Clamp(matte[0] + (r - matte[0]) * 255 / ma, 0, 255);
+                g = Math.Clamp(matte[1] + (g - matte[1]) * 255 / ma, 0, 255);
+                b = Math.Clamp(matte[2] + (b - matte[2]) * 255 / ma, 0, 255);
+            }
+            if (SamplingTransfer is { } transfer)
+            {
+                var c = transfer(new RgbColor(r / 255, g / 255, b / 255));
+                r = c.R * 255; g = c.G * 255; b = c.B * 255;
+            }
+            a *= ma / 255;
+            return (r * a / 255, g * a / 255, b * a / 255, a);
+        }
+        if (!Interpolate) return Pixel(Math.Clamp((int)x, 0, Width - 1), Math.Clamp((int)y, 0, Height - 1));
+        x = Math.Clamp(x - 0.5, 0, Width - 1); y = Math.Clamp(y - 0.5, 0, Height - 1);
+        int x0 = (int)x, y0 = (int)y;
+        var x1 = Math.Min(x0 + 1, Width - 1); var y1 = Math.Min(y0 + 1, Height - 1);
+        var tx = x - x0; var ty = y - y0;
+        var p00 = Pixel(x0, y0); var p10 = Pixel(x1, y0); var p01 = Pixel(x0, y1); var p11 = Pixel(x1, y1);
+        double Mix(double a, double b, double c, double d) => (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+        return (Mix(p00.R, p10.R, p01.R, p11.R), Mix(p00.G, p10.G, p01.G, p11.G),
+            Mix(p00.B, p10.B, p01.B, p11.B), Mix(p00.A, p10.A, p01.A, p11.A));
+
+        (double R, double G, double B, double A) Pixel(int px, int py)
+        {
+            var o = (py * Width + px) * 4;
+            var a = Rgba[o + 3];
+            return (Rgba[o] * a / 255.0, Rgba[o + 1] * a / 255.0, Rgba[o + 2] * a / 255.0, a);
+        }
+    }
+}
 
 /// <summary>
 /// Approximate overprint (ISO 32000-2 8.6.7 / 11.7.4.3 CompatibleOverprint) for a painting operation on an additive RGB surface.

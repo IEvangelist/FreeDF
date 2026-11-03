@@ -24,12 +24,12 @@ public sealed class ImageDecodeCache(long budgetBytes = 48L * 1024 * 1024)
 
     public void Add(Key key, ImageData? image, bool isMask, string? warning)
     {
-        var size = image?.Rgba.Length ?? 0;
+        var size = image?.DecodedByteLength ?? 0;
         if (size > budgetBytes || _entries.ContainsKey(key)) return;
         while (_bytes + size > budgetBytes && _order.Count > 0)
         {
             var oldest = _order.Dequeue();
-            if (_entries.Remove(oldest, out var removed)) _bytes -= removed.Image?.Rgba.Length ?? 0;
+            if (_entries.Remove(oldest, out var removed)) _bytes -= removed.Image?.DecodedByteLength ?? 0;
         }
         _entries[key] = (image, isMask, warning);
         _order.Enqueue(key);
