@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
+This is not full image-policy coverage: inline `/I` and malformed/unresolved
+flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,
+but the public positive has a baseline-reproduced FreeDF OutputIntent rejection;
+see [the scoped evidence and remaining disagreements](spec-backlog.md#pdfa-image-xobject-interpolation-policy).
+Historical corpus totals are unchanged.
+
 The editor-pipeline/current-main integration retains **15 Partial / 0 Todo**
 and the limited redaction/signature Done rows. Binary transport, cached
 selection metadata and reviewed pooled rendering improve bounded paths, but

@@ -4,6 +4,29 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## PDF/A image-XObject interpolation policy
+
+`PDFA-IMAGE-INTERPOLATE` rejects explicit `/Interpolate true` on image-XObject
+streams, including image masks and indirectly stored Boolean flags, in PDF/A-1b,
+2b and 3b. The clauses are ISO 19005-1 6.2.4 and ISO 19005-2/3 6.2.8.
+False, absent and null flags do not trigger this rule; ordinary rendering and
+its scoped interpolation policy are unchanged. Inline `/I`, non-Boolean values,
+unresolved-reference completeness and general image validity remain open.
+
+The public veraPDF corpus at `bb75f4f0073d9350dfd058c0162a367e6fadf25e`
+provides `PDF_A-1b/6.2 Graphics/6.2.4 Images/veraPDF test suite
+6-2-4-t03-pass-a.pdf` with an XObject `/Interpolate false`. An equal-length
+replacement with `/Interpolate true ` preserves its xref offsets. These two
+controls agree on the exact image rule with veraPDF 1.30.3 in all three profiles
+(six comparisons, zero exclusions; profile rule 6.2.4-3 or 6.2.8-3).
+They are not clean matching-profile positives: FreeDF rejects the public pass
+for `PDFA-OUTPUTINTENT-MISSING`, reproduced on exact committed baseline
+`e9d3141c`; the PDF/A-2/3 runs also use PDF/A-1 source metadata. The public
+`6-2-4-t03-fail-a.pdf` instead uses inline `/I true` and remains a miss in
+FreeDF. Keep both that miss and the baseline OutputIntent disagreement open
+under #5; neither corpus-wide agreement nor full image-policy coverage is claimed.
+External PDFs/reports are not bundled. See `PdfAImageInterpolationTests.cs`.
+
 ## 2026-11-01 named-destination consistency
 
 Outline/link inspection and outline import now share cycle-aware named-destination
