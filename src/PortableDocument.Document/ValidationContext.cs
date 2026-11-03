@@ -181,6 +181,8 @@ internal sealed class ValidationContext
     public List<PdfStream> IccBased { get; } = [];
     public bool UsesDeviceColor { get; private set; }
     public bool UsesUnmappedDeviceGray { get; private set; }
+    public bool UsesUnmappedDeviceRgb { get; private set; }
+    public bool UsesUnmappedDeviceCmyk { get; private set; }
     bool _walked;
     readonly HashSet<PdfObject> _seen = new(ReferenceEqualityComparer.Instance);
     readonly Dictionary<PdfDictionary, Dictionary<string, bool>> _defaultColorValidity = new(ReferenceEqualityComparer.Instance);
@@ -190,11 +192,13 @@ internal sealed class ValidationContext
     const int MaxContentTokens = 20_000_000;
     const int MaxFormDepth = 16;
 
+    enum DeviceColor { None, Gray, Rgb, Cmyk }
+
     sealed class ContentScanBudget
     {
         public int Tokens;
         public bool LimitReported;
-        public Dictionary<PdfStream, HashSet<(bool Fill, bool Stroke, int RenderMode)>> FormStates { get; } = new(ReferenceEqualityComparer.Instance);
+        public Dictionary<PdfStream, HashSet<(PdfDictionary Resources, DeviceColor Fill, DeviceColor Stroke, int RenderMode)>> FormStates { get; } = new(ReferenceEqualityComparer.Instance);
     }
 
     /// <summary>Collects fonts, graphics states, images and device-colour usage from every page (resources, forms, patterns, annotation appearances).</summary>
@@ -223,22 +227,43 @@ internal sealed class ValidationContext
         }
     }
 
-    bool IsUnmappedDeviceGray(PdfObject? colorSpace, PdfDictionary resources, HashSet<string>? aliases = null)
+    DeviceColor UnmappedDeviceColor(PdfObject? colorSpace, PdfDictionary resources)
     {
-        var resolved = F.Resolve(colorSpace);
-        if (resolved is PdfName name)
+        HashSet<string>? aliases = null;
+        while (true)
         {
-            if (name.Value is "DeviceGray" or "G") return !HasDeviceIndependentDefault(resources, "Gray");
+            var resolved = F.Resolve(colorSpace);
+            if (resolved is PdfArray { Count: > 0 } array)
+            {
+                if (F.Resolve(array[0]).AsName() is not ("DeviceGray" or "G" or "DeviceRGB" or "RGB" or "DeviceCMYK" or "CMYK"))
+                    return DeviceColor.None;
+                resolved = F.Resolve(array[0]);
+            }
+            if (resolved is not PdfName name) return DeviceColor.None;
+            var (color, space) = name.Value switch
+            {
+                "DeviceGray" or "G" => (DeviceColor.Gray, "Gray"),
+                "DeviceRGB" or "RGB" => (DeviceColor.Rgb, "RGB"),
+                "DeviceCMYK" or "CMYK" => (DeviceColor.Cmyk, "CMYK"),
+                _ => (DeviceColor.None, ""),
+            };
+            if (color != DeviceColor.None)
+                return HasDeviceIndependentDefault(resources, space) ? DeviceColor.None : color;
             aliases ??= new HashSet<string>(StringComparer.Ordinal);
-            if (!aliases.Add(name.Value)) return false;
+            if (!aliases.Add(name.Value)) return DeviceColor.None;
             var spaces = F.Resolve(resources.Get("ColorSpace")) as PdfDictionary;
-            if (spaces?.Get(name.Value) is { } alias)
-                return IsUnmappedDeviceGray(alias, resources, aliases);
-            return false;
+            if (spaces?.Get(name.Value) is not { } alias) return DeviceColor.None;
+            colorSpace = alias;
         }
-        return resolved is PdfArray { Count: > 0 } array
-            && (F.Resolve(array[0]).AsName() is "DeviceGray" or "G")
-            && !HasDeviceIndependentDefault(resources, "Gray");
+    }
+
+    void NotePaintedDeviceColor(DeviceColor color)
+    {
+        if (color == DeviceColor.None) return;
+        UsesDeviceColor = true;
+        if (color == DeviceColor.Gray) UsesUnmappedDeviceGray = true;
+        else if (color == DeviceColor.Rgb) UsesUnmappedDeviceRgb = true;
+        else if (color == DeviceColor.Cmyk) UsesUnmappedDeviceCmyk = true;
     }
 
     bool HasDeviceIndependentDefault(PdfDictionary resources, string space)
@@ -311,7 +336,7 @@ internal sealed class ValidationContext
     PdfDictionary FormResources(PdfStream form, PdfDictionary? inheritedResources) =>
         F.Resolve(form.Dict.Get("Resources")) as PdfDictionary ?? inheritedResources ?? new PdfDictionary();
 
-    void ScanContent(byte[] content, PdfDictionary resources, bool? initialFill = null, bool? initialStroke = null,
+    void ScanContent(byte[] content, PdfDictionary resources, DeviceColor? initialFill = null, DeviceColor? initialStroke = null,
         int initialRenderMode = 0, int depth = 0, ContentScanBudget? budget = null, int page = 0)
     {
         budget ??= new ContentScanBudget();
@@ -322,11 +347,11 @@ internal sealed class ValidationContext
                 UsesDeviceColor = true;
         }
 
-        var fill = initialFill ?? IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources);
+        var fill = initialFill ?? UnmappedDeviceColor(new PdfName("DeviceGray"), resources);
         var stroke = initialStroke ?? fill;
         var renderMode = initialRenderMode;
         var path = false;
-        var states = new Stack<(bool Fill, bool Stroke, int RenderMode)>();
+        var states = new Stack<(DeviceColor Fill, DeviceColor Stroke, int RenderMode)>();
         var operands = new List<PdfObject>();
         var lexer = new PdfLexer(content);
         while (budget.Tokens < _contentScanTokenLimit)
@@ -356,23 +381,27 @@ internal sealed class ValidationContext
                     if (states.TryPop(out var saved)) (fill, stroke, renderMode) = saved;
                     break;
                 case "g":
-                    fill = IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources);
+                    fill = UnmappedDeviceColor(new PdfName("DeviceGray"), resources);
                     break;
                 case "G":
-                    stroke = IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources);
+                    stroke = UnmappedDeviceColor(new PdfName("DeviceGray"), resources);
                     break;
                 case "rg":
+                    fill = UnmappedDeviceColor(new PdfName("DeviceRGB"), resources);
+                    break;
                 case "k":
-                    fill = false;
+                    fill = UnmappedDeviceColor(new PdfName("DeviceCMYK"), resources);
                     break;
                 case "RG":
+                    stroke = UnmappedDeviceColor(new PdfName("DeviceRGB"), resources);
+                    break;
                 case "K":
-                    stroke = false;
+                    stroke = UnmappedDeviceColor(new PdfName("DeviceCMYK"), resources);
                     break;
                 case "cs":
                     if (operands.LastOrDefault() is PdfName fillName)
                     {
-                        fill = IsUnmappedDeviceGray(fillName, resources);
+                        fill = UnmappedDeviceColor(fillName, resources);
                         if (fillName.Value is "DeviceRGB" or "DeviceCMYK")
                             NoteColorSpace(fillName, resources);
                     }
@@ -380,22 +409,28 @@ internal sealed class ValidationContext
                 case "CS":
                     if (operands.LastOrDefault() is PdfName strokeName)
                     {
-                        stroke = IsUnmappedDeviceGray(strokeName, resources);
+                        stroke = UnmappedDeviceColor(strokeName, resources);
                         if (strokeName.Value is "DeviceRGB" or "DeviceCMYK")
                             NoteColorSpace(strokeName, resources);
                     }
                     break;
                 case "Do":
-                    if (depth < MaxFormDepth
-                        && operands.LastOrDefault() is PdfName xObjectName
+                    if (operands.LastOrDefault() is PdfName xObjectName
                         && F.Resolve(resources.Get("XObject")) is PdfDictionary xObjects
-                        && F.Resolve(xObjects.Get(xObjectName.Value)) is PdfStream form
-                        && F.Resolve(form.Dict.Get("Subtype")).AsName() == "Form")
+                        && F.Resolve(xObjects.Get(xObjectName.Value)) is PdfStream xObject)
                     {
-                        if (!budget.FormStates.TryGetValue(form, out var formStates))
-                            budget.FormStates.Add(form, formStates = []);
-                        if (formStates.Add((fill, stroke, renderMode)))
-                            ScanContent(F.DecodeStream(form), FormResources(form, resources), fill, stroke, renderMode, depth + 1, budget, page);
+                        var subtype = F.Resolve(xObject.Dict.Get("Subtype")).AsName();
+                        if (subtype == "Image")
+                            NotePaintedDeviceColor(F.Resolve(xObject.Dict.Get("ImageMask")) is PdfBoolean { Value: true }
+                                ? fill : UnmappedDeviceColor(xObject.Dict.Get("ColorSpace"), resources));
+                        else if (subtype == "Form" && depth < MaxFormDepth)
+                        {
+                            if (!budget.FormStates.TryGetValue(xObject, out var formStates))
+                                budget.FormStates.Add(xObject, formStates = []);
+                            var formResources = FormResources(xObject, resources);
+                            if (formStates.Add((formResources, fill, stroke, renderMode)))
+                                ScanContent(F.DecodeStream(xObject), formResources, fill, stroke, renderMode, depth + 1, budget, page);
+                        }
                     }
                     break;
                 case "Tr":
@@ -410,8 +445,8 @@ internal sealed class ValidationContext
                         {
                             var paintsFill = op is "f" or "F" or "f*" or "B" or "B*" or "b" or "b*";
                             var paintsStroke = op is "S" or "s" or "B" or "B*" or "b" or "b*";
-                            if (paintsFill && fill || paintsStroke && stroke)
-                                UsesUnmappedDeviceGray = true;
+                            if (paintsFill) NotePaintedDeviceColor(fill);
+                            if (paintsStroke) NotePaintedDeviceColor(stroke);
                         }
                         path = false;
                     }
@@ -421,8 +456,8 @@ internal sealed class ValidationContext
                     {
                         var paintsFill = renderMode is 0 or 2 or 4 or 6;
                         var paintsStroke = renderMode is 1 or 2 or 5 or 6;
-                        if (paintsFill && fill || paintsStroke && stroke)
-                            UsesUnmappedDeviceGray = true;
+                        if (paintsFill) NotePaintedDeviceColor(fill);
+                        if (paintsStroke) NotePaintedDeviceColor(stroke);
                     }
                     break;
             }

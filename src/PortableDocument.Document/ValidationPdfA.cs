@@ -124,7 +124,7 @@ internal static class PdfAChecks
             return;
         }
         PdfStream? profile = null;
-        var hasGrayOutputIntent = false;
+        var outputSpaces = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in intents.Items)
         {
             if (f.Resolve(item) is not PdfDictionary oi) continue;
@@ -139,14 +139,18 @@ internal static class PdfAChecks
                 var d = f.DecodeStream(p);
                 if (d.Length < 128 || d[36] != 'a' || d[37] != 'c' || d[38] != 's' || d[39] != 'p')
                     c.Add("PDFA-OUTPUTINTENT-ICC", ValidationSeverity.Error, "DestOutputProfile is not a valid ICC profile", Clause(c, "6.2.2", "6.2.3", "6.2.3"));
-                else if (isPdfAOutputIntent && PdfADeepChecks.ReadIcc(d)?.Space == "GRAY")
-                    hasGrayOutputIntent = true;
+                else if (isPdfAOutputIntent && PdfADeepChecks.ReadIcc(d) is { } header)
+                    outputSpaces.Add(header.Space);
             }
         }
         if (profile is null)
             c.Add("PDFA-OUTPUTINTENT-PROFILE", ValidationSeverity.Error, "output intent has no /DestOutputProfile", Clause(c, "6.2.2", "6.2.3", "6.2.3"));
-        if (c.UsesUnmappedDeviceGray && !hasGrayOutputIntent)
-            c.Add("PDFA-OUTPUTINTENT-MISSING", ValidationSeverity.Error, "DeviceGray is used without a device-independent /DefaultGray colour space or a PDF/A OutputIntent with a Gray profile", Clause(c, "6.2.3.3", "6.2.4.3", "6.2.4.3"));
+        if (c.UsesUnmappedDeviceGray && outputSpaces.Count == 0)
+            c.Add("PDFA-OUTPUTINTENT-MISSING", ValidationSeverity.Error, "DeviceGray is used without a device-independent /DefaultGray colour space or a PDF/A OutputIntent", Clause(c, "6.2.3.3", "6.2.4.3", "6.2.4.3"));
+        if (c.UsesUnmappedDeviceRgb && !outputSpaces.Contains("RGB "))
+            c.Add("PDFA-OUTPUTINTENT-COLORSPACE", ValidationSeverity.Error, "DeviceRGB is painted without a device-independent /DefaultRGB or a PDF/A OutputIntent with an RGB profile", Clause(c, "6.2.3.3", "6.2.4.3", "6.2.4.3"));
+        if (c.UsesUnmappedDeviceCmyk && !outputSpaces.Contains("CMYK"))
+            c.Add("PDFA-OUTPUTINTENT-COLORSPACE", ValidationSeverity.Error, "DeviceCMYK is painted without a device-independent /DefaultCMYK or a PDF/A OutputIntent with a CMYK profile", Clause(c, "6.2.3.3", "6.2.4.3", "6.2.4.3"));
     }
 
     static void Transparency(ValidationContext c)
