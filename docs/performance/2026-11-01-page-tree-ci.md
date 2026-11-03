@@ -90,6 +90,31 @@ pass without changes. Chromium also accepts the published manifest and confirms
 installation eligibility; offline editing, save-handle write-back and the
 service-worker update/rollback protections pass against this exact AOT build.
 
+### Showcase editor pixel baseline correction (2026-11-03)
+
+The rebrand regenerated `samples/01-spec-showcase.pdf` in commits
+`78906500` and `06a69266`, but its editor first-page pixel baseline still
+expected the pre-rebrand hash. All three repeats in
+[the pre-rebrand run](https://github.com/IEvangelist/FreeDF/actions/runs/41311004728)
+matched `AD9BE49FD168998F562B4C008A8D7F79CD3DB76950B02E7B422B5150B49688E4`;
+all three in
+[the post-rebrand run](https://github.com/IEvangelist/FreeDF/actions/runs/41651437352)
+match `6FDB4446C535CF55263C2849D9A5F0B233C927763A74B67ECC9CBCC1365BC8B2`
+at the same 339 by 480 dimensions. The other four fixture hashes are unchanged.
+Only the showcase hash in `editor-ci-known-misses.v1.json` is corrected.
+
+Replaying the post-rebrand raw profile through `--profile-ci` fails solely on
+the showcase decoded-pixel gate with the old policy and passes with the
+corrected policy. A separate three-repeat Windows Chromium replay of that
+run's retained Linux AOT site confirms all 15 expected fixture images, with
+the same old-policy failure and corrected-policy pass.
+`Test-EditorProfileCi.ps1` also passes all ten fault-injection controls,
+including rejection of corrupted pixels. Timing ceilings, strict goals,
+allocations, cache gates and all other pixel values remain unchanged.
+This fixes stale pixel evidence, not proof of recovered hosted timing:
+[#4](https://github.com/IEvangelist/FreeDF/issues/4) remains open pending a
+current-main scheduled performance run.
+
 ## Selected parity gap
 
 Named destinations deeper than 16 levels resolved during outline/link

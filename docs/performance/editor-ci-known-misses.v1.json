@@ -9,7 +9,7 @@
     { "document": "20-report.pdf", "phase": "cached-zoom", "metric": "total-ms", "p50": 58.8, "p95": 73.8, "p50Budget": 100, "p95Budget": 200, "note": "Document-scoped first-paint AOT measurement: p50/p95 100.0/100.2 ms; unrounded median exceeds 100. Image-heavy open now passes at 133.2/133.5 ms. Numeric reference values remain identical to the versioned CSV; no regression ceiling changes." }
   ],
   "pixels": [
-    { "document": "01-spec-showcase.pdf", "width": 339, "height": 480, "hash": "AD9BE49FD168998F562B4C008A8D7F79CD3DB76950B02E7B422B5150B49688E4" },
+    { "document": "01-spec-showcase.pdf", "width": 339, "height": 480, "hash": "6FDB4446C535CF55263C2849D9A5F0B233C927763A74B67ECC9CBCC1365BC8B2" },
     { "document": "03-typography-embedded.pdf", "width": 339, "height": 480, "hash": "F091B8F4EB5C644134AF483254BDA06C7E00FADD307520403B41E812E869BBD5" },
     { "document": "09-images.pdf", "width": 339, "height": 480, "hash": "5A3B522346283BC8CABBF8B144AE3A28CE3EC1ABB0F8F4683A2044F10FD94CEE" },
     { "document": "20-report.pdf", "width": 339, "height": 480, "hash": "B877E8AF25866046906C1B23EE21D4604040353D1FE762C6C8DEC0616AF7AA67" },
