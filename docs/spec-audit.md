@@ -12,6 +12,16 @@ XFA/JS, editor, performance) are listed only where they intersect an audited cla
 
 Everything below was verified against the tree at the time of writing; "tests" names are files in `tests/FreeDF.Tests`.
 
+**Evidence chronology (reconciled 2026-11-03):** this audit and
+[validation-compat.md](validation-compat.md) preserve the earlier repository-fixture
+cross-check, not measurements rerun against the current tree. The later
+[2026-10-31 PDF/UA reconciliation](spec-backlog.md#tagged-pdf-and-pdfua-reconciliation-2026-10-31)
+uses a separate public veraPDF corpus and supersedes the older UA implementation
+status below. In particular, TrapNet checks now exist in `ValidationPdfUA.cs`;
+the earlier "not implemented" finding is historical. PDF/A positive-fixture
+and implicit DeviceGray gaps remain recorded open, not newly verified here.
+All validators remain Partial and non-certifying.
+
 ## 1. Validator cross-check against veraPDF
 
 Method (reproducible, see `tools/validation/`):
@@ -27,7 +37,7 @@ Method (reproducible, see `tools/validation/`):
    engines; clip-only (`7 Tr`) Type 3 text is not painted by us and MuPDF but is by pdfium (spec: no painting, kept);
    inline `/L` agrees with MuPDF (pdfium ignores `/L` and fails the fixture).
 
-Results (after the header rule below was added): **0 files where we are looser or stricter than veraPDF for PDF/A-1b/2b/3b**
+Historical results (after the header rule below was added): **0 files where we are looser or stricter than veraPDF for PDF/A-1b/2b/3b**
 (551/551/549 comparable files agree; before the rule: 16/28/2 looser, all `6.1.2-2`). For PDF/UA-1 we were stricter on 18 files, all from deliberately negative fixtures for three rules veraPDF has
 no check for (`PDFUA-ANNOT-OBJR`, `PDFUA-ANNOT-PARENTTREE`, `PDFUA-ARTIFACT-TAGGED`); each is justified by the standard text
 (ISO 32000 14.7.5.3/14.7.5.4 OBJR/ParentTree linkage, Matterhorn 01-004) and is recorded as *stricter*, not changed.
@@ -45,7 +55,10 @@ Important caveat: **no fixture passes veraPDF PDF/A** (0 of 552 for 1b/2b, 0 of 
 "conformant" PDF/A fixtures in the unit tests are conformant only with respect to the rules we implement; they are not
 veraPDF-clean (typically implicit DeviceGray default colour, or missing identification/XMP details). `IsCompliant` must therefore be read as
 "no errors among implemented checks" (the doc comment on `ValidationReport.IsCompliant` already says so). The false-positive
-direction (we reject, veraPDF accepts) is the one that matters for users, and the corpus shows none for PDF/A.
+direction where we accept a file that veraPDF rejects is the false-compliance risk;
+the reverse direction rejects a potentially usable file. Both matter. Neither was
+observed for PDF/A in this historical comparison, which had no veraPDF-accepted
+PDF/A positive fixtures and therefore cannot establish acceptance of valid files.
 
 veraPDF itself threw `StackOverflowError` on two of our fixtures (cyclic structure trees; `obj-0006`/`obj-0213` in the
 3b run), which are therefore not comparable; 12 more files cannot be loaded by us (password-protected samples and the
@@ -155,11 +168,12 @@ Implemented in this change (tests added):
 5. `BX`/`EX` compatibility sections suppress unknown-operator diagnostics.
 6. PDF/A header rules (6.1.2): header offset and binary comment.
 
-Remaining, highest impact first:
+Remaining at the time of this audit, highest impact first (not a current backlog;
+see the evidence chronology above and the reconciled backlog):
 
 1. **PDF/A implicit DeviceGray** (6.2.3.3 / 6.2.4.3): text and paths painted with the initial colour need an OutputIntent or `DefaultGray`; we only detect explicit device colour use. Without it a document can be `IsCompliant` yet fail veraPDF.
 2. **Validator is not veraPDF-clean on any PDF/A fixture**: needs a checked-in positive fixture that veraPDF accepts (requires a redistributable ICC profile and an embedded font; none is in the repo) and a CI job that re-runs `tools/validation`.
-3. PDF/UA structure containment rules (7.2: TR in Table/THead/TBody/TFoot, TD/TH in TR, LI in L, LBody in LI) and 7.18.2 TrapNet.
+3. PDF/UA structure containment rules (7.2: TR in Table/THead/TBody/TFoot, TD/TH in TR, LI in L, LBody in LI) and 7.18.2 TrapNet. TrapNet was subsequently addressed; the later reconciliation still records incomplete nesting coverage.
 4. Per-operator operand validation / strict mode, with diagnostics for `Q` underflow, text operators outside `BT`, unterminated `BDC`.
 5. `d1` colour images (only image masks allowed) and Type 3 `d0/d1` must be first operator.
 6. Image `/Interpolate` (visual quality hint only).
