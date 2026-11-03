@@ -213,8 +213,13 @@ description conflated profile totals with nesting rules. ISO 14289-2 6.2 and
 8.2.4 normatively incorporate ISO/TS 32005; the rules are not attributed to an
 ISO 14289-2 Table 5. Namespace-aware role resolution applies to both ends of a
 relationship, `Part`/`Div`/`NonStruct` inherit containment, and incomplete
-traversal produces an Error. The 55 grouping-dependent and 33 cardinality
-predicates, Ruby/Warichu sequence rules, and broader semantic/visual checks
+traversal produces an Error. All 33 unconditional occurrence predicates are
+also implemented, with counts combined through transparent wrappers and
+isolated by effective parent. The 110 authored controls agree with veraPDF
+1.30.3 at the exact occurrence-rule level (39 failures, 71 nonfailures, no
+exclusions); four independent UA-2 positives remain compliant in both.
+The 55 grouping-dependent predicates (including four conditional occurrence
+limits), Ruby/Warichu sequence rules, and broader semantic/visual checks
 remain outside this slice. See [scope and evidence](validation-compat.md#2026-11-03-pdfua-2-containment-slice).
 The dated corpus-wide counts above are unchanged; this is not certification.
 

@@ -9,7 +9,8 @@ veraPDF Consortium's [v1.30.3 validation profile](https://github.com/veraPDF/ver
 published under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
 The relationships were reorganized into parent-keyed sets and independently
 implemented in C#; the profile XML and validation-engine source are not bundled.
-Only unconditional exclusions and direct-content bans are implemented here.
+Unconditional exclusions, direct-content bans, and unconditional occurrence
+limits are implemented here; grouping-dependent requirements remain deferred.
 
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 

@@ -4,7 +4,7 @@ namespace PortableDocument.Document;
 
 /// <summary>Unconditional ISO/TS 32005:2023 Table 5 exclusions, incorporated by ISO 14289-2:2024 6.2 and 8.2.4.
 /// Factual relationships derived from veraPDF-validation-profiles v1.30.3 (c4f57eff), PDF_UA/PDFUA-2-ISO32005.xml.
-/// Conditional grouping, cardinality, and Ruby/Warichu sequence rules are not evaluated here.</summary>
+/// Grouping-dependent and Ruby/Warichu sequence rules are not evaluated here.</summary>
 internal static class PdfUA2NestingChecks
 {
     const int MaxFindings = 1000;
@@ -74,9 +74,38 @@ internal static class PdfUA2NestingChecks
         "Art", "Document", "DocumentFragment", "Index", "L", "Sect", "TBody", "TFoot", "THead", "TOC", "TOCI", "TR", "Table",
     };
 
+    static readonly Dictionary<string, string[]> AtMostOne = new(StringComparer.Ordinal)
+    {
+        ["Art"] = ["Caption", "H"],
+        ["Artifact"] = ["Caption", "H"],
+        ["Aside"] = ["Caption", "H"],
+        ["BlockQuote"] = ["Caption", "H"],
+        ["Caption"] = ["H"],
+        ["Code"] = ["Caption"],
+        ["Document"] = ["H"],
+        ["DocumentFragment"] = ["H"],
+        ["Figure"] = ["Caption", "H"],
+        ["Form"] = ["Caption"],
+        ["Formula"] = ["Caption", "H"],
+        ["H"] = ["Sect"],
+        ["Hn"] = ["Sect"],
+        ["Index"] = ["Caption"],
+        ["L"] = ["Caption"],
+        ["LBody"] = ["Caption", "H"],
+        ["Note"] = ["Caption"],
+        ["Sect"] = ["H"],
+        ["TD"] = ["H"],
+        ["TH"] = ["H"],
+        ["TOC"] = ["Caption"],
+        ["Table"] = ["Caption", "TFoot", "THead"],
+        ["Title"] = ["Caption"],
+    };
+
     public static void Run(ValidationContext c, StructureTree tree)
     {
-        var containers = new Dictionary<StructElement, string?>();
+        var containers = new Dictionary<StructElement, (string? Type, StructElement? Owner)>();
+        var occurrences = new Dictionary<(StructElement? Owner, string Type), int>();
+        var rootDocuments = 0;
         var findings = 0;
         var incomplete = tree.Truncated || tree.ParseIssues.Count > 0;
         var rootKids = c.F.Resolve(tree.Root.Get("K"));
@@ -95,17 +124,36 @@ internal static class PdfUA2NestingChecks
         {
             if (findings >= MaxFindings) { incomplete = true; break; }
             var type = TypeOf(e);
-            var parentType = e.Parent is null ? "StructTreeRoot" : containers[e.Parent];
+            var (parentType, owner) = e.Parent is null ? ("StructTreeRoot", null) : containers[e.Parent];
+            var transparent = type is "Part" or "Div" or "NonStruct";
+            if (!transparent && type is not null)
+            {
+                if (owner is null && parentType == "StructTreeRoot" && type == "Document") rootDocuments++;
+                if (parentType is not null && AtMostOne.TryGetValue(parentType, out var limited) && limited.Contains(type))
+                {
+                    var key = (owner, type);
+                    occurrences.TryGetValue(key, out var count);
+                    occurrences[key] = count + 1;
+                    if (count == 1)
+                    {
+                        findings++;
+                        c.Add("PDFUA2-NESTING-CARDINALITY", ValidationSeverity.Error,
+                            $"{parentType} contains more than one {type}, counting through transparent wrappers (ISO/TS 32005 Table 5. {parentType}-{type}; occurrence limit)",
+                            Clause, e.PageIndex);
+                    }
+                }
+            }
             if (type is not null && parentType is not null
                 && Prohibited.TryGetValue(parentType, out var excluded) && excluded.Contains(type))
             {
+                if (findings >= MaxFindings) { incomplete = true; break; }
                 findings++;
                 c.Add("PDFUA2-NESTING", ValidationSeverity.Error,
                     $"/{e.Type} ({type}) is not permitted inside {parentType} (ISO/TS 32005 Table 5. {parentType}-{type})",
                     Clause, e.PageIndex);
             }
-            var contentType = type is "Part" or "Div" or "NonStruct" ? parentType : type;
-            containers[e] = contentType;
+            var contentType = transparent ? parentType : type;
+            containers[e] = (contentType, transparent ? owner : e);
             if (contentType is not null && NoContent.Contains(contentType) && e.Children.Any(k => k is not StructElement))
             {
                 if (findings >= MaxFindings) { incomplete = true; break; }
@@ -113,6 +161,13 @@ internal static class PdfUA2NestingChecks
                 c.Add("PDFUA2-NESTING-CONTENT", ValidationSeverity.Error,
                     $"/{e.Type} inherits {contentType} containment and must not contain content items", Clause, e.PageIndex);
             }
+        }
+        if (rootDocuments > 1 || rootDocuments == 0 && !incomplete)
+        {
+            if (findings >= MaxFindings) incomplete = true;
+            else
+                c.Add("PDFUA2-NESTING-CARDINALITY", ValidationSeverity.Error,
+                    "StructTreeRoot must contain exactly one Document (ISO/TS 32005 Table 5. StructTreeRoot-Document; occurrence limit)", Clause);
         }
         if (incomplete)
             c.Add("PDFUA2-NESTING-INCOMPLETE", ValidationSeverity.Error,
