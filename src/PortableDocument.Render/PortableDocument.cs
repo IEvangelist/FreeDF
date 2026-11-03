@@ -13,6 +13,8 @@ public sealed record PdfRenderOptions
 {
     /// <summary>Host-provided substitutes for non-embedded fonts; null uses installed system fonts.</summary>
     public IFontFallback? FontFallback { get; init; }
+    /// <summary>Reports malformed content-stream operands and state transitions as warnings; rendering remains permissive.</summary>
+    public bool StrictContentValidation { get; init; }
     /// <summary>Name of a catalog /OCProperties /Configs entry; omitted selects the default /D configuration.</summary>
     public string? OptionalContentConfigurationName { get; init; }
     /// <summary>Reusable interactive layer state; cannot be combined with a configuration name.</summary>
@@ -127,6 +129,7 @@ public static class PortableDocument
         interp.OptionalContentContext = options.OptionalContentContext;
         interp.OverprintSimulation = options.OverprintSimulation;
         interp.ImageCache = options.ImageCache;
+        interp.StrictContentValidation = options.StrictContentValidation;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }

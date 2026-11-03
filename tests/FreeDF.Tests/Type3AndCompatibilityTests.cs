@@ -90,5 +90,71 @@ public class Type3AndCompatibilityTests
         var p = DocumentRenderer.RenderPage(PdfDocument.Load(TestPdf.Build("BX BX zz EX yy EX")).Pages[0], 72);
         Assert.Empty(p.Warnings);
     }
-}
 
+    [Fact]
+    public void StrictContentValidation_IsOptInAndPreservesPermissiveRendering()
+    {
+        var page = PdfDocument.Load(TestPdf.Build("Q 1 0 rg 0 0 50 50 re f")).Pages[0];
+        var permissive = DocumentRenderer.RenderPage(page, 72);
+        var strict = DocumentRenderer.RenderPage(page, new PdfRenderOptions { StrictContentValidation = true }, 72);
+
+        Assert.DoesNotContain(permissive.Warnings, warning => warning.Contains("stack underflow"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("graphics-state stack underflow at Q"));
+        Assert.Equal(permissive.Rgba, strict.Rgba);
+    }
+
+    [Fact]
+    public void StrictContentValidation_ReportsOperandArityAndTypeErrors()
+    {
+        var page = PdfDocument.Load(TestPdf.Build("0 /blue rg 1 /bad m [(text) /bad] TJ")).Pages[0];
+        var permissive = DocumentRenderer.RenderPage(page, 72);
+        var strict = DocumentRenderer.RenderPage(
+            page,
+            new PdfRenderOptions { StrictContentValidation = true }, 72);
+
+        Assert.DoesNotContain(permissive.Warnings, warning => warning.Contains("invalid operands for operator"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("operator rg: expected three numbers"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("operator m: expected two numbers"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("operator TJ: expected one array containing only strings and numbers"));
+    }
+
+    [Fact]
+    public void StrictContentValidation_AcceptsWellFormedOperators()
+    {
+        var p = DocumentRenderer.RenderPage(
+            PdfDocument.Load(TestPdf.Build("q 1 0 0 rg 0 0 50 50 re f Q")).Pages[0],
+            new PdfRenderOptions { StrictContentValidation = true }, 72);
+
+        Assert.Empty(p.Warnings);
+    }
+
+    [Fact]
+    public void StrictContentValidation_ReportsUnmatchedTextAndMarkedContent()
+    {
+        var page = PdfDocument.Load(TestPdf.Build("ET 0 0 Td BT 1 0 Td /Span << >> BDC")).Pages[0];
+        var permissive = DocumentRenderer.RenderPage(page, 72);
+        var strict = DocumentRenderer.RenderPage(
+            page,
+            new PdfRenderOptions { StrictContentValidation = true }, 72);
+
+        Assert.DoesNotContain(permissive.Warnings, warning => warning.Contains("unmatched ET")
+            || warning.Contains("outside BT/ET") || warning.Contains("unclosed BT")
+            || warning.Contains("unclosed marked content in content stream"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("unmatched ET"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("text operator Td outside BT/ET"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("unclosed BT text object"));
+        Assert.Contains(strict.Warnings, warning => warning.Contains("unclosed marked content in content stream"));
+    }
+
+    [Fact]
+    public void StrictContentValidation_ReportsType3MetricsAfterFirstOperator()
+    {
+        var glyph = "0 0 1000 1000 re f 1000 0 d0";
+        var pdf = TestPdf.Build("BT /F0 100 Tf 50 50 Td (A) Tj ET", Font, Glyph(glyph), brokenXref: true);
+        var p = DocumentRenderer.RenderPage(
+            PdfDocument.Load(pdf).Pages[0],
+            new PdfRenderOptions { StrictContentValidation = true }, 72);
+
+        Assert.Contains(p.Warnings, warning => warning.Contains("Type 3 d0 must be the first operator"));
+    }
+}
