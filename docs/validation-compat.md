@@ -32,6 +32,13 @@ default are rejected for all three profiles (6.2.3.3 test 3 for PDF/A-1b;
 6.2.4.3 test 4 for PDF/A-2b and -3b). FreeDF regression tests cover these
 fixtures and Gray OutputIntent space matching.
 
+CalGray `DefaultGray` is treated as device-independent only when `WhitePoint`
+has exactly three finite numeric entries with positive X/Z and Y equal to 1,
+optional `BlackPoint` has exactly three finite nonnegative entries, and
+optional `Gamma` is finite and positive. The bounded content scan reports an
+Error when it reaches its token limit while additional content remains; exact
+end-of-content at the limit does not produce an incomplete-scan finding.
+
 These are narrow controls, not a new corpus comparison. The Type 3 glyph is
 authored in the fixture generator, not a third-party font; the fixtures contain
 no ICC output profile and do not establish general font or output-profile

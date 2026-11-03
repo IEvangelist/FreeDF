@@ -132,7 +132,14 @@ internal sealed class ValidationContext
     /// <summary>(page index, MCID) pairs whose marked content shows text, collected by the PDF/UA content scan.</summary>
     public HashSet<(int Page, int Mcid)> TextMcids { get; } = [];
 
-    public ValidationContext(PdfDocument doc, PdfValidationProfile profile) { Doc = doc; Profile = profile; }
+    readonly int _contentScanTokenLimit;
+
+    public ValidationContext(PdfDocument doc, PdfValidationProfile profile, int contentScanTokenLimit = MaxContentTokens)
+    {
+        Doc = doc;
+        Profile = profile;
+        _contentScanTokenLimit = contentScanTokenLimit;
+    }
 
     public int Part => Profile switch
     {
@@ -186,6 +193,7 @@ internal sealed class ValidationContext
     sealed class ContentScanBudget
     {
         public int Tokens;
+        public bool LimitReported;
         public Dictionary<PdfStream, HashSet<(bool Fill, bool Stroke, int RenderMode)>> FormStates { get; } = new(ReferenceEqualityComparer.Instance);
     }
 
@@ -201,7 +209,7 @@ internal sealed class ValidationContext
             {
                 var page = Doc.Pages[i0];
                 Walk(page.Resources, i0, 0);
-                ScanContent(page.GetContents(), page.Resources);
+                ScanContent(page.GetContents(), page.Resources, page: i0);
                 if (F.Resolve(page.Dict.Get("Annots")) is PdfArray annots)
                     foreach (var a in annots.Items.Take(10_000))
                         if (F.Resolve(a) is PdfDictionary ad && F.Resolve(ad.Get("AP")) is PdfDictionary ap)
@@ -257,11 +265,17 @@ internal sealed class ValidationContext
         switch (F.Resolve(array[0]).AsName())
         {
             case "CalGray" when array.Count > 1 && F.Resolve(array[1]) is PdfDictionary parameters:
-                if (F.Resolve(parameters.Get("WhitePoint")) is not PdfArray { Count: >= 3 } whitePoint) return false;
-                var white = whitePoint.Items.Take(3).Select(x => F.Resolve(x).AsNumber()).ToArray();
+                if (F.Resolve(parameters.Get("WhitePoint")) is not PdfArray { Count: 3 } whitePoint) return false;
+                var white = whitePoint.Items.Select(x => F.Resolve(x).AsNumber()).ToArray();
                 if (!white.All(x => x is { } value && double.IsFinite(value) && value > 0)
                     || white[1] != 1)
                     return false;
+                if (parameters.Get("BlackPoint") is { } blackPointObject)
+                {
+                    if (F.Resolve(blackPointObject) is not PdfArray { Count: 3 } blackPoint) return false;
+                    var black = blackPoint.Items.Select(x => F.Resolve(x).AsNumber()).ToArray();
+                    if (!black.All(x => x is { } value && double.IsFinite(value) && value >= 0)) return false;
+                }
                 return parameters.Get("Gamma") is null
                     || F.Resolve(parameters.Get("Gamma")).AsNumber() is { } gamma && double.IsFinite(gamma) && gamma > 0;
             case "ICCBased" when array.Count > 1 && F.Resolve(array[1]) is PdfStream profile:
@@ -275,14 +289,14 @@ internal sealed class ValidationContext
     void ScanAppearance(PdfStream appearance, int page, PdfDictionary resources)
     {
         WalkForm(appearance, page, 1);
-        ScanContent(F.DecodeStream(appearance), FormResources(appearance, resources));
+        ScanContent(F.DecodeStream(appearance), FormResources(appearance, resources), page: page);
     }
 
     PdfDictionary FormResources(PdfStream form, PdfDictionary? inheritedResources) =>
         F.Resolve(form.Dict.Get("Resources")) as PdfDictionary ?? inheritedResources ?? new PdfDictionary();
 
     void ScanContent(byte[] content, PdfDictionary resources, bool? initialFill = null, bool? initialStroke = null,
-        int initialRenderMode = 0, int depth = 0, ContentScanBudget? budget = null)
+        int initialRenderMode = 0, int depth = 0, ContentScanBudget? budget = null, int page = 0)
     {
         budget ??= new ContentScanBudget();
         foreach (Match match in DeviceOps.Matches(Encoding.Latin1.GetString(content)))
@@ -299,7 +313,7 @@ internal sealed class ValidationContext
         var states = new Stack<(bool Fill, bool Stroke, int RenderMode)>();
         var operands = new List<PdfObject>();
         var lexer = new PdfLexer(content);
-        while (budget.Tokens < MaxContentTokens)
+        while (budget.Tokens < _contentScanTokenLimit)
         {
             budget.Tokens++;
             PdfObject? item;
@@ -357,7 +371,7 @@ internal sealed class ValidationContext
                         if (!budget.FormStates.TryGetValue(form, out var formStates))
                             budget.FormStates.Add(form, formStates = []);
                         if (formStates.Add((fill, stroke, renderMode)))
-                            ScanContent(F.DecodeStream(form), FormResources(form, resources), fill, stroke, renderMode, depth + 1, budget);
+                            ScanContent(F.DecodeStream(form), FormResources(form, resources), fill, stroke, renderMode, depth + 1, budget, page);
                     }
                     break;
                 case "Tr":
@@ -389,6 +403,22 @@ internal sealed class ValidationContext
                     break;
             }
             operands.Clear();
+        }
+        if (budget.Tokens >= _contentScanTokenLimit && !budget.LimitReported
+            && Profile is PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfA2b or PdfValidationProfile.PdfA3b)
+        {
+            var contentRemains = false;
+            try
+            {
+                contentRemains = lexer.ReadObject(false) is not null;
+            }
+            catch (PdfParseException) { contentRemains = true; }
+            if (contentRemains)
+            {
+                budget.LimitReported = true;
+                Add("PDFA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
+                    $"Content scanning stopped after {_contentScanTokenLimit} tokens before all content was examined", page: page);
+            }
         }
     }
 

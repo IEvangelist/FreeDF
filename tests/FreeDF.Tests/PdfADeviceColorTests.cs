@@ -84,6 +84,45 @@ public class PdfADeviceColorTests
         Assert.True(Validate(Pdf(path, part, "/ColorSpace << /DefaultGray /DeviceGray >>"), profile).Has("PDFA-OUTPUTINTENT-MISSING"));
     }
 
+    [Theory]
+    [InlineData("/WhitePoint [0.9505 1]")]
+    [InlineData("/WhitePoint [0.9505 1 1.089 2]")]
+    [InlineData("/WhitePoint [0.9505 0.99 1.089]")]
+    [InlineData("/WhitePoint [0.9505 (1) 1.089]")]
+    [InlineData("/WhitePoint [0.9505 1 1.089] /BlackPoint [-0.01 0 0]")]
+    [InlineData("/WhitePoint [0.9505 1 1.089] /BlackPoint [0 0]")]
+    [InlineData("/WhitePoint [0.9505 1 1.089] /BlackPoint [0 (0) 0]")]
+    [InlineData("/WhitePoint [0.9505 1 1.089] /Gamma 0")]
+    [InlineData("/WhitePoint [0.9505 1 1.089] /Gamma (2)")]
+    public void InvalidCalGrayDefaultDoesNotReplaceDeviceGray(string parameters)
+    {
+        var resources = $"/ColorSpace << /DefaultGray [/CalGray << {parameters} >>] >>";
+        Assert.True(Validate(Pdf("10 10 80 80 re f", resources: resources), PdfValidationProfile.PdfA2b)
+            .Has("PDFA-OUTPUTINTENT-MISSING"));
+    }
+
+    [Fact]
+    public void CalGrayDefaultAcceptsPositiveGammaBelowOneAndNonnegativeBlackPoint()
+    {
+        const string resources = "/ColorSpace << /DefaultGray [/CalGray << /WhitePoint [0.9505 1 1.089] /BlackPoint [0.2 0.1 0.3] /Gamma 0.5 >>] >>";
+        Assert.False(Validate(Pdf("10 10 80 80 re f", resources: resources), PdfValidationProfile.PdfA2b)
+            .Has("PDFA-OUTPUTINTENT-MISSING"));
+    }
+
+    [Theory]
+    [InlineData("1 2", false)]
+    [InlineData("1 2 3", true)]
+    public void ContentScanTokenLimitReportsOnlyWhenContentRemains(string content, bool expectedIncomplete)
+    {
+        var context = new ValidationContext(PdfDocument.Load(Pdf(content)), PdfValidationProfile.PdfA2b, contentScanTokenLimit: 2);
+        context.EnsureWalked();
+
+        var finding = context.Findings.SingleOrDefault(f => f.RuleId == "PDFA-CONTENT-SCAN-INCOMPLETE");
+        Assert.Equal(expectedIncomplete, finding is not null);
+        if (finding is not null)
+            Assert.Equal(ValidationSeverity.Error, finding.Severity);
+    }
+
     [Fact]
     public void ImplicitGrayTextPaintingRequiresDeviceIndependentGrayOrGrayOutputIntent()
     {
