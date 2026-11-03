@@ -325,7 +325,7 @@ were compared with veraPDF 1.30.3: both failures now fail the exact mapped
 `PDFUA2-LINK-TARGETS` rule and both passes remain accepted (4 compared, 0
 excluded). Self-authored `PdfUaLinkTargetTests` cover this slice without
 vendoring the external PDFs. URI/remote target grouping, general destination
-validity and exhaustive named-tree boundary validation remain open. The dated
+validity and exhaustive named-tree syntax validation remain open. The dated
 corpus-wide counts above have not been remeasured.
 
 PDF/UA-1 media clip data now requires string `/CT` and multilingual `/Alt`
@@ -352,7 +352,15 @@ destination-reference cycles/depth and action-walk truncation report
 new paths and preserve UA-1/remote-action behavior. Both public 8.8 negative
 controls still fail their exact mapped rules against veraPDF 1.30.3 (2 compared,
 0 excluded); these controls were already detected, not new corpus misses
-closed. Exhaustive destination validity, named-tree boundary diagnostics and
+closed. Named lookup now reports incomplete validation for indirect-reference
+cycles or chains beyond 32 references, name-tree cycles/depth beyond 64, and
+a 10,000-operation per-lookup validation budget (nodes, pairs, child entries
+and indirect-reference hops). Completed shared subtrees are not cycles, and
+reachable siblings remain searched after cycle/depth boundaries. Both destination
+and Link-grouping checks receive these failures; ordinary inspection/import
+retain their previous lookup policy. Self-authored boundary controls establish
+this behavior, not independent engine agreement on malformed trees.
+Exhaustive destination validity, named-tree syntax/key-byte matching and
 all possible action-bearing objects remain open. No navigation or target
 access occurs, and dated corpus-wide counts are unchanged.
 

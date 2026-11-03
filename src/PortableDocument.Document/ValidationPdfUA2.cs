@@ -199,7 +199,7 @@ internal static class PdfUA2Checks
         }
 
         void Incomplete() => c.Add("PDFUA2-LINK-TARGET-UNRESOLVED", ValidationSeverity.Error,
-            "a cyclic or excessively deep destination prevented comparison of Link annotation targets", "ISO 14289-2 8.2.5.20");
+            "a reference, destination or name-tree traversal boundary prevented comparison of Link annotation targets", "ISO 14289-2 8.2.5.20");
     }
 
     static PdfObject? ResolveDestination(PdfFile file, PdfObject? value, Action incomplete)
@@ -224,10 +224,10 @@ internal static class PdfUA2Checks
             switch (value)
             {
                 case PdfName name:
-                    destination = DocumentFeatures.LookupNamedDest(c.F, name.Value);
+                    destination = DocumentFeatures.LookupNamedDest(c.F, name.Value, incomplete);
                     break;
                 case PdfString name:
-                    destination = DocumentFeatures.LookupNamedDest(c.F, name.Text);
+                    destination = DocumentFeatures.LookupNamedDest(c.F, name.Text, incomplete);
                     break;
                 case PdfDictionary dictionary:
                     if (c.Doc.Structure?.ElementFor(dictionary) is not null) return dictionary;

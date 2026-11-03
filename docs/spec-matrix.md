@@ -214,7 +214,7 @@ each Link/Reference, including named destinations and GoTo `/SD` precedence.
 Cycles/depth exhaustion in destination chains produce an explicit error.
 The four public 8.2.5.20-t02 fail/pass a/b controls agree with veraPDF 1.30.3,
 including exact-rule overlap for both failures. URI/remote grouping, general
-destination validity and exhaustive named-tree boundary validation remain
+destination validity and exhaustive named-tree syntax validation remain
 open. This focused comparison does not update the dated corpus-wide counts.
 
 PDF/UA-1 media clip data checks require string `/CT` and even-length `/Alt`
@@ -230,8 +230,13 @@ PDF/UA-2 local page-destination detection (8.8) includes named/dictionary
 destinations, catalog OpenAction and the existing inert GoTo trigger walk,
 with `/SD` precedence. Shared bounded resolution preserves Link grouping;
 action-walk and destination-chain boundaries report incomplete-check errors.
+Named lookup also reports cycles, depth beyond 64, indirect chains beyond 32
+and a per-lookup 10,000-operation validation budget, without changing ordinary
+inspection/import lookup policy. Completed shared subtrees are not cycles;
+reachable siblings remain searchable after a cycle/depth boundary. Evidence is
+self-authored boundary regressions, not external malformed-tree agreement.
 Both public 8.8 negatives retain exact-rule agreement with veraPDF 1.30.3.
-General destination validity, named-tree boundaries and exhaustive action-owner
+General destination validity, named-tree syntax/key-byte matching and exhaustive action-owner
 coverage remain open; historical corpus counts are not remeasured.
 
 The clause-12 action model also exposes inert typed local `/GoTo` metadata through `GoToDetails`: `/D` names, byte strings, and explicit arrays are retained without navigation, named-destination lookup, or array-element resolution. Missing and wrong-type destinations remain null in the typed view while the original dictionary is preserved; array contents are not conformance-validated.

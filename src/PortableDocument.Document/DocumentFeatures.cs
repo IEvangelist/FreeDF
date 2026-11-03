@@ -678,26 +678,63 @@ public static class DocumentFeatures
         return null;
     }
 
-    internal static PdfObject? LookupNamedDest(PdfFile f, string key)
+    internal static PdfObject? LookupNamedDest(PdfFile f, string key, Action? incomplete = null)
     {
-        if (f.Resolve(f.Catalog.Get("Dests")) is PdfDictionary old && old.Get(key) is { } v) return v;
-        if (f.Resolve(f.Catalog.Get("Names")) is PdfDictionary names && f.Resolve(names.Get("Dests")) is PdfDictionary tree)
-            return SearchNameTree(f, tree, key, 0, new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance));
+        var remaining = 10_000;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var active = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        if (Resolve(f.Catalog.Get("Dests")) is PdfDictionary old && old.Get(key) is { } v) return v;
+        if (Resolve(f.Catalog.Get("Names")) is PdfDictionary names && Resolve(names.Get("Dests")) is PdfDictionary tree)
+            return Search(tree, 0);
         return null;
-    }
 
-    static PdfObject? SearchNameTree(PdfFile f, PdfDictionary node, string key, int depth, HashSet<PdfDictionary> seen)
-    {
-        if (depth > MaxDepth || !seen.Add(node)) return null;
-        if (f.Resolve(node.Get("Names")) is PdfArray pairs)
+        bool Spend()
         {
-            for (var i = 0; i + 1 < pairs.Count; i += 2)
-                if (f.Resolve(pairs[i]) is PdfString s && s.Text == key) return pairs[i + 1];
+            // Inspection/import retain their existing traversal policy; validation must report bounded work.
+            if (incomplete is null || remaining-- > 0) return true;
+            incomplete();
+            return false;
         }
-        if (f.Resolve(node.Get("Kids")) is PdfArray kids)
-            foreach (var k in kids.Items)
-                if (f.Resolve(k) is PdfDictionary kd && SearchNameTree(f, kd, key, depth + 1, seen) is { } r) return r;
-        return null;
+
+        PdfObject? Resolve(PdfObject? value)
+        {
+            if (incomplete is null) return f.Resolve(value);
+            var references = new HashSet<int>();
+            while (value is PdfRef reference)
+            {
+                if (!Spend()) return null;
+                if (references.Count >= 32 || !references.Add(reference.Number)) { incomplete(); return null; }
+                value = f.GetObject(reference.Number);
+            }
+            return value;
+        }
+
+        PdfObject? Search(PdfDictionary node, int depth)
+        {
+            if (!Spend()) return null;
+            if (depth > MaxDepth || active.Contains(node)) { incomplete?.Invoke(); return null; }
+            if (!seen.Add(node)) return null;
+            active.Add(node);
+            try
+            {
+                if (Resolve(node.Get("Names")) is PdfArray pairs)
+                {
+                    for (var i = 0; i + 1 < pairs.Count; i += 2)
+                    {
+                        if (!Spend()) return null;
+                        if (Resolve(pairs[i]) is PdfString s && s.Text == key) return pairs[i + 1];
+                    }
+                }
+                if (Resolve(node.Get("Kids")) is PdfArray kids)
+                    foreach (var k in kids.Items)
+                    {
+                        if (!Spend()) return null;
+                        if (Resolve(k) is PdfDictionary kd && Search(kd, depth + 1) is { } r) return r;
+                    }
+                return null;
+            }
+            finally { active.Remove(node); }
+        }
     }
 
     public static IReadOnlyList<PdfAnnotation> GetAnnotations(this PdfPage page)
