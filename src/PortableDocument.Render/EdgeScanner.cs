@@ -67,6 +67,8 @@ internal sealed class EdgeScanner
                     var active = _active; var xs = _xs; var xd = _xd; var xi = _xi;
                     cnt = 0;
                     var vertical = true;
+                    var shifts = 0;
+                    var sort = false;
                     for (var i = 0; i < _an; i++)
                     {
                         var idx = active[i];
@@ -75,8 +77,19 @@ internal sealed class EdgeScanner
                         if (e.Slope != 0 || e.Y1 <= lastSy) vertical = false;
                         var x = e.X0 + (sy - e.Y0) * e.Slope;
                         var j = cnt++;
-                        while (j > 0 && xs[j - 1] > x) { xs[j] = xs[j - 1]; xd[j] = xd[j - 1]; xi[j] = xi[j - 1]; j--; }
+                        if (!sort)
+                            while (j > 0 && xs[j - 1] > x)
+                            {
+                                xs[j] = xs[j - 1]; xd[j] = xd[j - 1]; xi[j] = xi[j - 1]; j--;
+                                if (++shifts >= 4096) { sort = true; break; }
+                            }
                         xs[j] = x; xd[j] = e.Dir; xi[j] = idx;
+                    }
+                    // Nearly sorted crossings use insertion sort; hostile paths must not incur quadratic work.
+                    if (sort)
+                    {
+                        Array.Sort(xs, xi, 0, cnt);
+                        for (var i = 0; i < cnt; i++) xd[i] = edges[xi[i]].Dir;
                     }
                     // The active list follows the crossing order, so the next sub-scanline starts almost sorted.
                     for (var i = 0; i < cnt; i++) active[i] = xi[i];

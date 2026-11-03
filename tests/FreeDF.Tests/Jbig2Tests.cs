@@ -105,6 +105,17 @@ public class Jbig2Tests
     static byte[] Embedded(params (int Num, byte Type, byte[] Payload)[] segs) =>
         [.. segs.SelectMany(s => Header(s.Num, s.Type, s.Payload.Length).Concat(s.Payload))];
 
+    [Theory]
+    [InlineData(1_000_001)]
+    [InlineData(-1)]
+    public void OversizedTextInstanceCountsWarnWithoutDecoding(int count)
+    {
+        byte[] text = [.. Be(8), .. Be(2), .. Be(0), .. Be(0), 0, 0, 0, .. Be(count)];
+        var stream = Embedded((1, 48, PageInfoSegment(8, 2, 0, 0)), (2, 6, text));
+        Jbig2Decoder.Decode(stream, null, 8, 2, out var warning);
+        Assert.Contains("symbol instance limit", warning);
+    }
+
     static readonly byte[] FileMagic = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
 
     [Fact]

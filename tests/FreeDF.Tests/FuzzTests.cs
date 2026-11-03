@@ -22,7 +22,7 @@ public class FuzzTests
     {
         var root = Path.Combine(AppContext.BaseDirectory, "fixtures");
         foreach (var f in Directory.GetFiles(root, "*.pdf", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
-            yield return (Path.GetRelativePath(root, f), File.ReadAllBytes(f));
+            yield return (Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllBytes(f));
         yield return ("synthetic/tagged", StructureTests.Tagged());
     }
 
@@ -153,7 +153,23 @@ public class FuzzTests
         var (name, data) = Corpus().First(c => c.Name == parts[0]);
         var bytes = Mutate(data, int.Parse(parts[1]), name);
         File.WriteAllBytes(parts[2], bytes);
-        Assert.Null(Run(bytes));
+        var failure = Run(bytes);
+        Assert.True(failure is null, failure);
+    }
+
+    [Fact]
+    public void ReleaseBlockingMutationsCompleteWithoutTimeout()
+    {
+        foreach (var (fixture, seed) in new[]
+        {
+            ("jbig2/huffman-oddwidth-refagg-single.pdf", 18),
+            ("samples/12-navigation.pdf", 56)
+        })
+        {
+            var (name, data) = Corpus().First(c => c.Name == fixture);
+            var failure = Run(Mutate(data, seed, name));
+            Assert.True(failure is null, $"{name} seed {seed}: {failure}");
+        }
     }
 
     [Fact]

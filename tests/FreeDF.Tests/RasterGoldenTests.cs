@@ -1,14 +1,14 @@
 using System.Security.Cryptography;
 using System.Text;
 using PortableDocument.Document;
+using PortableDocument.FallbackFonts;
 using PortableDocument.Render;
 using DocumentRenderer = PortableDocument.Render.PortableDocument;
 
 namespace FreeDF.Tests;
 
 /// <summary>
-/// Golden RGBA hashes of every fixture and sample page, captured from the pre-raster main renderer at integration.
-/// Samples 01 and 28 were refreshed for the FreeDF rebrand; other page hashes retain the renderer baseline.
+/// Golden RGBA hashes of every fixture and sample page, using bundled fonts for host-independent output.
 /// Set FREEDF_WRITE_GOLDEN=&lt;path&gt; to regenerate; only do that when an output change is intended and justified.
 /// </summary>
 public class RasterGoldenTests
@@ -25,6 +25,7 @@ public class RasterGoldenTests
     static List<string> Compute()
     {
         var lines = new List<string>();
+        var options = new PdfRenderOptions { FontFallback = new BundledFontFallback(new DirectoryAssetSource()) };
         foreach (var rel in Files())
         {
             try
@@ -34,7 +35,7 @@ public class RasterGoldenTests
                 foreach (var page in doc.Pages)
                 {
                     string hash;
-                    try { hash = Convert.ToHexString(SHA256.HashData(DocumentRenderer.RenderPage(page, Dpi).Rgba)); }
+                    try { hash = Convert.ToHexString(SHA256.HashData(DocumentRenderer.RenderPage(page, options, Dpi).Rgba)); }
                     catch (Exception e) { hash = "ERR:" + e.GetType().Name; }
                     lines.Add($"{rel}#{i++}\t{hash}");
                 }
@@ -65,6 +66,33 @@ public class RasterGoldenTests
                 Assert.True(diffs.Count == 0, $"sequential={sequential}: {string.Join(" | ", diffs)}");
             }
             finally { SoftwareRasterizer.ForceSequential = false; }
+        }
+    }
+
+    [Fact]
+    public void ReversedCrossingsRetainFullCoverage()
+    {
+        const int width = 2048;
+        var edges = new RasterEdge[width * 2];
+        for (var i = 0; i < width; i++)
+        {
+            var x = width - i - 1;
+            edges[i * 2] = new RasterEdge { Y0 = 0, Y1 = 2, X0 = x, Dir = 1 };
+            edges[i * 2 + 1] = new RasterEdge { Y0 = 0, Y1 = 2, X0 = x + 1, Dir = -1 };
+        }
+        foreach (var evenOdd in new[] { false, true })
+        {
+            var scanner = new EdgeScanner(width);
+            scanner.Begin(edges, 0, edges.Length, evenOdd, 0, 2, 0, width);
+            for (var row = 0; row < 2; row++)
+            {
+                Assert.True(scanner.NextRow(out var y, out var xa, out var xb));
+                Assert.Equal(row, y);
+                Assert.Equal(0, xa);
+                Assert.Equal(width, xb);
+                Assert.All(scanner.Cov.Take(width), coverage => Assert.Equal(1f, coverage));
+            }
+            Assert.False(scanner.NextRow(out _, out _, out _));
         }
     }
 

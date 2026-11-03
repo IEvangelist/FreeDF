@@ -187,7 +187,7 @@ public static class Jbig2Decoder
                 first ??= e;
             }
         }
-        if (first is not null && st.Page is null) throw first;
+        if (first is not null) throw first;
     }
 
     static Seg? ParseHeader(byte[] d, ref int pos)
@@ -748,6 +748,8 @@ public static class Jbig2Decoder
 
     static Bitmap DecodeText(TextParams p, byte[] data, MqDecoder? mq, TextArith? ta, Jb2BitReader? br)
     {
+        if (p.NumInstances < 0 || p.NumInstances > 1_000_000)
+            throw new InvalidOperationException("JBIG2 text region exceeds the symbol instance limit");
         var bm = NewBitmap(p.W, p.H);
         if (p.DefPixel != 0) Array.Fill(bm.D, (byte)1);
         var strips = 1 << p.LogStrips;

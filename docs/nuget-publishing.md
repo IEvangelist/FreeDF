@@ -53,6 +53,12 @@ after testing and packing have completed. NuGet issues a short-lived API key
 through `NuGet/login@v1`; the workflow uses it immediately and skips already
 published package versions so a partially completed release can be retried.
 
+The release tests use bundled fonts without installed-font fallback for
+host-independent raster golden hashes. Fuzz fixture names use `/` separators
+so Windows and Linux exercise the same deterministic mutations.
+JBIG2 text regions are limited to 1,000,000 symbol instances; exceeding that
+limit produces a render warning rather than unbounded decoding work.
+
 For a local package build, pass an explicit version:
 
 ```powershell
