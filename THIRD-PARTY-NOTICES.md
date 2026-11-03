@@ -2,7 +2,7 @@
 
 Entries are grouped per component; each section is self-contained.
 
-## veraPDF validation-profile facts (PDF/UA-2 containment)
+## veraPDF validation-profile facts
 
 The factual relationships in `ValidationPdfUA2Nesting.cs` were derived from the
 veraPDF Consortium's [v1.30.3 validation profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2-ISO32005.xml),
@@ -11,6 +11,12 @@ The relationships were reorganized into parent-keyed sets and independently
 implemented in C#; the profile XML and validation-engine source are not bundled.
 Unconditional exclusions, direct-content bans, and unconditional occurrence
 limits are implemented here; grouping-dependent requirements remain deferred.
+
+The PDF/A image-XObject interpolation prohibition in `ValidationPdfA.cs` was
+also cross-checked against the veraPDF Consortium's
+[v1.30.3 PDF/A profiles](https://github.com/veraPDF/veraPDF-validation-profiles/tree/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_A),
+under the same CC BY 4.0 licence (PDF/A-1b 6.2.4-3, PDF/A-2b/3b 6.2.8-3).
+It is independently implemented in C#; inline-image coverage remains deferred.
 
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
@@ -114,4 +120,4 @@ HarfBuzz (via the `uharfbuzz` Python package, MIT) was used only to generate the
 
 ## veraPDF and veraPDF-corpus (test oracle only)
 
-veraPDF (GPLv3 / MPLv2+) and the veraPDF-corpus are run locally by `tools/ua_crosscheck.py` as an independent PDF/UA oracle. No veraPDF binaries, profiles or corpus files are included in this repository or its packages, and no validation rules were copied from them; rule ids in code comments refer to published profile ids only.
+veraPDF (GPLv3 / MPLv2+) and the veraPDF-corpus are run locally as independent PDF/A and PDF/UA oracles, including by `tools/ua_crosscheck.py`. No veraPDF binaries, profiles, corpus files or validation-engine source are included in this repository or its packages; profile-derived facts are attributed above.

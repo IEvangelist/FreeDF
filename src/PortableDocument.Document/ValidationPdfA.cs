@@ -199,10 +199,18 @@ internal static class PdfAChecks
     {
         var f = c.F;
         var reportedLzw = false; var reportedJpx = false; var reportedAction = false; var reportedObjStm = false; var reportedFile = false; var reportedAf = false;
+        var reportedInterpolation = false;
         foreach (var o in c.AllObjects())
         {
             var dict = o switch { PdfStream s => s.Dict, PdfDictionary d => d, _ => null };
             if (dict is null) continue;
+            if (!reportedInterpolation && o is PdfStream && f.Resolve(dict.Get("Subtype")).AsName() == "Image"
+                && f.Resolve(dict.Get("Interpolate")) is PdfBoolean { Value: true })
+            {
+                reportedInterpolation = true;
+                c.Add("PDFA-IMAGE-INTERPOLATE", ValidationSeverity.Error, "an image XObject requests interpolation; PDF/A requires /Interpolate to be false",
+                    Clause(c, "6.2.4", "6.2.8", "6.2.8"));
+            }
             if (o is PdfStream st)
             {
                 foreach (var name in FilterNames(f, st.Dict))
