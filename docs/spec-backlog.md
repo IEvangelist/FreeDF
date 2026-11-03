@@ -193,6 +193,27 @@ The legacy `ppm-lossless.pdf` and `ppt-lossless.pdf` references have been replac
 
 ## Rendering and content
 
+### Issue #8: content-stream diagnostics and remaining dispositions
+
+`PdfRenderOptions.StrictContentValidation` opts into warning-only checks for
+recognized operator operand arity/types, graphics-state underflow, unmatched
+or unclosed text objects, text operators outside `BT`/`ET`, unclosed marked
+content, and missing/repeated/non-first Type 3 `d0`/`d1`. It does not reject
+content or alter the renderer's permissive operator execution; the default is
+unchanged. `Type3AndCompatibilityTests` covers strict/permissive diagnostics,
+rendered-pixel compatibility, and Type 3 ordering.
+
+| Issue #8 item | Disposition |
+|---|---|
+| Operand arity/types, `Q` underflow, text outside `BT`/`ET`, and unclosed marked content | Implemented as opt-in warning-only diagnostics; complete semantic/value-range validation and rejecting validation remain deferred |
+| Type 3 `d0`/`d1` ordering | Missing, repeated, and non-first metrics operators are diagnosed in strict mode; enforcement is deferred |
+| Type 3 `d1` colour-image restriction | Deferred; colour images inside `d1` glyphs may still be painted |
+| Image `/Interpolate` | Not implemented; remains an ignored visual-quality hint, with no promise of interpolation parity |
+| External stream `/F`, Reference and PostScript XObjects | Intentionally unsupported legacy/deprecated features; external data is not opened and PostScript is not executed |
+
+This closes only the strict-diagnostics slice, not issue #8 or PDF-spec parity.
+The image and Type 3 rendering gaps above remain actionable.
+
 The subsequent annotation/AP, DPart hierarchy, CFF Expert and JPX marker-boundary batch passed 583/583 combined focused cases and 1160/1160 full Release cases, with no failures or skips. The Release solution build succeeded with one EditorWeb CS8602 warning. The initial focused attempt stopped before tests on an invalid generated Content reference assembly (CS0009); a targeted non-incremental Content rebuild regenerated it, then serial MSBuild (`-m:1`) focused/build/full runs passed without source changes for that error.
 
 CFF1 predefined ISOAdobe/Expert/ExpertSubset charsets and Standard/Adobe Expert built-in encodings are supported. Absent PDF `/Encoding` or `/BaseEncoding` selects embedded non-CID CFF encoding; `/Differences` overlays that base, `/ToUnicode` takes extraction precedence, and encoding uses the selected code/glyph mapping. `CffTests` passes in the combined runs. Generated tables cite Adobe TN 5176 Appendices B/C and fontTools 4.63.0; this closes the narrow CFF Expert table gap, not legacy Type 1 Expert/MM support. Explicit PDF MacExpertEncoding is now supported as a distinct code-to-glyph-name table (Adobe PDF Reference 6th ed Appendix D.3 / ISO 32000-2 Annex D.4), with holes mapping to .notdef, Differences overrides and ToUnicode precedence; it is not aliased to Adobe ExpertEncoding. Focused mapping/width/encoding tests cover this addition.
