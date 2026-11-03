@@ -242,6 +242,12 @@ JPX POC coverage additionally includes a three-layer, multi-precinct fixture tha
 
 ## Renderer (`PortableDocument.Content`, `PortableDocument.Render`)
 
+Strict rendering diagnostics also warn on non-stencil images in Type 3 `d1`
+glyphs (9.6.5), including inline images and images reached through Forms.
+Resolved `/ImageMask true` stencils remain allowed; `d0` is unaffected.
+The warning does not skip/recolour images or change permissive pixels, and
+does not establish rejecting validation or complete Type 3 semantics.
+
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
 | 8.4 | Graphics state, paths, clipping | Done | AA scanline raster, non-zero/even-odd. Opt-in `PdfRenderOptions.StrictContentValidation` reports recognized-operator operand arity/type issues, graphics-state underflow, unbalanced text/marked-content state, and Type 3 `d0`/`d1` ordering as warnings only; rendering remains permissive and the default is unchanged. |

@@ -118,7 +118,7 @@ matrix, so most rows are "implemented/tested at render level".
 | Text state | `Tc Tw Tz TL Tf Tr Ts` | implemented/tested (`TextPerformanceRegressionTests`, samples `03`/`04`); `Tr` values > 7 are not rejected |
 | Text positioning | `Td TD Tm T*` | implemented/tested |
 | Text showing | `Tj TJ ' "` | implemented/tested |
-| Type 3 | `d0 d1` | `d0` implemented; **`d1` was a no-op - fixed** (colour operators ignored, stroke uses fill colour); tested (`Type3AndCompatibilityTests`, new). Strict validation diagnoses missing, repeated, or non-first `d0`/`d1` metrics operators but remains warning-only. Colour *images* inside `d1` glyphs are still painted (spec: only image masks) |
+| Type 3 | `d0 d1` | `d0` implemented; **`d1` was a no-op - fixed** (colour operators ignored, stroke uses fill colour); tested (`Type3AndCompatibilityTests`, new). Strict validation diagnoses missing, repeated, or non-first `d0`/`d1` metrics operators and non-stencil images inside `d1` glyphs (including inline images and images reached through Forms). These checks remain warning-only; colour images may still be painted, preserving permissive pixels rather than claiming rejecting conformance |
 | Colour | `CS cs SC SCN sc scn G g RG rg K k` | implemented/tested (colour session owns depth); ignored inside uncoloured patterns and `d1` glyphs |
 | Shading | `sh` | implemented/tested |
 | Inline images | `BI ID EI` | implemented/tested; **`/L` (PDF 2.0 length) was ignored - fixed**; **`/IM false` was treated as a stencil when computing the data length - fixed** (`InlineImageTests`, new) |
@@ -184,7 +184,7 @@ see the evidence chronology above and the reconciled backlog):
 2. **Validator is not veraPDF-clean on any PDF/A fixture**: needs a checked-in positive fixture that veraPDF accepts (requires a redistributable ICC profile and an embedded font; none is in the repo) and a CI job that re-runs `tools/validation`.
 3. PDF/UA structure containment rules (7.2: TR in Table/THead/TBody/TFoot, TD/TH in TR, LI in L, LBody in LI) and 7.18.2 TrapNet. TrapNet was subsequently addressed; the later reconciliation still records incomplete nesting coverage.
 4. **Partially addressed:** opt-in warning-only operand arity/type validation, `Q` underflow, unmatched text state/text operators outside `BT`, and unclosed marked content have regressions in `Type3AndCompatibilityTests`; this is not rejecting validation or complete semantic checking.
-5. Strict diagnostics detect missing, repeated, or non-first Type 3 `d0`/`d1`; enforcement and the `d1` colour-image restriction (only image masks allowed) remain open.
+5. Strict diagnostics detect missing, repeated, or non-first Type 3 `d0`/`d1` and non-stencil images under `d1` (only image masks allowed); rejecting enforcement remains open.
 6. Image `/Interpolate` (visual quality hint only).
 7. `/F` external streams, Reference/PostScript XObjects (deprecated, low impact).
 8. Clause 12 per-subtype appearance generation audit and clauses 10-13 line-by-line audit were not done.

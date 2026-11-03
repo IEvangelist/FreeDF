@@ -1632,6 +1632,8 @@ public sealed class ContentInterpreter
 
     void DrawImage(PdfStream xs, PdfDictionary res, bool cacheable = true)
     {
+        if (StrictContentValidation && _type3Mono && R(xs.Dict.Get("ImageMask")) is not PdfBoolean { Value: true })
+            Warn("Type 3 d1 glyph may paint only stencil images (ImageMask true)");
         if (!DrawGraphics || !_be.MayPaintImage(_gs.Ctm)) return;
         ImageData? img; bool isMask; string? warn;
         var cacheKey = new ImageDecodeCache.Key(xs, res, _gs.Intent, _gs.BlackPointCompensation);

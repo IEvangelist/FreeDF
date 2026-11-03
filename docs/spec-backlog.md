@@ -207,7 +207,7 @@ rendered-pixel compatibility, and Type 3 ordering.
 |---|---|
 | Operand arity/types, `Q` underflow, text outside `BT`/`ET`, and unclosed marked content | Implemented as opt-in warning-only diagnostics; complete semantic/value-range validation and rejecting validation remain deferred |
 | Type 3 `d0`/`d1` ordering | Missing, repeated, and non-first metrics operators are diagnosed in strict mode; enforcement is deferred |
-| Type 3 `d1` colour-image restriction | Deferred; colour images inside `d1` glyphs may still be painted |
+| Type 3 `d1` colour-image restriction | Strict mode warns on non-stencil XObject/inline images, including images reached through Forms; permissive pixels are unchanged and rejecting enforcement remains deferred |
 | Image `/Interpolate` | Not implemented; remains an ignored visual-quality hint, with no promise of interpolation parity |
 | External stream `/F`, Reference and PostScript XObjects | Intentionally unsupported legacy/deprecated features; external data is not opened and PostScript is not executed |
 
