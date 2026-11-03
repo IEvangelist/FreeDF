@@ -20,6 +20,7 @@ internal static partial class PdfUAChecks
         c.Guard("document flags", () => PdfUADeepChecks.DocumentFlags(c));
         c.Guard("font mapping", () => PdfUADeepChecks.Fonts(c));
         c.Guard("pages", () => Pages(c));
+        if (c.Part == 1) c.Guard("media clip data", () => MediaClipData(c));
         var tree = c.Doc.Structure;
         if (tree is null) return;
         c.Guard("content tagging", () => PdfUADeepChecks.ContentTagging(c, tree));
@@ -102,6 +103,85 @@ internal static partial class PdfUAChecks
                 c.Add("PDFUA-PAGE-UNTAGGED", ValidationSeverity.Warning, "page has content but no /StructParents, so its content is probably not tagged", Clause(c, "7.1", "8.2"), i);
             if (f.Resolve(p.Dict.Get("Annots")) is PdfArray { Count: > 0 } && f.Resolve(p.Dict.Get("Tabs")).AsName() != "S")
                 c.Add("PDFUA-TABS", ValidationSeverity.Error, "page with annotations must have /Tabs /S", Clause(c, "7.18.3", "8.9"), i);
+        }
+    }
+
+    static void MediaClipData(ValidationContext c)
+    {
+        const string clause = "ISO 14289-1 7.18.6.2";
+        const int maxNodes = 4096, maxDepth = 64, maxAltEntries = 8192;
+        var f = c.F;
+        var actions = c.Doc.GetActionReport();
+        var active = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var completedRenditions = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var completedClips = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var work = 0;
+        var incomplete = false;
+        if (actions.Truncated) Incomplete();
+        foreach (var action in actions.Actions)
+        {
+            if (action.ActionType == "Rendition") Walk(action.Dictionary.Get("R"), false, 0, action.PageIndex);
+            if (work > maxNodes) break;
+        }
+
+        void Walk(PdfObject? raw, bool clip, int depth, int? page)
+        {
+            if (raw is null) return;
+            if (++work > maxNodes || depth > maxDepth) { Incomplete(); return; }
+            if (Resolve(raw) is not PdfDictionary dictionary) return;
+            var completed = clip ? completedClips : completedRenditions;
+            if (completed.Contains(dictionary)) return;
+            if (!active.Add(dictionary)) { Incomplete(); return; }
+            var subtype = Resolve(dictionary.Get("S")).AsName();
+            if (clip)
+            {
+                if (subtype == "MCD")
+                {
+                    if (Resolve(dictionary.Get("CT")) is not PdfString)
+                        c.Add("PDFUA-MEDIA-CT", ValidationSeverity.Error, "media clip data has no string /CT content type", clause, page);
+                    var alt = Resolve(dictionary.Get("Alt"));
+                    if (alt is PdfArray large && large.Count > maxAltEntries) Incomplete();
+                    else if (!ValidAlt(alt))
+                        c.Add("PDFUA-MEDIA-ALT", ValidationSeverity.Error, "media clip data /Alt must be an even-length multilingual string array with nonempty descriptions", clause, page);
+                }
+                else if (subtype == "MCS") Walk(dictionary.Get("D"), true, depth + 1, page);
+            }
+            else if (subtype == "MR") Walk(dictionary.Get("C"), true, depth + 1, page);
+            else if (subtype == "SR" && Resolve(dictionary.Get("R")) is PdfArray alternatives)
+                foreach (var alternative in alternatives.Items)
+                {
+                    Walk(alternative, false, depth + 1, page);
+                    if (work > maxNodes) break;
+                }
+            active.Remove(dictionary);
+            completed.Add(dictionary);
+        }
+
+        bool ValidAlt(PdfObject? value)
+        {
+            if (value is not PdfArray array || array.Count % 2 != 0) return false;
+            for (var i = 0; i < array.Count; i++)
+                if (Resolve(array[i]) is not PdfString text || (i % 2 == 1 && text.Text.Length == 0)) return false;
+            return true;
+        }
+
+        PdfObject? Resolve(PdfObject? value)
+        {
+            var references = new HashSet<int>();
+            while (value is PdfRef reference)
+            {
+                if (references.Count >= 32 || !references.Add(reference.Number)) { Incomplete(); return null; }
+                value = f.GetObject(reference.Number);
+            }
+            return value;
+        }
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA-MEDIA-INCOMPLETE", ValidationSeverity.Error,
+                "media clip data validation could not complete because action traversal or a rendition, clip, reference or alternate-text boundary was reached", clause);
         }
     }
 

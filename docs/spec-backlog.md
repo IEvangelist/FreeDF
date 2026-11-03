@@ -207,7 +207,7 @@ rendered-pixel compatibility, and Type 3 ordering.
 |---|---|
 | Operand arity/types, `Q` underflow, text outside `BT`/`ET`, and unclosed marked content | Implemented as opt-in warning-only diagnostics; complete semantic/value-range validation and rejecting validation remain deferred |
 | Type 3 `d0`/`d1` ordering | Missing, repeated, and non-first metrics operators are diagnosed in strict mode; enforcement is deferred |
-| Type 3 `d1` colour-image restriction | Deferred; colour images inside `d1` glyphs may still be painted |
+| Type 3 `d1` colour-image restriction | Strict mode warns on non-stencil XObject/inline images, including images reached through Forms; permissive pixels are unchanged and rejecting enforcement remains deferred |
 | Image `/Interpolate` | Not implemented; remains an ignored visual-quality hint, with no promise of interpolation parity |
 | External stream `/F`, Reference and PostScript XObjects | Intentionally unsupported legacy/deprecated features; external data is not opened and PostScript is not executed |
 
@@ -327,6 +327,21 @@ excluded). Self-authored `PdfUaLinkTargetTests` cover this slice without
 vendoring the external PDFs. URI/remote target grouping, general destination
 validity and exhaustive named-tree boundary validation remain open. The dated
 corpus-wide counts above have not been remeasured.
+
+PDF/UA-1 media clip data now requires string `/CT` and multilingual `/Alt`
+string pairs with nonempty description strings (7.18.6.2; published veraPDF
+rules 7.18.6.2-1/2). The inert action walk follows Rendition selectors, media
+renditions and clip sections to data dictionaries, including direct dictionaries
+without optional `/Type`. Shared nodes are checked once; cycles, reference/depth,
+work and alternate-array boundaries report explicit incomplete-check errors.
+Five independent public 7.18.6.2 controls were compared with veraPDF 1.30.3:
+all three negatives now fail their exact mapped rules and both positives remain
+accepted (5 compared, 0 excluded). `PdfUaMediaClipTests` uses self-authored
+fixtures. This checks syntax, not MIME grammar, language suitability or useful
+human descriptions; empty `/CT` strings and empty `/Alt` arrays are not rejected
+by these rules, matching the published controls. Media is never accessed,
+decoded or played. UA-2 is unchanged; broader media conformance and dated
+corpus-wide remeasurement remain open.
 
 Closed (editor): structure tree editing, `RebuildParentTree` (page, `/Stm`, OBJR owners; unique keys kept, clashes reassigned) and conservative `AutoTagUntagged` (text and text-painting Forms -> P, images -> Figure without alt, vector paths -> Artifact; catalog set `/Suspects true`; render-equality tested; result reports figure/artifact counts and `NeedsReview`). `RebuildParentTree` refuses (throws, writes nothing) beyond the depth/size bounds and clears keys of owners that left the tree.
 

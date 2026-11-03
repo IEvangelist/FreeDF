@@ -229,6 +229,15 @@ including exact-rule overlap for both failures. URI/remote grouping, general
 destination validity and exhaustive named-tree boundary validation remain
 open. This focused comparison does not update the dated corpus-wide counts.
 
+PDF/UA-1 media clip data checks require string `/CT` and even-length `/Alt`
+string arrays with nonempty descriptions (7.18.6.2-1/2). Reachable rendition
+selectors and clip sections are traversed inertly with explicit incomplete-check
+errors at cycle/reference/depth/work/array boundaries. All five public 7.18.6.2
+controls agree with veraPDF 1.30.3, including exact-rule overlap for three
+failures. Empty content-type strings/alternate arrays remain accepted; MIME
+grammar, description quality and broader media semantics are not validated.
+UA-2 and the historical corpus-wide counts are unchanged.
+
 The clause-12 action model also exposes inert typed local `/GoTo` metadata through `GoToDetails`: `/D` names, byte strings, and explicit arrays are retained without navigation, named-destination lookup, or array-element resolution. Missing and wrong-type destinations remain null in the typed view while the original dictionary is preserved; array contents are not conformance-validated.
 
 Typed `/Named` metadata exposes `/N` through `NamedDetails`, retaining standard and unrecognised names and the original action dictionary without dispatching actions. Missing or wrong-type names are null in the typed view.
@@ -244,6 +253,12 @@ The separate additive `doc.ValidateDParts()` checks bounded parent/group links, 
 JPX POC coverage additionally includes a three-layer, multi-precinct fixture that changes from one PCRL layer to the remaining CPRL layers. Its decoded pixels match Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4) exactly, and tests verify both progression records. POC-plus-PPM/PPT fixtures exercise component reordering and packed segments ending at complete packet-header boundaries, with exact decoded samples. Legacy PPM/PPT references now also end segments at complete packet headers and verify exact RGB samples. The decoder retains marker-segment boundaries and rejects mid-packet-header splits per T.800 A.7.4/A.7.5; byte-position repartition regressions pass in the integrated Release run. These are bounded reference cases, not exhaustive POC coverage; multi-tile/multi-tile-part packed headers, including PPT headers preceding bodies in an earlier tile-part, remain backlog items.
 
 ## Renderer (`PortableDocument.Content`, `PortableDocument.Render`)
+
+Strict rendering diagnostics also warn on non-stencil images in Type 3 `d1`
+glyphs (9.6.5), including inline images and images reached through Forms.
+Resolved `/ImageMask true` stencils remain allowed; `d0` is unaffected.
+The warning does not skip/recolour images or change permissive pixels, and
+does not establish rejecting validation or complete Type 3 semantics.
 
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
