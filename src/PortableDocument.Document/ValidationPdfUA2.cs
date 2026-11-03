@@ -183,12 +183,12 @@ internal static class PdfUA2Checks
                 PdfObject? destination;
                 if (annotation.Get("A") is { } rawAction)
                 {
-                    if (ResolveDestination(rawAction) is not PdfDictionary action || f.Resolve(action.Get("S")).AsName() != "GoTo") continue;
+                    if (ResolveDestination(f, rawAction, Incomplete) is not PdfDictionary action || f.Resolve(action.Get("S")).AsName() != "GoTo") continue;
                     destination = action.Get("SD") ?? action.Get("D");
                 }
                 else destination = annotation.Get("Dest");
-                var target = StructureTarget(destination);
-                if (target is null) continue;
+                var target = DestinationTarget(c, destination, Incomplete);
+                if (target is null || tree.ElementFor(target) is null) continue;
                 firstTarget ??= target;
                 if (!ReferenceEquals(firstTarget, target))
                 {
@@ -198,73 +198,84 @@ internal static class PdfUA2Checks
             }
         }
 
-        PdfDictionary? StructureTarget(PdfObject? destination)
-        {
-            var seen = new HashSet<PdfObject>(ReferenceEqualityComparer.Instance);
-            for (var depth = 0; destination is not null && depth < MaxRoleDepth; depth++)
-            {
-                var value = ResolveDestination(destination);
-                if (value is null or PdfNull) return null;
-                if (!seen.Add(value))
-                {
-                    Incomplete();
-                    return null;
-                }
-                switch (value)
-                {
-                    case PdfName name:
-                        destination = DocumentFeatures.LookupNamedDest(f, name.Value);
-                        break;
-                    case PdfString name:
-                        destination = DocumentFeatures.LookupNamedDest(f, name.Text);
-                        break;
-                    case PdfDictionary dictionary:
-                        if (tree.ElementFor(dictionary) is not null) return dictionary;
-                        destination = dictionary.Get("SD") ?? dictionary.Get("D");
-                        break;
-                    case PdfArray { Count: > 0 } array:
-                        return ResolveDestination(array[0]) is PdfDictionary target && tree.ElementFor(target) is not null ? target : null;
-                    default:
-                        return null;
-                }
-            }
-            if (destination is not null) Incomplete();
-            return null;
-        }
-
-        PdfObject? ResolveDestination(PdfObject? value)
-        {
-            var seen = new HashSet<int>();
-            while (value is PdfRef reference)
-            {
-                if (seen.Count >= MaxRoleDepth || !seen.Add(reference.Number))
-                {
-                    Incomplete();
-                    return null;
-                }
-                value = f.GetObject(reference.Number);
-            }
-            return value;
-        }
-
         void Incomplete() => c.Add("PDFUA2-LINK-TARGET-UNRESOLVED", ValidationSeverity.Error,
             "a cyclic or excessively deep destination prevented comparison of Link annotation targets", "ISO 14289-2 8.2.5.20");
     }
 
-    /// <summary>8.8: destinations that target this document must be structure destinations. Only direct destination arrays are evaluated; named destinations are not resolved.</summary>
+    static PdfObject? ResolveDestination(PdfFile file, PdfObject? value, Action incomplete)
+    {
+        var seen = new HashSet<int>();
+        while (value is PdfRef reference)
+        {
+            if (seen.Count >= MaxRoleDepth || !seen.Add(reference.Number)) { incomplete(); return null; }
+            value = file.GetObject(reference.Number);
+        }
+        return value;
+    }
+
+    static PdfDictionary? DestinationTarget(ValidationContext c, PdfObject? destination, Action incomplete)
+    {
+        var seen = new HashSet<PdfObject>(ReferenceEqualityComparer.Instance);
+        for (var depth = 0; destination is not null && depth < MaxRoleDepth; depth++)
+        {
+            var value = ResolveDestination(c.F, destination, incomplete);
+            if (value is null or PdfNull) return null;
+            if (!seen.Add(value)) { incomplete(); return null; }
+            switch (value)
+            {
+                case PdfName name:
+                    destination = DocumentFeatures.LookupNamedDest(c.F, name.Value);
+                    break;
+                case PdfString name:
+                    destination = DocumentFeatures.LookupNamedDest(c.F, name.Text);
+                    break;
+                case PdfDictionary dictionary:
+                    if (c.Doc.Structure?.ElementFor(dictionary) is not null) return dictionary;
+                    destination = dictionary.Get("SD") ?? dictionary.Get("D");
+                    break;
+                case PdfArray { Count: > 0 } array:
+                    return ResolveDestination(c.F, array[0], incomplete) as PdfDictionary;
+                default:
+                    return null;
+            }
+        }
+        if (destination is not null) incomplete();
+        return null;
+    }
+
+    /// <summary>8.8: detect local page destinations, including named destinations and inert action triggers.</summary>
     static void Destinations(ValidationContext c)
     {
         var f = c.F;
-        bool PageTarget(PdfObject? dest) =>
-            f.Resolve(dest) is PdfArray { Count: > 0 } a && f.Resolve(a[0]) is PdfDictionary d && f.Resolve(d.Get("Type")).AsName() == "Page";
-        bool ActionTargetsPage(PdfObject? action) =>
-            f.Resolve(action) is PdfDictionary ad && f.Resolve(ad.Get("S")).AsName() == "GoTo" && ad.Get("SD") is null && PageTarget(ad.Get("D"));
+        bool incomplete = false;
+        PdfObject? Resolve(PdfObject? value) => ResolveDestination(f, value, Incomplete);
+        bool PageTarget(PdfObject? destination) =>
+            DestinationTarget(c, destination, Incomplete) is { } target && Resolve(target.Get("Type")).AsName() == "Page";
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-DEST-INCOMPLETE", ValidationSeverity.Error,
+                "local destination validation could not complete because an action or destination boundary was reached", "ISO 14289-2 8.8");
+        }
+
+        var actions = c.Doc.GetActionReport();
+        if (actions.Truncated) Incomplete();
+        foreach (var action in actions.Actions)
+            if (action.ActionType == "GoTo" && PageTarget(action.Dictionary.Get("SD") ?? action.Dictionary.Get("D")))
+                c.Add("PDFUA2-DEST-NOT-STRUCTURE", ValidationSeverity.Error,
+                    "a GoTo action destination targets a page instead of a structure element (veraPDF PDFUA-2 8.8-2)", "ISO 14289-2 8.8", action.PageIndex);
+        var openAction = Resolve(f.Catalog.Get("OpenAction"));
+        if (openAction is not PdfDictionary && PageTarget(openAction))
+            c.Add("PDFUA2-DEST-NOT-STRUCTURE", ValidationSeverity.Error,
+                "catalog OpenAction targets a page instead of a structure element (veraPDF PDFUA-2 8.8-1)", "ISO 14289-2 8.8");
 
         for (var i = 0; i < c.Doc.Pages.Count; i++)
         {
             if (f.Resolve(c.Doc.Pages[i].Dict.Get("Annots")) is not PdfArray annots) continue;
             foreach (var a in annots.Items.Take(10_000))
-                if (f.Resolve(a) is PdfDictionary ad && (PageTarget(ad.Get("Dest")) || ActionTargetsPage(ad.Get("A"))))
+                if (f.Resolve(a) is PdfDictionary ad && PageTarget(ad.Get("Dest")))
                 {
                     c.Add("PDFUA2-DEST-NOT-STRUCTURE", ValidationSeverity.Error, "an annotation destination targets a page instead of a structure element (veraPDF PDFUA-2 8.8-1/2)", "ISO 14289-2 8.8", i);
                     return;
@@ -278,7 +289,7 @@ internal static class PdfUA2Checks
         {
             var item = stack.Pop();
             if (!seen.Add(item)) continue;
-            if (PageTarget(item.Get("Dest")) || ActionTargetsPage(item.Get("A")))
+            if (PageTarget(item.Get("Dest")))
             {
                 c.Add("PDFUA2-DEST-NOT-STRUCTURE", ValidationSeverity.Error, "an outline destination targets a page instead of a structure element (veraPDF PDFUA-2 8.8-1/2)", "ISO 14289-2 8.8");
                 return;

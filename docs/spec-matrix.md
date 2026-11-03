@@ -226,6 +226,14 @@ failures. Empty content-type strings/alternate arrays remain accepted; MIME
 grammar, description quality and broader media semantics are not validated.
 UA-2 and the historical corpus-wide counts are unchanged.
 
+PDF/UA-2 local page-destination detection (8.8) includes named/dictionary
+destinations, catalog OpenAction and the existing inert GoTo trigger walk,
+with `/SD` precedence. Shared bounded resolution preserves Link grouping;
+action-walk and destination-chain boundaries report incomplete-check errors.
+Both public 8.8 negatives retain exact-rule agreement with veraPDF 1.30.3.
+General destination validity, named-tree boundaries and exhaustive action-owner
+coverage remain open; historical corpus counts are not remeasured.
+
 The clause-12 action model also exposes inert typed local `/GoTo` metadata through `GoToDetails`: `/D` names, byte strings, and explicit arrays are retained without navigation, named-destination lookup, or array-element resolution. Missing and wrong-type destinations remain null in the typed view while the original dictionary is preserved; array contents are not conformance-validated.
 
 Typed `/Named` metadata exposes `/N` through `NamedDetails`, retaining standard and unrecognised names and the original action dictionary without dispatching actions. Missing or wrong-type names are null in the typed view.
