@@ -163,6 +163,22 @@ interpolation, ideal reconstruction/minification, independent engine validation,
 or complete clause 8.9-8.10 parity. Redaction still re-encodes flattened replacement
 images without requesting interpolation.
 
+**Gallery golden control:** the self-authored `samples/09-images.pdf` requests
+interpolation on the 16x16 RGB XObject `/X11` (`18 0 R`) and one 16x16 inline
+image (`/I true`); `tools/FreeDF.Samples/Gen/Gen09.cs` generates both. At 96 dpi
+with bundled fonts, base `3b11347e` renders the original sample and the variant
+with both flags disabled to SHA-256
+`75ABE00AA9325C6949D61FF87F963FC0D2A5FB6144265DCE213BF2C9C94546C9`.
+The interpolation implementation preserves that exact disabled-flags hash.
+With flags enabled its hash is
+`F1BD7DFDA42A00D926FAE5384EF6CF3D7F0447BE1DC5EC418823FB3A63E18092`;
+27,919 changed pixels are confined to the requested image footprints (20,983
+XObject, 6,936 inline). `SampleImageInterpolationGoldenTests` pins the disabled
+hash and enabled-footprint isolation. The base corpus golden test passes;
+only this sample's golden row is intentionally updated, not the sample PDF.
+This analytic/control evidence does not substitute for independent renderer
+comparison.
+
 ## 4. Clause 9 - text and fonts
 
 | Requirement | Status | Evidence |
