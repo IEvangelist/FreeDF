@@ -208,8 +208,23 @@ targeted color-rule evidence only, not full PDF/A conformance.
 
 PDF/UA Link-parent validation applies the profile-specific rule: UA-1 requires
 Link; UA-2 accepts Link or Reference, including role-mapped types (ISO 14289-2
-8.2.5.20; veraPDF 8.2.5.20-1). The separate UA-2 different-target grouping check
-8.2.5.20-2 remains open; this focused correction does not update corpus counts.
+8.2.5.20; veraPDF 8.2.5.20-1). UA-2 different-target grouping (8.2.5.20-2)
+now compares local structure targets of direct OBJR Link annotations within
+each Link/Reference, including named destinations and GoTo `/SD` precedence.
+Cycles/depth exhaustion in destination chains produce an explicit error.
+The four public 8.2.5.20-t02 fail/pass a/b controls agree with veraPDF 1.30.3,
+including exact-rule overlap for both failures. URI/remote grouping, general
+destination validity and exhaustive named-tree boundary validation remain
+open. This focused comparison does not update the dated corpus-wide counts.
+
+PDF/UA-1 media clip data checks require string `/CT` and even-length `/Alt`
+string arrays with nonempty descriptions (7.18.6.2-1/2). Reachable rendition
+selectors and clip sections are traversed inertly with explicit incomplete-check
+errors at cycle/reference/depth/work/array boundaries. All five public 7.18.6.2
+controls agree with veraPDF 1.30.3, including exact-rule overlap for three
+failures. Empty content-type strings/alternate arrays remain accepted; MIME
+grammar, description quality and broader media semantics are not validated.
+UA-2 and the historical corpus-wide counts are unchanged.
 
 The clause-12 action model also exposes inert typed local `/GoTo` metadata through `GoToDetails`: `/D` names, byte strings, and explicit arrays are retained without navigation, named-destination lookup, or array-element resolution. Missing and wrong-type destinations remain null in the typed view while the original dictionary is preserved; array contents are not conformance-validated.
 
@@ -226,6 +241,12 @@ The separate additive `doc.ValidateDParts()` checks bounded parent/group links, 
 JPX POC coverage additionally includes a three-layer, multi-precinct fixture that changes from one PCRL layer to the remaining CPRL layers. Its decoded pixels match Pillow's OpenJPEG-backed decode (OpenJPEG/libopenjp2 2.5.4) exactly, and tests verify both progression records. POC-plus-PPM/PPT fixtures exercise component reordering and packed segments ending at complete packet-header boundaries, with exact decoded samples. Legacy PPM/PPT references now also end segments at complete packet headers and verify exact RGB samples. The decoder retains marker-segment boundaries and rejects mid-packet-header splits per T.800 A.7.4/A.7.5; byte-position repartition regressions pass in the integrated Release run. These are bounded reference cases, not exhaustive POC coverage; multi-tile/multi-tile-part packed headers, including PPT headers preceding bodies in an earlier tile-part, remain backlog items.
 
 ## Renderer (`PortableDocument.Content`, `PortableDocument.Render`)
+
+Strict rendering diagnostics also warn on non-stencil images in Type 3 `d1`
+glyphs (9.6.5), including inline images and images reached through Forms.
+Resolved `/ImageMask true` stencils remain allowed; `d0` is unaffected.
+The warning does not skip/recolour images or change permissive pixels, and
+does not establish rejecting validation or complete Type 3 semantics.
 
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
