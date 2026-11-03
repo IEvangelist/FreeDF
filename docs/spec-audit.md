@@ -114,18 +114,18 @@ matrix, so most rows are "implemented/tested at render level".
 | Path construction | `m l c v y h re` | implemented/tested |
 | Path painting | `S s f F f* B B* b b* n` | implemented/tested |
 | Clipping | `W W*` | implemented/tested |
-| Text objects | `BT ET` | implemented/tested; nested `BT`, `ET` without `BT`, and text operators outside `BT` are accepted silently (no diagnostic) |
+| Text objects | `BT ET` | implemented/tested; opt-in `StrictContentValidation` warns for nested/unmatched/unclosed text objects and text operators outside `BT`/`ET`; warnings do not alter permissive rendering |
 | Text state | `Tc Tw Tz TL Tf Tr Ts` | implemented/tested (`TextPerformanceRegressionTests`, samples `03`/`04`); `Tr` values > 7 are not rejected |
 | Text positioning | `Td TD Tm T*` | implemented/tested |
 | Text showing | `Tj TJ ' "` | implemented/tested |
-| Type 3 | `d0 d1` | `d0` implemented; **`d1` was a no-op - fixed** (colour operators ignored, stroke uses fill colour); tested (`Type3AndCompatibilityTests`, new). Colour *images* inside `d1` glyphs are still painted (spec: only image masks) |
+| Type 3 | `d0 d1` | `d0` implemented; **`d1` was a no-op - fixed** (colour operators ignored, stroke uses fill colour); tested (`Type3AndCompatibilityTests`, new). Strict validation diagnoses missing, repeated, or non-first `d0`/`d1` metrics operators but remains warning-only. Colour *images* inside `d1` glyphs are still painted (spec: only image masks) |
 | Colour | `CS cs SC SCN sc scn G g RG rg K k` | implemented/tested (colour session owns depth); ignored inside uncoloured patterns and `d1` glyphs |
 | Shading | `sh` | implemented/tested |
 | Inline images | `BI ID EI` | implemented/tested; **`/L` (PDF 2.0 length) was ignored - fixed**; **`/IM false` was treated as a stencil when computing the data length - fixed** (`InlineImageTests`, new) |
 | XObjects | `Do` | implemented/tested (images, forms); PostScript XObjects ignored |
-| Marked content | `MP DP BMC BDC EMC` | `BMC/BDC/EMC` implemented/tested (MCID, `/OC`, Artifact); `MP/DP` accepted and ignored; unmatched `EMC` warns; an unterminated `BDC` is silently closed at end of stream |
+| Marked content | `MP DP BMC BDC EMC` | `BMC/BDC/EMC` implemented/tested (MCID, `/OC`, Artifact); `MP/DP` accepted and ignored; unmatched `EMC` warns; opt-in strict validation also warns when marked content remains open at end of stream |
 | Compatibility | `BX EX` | **unknown operators inside BX/EX warned - fixed** (nesting counted); tested |
-| Operand errors | missing/ill-typed operands | partial: missing operands default to 0, every operator runs inside a catch that records a warning (`operator X: ...Exception`), operand stack capped at 512; **no operand-arity or type validation per operator, no strict mode**; unbalanced `Q` is ignored silently |
+| Operand errors | missing/ill-typed operands | Opt-in `StrictContentValidation` checks operand arity/types for recognized operators and diagnoses `Q` underflow; it adds warnings only and preserves permissive operator execution. The default remains permissive; malformed `Q` recovery and complete semantic/value-range validation are not established |
 
 ### 3.2 Images (8.9) and forms (8.10)
 
@@ -206,15 +206,15 @@ see the evidence chronology above and the reconciled backlog):
 1. **PDF/A implicit DeviceGray** (6.2.3.3 / 6.2.4.3): text and paths painted with the initial colour need an OutputIntent or `DefaultGray`; we only detect explicit device colour use. Without it a document can be `IsCompliant` yet fail veraPDF.
 2. **Validator is not veraPDF-clean on any PDF/A fixture**: needs a checked-in positive fixture that veraPDF accepts (requires a redistributable ICC profile and an embedded font; none is in the repo) and a CI job that re-runs `tools/validation`.
 3. PDF/UA structure containment rules (7.2: TR in Table/THead/TBody/TFoot, TD/TH in TR, LI in L, LBody in LI) and 7.18.2 TrapNet. TrapNet was subsequently addressed; the later reconciliation still records incomplete nesting coverage.
-4. Per-operator operand validation / strict mode, with diagnostics for `Q` underflow, text operators outside `BT`, unterminated `BDC`.
-5. `d1` colour images (only image masks allowed) and Type 3 `d0/d1` must be first operator.
+4. **Partially addressed:** opt-in warning-only operand arity/type validation, `Q` underflow, unmatched text state/text operators outside `BT`, and unclosed marked content have regressions in `Type3AndCompatibilityTests`; this is not rejecting validation or complete semantic checking.
+5. Strict diagnostics detect missing, repeated, or non-first Type 3 `d0`/`d1`; enforcement and the `d1` colour-image restriction (only image masks allowed) remain open.
 6. Image `/Interpolate` (visual quality hint only; subsequently implemented with the scoped RGB policy in 3.2).
 7. `/F` external streams, Reference/PostScript XObjects (deprecated, low impact).
 8. Clause 12 per-subtype appearance generation audit and clauses 10-13 line-by-line audit were not done.
 
 ## 7. Notes for the owners of `docs/spec-matrix.md` / `docs/spec-backlog.md`
 
-Suggested edits (not applied here): 7.4 filters -> note TIFF predictor now complete and all non-image filters tested; 8.9
-images -> `/Matte` done, `/Interpolate` open at audit time (subsequently implemented; see 3.2); 8.x operators -> `d1`, `BX/EX`, inline `/L` done; 9 text -> Type 3 modes 3/7
-and resource fallback done; PDF/A -> header rule added, implicit DeviceGray still open; add the veraPDF compatibility
-table (`docs/validation-compat.md`) and the caveat that no fixture is veraPDF-clean.
+The matrix and compatibility report carry the detailed status: `/Interpolate`
+has the scoped RGB rendering policy in 3.2; `d1` colour-image restrictions,
+deprecated external streams/Reference/PostScript XObjects and broader PDF/A
+evidence remain open or intentionally unsupported.

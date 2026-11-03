@@ -55,6 +55,8 @@ public sealed class ContentInterpreter
     List<(string? Text, bool Used)> _actualText = [];
     /// <summary>When set, text shown inside a marked-content sequence with /ActualText is reported once as that replacement text (ISO 32000-2 14.9.4).</summary>
     public bool HonorActualText { get; set; }
+    /// <summary>Reports malformed content-stream operands and state transitions as warnings without changing permissive rendering behavior.</summary>
+    public bool StrictContentValidation { get; set; }
     int _hiddenDepth;
     int _pageMcid = -1;
     int _type3Depth, _compat;
@@ -283,11 +285,90 @@ public sealed class ContentInterpreter
 
     PdfObject? R(PdfObject? o) => _f.Resolve(o);
 
-    void Run(byte[] content, PdfDictionary res)
+    string? ValidateOperands(string op, List<PdfObject> a)
+    {
+        static bool Number(PdfObject value) => value.AsNumber() is not null;
+        bool Count(int count) => a.Count == count;
+        bool Numbers(int count) => Count(count) && a.All(Number);
+        bool IsInteger(int index, int min, int max) =>
+            a[index].AsNumber() is double value && value == Math.Truncate(value) && value >= min && value <= max;
+        string? Invalid(string expected) => $"invalid operands for operator {op}: expected {expected}";
+
+        switch (op)
+        {
+            case "q": case "Q": case "h": case "S": case "s": case "f": case "F": case "f*":
+            case "B": case "B*": case "b": case "b*": case "n": case "W": case "W*":
+            case "BT": case "ET": case "T*": case "EMC": case "BX": case "EX":
+                return Count(0) ? null : Invalid("no operands");
+            case "cm": case "Tm": case "c": case "d1":
+                return Numbers(6) ? null : Invalid("six numbers");
+            case "v": case "y":
+                return Numbers(4) ? null : Invalid("four numbers");
+            case "m": case "l": case "Td": case "TD": case "d0":
+                return Numbers(2) ? null : Invalid("two numbers");
+            case "re":
+                return Numbers(4) ? null : Invalid("four numbers");
+            case "w": case "M": case "i": case "Tc": case "Tw": case "Tz": case "TL": case "Ts":
+                return Numbers(1) ? null : Invalid("one number");
+            case "J": case "j":
+                return Count(1) && IsInteger(0, 0, 2) ? null : Invalid("one integer from 0 to 2");
+            case "Tr":
+                return Count(1) && IsInteger(0, 0, 7) ? null : Invalid("one integer from 0 to 7");
+            case "d":
+                return Count(2) && a[0] is PdfArray dash && dash.Items.All(Number) && Number(a[1])
+                    ? null : Invalid("a numeric array and a number");
+            case "ri": case "gs": case "CS": case "cs": case "sh": case "Do": case "MP": case "BMC":
+                return Count(1) && a[0] is PdfName ? null : Invalid("one name");
+            case "Tf":
+                return Count(2) && a[0] is PdfName && Number(a[1]) ? null : Invalid("a name and a number");
+            case "Tj": case "'":
+                return Count(1) && a[0] is PdfString ? null : Invalid("one string");
+            case "\"":
+                return Count(3) && Number(a[0]) && Number(a[1]) && a[2] is PdfString
+                    ? null : Invalid("two numbers and a string");
+            case "TJ":
+                return Count(1) && a[0] is PdfArray textArray && textArray.Items.All(x => x is PdfString || Number(x))
+                    ? null : Invalid("one array containing only strings and numbers");
+            case "G": case "g":
+                return Numbers(1) ? null : Invalid("one number");
+            case "RG": case "rg":
+                return Numbers(3) ? null : Invalid("three numbers");
+            case "K": case "k":
+                return Numbers(4) ? null : Invalid("four numbers");
+            case "SC": case "SCN": case "sc": case "scn":
+                {
+                    var stroke = op is "SC" or "SCN";
+                    var space = stroke ? _gs.StrokeCs : _gs.FillCs;
+                    var pattern = space as PdfColorSpace.PatternCs;
+                    var hasPatternName = pattern is not null && a.Count > 0 && a[^1] is PdfName;
+                    var numericCount = hasPatternName ? a.Count - 1 : a.Count;
+                    var componentCount = pattern is null ? space.Components : pattern.Underlying?.Components ?? 0;
+                    var nameAllowed = op is "SCN" or "scn";
+                    if (numericCount != componentCount
+                        || a.Take(numericCount).Any(x => !Number(x))
+                        || hasPatternName && !nameAllowed
+                        || pattern is not null && (pattern.Underlying is null || nameAllowed) && !hasPatternName)
+                        return Invalid("the current colour-space components and any required final pattern name");
+                    return null;
+                }
+            case "BDC": case "DP":
+                return Count(2) && a[0] is PdfName && (a[1] is PdfName or PdfDictionary)
+                    ? null : Invalid("a tag name and a property name or dictionary");
+            default:
+                return null;
+        }
+    }
+
+    void Run(byte[] content, PdfDictionary res, bool type3CharProc = false)
     {
         var lx = new PdfLexer(content);
         var ops = new List<PdfObject>();
         var stackDepth = _stack.Count;
+        var strictValidation = StrictContentValidation;
+        var markedContentDepth = _mcidStack.Count;
+        var inTextObject = false;
+        var operatorCount = 0;
+        var type3MetricsSeen = false;
         PdfObject? o;
         _runDepth++;
         var collect = _runDepth == _collectDepth && Objects is not null;
@@ -299,15 +380,49 @@ public sealed class ContentInterpreter
                 if (o is not PdfKeyword k) { ops.Add(o); if (ops.Count > 512) ops.RemoveAt(0); continue; }
                 if (k.Value == "BI")
                 {
+                    if (strictValidation && ops.Count > 0)
+                        Warn("inline-image BI must not have preceding operands");
                     if (collect && _hiddenDepth == 0) { var s0 = SkipWhite(content, stmtStart); var c0 = _gs.Ctm; _lastInline = null; InlineImage(lx, res); AddObject("image", s0, lx.Pos, c0, UnitSquare(c0), stream: _lastInline); }
                     else InlineImage(lx, res);
-                    ops.Clear(); stmtStart = lx.Pos; continue;
+                    ops.Clear(); stmtStart = lx.Pos;
+                    if (strictValidation) operatorCount++;
+                    continue;
                 }
                 if (collect) Observe(k.Value, ops, res, content, stmtStart, lx.Pos, ref pathStart);
+                if (strictValidation)
+                {
+                    if (ValidateOperands(k.Value, ops) is { } operandWarning) Warn(operandWarning);
+                    if (k.Value == "Q" && _stack.Count <= stackDepth) Warn("graphics-state stack underflow at Q");
+                    if (k.Value == "BT" && inTextObject) Warn("nested BT in text object");
+                    if (k.Value == "ET" && !inTextObject) Warn("unmatched ET");
+                    if (k.Value is "Tc" or "Tw" or "Tz" or "TL" or "Tf" or "Tr" or "Ts" or "Td" or "TD" or "Tm" or "T*" or "Tj" or "TJ" or "'" or "\""
+                        && !inTextObject)
+                        Warn($"text operator {k.Value} outside BT/ET");
+                    if (k.Value == "EMC" && _mcidStack.Count <= markedContentDepth)
+                        Warn("unmatched EMC in content stream");
+                    if (type3CharProc && k.Value is "d0" or "d1")
+                    {
+                        if (operatorCount != 0) Warn($"Type 3 {k.Value} must be the first operator");
+                        if (type3MetricsSeen) Warn("Type 3 charproc has multiple d0/d1 operators");
+                        type3MetricsSeen = true;
+                    }
+                }
                 try { Exec(k.Value, ops, res); }
                 catch (Exception e) when (e is InvalidCastException or ArgumentException or IndexOutOfRangeException or NotSupportedException or KeyNotFoundException or InvalidOperationException or OverflowException or NullReferenceException or FormatException or InvalidDataException or AggregateException)
                 { Warn($"operator {k.Value}: {e.GetType().Name}"); }
+                if (strictValidation)
+                {
+                    if (k.Value == "BT") inTextObject = true;
+                    else if (k.Value == "ET") inTextObject = false;
+                    operatorCount++;
+                }
                 ops.Clear(); stmtStart = lx.Pos;
+            }
+            if (strictValidation)
+            {
+                if (inTextObject) Warn("unclosed BT text object");
+                if (_mcidStack.Count > markedContentDepth) Warn("unclosed marked content in content stream");
+                if (type3CharProc && !type3MetricsSeen) Warn("Type 3 charproc must begin with d0 or d1");
             }
         }
         finally { EndTextKnockout(); _runDepth--; }
@@ -1194,7 +1309,7 @@ public sealed class ContentInterpreter
         var savedMono = _type3Mono; var savedCompat = _compat;
         _type3Mono = false; _compat = 0;
         // d1 glyphs inherit the current colour and ignore colour operators; d0 glyphs may set their own.
-        Run(data, font.Type3Resources ?? pageResources);
+        Run(data, font.Type3Resources ?? pageResources, type3CharProc: true);
         _type3Mono = savedMono; _compat = savedCompat;
         _type3Depth--;
         _gs = _stack.Pop();

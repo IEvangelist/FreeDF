@@ -13,6 +13,14 @@ public sealed record PdfRenderOptions
 {
     /// <summary>Host-provided substitutes for non-embedded fonts; null uses installed system fonts.</summary>
     public IFontFallback? FontFallback { get; init; }
+    /// <summary>
+    /// For <see cref="PortableDocument.RenderPage(PdfPage, PdfRenderOptions, double, IRenderBackendFactory?)"/> and
+    /// <see cref="PortableDocument.RenderBand(PdfPage, PdfRenderOptions, double, int, int)"/>, reports recognized malformed
+    /// content-stream operands and state transitions in <see cref="RenderedPage.Warnings"/>. This is diagnostic only:
+    /// rendering remains permissive, and the option does not apply to <see cref="PortableDocument.ExtractText(PdfPage)"/>
+    /// or <see cref="PortableDocument.Analyze(PdfPage, bool)"/>. It is not a rejecting validator.
+    /// </summary>
+    public bool StrictContentValidation { get; init; }
     /// <summary>Name of a catalog /OCProperties /Configs entry; omitted selects the default /D configuration.</summary>
     public string? OptionalContentConfigurationName { get; init; }
     /// <summary>Reusable interactive layer state; cannot be combined with a configuration name.</summary>
@@ -127,6 +135,7 @@ public static class PortableDocument
         interp.OptionalContentContext = options.OptionalContentContext;
         interp.OverprintSimulation = options.OverprintSimulation;
         interp.ImageCache = options.ImageCache;
+        interp.StrictContentValidation = options.StrictContentValidation;
         interp.Render(page, m);
         return new RenderedPage(w, h, raster.ToRgba(), interp.Warnings);
     }
