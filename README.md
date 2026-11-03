@@ -79,7 +79,7 @@ package for rendering and text extraction; its dependencies are included
 automatically:
 
 ```powershell
-dotnet add package PortableDocument.Render --version 0.1.0-preview.4
+dotnet add package PortableDocument.Render --version 0.1.0-preview.5
 ```
 
 Use `0.1.0-preview.3` or later; `preview.2` has a fallback-font packaging defect.

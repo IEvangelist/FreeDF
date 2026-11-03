@@ -39,7 +39,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="0.1.0-preview.4"
+          version="0.1.0-preview.5"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             version="${GITHUB_REF_NAME#v}"
             git merge-base --is-ancestor HEAD origin/main || {

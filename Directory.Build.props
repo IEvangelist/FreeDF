@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <VersionPrefix>0.1.0</VersionPrefix>
-    <VersionSuffix>preview.4</VersionSuffix>
+    <VersionSuffix>preview.5</VersionSuffix>
     <Authors>David Pine</Authors>
     <Company>IEvangelist</Company>
     <Copyright>Copyright (c) 2026-Present David Pine</Copyright>
@@ -18,6 +18,6 @@
     <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="\" />
     <None Include="$(MSBuildThisFileDirectory)docs\nuget-readme.md" Pack="true" PackagePath="\README.md" />
     <None Include="$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
-    <None Include="$(MSBuildThisFileDirectory)tests\fixtures\ucd\UNICODE-LICENSE.txt" Pack="true" PackagePath="licenses\" />
+    <None Include="$(MSBuildThisFileDirectory)tests\fixtures\ucd\UNICODE-LICENSE.txt" Pack="true" PackagePath="licenses\UNICODE-LICENSE.txt" />
   </ItemGroup>
 </Project>

@@ -13,7 +13,7 @@ PDF files stay in your application unless you explicitly send them elsewhere.
 ## Get started
 
 ```shell
-dotnet add package PortableDocument.Render --version 0.1.0-preview.4
+dotnet add package PortableDocument.Render --version 0.1.0-preview.5
 ```
 
 ```csharp
@@ -48,7 +48,7 @@ dependencies are resolved automatically; you don't need to install all six.
 ## Render with bundled fallback fonts
 
 ```shell
-dotnet add package PortableDocument.FallbackFonts --version 0.1.0-preview.4
+dotnet add package PortableDocument.FallbackFonts --version 0.1.0-preview.5
 ```
 
 ```csharp

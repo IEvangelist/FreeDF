@@ -19,7 +19,7 @@ is likewise optional and is the only package that performs HTTP timestamp reques
 FreeDF code uses the MIT license, copyright (c) 2026-Present David Pine.
 Each package includes `LICENSE`, `README.md`, `THIRD-PARTY-NOTICES.md` and the
 Unicode license. Bundled third-party data and fonts retain their own licenses.
-The packages currently target `net10.0` and default to `0.1.0-preview.4`.
+The packages currently target `net10.0` and default to `0.1.0-preview.5`.
 The embedded README comes from [the package quick start](nuget-readme.md), not
 the editor-focused repository README. Package metadata links to the FreeDF
 homepage, source repository, release notes, and MIT license.
@@ -79,7 +79,7 @@ and verifies that Latin and CJK font assets are copied to its output.
 For a local package build, pass an explicit version:
 
 ```powershell
-dotnet pack src\PortableDocument.Render\PortableDocument.Render.csproj -c Release -p:Version=0.1.0-preview.4
+dotnet pack src\PortableDocument.Render\PortableDocument.Render.csproj -c Release -p:Version=0.1.0-preview.5
 ```
 
 See the [NuGet Trusted Publishing documentation](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing)
