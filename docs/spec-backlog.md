@@ -328,6 +328,21 @@ vendoring the external PDFs. URI/remote target grouping, general destination
 validity and exhaustive named-tree boundary validation remain open. The dated
 corpus-wide counts above have not been remeasured.
 
+PDF/UA-1 media clip data now requires string `/CT` and multilingual `/Alt`
+string pairs with nonempty description strings (7.18.6.2; published veraPDF
+rules 7.18.6.2-1/2). The inert action walk follows Rendition selectors, media
+renditions and clip sections to data dictionaries, including direct dictionaries
+without optional `/Type`. Shared nodes are checked once; cycles, reference/depth,
+work and alternate-array boundaries report explicit incomplete-check errors.
+Five independent public 7.18.6.2 controls were compared with veraPDF 1.30.3:
+all three negatives now fail their exact mapped rules and both positives remain
+accepted (5 compared, 0 excluded). `PdfUaMediaClipTests` uses self-authored
+fixtures. This checks syntax, not MIME grammar, language suitability or useful
+human descriptions; empty `/CT` strings and empty `/Alt` arrays are not rejected
+by these rules, matching the published controls. Media is never accessed,
+decoded or played. UA-2 is unchanged; broader media conformance and dated
+corpus-wide remeasurement remain open.
+
 Closed (editor): structure tree editing, `RebuildParentTree` (page, `/Stm`, OBJR owners; unique keys kept, clashes reassigned) and conservative `AutoTagUntagged` (text and text-painting Forms -> P, images -> Figure without alt, vector paths -> Artifact; catalog set `/Suspects true`; render-equality tested; result reports figure/artifact counts and `NeedsReview`). `RebuildParentTree` refuses (throws, writes nothing) beyond the depth/size bounds and clears keys of owners that left the tree.
 
 Still open: arbitrary owner graphs and external (`/Stm`) streams in text extraction; per-invocation tagging of reused Form XObjects (UA-1 7.20-2 is only a heuristic `PDFUA-FORM-REUSED-TAGGED`); editing `/Stm` content, structure namespaces and role maps in the editor; auto-tagging of links/forms/figures/tables/headings and alternate text; veraPDF misses listed above (font-program completeness 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clips, 8.2.5.20-2 link targets, Table 5 nesting matrix); logical-order checks against an independent renderer/reader for malformed or reused forms. Empirical, not spec-derived: `PDFUA-TABLE-HEADER-CONNECTION`. Status stays Partial.
