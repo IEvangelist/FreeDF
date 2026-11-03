@@ -367,4 +367,18 @@ access occurs, and dated corpus-wide counts are unchanged.
 
 Closed (editor): structure tree editing, `RebuildParentTree` (page, `/Stm`, OBJR owners; unique keys kept, clashes reassigned) and conservative `AutoTagUntagged` (text and text-painting Forms -> P, images -> Figure without alt, vector paths -> Artifact; catalog set `/Suspects true`; render-equality tested; result reports figure/artifact counts and `NeedsReview`). `RebuildParentTree` refuses (throws, writes nothing) beyond the depth/size bounds and clears keys of owners that left the tree.
 
-Still open: arbitrary owner graphs and external (`/Stm`) streams in text extraction; per-invocation tagging of reused Form XObjects (UA-1 7.20-2 is only a heuristic `PDFUA-FORM-REUSED-TAGGED`); editing `/Stm` content, structure namespaces and role maps in the editor; auto-tagging of links/forms/figures/tables/headings and alternate text; veraPDF misses listed above (font-program completeness 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clips, 8.2.5.20-2 link targets, Table 5 nesting matrix); logical-order checks against an independent renderer/reader for malformed or reused forms. Empirical, not spec-derived: `PDFUA-TABLE-HEADER-CONNECTION`. Status stays Partial.
+The 2026-11-03 containment slice adds 1534 unconditional parent-child
+exclusions and 14 direct-content bans from ISO/TS 32005:2023 Table 5,
+incorporated by ISO 14289-2:2024 6.2 and 8.2.4. Both parent and child types
+resolve through namespace role maps, including inherited containment through
+`Part`, `Div`, and `NonStruct`. Findings are capped at 1000 with a separate
+Error when work is omitted; malformed namespaces and skipped/truncated
+structure are not reported as complete checks. PDF 2.0 `Em`/`Strong` types
+are recognized. The pinned combined veraPDF profile contains 1636 Table 5
+rules, not the previously stated 1722. The remaining 55 grouping-dependent
+and 33 cardinality predicates are explicitly deferred, as are Ruby/Warichu
+sequences; existing checks may overlap individual deferred predicates, but
+complete coverage is not established. See [provenance and narrow controls](validation-compat.md#2026-11-03-pdfua-2-containment-slice).
+The dated corpus comparison above has not been rerun.
+
+Still open: arbitrary owner graphs and external (`/Stm`) streams in text extraction; per-invocation tagging of reused Form XObjects (UA-1 7.20-2 is only a heuristic `PDFUA-FORM-REUSED-TAGGED`); editing `/Stm` content, structure namespaces and role maps in the editor; auto-tagging of links/forms/figures/tables/headings and alternate text; remaining veraPDF misses listed above (font-program completeness 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clips, URI/remote link-target grouping, remaining ISO/TS 32005 nesting conditions); logical-order checks against an independent renderer/reader for malformed or reused forms. Empirical, not spec-derived: `PDFUA-TABLE-HEADER-CONNECTION`. Status stays Partial.

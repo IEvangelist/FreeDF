@@ -19,6 +19,7 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 version", () => Version(c));
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
+        c.Guard("PDF/UA-2 containment", () => PdfUA2NestingChecks.Run(c, tree));
         c.Guard("PDF/UA-2 element rules", () => Elements(c, tree));
         c.Guard("PDF/UA-2 link targets", () => LinkTargets(c, tree));
         c.Guard("PDF/UA-2 destinations", () => Destinations(c));
@@ -94,8 +95,11 @@ internal static class PdfUA2Checks
     }
 
     internal static string? StandardType(ValidationContext c, StructureTree tree, StructElement element)
+        => StandardType(c, tree, element, out _);
+
+    internal static string? StandardType(ValidationContext c, StructureTree tree, StructElement element, out bool roleResolved)
     {
-        Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type);
+        roleResolved = Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type) == RoleOutcome.Standard;
         return type;
     }
 
