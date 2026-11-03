@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## PDF/A default RGB/CMYK replacements
+
+The device-colour scan now honors resource-local `/DefaultRGB` with CalRGB
+or matching three-component ICCBased data, and `/DefaultCMYK` with matching
+four-component ICCBased data. Existing CalGray/ICCBased `/DefaultGray` behavior
+is retained. Malformed arrays, calibration parameters, ICC signatures/component
+counts and cyclic aliases do not suppress the missing-OutputIntent finding.
+Explicit colour operators, direct named device-space selection and image
+XObjects use the replacement check. A shared image is checked in each page/Form
+resource context, rather than allowing a mapped occurrence to hide an unmapped
+one. This is still a bounded heuristic resource/content scan, not exhaustive
+actual-use analysis or full ICC validation.
+
+The public image-positive OutputIntent rejection recorded below is corrected.
+Two public PDF/A-1b sources at corpus commit
+`bb75f4f0073d9350dfd058c0162a367e6fadf25e` supply independent RGB controls:
+the image pass below (ICCBased) and
+`PDF_A-1b/6.2 Graphics/6.2.3.3 Uncalibrated color space/veraPDF test suite
+6-2-3-3-t03-pass-b.pdf` (CalRGB). Equal-length `pdfaid:part` substitutions
+produce matching-profile 1b/2b/3b controls; renaming `/DefaultRGB` to
+`/DefaultXYZ` removes the replacement without changing xref offsets.
+All twelve whole-file verdicts agree with veraPDF 1.30.3: six compliant
+positives and six negatives failing the exact DeviceRGB rule
+(1b 6.2.3.3-1; 2b/3b 6.2.4.3-2), zero exclusions.
+CMYK coverage here is authored rule-specific controls, not an independent CMYK
+comparison. See `PdfADefaultDeviceColorTests.cs`; its synthetic ICC headers
+are not claimed to be complete ICC-positive files.
+
+Lab/DeviceN replacements, binary-safe inline-image handling, exhaustive
+colour-use/traversal completeness and OutputIntent colour-space matching
+(including the existing over-strict Gray-profile policy) remain open.
+External PDFs/reports are not bundled; historical corpus totals are unchanged.
+
 ## PDF/A image-XObject interpolation policy
 
 `PDFA-IMAGE-INTERPOLATE` rejects explicit `/Interpolate true` on image-XObject
@@ -19,12 +52,14 @@ provides `PDF_A-1b/6.2 Graphics/6.2.4 Images/veraPDF test suite
 replacement with `/Interpolate true ` preserves its xref offsets. These two
 controls agree on the exact image rule with veraPDF 1.30.3 in all three profiles
 (six comparisons, zero exclusions; profile rule 6.2.4-3 or 6.2.8-3).
-They are not clean matching-profile positives: FreeDF rejects the public pass
-for `PDFA-OUTPUTINTENT-MISSING`, reproduced on exact committed baseline
-`e9d3141c`; the PDF/A-2/3 runs also use PDF/A-1 source metadata. The public
+At that checkpoint they were not clean matching-profile positives: FreeDF
+rejected the public pass for `PDFA-OUTPUTINTENT-MISSING`, reproduced on exact
+committed baseline `e9d3141c`; the PDF/A-2/3 runs also used PDF/A-1 source
+metadata. The default-colour correction above supersedes that rejection, not
+the historical measurement. The public
 `6-2-4-t03-fail-a.pdf` instead uses inline `/I true` and remains a miss in
-FreeDF. Keep both that miss and the baseline OutputIntent disagreement open
-under #5; neither corpus-wide agreement nor full image-policy coverage is claimed.
+FreeDF. Keep that miss open under #5; neither corpus-wide agreement nor full
+image-policy coverage is claimed.
 External PDFs/reports are not bundled. See `PdfAImageInterpolationTests.cs`.
 
 ## 2026-11-01 named-destination consistency

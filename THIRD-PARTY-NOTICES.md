@@ -17,6 +17,9 @@ also cross-checked against the veraPDF Consortium's
 [v1.30.3 PDF/A profiles](https://github.com/veraPDF/veraPDF-validation-profiles/tree/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_A),
 under the same CC BY 4.0 licence (PDF/A-1b 6.2.4-3, PDF/A-2b/3b 6.2.8-3).
 It is independently implemented in C#; inline-image coverage remains deferred.
+The same profiles were used to cross-check device-colour replacement conditions
+(PDF/A-1b 6.2.3.3 and PDF/A-2b/3b 6.2.4.3). Resource-scoped calibrated/ICCBased
+replacement detection is independently implemented in `ValidationContext.cs`.
 
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
