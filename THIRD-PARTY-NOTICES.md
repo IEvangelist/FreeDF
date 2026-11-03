@@ -2,6 +2,15 @@
 
 Entries are grouped per component; each section is self-contained.
 
+## veraPDF validation-profile facts (PDF/UA-2 containment)
+
+The factual relationships in `ValidationPdfUA2Nesting.cs` were derived from the
+veraPDF Consortium's [v1.30.3 validation profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2-ISO32005.xml),
+published under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
+The relationships were reorganized into parent-keyed sets and independently
+implemented in C#; the profile XML and validation-engine source are not bundled.
+Only unconditional exclusions and direct-content bans are implemented here.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

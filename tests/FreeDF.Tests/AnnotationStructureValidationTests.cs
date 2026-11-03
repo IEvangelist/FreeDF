@@ -33,6 +33,9 @@ public class AnnotationStructureValidationTests
             bodies[0] = bodies[0].Replace("/Type /Catalog", "/Type /Catalog /Version /2.0");
             bodies[6] = bodies[6].Replace("/S /Document", "/S /Document /NS 14 0 R");
             bodies = [.. bodies, "<< /Type /Namespace /NS (http://iso.org/pdf2/ssn) >>"];
+            bodies[6] = bodies[6].Replace("/K 8 0 R", "/K 15 0 R");
+            bodies[7] = bodies[7].Replace("/P 7 0 R", "/P 15 0 R");
+            bodies = [.. bodies, "<< /Type /StructElem /S /P /P 7 0 R /K 8 0 R >>"];
         }
         return PdfDocument.Load(ObjPdf.Build(bodies));
     }
@@ -498,7 +501,7 @@ public class AnnotationStructureValidationTests
     {
         var doc = Load(part,
             (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>"),
-            (8, "<< /Type /StructElem /S /P /P 7 0 R >>"));
+            (8, "<< /Type /StructElem /S /Span /P 7 0 R >>"));
         Assert.Empty(Validate(doc, part).Findings);
     }
 }

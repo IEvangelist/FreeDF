@@ -18,6 +18,72 @@ the failing fixtures does not prove that valid PDF/A files are accepted.
 File-verdict agreement and mapped-rule overlap are distinct evidence; neither
 establishes complete conformance or certification.
 
+## 2026-11-03 PDF/UA-2 containment slice
+
+ISO 14289-2:2024 6.2 requires ISO/TS 32005 conformance; 8.2.4 explicitly
+includes role-mapped types in its Clause 7 containment requirements.
+These provisions are visible on printed pages 3 and 8 of the
+[public ISO preview](https://cdn.standards.iteh.ai/samples/82278/61329d7c9eb54e3fbc58a69f6036031d/ISO-14289-2-2024.pdf).
+ISO/TS 32005:2023 7.2 and Table 4 distinguish unconditional exclusions,
+grouping-dependent exclusions, occurrence limits, and rules delegated to
+element descriptions; see printed page 6 of its
+[public preview](https://cdn.standards.iteh.ai/samples/45878/b574c2cc0cc94e7986f66b148550bd7d/ISO-TS-32005-2023.pdf).
+
+Factual relationships were derived from the veraPDF Consortium's
+[v1.30.3 combined profile, commit c4f57effb0d3618827c87bd71882930d752be6e3](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2-ISO32005.xml).
+The source is [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
+FreeDF independently implements the checks without bundling the XML or
+copying the validation engine. The combined profile has 92 ISO 14289-2 rules
+and 1636 ISO/TS 32005 Table 5 rules. The separate `PDFUA-2.xml` has only the
+92 ISO 14289-2 rules; the combined profile distinction does not negate
+normative incorporation. The former "1722-check Table 5" statement was not
+a verified count of Table 5 rules. The local veraPDF 1.30.3 CLI's `-f ua2`
+also selected the combined profile; explicit `--profile <downloaded-XML>`
+was used for the controls below.
+
+`ValidationPdfUA2Nesting.cs` implements all 1504 literal-parent exclusions
+and 30 numbered-heading-parent exclusions, plus 14 direct-content bans.
+`PDFUA2-NESTING` and `PDFUA2-NESTING-CONTENT` are Errors citing ISO/TS 32005
+Table 5. Both ends use namespace-aware role resolution; MathML and unresolved
+custom roles are not interpreted as PDF types merely because names match.
+Numbered headings normalize to Hn, and `Part`/`Div`/`NonStruct` inherit their
+parent's containment limitations. PDF 2.0 `Em` and `Strong` are recognized
+without expanding the PDF 1.7 vocabulary. At most 1000 nesting findings are
+retained; skipped structure parse nodes, tree truncation, malformed/unresolved
+namespace dictionaries, and finding-limit exhaustion cause the separate
+Error `PDFUA2-NESTING-INCOMPLETE`. Role-map cycles and depth exhaustion retain
+the existing role-resolution errors. Parsed tree limits remain depth 256 and
+500000 nodes; no visual ordering or grouping semantics are inferred.
+
+`PdfUa2NestingTests` exercises every standard-type pair; the 1534 rejected
+pairs have the independently computed pinned-profile SHA-256
+`94170f4be2b860ff2e7f54fa2af4f3248b0e11091861a006129f8b7119b30f87`
+(ordinal-sorted `parent-child` lines, joined with LF, no trailing LF).
+Additional authored cases cover MCR/OBJR/root content, namespace chains,
+transparent containers, foreign names, malformed namespaces, cycles, bounds,
+and isolation from PDF/UA-1.
+
+Narrow independent controls use
+[veraPDF-corpus commit bb75f4f0073d9350dfd058c0162a367e6fadf25e](https://github.com/veraPDF/veraPDF-corpus/tree/bb75f4f0073d9350dfd058c0162a367e6fadf25e):
+the four UA-2 positives `8.2.4-t01-pass-a/b` and `8.2.5.26-t01-pass-a/b`
+remain compliant in both validators. The UA-2 `8.2.5.2-t01-fail-a` root
+cardinality control is rejected by both through existing root checks.
+Four independently authored UA-1 containment negatives were additionally
+run under the UA-2 combined profile for exact nesting-rule comparison:
+`7.2-t04-fail-a` (Document-TR), `7.2-t08-fail-a` (THead-TH),
+`7.2-t17-fail-a` (Document-LI and Document-Caption), and
+`7.2-t18-fail-a` (Document-LBody). Their UA-1 version/metadata cause
+additional, expected UA-2 failures; they are not UA-2 conformance controls.
+External PDFs remain outside the repository.
+
+Still deferred: 55 grouping-dependent and 33 cardinality predicates from
+the pinned matrix, Ruby/Warichu sequence rules outside Table 5, and semantic
+correctness. Existing root/heading/table/caption checks overlap some of these
+predicates, but are not claimed as full matrix coverage. Resolving grouping
+requires evidence beyond blindly equating every element with a fixed
+grouping/non-grouping class. These narrow controls do not regenerate any
+dated corpus-wide counts, establish full PDF/UA parity, or certify conformance.
+
 ## 2026-11-03 targeted PDF/A color fixtures
 
 `tools/validation/generate_pdfa_color_fixtures.py` deterministically generates
