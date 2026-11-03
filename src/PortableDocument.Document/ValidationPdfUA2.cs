@@ -20,6 +20,7 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
         c.Guard("PDF/UA-2 element rules", () => Elements(c, tree));
+        c.Guard("PDF/UA-2 link targets", () => LinkTargets(c, tree));
         c.Guard("PDF/UA-2 destinations", () => Destinations(c));
         c.Guard("PDF/UA-2 file specifications", () => Files(c));
     }
@@ -167,6 +168,87 @@ internal static class PdfUA2Checks
                     { c.Add("PDFUA2-CAPTION-POSITION", ValidationSeverity.Error, $"Caption must be the first or last child of /{e.Type}", "ISO 14289-2 8.2.5.27", e.PageIndex); break; }
             }
         }
+    }
+
+    static void LinkTargets(ValidationContext c, StructureTree tree)
+    {
+        var f = c.F;
+        foreach (var element in tree.Elements())
+        {
+            if (StandardType(c, tree, element) is not ("Link" or "Reference")) continue;
+            PdfDictionary? firstTarget = null;
+            foreach (var reference in element.Children.OfType<StructObjectRef>())
+            {
+                if (reference.Object is not PdfDictionary annotation || f.Resolve(annotation.Get("Subtype")).AsName() != "Link") continue;
+                PdfObject? destination;
+                if (annotation.Get("A") is { } rawAction)
+                {
+                    if (ResolveDestination(rawAction) is not PdfDictionary action || f.Resolve(action.Get("S")).AsName() != "GoTo") continue;
+                    destination = action.Get("SD") ?? action.Get("D");
+                }
+                else destination = annotation.Get("Dest");
+                var target = StructureTarget(destination);
+                if (target is null) continue;
+                firstTarget ??= target;
+                if (!ReferenceEquals(firstTarget, target))
+                {
+                    c.Add("PDFUA2-LINK-TARGETS", ValidationSeverity.Error, $"a /{element.Type} structure element contains Link annotations targeting different structure elements", "ISO 14289-2 8.2.5.20", element.PageIndex);
+                    break;
+                }
+            }
+        }
+
+        PdfDictionary? StructureTarget(PdfObject? destination)
+        {
+            var seen = new HashSet<PdfObject>(ReferenceEqualityComparer.Instance);
+            for (var depth = 0; destination is not null && depth < MaxRoleDepth; depth++)
+            {
+                var value = ResolveDestination(destination);
+                if (value is null or PdfNull) return null;
+                if (!seen.Add(value))
+                {
+                    Incomplete();
+                    return null;
+                }
+                switch (value)
+                {
+                    case PdfName name:
+                        destination = DocumentFeatures.LookupNamedDest(f, name.Value);
+                        break;
+                    case PdfString name:
+                        destination = DocumentFeatures.LookupNamedDest(f, name.Text);
+                        break;
+                    case PdfDictionary dictionary:
+                        if (tree.ElementFor(dictionary) is not null) return dictionary;
+                        destination = dictionary.Get("SD") ?? dictionary.Get("D");
+                        break;
+                    case PdfArray { Count: > 0 } array:
+                        return ResolveDestination(array[0]) is PdfDictionary target && tree.ElementFor(target) is not null ? target : null;
+                    default:
+                        return null;
+                }
+            }
+            if (destination is not null) Incomplete();
+            return null;
+        }
+
+        PdfObject? ResolveDestination(PdfObject? value)
+        {
+            var seen = new HashSet<int>();
+            while (value is PdfRef reference)
+            {
+                if (seen.Count >= MaxRoleDepth || !seen.Add(reference.Number))
+                {
+                    Incomplete();
+                    return null;
+                }
+                value = f.GetObject(reference.Number);
+            }
+            return value;
+        }
+
+        void Incomplete() => c.Add("PDFUA2-LINK-TARGET-UNRESOLVED", ValidationSeverity.Error,
+            "a cyclic or excessively deep destination prevented comparison of Link annotation targets", "ISO 14289-2 8.2.5.20");
     }
 
     /// <summary>8.8: destinations that target this document must be structure destinations. Only direct destination arrays are evaluated; named destinations are not resolved.</summary>
