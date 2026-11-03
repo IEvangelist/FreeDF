@@ -157,4 +157,53 @@ public class Type3AndCompatibilityTests
 
         Assert.Contains(p.Warnings, warning => warning.Contains("Type 3 d0 must be the first operator"));
     }
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    public void StrictContentValidation_DiagnosesNonStencilImagesInD1Glyphs(bool mono, bool stencil, bool form)
+    {
+        var imageData = stencil ? "00>" : "FF0000>";
+        var imageEntries = stencil ? "/ImageMask 8 0 R /BitsPerComponent 1" : "/ColorSpace /DeviceRGB /BitsPerComponent 8";
+        var image = $"7 0 obj\n<< /Type /XObject /Subtype /Image /Width 1 /Height 1 {imageEntries} /Filter /ASCIIHexDecode /Length {imageData.Length} >>\nstream\n{imageData}\nendstream\nendobj\n8 0 obj\ntrue\nendobj\n";
+        const string formContent = "1000 0 0 1000 0 0 cm /Im0 Do";
+        var formObject = $"9 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 1000 1000] /Length {formContent.Length} >>\nstream\n{formContent}\nendstream\nendobj\n";
+        var metrics = mono ? "1000 0 0 0 1000 1000 d1" : "1000 0 d0";
+        var glyph = $"{metrics} q {(form ? "/Fm0 Do" : formContent)} Q";
+        var pdf = TestPdf.Build("0 0 1 rg BT /F0 100 Tf 50 50 Td (A) Tj ET",
+            Font + " /XObject << /Im0 7 0 R /Fm0 9 0 R >>", Glyph(glyph) + image + formObject, brokenXref: true);
+        var page = PdfDocument.Load(pdf).Pages[0];
+        var permissive = DocumentRenderer.RenderPage(page, 72);
+        var strict = DocumentRenderer.RenderPage(page, new PdfRenderOptions { StrictContentValidation = true }, 72);
+
+        Assert.Equal(mono && !stencil, strict.Warnings.Any(w => w.Contains("d1 glyph may paint only stencil images")));
+        Assert.DoesNotContain(permissive.Warnings, w => w.Contains("d1 glyph may paint only stencil images"));
+        Assert.Equal(permissive.Rgba, strict.Rgba);
+        var offset = (100 * strict.Width + 100) * 4;
+        Assert.Equal(stencil ? (0, 0, 255) : (255, 0, 0),
+            (strict.Rgba[offset], strict.Rgba[offset + 1], strict.Rgba[offset + 2]));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void StrictContentValidation_DiagnosesInlineD1ImagesButAllowsInlineStencils(bool stencil)
+    {
+        var entries = stencil ? "/IM true /BPC 1" : "/CS /RGB /BPC 8";
+        var data = stencil ? "00>" : "FF0000>";
+        var glyph = $"1000 0 0 0 1000 1000 d1 1000 0 0 1000 0 0 cm BI /W 1 /H 1 {entries} /F /AHx ID {data} EI";
+        var pdf = TestPdf.Build("0 0 1 rg BT /F0 100 Tf 50 50 Td (A) Tj ET", Font, Glyph(glyph), brokenXref: true);
+        var page = PdfDocument.Load(pdf).Pages[0];
+        var permissive = DocumentRenderer.RenderPage(page, 72);
+        var strict = DocumentRenderer.RenderPage(page, new PdfRenderOptions { StrictContentValidation = true }, 72);
+
+        Assert.Equal(!stencil, strict.Warnings.Any(w => w.Contains("d1 glyph may paint only stencil images")));
+        Assert.Equal(permissive.Rgba, strict.Rgba);
+    }
 }
