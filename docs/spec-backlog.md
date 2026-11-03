@@ -375,8 +375,15 @@ resolve through namespace role maps, including inherited containment through
 Error when work is omitted; malformed namespaces and skipped/truncated
 structure are not reported as complete checks. PDF 2.0 `Em`/`Strong` types
 are recognized. The pinned combined veraPDF profile contains 1636 Table 5
-rules, not the previously stated 1722. The remaining 55 grouping-dependent
-and 33 cardinality predicates are explicitly deferred, as are Ruby/Warichu
+rules, not the previously stated 1722. A follow-up implements all 33 unconditional
+occurrence predicates: at most one specified child type and exactly one root
+Document. Counts share an effective parent through transparent wrappers and
+remain independent for nontransparent parents, using namespace-aware roles.
+The 110 self-authored reference controls agree with veraPDF 1.30.3 on all 33
+exact predicates (39 failures, 71 nonfailures, zero excluded); four independent
+UA-2 positives remain compliant in both. These are rule-level controls, not
+proof that the authored fixtures fully conform. The remaining 55 grouping-dependent
+predicates (including four conditional occurrence limits) are deferred, as are Ruby/Warichu
 sequences; existing checks may overlap individual deferred predicates, but
 complete coverage is not established. See [provenance and narrow controls](validation-compat.md#2026-11-03-pdfua-2-containment-slice).
 The dated corpus comparison above has not been rerun.

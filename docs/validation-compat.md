@@ -78,8 +78,41 @@ run under the UA-2 combined profile for exact nesting-rule comparison:
 additional, expected UA-2 failures; they are not UA-2 conformance controls.
 External PDFs remain outside the repository.
 
-Still deferred: 55 grouping-dependent and 33 cardinality predicates from
-the pinned matrix, Ruby/Warichu sequence rules outside Table 5, and semantic
+The occurrence follow-up implements the 33 unconditional cardinality predicates:
+32 at-most-one relationships and the exactly-one root Document requirement.
+`PDFUA2-NESTING-CARDINALITY` is an Error citing Table 5. Counts combine children
+across transparent `Part`/`Div`/`NonStruct` siblings and nested wrappers, but
+remain isolated for distinct nontransparent parents. Both parent and child
+types use the same namespace-aware role resolution; MathML names are not PDF
+type names. Incomplete role resolution cannot prove an absent root Document;
+it retains the incomplete-check error instead. Existing traversal/finding bounds
+still apply.
+
+`PdfUa2CardinalityTests` covers zero, one, and two occurrences for every
+unconditional relationship, wrapper aggregation, independent parent counts,
+namespace role mapping, MathML exclusion, incomplete root resolution and UA-1
+isolation. Four grouping-dependent Caption limits remain deliberately deferred.
+The 110 exported authored controls (before adding the two isolation/incomplete
+regressions) were cross-run against veraPDF 1.30.3 with the explicit pinned
+combined profile: 110 compared, zero excluded, zero occurrence-verdict
+disagreements, 39 occurrence failures and 71 occurrence nonfailures. Every one
+of the 33 exact predicates fails in at least one negative control; this is not
+agreement merely through unrelated rules. Other expected metadata, unnumbered-H
+and nesting errors mean these fixtures are not general UA-2 conformance controls.
+The four independently authored UA-2 positives named above remain compliant in
+both validators. External PDFs, profile XML and engine source are not bundled.
+
+Reproduce the authored export with `PDF_VALIDATION_DUMP=<dir>` and the explicit
+test project filtered to `PdfUa2CardinalityTests` (the current suite additionally
+exports the two isolation/incomplete regressions). Run veraPDF with
+`--format mrr --profile <pinned-XML> -r <dir>`; compare only the unconditional
+Table 5 occurrence predicates to FreeDF's `PDFUA2-NESTING-CARDINALITY`, not whole
+file verdicts. The ordinary `tools/ua_crosscheck.py` clause map does not provide
+this Table 5 per-pair breakdown.
+
+Still deferred: 55 grouping-dependent predicates from
+the pinned matrix (including four conditional occurrence limits),
+Ruby/Warichu sequence rules outside Table 5, and semantic
 correctness. Existing root/heading/table/caption checks overlap some of these
 predicates, but are not claimed as full matrix coverage. Resolving grouping
 requires evidence beyond blindly equating every element with a fixed
