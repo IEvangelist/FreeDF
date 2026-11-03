@@ -47,6 +47,11 @@ checks automatically. The service-worker smoke also verifies manifest
 installability, real offline edit/download, and Save through a received local
 file handle.
 
+The `node` chunk also runs the standard-library Python regressions for
+`tools/ua_crosscheck.py`: bounded UTF-16 command batching, failed-batch
+propagation, explicit profile selection and incomplete/parse-result exclusions.
+Run them alone with `python -m unittest discover -s tools -p test_ua_crosscheck.py`.
+
 Raster goldens cover the fixed fixture/committed-sample corpus, not the optional
 generated `27-full-collection.pdf`. Generating that local collection must not
 change which pages the golden gate compares. The FreeDF rebrand refreshes only

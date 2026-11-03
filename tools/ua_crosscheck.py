@@ -1,19 +1,24 @@
 """Cross-run veraPDF PDF/UA-1/2 profiles against this repo's PDF/UA validator.
 
   python tools/ua_crosscheck.py [--strict] <pdf-or-dir> [...]
-  python tools/ua_crosscheck.py corpus <dir> <1|2> [--misses] [--strict]
+  python tools/ua_crosscheck.py corpus <dir> <1|2> [--profile <xml>] [--misses] [--strict]
 
 Needs a user-local veraPDF (VERAPDF env var, default ~/tools/verapdf/verapdf.bat) and a Java 11+ runtime
 (JAVA_HOME). `corpus` prints total/compared/excluded counts, the file-verdict confusion matrix (the figures quoted
 in docs/spec-backlog.md: vera-fail/ours-pass = misses, vera-pass/ours-fail = false positives) and a per-rule overlap
 table, because a file-level agreement can hide a rule-level false negative. Files either side could not process land
 in an `excluded` bucket (--strict makes that fatal); a failing dotnet run aborts instead of reporting a partial matrix.
-veraPDF is only an independent oracle; nothing is vendored.
+Mapped family-ID overlap is not proof of an exact predicate. In veraPDF 1.30.3, -f ua2 selects the combined
+ISO 32005 profile; use --profile with the standalone XML to measure its 92 UA-2 rules separately.
+veraPDF is an independent oracle; nothing is vendored.
 
 Reproduce the documented figures with the veraPDF-corpus checkout at <corpus>:
   python tools/ua_crosscheck.py corpus <corpus>/PDF_UA-1 1 --misses
   python tools/ua_crosscheck.py corpus <corpus>/PDF_UA-2 2 --misses
+
+Tool regressions: python -m unittest discover -s tools -p "test_ua_crosscheck.py"
 """
+import argparse
 import glob
 import json
 import os
@@ -24,6 +29,7 @@ import xml.etree.ElementTree as ET
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERA = os.environ.get("VERAPDF", os.path.expanduser(r"~\tools\verapdf\verapdf.bat"))
 FLAVOURS = {1: "ua1", 2: "ua2"}
+COMMAND_LINE_LIMIT = 24000
 
 # veraPDF rule key (clause-testNumber) -> our rule ids that cover it. Keys absent here are reported as unmapped
 # (marked *), never silently counted as caught.
@@ -78,66 +84,102 @@ def vera(path, part):
     except ET.ParseError:
         tree = None
     rep = tree.find(".//validationReport") if tree is not None else None
-    if rep is None:
-        return None, ["<veraPDF produced no report>"]
+    if rep is None or rep.get("jobEndStatus") != "normal":
+        return None, ["<veraPDF produced no complete report>"]
     failed = [f"{r.get('clause')}-{r.get('testNumber')}" for r in rep.iter("rule") if r.get("status") == "failed"]
     return rep.get("isCompliant") == "true", failed
 
 
+def command_batches(command, files):
+    """Reserve room below Windows' 32767 UTF-16-unit process command-line limit."""
+    batch = []
+    for path in files:
+        if len(subprocess.list2cmdline([*command, *batch, path]).encode("utf-16-le")) // 2 > COMMAND_LINE_LIMIT:
+            if batch:
+                yield batch
+            batch = []
+            if len(subprocess.list2cmdline([*command, path]).encode("utf-16-le")) // 2 > COMMAND_LINE_LIMIT:
+                sys.exit(f"Input path exceeds the command-line budget: {path}")
+        batch.append(path)
+    if batch:
+        yield batch
+
+
 def ours(files):
     proj = os.path.join(ROOT, "tools", "FreeDF.UaDump", "FreeDF.UaDump.csproj")
-    run = subprocess.run(["dotnet", "run", "-c", "Release", "--project", proj, "--", *files], capture_output=True, text=True)
-    if run.returncode != 0:
-        sys.exit(f"FreeDF.UaDump failed with exit code {run.returncode}; refusing to report a partial matrix:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
+    command = ["dotnet", "run", "-c", "Release", "--project", proj]
+    batches = command_batches([*command, "--no-build", "--no-restore", "--"], files)
     res = {}
-    for line in run.stdout.splitlines():
-        if line.startswith("{"):
-            j = json.loads(line)
-            res[(os.path.abspath(j["file"]), j.get("part"))] = j
+    for index, batch in enumerate(batches):
+        flags = ["--no-build", "--no-restore"] if index else []
+        run = subprocess.run([*command, *flags, "--", *batch], capture_output=True, text=True, encoding="utf-8-sig")
+        if run.returncode != 0:
+            sys.exit(f"FreeDF.UaDump batch {index + 1} failed with exit code {run.returncode}; refusing to report a partial matrix:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
+        for line in run.stdout.splitlines():
+            if line.startswith("{"):
+                j = json.loads(line)
+                res[(os.path.abspath(j["file"]), j.get("part"))] = j
     return res
 
 
-def vera_batch(directory, part):
+def ours_failure(row):
+    if "compliant" not in row:
+        return row.get("error", "no result")
+    if "VALIDATION-INTERNAL" in row.get("warnings", []):
+        return "validation check-group incomplete (VALIDATION-INTERNAL)"
+    return None
+
+
+def vera_batch(directory, part, profile=None):
     """One veraPDF run over a directory tree; returns {abs path: (compliant, [failed rules])}."""
-    run = subprocess.run([VERA, "-r", "-f", FLAVOURS[part], directory], capture_output=True, text=True)
+    selection = ["--profile", profile] if profile else ["-f", FLAVOURS[part]]
+    run = subprocess.run([VERA, "-r", *selection, directory], capture_output=True, text=True)
     tree = parse_report(run.stdout)
     if tree is None:
         sys.exit(f"veraPDF produced no report (exit {run.returncode}):\n{run.stderr[-2000:]}")
-    res = {}
+    res, profiles = {}, set()
     for job in tree.iter("job"):
         name = os.path.abspath(job.find("item/name").text)
         rep = job.find("validationReport")
-        if rep is None:
-            res[name] = (None, ["<veraPDF produced no report>"])
+        if rep is None or rep.get("jobEndStatus") != "normal":
+            res[name] = (None, ["<veraPDF produced no complete report>"])
             continue
+        profiles.add(rep.get("profileName", "<unnamed>"))
         failed = sorted({f"{r.get('clause')}-{r.get('testNumber')}" for r in rep.iter("rule") if r.get("status") == "failed"})
         res[name] = (rep.get("isCompliant") == "true", failed)
+    if profiles:
+        print(f"veraPDF profiles: {', '.join(sorted(profiles))}")
     return res
 
 
-def corpus(directory, part):
-    truth = vera_batch(directory, part)
-    mine = ours(sorted(truth))
+def corpus(directory, part, profile=None, *, misses=False, strict=False):
+    files = sorted(os.path.abspath(f) for f in collect([directory]))
+    if not files:
+        sys.exit(f"No PDFs found in corpus directory: {directory}")
+    truth = vera_batch(directory, part, profile)
+    mine = ours(files)
     cells, excluded = {}, []
-    for f, (ok, failed) in sorted(truth.items()):
-        j = mine.get((f, part), {})
+    for f in files:
+        ok, failed = truth.get(f, (None, ["<veraPDF produced no report for input>"]))
+        j = mine.get((f, part), mine.get((f, None), {}))
+        error = ours_failure(j)
         rel = os.path.relpath(f, directory)
         if ok is None:
             excluded.append((rel, f"veraPDF: {failed}"))
-        elif "compliant" not in j:
-            excluded.append((rel, f"ours: {j.get('error', 'no result')}"))
+        elif error is not None:
+            excluded.append((rel, f"ours: {error}"))
         else:
             key = ("vera-pass" if ok else "vera-fail", "ours-pass" if j["compliant"] else "ours-fail")
             cells.setdefault(key, []).append((rel, failed, j.get("errors")))
     compared = sum(len(v) for v in cells.values())
-    print(f"total={len(truth)} compared={compared} excluded={len(excluded)}")
+    print(f"total={len(files)} compared={compared} excluded={len(excluded)}")
     for k, v in sorted(cells.items()):
         print(f"{k[0]} / {k[1]}: {len(v)}")
     for rel, why in excluded:
         print(f"  EXCLUDED {rel}: {why}")
     for rel, failed, errs in cells.get(("vera-pass", "ours-fail"), []):
         print(f"  FALSE-POSITIVE {rel}: ours={errs}")
-    if "--misses" in sys.argv:
+    if misses:
         for rel, failed, errs in cells.get(("vera-fail", "ours-pass"), []):
             print(f"  MISS {rel}: vera={failed}")
 
@@ -156,14 +198,20 @@ def corpus(directory, part):
     print("per-rule overlap (veraPDF rule: failing files / caught by the mapped rule / failed only through other rules; * = unmapped)")
     for r, row in sorted(per_rule.items()):
         print(f"  {r}{'*' if row['unmapped'] else ''}: {row['files']} / {row['rule_caught']} / {row['verdict_only']}")
-    if excluded and "--strict" in sys.argv:
+    if excluded and strict:
         sys.exit(2)
 
 
 def main():
     args = [a for a in sys.argv[1:] if a != "--strict"]
     if args and args[0] == "corpus":
-        corpus(os.path.abspath(args[1]), int(args[2]))
+        parser = argparse.ArgumentParser(description="Compare a corpus against a standalone or explicit veraPDF profile.")
+        parser.add_argument("directory", type=os.path.abspath)
+        parser.add_argument("part", type=int, choices=(1, 2))
+        parser.add_argument("--profile", type=os.path.abspath)
+        parser.add_argument("--misses", action="store_true")
+        options = parser.parse_args(args[1:])
+        corpus(options.directory, options.part, options.profile, misses=options.misses, strict="--strict" in sys.argv)
         return
     files = [os.path.abspath(f) for f in collect(args)]
     mine = ours(files)
@@ -171,10 +219,11 @@ def main():
     for f in files:
         for part in (1, 2):
             compliant, failed = vera(f, part)
-            j = mine.get((f, part), {})
-            if compliant is None or "compliant" not in j:
+            j = mine.get((f, part), mine.get((f, None), {}))
+            error = ours_failure(j)
+            if compliant is None or error is not None:
                 excluded += 1
-                print(f"EXCLUDED {os.path.basename(f)} UA-{part}: vera={failed} ours={j.get('error', 'no result')}")
+                print(f"EXCLUDED {os.path.basename(f)} UA-{part}: vera={failed} ours={error}")
                 continue
             ok = j["compliant"]
             print(f"{'AGREE' if ok == compliant else 'DISAGREE'} {os.path.basename(f)} UA-{part}: ours={'pass' if ok else 'fail'} {j.get('errors')} | vera={'pass' if compliant else 'fail'} {failed}")
