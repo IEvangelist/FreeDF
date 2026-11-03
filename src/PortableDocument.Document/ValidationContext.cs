@@ -183,7 +183,7 @@ internal sealed class ValidationContext
     public bool UsesUnmappedDeviceGray { get; private set; }
     bool _walked;
     readonly HashSet<PdfObject> _seen = new(ReferenceEqualityComparer.Instance);
-    readonly Dictionary<PdfDictionary, bool> _defaultGrayValidity = new(ReferenceEqualityComparer.Instance);
+    readonly Dictionary<PdfDictionary, Dictionary<string, bool>> _defaultColorValidity = new(ReferenceEqualityComparer.Instance);
 
     static readonly Regex DeviceOps = new(@"(?<![\w/])[-+.\d]+(?:\s+[-+.\d]+){0,3}\s+(rg|RG|g|G|k|K)(?![\w])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     static readonly HashSet<string> PathOps = new(StringComparer.Ordinal) { "m", "l", "c", "v", "y", "re" };
@@ -228,7 +228,7 @@ internal sealed class ValidationContext
         var resolved = F.Resolve(colorSpace);
         if (resolved is PdfName name)
         {
-            if (name.Value is "DeviceGray" or "G") return !HasDeviceIndependentDefaultGray(resources);
+            if (name.Value is "DeviceGray" or "G") return !HasDeviceIndependentDefault(resources, "Gray");
             aliases ??= new HashSet<string>(StringComparer.Ordinal);
             if (!aliases.Add(name.Value)) return false;
             var spaces = F.Resolve(resources.Get("ColorSpace")) as PdfDictionary;
@@ -238,33 +238,37 @@ internal sealed class ValidationContext
         }
         return resolved is PdfArray { Count: > 0 } array
             && (F.Resolve(array[0]).AsName() is "DeviceGray" or "G")
-            && !HasDeviceIndependentDefaultGray(resources);
+            && !HasDeviceIndependentDefault(resources, "Gray");
     }
 
-    bool HasDeviceIndependentDefaultGray(PdfDictionary resources)
+    bool HasDeviceIndependentDefault(PdfDictionary resources, string space)
     {
-        if (_defaultGrayValidity.TryGetValue(resources, out var valid)) return valid;
+        if (!_defaultColorValidity.TryGetValue(resources, out var defaults))
+            _defaultColorValidity.Add(resources, defaults = new(StringComparer.Ordinal));
+        if (defaults.TryGetValue(space, out var valid)) return valid;
         valid = F.Resolve(resources.Get("ColorSpace")) is PdfDictionary spaces
-            && spaces.Get("DefaultGray") is { } defaultGray
-            && IsDeviceIndependentGray(defaultGray, spaces, new HashSet<string>(StringComparer.Ordinal), 0);
-        _defaultGrayValidity.Add(resources, valid);
+            && spaces.Get("Default" + space) is { } replacement
+            && IsDeviceIndependentColor(replacement, spaces, new HashSet<string>(StringComparer.Ordinal), 0, space);
+        defaults.Add(space, valid);
         return valid;
     }
 
-    bool IsDeviceIndependentGray(PdfObject? colorSpace, PdfDictionary spaces, HashSet<string> aliases, int depth)
+    bool IsDeviceIndependentColor(PdfObject? colorSpace, PdfDictionary spaces, HashSet<string> aliases, int depth, string space)
     {
         if (depth > 16) return false;
         var resolved = F.Resolve(colorSpace);
         if (resolved is PdfName name)
         {
-            if (name.Value is "DeviceGray" or "G") return false;
+            if (name.Value is "DeviceGray" or "G" or "DeviceRGB" or "RGB" or "DeviceCMYK" or "CMYK") return false;
             return aliases.Add(name.Value) && spaces.Get(name.Value) is { } alias
-                && IsDeviceIndependentGray(alias, spaces, aliases, depth + 1);
+                && IsDeviceIndependentColor(alias, spaces, aliases, depth + 1, space);
         }
         if (resolved is not PdfArray { Count: > 0 } array) return false;
         switch (F.Resolve(array[0]).AsName())
         {
-            case "CalGray" when array.Count == 2 && F.Resolve(array[1]) is PdfDictionary parameters:
+            case "CalGray" when space == "Gray":
+            case "CalRGB" when space == "RGB":
+                if (array.Count != 2 || F.Resolve(array[1]) is not PdfDictionary parameters) return false;
                 if (F.Resolve(parameters.Get("WhitePoint")) is not PdfArray { Count: 3 } whitePoint) return false;
                 var white = whitePoint.Items.Select(x => F.Resolve(x).AsNumber()).ToArray();
                 if (!white.All(x => x is { } value && double.IsFinite(value) && value > 0)
@@ -276,11 +280,23 @@ internal sealed class ValidationContext
                     var black = blackPoint.Items.Select(x => F.Resolve(x).AsNumber()).ToArray();
                     if (!black.All(x => x is { } value && double.IsFinite(value) && value >= 0)) return false;
                 }
-                return parameters.Get("Gamma") is null
-                    || F.Resolve(parameters.Get("Gamma")).AsNumber() is { } gamma && double.IsFinite(gamma) && gamma > 0;
+                if (space == "Gray")
+                    return parameters.Get("Gamma") is null
+                        || F.Resolve(parameters.Get("Gamma")).AsNumber() is { } gamma && double.IsFinite(gamma) && gamma > 0;
+                if (parameters.Get("Gamma") is { } rgbGamma)
+                {
+                    if (F.Resolve(rgbGamma) is not PdfArray { Count: 3 } gammaArray
+                        || !gammaArray.Items.Select(x => F.Resolve(x).AsNumber())
+                            .All(x => x is { } value && double.IsFinite(value) && value > 0))
+                        return false;
+                }
+                return parameters.Get("Matrix") is null
+                    || F.Resolve(parameters.Get("Matrix")) is PdfArray { Count: 9 } matrix
+                        && matrix.Items.Select(x => F.Resolve(x).AsNumber()).All(x => x is { } value && double.IsFinite(value));
             case "ICCBased" when array.Count == 2 && F.Resolve(array[1]) is PdfStream profile:
-                if (F.Resolve(profile.Dict.Get("N")).AsNumber() != 1) return false;
-                return PdfADeepChecks.ReadIcc(F.DecodeStream(profile))?.Space == "GRAY";
+                var components = space == "Gray" ? 1 : space == "RGB" ? 3 : 4;
+                if (F.Resolve(profile.Dict.Get("N")).AsNumber() != components) return false;
+                return PdfADeepChecks.ReadIcc(F.DecodeStream(profile))?.Space == (space == "Gray" ? "GRAY" : space.PadRight(4));
             default:
                 return false;
         }
@@ -301,8 +317,8 @@ internal sealed class ValidationContext
         budget ??= new ContentScanBudget();
         foreach (Match match in DeviceOps.Matches(Encoding.Latin1.GetString(content)))
         {
-            var isGray = match.Groups[1].Value is "g" or "G";
-            if (!isGray || IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources))
+            var space = match.Groups[1].Value switch { "g" or "G" => "Gray", "rg" or "RG" => "RGB", _ => "CMYK" };
+            if (!HasDeviceIndependentDefault(resources, space))
                 UsesDeviceColor = true;
         }
 
@@ -355,11 +371,19 @@ internal sealed class ValidationContext
                     break;
                 case "cs":
                     if (operands.LastOrDefault() is PdfName fillName)
+                    {
                         fill = IsUnmappedDeviceGray(fillName, resources);
+                        if (fillName.Value is "DeviceRGB" or "DeviceCMYK")
+                            NoteColorSpace(fillName, resources);
+                    }
                     break;
                 case "CS":
                     if (operands.LastOrDefault() is PdfName strokeName)
+                    {
                         stroke = IsUnmappedDeviceGray(strokeName, resources);
+                        if (strokeName.Value is "DeviceRGB" or "DeviceCMYK")
+                            NoteColorSpace(strokeName, resources);
+                    }
                     break;
                 case "Do":
                     if (depth < MaxFormDepth
@@ -431,8 +455,8 @@ internal sealed class ValidationContext
             if (a.Count > 1 && F.Resolve(a[0]).AsName() == "ICCBased" && F.Resolve(a[1]) is PdfStream icc && _seen.Add(icc)) IccBased.Add(icc);
             name = F.Resolve(a[0]).AsName();
         }
-        if (name is "DeviceRGB" or "DeviceCMYK" or "RGB" or "CMYK"
-            || name is "DeviceGray" or "G" && IsUnmappedDeviceGray(o, resources))
+        var space = name switch { "DeviceGray" or "G" => "Gray", "DeviceRGB" or "RGB" => "RGB", "DeviceCMYK" or "CMYK" => "CMYK", _ => null };
+        if (space is not null && !HasDeviceIndependentDefault(resources, space))
             UsesDeviceColor = true;
     }
 
@@ -459,7 +483,11 @@ internal sealed class ValidationContext
             {
                 if (F.Resolve(v) is not PdfStream x) continue;
                 var sub = F.Resolve(x.Dict.Get("Subtype")).AsName();
-                if (sub == "Image") { if (_seen.Add(x)) { Images.Add((x, page)); NoteColorSpace(x.Dict.Get("ColorSpace"), res); } }
+                if (sub == "Image")
+                {
+                    if (_seen.Add(x)) Images.Add((x, page));
+                    NoteColorSpace(x.Dict.Get("ColorSpace"), res);
+                }
                 else WalkForm(x, page, depth + 1);
             }
         if (F.Resolve(res.Get("Pattern")) is PdfDictionary pats)

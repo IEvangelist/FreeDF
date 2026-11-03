@@ -7,7 +7,11 @@ See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,
-but the public positive has a baseline-reproduced FreeDF OutputIntent rejection;
+and the separate baseline-reproduced public-positive OutputIntent rejection is
+now corrected by honoring CalRGB/ICCBased DefaultRGB and ICCBased DefaultCMYK.
+Twelve matching-profile RGB controls agree with veraPDF (six positives/six
+negatives); CMYK controls are authored, not an independent comparison.
+Lab/DeviceN replacements and broader OutputIntent matching remain open;
 see [the scoped evidence and remaining disagreements](spec-backlog.md#pdfa-image-xobject-interpolation-policy).
 Historical corpus totals are unchanged.
 
