@@ -116,7 +116,7 @@ internal static class PdfUA2NestingChecks
         }
         if (incomplete)
             c.Add("PDFUA2-NESTING-INCOMPLETE", ValidationSeverity.Error,
-                "structure parse issues or truncation, an unresolved namespace, or the containment finding limit prevented a complete nesting check", Clause);
+                "structure parse issues or truncation, an unresolved namespace or role mapping, or the containment finding limit prevented a complete nesting check", Clause);
 
         string? TypeOf(StructElement e)
         {
@@ -137,7 +137,8 @@ internal static class PdfUA2NestingChecks
                 incomplete = true;
                 return null;
             }
-            var type = PdfUA2Checks.StandardType(c, tree, e);
+            var type = PdfUA2Checks.StandardType(c, tree, e, out var roleResolved);
+            if (!roleResolved) incomplete = true;
             return StructureTree.HeadingLevel(type ?? "") is > 0 ? "Hn" : type;
         }
     }

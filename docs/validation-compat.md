@@ -51,8 +51,10 @@ parent's containment limitations. PDF 2.0 `Em` and `Strong` are recognized
 without expanding the PDF 1.7 vocabulary. At most 1000 nesting findings are
 retained; skipped structure parse nodes, tree truncation, malformed/unresolved
 namespace dictionaries, and finding-limit exhaustion cause the separate
-Error `PDFUA2-NESTING-INCOMPLETE`. Role-map cycles and depth exhaustion retain
-the existing role-resolution errors. Parsed tree limits remain depth 256 and
+Error `PDFUA2-NESTING-INCOMPLETE`. Unmapped roles, role-map cycles, and depth
+exhaustion also mark nesting incomplete alongside existing role errors;
+successfully resolved MathML roles intentionally remain outside this matrix.
+Parsed tree limits remain depth 256 and
 500000 nodes; no visual ordering or grouping semantics are inferred.
 
 `PdfUa2NestingTests` exercises every standard-type pair; the 1534 rejected

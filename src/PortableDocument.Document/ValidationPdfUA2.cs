@@ -95,8 +95,11 @@ internal static class PdfUA2Checks
     }
 
     internal static string? StandardType(ValidationContext c, StructureTree tree, StructElement element)
+        => StandardType(c, tree, element, out _);
+
+    internal static string? StandardType(ValidationContext c, StructureTree tree, StructElement element, out bool roleResolved)
     {
-        Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type);
+        roleResolved = Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type) == RoleOutcome.Standard;
         return type;
     }
 

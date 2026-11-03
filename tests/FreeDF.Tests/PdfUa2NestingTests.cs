@@ -187,8 +187,49 @@ public class PdfUa2NestingTests
     {
         var doc = Load("P", "P", (7, "<< /S /P /NS 9 0 R /P 6 0 R >>"), (9, $"<< /NS ({ns}) >>"));
         Assert.DoesNotContain(Nesting(doc), f => f.Message.Contains("Table 5. P-P"));
+        Assert.Equal(ns != PdfUA2Checks.MathMlNamespace,
+            Nesting(doc).Any(f => f.RuleId == "PDFUA2-NESTING-INCOMPLETE"));
         doc = Load("P", "P", (6, "<< /S /P /NS 9 0 R /P 5 0 R /K 7 0 R >>"), (9, $"<< /NS ({ns}) >>"));
         Assert.DoesNotContain(Nesting(doc), f => f.Message.Contains("Table 5. P-P"));
+        Assert.Equal(ns != PdfUA2Checks.MathMlNamespace,
+            Nesting(doc).Any(f => f.RuleId == "PDFUA2-NESTING-INCOMPLETE"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/Custom /Missing")]
+    [InlineData("/Custom /Other /Other /Custom")]
+    public void UnresolvedDefaultRoleChainsReportIncompleteContainment(string mappings)
+    {
+        foreach (var number in new[] { 6, 7 })
+        {
+            var doc = Load("P", "P",
+                (4, $"<< /Type /StructTreeRoot /K 5 0 R /RoleMap << {mappings} >> >>"),
+                (number, $"<< /S /Custom /P {number - 1} 0 R {(number == 6 ? "/K 7 0 R" : "")} >>"));
+            Assert.Single(Nesting(doc), f => f.RuleId == "PDFUA2-NESTING-INCOMPLETE"
+                && f.Severity == ValidationSeverity.Error && f.Message.Contains("role mapping"));
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/Custom /Missing")]
+    [InlineData("/Custom /Other /Other /Custom")]
+    [InlineData("/Custom [/P 8 0 R]")]
+    [InlineData("/Custom [/math 11 0 R]")]
+    public void NamespaceRoleOutcomesDistinguishUnresolvedFromIntentionalExclusion(string mappings)
+    {
+        foreach (var number in new[] { 6, 7 })
+        {
+            var doc = Load("P", "P",
+                (number, $"<< /S /Custom /NS 9 0 R /P {number - 1} 0 R {(number == 6 ? "/K 7 0 R" : "")} >>"),
+                (9, $"<< /NS (urn:test) /RoleMapNS << {mappings} >> >>"));
+            var findings = Nesting(doc);
+            Assert.Equal(!mappings.Contains('['),
+                findings.Any(f => f.RuleId == "PDFUA2-NESTING-INCOMPLETE"));
+            Assert.Equal(mappings.Contains("/P 8"),
+                findings.Any(f => f.Message.Contains("Table 5. P-P")));
+        }
     }
 
     [Fact]
