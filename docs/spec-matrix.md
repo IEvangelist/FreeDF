@@ -208,8 +208,14 @@ targeted color-rule evidence only, not full PDF/A conformance.
 
 PDF/UA Link-parent validation applies the profile-specific rule: UA-1 requires
 Link; UA-2 accepts Link or Reference, including role-mapped types (ISO 14289-2
-8.2.5.20; veraPDF 8.2.5.20-1). The separate UA-2 different-target grouping check
-8.2.5.20-2 remains open; this focused correction does not update corpus counts.
+8.2.5.20; veraPDF 8.2.5.20-1). UA-2 different-target grouping (8.2.5.20-2)
+now compares local structure targets of direct OBJR Link annotations within
+each Link/Reference, including named destinations and GoTo `/SD` precedence.
+Cycles/depth exhaustion in destination chains produce an explicit error.
+The four public 8.2.5.20-t02 fail/pass a/b controls agree with veraPDF 1.30.3,
+including exact-rule overlap for both failures. URI/remote grouping, general
+destination validity and exhaustive named-tree boundary validation remain
+open. This focused comparison does not update the dated corpus-wide counts.
 
 The clause-12 action model also exposes inert typed local `/GoTo` metadata through `GoToDetails`: `/D` names, byte strings, and explicit arrays are retained without navigation, named-destination lookup, or array-element resolution. Missing and wrong-type destinations remain null in the typed view while the original dictionary is preserved; array contents are not conformance-validated.
 

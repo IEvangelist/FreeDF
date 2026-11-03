@@ -314,8 +314,19 @@ The Link-parent check now distinguishes profiles: PDF/UA-2 permits either Link
 or Reference (ISO 14289-2 8.2.5.20; published veraPDF rule 8.2.5.20-1),
 including role-mapped types; PDF/UA-1 still requires Link. Focused
 `AnnotationStructureValidationTests` cover both accepted and rejected parents.
-This corrects a false rejection, not the separate different-target grouping rule
-8.2.5.20-2. The dated corpus counts above have not been remeasured for this fix.
+This corrects a false rejection. A subsequent bounded check for 8.2.5.20-2
+compares local structure-target identity across direct OBJR Link annotations
+inside each Link/Reference element. It resolves local GoTo `/SD` before `/D`,
+direct `/Dest`, named destinations and destination dictionaries; different
+fit/zoom parameters do not make a different structure target. Cyclic or
+excessively deep destination chains produce an explicit incomplete-check error.
+Four independent public veraPDF-corpus controls (8.2.5.20-t02 fail/pass a/b)
+were compared with veraPDF 1.30.3: both failures now fail the exact mapped
+`PDFUA2-LINK-TARGETS` rule and both passes remain accepted (4 compared, 0
+excluded). Self-authored `PdfUaLinkTargetTests` cover this slice without
+vendoring the external PDFs. URI/remote target grouping, general destination
+validity and exhaustive named-tree boundary validation remain open. The dated
+corpus-wide counts above have not been remeasured.
 
 Closed (editor): structure tree editing, `RebuildParentTree` (page, `/Stm`, OBJR owners; unique keys kept, clashes reassigned) and conservative `AutoTagUntagged` (text and text-painting Forms -> P, images -> Figure without alt, vector paths -> Artifact; catalog set `/Suspects true`; render-equality tested; result reports figure/artifact counts and `NeedsReview`). `RebuildParentTree` refuses (throws, writes nothing) beyond the depth/size bounds and clears keys of owners that left the tree.
 
