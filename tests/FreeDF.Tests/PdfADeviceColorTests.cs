@@ -101,6 +101,20 @@ public class PdfADeviceColorTests
             .Has("PDFA-OUTPUTINTENT-MISSING"));
     }
 
+    [Theory]
+    [InlineData("[/CalGray]")]
+    [InlineData("[/CalGray << /WhitePoint [0.9505 1 1.089] >> /Extra]")]
+    [InlineData("[/ICCBased]")]
+    [InlineData("[/ICCBased 6 0 R /Extra]")]
+    public void DefaultGrayColorSpaceArraysRequireExactArity(string colorSpace)
+    {
+        var resources = $"/ColorSpace << /DefaultGray {colorSpace} >>";
+        var grayProfile = ObjPdf.Stream(Icc("GRAY"), "/N 1");
+
+        Assert.True(Validate(Pdf("10 10 80 80 re f", resources: resources, extras: grayProfile), PdfValidationProfile.PdfA2b)
+            .Has("PDFA-OUTPUTINTENT-MISSING"));
+    }
+
     [Fact]
     public void CalGrayDefaultAcceptsPositiveGammaBelowOneAndNonnegativeBlackPoint()
     {

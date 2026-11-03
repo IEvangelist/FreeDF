@@ -264,7 +264,7 @@ internal sealed class ValidationContext
         if (resolved is not PdfArray { Count: > 0 } array) return false;
         switch (F.Resolve(array[0]).AsName())
         {
-            case "CalGray" when array.Count > 1 && F.Resolve(array[1]) is PdfDictionary parameters:
+            case "CalGray" when array.Count == 2 && F.Resolve(array[1]) is PdfDictionary parameters:
                 if (F.Resolve(parameters.Get("WhitePoint")) is not PdfArray { Count: 3 } whitePoint) return false;
                 var white = whitePoint.Items.Select(x => F.Resolve(x).AsNumber()).ToArray();
                 if (!white.All(x => x is { } value && double.IsFinite(value) && value > 0)
@@ -278,7 +278,7 @@ internal sealed class ValidationContext
                 }
                 return parameters.Get("Gamma") is null
                     || F.Resolve(parameters.Get("Gamma")).AsNumber() is { } gamma && double.IsFinite(gamma) && gamma > 0;
-            case "ICCBased" when array.Count > 1 && F.Resolve(array[1]) is PdfStream profile:
+            case "ICCBased" when array.Count == 2 && F.Resolve(array[1]) is PdfStream profile:
                 if (F.Resolve(profile.Dict.Get("N")).AsNumber() != 1) return false;
                 return PdfADeepChecks.ReadIcc(F.DecodeStream(profile))?.Space == "GRAY";
             default:
