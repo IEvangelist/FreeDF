@@ -1064,6 +1064,7 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
         var mode = ParseBlend(blendMode);
         float mr = (float)maskColor.R, mg = (float)maskColor.G, mb = (float)maskColor.B, al = (float)alpha;
         var src = img.Rgba; int iw = img.Width, ih = img.Height; var isMask = img.IsMask;
+        var interpolate = img.RequiresInterpolatedSampling;
         var clip = _clip; var px = _px; var wpx = _w;
         var invNs = 1f / ns;
         double invA = inv.A, invB = inv.B;
@@ -1076,13 +1077,19 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
             Touch(y, x0, x1);
             for (var x = x0; x < x1; x++, u += invA, v += invB)
             {
-                int sr = 0, sg = 0, sb = 0, sa = 0;
+                double sr = 0, sg = 0, sb = 0, sa = 0;
                 for (var k = 0; k < ns; k++)
                 {
                     var uu = u + ou[k]; var vv = v + ov[k];
                     if (uu < 0 || vv < 0) continue;
                     int iu = (int)uu, iv = (int)vv;
                     if (iu >= iw || iv >= ih) continue;
+                    if (interpolate)
+                    {
+                        var sample = img.SamplePremultiplied(uu, vv);
+                        sr += sample.R; sg += sample.G; sb += sample.B; sa += sample.A;
+                        continue;
+                    }
                     var o = (iv * iw + iu) * 4;
                     int pa = src[o + 3];
                     if (pa == 0) continue;
@@ -1091,12 +1098,12 @@ public sealed class SoftwareRasterizer : IRenderBackend, IDisposable
                     sa += pa;
                 }
                 if (sa == 0) continue;
-                var cov = sa * (1f / 255f) * invNs;
+                var cov = (float)sa * (1f / 255f) * invNs;
                 if (hasCov) cov *= clip.At(x, y);
                 if (cov * al <= 0f) continue;
                 float r, g, b;
                 if (isMask) { r = mr; g = mg; b = mb; }
-                else { var k = 255f / sa; r = sr * k * (1f / 255f); g = sg * k * (1f / 255f); b = sb * k * (1f / 255f); }
+                else { var k = 255f / (float)sa; r = (float)sr * k * (1f / 255f); g = (float)sg * k * (1f / 255f); b = (float)sb * k * (1f / 255f); }
                 Put(rowBase + x, r, g, b, cov, al, mode);
             }
         }

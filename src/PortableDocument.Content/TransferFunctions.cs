@@ -88,6 +88,6 @@ sealed class TransferFunctions
         {
             dst[i] = r[src[i]]; dst[i + 1] = g[src[i + 1]]; dst[i + 2] = b[src[i + 2]]; dst[i + 3] = src[i + 3];
         }
-        return img with { Rgba = dst };
+        return img with { Rgba = dst, SamplingTransfer = img.UnmaskedImage is not null ? Apply : null };
     }
 }
