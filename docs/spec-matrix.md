@@ -182,6 +182,13 @@ Mapped-rule overlap does not establish coverage for unmapped rules or turn
 file-verdict agreement into certification. See the [audit chronology](spec-audit.md)
 for superseded findings.
 
+Targeted PDF/A color regressions now detect implicit initial DeviceGray text and
+path painting, honor calibrated `DefaultGray` resources, and require a Gray
+OutputIntent when no usable default applies. CalRGB, DefaultGray, and authored
+Type 3 text-with-DefaultGray fixtures are accepted by veraPDF 1.30.3 for their
+matching profiles; corresponding Gray negatives fail. These controls are
+targeted color-rule evidence only, not full PDF/A conformance.
+
 | Clause | Feature | Status | Notes |
 |---|---|---|---|
 | 7.2-7.3 | Lexical conventions, all object types | Done | Names `#xx`, literal/hex strings, tolerant numbers |
