@@ -133,12 +133,51 @@ matrix, so most rows are "implemented/tested at render level".
 |---|---|---|
 | `ImageMask`, `Decode`, `BitsPerComponent` 1/2/4/8/16, colour-key `/Mask`, stencil `/Mask`, `/SMask`, `/Intent`, `SMaskInData` | implemented/tested | `ImageDecoder.cs`; `GraphicsGapTests`, `IccTests`, `JpxTests` |
 | SMask `/Matte` (pre-blended images, 11.6.5.3) | **was not implemented - fixed** for RGB/Gray (matte is converted through the image colour space and un-premultiplied in RGB) | `SoftMaskMatteTests` (new, pdfium/MuPDF cross-check in `renderer_crosscheck.py`) |
-| `/Interpolate` | not implemented (hint) | no references in `ImageDecoder`/`ContentInterpreter` |
+| `/Interpolate` (8.9.5.3) | implemented/tested for the RGB raster support contract below; algorithm is reader-dependent | `ImageDecoder`, `ImageData.SamplePremultiplied`, `SoftwareRasterizer.DrawImage`; `ImageInterpolationTests` |
 | Image `/Alternates`, `/OPI`, `/Measure`, `/PtData` | not implemented (informational) | |
 | Image `/OC` | implemented/tested | `OptionalContentStateTests` |
 | Form XObject `Matrix`, `BBox` clip, `Resources`, transparency `Group`, `/OC` | implemented/tested | `FormStructureTests`, `TransparencyTests` |
 | Reference XObjects (`/Ref`), PostScript XObjects | not implemented (deprecated in 2.0) | |
 | Type 3 glyph resources absent -> current resources | **was an empty dictionary - fixed** | `Type3AndCompatibilityTests` |
+
+**2026-11-03 image interpolation follow-up (#8):** `/Interpolate true` selects
+pixel-centred bilinear sampling of decoded RGB and premultiplied alpha; absent
+or false keeps the existing nearest-sample magnification and bounded box-filter
+minification. Inline `/I` and `/Interpolate` use the same path as image XObjects.
+Stencil coverage is interpolated, not the current paint colour. Explicit
+stencil masks and image `/SMask` retain their native grids and independent flags
+when either image requests interpolation, including masks with different
+dimensions. `/Matte` recovery uses the sampled mask before compositing;
+colour-key and embedded alpha are interpolated as premultiplied RGBA to avoid
+transparent-colour fringes. Flattened decoded RGBA remains available to other
+consumers, and the decode-cache budget counts the retained mask buffers.
+
+The existing inverse CTM, image footprint, clip, blend/constant-alpha path and
+bounded (at most 8x8) downsampling sample positions are unchanged. Regressions
+use self-authored analytic pixel expectations, including false/default equality,
+scale/rotation/shear/reflection, edge extension, clip, native masks, matte,
+transfer functions and cached band rendering. This is a chosen reader rendering
+policy: 8.9.5.3 permits readers to omit interpolation or choose their algorithm.
+It is **not** a claim of pixel equivalence with other viewers, source-colour-space
+interpolation, ideal reconstruction/minification, independent engine validation,
+or complete clause 8.9-8.10 parity. Redaction still re-encodes flattened replacement
+images without requesting interpolation.
+
+**Gallery golden control:** the self-authored `samples/09-images.pdf` requests
+interpolation on the 16x16 RGB XObject `/X11` (`18 0 R`) and one 16x16 inline
+image (`/I true`); `tools/FreeDF.Samples/Gen/Gen09.cs` generates both. At 96 dpi
+with bundled fonts, base `3b11347e` renders the original sample and the variant
+with both flags disabled to SHA-256
+`75ABE00AA9325C6949D61FF87F963FC0D2A5FB6144265DCE213BF2C9C94546C9`.
+The interpolation implementation preserves that exact disabled-flags hash.
+With flags enabled its hash is
+`F1BD7DFDA42A00D926FAE5384EF6CF3D7F0447BE1DC5EC418823FB3A63E18092`;
+27,919 changed pixels are confined to the requested image footprints (20,983
+XObject, 6,936 inline). `SampleImageInterpolationGoldenTests` pins the disabled
+hash and enabled-footprint isolation. The base corpus golden test passes;
+only this sample's golden row is intentionally updated, not the sample PDF.
+This analytic/control evidence does not substitute for independent renderer
+comparison.
 
 ## 4. Clause 9 - text and fonts
 
@@ -185,12 +224,15 @@ see the evidence chronology above and the reconciled backlog):
 3. PDF/UA structure containment rules (7.2: TR in Table/THead/TBody/TFoot, TD/TH in TR, LI in L, LBody in LI) and 7.18.2 TrapNet. TrapNet was subsequently addressed; the later reconciliation still records incomplete nesting coverage.
 4. **Partially addressed:** opt-in warning-only operand arity/type validation, `Q` underflow, unmatched text state/text operators outside `BT`, and unclosed marked content have regressions in `Type3AndCompatibilityTests`; this is not rejecting validation or complete semantic checking.
 5. Strict diagnostics detect missing, repeated, or non-first Type 3 `d0`/`d1` and non-stencil images under `d1` (only image masks allowed); rejecting enforcement remains open.
-6. Image `/Interpolate` (visual quality hint only).
+6. Image `/Interpolate` (visual quality hint only; subsequently implemented with the scoped RGB policy in 3.2).
 7. `/F` external streams, Reference/PostScript XObjects (deprecated, low impact).
 8. Clause 12 per-subtype appearance generation audit and clauses 10-13 line-by-line audit were not done.
 
 ## 7. Notes for the owners of `docs/spec-matrix.md` / `docs/spec-backlog.md`
 
-The matrix and compatibility report carry the detailed status: `/Interpolate`,
-`d1` colour-image restrictions, deprecated external streams/Reference/PostScript
-XObjects and broader PDF/A evidence remain open or intentionally unsupported.
+The matrix and compatibility report carry the detailed status: `/Interpolate`
+has the scoped RGB rendering policy in 3.2; strict diagnostics warn for `d1`
+non-stencil images reached directly, inline, or through Forms, without changing
+permissive pixels. Rejecting enforcement, deprecated external
+streams/Reference/PostScript XObjects and broader PDF/A evidence remain open
+or intentionally unsupported.
