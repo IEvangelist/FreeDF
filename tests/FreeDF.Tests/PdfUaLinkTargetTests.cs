@@ -129,6 +129,17 @@ public class PdfUaLinkTargetTests
     }
 
     [Fact]
+    public void NamedTargetTreeCycleReportsIncompleteWithoutHidingOtherTargets()
+    {
+        var report = Validate(Load("/Dest (first)", "/Dest [13 0 R /Fit]",
+            catalog: "/Names << /Dests 17 0 R >>",
+            extraObjects: ["<< /Kids [17 0 R 18 0 R] >>", "<< /Names [(first) [7 0 R /Fit]] >>"]));
+
+        Assert.True(report.Has("PDFUA2-LINK-TARGET-UNRESOLVED"));
+        Assert.True(report.Has("PDFUA2-LINK-TARGETS"));
+    }
+
+    [Fact]
     public void Ua1DoesNotApplyTheUa2TargetGroupingRule()
     {
         var report = Validate(Load("/Dest [7 0 R /Fit]", "/Dest [13 0 R /Fit]", part: 1), 1);
