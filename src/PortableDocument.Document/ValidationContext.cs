@@ -173,10 +173,21 @@ internal sealed class ValidationContext
     public List<(PdfStream Image, int Page)> Images { get; } = [];
     public List<PdfStream> IccBased { get; } = [];
     public bool UsesDeviceColor { get; private set; }
+    public bool UsesUnmappedDeviceGray { get; private set; }
     bool _walked;
     readonly HashSet<PdfObject> _seen = new(ReferenceEqualityComparer.Instance);
+    readonly Dictionary<PdfDictionary, bool> _defaultGrayValidity = new(ReferenceEqualityComparer.Instance);
 
     static readonly Regex DeviceOps = new(@"(?<![\w/])[-+.\d]+(?:\s+[-+.\d]+){0,3}\s+(rg|RG|g|G|k|K)(?![\w])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    static readonly HashSet<string> PathOps = new(StringComparer.Ordinal) { "m", "l", "c", "v", "y", "re" };
+    const int MaxContentTokens = 20_000_000;
+    const int MaxFormDepth = 16;
+
+    sealed class ContentScanBudget
+    {
+        public int Tokens;
+        public Dictionary<PdfStream, HashSet<(bool Fill, bool Stroke, int RenderMode)>> FormStates { get; } = new(ReferenceEqualityComparer.Instance);
+    }
 
     /// <summary>Collects fonts, graphics states, images and device-colour usage from every page (resources, forms, patterns, annotation appearances).</summary>
     public void EnsureWalked()
@@ -190,41 +201,216 @@ internal sealed class ValidationContext
             {
                 var page = Doc.Pages[i0];
                 Walk(page.Resources, i0, 0);
-                ScanContent(page.GetContents());
+                ScanContent(page.GetContents(), page.Resources);
                 if (F.Resolve(page.Dict.Get("Annots")) is PdfArray annots)
                     foreach (var a in annots.Items.Take(10_000))
                         if (F.Resolve(a) is PdfDictionary ad && F.Resolve(ad.Get("AP")) is PdfDictionary ap)
                             foreach (var (_, v) in ap.Entries)
                             {
                                 var n = F.Resolve(v);
-                                if (n is PdfStream ns) WalkForm(ns, i0, 1);
-                                else if (n is PdfDictionary nd) foreach (var (_, sv) in nd.Entries) if (F.Resolve(sv) is PdfStream ss) WalkForm(ss, i0, 1);
+                                if (n is PdfStream ns) ScanAppearance(ns, i0, page.Resources);
+                                else if (n is PdfDictionary nd) foreach (var (_, sv) in nd.Entries) if (F.Resolve(sv) is PdfStream ss) ScanAppearance(ss, i0, page.Resources);
                             }
             });
         }
     }
 
-    void ScanContent(byte[] content)
+    bool IsUnmappedDeviceGray(PdfObject? colorSpace, PdfDictionary resources, HashSet<string>? aliases = null)
     {
-        if (!UsesDeviceColor && DeviceOps.IsMatch(Encoding.Latin1.GetString(content))) UsesDeviceColor = true;
+        var resolved = F.Resolve(colorSpace);
+        if (resolved is PdfName name)
+        {
+            if (name.Value is "DeviceGray" or "G") return !HasDeviceIndependentDefaultGray(resources);
+            aliases ??= new HashSet<string>(StringComparer.Ordinal);
+            if (!aliases.Add(name.Value)) return false;
+            var spaces = F.Resolve(resources.Get("ColorSpace")) as PdfDictionary;
+            if (spaces?.Get(name.Value) is { } alias)
+                return IsUnmappedDeviceGray(alias, resources, aliases);
+            return false;
+        }
+        return resolved is PdfArray { Count: > 0 } array
+            && (F.Resolve(array[0]).AsName() is "DeviceGray" or "G")
+            && !HasDeviceIndependentDefaultGray(resources);
     }
 
-    void NoteColorSpace(PdfObject? cs)
+    bool HasDeviceIndependentDefaultGray(PdfDictionary resources)
+    {
+        if (_defaultGrayValidity.TryGetValue(resources, out var valid)) return valid;
+        valid = F.Resolve(resources.Get("ColorSpace")) is PdfDictionary spaces
+            && spaces.Get("DefaultGray") is { } defaultGray
+            && IsDeviceIndependentGray(defaultGray, spaces, new HashSet<string>(StringComparer.Ordinal), 0);
+        _defaultGrayValidity.Add(resources, valid);
+        return valid;
+    }
+
+    bool IsDeviceIndependentGray(PdfObject? colorSpace, PdfDictionary spaces, HashSet<string> aliases, int depth)
+    {
+        if (depth > 16) return false;
+        var resolved = F.Resolve(colorSpace);
+        if (resolved is PdfName name)
+        {
+            if (name.Value is "DeviceGray" or "G") return false;
+            return aliases.Add(name.Value) && spaces.Get(name.Value) is { } alias
+                && IsDeviceIndependentGray(alias, spaces, aliases, depth + 1);
+        }
+        if (resolved is not PdfArray { Count: > 0 } array) return false;
+        switch (F.Resolve(array[0]).AsName())
+        {
+            case "CalGray" when array.Count > 1 && F.Resolve(array[1]) is PdfDictionary parameters:
+                if (F.Resolve(parameters.Get("WhitePoint")) is not PdfArray { Count: >= 3 } whitePoint) return false;
+                var white = whitePoint.Items.Take(3).Select(x => F.Resolve(x).AsNumber()).ToArray();
+                if (!white.All(x => x is { } value && double.IsFinite(value) && value > 0)
+                    || white[1] != 1)
+                    return false;
+                return parameters.Get("Gamma") is null
+                    || F.Resolve(parameters.Get("Gamma")).AsNumber() is { } gamma && double.IsFinite(gamma) && gamma > 0;
+            case "ICCBased" when array.Count > 1 && F.Resolve(array[1]) is PdfStream profile:
+                if (F.Resolve(profile.Dict.Get("N")).AsNumber() != 1) return false;
+                return PdfADeepChecks.ReadIcc(F.DecodeStream(profile))?.Space == "GRAY";
+            default:
+                return false;
+        }
+    }
+
+    void ScanAppearance(PdfStream appearance, int page, PdfDictionary resources)
+    {
+        WalkForm(appearance, page, 1);
+        ScanContent(F.DecodeStream(appearance), FormResources(appearance, resources));
+    }
+
+    PdfDictionary FormResources(PdfStream form, PdfDictionary? inheritedResources) =>
+        F.Resolve(form.Dict.Get("Resources")) as PdfDictionary ?? inheritedResources ?? new PdfDictionary();
+
+    void ScanContent(byte[] content, PdfDictionary resources, bool? initialFill = null, bool? initialStroke = null,
+        int initialRenderMode = 0, int depth = 0, ContentScanBudget? budget = null)
+    {
+        budget ??= new ContentScanBudget();
+        foreach (Match match in DeviceOps.Matches(Encoding.Latin1.GetString(content)))
+        {
+            var isGray = match.Groups[1].Value is "g" or "G";
+            if (!isGray || IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources))
+                UsesDeviceColor = true;
+        }
+
+        var fill = initialFill ?? IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources);
+        var stroke = initialStroke ?? fill;
+        var renderMode = initialRenderMode;
+        var path = false;
+        var states = new Stack<(bool Fill, bool Stroke, int RenderMode)>();
+        var operands = new List<PdfObject>();
+        var lexer = new PdfLexer(content);
+        while (budget.Tokens < MaxContentTokens)
+        {
+            budget.Tokens++;
+            PdfObject? item;
+            try { item = lexer.ReadObject(false); }
+            catch (PdfParseException) { break; }
+            if (item is null) break;
+            if (item is not PdfKeyword keyword)
+            {
+                operands.Add(item);
+                if (operands.Count > 512) operands.RemoveAt(0);
+                continue;
+            }
+
+            var op = keyword.Value;
+            switch (op)
+            {
+                case "BI":
+                    PdfUADeepChecks.SkipInlineImage(lexer);
+                    break;
+                case "q":
+                    states.Push((fill, stroke, renderMode));
+                    break;
+                case "Q":
+                    if (states.TryPop(out var saved)) (fill, stroke, renderMode) = saved;
+                    break;
+                case "g":
+                    fill = IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources);
+                    break;
+                case "G":
+                    stroke = IsUnmappedDeviceGray(new PdfName("DeviceGray"), resources);
+                    break;
+                case "rg":
+                case "k":
+                    fill = false;
+                    break;
+                case "RG":
+                case "K":
+                    stroke = false;
+                    break;
+                case "cs":
+                    if (operands.LastOrDefault() is PdfName fillName)
+                        fill = IsUnmappedDeviceGray(fillName, resources);
+                    break;
+                case "CS":
+                    if (operands.LastOrDefault() is PdfName strokeName)
+                        stroke = IsUnmappedDeviceGray(strokeName, resources);
+                    break;
+                case "Do":
+                    if (depth < MaxFormDepth
+                        && operands.LastOrDefault() is PdfName xObjectName
+                        && F.Resolve(resources.Get("XObject")) is PdfDictionary xObjects
+                        && F.Resolve(xObjects.Get(xObjectName.Value)) is PdfStream form
+                        && F.Resolve(form.Dict.Get("Subtype")).AsName() == "Form")
+                    {
+                        if (!budget.FormStates.TryGetValue(form, out var formStates))
+                            budget.FormStates.Add(form, formStates = []);
+                        if (formStates.Add((fill, stroke, renderMode)))
+                            ScanContent(F.DecodeStream(form), FormResources(form, resources), fill, stroke, renderMode, depth + 1, budget);
+                    }
+                    break;
+                case "Tr":
+                    renderMode = (int)(operands.LastOrDefault()?.AsNumber() ?? 0);
+                    break;
+                default:
+                    if (PathOps.Contains(op))
+                        path = true;
+                    else if (op is "S" or "s" or "f" or "F" or "f*" or "B" or "B*" or "b" or "b*")
+                    {
+                        if (path)
+                        {
+                            var paintsFill = op is "f" or "F" or "f*" or "B" or "B*" or "b" or "b*";
+                            var paintsStroke = op is "S" or "s" or "B" or "B*" or "b" or "b*";
+                            if (paintsFill && fill || paintsStroke && stroke)
+                                UsesUnmappedDeviceGray = true;
+                        }
+                        path = false;
+                    }
+                    else if (op == "n")
+                        path = false;
+                    else if (op is "Tj" or "TJ" or "'" or "\"")
+                    {
+                        var paintsFill = renderMode is 0 or 2 or 4 or 6;
+                        var paintsStroke = renderMode is 1 or 2 or 5 or 6;
+                        if (paintsFill && fill || paintsStroke && stroke)
+                            UsesUnmappedDeviceGray = true;
+                    }
+                    break;
+            }
+            operands.Clear();
+        }
+    }
+
+    void NoteColorSpace(PdfObject? cs, PdfDictionary resources)
     {
         var o = F.Resolve(cs);
+        string? name = o.AsName();
         if (o is PdfArray { Count: > 0 } a)
         {
             if (a.Count > 1 && F.Resolve(a[0]).AsName() == "ICCBased" && F.Resolve(a[1]) is PdfStream icc && _seen.Add(icc)) IccBased.Add(icc);
-            o = F.Resolve(a[0]);
+            name = F.Resolve(a[0]).AsName();
         }
-        if (o.AsName() is "DeviceRGB" or "DeviceGray" or "DeviceCMYK" or "RGB" or "G" or "CMYK") UsesDeviceColor = true;
+        if (name is "DeviceRGB" or "DeviceCMYK" or "RGB" or "CMYK"
+            || name is "DeviceGray" or "G" && IsUnmappedDeviceGray(o, resources))
+            UsesDeviceColor = true;
     }
 
     void WalkForm(PdfStream form, int page, int depth)
     {
         if (depth > 16 || !_seen.Add(form)) return;
-        if (F.Resolve(form.Dict.Get("Resources")) is PdfDictionary r) Walk(r, page, depth + 1);
-        ScanContent(F.DecodeStream(form));
+        if (F.Resolve(form.Dict.Get("Resources")) is PdfDictionary resources)
+            Walk(resources, page, depth + 1);
     }
 
     void Walk(PdfDictionary? res, int page, int depth)
@@ -237,13 +423,13 @@ internal sealed class ValidationContext
             foreach (var (_, v) in gss.Entries)
                 if (F.Resolve(v) is PdfDictionary gd && _seen.Add(gd)) ExtGStates.Add((gd, page));
         if (F.Resolve(res.Get("ColorSpace")) is PdfDictionary css)
-            foreach (var (_, v) in css.Entries) NoteColorSpace(v);
+            foreach (var (_, v) in css.Entries) NoteColorSpace(v, res);
         if (F.Resolve(res.Get("XObject")) is PdfDictionary xs)
             foreach (var (_, v) in xs.Entries)
             {
                 if (F.Resolve(v) is not PdfStream x) continue;
                 var sub = F.Resolve(x.Dict.Get("Subtype")).AsName();
-                if (sub == "Image") { if (_seen.Add(x)) { Images.Add((x, page)); NoteColorSpace(x.Dict.Get("ColorSpace")); } }
+                if (sub == "Image") { if (_seen.Add(x)) { Images.Add((x, page)); NoteColorSpace(x.Dict.Get("ColorSpace"), res); } }
                 else WalkForm(x, page, depth + 1);
             }
         if (F.Resolve(res.Get("Pattern")) is PdfDictionary pats)

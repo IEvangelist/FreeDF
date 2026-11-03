@@ -18,9 +18,12 @@ cross-check, not measurements rerun against the current tree. The later
 [2026-10-31 PDF/UA reconciliation](spec-backlog.md#tagged-pdf-and-pdfua-reconciliation-2026-10-31)
 uses a separate public veraPDF corpus and supersedes the older UA implementation
 status below. In particular, TrapNet checks now exist in `ValidationPdfUA.cs`;
-the earlier "not implemented" finding is historical. PDF/A positive-fixture
-and implicit DeviceGray gaps remain recorded open, not newly verified here.
-All validators remain Partial and non-certifying.
+the earlier "not implemented" finding is historical. A 2026-11-03 targeted
+PDF/A color follow-up added implicit DeviceGray paint checks and small
+veraPDF-accepted CalRGB, calibrated-DefaultGray, and Type 3 text fixtures; see
+[`validation-compat.md`](validation-compat.md#2026-11-03-targeted-pdfa-color-fixtures).
+The validator remains Partial and non-certifying, and these controls do not
+establish general output-profile coverage.
 
 ## 1. Validator cross-check against veraPDF
 
@@ -46,12 +49,12 @@ We were *looser* on 24 UA-1 files. The remaining causes:
 | veraPDF rule | meaning | our status |
 |---|---|---|
 | PDFA 6.1.2-2 | header must be followed by a comment with 4 bytes > 127 | **fixed** (`PDFA-HEADER-BINARY`, `PDFA-HEADER-OFFSET`) |
-| PDFA-1 6.2.3.3-3 / PDFA-2,3 6.2.4.3-4 | DeviceGray/RGB/CMYK used without OutputIntent or Default* | partial: explicit device-colour operators and resources are detected, the *implicit* initial DeviceGray (text/paths painted without a colour operator) is not |
+| PDFA-1 6.2.3.3-3 / PDFA-2,3 6.2.4.3-4 | DeviceGray/RGB/CMYK used without OutputIntent or Default* | historical gap: explicit device-colour detection missed implicit initial DeviceGray; see the targeted 2026-11-03 tests below |
 | UA 7.1-3, 7.18.1-1/2, 7.18.5-2, 7.2-x | untagged content, untagged/undescribed annotations, structure containment (TR/TD/TH/LI/LBody) | partly covered by other rule IDs with stricter-than-veraPDF scope; containment rules for TR/TD/TH/LI/LBody **not implemented** |
 | UA 7.18.2-1 | TrapNet annotations not permitted | not implemented |
 | UA 7.5-1 | TH scope/headers determinability | partly (`PDFUA-TABLE-*`) |
 
-Important caveat: **no fixture passes veraPDF PDF/A** (0 of 552 for 1b/2b, 0 of 271 for 3b; 42 of 551 pass UA-1). The
+Important historical caveat: **no fixture in that repository-fixture comparison passes veraPDF PDF/A** (0 of 552 for 1b/2b, 0 of 271 for 3b; 42 of 551 pass UA-1). The
 "conformant" PDF/A fixtures in the unit tests are conformant only with respect to the rules we implement; they are not
 veraPDF-clean (typically implicit DeviceGray default colour, or missing identification/XMP details). `IsCompliant` must therefore be read as
 "no errors among implemented checks" (the doc comment on `ValidationReport.IsCompliant` already says so). The false-positive
@@ -63,6 +66,12 @@ PDF/A positive fixtures and therefore cannot establish acceptance of valid files
 veraPDF itself threw `StackOverflowError` on two of our fixtures (cyclic structure trees; `obj-0006`/`obj-0213` in the
 3b run), which are therefore not comparable; 12 more files cannot be loaded by us (password-protected samples and the
 deliberately unsupported-filter fixtures). Full per-rule table: `docs/validation-compat.md`.
+
+The later targeted color controls are a separate result: veraPDF 1.30.3 accepts
+the corresponding CalRGB, calibrated DefaultGray, and Type 3 text-with-
+DefaultGray fixtures, and rejects the implicit/explicit DeviceGray negatives.
+This pins only the targeted color cases; it does not supersede the historical
+corpus figures or establish complete PDF/A conformance.
 
 ## 2. Clause 7 - syntax, filters, encryption, document structure
 

@@ -119,15 +119,17 @@ internal static class PdfAChecks
         var intents = f.Resolve(f.Catalog.Get("OutputIntents")) as PdfArray;
         if (intents is null || intents.Count == 0)
         {
-            if (c.UsesDeviceColor)
+            if (c.UsesDeviceColor || c.UsesUnmappedDeviceGray)
                 c.Add("PDFA-OUTPUTINTENT-MISSING", ValidationSeverity.Error, "device-dependent colour is used but the catalog has no /OutputIntents (device colour use is detected heuristically)", Clause(c, "6.2.3.3", "6.2.4.3", "6.2.4.3"));
             return;
         }
         PdfStream? profile = null;
+        var hasGrayOutputIntent = false;
         foreach (var item in intents.Items)
         {
             if (f.Resolve(item) is not PdfDictionary oi) continue;
-            if (f.Resolve(oi.Get("S")).AsName() != "GTS_PDFA1")
+            var isPdfAOutputIntent = f.Resolve(oi.Get("S")).AsName() == "GTS_PDFA1";
+            if (!isPdfAOutputIntent)
                 c.Add("PDFA-OUTPUTINTENT-SUBTYPE", ValidationSeverity.Error, "output intent /S must be /GTS_PDFA1", Clause(c, "6.2.2", "6.2.3", "6.2.3"));
             if (f.Resolve(oi.Get("DestOutputProfile")) is PdfStream p)
             {
@@ -137,10 +139,14 @@ internal static class PdfAChecks
                 var d = f.DecodeStream(p);
                 if (d.Length < 128 || d[36] != 'a' || d[37] != 'c' || d[38] != 's' || d[39] != 'p')
                     c.Add("PDFA-OUTPUTINTENT-ICC", ValidationSeverity.Error, "DestOutputProfile is not a valid ICC profile", Clause(c, "6.2.2", "6.2.3", "6.2.3"));
+                else if (isPdfAOutputIntent && PdfADeepChecks.ReadIcc(d)?.Space == "GRAY")
+                    hasGrayOutputIntent = true;
             }
         }
         if (profile is null)
             c.Add("PDFA-OUTPUTINTENT-PROFILE", ValidationSeverity.Error, "output intent has no /DestOutputProfile", Clause(c, "6.2.2", "6.2.3", "6.2.3"));
+        if (c.UsesUnmappedDeviceGray && !hasGrayOutputIntent)
+            c.Add("PDFA-OUTPUTINTENT-MISSING", ValidationSeverity.Error, "DeviceGray is used without a device-independent /DefaultGray colour space or a PDF/A OutputIntent with a Gray profile", Clause(c, "6.2.3.3", "6.2.4.3", "6.2.4.3"));
     }
 
     static void Transparency(ValidationContext c)

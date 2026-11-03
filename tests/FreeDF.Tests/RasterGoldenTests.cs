@@ -19,7 +19,9 @@ public class RasterGoldenTests
     static IEnumerable<string> Files() =>
         Directory.EnumerateFiles(FixtureRoot, "*.pdf", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(FixtureRoot, f).Replace('\\', '/'))
-            .Where(f => !f.StartsWith("signatures/", StringComparison.Ordinal) && f != "samples/27-full-collection.pdf")
+            .Where(f => !f.StartsWith("signatures/", StringComparison.Ordinal)
+                && !f.StartsWith("validation/pdfa-color/", StringComparison.Ordinal)
+                && f != "samples/27-full-collection.pdf")
             .Order(StringComparer.Ordinal);
 
     static List<string> Compute()

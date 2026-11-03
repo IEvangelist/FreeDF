@@ -18,6 +18,27 @@ the failing fixtures does not prove that valid PDF/A files are accepted.
 File-verdict agreement and mapped-rule overlap are distinct evidence; neither
 establishes complete conformance or certification.
 
+## 2026-11-03 targeted PDF/A color fixtures
+
+`tools/validation/generate_pdfa_color_fixtures.py` deterministically generates
+small self-contained fixtures in `tests/fixtures/validation/pdfa-color/`.
+Recreate them with `python tools/validation/generate_pdfa_color_fixtures.py`;
+check a file with veraPDF 1.30.3 using its matching flavour (for example,
+`verapdf --format text -f 1b tests/fixtures/validation/pdfa-color/calrgb-pdfa-1b.pdf`).
+CalRGB, calibrated `DefaultGray`, and Type 3 text using calibrated `DefaultGray`
+fixtures are accepted by veraPDF 1.30.3 for their corresponding PDF/A-1b, -2b,
+and -3b profiles. Path, text and explicit-Gray controls without a calibrated
+default are rejected for all three profiles (6.2.3.3 test 3 for PDF/A-1b;
+6.2.4.3 test 4 for PDF/A-2b and -3b). FreeDF regression tests cover these
+fixtures and Gray OutputIntent space matching.
+
+These are narrow controls, not a new corpus comparison. The Type 3 glyph is
+authored in the fixture generator, not a third-party font; the fixtures contain
+no ICC output profile and do not establish general font or output-profile
+coverage. The calibrated `DefaultGray` case uses an authored CalGray space.
+This evidence does not make `IsCompliant` a certification or close the broader
+PDF/A validation backlog.
+
 Statuses in this snapshot:
 
 * **matched** - every file where we report the rule also fails a related veraPDF clause.

@@ -448,7 +448,7 @@ public class ValidationTests
         $"<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R {extraCatalog} >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         $"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << {resources} >> {pageExtra} >>",
-        ObjPdf.Stream("0 0 50 50 re f"),
+        ObjPdf.Stream(""),
         ObjPdf.Xmp(xmp));
 
     [Fact]
