@@ -68,6 +68,14 @@ only bundled substitutes for consistent output across hosts; omitting
 `FontFallback` uses installed system fonts. The optional timestamp client
 performs HTTP requests only when invoked.
 
+For render diagnostics, set `StrictContentValidation = true` on
+`PdfRenderOptions` passed to `Pdf.RenderPage` or `Pdf.RenderBand`; inspect
+`RenderedPage.Warnings` for recognized malformed content-stream operands and
+state transitions. This opt-in reports warnings only and does not reject or
+change permissive rendering. It does not apply to `Pdf.ExtractText` or
+`Pdf.Analyze`, which do not expose content-validation warnings, and it is not
+a PDF conformance validator.
+
 ## Preview versions and compatibility
 
 FreeDF is actively developed and **does not claim complete PDF 2.0 parity**.
