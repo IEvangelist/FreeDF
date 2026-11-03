@@ -13,6 +13,8 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'README.md'
+      - 'docs/nuget-readme.md'
+      - 'docs/releases/**'
       - 'LICENSE'
       - 'THIRD-PARTY-NOTICES.md'
 
@@ -37,7 +39,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="0.1.0-preview.1"
+          version="0.1.0-preview.4"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             version="${GITHUB_REF_NAME#v}"
             git merge-base --is-ancestor HEAD origin/main || {
@@ -71,10 +73,34 @@ jobs:
             dotnet pack "$project" -c Release --no-build \
               -p:Version="$VERSION" \
               -p:ContinuousIntegrationBuild=true \
+              -p:PackageReleaseNotes="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" \
               -p:IncludeSymbols=true \
               -p:SymbolPackageFormat=snupkg \
               --output "$RUNNER_TEMP/nuget-packages"
           done
+      - name: Verify package presentation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re, zipfile
+          import xml.etree.ElementTree as ET
+          packages = list((pathlib.Path(os.environ["RUNNER_TEMP"]) / "nuget-packages").glob("*.nupkg"))
+          assert len(packages) == 6, f"Expected six packages, got {len(packages)}"
+          ns = {"n": "http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd"}
+          for package in packages:
+              with zipfile.ZipFile(package) as archive:
+                  readme = archive.read("README.md").decode("utf-8-sig")
+                  assert readme.startswith("# FreeDF for .NET"), package
+                  assert not re.search(r"\]\((?!https://)[^)]+\)", readme), f"Relative link in {package}"
+                  assert "![" not in readme, f"Unexpected image in {package}"
+                  metadata = ET.fromstring(archive.read(next(n for n in archive.namelist() if n.endswith(".nuspec")))).find("n:metadata", ns)
+                  assert metadata.findtext("n:license", namespaces=ns) == "MIT", package
+                  assert metadata.findtext("n:projectUrl", namespaces=ns) == "https://ievangelist.github.io/FreeDF/", package
+                  assert "/releases/tag/v" in metadata.findtext("n:releaseNotes", namespaces=ns), package
+                  for name in ("LICENSE", "THIRD-PARTY-NOTICES.md", "licenses/UNICODE-LICENSE.txt"):
+                      assert name in archive.namelist(), f"Missing {name} in {package}"
+          print("Verified README, absolute links, license, homepage, and release notes in all six packages.")
+          PY
       - name: Verify installed packages
         env:
           VERSION: ${{ steps.version.outputs.value }}
@@ -131,3 +157,59 @@ jobs:
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push "artifacts/nuget/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  release:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: nuget-packages
+          path: artifacts/nuget
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          version="${RELEASE_TAG#v}"
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          ## FreeDF $version
+
+          Six .NET 10 libraries for PDF parsing, editing, rendering, text extraction,
+          fallback fonts, and HTTP timestamping.
+
+          \`\`\`shell
+          dotnet add package PortableDocument.Render --version $version
+          \`\`\`
+
+          [Package guide](https://github.com/${GH_REPO}/blob/${RELEASE_TAG}/docs/nuget-readme.md) |
+          [Homepage](https://ievangelist.github.io/FreeDF/) |
+          [MIT license](https://github.com/${GH_REPO}/blob/${RELEASE_TAG}/LICENSE)
+
+          All six packages share this version. Optional font and timestamp packages
+          are installed separately. Packages and symbols are attached below.
+          EOF
+          if [[ -f "docs/releases/$version.md" ]]; then
+            printf '\n' >> "$RUNNER_TEMP/release-notes.md"
+            cat "docs/releases/$version.md" >> "$RUNNER_TEMP/release-notes.md"
+          fi
+          flags=()
+          if [[ "$version" == *-* ]]; then
+            flags+=(--prerelease --latest=false)
+            printf '\n**Preview:** APIs and output may change. Test your PDF corpus before upgrading; full PDF 2.0 parity is not claimed.\n' >> "$RUNNER_TEMP/release-notes.md"
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/nuget/* --clobber
+          else
+            gh release create "$RELEASE_TAG" artifacts/nuget/* \
+              --verify-tag --title "FreeDF $version" --generate-notes \
+              --notes-file "$RUNNER_TEMP/release-notes.md" "${flags[@]}"
+          fi

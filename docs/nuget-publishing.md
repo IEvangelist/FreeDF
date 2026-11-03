@@ -19,7 +19,10 @@ is likewise optional and is the only package that performs HTTP timestamp reques
 FreeDF code uses the MIT license, copyright (c) 2026-Present David Pine.
 Each package includes `LICENSE`, `README.md`, `THIRD-PARTY-NOTICES.md` and the
 Unicode license. Bundled third-party data and fonts retain their own licenses.
-The packages currently target `net10.0` and default to `0.1.0-preview.1`.
+The packages currently target `net10.0` and default to `0.1.0-preview.4`.
+The embedded README comes from [the package quick start](nuget-readme.md), not
+the editor-focused repository README. Package metadata links to the FreeDF
+homepage, source repository, release notes, and MIT license.
 
 ## Publishing
 
@@ -53,6 +56,17 @@ after testing and packing have completed. NuGet issues a short-lived API key
 through `NuGet/login@v1`; the workflow uses it immediately and skips already
 published package versions so a partially completed release can be retried.
 
+After successful publication, a separate job creates a GitHub Release with
+installation instructions, generated change notes, and all `.nupkg` and
+`.snupkg` assets. Tags containing a prerelease suffix create prereleases, not
+stable releases. Only this release job has `contents: write`; NuGet OIDC
+permission remains scoped to the publish job. Retrying an existing release
+refreshes its assets without overwriting manually edited notes.
+Add curated highlights and compatibility notes in `docs/releases/<version>.md`
+before tagging; the release job includes them alongside generated notes.
+An already-published package version is immutable: README or metadata changes
+appear on NuGet only after publishing a new version.
+
 The release tests use bundled fonts without installed-font fallback for
 host-independent raster golden hashes. Fuzz fixture names use `/` separators
 so Windows and Linux exercise the same deterministic mutations.
@@ -65,7 +79,7 @@ and verifies that Latin and CJK font assets are copied to its output.
 For a local package build, pass an explicit version:
 
 ```powershell
-dotnet pack src\PortableDocument.Render\PortableDocument.Render.csproj -c Release -p:PackageVersion=0.1.0-preview.1
+dotnet pack src\PortableDocument.Render\PortableDocument.Render.csproj -c Release -p:Version=0.1.0-preview.4
 ```
 
 See the [NuGet Trusted Publishing documentation](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing)

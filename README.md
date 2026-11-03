@@ -74,6 +74,21 @@ deployment described above.
 
 ## Use the .NET libraries
 
+NuGet packages target .NET 10 and are currently in preview. Install the rendering
+package for rendering and text extraction; its dependencies are included
+automatically:
+
+```powershell
+dotnet add package PortableDocument.Render --version 0.1.0-preview.4
+```
+
+Use `0.1.0-preview.3` or later; `preview.2` has a fallback-font packaging defect.
+Add `PortableDocument.FallbackFonts` separately when you need bundled substitutes
+for non-embedded fonts.
+See the [package quick start](docs/nuget-readme.md) for rendering examples,
+fallback-font setup, versioning, and licensing, and
+[GitHub Releases](https://github.com/IEvangelist/FreeDF/releases) for release notes.
+
 The libraries are split by responsibility: PDF file structure and writing,
 document-level features, content interpretation, and rendering. For example:
 
@@ -96,14 +111,14 @@ The `PortableDocument.*` library API is unchanged by the repository rename.
 Existing browser data is migrated locally; historical benchmark reports retain
 their original tool identities and measurements.
 
-| Project | What it provides |
+| NuGet package | What it provides |
 | --- | --- |
-| `PortableDocument.Core` | PDF objects, parsing, file structure, filters, writing, encryption, and signature primitives |
-| `PortableDocument.Document` | Document/page models, editing and page import, annotations, forms, metadata, navigation, structure, and validation |
-| `PortableDocument.Content` | PDF page-content interpretation, fonts and text shaping, color spaces, images, graphics, and optional-content layers |
-| `PortableDocument.Render` | Software page rendering, structured text extraction, annotation tools, and redaction |
-| `PortableDocument.FallbackFonts` | Bundled font fallback assets used by the browser editor |
-| `PortableDocument.Signing.Http` | HTTP RFC 3161 timestamp-authority client |
+| [`PortableDocument.Core`](https://www.nuget.org/packages/PortableDocument.Core) | PDF objects, parsing, file structure, filters, writing, encryption, and signature primitives |
+| [`PortableDocument.Document`](https://www.nuget.org/packages/PortableDocument.Document) | Document/page models, editing and page import, annotations, forms, metadata, navigation, structure, and validation |
+| [`PortableDocument.Content`](https://www.nuget.org/packages/PortableDocument.Content) | PDF page-content interpretation, fonts and text shaping, color spaces, images, graphics, and optional-content layers |
+| [`PortableDocument.Render`](https://www.nuget.org/packages/PortableDocument.Render) | Software page rendering, structured text extraction, annotation tools, and redaction |
+| [`PortableDocument.FallbackFonts`](https://www.nuget.org/packages/PortableDocument.FallbackFonts) | Optional bundled Latin fonts and CJK glyph assets for non-embedded fonts |
+| [`PortableDocument.Signing.Http`](https://www.nuget.org/packages/PortableDocument.Signing.Http) | Optional HTTP RFC 3161 timestamp-authority client |
 
 PDF actions and embedded content are inspected as data; parsing a PDF does not
 execute its JavaScript, launch actions, or open remote destinations. Validation
@@ -148,3 +163,10 @@ Partial, or Todo and links to the remaining gaps. See
 [docs/spec-matrix.md](docs/spec-matrix.md) and
 [docs/spec-backlog.md](docs/spec-backlog.md) before relying on a feature for a
 particular class of PDFs.
+
+## License
+
+FreeDF code is [MIT licensed](LICENSE), copyright (c) 2026-Present David Pine.
+Bundled third-party data and fonts retain their own licenses; see
+[third-party notices](THIRD-PARTY-NOTICES.md) and the license files included
+with the packages.
