@@ -234,6 +234,14 @@ internal static class PdfUADeepChecks
                 c.Add("PDFUA-FONT-CIDTOGID", ValidationSeverity.Error, $"embedded CIDFontType2 {FontChecks.Name(f, cid)} requires /CIDToGIDMap to be a stream or /Identity", Clause(c, "7.21.3.2", "8.4.5.3.2"), u.Page);
             CompositeAndTrueTypeEncoding(c, u, font, subtype);
             if (c.Part == 1) PdfADeepChecks.SubsetListings(c, font, subtype, FontChecks.Name(f, font), u.Page);
+            if (u.ZeroTwoByteCodePage is { } zeroPage && subtype == "Type0"
+                && f.Resolve(font.Get("Encoding")) is PdfName { Value: "Identity-H" or "Identity-V" }
+                && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } zeroDescendants
+                && f.Resolve(zeroDescendants[0]) is PdfDictionary zeroCid
+                && f.Resolve(zeroCid.Get("Subtype")).AsName() == "CIDFontType0")
+                c.Add("PDFUA-FONT-NOTDEF", ValidationSeverity.Error,
+                    $"text showing operator references CID 0 (.notdef) in Identity-encoded CIDFontType0 {FontChecks.Name(f, font)}",
+                    Clause(c, "7.21.8", "8.4.5.9"), zeroPage);
             if (f.Resolve(font.Get("ToUnicode")) is PdfStream toUnicode)
             {
                 ToUnicodeValues(c, u, toUnicode);

@@ -176,6 +176,14 @@ internal sealed class ValidationContext
     public sealed record FontUse(PdfDictionary Font, int Page)
     {
         public int? RenderingPage { get; set; }
+        public int? ZeroTwoByteCodePage { get; private set; }
+
+        public void NoteTwoByteCodes(PdfString text, int page)
+        {
+            if (ZeroTwoByteCodePage is not null) return;
+            for (var i = 0; i + 1 < text.Bytes.Length; i += 2)
+                if (text.Bytes[i] == 0 && text.Bytes[i + 1] == 0) { ZeroTwoByteCodePage = page; return; }
+        }
     }
 
     public List<FontUse> Fonts { get; } = [];
@@ -584,6 +592,13 @@ internal sealed class ValidationContext
                             else
                             {
                                 var use = FontFor(font, page);
+                                if (Profile is PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)
+                                {
+                                    if (text is PdfString shown) use.NoteTwoByteCodes(shown, page);
+                                    else if (text is PdfArray shownArray)
+                                        foreach (var value in shownArray.Items)
+                                            if (value is PdfString shownItem) use.NoteTwoByteCodes(shownItem, page);
+                                }
                                 if (Profile == PdfValidationProfile.PdfA1b)
                                 {
                                     use.RenderingPage ??= page;

@@ -43,6 +43,12 @@ inspection in `ValidationPdfADeep.cs`; PDF/UA-2 is not given these rules.
 The retained maxp-derived glyph-slot policy and its sparse-font reference
 disagreement are documented in the specification backlog.
 
+The explicit Identity CFF CID 0 (.notdef) check was cross-checked against
+the same CC BY 4.0 PDF/UA-1 profile 7.21.8-1 and PDF/UA-2 profile 8.4.5.9-1.
+Content-state collection in `ValidationContext.cs` and scoped rejection
+in `ValidationPdfUADeep.cs` are independently implemented; other glyph
+lookup surfaces remain incomplete.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

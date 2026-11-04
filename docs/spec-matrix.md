@@ -338,6 +338,18 @@ findings. All UA-2 findings/verdicts are unchanged. The full Release suite
 passes 12245/12245. Sparse-slot semantics, legacy Type1 programs,
 unsupported mappings and complete font/glyph validity remain partial.
 
+The [explicit Identity CFF .notdef slice](spec-backlog.md#2026-11-04-pdfua-explicit-identity-cff-notdef-references)
+rejects shown CID 0 in Identity-H/V CIDFontType0 fonts, regardless of
+rendering mode, through existing font/Form/appearance state tracking.
+Forty-two of 44 real-font controls agree on exact rule and whole-file
+verdict; two reference-accepted double-quote negatives are independently
+confirmed as GID 0 by PyMuPDF and remain explicit disagreements.
+A fresh 435-file/870-result run closes both public .notdef misses:
+**2 UA-1 / 1 UA-2 misses remain**, zero reference-positive regressions,
+internal errors or new incomplete findings. The full Release suite passes
+12295/12295. Other font mappings, fallback glyphs, complete content
+coverage and metrics remain partial.
+
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
 adds strict A1 parameter/frame/tag inspection while preserving tolerant
 reader recovery. All 30 valid encodings have independent byte checks;

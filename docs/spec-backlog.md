@@ -4,6 +4,65 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA explicit Identity CFF notdef references
+
+The shared content walk records complete high-byte-first two-byte zero
+codes in actual text-showing strings, independently per string, under
+the selected font. PDF/UA-1 and UA-2 now reject such references for
+Type0 fonts with resolved Identity-H/Identity-V encoding and a
+CIDFontType0 descendant as `PDFUA-FONT-NOTDEF` Errors. This does not
+confuse Unicode U+0000, zero-valued positioning numbers, comments,
+unused string operands or adjacent zero bytes across code boundaries
+with CID 0. No text extraction or rendering behavior changes.
+
+The requirement provenance is the published veraPDF Consortium v1.30.3
+[UA-1 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-1.xml)
+7.21.8-1 and
+[UA-2 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2.xml)
+8.4.5.9-1, under CC BY 4.0; this is not independently obtained full ISO
+PDF/UA clause text. Public ISO 32000-1 9.7.4.2 specifies CID 0 as
+analogous to .notdef (printed page 271); 9.7.5.2 defines Identity-H/V
+strings as high-byte-first CID pairs (printed page 275). The C# check
+is independently implemented; external PDFs/fonts/profiles remain
+session-only evidence.
+
+Actual Tj, TJ, single-quote and double-quote operations are inspected
+regardless of rendering mode, including modes 3 and 7. Existing q/Q,
+Tf/ExtGState font selection, inherited/local Form state and annotation
+appearance walking are reused. Only one finding is emitted per font,
+using the page of the detected reference. Separate TJ strings are not
+concatenated into a synthetic two-byte code.
+
+Forty-four mutations of the two public real CFF files compare CID 0
+with CID 1 across all eight modes and four operators. Independent
+Python byte-pair checks and FontTools CFF inspection verify the shown
+CID and .notdef program slot. Forty-two agree with veraPDF 1.30.3 on
+exact rule and whole-file verdict: 22 clean positives, 20 negatives.
+Two double-quote CID 0 controls explicitly disagree: the reference
+accepts them, while FreeDF rejects. PyMuPDF text traces independently
+show GID 0 in both; they are not counted as reference agreement.
+
+A fresh FreeDF pass over 435 public files / 870 UA profile results,
+against retained reference reports and preceding subset-listing output,
+closes exactly the two .notdef file-verdict misses. Four finding sets
+change solely by adding this rule (including the opposite-profile
+evaluations already rejected for version/metadata). Remaining misses
+are **2 UA-1 / 1 UA-2**, with zero reference-positive regressions,
+internal errors or newly added incomplete findings.
+Fifty authored cases include font-state, byte-boundary, Form,
+appearance, ExtGState and operator controls; 28 failed on the preceding
+implementation. The combined focused selector passes 319 tests;
+the full Release suite passes 12295/12295, and the solution builds
+with the same two machine-feed NU1507 warnings.
+
+This is explicit Identity CID 0 detection, not complete .notdef or
+glyph-reference conformance. CIDFontType2 CIDToGIDMap/cmap lookup,
+simple fonts, other encoding CMaps and undefined-character fallback
+remain open. The existing bounded content walk does not establish
+complete coverage of patterns, Type3 charprocs, malformed/unsupported
+content or exhausted traversal bounds. Metrics and overall PDF/UA
+parity remain partial; historical dated measurements are retained.
+
 ## 2026-11-04 PDF/UA-1 supplied subset font listings
 
 PDF/UA-1 now inspects supplied CharSet and CIDSet listings for embedded
