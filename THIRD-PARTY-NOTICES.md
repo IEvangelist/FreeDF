@@ -66,6 +66,12 @@ prohibition were cross-checked against the same CC BY 4.0 PDF/UA-2 profile,
 8.7 tests 1/2. Configuration selection, decoded-name emptiness and null-entry
 handling in `ValidationPdfUADeep.cs` are independently implemented.
 
+The string-valued language-tag syntax checks were cross-checked against
+the same CC BY 4.0 PDF/UA-1 profile 7.2-29 and PDF/UA-2 profile 8.4.4-2.
+Page/invoked-Form Span-property inspection and shared grammar validation
+in `ValidationPdfUA.cs` and `ValidationPdfUADeep.cs` are independently
+implemented; no profile XML or reference-engine source is bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

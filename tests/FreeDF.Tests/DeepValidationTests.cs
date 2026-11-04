@@ -283,6 +283,89 @@ public class DeepValidationTests
     const string Para = "<< /Type /StructElem /S /P /P 7 0 R /Pg 3 0 R /K 0 >>";
     const string TaggedText = "/P <</MCID 0>> BDC BT 10 10 Td (x) Tj ET EMC";
 
+    public static IEnumerable<object[]> PropertyLanguageCases()
+    {
+        (string Value, bool Invalid)[] values =
+        [
+            ("(en)", false), ("(EN-us)", false), ("(i-klingon)", false),
+            ("(zh-Hant-TW)", false), ("(abcdefgh-12345678)", false),
+            ("null", false), ("()", true), ("<FEFF>", true), ("( )", true),
+            ("(-pt)", true), ("(portugues-pt)", true), ("(1-pt)", true),
+            ("(en_Us)", true), ("(en--US)", true), ("(en-123456789)", true),
+            ("<656E0A>", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var source in new[] { "direct", "named", "form" })
+        foreach (var indirect in new[] { false, true })
+        foreach (var (value, invalid) in values)
+            if (!indirect || source == "named")
+                yield return [part, source, indirect, value, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(PropertyLanguageCases))]
+    public void SpanPropertyLanguageTagsAreValidated(
+        int part, string source, bool indirect, string value, bool invalid)
+    {
+        var language = indirect ? "9 0 R" : value;
+        var properties = $"<< /Lang {language} >>";
+        var text = $"/Span {properties} BDC BT (x) Tj ET EMC";
+        var pageExtra = "";
+        var content = $"/P << /MCID 0 >> BDC {text} EMC";
+        if (source == "named")
+        {
+            content = "/P << /MCID 0 >> BDC /Span /Language BDC BT (x) Tj ET EMC EMC";
+            pageExtra = $"/Resources << /Properties << /Language {properties} >> >>";
+        }
+        else if (source == "form")
+        {
+            content = "/P << /MCID 0 >> BDC /Form Do EMC";
+            pageExtra = "/Resources << /XObject << /Form 10 0 R >> >>";
+        }
+        var pdf = Ua(content, "8 0 R", pageExtra,
+            extras: [Para, value, ObjPdf.Stream(text, "/Type /XObject /Subtype /Form /BBox [0 0 100 100]")]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(invalid, report.Has("PDFUA-LANG-INVALID"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void TrailingLineFeedIsNotPartOfAValidLanguageTag(int part, bool structure)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            extras: structure ? Para.Replace("/K 0", "/K 0 /Lang <656E0A>") : Para);
+        if (!structure)
+            pdf = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(pdf).Replace("/Lang (en)", "/Lang <656E0A>"));
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.True(report.Has("PDFUA-LANG-INVALID"));
+    }
+
+    [Theory]
+    [InlineData(1, false, "()")]
+    [InlineData(1, false, "<FEFF>")]
+    [InlineData(1, true, "()")]
+    [InlineData(1, true, "<FEFF>")]
+    [InlineData(2, false, "()")]
+    [InlineData(2, false, "<FEFF>")]
+    [InlineData(2, true, "()")]
+    [InlineData(2, true, "<FEFF>")]
+    public void PresentEmptyLanguageIsNotAConformingUaLanguageTag(int part, bool structure, string value)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            extras: structure ? Para.Replace("/K 0", $"/K 0 /Lang {value}") : Para);
+        if (!structure)
+            pdf = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(pdf).Replace("/Lang (en)", $"/Lang {value}"));
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.True(report.Has("PDFUA-LANG-INVALID"));
+    }
+
     [Fact]
     public void ContentTaggingConformantPageIsClean()
     {

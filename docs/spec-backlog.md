@@ -4,6 +4,66 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA property-list language syntax
+
+The existing page/invoked-Form content walk now checks string-valued `Lang`
+in Span marked-content property lists, including named resource properties
+and indirect language strings in those resource dictionaries. Both UA profiles
+reuse the existing RFC 3066 shape expression; absolute anchors reject a final
+line feed rather than accepting the prefix before it. Present empty/BOM-only
+catalog and structure language strings now also receive `PDFUA-LANG-INVALID`.
+UA-2 language finding references are corrected to 8.4.4. This is grammar
+validation, not IANA registration or semantic language identification.
+
+The predicate provenance is the veraPDF Consortium's CC BY 4.0 v1.30.3
+UA-1 profile 7.2-29 and standalone UA-2 profile 8.4.4-2, pinned at
+`c4f57effb0d3618827c87bd71882930d752be6e3`. Full ISO PDF/UA clause text
+was not independently obtained. Public ISO 32000-1 14.9.2 (printed pp611-612)
+defines language identifiers and their hierarchy; base PDF permits empty
+identifiers as unknown, whereas these UA profile predicates require a tag.
+[RFC 3066 2.1](https://www.rfc-editor.org/rfc/rfc3066.html#section-2.1)
+supplies the exact primary/subtag character grammar.
+
+The corrected authored set has 140 cases. The first valid-syntax baseline
+had 44 failures/132 cases; subsequently enabling matching UA-2 coverage and
+empty catalog/structure cases exposed 48 failures/136 cases in a separate
+red stage. An initial draft incorrectly used indirect references inside
+inline content dictionaries; those illegal content-stream cases were removed,
+not accommodated by changing the parser. Indirect resource values remain
+tested. Final full Release passes **12864/12864**, zero skipped; solution
+build has zero errors and the same two machine-feed NU1507 warnings.
+All 18 Python cross-check tool tests pass.
+
+Independent mutations of native UA-1 and UA-2 public fixtures produce
+**76 exact-rule/whole-file agreements: 28 clean positives, 48 negatives**.
+Direct/named/empty invoked-Form declarations, mixed-case and grandfathered
+tag shapes, invalid primary subtags, empty/BOM-only strings, and final LF
+are covered. They are mutations of two documents, not 76 independent layouts.
+The retained pre-fix UaDump accepts all initial 30 UA-1 controls, including
+18 independently invalid property declarations.
+
+A fresh 435-file/870-result run changes exactly 24 finding sets: six native
+UA-1 documents, six native UA-2 documents, and their cross-profile evaluations
+gain the previously missing syntax Error. There are no verdict changes,
+reference-positive regressions, new internal or incomplete findings.
+Mapped syntax-family overlap is now **16/16 UA-1** and **17/17 UA-2** native
+reference failures; matching a finding family still does not establish full
+predicate or standards coverage. File-verdict misses remain **0 UA-1 / 0 UA-2**.
+
+Scope remains bounded by the existing parsed-structure, page/invoked-Form
+walk: non-Span or unused properties, appearance-only/unreachable streams,
+non-string language values, traversal truncation, complete language
+determinability and registry checks are not newly covered. No base-PDF reader
+restriction is added.
+
+The preceding tooltip investigation is explicitly **not implemented**:
+12 real-field mutations show veraPDF 7.2-25 accepts catalog or the associated
+Form element's own language, but not inherited structure language or a Widget
+Lang entry. ISO 32000-1 14.9.2.3 defines structure-language inheritance, but its
+precise application to field tooltip strings needs stronger PDF/UA evidence.
+FreeDF's inherited-language fallback is retained; reproducing the reference's
+stricter behaviour without that evidence is not treated as a parity fix.
+
 ## 2026-11-04 PDF/UA optional-content configuration boundaries
 
 The clause-level review after corpus exhaustion found an over-rejection:

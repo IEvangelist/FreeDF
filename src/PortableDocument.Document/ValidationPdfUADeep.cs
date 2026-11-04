@@ -506,7 +506,7 @@ internal static class PdfUADeepChecks
             c.Add("PDFUA-FORM-REUSED-TAGGED", ValidationSeverity.Error, "a Form XObject containing marked content with MCIDs is invoked more than once, so its content has no unique semantic parent (veraPDF PDFUA-1 7.20-2; heuristic, per-invocation structure is not evaluated)", "ISO 14289-1 7.20");
     }
 
-    sealed class ScanBudget { public int Steps; public bool UntaggedReported, ArtifactReported, NestingReported; public Dictionary<PdfStream, (int Count, bool HasMcid)> Forms = new(ReferenceEqualityComparer.Instance); }
+    sealed class ScanBudget { public int Steps; public bool UntaggedReported, ArtifactReported, NestingReported, LanguageReported; public Dictionary<PdfStream, (int Count, bool HasMcid)> Forms = new(ReferenceEqualityComparer.Instance); }
 
     const int MaxScanSteps = 5_000_000;
     const int MaxFormDepth = 8;
@@ -547,6 +547,13 @@ internal static class PdfUADeepChecks
                     {
                         var tag = operands.Count > 0 ? operands[0].AsName() : null;
                         PdfDictionary? d = operands.Count > 1 ? operands[1] as PdfDictionary ?? (operands[1].AsName() is { } n ? f.Resolve(props?.Get(n)) as PdfDictionary : null) : null;
+                        if (tag == "Span" && !budget.LanguageReported
+                            && f.Resolve(d?.Get("Lang")) is PdfString language && !PdfUAChecks.LangTag().IsMatch(language.Text))
+                        {
+                            budget.LanguageReported = true;
+                            c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error,
+                                $"Span property /Lang '{language.Text}' is not a well-formed language tag", Clause(c, "7.2", "8.4.4"), page);
+                        }
                         int? mcid = d is not null && f.Resolve(d.Get("MCID")).AsNumber() is { } m ? (int)m : null;
                         var artifact = tag == "Artifact";
                         if (mcid is { } id)

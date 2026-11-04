@@ -384,6 +384,18 @@ has no verdict changes: native UA-1/UA-2 outputs are unchanged, and two
 cross-profile UA-2-on-UA-1 evaluations lose an unnecessary name Error.
 Existing traversal bounds and incomplete rule/semantic coverage remain.
 
+The [property-list language syntax check](spec-backlog.md#2026-11-04-pdfua-property-list-language-syntax)
+validates Span Lang strings in page/invoked-Form content and named properties,
+rejects present empty catalog/structure tags and trailing LF, and corrects
+UA-2 clause references. All 76 independent controls agree exactly/whole-file
+(28 positives, 48 negatives). Full Release passes 12864/12864. A fresh
+435-file/870-result run adds the correct syntax finding to 24 evaluations
+without verdict changes; native syntax-family overlap is 16/16 UA-1 and
+17/17 UA-2. Non-string/unused/non-Span properties, appearance-only streams,
+full language determinability and registry semantics remain outside this
+slice. The tooltip inheritance/reference discrepancy is documented, not
+silently resolved in favour of reference rejection.
+
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
 adds strict A1 parameter/frame/tag inspection while preserving tolerant
 reader recovery. All 30 valid encodings have independent byte checks;

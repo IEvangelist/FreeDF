@@ -7,8 +7,8 @@ namespace PortableDocument.Document;
 internal static partial class PdfUAChecks
 {
     // RFC 3066 shape, as ISO 14289 requires of ISO 32000 14.9.2 language identifiers (veraPDF PDFUA-1 7.2-29 accepts 1-8 letter primary subtags).
-    [GeneratedRegex(@"^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*$")]
-    private static partial Regex LangTag();
+    [GeneratedRegex(@"\A[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*\z")]
+    internal static partial Regex LangTag();
 
     public static void Run(ValidationContext c)
     {
@@ -52,10 +52,10 @@ internal static partial class PdfUAChecks
         {
             // UA-1 only requires that the language of text be determinable (checked per structure element); UA-2 requires the catalog entry.
             if (c.Part != 1 || c.Doc.Structure is null)
-                c.Add("PDFUA-LANG", ValidationSeverity.Error, "catalog /Lang is missing or empty", Clause(c, "7.2", "8.4.2"));
+                c.Add("PDFUA-LANG", ValidationSeverity.Error, "catalog /Lang is missing or empty", Clause(c, "7.2", "8.4.4"));
         }
-        else if (!LangTag().IsMatch(lang))
-            c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"catalog /Lang '{lang}' is not a well-formed language tag", Clause(c, "7.2", "8.4.2"));
+        if (lang is not null && !LangTag().IsMatch(lang))
+            c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"catalog /Lang '{lang}' is not a well-formed language tag", Clause(c, "7.2", "8.4.4"));
         if (f.Resolve(f.Catalog.Get("ViewerPreferences")) is not PdfDictionary vp || f.Resolve(vp.Get("DisplayDocTitle")) is not PdfBoolean { Value: true })
             c.Add("PDFUA-DISPLAYDOCTITLE", ValidationSeverity.Error, "ViewerPreferences /DisplayDocTitle is not true", Clause(c, "7.1", "8.5"));
     }
@@ -250,12 +250,12 @@ internal static partial class PdfUAChecks
         var reported = catalogLang || c.Part != 1;
         foreach (var e in tree.Elements())
         {
-            if (e.Lang is { Length: > 0 } l && !LangTag().IsMatch(l))
-                c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"element /{e.Type} has malformed /Lang '{l}'", Clause(c, "7.2", "8.4.2"), e.PageIndex);
+            if (e.Lang is { } l && !LangTag().IsMatch(l))
+                c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"element /{e.Type} has malformed /Lang '{l}'", Clause(c, "7.2", "8.4.4"), e.PageIndex);
             if (!reported && string.IsNullOrEmpty(e.EffectiveLang) && e.MarkedContent.Any(m => c.TextMcids.Contains((m.PageIndex ?? e.PageIndex ?? -1, m.Mcid))))
             {
                 reported = true;
-                c.Add("PDFUA-LANG", ValidationSeverity.Error, $"no catalog /Lang and /{e.Type} content has no inherited /Lang, so its natural language is not determinable (veraPDF PDFUA-1 7.2-34 considers text items)", Clause(c, "7.2", "8.4.2"), e.PageIndex);
+                c.Add("PDFUA-LANG", ValidationSeverity.Error, $"no catalog /Lang and /{e.Type} content has no inherited /Lang, so its natural language is not determinable (veraPDF PDFUA-1 7.2-34 considers text items)", Clause(c, "7.2", "8.4.4"), e.PageIndex);
             }
         }
     }
