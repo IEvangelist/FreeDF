@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A known-prohibited action context correction
+
+The legacy `PDFA-ACTION` check now shares the bounded inert action
+report and its established event/root filters with subtype and Named
+checks, instead of scanning unrelated dictionaries. The same known
+prohibited set, part-specific GoToE policy, optional Type filter,
+clauses and single legacy finding are preserved. Actual disallowed
+actions still also receive `PDFA-ACTION-TYPE`. Action traversal or
+finding exhaustion remains an explicit incomplete Error, not a pass.
+The pinned rule is ISO 19005-1 6.6.1 test 1 or ISO 19005-2/3 6.5.1
+test 1 at profile commit `c4f57effb0d3618827c87bd71882930d752be6e3`.
+
+All 63 independent controls agree with veraPDF 1.30.3 on the exact
+rule and whole-file verdict: 42 positives and 21 negatives.
+Launch, Hide and GoToE are tested in actual OpenAction, Link and Next
+contexts versus unused, extension, unknown-AA-event and array-root
+dictionaries. This corrects 28 prior false rejections without losing
+any reference negative in these controls. The 84 Named controls were
+also rerun unchanged and still agree. Reports, before/after results
+and per-file hashes remain session artifacts.
+The 252 authored cases cover all 12 legacy known kinds in all seven
+contexts and three parts; 136 failed before this correction.
+The full Release suite now passes 9951 tests, zero failed/skipped;
+the solution builds with existing machine feed warnings unchanged.
+
+This closes the demonstrated action-context false positives, not
+exhaustive action-source discovery, unknown event/root-kind validity,
+required parameters, destination validity or dispatch semantics.
+No actions or external files are executed. Historical corpus counts
+and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A named-action context correction
 
 `PDFA-ACTION-NAMED` now checks the existing bounded inert action report

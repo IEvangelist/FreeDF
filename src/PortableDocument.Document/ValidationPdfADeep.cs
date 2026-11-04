@@ -10,6 +10,9 @@ namespace PortableDocument.Document;
 /// </summary>
 internal static partial class PdfADeepChecks
 {
+    static readonly HashSet<string> ForbiddenActions = new(StringComparer.Ordinal)
+        { "Launch", "Sound", "Movie", "ResetForm", "ImportData", "Hide", "JavaScript", "SetOCGState", "Rendition", "Trans", "GoTo3DView" };
+
     [GeneratedRegex("^[A-Z]{6}\\+")]
     private static partial Regex SubsetPrefix();
 
@@ -300,12 +303,20 @@ internal static partial class PdfADeepChecks
         var actionFindings = 0;
         var actionIncomplete = actions.Truncated;
         var namedReported = false;
+        var prohibitedReported = false;
         foreach (var action in actions.Actions)
         {
             if (action.EventKey is not null && action.Event is null) continue;
             var rootArray = action.Trigger.IndexOf('[');
             var nextHop = action.Trigger.IndexOf("/Next", StringComparison.Ordinal);
             if (rootArray >= 0 && (nextHop < 0 || rootArray < nextHop)) continue;
+            if (!prohibitedReported && action.ActionType is { } actionType
+                && (ForbiddenActions.Contains(actionType) || c.Part == 1 && actionType == "GoToE")
+                && f.Resolve(action.Dictionary.Get("Type")) is null or PdfNull or PdfName { Value: "Action" })
+            {
+                prohibitedReported = true;
+                c.Add("PDFA-ACTION", ValidationSeverity.Error, $"action /{actionType} is not permitted", Clause(c, "6.6.1", "6.5.1", "6.5.1"), action.PageIndex);
+            }
             if (!namedReported && action.ActionType == "Named"
                 && f.Resolve(action.Dictionary.Get("N")).AsName() is not ("NextPage" or "PrevPage" or "FirstPage" or "LastPage"))
             {

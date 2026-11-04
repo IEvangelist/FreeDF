@@ -184,6 +184,13 @@ correcting 36 false rejections without losing a reference negative.
 Unknown-event/root-kind validity and the separate known-prohibited
 all-object scan remain outside this correction.
 
+The subsequent [known-prohibited context correction](spec-backlog.md#2026-11-04-pdfa-known-prohibited-action-context-correction)
+moves that legacy scan onto the same bounded action report, preserving
+its ID, kind/Type policy and explicit incompleteness. All 63 controls
+agree on exact rules and verdicts, correcting 28 more false rejections;
+the 84 Named controls remain unchanged. Exhaustive action sources,
+required parameters and root/event validity remain open.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource
