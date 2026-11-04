@@ -77,6 +77,7 @@ class RuleOverlapTests(unittest.TestCase):
         (1, "7.10-2", "PDFUA-OC-AS"),
         (1, "7.11-1", "PDFUA-FILESPEC-UF"),
         (1, "7.16-1", "PDFUA-ENCRYPT-ACCESS"),
+        (1, "7.15-1", "PDFUA-XFA-DYNAMIC"),
         (2, "5-1", "PDFUA-XMP-ID-MISSING"),
         (2, "5-3", "PDFUA-XMP-ID-PREFIX"),
         (2, "8.4.4-1", "PDFUA-LANG"),
@@ -112,6 +113,10 @@ class RuleOverlapTests(unittest.TestCase):
     def test_unimplemented_reference_rule_remains_unmapped(self):
         self.assertIn("  unimplemented-1*: 1 / 0 / 1",
                       self.overlap(2, "unimplemented-1", ["PDFUA-FONT-WIDTH"]))
+
+    def test_incomplete_xfa_is_not_dynamic_rule_overlap(self):
+        self.assertIn("  7.15-1: 1 / 0 / 1",
+                      self.overlap(1, "7.15-1", ["PDFUA-XFA-INCOMPLETE"]))
 
 
 class ProfileSelectionTests(unittest.TestCase):

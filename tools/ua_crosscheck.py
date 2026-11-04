@@ -54,6 +54,7 @@ RULE_MAP = {
         "7.21.5-1": ["PDFUA-FONT-WIDTH"], "7.21.7-2": ["PDFUA-FONT-TOUNICODE-VALUE"], "7.21.8-1": ["PDFUA-FONT-NOTDEF"],
         "7.10-1": ["PDFUA-OC-NAME"], "7.10-2": ["PDFUA-OC-AS"],
         "7.11-1": ["PDFUA-FILESPEC-UF"], "7.16-1": ["PDFUA-ENCRYPT-ACCESS"],
+        "7.15-1": ["PDFUA-XFA-DYNAMIC"],
     },
     2: {
         "5-2": ["PDFUA-XMP-ID-PART"], "5-4": ["PDFUA-XMP-ID-PREFIX"], "5-5": ["PDFUA2-XMP-ID-REV"], "6.1-1": ["PDFUA2-VERSION"], "6.2-1": ["PDFUA-MARKINFO"],

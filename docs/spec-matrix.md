@@ -396,6 +396,17 @@ full language determinability and registry semantics remain outside this
 slice. The tooltip inheritance/reference discrepancy is documented, not
 silently resolved in favour of reference rejection.
 
+The [UA-1 dynamic-XFA configuration check](spec-backlog.md#2026-11-04-ua-1-dynamic-xfa-configuration)
+replaces the NeedsRendering proxy with bounded inert XCI 3.0 configuration
+inspection and a separate incomplete Error. Corrected real-document
+controls have 36 exact-rule/whole-file agreements (30 clean positives/six
+negatives), four newly rejected dynamics and ten corrected canonical
+static acceptances. Twelve namespace disagreements remain explicit; the
+initial unused-font masking error is not counted as clean evidence.
+UA-2 is unchanged. Full Release passes 13163/13163; fresh 435-file/870-result
+public-corpus outputs are unchanged. Other XCI versions, full schema
+semantics, rendering and complete dynamic-XFA parity remain open.
+
 The [UA-1 embedded-file name boundary fix](spec-backlog.md#2026-11-04-ua-1-embedded-file-unicode-name-boundaries)
 rejects marker-only Unicode UF names and treats resolved-null EF as
 omission. Independent native-document controls show three corrected

@@ -91,6 +91,15 @@ independently implemented using ISO 32000-1 text-string/null semantics;
 F encoding and indirect-null reference disagreements are retained in
 the specification backlog rather than represented as full agreement.
 
+The UA-1 dynamicRender requirement was cross-checked against the same
+CC BY 4.0 PDF/UA-1 profile, 7.15-1, and the publicly indexed PDF
+Association [Matterhorn Protocol 1.1](https://pdfa.org/wp-content/uploads/2021/04/Matterhorn-Protocol-1-1.pdf),
+checkpoint 25-001 (copyright 2021 PDF Association, CC BY 4.0).
+Bounded namespace-aware configuration inspection in `ValidationPdfUADeep.cs`
+independently reuses the repository's inert XML parser; no source XML,
+schema or protocol PDF is bundled. Namespace/reference limits and source
+retrieval limitations are documented in the specification backlog.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

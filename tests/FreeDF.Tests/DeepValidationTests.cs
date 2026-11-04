@@ -604,6 +604,94 @@ public class DeepValidationTests
         Assert.False(U(Ua(TaggedText, "8 0 R", extras: [Para, "<< /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F 10 0 R >> >>", ObjPdf.Stream("x", "/Type /EmbeddedFile")])).Has("PDFUA-FILESPEC-UF"));
     }
 
+    const string XfaConfigNamespace = "http://www.xfa.org/schema/xci/3.0/";
+
+    public static IEnumerable<object[]> DynamicXfaCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var stream in new[] { false, true })
+        foreach (var needs in new[] { "", "/NeedsRendering false", "/NeedsRendering true" })
+        foreach (var value in new[] { "required", "forbidden", "", "Required", " required " })
+            yield return [part, stream, needs, value, part == 1 ? value == "required" : needs == "/NeedsRendering true"];
+    }
+
+    [Theory]
+    [MemberData(nameof(DynamicXfaCases))]
+    public void Ua1DynamicXfaUsesConfigurationInsteadOfRenderingFlag(
+        int part, bool stream, string needs, string value, bool dynamic)
+    {
+        var config = $"<config xmlns='{XfaConfigNamespace}'><acrobat><acrobat7><dynamicRender>{value}</dynamicRender></acrobat7></acrobat></config>";
+        var xml = stream ? $"<xdp:xdp xmlns:xdp='http://ns.adobe.com/xdp/'>{config}</xdp:xdp>" : config;
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: $"{needs} /AcroForm << /Fields [] /XFA {(stream ? "9 0 R" : "[(config) 9 0 R]")} >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(dynamic, report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-XFA-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("<config xmlns='urn:foreign'><acrobat><acrobat7><dynamicRender>required</dynamicRender></acrobat7></acrobat></config>")]
+    [InlineData("<config><acrobat><acrobat7><dynamicRender>required</dynamicRender></acrobat7></acrobat></config>")]
+    [InlineData("<config xmlns='http://www.xfa.org/schema/xci/3.0/'><dynamicRender>required</dynamicRender></config>")]
+    [InlineData("<config xmlns='http://www.xfa.org/schema/xci/3.0/'><acrobat><acrobat7><dynamicRender xmlns='urn:foreign'>required</dynamicRender></acrobat7></acrobat></config>")]
+    public void LookalikeXfaElementsAreNotDynamicConfiguration(string xml)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: "/NeedsRendering true /AcroForm << /XFA [(config) 9 0 R] >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        var report = U(pdf);
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<config>")]
+    [InlineData("<!DOCTYPE config SYSTEM 'https://invalid.example/never-load'><config/>")]
+    public void MalformedXfaConfigurationIsExplicitlyIncomplete(string xml)
+    {
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: "/AcroForm << /XFA [(config) 9 0 R] >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        var report = U(pdf);
+        Assert.True(report.Has("PDFUA-XFA-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("null", false)]
+    [InlineData("9 0 R", false)]
+    [InlineData("99 0 R", false)]
+    [InlineData("[]", false)]
+    [InlineData("[(config)]", true)]
+    [InlineData("[(config) null]", true)]
+    [InlineData("[(config) 99 0 R]", true)]
+    [InlineData("(not packets)", true)]
+    public void XfaPacketBoundariesDoNotSilentlyLookComplete(string xfa, bool incomplete)
+    {
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: $"/AcroForm << /XFA {xfa} >>",
+            extras: [Para, "null"]);
+        var report = U(pdf);
+        Assert.Equal(incomplete, report.Has("PDFUA-XFA-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
+    }
+
+    [Fact]
+    public void XfaConfigurationInspectionIsBounded()
+    {
+        var xml = $"<config xmlns='{XfaConfigNamespace}'>" + string.Concat(Enumerable.Repeat("<a>", 70))
+            + string.Concat(Enumerable.Repeat("</a>", 70)) + "</config>";
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: "/AcroForm << /XFA [(config) 9 0 R] >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        Assert.True(U(pdf).Has("PDFUA-XFA-INCOMPLETE"));
+        var packets = string.Concat(Enumerable.Repeat("(config) 9 0 R ", 1001));
+        pdf = Ua(TaggedText, "8 0 R", catalogExtra: $"/AcroForm << /XFA [{packets}] >>",
+            extras: [Para, ObjPdf.Stream($"<config xmlns='{XfaConfigNamespace}'/>")]);
+        Assert.Single(U(pdf).Findings, f => f.RuleId == "PDFUA-XFA-INCOMPLETE");
+    }
+
     public static IEnumerable<object[]> FileSpecificationNameCases()
     {
         foreach (var part in new[] { 1, 2 })

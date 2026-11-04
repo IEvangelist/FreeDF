@@ -21,7 +21,8 @@ internal static class PdfUADeepChecks
             c.Add("PDFUA-SUSPECTS", ValidationSeverity.Error, "MarkInfo /Suspects is true (tagged content is declared unreliable)", Clause(c, "7.1", "8.2"));
         if (c.Part == 1 && !System.Text.RegularExpressions.Regex.IsMatch(f.Version ?? "", @"^1\.[0-7]$"))
             c.Add("PDFUA-VERSION", ValidationSeverity.Error, $"file header version '{f.Version}' is not PDF 1.0 to 1.7", "ISO 14289-1 6.1");
-        if (f.Resolve(f.Catalog.Get("NeedsRendering")) is PdfBoolean { Value: true } && f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary af && af.Get("XFA") is not null)
+        if (c.Part == 1) DynamicXfa(c);
+        else if (f.Resolve(f.Catalog.Get("NeedsRendering")) is PdfBoolean { Value: true } && f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary af && af.Get("XFA") is not null)
             c.Add("PDFUA-XFA-DYNAMIC", ValidationSeverity.Error, "dynamic XFA rendering is required (/NeedsRendering true with an XFA form)", Clause(c, "7.15", "8.9"));
         if (f.Resolve(f.Catalog.Get("OCProperties")) is PdfDictionary oc)
         {
@@ -53,6 +54,72 @@ internal static class PdfUADeepChecks
         }
         if (c.Doc.Pages.Count > 20 && f.Resolve(f.Catalog.Get("Outlines")) is not PdfDictionary)
             c.Add("PDFUA-BOOKMARKS", ValidationSeverity.Info, $"document has {c.Doc.Pages.Count} pages and no /Outlines (navigation aid recommended; advisory only, no veraPDF counterpart)");
+    }
+
+    static void DynamicXfa(ValidationContext c)
+    {
+        const string configNamespace = "http://www.xfa.org/schema/xci/3.0/";
+        var f = c.F;
+        var xfa = c.Doc.GetXfaData();
+        bool incomplete = false, dynamic = false;
+        var remainingBytes = XfaReader.MaxBytes;
+        if (xfa is null or PdfNull) return;
+        if (xfa is PdfStream document) Inspect(document);
+        else if (xfa is PdfArray packets)
+        {
+            if (packets.Count % 2 != 0 || packets.Count > 2000) Incomplete();
+            for (var i = 0; i + 1 < Math.Min(packets.Count, 2000); i += 2)
+            {
+                if (f.Resolve(packets[i]) is not PdfString name || f.Resolve(packets[i + 1]) is not PdfStream packet)
+                {
+                    Incomplete();
+                    continue;
+                }
+                if (name.Text == "config") Inspect(packet);
+            }
+        }
+        else Incomplete();
+
+        void Inspect(PdfStream packet)
+        {
+            if (remainingBytes <= 0) { Incomplete(); return; }
+            byte[] data;
+            try { data = f.DecodeStream(packet); }
+            catch (Exception e) when (e is PdfParseException or InvalidDataException or InvalidOperationException)
+            {
+                Incomplete();
+                return;
+            }
+            if (data.Length > remainingBytes) { remainingBytes = 0; Incomplete(); return; }
+            remainingBytes -= data.Length;
+            var xml = XfaReader.ParseXml(data);
+            if (xml.Error is not null || xml.Truncated) { Incomplete(); return; }
+            if (xml.Root is not { } root) { Incomplete(); return; }
+            var configs = root.Name == "xdp" && root.Namespace == "http://ns.adobe.com/xdp/"
+                ? root.Children : [root];
+            foreach (var config in configs.Where(e => e.Name == "config" && e.Namespace == configNamespace))
+                foreach (var acrobat in Children(config, "acrobat"))
+                    foreach (var acrobat7 in Children(acrobat, "acrobat7"))
+                        if (!dynamic && Children(acrobat7, "dynamicRender").Any(e => e.Text == "required"))
+                        {
+                            dynamic = true;
+                            c.Add("PDFUA-XFA-DYNAMIC", ValidationSeverity.Error,
+                                "XFA configuration requires dynamic rendering (/config/acrobat/acrobat7/dynamicRender)",
+                                "ISO 14289-1 7.15");
+                        }
+        }
+
+        static IEnumerable<XfaElement> Children(XfaElement parent, string name) =>
+            parent.Children.Where(e => e.Name == name && e.Namespace == configNamespace);
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA-XFA-INCOMPLETE", ValidationSeverity.Error,
+                "dynamic XFA configuration inspection is incomplete because packet references, decoding, XML or inspection limits could not be resolved",
+                "ISO 14289-1 7.15");
+        }
     }
 
     static readonly Dictionary<string, string> PredefinedCMapOrdering = BuildPredefinedCMaps();

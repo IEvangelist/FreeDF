@@ -4,6 +4,72 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 UA-1 dynamic XFA configuration
+
+`PDFUA-XFA-DYNAMIC` now inspects the inert XFA configuration for UA-1
+instead of using catalog NeedsRendering as a proxy. The supported path
+is `config/acrobat/acrobat7/dynamicRender` in the
+`http://www.xfa.org/schema/xci/3.0/` namespace, with exact text `required`.
+Both named config packets and a config child of a single XDP stream are
+checked. A forbidden/missing/differently cased/whitespace-padded value or
+wrong-path element does not establish that predicate. UA-2 retains its
+previous behaviour; this does not add XFA rendering or execute scripts.
+
+The factual predicate is cross-checked against the pinned veraPDF v1.30.3
+UA-1 profile 7.15-1. The PDF Association's CC BY 4.0
+[Matterhorn Protocol 1.1](https://pdfa.org/wp-content/uploads/2021/04/Matterhorn-Protocol-1-1.pdf),
+checkpoint 25-001, identifies the dynamicRender value `required` as the
+failure condition. Its publicly indexed content was available, but direct
+PDF retrieval and the Adobe XFA 3.3 specification download returned 403.
+Full XFA schema semantics and the full ISO UA-1 clause were not
+independently obtained. The implemented namespace/path subset is supported
+by the native fixture and independent controls, not claimed as exhaustive.
+
+The existing inert `XfaReader.ParseXml` supplies DTD prohibition, no XML
+resolver, and byte/element/depth/text bounds. Validation visits at most
+1000 packet pairs with a shared 32 MiB decoded configuration/XML budget.
+Malformed packet references, undecodable selected streams, malformed or
+truncated XML and inspection limits produce a separate bounded Error,
+`PDFUA-XFA-INCOMPLETE`, not a dynamic-rendering finding or a silent pass.
+The byte budget is checked after the existing stream decoder returns;
+this is not a new bounded-inflate guarantee. Other packet XML is not
+parsed merely to classify configuration. Foreign/no-namespace lookalikes,
+other XCI versions, full schema validity and template/data interpretation
+remain outside this subset.
+
+The 76 authored controls cover both profiles, packet/single-XDP forms,
+three rendering-flag states, five values, namespace/path lookalikes,
+malformed/DTD XML, null/dangling/malformed packet references and depth/
+packet bounds. The pre-fix run has 24 failures; focused XFA/deep-validation
+passes 843 tests, full Release **13163/13163**, zero skipped. Solution
+build has zero errors and the two retained machine-feed NU1507 warnings.
+All 19 Python tool tests pass; incomplete XFA does not count as overlap.
+
+The first 48 real-document controls exposed a pre-existing, independent
+font Error: the native dynamic fixture has no page content but an unused
+unembedded page font resource. That initial masked run is retained rather
+than counted as clean positives. Corrected controls remove only that
+unused page font resource, preserve all XFA packets/template/data and
+structure, and confirm the page content remains empty. An isolated build
+of exact pre-fix commit `672d83b6` measures those same corrected files.
+
+All **36 canonical-namespace controls agree on exact rule and whole-file
+verdict**: 30 clean positives and six dynamic negatives. Four required
+configurations with absent/false NeedsRendering are newly rejected; ten
+canonical static controls with NeedsRendering true are newly accepted.
+Twelve additional foreign/no-namespace controls explicitly disagree with
+the reference, which matches their local names despite the namespace
+difference. FreeDF does not turn these lookalikes into the supported XCI
+predicate; four lose the previous flag-only rejection. Those twelve are
+not counted as exact-rule agreement or established normative positives.
+Every UA-2 output is unchanged.
+
+Fresh measurement of all 435 public PDFs/870 profile results is identical
+to the preceding file-specification run: no finding/verdict changes,
+regressions or new incomplete/internal findings. Native UA-1 7.15-1 now
+has mapped-family overlap 1/1; this is not complete dynamic-XFA or PDF/UA
+parity. No external PDFs, XML, schema or runtime are bundled.
+
 ## 2026-11-04 UA-1 embedded-file Unicode name boundaries
 
 The existing `PDFUA-FILESPEC-UF` check now measures the decoded UF text
