@@ -205,6 +205,51 @@ The first quiet log does not establish its cause; no deterministic cause or
 unrelated-failure attribution is claimed. Diagnostic final/control TRX files
 are retained.
 
+## 2026-11-04 PDF/UA TrueType Differences glyph names
+
+Non-symbolic TrueType `/Differences` names are now checked against the
+literal Adobe Glyph List, with reserved `.notdef` accepted separately.
+Names such as `/uni0060`, `/u0060`, `/grave.alt` and `/grave_grave` remain
+supported by the extraction algorithm, but do not meet this literal-name
+validation requirement. `PDFUA-FONT-TRUETYPE-DIFFERENCES` reports violations
+under UA-1 7.21.6 / UA-2 8.4.5.7, profile test 2. Symbolic and nonembedded
+cases retain their respective rules; this name requirement does not depend
+on embedding. The related existing encoding finding now cites UA-2 8.4.5.7
+instead of the old broad 8.8 citation.
+
+The existing internal glyph-list reader and both exact official resources
+move from Content to Core so Document can reuse literal membership without
+a circular dependency, duplicate tables or a new public API. Content retains
+the same lookup algorithm. Resource SHA-256/count and all 4,281 official
+name-to-text mappings remain pinned; the generation script targets the new
+location. Adobe's embedded notices and data bytes are unchanged.
+
+There are 190 authored cases: 160 direct/indirect name tests across both
+profiles, symbolic/non-symbolic and embedded/nonembedded fonts (40 red before
+the fix), plus 30 malformed/empty/null/budget-boundary cases. Invalid array
+syntax/types/byte-code ranges or more than 10,000 entries produce Error
+`PDFUA-FONT-ENCODING-INCOMPLETE`; optional null values, including missing
+indirect references resolved as PDF null, retain absent-entry semantics.
+Twenty mutated public-font controls agree with veraPDF on exact test 2
+(ten rule positives/ten negatives), including the distinction between literal
+and algorithmic names and the `.notdef` exception. These controls do not
+establish whole-file conformance or usefulness of extracted Unicode.
+
+The full 435-file differential closes exactly the two public `t02-fail-d`
+character-encoding misses relative to the symbolic-header checkpoint.
+UA-1 now has 147 both-fail / 141 both-pass / 9 misses; both explicit UA-2
+profiles have 79 both-fail / 54 both-pass / 5 misses. No public positive
+changes, false positives, exclusions or incomplete encoding scans occur.
+Embedded-program Microsoft Unicode (3,1) presence for Differences,
+non-symbolic glyph lookup, subset coverage, widths, used-character Unicode,
+`.notdef` use, table headers and other remaining parity gaps stay open.
+Mapped family IDs in the comparison tool are not complete predicate coverage.
+
+After integrating upstream PNG fixes and the delivered dictionary/field
+corrections, the full Release suite passes 4164/4164 (zero skipped), the
+solution build has zero errors/two machine-feed NU1507 warnings, and all
+15 comparison-tool regressions pass.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects

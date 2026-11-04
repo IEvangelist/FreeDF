@@ -34,6 +34,12 @@ incomplete-header errors. Ten mutated real-font controls agree with the exact
 reference rules; all 435 corpus verdicts remain unchanged (10/6 misses).
 Subtable mappings, glyph programs, non-symbolic use and FontFile3 remain open.
 
+The [literal TrueType Differences-name check](spec-backlog.md#2026-11-04-pdfua-truetype-differences-glyph-names)
+closes the two character-encoding misses: 9 UA-1 / 5 UA-2 remaining misses,
+zero false positives/exclusions. The shared official AGL data now resides in
+Core; extraction's algorithmic-name support is unchanged. Twenty exact-rule
+controls agree; glyph lookup and embedded-program requirements remain partial.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded

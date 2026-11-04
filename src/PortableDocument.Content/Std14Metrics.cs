@@ -1,4 +1,5 @@
 using System.Globalization;
+using PortableDocument.Core;
 
 namespace PortableDocument.Content;
 

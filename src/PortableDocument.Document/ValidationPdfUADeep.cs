@@ -130,6 +130,39 @@ internal static class PdfUADeepChecks
                 Clause(c, "7.21.6", "8.4.5.7"), use.Page);
     }
 
+    static void TrueTypeDifferences(ValidationContext c, ValidationContext.FontUse use, PdfDictionary encoding)
+    {
+        var raw = encoding.Get("Differences");
+        if (raw is null || c.F.Resolve(raw) is PdfNull) return;
+        var name = FontChecks.Name(c.F, use.Font);
+        if (c.F.Resolve(raw) is PdfArray { Count: <= 10_000 } differences)
+        {
+            long? code = null;
+            foreach (var item in differences.Items)
+            {
+                switch (c.F.Resolve(item))
+                {
+                    case PdfInteger { Value: >= 0 and <= 255 } next:
+                        code = next.Value;
+                        break;
+                    case PdfName glyph when code is >= 0 and <= 255:
+                        if (glyph.Value != ".notdef" && !GlyphList.ContainsName(glyph.Value))
+                        {
+                            c.Add("PDFUA-FONT-TRUETYPE-DIFFERENCES", ValidationSeverity.Error, $"non-symbolic TrueType font {name} has a /Differences name /{glyph.Value} not listed in the Adobe Glyph List", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
+                            return;
+                        }
+                        code++;
+                        break;
+                    default:
+                        c.Add("PDFUA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect malformed /Differences of {name}: expected a byte character code followed by glyph names", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
+                        return;
+                }
+            }
+        }
+        else
+            c.Add("PDFUA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot inspect /Differences of {name}: non-array value or more than 10000 entries", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
+    }
+
     /// <summary>ISO 14289-1 7.21.3.1/7.21.3.3 (CMaps and CIDSystemInfo) and 7.21.6 (TrueType encodings); see veraPDF PDFUA-1 7.21.3.1-1, 7.21.3.3-1/2, 7.21.6-2/3.</summary>
     static void CompositeAndTrueTypeEncoding(ValidationContext c, ValidationContext.FontUse use, PdfDictionary font, string? subtype)
     {
@@ -141,10 +174,11 @@ internal static class PdfUADeepChecks
             if (symbolic) SymbolicTrueTypeCmap(c, use, desc);
             var enc = f.Resolve(font.Get("Encoding"));
             if (symbolic && enc is not null and not PdfNull)
-                c.Add("PDFUA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", Clause(c, "7.21.6", "8.8"), use.Page);
+                c.Add("PDFUA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
             else if (!symbolic && !(enc.AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
                 || enc is PdfDictionary ed && f.Resolve(ed.Get("BaseEncoding")).AsName() is "MacRomanEncoding" or "WinAnsiEncoding"))
-                c.Add("PDFUA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding (glyph-name checks of /Differences are not evaluated)", Clause(c, "7.21.6", "8.8"), use.Page);
+                c.Add("PDFUA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
+            if (!symbolic && enc is PdfDictionary differencesEncoding) TrueTypeDifferences(c, use, differencesEncoding);
         }
         if (subtype != "Type0" || f.Resolve(font.Get("DescendantFonts")) is not PdfArray { Count: > 0 } df || f.Resolve(df[0]) is not PdfDictionary cid) return;
         var cidInfo = SystemInfoOf(f, cid);
