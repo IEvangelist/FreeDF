@@ -119,13 +119,28 @@ public class CffGlyphNamesTests
                 CffGlyphNames.ReadCids(Build(charset.Length == 3 ? 2 : 3, charset, prefix: [173, 174, 139, 12, 30])));
         foreach (var prefix in new byte[][]
         {
-            [], [173, 174, 12, 30], [173, 174, 138, 12, 30], [173, 174, 139, 139, 12, 30],
+            [173, 174, 12, 30], [173, 174, 138, 12, 30], [173, 174, 139, 139, 12, 30],
             [28, 255, 255, 174, 139, 12, 30], [28, 1, 135, 174, 139, 12, 30],
             [173, 174, 139, 12, 30, 173, 174, 139, 12, 30],
         })
             Assert.Throws<InvalidDataException>(() => CffGlyphNames.ReadCids(Build(2, [0, 0, 1], prefix: prefix)));
         Assert.Throws<InvalidDataException>(() =>
             CffGlyphNames.ReadCids(Build(2, null, prefix: [173, 174, 139, 12, 30])));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void NameKeyedCidFontsUseGidsInsteadOfSids(int format)
+    {
+        var charset = format switch
+        {
+            0 => new byte[] { 0, 0, 34, 0, 35, 0, 1 },
+            1 => [1, 0, 34, 1, 0, 1, 0],
+            _ => [2, 0, 34, 0, 1, 0, 1, 0, 0],
+        };
+        Assert.Equal(new[] { 0, 1, 2, 3 }, CffGlyphNames.ReadCids(Build(4, charset)));
     }
 
     internal static byte[] Build(int glyphs, byte[]? charset, int predefined = 0, string[]? strings = null, byte[]? prefix = null)

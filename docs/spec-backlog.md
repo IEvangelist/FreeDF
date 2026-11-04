@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A name-keyed CFF CIDSet selection
+
+The raw CFF CIDSet metadata path now also handles a Top DICT without
+CIDFont operators: CIDs are sequential GIDs, not charset string IDs.
+ISO 32000-1 9.7.4.2 (PDF page 278) explicitly distinguishes this case
+from ROS-bearing CID-keyed charsets. SID references are still checked;
+malformed names do not become successful metadata inspection.
+
+The earlier private name-keyed transplant painted GID 2 (slash) using
+the width of C. FontTools independently establishes C at GID 3.
+Sixty corrected controls paint that GID with its source width and have
+no unrelated reference rule failures. The original 60 width-failing
+controls remain separate, not retrospectively relabeled as clean.
+The corrected set uses one retained Adobe Naskh program, not 60 fonts.
+Core's exact GID/CID sequence agrees with the independently read
+FontTools glyph order.
+
+Of the corrected controls, 46 agree with veraPDF 1.30.3 on exact rules
+and whole-file verdicts. Fourteen normative disagreements remain:
+the reference accepts all eight malformed A1 subset lists and empty
+A2/3 subset lists, while rejecting the complete and zero-padded complete
+A2/3 lists. FreeDF follows the explicit GID selection and complete-defined-CID
+requirements: it rejects those ten incomplete/extra lists and accepts
+the four complete-list positives. The other 14 reference-negative
+controls fail the shared exact predicate in both engines.
+No corrected controls are excluded.
+
+Six authored tests, all failing on the preceding implementation, cover
+custom formats and 126 predefined-charset/profile/subset/list combinations.
+All 7810 combined PDF/A, PDF/UA, deep-validation and reader cases pass;
+the solution builds with existing machine feed warnings unchanged.
+The full 10914-case measurement predates this small selection extension.
+Existing raw CID-keyed controls remain at 52/60 agreement with eight
+explicit normative disagreements. OpenType wrappers, complete font/outline
+validity and used-glyph/width/Unicode completeness remain open; historical
+corpus measurements and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A raw CID-keyed CFF CIDSet completeness
 
 Embedded subset CIDFontType0 fonts with a raw CIDFontType0C program and

@@ -15,8 +15,12 @@ internal static class CffGlyphNames
 
     public static int[] ReadCids(byte[] data)
     {
-        var (cids, _, isCid) = Metadata(data);
-        if (!isCid) throw new InvalidDataException("name-keyed CFF CIDSet inspection is not supported");
+        var (cids, custom, isCid) = Metadata(data);
+        if (!isCid)
+        {
+            foreach (var sid in cids) _ = String(sid, custom);
+            return Enumerable.Range(0, cids.Length).ToArray();
+        }
         if (cids.Distinct().Count() != cids.Length)
             throw new InvalidDataException("CFF charset contains duplicate CIDs");
         return cids;

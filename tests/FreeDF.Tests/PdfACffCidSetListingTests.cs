@@ -41,7 +41,7 @@ public class PdfACffCidSetListingTests
     {
         var valid = CffProgram(0);
         var invalid = Enumerable.Range(0, valid.Length).Select(length => valid[..length]).ToList();
-        invalid.Add(CffGlyphNamesTests.Build(2, [0, 0, 1]));
+        invalid.Add(CffGlyphNamesTests.Build(2, [0, 255, 255]));
         invalid.Add(CffGlyphNamesTests.Build(2, [0, 0, 0], prefix: [173, 174, 139, 12, 30]));
         invalid.Add(CffGlyphNamesTests.Build(2, null, prefix: [173, 174, 139, 12, 30]));
         foreach (var data in invalid)
@@ -52,6 +52,29 @@ public class PdfACffCidSetListingTests
             Assert.False(report.Has("PDFA-FONT-CIDSET-LIST"));
             AssertClauses(report, profile);
         }
+    }
+
+    [Theory]
+    [InlineData(PdfValidationProfile.PdfA1b)]
+    [InlineData(PdfValidationProfile.PdfA2b)]
+    [InlineData(PdfValidationProfile.PdfA3b)]
+    public void NameKeyedProgramsUseSequentialGidsRegardlessOfCharsetSids(PdfValidationProfile profile)
+    {
+        foreach (var predefined in new[] { 0, 1, 2 })
+            foreach (var subset in new[] { false, true })
+                foreach (var (bitmap, rejected) in new (byte[], bool)[]
+                {
+                    ([240], false), ([240, 0], false), ([], true), ([112], true),
+                    ([224], true), ([248], true), ([192, 0, 0, 0, 48], true),
+                })
+                {
+                    var program = CffGlyphNamesTests.Build(4, null, predefined);
+                    var report = PdfValidator.Validate(Document(program, bitmap, subset, cff: true), profile);
+                    Assert.False(report.Has("VALIDATION-INTERNAL"));
+                    Assert.False(report.Has("PDFA-FONT-CIDSET-INCOMPLETE"));
+                    Assert.Equal(subset && rejected, report.Has("PDFA-FONT-CIDSET-LIST"));
+                    AssertClauses(report, profile);
+                }
     }
 
     [Theory]

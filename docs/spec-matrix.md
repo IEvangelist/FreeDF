@@ -239,6 +239,15 @@ A name-keyed transplant experiment with unrelated width failures is
 retained separately, not called clean evidence. Name-keyed CFF CIDFonts,
 OpenType wrappers and full program validity remain open.
 
+The [name-keyed CFF selection follow-up](spec-backlog.md#2026-11-04-pdfa-name-keyed-cff-cidset-selection)
+uses sequential GIDs as CIDs under ISO 32000-1 9.7.4.2.
+Sixty corrected painted-GID controls have no collateral width failures;
+46/60 agree, with 14 explicit normative disagreements, including four
+complete-list positives accepted by FreeDF but rejected by the reference.
+The initial width-failing experiment remains separate. Raw name-keyed
+and CID-keyed CFF are covered within this scope; OpenType wrappers and
+full font validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and
