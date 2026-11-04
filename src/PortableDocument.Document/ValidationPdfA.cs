@@ -248,6 +248,28 @@ internal static class PdfAChecks
                 c.Add("PDFA1-TRANSPARENCY-GROUP", ValidationSeverity.Error, "page transparency group is not permitted", clause, i);
     }
 
+    static bool AnnotationFieldType(PdfFile f, PdfDictionary annotation, out string? fieldType)
+    {
+        fieldType = null;
+        var current = annotation;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        for (var depth = 0; depth < 64; depth++)
+        {
+            if (!seen.Add(current)) return false;
+            var value = f.Resolve(current.Get("FT"));
+            if (value is not null and not PdfNull)
+            {
+                fieldType = value.AsName();
+                return true;
+            }
+            var parent = f.Resolve(current.Get("Parent"));
+            if (parent is null or PdfNull) return true;
+            if (parent is not PdfDictionary dictionary) return false;
+            current = dictionary;
+        }
+        return false;
+    }
+
     static void Annotations(ValidationContext c)
     {
         const int annotationLimit = 10_000;
@@ -272,8 +294,26 @@ internal static class PdfAChecks
                     && !appearance.Entries.Any(entry => entry.Key != "N" && f.Resolve(entry.Value) is not null and not PdfNull);
                 if (appearance is not null && !normalOnly)
                     c.Add("PDFA-ANNOT-APPEARANCE-KEYS", ValidationSeverity.Error, "annotation appearance dictionary must contain only a non-null /N entry", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
-                if (normalOnly && sub != "Widget" && normal is not PdfStream)
-                    c.Add("PDFA-ANNOT-APPEARANCE-STREAM", ValidationSeverity.Error, "non-Widget annotation normal appearance must be a stream", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                if (normalOnly)
+                {
+                    string? fieldType = null;
+                    if (sub == "Widget" && !AnnotationFieldType(f, ad, out fieldType))
+                        c.Add("PDFA-ANNOT-APPEARANCE-INCOMPLETE", ValidationSeverity.Error, "cannot resolve Widget field type within the 64-node parent traversal bound or through a cyclic/malformed parent chain", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                    else if (sub == "Widget" && fieldType == "Btn")
+                    {
+                        const int stateLimit = 10_000;
+                        var states = normal as PdfDictionary;
+                        if (states?.Entries.Take(stateLimit).Any(entry => f.Resolve(entry.Value) is PdfStream) != true)
+                        {
+                            if (states?.Entries.Count > stateLimit)
+                                c.Add("PDFA-ANNOT-APPEARANCE-INCOMPLETE", ValidationSeverity.Error, $"cannot determine whether button Widget has an appearance stream within the {stateLimit}-entry state search bound", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                            else
+                                c.Add("PDFA-ANNOT-APPEARANCE-BUTTON", ValidationSeverity.Error, "button Widget normal appearance must be a dictionary containing at least one stream", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                        }
+                    }
+                    else if (normal is not PdfStream)
+                        c.Add("PDFA-ANNOT-APPEARANCE-STREAM", ValidationSeverity.Error, "non-button annotation normal appearance must be a stream", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                }
                 if (c.Part != 1 && sub is not ("Popup" or "Link") && appearance is null)
                 {
                     var point = f.Resolve(ad.Get("Rect")) is PdfArray { Count: 4 } rect

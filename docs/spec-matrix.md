@@ -117,8 +117,14 @@ The [non-Widget N stream check](spec-backlog.md#2026-11-04-pdfa-non-widget-norma
 now rejects scalar/array/dictionary normal values. All 144 non-Widget
 control verdicts agree; 135 exact stream predicates agree and nine
 indirect-null diagnostic disagreements are retained explicitly.
-Widget N stream/state validity, inherited field types, Form/content validity
-and general annotation well-formedness remain open.
+The [inherited Widget type check](spec-backlog.md#2026-11-04-pdfa-inherited-widget-normal-appearances)
+requires non-button streams or button dictionaries with at least one stream,
+with explicit incomplete Errors for exhausted parent/state inspection.
+Across 600 controls, 558 appearance-rule sets and 588 verdicts agree;
+42 indirect-null rule differences include 12 FT-inheritance verdict
+disagreements, all retained with ISO null/inheritance provenance.
+All-state/AS/V validity, field-tree membership, Form/content validity and
+general annotation well-formedness remain open.
 
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),

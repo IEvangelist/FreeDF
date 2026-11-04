@@ -4,6 +4,60 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A inherited Widget normal appearances
+
+The normal-appearance type check now also classifies Widgets using the
+nearest non-null inherited FT value. Non-button Widgets require an N
+stream; Btn Widgets require an N dictionary containing at least one stream.
+These are ISO 19005-1 6.5.3 tests 5/6 and ISO 19005-2/3 6.3.3 tests 3/4 in
+validation-profiles commit `c4f57effb0d3618827c87bd71882930d752be6e3`.
+`PDFA-ANNOT-APPEARANCE-BUTTON` and the existing
+`PDFA-ANNOT-APPEARANCE-STREAM` are page-attributed Errors.
+
+Parent traversal is cycle-aware and bounded to 64 dictionaries including
+the Widget. An unresolved classification due to that bound, a dictionary
+cycle or a malformed non-null Parent kind emits
+`PDFA-ANNOT-APPEARANCE-INCOMPLETE`, not a guessed type. The state existence
+search inspects up to 10000 entries; finding a stream establishes this
+existential predicate even in a larger dictionary, but exhausting the bound
+without finding one emits incomplete rather than falsely claiming none
+exists. Both numeric limits are library resource bounds, not ISO limits.
+
+Six hundred retained independent controls comprise 360 new inheritance/
+state cases and the earlier 240 appearance-type cases. With veraPDF 1.30.3,
+558 appearance-rule sets and 588 whole-file verdicts agree. All 42 rule-set
+differences remain explicit: 15 indirect N-null cases and 27 indirect
+FT-null inheritance cases. Twelve of the latter also differ in whole-file
+verdict (three reference-positive/FreeDF-negative and nine
+reference-negative/FreeDF-positive); the other 30 differences are
+diagnostic-only. No cases are excluded or represented as full agreement.
+The reference has 102 compliant files and FreeDF 108, not a new corpus
+conformance or parity total.
+
+The indirect FT-null controls resolve to null locally and inherit Btn from
+Parent in FreeDF, consistently with direct null. veraPDF instead classifies
+these indirect-null cases as non-button. The public
+[ISO 32000-1 text](https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf),
+7.3.9 (PDF page 29), makes null dictionary values equivalent to omission;
+12.7.3.1 (PDF page 440) marks FT inheritable. Those semantics are retained
+rather than special-casing the reference's indirect-null behavior.
+Raw XML, per-file hashes and disagreements remain session artifacts.
+
+There are 369 authored tests, including 51 internal boundary/malformed
+parent scenarios. The initial 366-test set had 252 failures. Full Release
+now passes 8373 tests with none failed/skipped; the solution builds without
+new warnings. The earlier non-Widget and key-only checkpoints retain their
+original measurements and scope.
+
+This is the at-least-one-stream predicate, not validation of every state:
+mixed stream/non-stream entries can meet it, as independently confirmed.
+AS/V state selection, all-state well-formedness, Form dictionaries and
+content, required/valid FT values, complete field-tree membership and
+general annotation validity remain open. Existing resolution collapses
+missing/cyclic indirect references to null, so such references are not
+claimed diagnosed by the new dictionary-parent traversal. Historical
+corpus totals and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A non-Widget normal appearance streams
 
 For a non-Widget annotation with a normal-only AP dictionary, its N value
