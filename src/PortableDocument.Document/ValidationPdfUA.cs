@@ -440,6 +440,17 @@ internal static partial class PdfUAChecks
     static void TableScopeConnections(ValidationContext c, StructureTree tree, List<StructElement> rows, Dictionary<StructElement, PdfObject?> headerAttributes)
     {
         var f = c.F;
+        var cells = rows.SelectMany(row => row.ChildElements).ToList();
+        var dataCells = cells.Where(cell => cell.StandardType == "TD").ToList();
+        if (dataCells.Count > 0 && dataCells.All(cell => headerAttributes.GetValueOrDefault(cell) is null)
+            && cells.FirstOrDefault(cell => cell.StandardType == "TH"
+                && f.Resolve(TableAttribute(c, tree, cell, "Scope")).AsName() is not ("Row" or "Column" or "Both")) is { } missingScope)
+        {
+            c.Add("PDFUA-TABLE-HEADER-CONNECTION", ValidationSeverity.Error,
+                "no TD supplies /Headers, so every TH requires a valid /Scope to describe header associations",
+                "ISO 14289-1 7.5", missingScope.PageIndex);
+            return;
+        }
         var carry = new Dictionary<int, int>();
         var placed = new List<(StructElement Cell, int Row, int Col, int ColSpan, int RowSpan)>();
         for (var r = 0; r < rows.Count; r++)

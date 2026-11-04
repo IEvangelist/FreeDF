@@ -56,6 +56,11 @@ format-4 cmap/hmtx inspection in `ValidationPdfA.cs`, content-state
 collection and scoped PDF/UA comparison are independently implemented.
 No reference-engine source or external font program is bundled.
 
+The UA-1 complete Scope-presence check for tables without TD Headers was
+cross-checked against the same CC BY 4.0 PDF/UA-1 profile, 7.5 tests 1/2.
+`ValidationPdfUA.cs` independently implements this necessary presence
+condition; complete directional/semantic header association is not claimed.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

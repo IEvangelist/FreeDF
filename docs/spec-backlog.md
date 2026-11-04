@@ -4,6 +4,58 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA-1 tables without Headers require complete Scope
+
+When a table has TD cells and none supplies a Headers attribute,
+PDF/UA-1 now requires every TH in that table to supply a valid
+Row/Column/Both Scope. A partly scoped table is no longer treated as
+an advisory merely because some other header has Scope. The existing
+`PDFUA-TABLE-HEADER-CONNECTION` Error is reused. Direct, array and
+ClassMap attribute lookup is unchanged; explicit/mixed Headers tables
+retain their existing reference validation and advisory fallback.
+UA-2 is unchanged by this slice.
+
+The requirement provenance is the published veraPDF Consortium v1.30.3
+[UA-1 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-1.xml)
+7.5 tests 1/2, under CC BY 4.0: when structure is not determined through
+Headers/IDs, TH elements need Scope. This is profile cross-checking,
+not independent access to the full ISO PDF/UA clause. Public ISO
+32000-1 Table 349 (printed page 610) separately defines Scope direction;
+the new check enforces presence, not full directional/semantic validity.
+
+All 256 combinations of absent/Row/Column/Both on four header cells
+in the retained public partial-Scope table were independently evaluated
+with veraPDF 1.30.3. Saved dictionaries and absent TD Headers are checked
+separately in Python. All 256 agree on exact rule and whole-file verdict:
+81 clean positives, 175 negatives. The preceding implementation accepted
+174 of those negatives. All opposite-profile UA-2 outputs are unchanged.
+These are mutations of one table, not 256 independent table layouts.
+
+The initial directional-connection model was rejected before shipping:
+76 of the 256 reference outcomes differed from that model, while all
+matched complete valid Scope presence. No claim is made that the
+reference correctly evaluates Row versus Column direction. Missing
+Scope is a structural requirement here; accurate associations, spanning
+geometry, higher-header relationships and visual semantics remain open.
+
+A fresh FreeDF pass over 435 public files / 870 UA profile results
+against retained reference and prior output closes the last UA-1
+file-verdict miss. Exactly three finding sets change: add the connection
+Error and remove the superseded partial-Scope advisory, including two
+already-invalid evaluations. All UA-2 results are unchanged.
+**0 UA-1 / 0 UA-2 measured file-verdict misses remain**, with zero
+reference-positive regressions or internal errors. No new incomplete
+rule was introduced. Thirty-seven of 67 authored cases failed on the
+preceding implementation; final focused coverage passes 131 tests.
+The full Release suite passes 12512/12512 and the solution builds with
+the same two machine-feed NU1507 warnings.
+
+This exhausts the measured public file-verdict gap, not PDF/UA parity,
+per-rule coverage or certification. The validators retain explicit
+unsupported/incomplete font, content, structure and semantic surfaces.
+External PDFs/profiles remain session-only evidence; historical dated
+counts below are preserved.
+
 ## 2026-11-04 PDF/UA rendered ASCII TrueType widths
 
 PDF/UA-1 and UA-2 now compare the widths of actually shown printable
