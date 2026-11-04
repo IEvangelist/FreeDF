@@ -67,10 +67,12 @@ internal static class FontChecks
         return data.Slice(t.Offset, t.Length).ToArray();
     }
 
-    public static (int Count, bool Symbol, bool Roman)? TrueTypeCmapRecords(ReadOnlySpan<byte> data)
+    public readonly record struct CmapRecords(int Count, bool Symbol, bool Roman, bool Unicode, bool NonSymbolic);
+
+    public static CmapRecords? TrueTypeCmapRecords(ReadOnlySpan<byte> data)
     {
         if (!TrySfntTable(data, "cmap"u8, out var table)) return null;
-        if (table is not { } t) return (0, false, false);
+        if (table is not { } t) return new(0, false, false, false, false);
         if (t.Length < 4) return null;
         var cmap = data.Slice(t.Offset, t.Length);
         if (BinaryPrimitives.ReadUInt16BigEndian(cmap) != 0) return null;
@@ -79,6 +81,8 @@ internal static class FontChecks
         if (recordsEnd > cmap.Length) return null;
         var symbol = false;
         var roman = false;
+        var unicode = false;
+        var nonSymbolic = false;
         for (var j = 0; j < count; j++)
         {
             var record = cmap.Slice(4 + j * 8, 8);
@@ -88,8 +92,10 @@ internal static class FontChecks
             var encoding = BinaryPrimitives.ReadUInt16BigEndian(record[2..]);
             symbol |= platform == 3 && encoding == 0;
             roman |= platform == 1 && encoding == 0;
+            unicode |= platform == 3 && encoding == 1;
+            nonSymbolic |= platform != 3 || encoding != 0;
         }
-        return (count, symbol, roman);
+        return new(count, symbol, roman, unicode, nonSymbolic);
     }
 
     public static (string? InvalidName, string? IncompleteReason) InspectDifferences(PdfFile f, PdfDictionary encoding)

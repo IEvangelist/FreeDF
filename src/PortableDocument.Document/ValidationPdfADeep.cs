@@ -356,7 +356,7 @@ internal static partial class PdfADeepChecks
         var symbolic = ((int)flags & 4) != 0;
         var enc = f.Resolve(font.Get("Encoding"));
         var clause = Clause(c, "6.3.7", "6.2.11.6", "6.2.11.6");
-        if (symbolic) SymbolicTrueTypeCmap(c, desc, name, page, clause);
+        if (symbolic || c.Part != 1) TrueTypeCmap(c, desc, name, page, clause, symbolic);
         if (symbolic && enc is not null and not PdfNull)
             c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", clause, page);
         else if (!symbolic)
@@ -379,10 +379,10 @@ internal static partial class PdfADeepChecks
         }
     }
 
-    static void SymbolicTrueTypeCmap(ValidationContext c, PdfDictionary descriptor, string name, int page, string clause)
+    static void TrueTypeCmap(ValidationContext c, PdfDictionary descriptor, string name, int page, string clause, bool symbolic)
     {
         if (FontChecks.TrueTypeProgram(c.F, descriptor) is not { } program) return;
-        (int Count, bool Symbol, bool Roman)? records;
+        FontChecks.CmapRecords? records;
         try { records = FontChecks.TrueTypeCmapRecords(c.F.DecodeStream(program)); }
         catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException)
         {
@@ -390,12 +390,15 @@ internal static partial class PdfADeepChecks
             return;
         }
         if (records is not { } found)
-            c.Add("PDFA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"embedded TrueType cmap headers of {name} are truncated, malformed or unsupported; symbolic encoding validation is incomplete", clause, page);
-        else if (found.Count != 1 && (c.Part == 1 || !found.Symbol))
+            c.Add("PDFA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"embedded TrueType cmap headers of {name} are truncated, malformed or unsupported; encoding validation is incomplete", clause, page);
+        else if (symbolic && found.Count != 1 && (c.Part == 1 || !found.Symbol))
             c.Add("PDFA-FONT-SYMBOLIC-CMAP", ValidationSeverity.Error,
                 c.Part == 1 ? $"symbolic TrueType font {name} needs exactly one cmap encoding"
                     : $"symbolic TrueType font {name} needs exactly one cmap encoding or Microsoft Symbol (3,0)",
                 clause, page);
+        else if (!symbolic && !found.NonSymbolic)
+            c.Add("PDFA-FONT-NONSYMBOLIC-CMAP", ValidationSeverity.Error,
+                $"non-symbolic TrueType font {name} needs at least one non-symbolic cmap encoding", clause, page);
     }
 
     public static void FieldAdditionalActions(ValidationContext c)

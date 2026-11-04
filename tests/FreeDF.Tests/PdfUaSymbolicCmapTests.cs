@@ -77,13 +77,13 @@ public class PdfUaSymbolicCmapTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    public void NonSymbolicAndUnembeddedFontsAreOutsideThisSlice(int part)
+    public void NonSymbolicFontsNeverProduceSymbolicFindingsAndUnembeddedFontsRemainExcluded(int part)
     {
         foreach (var program in new byte[]?[] { null, [] })
         {
             var report = Validate(part, program, symbolic: false);
             Assert.False(report.Has("PDFUA-FONT-SYMBOLIC-CMAP"));
-            Assert.False(report.Has("PDFUA-FONT-CMAP-INCOMPLETE"));
+            Assert.Equal(program is not null, report.Has("PDFUA-FONT-CMAP-INCOMPLETE"));
         }
         var unembedded = Validate(part, null);
         Assert.False(unembedded.Has("PDFUA-FONT-SYMBOLIC-CMAP"));

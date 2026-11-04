@@ -97,14 +97,12 @@ public class OpenTypeSymbolicCmapTests
     [InlineData("A3")]
     [InlineData("UA1")]
     [InlineData("UA2")]
-    public void NonSymbolicAndUnembeddedFontsRemainOutsideTheCmapCheck(string profile)
+    public void UnembeddedFontsRemainOutsideTheCmapCheck(string profile)
     {
-        foreach (var report in new[] { Validate(profile, null), Validate(profile, [], symbolic: false) })
-        {
-            Assert.False(report.Has("VALIDATION-INTERNAL"));
-            Assert.False(report.Has(Prefix(profile) + "-FONT-CMAP-INCOMPLETE"));
-            Assert.False(report.Has(Prefix(profile) + "-FONT-SYMBOLIC-CMAP"));
-        }
+        var report = Validate(profile, null);
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has(Prefix(profile) + "-FONT-CMAP-INCOMPLETE"));
+        Assert.False(report.Has(Prefix(profile) + "-FONT-SYMBOLIC-CMAP"));
     }
 
     static void AssertIncomplete(ValidationReport report, string profile)

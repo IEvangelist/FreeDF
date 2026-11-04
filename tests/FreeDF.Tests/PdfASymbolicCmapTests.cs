@@ -78,13 +78,13 @@ public class PdfASymbolicCmapTests
     [InlineData(PdfValidationProfile.PdfA1b)]
     [InlineData(PdfValidationProfile.PdfA2b)]
     [InlineData(PdfValidationProfile.PdfA3b)]
-    public void NonSymbolicUnembeddedAndUnlabelledFontFile3RemainOutsideThisCheck(PdfValidationProfile profile)
+    public void NonSymbolicFontsNeverProduceSymbolicFindingsAndUnlabelledProgramsRemainExcluded(PdfValidationProfile profile)
     {
         foreach (var program in new byte[]?[] { null, [] })
         {
             var report = Validate(profile, program, symbolic: false);
             Assert.False(report.Has("PDFA-FONT-SYMBOLIC-CMAP"));
-            Assert.False(report.Has("PDFA-FONT-CMAP-INCOMPLETE"));
+            Assert.Equal(profile != PdfValidationProfile.PdfA1b && program is not null, report.Has("PDFA-FONT-CMAP-INCOMPLETE"));
         }
         foreach (var report in new[] { Validate(profile, null), Validate(profile, [], programKey: "FontFile3") })
         {

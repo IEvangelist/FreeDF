@@ -4,6 +4,47 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 Non-symbolic TrueType cmap records
+
+Embedded non-symbolic simple-TrueType fonts now receive bounded cmap
+record inspection for raw FontFile2 and FontFile3 OpenType programs.
+PDF/A-2/3 (6.2.11.6) and PDF/UA-1 (7.21.6) require at least one
+non-symbolic entry; PDF/UA-2 (8.4.5.7) specifically requires Microsoft
+Unicode (3,1) or Macintosh Roman (1,0). PDF/A-1 has no new non-symbolic
+record predicate. Existing symbolic policy, raw-program priority,
+unknown FontFile3 exclusion and stream-filter errors are preserved.
+The shared reader now reports typed Count/Symbol/Roman/Unicode/NonSymbolic
+metadata; malformed selected headers produce existing incomplete Errors.
+This intentionally changes the prior exclusion of embedded non-symbolic
+programs from cmap inspection, not its glyph-level completeness.
+
+Thirty-two retained real-font mutations cover eight record combinations,
+raw/OpenType placement and both source UA parts. FontTools independently
+reads the intended records. All 64 external A2/A3/UA1/standalone-UA2
+profile/control pairs agree on exact test 1: 46 record positives and
+18 newly detected negatives. Changing symbolic fonts to WinAnsi non-symbolic
+introduces independent used-glyph, width and Unicode failures; every raw
+reference failure is retained, and none of these mutations is claimed
+as a new whole-file corpus closure. No controls are excluded and no
+external fonts/PDFs are bundled.
+
+There are 82 authored cases, 26 failing before implementation, covering
+profile/record/wrapper combinations, truncation/filter incompleteness,
+unembedded scope and unchanged A1 behavior. All 8361 combined
+PDF/A/UA/deep/reader/cmap cases pass; the solution builds with existing
+machine source warnings unchanged. A fresh exact pre-change and post-change
+FreeDF comparison of all 435 public UA files (870 profile results) shows
+zero changed file verdicts, no reference-positive regressions and no
+incomplete-header/internal errors. Retained symbolic OpenType controls
+remain 20/20 exact-rule agreements. The preceding full11344 measurement
+predates this and the OpenType selection follow-up.
+
+Record presence is only a necessary condition, not proof of every needed
+glyph lookup or a valid subtable. Differences-dependent (3,1) requirements,
+full subtable/program/outline validity, legacy Type1 and used-glyph/width/
+Unicode completeness remain open. No new decode-byte cap is implied;
+broader Partial status and historical corpus measurements are unchanged.
+
 ## 2026-11-04 OpenType symbolic cmap inspection
 
 PDF/A-2/3 and PDF/UA-1/2 symbolic simple-TrueType checks now inspect

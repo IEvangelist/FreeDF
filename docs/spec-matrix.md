@@ -278,6 +278,15 @@ new negatives); UA-derived PDF/A controls are not whole-file closures.
 Malformed selected metadata reports incomplete; full subtable/glyph/font
 validity remains open. Latest focused integration passes 8279 cases.
 
+The [non-symbolic cmap slice](spec-backlog.md#2026-11-04-non-symbolic-truetype-cmap-records)
+adds profile-specific necessary record requirements for embedded A2/3 and
+UA1/2 simple-TrueType fonts, including OpenType; A1 is unchanged.
+All 64 independent exact-rule pairs agree (46 positives/18 new negatives),
+without claiming whole-file closures for collateral-failing mutations.
+Fresh 435-file/870-result UA controls have zero changed verdicts or
+reference-positive regressions. Focused integration passes 8361 cases;
+glyph lookup, Differences-dependent (3,1) and full font validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and
