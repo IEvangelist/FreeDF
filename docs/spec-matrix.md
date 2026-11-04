@@ -108,8 +108,12 @@ partial.
 The [PDF/A-2/3 appearance presence check](spec-backlog.md#2026-11-04-pdfa-23-annotation-appearance-presence)
 requires AP except for Link, Popup or rectangles with both dimensions zero.
 All 225 independent controls agree on exact rules and verdicts (201 positives,
-24 negatives). PDF/A-1 is unchanged; appearance keys, N stream/state
-validity and general annotation well-formedness remain open.
+24 negatives). PDF/A-1 presence is unchanged. The separate
+[normal-only appearance dictionary check](spec-backlog.md#2026-11-04-pdfa-normal-only-appearance-dictionary-keys)
+applies to all three parts, ignoring null-valued extra keys while rejecting
+empty/rollover/down/custom active keys. All 66 independent controls agree
+on its exact rule and whole-file verdict (18 positives, 48 negatives).
+N stream/state validity and general annotation well-formedness remain open.
 
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),

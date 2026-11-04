@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A normal-only appearance dictionary keys
+
+Resolved annotation appearance dictionaries now require exactly one effective
+key, N, in every PDF/A part. Null-valued entries are absent for this check:
+N plus null R or a null custom entry passes, while an empty dictionary,
+null N alone, rollover/down-only entries or non-null additional keys fail.
+The rule also applies to Link/Popup when an AP dictionary is supplied;
+their presence exceptions do not waive dictionary contents.
+`PDFA-ANNOT-APPEARANCE-KEYS` is an Error with page attribution under
+ISO 19005-1 6.5.3 or ISO 19005-2/3 6.3.3.
+
+The pinned validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` supplies the exact normal-only
+predicates: PDF/A-1 6.5.3 test 4 and PDF/A-2/3 6.3.3 test 2.
+All 66 independently mutated controls agree with veraPDF 1.30.3 on
+the exact rule and whole-file verdict: 18 positives and 48 negatives,
+covering direct/indirect dictionaries across all three parts. External
+PDFs/XML and per-file hashes remain session artifacts.
+
+There are 342 authored cases across Square/Link/Popup, including indirect
+null entries and deliberately wrong-kind N values that do not fail this
+key-only rule. Before implementation 180 failed; the integrated PDF/A/deep
+selector now passes 3563 cases; full Release passes 7476, none failed/skipped.
+The solution builds without new warnings. Missing/non-dictionary AP remains the
+separate presence rule, not this dictionary-key predicate.
+
+This does not validate N stream/state dictionary types, inherited button
+field classification, appearance content or general AP well-formedness.
+Existing resolution collapses missing/cyclic references to null, so this
+does not establish malformed-reference detection. Traversal incompleteness
+is reported separately; historical corpus totals and broad Partial status
+are unchanged.
+
 ## 2026-11-04 explicit PDF/A annotation traversal incompleteness
 
 The existing 10000-entry per-page annotation limit is retained, but

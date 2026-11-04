@@ -266,7 +266,12 @@ internal static class PdfAChecks
                     || c.Part != 1 && sub is "Polygon" or "PolyLine" or "Caret" or "FileAttachment" or "Watermark" or "Redact";
                 if (!allowed)
                     c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub ?? "(missing or non-name)"} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
-                if (c.Part != 1 && sub is not ("Popup" or "Link") && f.Resolve(ad.Get("AP")) is not PdfDictionary)
+                var appearance = f.Resolve(ad.Get("AP")) as PdfDictionary;
+                if (appearance is not null
+                    && (f.Resolve(appearance.Get("N")) is null or PdfNull
+                        || appearance.Entries.Any(entry => entry.Key != "N" && f.Resolve(entry.Value) is not null and not PdfNull)))
+                    c.Add("PDFA-ANNOT-APPEARANCE-KEYS", ValidationSeverity.Error, "annotation appearance dictionary must contain only a non-null /N entry", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                if (c.Part != 1 && sub is not ("Popup" or "Link") && appearance is null)
                 {
                     var point = f.Resolve(ad.Get("Rect")) is PdfArray { Count: 4 } rect
                         && f.Resolve(rect[0]).AsNumber() is { } x0 && f.Resolve(rect[1]).AsNumber() is { } y0
