@@ -249,8 +249,8 @@ public class DeepValidationTests
     [Fact]
     public void NamedActionsAreRestrictedAndNeedAppearancesMustBeFalse()
     {
-        Assert.False(A(PdfA(Xmp(), extras: "<< /Type /Action /S /Named /N /NextPage >>")).Has("PDFA-ACTION-NAMED"));
-        Assert.True(A(PdfA(Xmp(), extras: "<< /Type /Action /S /Named /N /Print >>")).Has("PDFA-ACTION-NAMED"));
+        Assert.False(A(PdfA(Xmp(), "/OpenAction 6 0 R", extras: "<< /Type /Action /S /Named /N /NextPage >>")).Has("PDFA-ACTION-NAMED"));
+        Assert.True(A(PdfA(Xmp(), "/OpenAction 6 0 R", extras: "<< /Type /Action /S /Named /N /Print >>")).Has("PDFA-ACTION-NAMED"));
         Assert.True(A(PdfA(Xmp(), "/AcroForm << /Fields [] /NeedAppearances true >>")).Has("PDFA-FORM-NEEDAPPEARANCES"));
         Assert.False(A(PdfA(Xmp(), "/AcroForm << /Fields [] /NeedAppearances false >>")).Has("PDFA-FORM-NEEDAPPEARANCES"));
     }

@@ -177,6 +177,13 @@ null and false. Across 42 controls, 39 exact rules and verdicts agree;
 three indirect-null differences remain explicit under null-as-omitted
 semantics. This is not general AcroForm validity.
 
+The [Named action context correction](spec-backlog.md#2026-11-04-pdfa-named-action-context-correction)
+reuses the bounded action walk rather than classifying arbitrary S/Named
+dictionaries as actions. All 84 controls agree on exact rules and verdicts,
+correcting 36 false rejections without losing a reference negative.
+Unknown-event/root-kind validity and the separate known-prohibited
+all-object scan remain outside this correction.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

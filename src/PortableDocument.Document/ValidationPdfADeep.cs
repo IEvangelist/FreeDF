@@ -299,12 +299,19 @@ internal static partial class PdfADeepChecks
         var actions = c.Doc.GetActionReport();
         var actionFindings = 0;
         var actionIncomplete = actions.Truncated;
+        var namedReported = false;
         foreach (var action in actions.Actions)
         {
             if (action.EventKey is not null && action.Event is null) continue;
             var rootArray = action.Trigger.IndexOf('[');
             var nextHop = action.Trigger.IndexOf("/Next", StringComparison.Ordinal);
             if (rootArray >= 0 && (nextHop < 0 || rootArray < nextHop)) continue;
+            if (!namedReported && action.ActionType == "Named"
+                && f.Resolve(action.Dictionary.Get("N")).AsName() is not ("NextPage" or "PrevPage" or "FirstPage" or "LastPage"))
+            {
+                namedReported = true;
+                c.Add("PDFA-ACTION-NAMED", ValidationSeverity.Error, $"named action /{f.Resolve(action.Dictionary.Get("N")).AsName() ?? "(missing)"} is not permitted (only NextPage, PrevPage, FirstPage, LastPage)", Clause(c, "6.6.1", "6.5.1", "6.5.1"), action.PageIndex);
+            }
             if (action.ActionType is "GoTo" or "GoToR" or "Thread" or "URI" or "Named" or "SubmitForm"
                 || c.Part != 1 && action.ActionType == "GoToE") continue;
             if (actionFindings++ >= 1000) { actionIncomplete = true; break; }
@@ -312,16 +319,5 @@ internal static partial class PdfADeepChecks
         }
         if (actionIncomplete)
             c.Add("PDFA-ACTION-INCOMPLETE", ValidationSeverity.Error, "action inspection was truncated by traversal limits, a cycle or the 1000 subtype-finding bound", Clause(c, "6.6.1", "6.5.1", "6.5.1"));
-        var reported = false;
-        foreach (var o in c.AllObjects())
-        {
-            if (reported) break;
-            if (o is not PdfDictionary d || f.Resolve(d.Get("S")).AsName() != "Named") continue;
-            if (f.Resolve(d.Get("N")).AsName() is not ("NextPage" or "PrevPage" or "FirstPage" or "LastPage"))
-            {
-                reported = true;
-                c.Add("PDFA-ACTION-NAMED", ValidationSeverity.Error, $"named action /{f.Resolve(d.Get("N")).AsName() ?? "(missing)"} is not permitted (only NextPage, PrevPage, FirstPage, LastPage)", Clause(c, "6.6.1", "6.5.1", "6.5.1"));
-            }
-        }
     }
 }

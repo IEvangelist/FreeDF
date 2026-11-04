@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A named-action context correction
+
+`PDFA-ACTION-NAMED` now checks the existing bounded inert action report
+instead of every dictionary whose S entry happens to be Named. Actual
+catalog OpenAction, Link actions and Next chains still require N to be
+NextPage, PrevPage, FirstPage or LastPage. The rule ID, clauses and
+single named-action finding behavior are retained. The pinned profiles
+at commit `c4f57effb0d3618827c87bd71882930d752be6e3` target
+PDNamedAction under ISO 19005-1 6.6.1 test 2 or ISO 19005-2/3 6.5.1 test 2.
+
+All 84 independent controls agree with veraPDF 1.30.3 on the exact rule
+and whole-file verdict. This corrects 36 prior false rejections, with no
+reference-negative verdict lost in these controls: unused objects,
+extension dictionaries, unknown AA events and array-valued OpenAction
+roots do not establish Named action contexts. Each was tested with an
+explicit Type Action dictionary and absent, Print, NextPage or
+string-valued N. Raw before/after outputs, reference reports and hashes
+remain session artifacts. The 231 authored cases additionally cover all
+four permitted names and direct/indirect null/name values; 72 failed
+on the preceding implementation. The older deep-validation fixture now
+registers its tested action as OpenAction instead of leaving it unused.
+
+All 5786 integrated PDF/A/deep tests pass and the solution builds with
+existing machine feed warnings unchanged. The full 9468 measurement
+predates this correction. Unknown-event and root-kind validity, exhaustive
+action sources, target/required-key semantics and the separate all-object
+known-prohibited subtype scan remain outside this correction. Existing
+action traversal/finding exhaustion still produces an incomplete Error.
+Historical corpus counts and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A NeedAppearances value kinds
 
 The existing `PDFA-FORM-NEEDAPPEARANCES` Error now rejects every resolved
