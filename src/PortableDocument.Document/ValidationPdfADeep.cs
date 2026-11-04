@@ -254,6 +254,22 @@ internal static partial class PdfADeepChecks
             if (f.Resolve(f.Catalog.Get("NeedsRendering")) is { } rendering and not PdfNull && rendering is not PdfBoolean { Value: false })
                 c.Add("PDFA-NEEDSRENDERING", ValidationSeverity.Error, "catalog /NeedsRendering must be absent or false", Clause(c, "6.9", "6.4.2", "6.4.2"));
         }
+        var actions = c.Doc.GetActionReport();
+        var actionFindings = 0;
+        var actionIncomplete = actions.Truncated;
+        foreach (var action in actions.Actions)
+        {
+            if (action.EventKey is not null && action.Event is null) continue;
+            var rootArray = action.Trigger.IndexOf('[');
+            var nextHop = action.Trigger.IndexOf("/Next", StringComparison.Ordinal);
+            if (rootArray >= 0 && (nextHop < 0 || rootArray < nextHop)) continue;
+            if (action.ActionType is "GoTo" or "GoToR" or "Thread" or "URI" or "Named" or "SubmitForm"
+                || c.Part != 1 && action.ActionType == "GoToE") continue;
+            if (actionFindings++ >= 1000) { actionIncomplete = true; break; }
+            c.Add("PDFA-ACTION-TYPE", ValidationSeverity.Error, $"action subtype /{action.ActionType ?? "(missing or non-name)"} is not permitted", Clause(c, "6.6.1", "6.5.1", "6.5.1"), action.PageIndex);
+        }
+        if (actionIncomplete)
+            c.Add("PDFA-ACTION-INCOMPLETE", ValidationSeverity.Error, "action inspection was truncated by traversal limits, a cycle or the 1000 subtype-finding bound", Clause(c, "6.6.1", "6.5.1", "6.5.1"));
         var reported = false;
         foreach (var o in c.AllObjects())
         {

@@ -151,6 +151,14 @@ Across 168 controls, 157 scoped predicates and 151 verdicts agree;
 11 indirect-null differences and six real empty-Link-action misses remain
 explicit. Non-Widget fields and complete action classification remain open.
 
+The [action-context subtype whitelist](spec-backlog.md#2026-11-04-pdfa-action-context-subtype-vocabulary)
+now rejects unknown/missing/prohibited types through the existing inert
+bounded action report, with explicit traversal/finding incompleteness.
+All 90 new controls agree on exact rules and verdicts; the six prior
+empty-Link-action misses are closed (157/168 prior verdicts now agree,
+11 indirect-null differences retained). Unknown AA events, root-kind
+validity, arbitrary action sources and target/required-key semantics remain open.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

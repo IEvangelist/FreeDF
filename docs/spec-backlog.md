@@ -4,6 +4,58 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A action-context subtype vocabulary
+
+The existing inert bounded action report now supplies actual action
+dictionaries for subtype validation. `PDFA-ACTION-TYPE` rejects missing,
+non-name, unknown, deprecated and prohibited subtypes under ISO 19005-1
+6.6.1 or ISO 19005-2/3 6.5.1. The whitelist is GoTo, GoToR, Thread, URI,
+Named and SubmitForm, with GoToE additionally permitted in parts 2/3.
+Pinned validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` supplies test 1 for each.
+The prior all-object known-prohibited-action scan remains, preserving its
+ID and broader resource-object coverage.
+
+Destination arrays are not action dictionaries. The report exposes unknown
+AA events and arrays even in root slots requiring a dictionary; subtype
+validation deliberately excludes unknown events and root-array descendants
+instead of misclassifying their arbitrary dictionaries as actions.
+Known events and legitimate Next chains/arrays remain checked. Initial
+reference cross-checks caught both over-classifications before delivery;
+regression tests pin the corrected scope. Root-kind and unknown-event
+validity remain open rather than being silently claimed established.
+
+All 90 new independent Link/OpenAction/Next controls agree with veraPDF
+1.30.3 on the exact rule and whole-file verdict: 24 rule positives and
+66 negatives. Rechecking the earlier 168 entry controls closes all six
+empty-Link-action misses; 157 verdicts now agree, with the original 11
+indirect-null differences retained. The earlier 151-agreement checkpoint
+is historical, not overwritten. Raw reference XML and per-file hashes
+remain session artifacts.
+
+There are 165 authored tests. The initial 159 cases had 87 failures;
+additional cases cover recognized AA events and exactly 1000 versus 1001
+invalid subtype findings. Exhausting the existing report traversal budget/
+depth/cycle bounds or the new 1000 subtype-finding bound emits
+`PDFA-ACTION-INCOMPLETE` Error. These are library limits, not normative
+action-count restrictions.
+
+The first full run had 9251 passes and one failure in
+`SignatureTrustTests.Path_length_constraint_violation_is_invalid`.
+That test passed in isolation. An exact-parent archive at `64ad33ec`
+then passed all 9087 tests (and its 71 signature-trust tests), while the
+unchanged current implementation passed all 9252 in the comparison run.
+This establishes a non-reproduced failure, not proof of its cause or
+that it was unrelated. The failed run and both controls are retained;
+temporary baseline checkout/archive were removed. The solution builds
+without new warnings.
+
+This closes bounded action-context subtype vocabulary, not all action
+sources, target validity, required action keys, field-entry prohibitions,
+malformed root kinds, unknown event keys, named-action semantics or
+general reference resolution. Historical corpus totals and broad Partial
+status remain unchanged.
+
 ## 2026-11-04 context-specific PDF/A action entries
 
 The existing catalog AA prohibition now rejects every resolved non-null
