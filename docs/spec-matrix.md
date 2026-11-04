@@ -72,6 +72,12 @@ non-null prohibition and exact part-specific clauses. All 36 independent
 controls agree on exact rules and verdicts. General stream/reference
 validity remains outside this check.
 
+The [Hide/GoToE action policy correction](spec-backlog.md#2026-11-04-pdfa-hidegotoe-action-policy)
+rejects Hide in all parts and GoToE in PDF/A-1, and prevents explicit-null
+Type from bypassing the known-action scan. All 36 independent controls
+agree on exact rules and verdicts. Unknown/deprecated action kinds and
+complete context/target validation remain open.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

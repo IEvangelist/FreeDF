@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A Hide/GoToE action policy
+
+The existing known-action scan now rejects `/Hide` in all three parts and
+`/GoToE` in PDF/A-1 only. PDF/A-2/3 keep GoToE permitted by this rule.
+Optional action `/Type` is resolved consistently: absent, direct null and
+indirect null are equivalent, so null no longer bypasses existing prohibited
+action checks. A different explicit Type remains outside the existing
+action-dictionary heuristic.
+
+The pinned veraPDF action predicates (validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`) are ISO 19005-1 6.6.1 test 1
+(including Corrigendum 2's Hide prohibition) and ISO 19005-2/3 6.5.1
+test 1. Thirty-six independently mutated catalog OpenAction controls agree
+with veraPDF 1.30.3 on the exact rule and whole-file verdict: 20 positives
+and 16 negatives, spanning Hide, GoToE and URI with absent, Action,
+direct-null and indirect-null Type. No action is executed or external
+destination opened.
+
+The 540 authored cases cover 18 known action kinds, all parts, direct and
+indirect S names and five Type variants, retaining existing prohibited
+kinds and allowed-kind controls. Against the original implementation 152
+failed and 388 passed; all now pass. The integrated PDF/A/deep-validation
+selector passed 1984 tests. Rule ID, severity, clause attribution and
+one-finding-per-document behavior are unchanged.
+
+This is not a complete action whitelist or action-target validity check:
+deprecated/unknown action kinds and context-aware classification beyond the
+existing heuristic remain open. Other keys and target dictionaries are not
+validated by these cases. As elsewhere, null resolution does not distinguish
+intentional null from missing/cyclic references. No new corpus-wide
+conformance or executable-content support is claimed.
+
 ## 2026-11-04 PDF/A external-stream null entries
 
 The all-object stream scan now resolves `/F`, `/FFilter` and `/FDecodeParms`

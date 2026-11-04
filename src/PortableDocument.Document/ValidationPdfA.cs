@@ -26,7 +26,7 @@ internal static class FontChecks
 internal static class PdfAChecks
 {
     static readonly HashSet<string> ForbiddenActions = new(StringComparer.Ordinal)
-        { "Launch", "Sound", "Movie", "ResetForm", "ImportData", "JavaScript", "SetOCGState", "Rendition", "Trans", "GoTo3DView" };
+        { "Launch", "Sound", "Movie", "ResetForm", "ImportData", "Hide", "JavaScript", "SetOCGState", "Rendition", "Trans", "GoTo3DView" };
 
     public static void Run(ValidationContext c)
     {
@@ -256,7 +256,9 @@ internal static class PdfAChecks
                 if (c.Part == 1 && !reportedObjStm && f.Resolve(st.Dict.Get("Type")).AsName() is "ObjStm" or "XRef")
                 { reportedObjStm = true; c.Add("PDFA1-OBJSTM", ValidationSeverity.Error, "object streams and cross-reference streams are not permitted in PDF/A-1", "ISO 19005-1 6.1.4"); }
             }
-            if (!reportedAction && f.Resolve(dict.Get("S")).AsName() is { } actionType && ForbiddenActions.Contains(actionType) && (dict.Get("Type") is null || f.Resolve(dict.Get("Type")).AsName() == "Action"))
+            if (!reportedAction && f.Resolve(dict.Get("S")).AsName() is { } actionType
+                && (ForbiddenActions.Contains(actionType) || c.Part == 1 && actionType == "GoToE")
+                && f.Resolve(dict.Get("Type")) is null or PdfNull or PdfName { Value: "Action" })
             { reportedAction = true; c.Add("PDFA-ACTION", ValidationSeverity.Error, $"action /{actionType} is not permitted", Clause(c, "6.6.1", "6.5.1", "6.5.1")); }
             if (dict.Get("EF") is not null && f.Resolve(dict.Get("Type")).AsName() is "Filespec" or null)
             {
