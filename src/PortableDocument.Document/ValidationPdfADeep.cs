@@ -181,7 +181,13 @@ internal static partial class PdfADeepChecks
             }
             if (c.Part == 1 && subtype == "Type1" && SubsetPrefix().IsMatch(name) && FontChecks.IsEmbedded(f, font)
                 && !(f.Resolve(font.Get("FontDescriptor")) is PdfDictionary fd && f.Resolve(fd.Get("CharSet")) is PdfString))
-                c.Add("PDFA1-FONT-CHARSET", ValidationSeverity.Error, $"subset font {name} has no /CharSet string in its descriptor (listing completeness is not verified)", "ISO 19005-1 6.3.5", u.Page);
+                c.Add("PDFA1-FONT-CHARSET", ValidationSeverity.Error, $"subset font {name} has no /CharSet string in its descriptor", "ISO 19005-1 6.3.5", u.Page);
+            if (subtype == "Type1" && SubsetPrefix().IsMatch(name)
+                && f.Resolve(font.Get("FontDescriptor")) is PdfDictionary type1Descriptor
+                && f.Resolve(type1Descriptor.Get("CharSet")) is PdfString charset
+                && f.Resolve(type1Descriptor.Get("FontFile3")) is PdfStream type1Program
+                && f.Resolve(type1Program.Dict.Get("Subtype")).AsName() == "Type1C")
+                Type1CCharSet(c, type1Program, charset, name, u.Page);
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid)
             {
                 if (c.Part == 1 && SubsetPrefix().IsMatch(FontChecks.Name(f, cid)) && FontChecks.IsEmbedded(f, font)
@@ -190,6 +196,57 @@ internal static partial class PdfADeepChecks
                 if (f.Resolve(font.Get("Encoding")) is PdfStream cmap && SystemInfo(f, cmap.Dict) is { } a && SystemInfo(f, cid) is { } b && a != b)
                     c.Add("PDFA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"embedded CMap of {name} has CIDSystemInfo {a} but the CIDFont has {b}", Clause(c, "6.3.3.1", "6.2.11.3.3", "6.2.11.3.3"), u.Page);
             }
+        }
+    }
+
+    static void Type1CCharSet(ValidationContext c, PdfStream program, PdfString charset, string name, int page)
+    {
+        var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+        void Incomplete(string reason) =>
+            c.Add("PDFA-FONT-CHARSET-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect Type1C CharSet of {name}: {reason}", clause, page);
+        void Invalid(string reason) =>
+            c.Add("PDFA-FONT-CHARSET-LIST", ValidationSeverity.Error, $"Type1C CharSet of {name} {reason}", clause, page);
+        try
+        {
+            if (charset.Bytes.Length > 1_048_576) { Incomplete("CharSet exceeds 1048576 bytes"); return; }
+            var data = c.F.DecodeStream(program);
+            if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
+            var names = CffGlyphNames.Read(data);
+            var expected = new HashSet<string>(StringComparer.Ordinal);
+            for (var gid = 1; gid < names.Length; gid++)
+            {
+                var glyph = names[gid];
+                if (glyph.Length == 0 || glyph == ".notdef" || !expected.Add(glyph))
+                { Incomplete("program glyph names are missing or duplicated"); return; }
+            }
+            var actual = new HashSet<string>(StringComparer.Ordinal);
+            var lexer = new PdfLexer(charset.Bytes);
+            var entries = 0;
+            while (true)
+            {
+                lexer.SkipWhite();
+                if (lexer.Pos == lexer.Length) break;
+                if (entries++ >= 65_535) { Incomplete("CharSet exceeds 65535 name entries"); return; }
+                var start = lexer.Pos;
+                if (lexer.Data[lexer.Pos] != '/' || lexer.ReadObject(false) is not PdfName glyph)
+                { Invalid("does not contain only names in PDF syntax"); return; }
+                for (var i = start + 1; i < lexer.Pos; i++)
+                {
+                    if (lexer.Data[i] != '#') continue;
+                    if (i + 2 >= lexer.Pos || !char.IsAsciiHexDigit((char)lexer.Data[i + 1])
+                        || !char.IsAsciiHexDigit((char)lexer.Data[i + 2]))
+                    { Invalid("contains an invalid PDF name escape"); return; }
+                    i += 2;
+                }
+                actual.Add(glyph.Value);
+            }
+            if (!expected.SetEquals(actual))
+                Invalid("must list exactly the program's defined glyph names, excluding .notdef");
+        }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException
+            or InvalidOperationException or ArgumentException or IndexOutOfRangeException or KeyNotFoundException or OverflowException)
+        {
+            Incomplete(e.Message);
         }
     }
 

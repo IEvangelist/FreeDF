@@ -4,6 +4,59 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A Type1C CharSet completeness
+
+Embedded Type1 subsets with a string CharSet and raw FontFile3 Type1C
+program now compare the complete defined glyph-name set, not just painted
+glyphs. `PDFA-FONT-CHARSET-LIST` rejects missing or extra names, invalid PDF
+name syntax and inclusion of `.notdef`. Order and duplicate listing entries
+do not change set membership; whitespace, comments and valid `#` escapes
+are supported. The existing A1 string-presence check remains separate.
+The pinned profile commit `c4f57effb0d3618827c87bd71882930d752be6e3`
+supplies A1 6.3.5 test 2 and A2/3 6.2.11.4.2 test 1.
+[ISO 32000-1 9.8.1](https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf),
+PDF page 291, requires names in PDF syntax, permits any order, and requires
+omitting `.notdef` from the listing.
+
+A bounded Core metadata reader supports CFF1 name-keyed predefined
+ISOAdobe/Expert/ExpertSubset charsets and custom formats 0/1/2, standard and
+custom SIDs, without executing charstrings. The existing internal standard
+tables moved from Content to Core with no data changes; Content and Document
+share them without a circular dependency or public API addition.
+Malformed/unsupported metadata or exhausted resource bounds produce
+`PDFA-FONT-CHARSET-INCOMPLETE` Errors, never a successful omitted check.
+Limits are 1048576 CharSet bytes, 65535 parsed name entries including
+duplicates, and 16777216 decoded font bytes. The font-byte limit applies
+after the existing stream decode; this is not a new bounded streaming
+decompressor.
+
+Sixty listing mutations and the retained 66 kind controls reuse the public
+positive Adobe Naskh Type1C program in calibrated-RGB documents.
+All 66 kind controls now agree on exact rules and whole-file verdicts,
+closing their three remaining empty-string misses. Of the 60 listing
+controls, 55 agree, including all ten reference negatives. Five explicit
+normative disagreements remain: veraPDF 1.30.3 accepts missing/extra names
+in the A1 controls and inclusion of `.notdef` in all three parts; FreeDF
+rejects them under the complete-list/PDF-syntax requirements above.
+Contrary to an initial expectation, A2/3 missing/extra controls are already
+reference-negative. No controls are excluded. FontTools 4.68.0 independently
+agrees on the exact ordered program names across 136 font references,
+representing five distinct raw Type1C programs, including repository CFF
+fixtures. These are not 136 independent font programs. Per-file hashes,
+raw reference reports, before/after results and independent name comparisons
+remain session artifacts; no external PDF or font is bundled.
+
+The 188 authored validator cases and 11 reader cases cover listing scope,
+PDF escapes, exact resource boundaries, custom/predefined charsets, INDEX
+offsets, truncated data, undefined SIDs and explicit unsupported CID metadata.
+Of the initial 185 listing cases, 58 failed before implementation.
+All 10480 full Release tests pass, with zero failed/skipped; the solution
+builds with the existing machine feed warnings unchanged.
+Legacy FontFile Type1, OpenType wrappers, CID-keyed programs, CIDSet
+bitmaps, complete CFF/charstring validity and used-glyph/width/Unicode
+completeness remain open. Historical corpus measurements and broad Partial
+status are unchanged.
+
 ## 2026-11-04 PDF/A-1 null Differences entries
 
 The non-symbolic TrueType encoding check now resolves Differences before

@@ -204,6 +204,15 @@ seven A1 wrong-kind misses are closed and all three empty-string
 listing misses remain explicit. Parts 2/3 and listing completeness
 remain unchanged.
 
+The subsequent [Type1C CharSet completeness slice](spec-backlog.md#2026-11-04-pdfa-type1c-charset-completeness)
+compares complete defined glyph-name sets for embedded Type1 subsets with
+raw Type1C programs. All 66 retained kind controls now agree; 55/60 listing
+controls agree, with five explicit complete-list/`.notdef` disagreements.
+FontTools independently agrees on ordered names for five distinct programs.
+Malformed, unsupported or bounded-out metadata produces an incomplete Error.
+Legacy Type1/OpenType/CID-keyed programs, CIDSet and full font validity
+remain outside this slice; broad status stays Partial.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

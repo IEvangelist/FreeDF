@@ -317,9 +317,8 @@ public class Type1MultipleMasterTests
     public void Named_expert_encoding_matches_the_adobe_table_for_every_code()
     {
         var f = Font("type1-expert.pdf", "F2");
-        var table = typeof(Type1Font).Assembly.GetType("PortableDocument.Content.CffStandardStrings")!;
-        var strings = (string[])table.GetField("Strings")!.GetValue(null)!;
-        var expert = (int[])table.GetField("ExpertEncoding")!.GetValue(null)!;
+        var strings = CffStandardStrings.Strings;
+        var expert = CffStandardStrings.ExpertEncoding;
         for (var code = 0; code < 256; code++)
         {
             var expected = strings[expert[code]];
