@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-2/3 annotation appearance presence
+
+Non-exempt PDF/A-2/3 annotations now require an appearance dictionary.
+Link and Popup annotations are exempt, as are annotations whose Rect has
+both opposing coordinates equal (both width and height zero). A single
+zero dimension does not qualify; reversed nonzero rectangles do not qualify.
+Rect arrays/coordinates and AP values are resolved, including indirect null.
+Missing or non-dictionary AP reports `PDFA-ANNOT-APPEARANCE-MISSING` Error
+with page attribution under ISO 19005-2/3 6.3.3. PDF/A-1 has no corresponding
+presence requirement and remains unchanged.
+
+The pinned veraPDF predicate is 6.3.3 test 1 in validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`. All 225 independently mutated
+controls agree with veraPDF 1.30.3 on the exact presence rule and whole-file
+verdicts: 201 positives and 24 negatives. They span Square/Link/Popup, all
+three parts, five rectangle shapes, omitted/direct-null/indirect-null and
+direct/indirect valid appearances. A separate 27-control exploratory batch
+confirmed malformed AP kinds fail the presence rule in parts 2/3, while
+empty/rollover dictionaries instead fail the separate normal-only rule.
+These results are retained rather than conflating presence with contents.
+
+There are 458 authored cases, including eight indirect rectangle/coordinate
+cases; the initial 450-case set had 48 failures before the implementation.
+Final full Release passed 7104 tests, none failed/skipped. External PDFs/XML
+remain session artifacts; historical corpus totals are unchanged.
+
+This establishes appearance presence only. Empty dictionaries meet this
+presence predicate but are not claimed valid appearances: normal-only
+keys, N stream/state dictionary rules, field inheritance, general Rect/AP
+well-formedness and appearance rendering/content remain open. The existing
+annotation traversal limit and null-resolution limitations also remain.
+
 ## 2026-11-04 PDF/A annotation subtype vocabulary
 
 The page annotation scan now enforces the explicit PDF/A subtype

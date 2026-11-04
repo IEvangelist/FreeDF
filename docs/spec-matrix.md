@@ -105,6 +105,12 @@ independent controls agree on exact rules and verdicts (120 positives,
 78 negatives). Other annotation dictionary/appearance requirements remain
 partial.
 
+The [PDF/A-2/3 appearance presence check](spec-backlog.md#2026-11-04-pdfa-23-annotation-appearance-presence)
+requires AP except for Link, Popup or rectangles with both dimensions zero.
+All 225 independent controls agree on exact rules and verdicts (201 positives,
+24 negatives). PDF/A-1 is unchanged; appearance keys, N stream/state
+validity and general annotation well-formedness remain open.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

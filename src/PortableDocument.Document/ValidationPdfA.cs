@@ -263,6 +263,15 @@ internal static class PdfAChecks
                     || c.Part != 1 && sub is "Polygon" or "PolyLine" or "Caret" or "FileAttachment" or "Watermark" or "Redact";
                 if (!allowed)
                     c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub ?? "(missing or non-name)"} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
+                if (c.Part != 1 && sub is not ("Popup" or "Link") && f.Resolve(ad.Get("AP")) is not PdfDictionary)
+                {
+                    var point = f.Resolve(ad.Get("Rect")) is PdfArray { Count: 4 } rect
+                        && f.Resolve(rect[0]).AsNumber() is { } x0 && f.Resolve(rect[1]).AsNumber() is { } y0
+                        && f.Resolve(rect[2]).AsNumber() is { } x1 && f.Resolve(rect[3]).AsNumber() is { } y1
+                        && x0 == x1 && y0 == y1;
+                    if (!point)
+                        c.Add("PDFA-ANNOT-APPEARANCE-MISSING", ValidationSeverity.Error, "non-exempt annotation has no appearance dictionary", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                }
                 var flagValue = f.Resolve(ad.Get("F"));
                 if (c.Part != 1 && sub == "Popup" && flagValue is null or PdfNull) continue;
                 var flags = (int)(flagValue.AsNumber() ?? 0);
