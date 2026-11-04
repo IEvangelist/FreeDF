@@ -309,6 +309,15 @@ one old false positive. All 11800 Release tests pass. Unsupported execution/
 decoding surfaces, embedding exemptions and full glyph/program validity
 remain partial; historical corpus totals are not replaced.
 
+The [strict RunLength content-filter slice](spec-backlog.md#2026-11-04-strict-runlength-content-filter-inspection)
+adds complete bounded packets/EOD and chains without changing normal reader
+recovery. Twelve valid independent controls agree exactly and whole-file
+(six positives/six negatives), removing six conservative incomplete
+rejections; six malformed controls remain explicit incomplete errors with
+five accepted/one rejected reference result retained. All 8672 selected
+profile/filter/discovery cases pass. LZW/predictor/execution completeness
+and full font validity remain open.
+
 The [strict ASCII content-filter slice](spec-backlog.md#2026-11-04-strict-ascii-content-filter-inspection)
 extends A1 exemption inspection to complete ASCIIHex/ASCII85, including
 Flate chains, without changing ordinary reader recovery. Sixteen valid

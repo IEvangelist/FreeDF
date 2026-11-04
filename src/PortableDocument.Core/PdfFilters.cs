@@ -48,7 +48,7 @@ public static class PdfFilters
                 "LZWDecode" => Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
                 "ASCIIHexDecode" => strictContentFilters ? StrictAsciiHex(data) : AsciiHex(data),
                 "ASCII85Decode" => strictContentFilters ? StrictAscii85(data) : Ascii85(data),
-                "RunLengthDecode" => RunLength(data),
+                "RunLengthDecode" => strictContentFilters ? StrictRunLength(data) : RunLength(data),
                 "Crypt" => data,
                 _ => throw new NotSupportedException($"Filter {name}")
             };
@@ -208,6 +208,24 @@ public static class PdfFilters
             for (var k = 0; k < 5; k++) v = unchecked(v * 85 + grp[k]);
             for (var k = 0; k < count - 1; k++) o.Add((byte)(v >> (24 - 8 * k)));
         }
+    }
+
+    static byte[] StrictRunLength(byte[] data)
+    {
+        long length = 0;
+        for (var i = 0; i < data.Length;)
+        {
+            var run = data[i++];
+            if (run == 128) return RunLength(data);
+            var input = run < 128 ? run + 1 : 1;
+            if (input > data.Length - i)
+                throw new InvalidDataException("Incomplete RunLength content-stream packet");
+            i += input;
+            length += run < 128 ? run + 1 : 257 - run;
+            if (length > MaxInflated)
+                throw new PdfParseException("Decompressed stream exceeds the size limit");
+        }
+        throw new InvalidDataException("RunLength content-stream end marker was not found");
     }
 
     static byte[] RunLength(byte[] s)

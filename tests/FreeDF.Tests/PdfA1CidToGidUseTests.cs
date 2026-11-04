@@ -268,6 +268,39 @@ public class PdfA1CidToGidUseTests
     }
 
     [Theory]
+    [InlineData(0, "literal")]
+    [InlineData(3, "literal")]
+    [InlineData(0, "repeated")]
+    [InlineData(3, "repeated")]
+    [InlineData(0, "hex")]
+    [InlineData(3, "hex")]
+    [InlineData(0, "flate")]
+    [InlineData(3, "flate")]
+    public void CompleteRunLengthChainsPreserveRenderingMode(int mode, string kind)
+    {
+        var doc = Document("");
+        var data = Encoding.ASCII.GetBytes($"BT /F1 12 Tf {mode} Tr (A) Tj ET");
+        if (kind == "flate") data = PdfFilters.DeflateEncode(data);
+        Assert.InRange(data.Length, 1, 128);
+        byte[] encoded = [(byte)(data.Length - 1), .. data, 128];
+        PdfObject filter = new PdfName("RunLengthDecode");
+        if (kind == "repeated") encoded = [129, 32, .. encoded];
+        if (kind == "hex")
+        {
+            encoded = Encoding.ASCII.GetBytes(Convert.ToHexString(encoded) + ">");
+            filter = new PdfArray([new PdfName("ASCIIHexDecode"), filter]);
+        }
+        if (kind == "flate") filter = new PdfArray([filter, new PdfName("FlateDecode")]);
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(
+            new PdfDictionary { Entries = { ["Filter"] = filter } }, encoded);
+        var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has("PDFA-CONTENT-SCAN-INCOMPLETE"));
+        Assert.False(report.Has("PDFA-FONT-USAGE-INCOMPLETE"));
+        Assert.Equal(mode != 3, report.Has("PDFA-FONT-CIDTOGID"));
+    }
+
+    [Theory]
     [InlineData(3, 0, 1)]
     [InlineData(0, 3, 0)]
     [InlineData(3, 3, -1)]
@@ -310,7 +343,7 @@ public class PdfA1CidToGidUseTests
         }
         else
             doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(
-                new PdfDictionary { Entries = { ["Filter"] = new PdfName("RunLengthDecode") } }, [128]);
+                new PdfDictionary { Entries = { ["Filter"] = new PdfName("LZWDecode") } }, []);
         var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
         Assert.Contains(report.Findings, finding => finding.RuleId == "PDFA-FONT-USAGE-INCOMPLETE"
             && finding.Severity == ValidationSeverity.Error);

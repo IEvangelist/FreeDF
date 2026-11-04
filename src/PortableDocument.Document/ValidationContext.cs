@@ -276,7 +276,7 @@ internal sealed class ValidationContext
             || filter is PdfArray && parms is PdfDictionary
             || parms is PdfArray parameters && (parameters.Count != filters.Count
                 || parameters.Items.Any(x => F.Resolve(x) is not (null or PdfNull or PdfDictionary)))
-            || filters.Any(x => x.Name is not ("FlateDecode" or "ASCIIHexDecode" or "ASCII85Decode")
+            || filters.Any(x => x.Name is not ("FlateDecode" or "ASCIIHexDecode" or "ASCII85Decode" or "RunLengthDecode")
                 || F.Resolve(x.Parms?.Get("Predictor")) is { } predictor and not PdfNull && predictor.AsNumber() != 1))
             FontUsageComplete = false;
         try { return PdfFilters.Decode(stream.RawData, filters, F.Resolve, strictContentFilters: true).Data; }

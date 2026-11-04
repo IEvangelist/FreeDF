@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 Strict RunLength content-filter inspection
+
+The internal A1 content-decoding path now checks complete RunLength literal
+and repeated packets, the 128 EOD marker and the existing decoded-size
+bound before using decoded content to establish a font-use exemption.
+Maximum 128-byte packets and filter chains are supported. Normal reader
+recovery remains unchanged. ISO 32000-1 7.4.5 (public edition printed page
+29) defines the packet lengths and EOD; uncompleted inspections retain
+explicit content/font-usage Errors, not invented glyph-use verdicts.
+
+Eighteen retained real-font controls cover literal/repeated/maximum packets,
+RunLength preceding Flate and ASCIIHex/ASCII85 preceding RunLength, each
+with rendered and invisible text. All twelve valid encodings agree exactly
+and whole-file with veraPDF 1.30.3 (six positives/six negatives), removing
+six previous conservative incomplete positive rejections. An independent
+Python packet walker, standard-library outer/inner filters and PyMuPDF
+agree on every valid decoded byte. All six malformed packet/EOD controls
+remain explicit incomplete errors; five reference acceptances and one
+reference rejection are recorded, not counted as exact rule agreements.
+Other profiles' complete findings/verdicts are unchanged across all 18.
+
+Fifteen authored filter cases initially exposed seven baseline failures;
+eight document-integration cases exercise rendered/invisible direct and
+chained use. All 8672 combined profile/filter/discovery cases pass and
+the solution builds. The preceding full11980 predates both strict-filter
+follow-ups. No external PDF/font bundled, no new historical corpus totals.
+LZW, predictors, executable-content interpretation and complete font/glyph
+validity remain open.
+
 ## 2026-11-04 Strict ASCII content-filter inspection
 
 The A1 font-use scan can now establish complete ASCIIHex/ASCII85 decoding,

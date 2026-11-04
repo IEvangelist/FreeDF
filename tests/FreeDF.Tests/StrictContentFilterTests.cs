@@ -77,6 +77,45 @@ public class StrictContentFilterTests
             x => x, strictContentFilters: true).Data);
     }
 
+    [Theory]
+    [InlineData(new byte[] { 128 }, "")]
+    [InlineData(new byte[] { 0, 65, 128 }, "A")]
+    [InlineData(new byte[] { 2, 65, 66, 67, 128 }, "ABC")]
+    [InlineData(new byte[] { 255, 65, 128 }, "AA")]
+    [InlineData(new byte[] { 0, 65, 255, 66, 0, 67, 128 }, "ABBC")]
+    [InlineData(new byte[] { 128, 0 }, "")]
+    public void StrictRunLengthAcceptsCompletePackets(byte[] encoded, string expected) =>
+        Assert.Equal(Encoding.ASCII.GetBytes(expected), Decode(encoded, "RunLengthDecode"));
+
+    [Theory]
+    [InlineData(new byte[] { })]
+    [InlineData(new byte[] { 0 })]
+    [InlineData(new byte[] { 0, 65 })]
+    [InlineData(new byte[] { 1, 65 })]
+    [InlineData(new byte[] { 1, 65, 128 })]
+    [InlineData(new byte[] { 129 })]
+    [InlineData(new byte[] { 255, 65 })]
+    public void StrictRunLengthRequiresCompletePacketsAndAnEndMarker(byte[] encoded) =>
+        Assert.Throws<InvalidDataException>(() => Decode(encoded, "RunLengthDecode"));
+
+    [Fact]
+    public void StrictRunLengthAcceptsMaximumLiteralAndRepeatedRuns()
+    {
+        var literal = Enumerable.Range(0, 128).Select(x => (byte)x).ToArray();
+        Assert.Equal(literal, Decode([127, .. literal, 128], "RunLengthDecode"));
+        Assert.Equal(Enumerable.Repeat((byte)65, 128), Decode([129, 65, 128], "RunLengthDecode"));
+    }
+
+    [Fact]
+    public void RunLengthReaderStillRecoversIncompletePackets()
+    {
+        var decoded = PdfFilters.Decode([2, 65, 66], [("RunLengthDecode", null)], x => x);
+        Assert.Equal("AB", Encoding.ASCII.GetString(decoded.Data));
+    }
+
     static byte[] Decode(string encoded, string filter) =>
-        PdfFilters.Decode(Encoding.Latin1.GetBytes(encoded), [(filter, null)], x => x, strictContentFilters: true).Data;
+        Decode(Encoding.Latin1.GetBytes(encoded), filter);
+
+    static byte[] Decode(byte[] encoded, string filter) =>
+        PdfFilters.Decode(encoded, [(filter, null)], x => x, strictContentFilters: true).Data;
 }
