@@ -233,7 +233,11 @@ internal static class PdfUADeepChecks
                 && f.Resolve(cid.Get("CIDToGIDMap")) is not (PdfStream or PdfName { Value: "Identity" }))
                 c.Add("PDFUA-FONT-CIDTOGID", ValidationSeverity.Error, $"embedded CIDFontType2 {FontChecks.Name(f, cid)} requires /CIDToGIDMap to be a stream or /Identity", Clause(c, "7.21.3.2", "8.4.5.3.2"), u.Page);
             CompositeAndTrueTypeEncoding(c, u, font, subtype);
-            if (f.Resolve(font.Get("ToUnicode")) is PdfStream) continue;
+            if (f.Resolve(font.Get("ToUnicode")) is PdfStream toUnicode)
+            {
+                ToUnicodeValues(c, u, toUnicode);
+                continue;
+            }
             var name = FontChecks.Name(f, font);
             if (subtype == "Type0")
             {
@@ -254,6 +258,176 @@ internal static class PdfUADeepChecks
                     c.Add("PDFUA-FONT-TOUNICODE", ValidationSeverity.Warning, $"font {name} has no /ToUnicode CMap and no standard text encoding (heuristic: glyph-level mapping is not evaluated)", Clause(c, "7.21.7", "8.8"), u.Page);
             }
         }
+    }
+
+    static void ToUnicodeValues(ValidationContext c, ValidationContext.FontUse use, PdfStream stream)
+    {
+        var clause = Clause(c, "7.21.7", "8.4.5.8");
+        try
+        {
+            if (c.F.Resolve(stream.Dict.Get("UseCMap")) is not (null or PdfNull))
+                throw new PdfParseException("inherited ToUnicode mappings are not completely inspected");
+            var filters = PdfFilters.GetFilters(stream.Dict, c.F.Resolve);
+            var filter = c.F.Resolve(stream.Dict.Get("Filter") ?? stream.Dict.Get("F"));
+            var parms = c.F.Resolve(stream.Dict.Get("DecodeParms") ?? stream.Dict.Get("DP"));
+            if (filter is not (null or PdfNull or PdfName or PdfArray)
+                || filter is PdfArray array && array.Count != filters.Count
+                || parms is not (null or PdfNull or PdfDictionary or PdfArray)
+                || filter is PdfArray && parms is PdfDictionary
+                || parms is PdfArray parameters && (parameters.Count != filters.Count
+                    || parameters.Items.Any(p => c.F.Resolve(p) is not (null or PdfNull or PdfDictionary)))
+                || filters.Any(f => f.Name is not ("FlateDecode" or "ASCIIHexDecode" or "ASCII85Decode" or "RunLengthDecode")))
+                throw new PdfParseException("unsupported strict ToUnicode stream filter");
+            var bytes = PdfFilters.Decode(stream.RawData, filters, c.F.Resolve, strictContentFilters: true).Data;
+            if (ForbiddenToUnicodeValue(bytes))
+                c.Add("PDFUA-FONT-TOUNICODE-VALUE", ValidationSeverity.Error,
+                    $"ToUnicode of {FontChecks.Name(c.F, use.Font)} specifies U+0000, U+FEFF or U+FFFE",
+                    clause, use.Page);
+        }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or IOException)
+        {
+            c.Add("PDFUA-FONT-TOUNICODE-INCOMPLETE", ValidationSeverity.Error,
+                $"cannot completely inspect ToUnicode of {FontChecks.Name(c.F, use.Font)}: {e.Message}", clause, use.Page);
+        }
+    }
+
+    static bool ForbiddenToUnicodeValue(byte[] data)
+    {
+        if (data.Length > 16 * 1024 * 1024) throw new PdfParseException("ToUnicode byte limit");
+        var lexer = new PdfLexer(data);
+        var mappings = new Dictionary<(int Length, uint Code), byte[]>();
+        var steps = 0;
+        var entries = 0;
+        var inside = false;
+        var ended = false;
+        int? previousCount = null;
+        int tokenStart = 0, tokenEnd = 0;
+        PdfObject? Read()
+        {
+            if (++steps > 1_000_000) throw new PdfParseException("ToUnicode token limit");
+            lexer.SkipWhite();
+            tokenStart = lexer.Pos;
+            if (lexer.Pos < data.Length && data[lexer.Pos] == '[')
+            {
+                lexer.Pos++;
+                tokenEnd = lexer.Pos;
+                return new PdfKeyword("[");
+            }
+            var start = lexer.Pos;
+            var result = lexer.ReadObject(false);
+            if (lexer.Pos > data.Length || result is not null && lexer.Pos <= start)
+                throw new PdfParseException("malformed ToUnicode token");
+            tokenEnd = lexer.Pos;
+            return result;
+        }
+        byte[] Hex()
+        {
+            lexer.SkipWhite();
+            var start = lexer.Pos;
+            var value = Read();
+            if (value is not PdfString text || start >= data.Length || data[start] != '<'
+                || lexer.Pos > data.Length || data[lexer.Pos - 1] != '>')
+                throw new PdfParseException("non-literal ToUnicode mapping string");
+            var digits = 0;
+            foreach (var b in data.AsSpan(start + 1, lexer.Pos - start - 2))
+                if (!PdfLexer.IsWhite(b))
+                {
+                    if (b is not (>= (byte)'0' and <= (byte)'9' or >= (byte)'a' and <= (byte)'f' or >= (byte)'A' and <= (byte)'F'))
+                        throw new PdfParseException("invalid ToUnicode hexadecimal string");
+                    digits++;
+                }
+            if (digits % 2 != 0) throw new PdfParseException("partial ToUnicode hexadecimal byte");
+            return text.Bytes;
+        }
+        (int Length, uint Code) Source()
+        {
+            var bytes = Hex();
+            if (bytes.Length is < 1 or > 4) throw new PdfParseException("invalid ToUnicode source-code length");
+            uint code = 0;
+            foreach (var b in bytes) code = code << 8 | b;
+            return (bytes.Length, code);
+        }
+        void Set((int Length, uint Code) key, byte[] destination)
+        {
+            if (++entries > 65536) throw new PdfParseException("ToUnicode expanded-mapping limit");
+            if (destination.Length is < 2 or > 512 || destination.Length % 2 != 0)
+                throw new PdfParseException("invalid ToUnicode UTF-16BE destination length");
+            mappings[key] = destination;
+        }
+        while (Read() is { } token)
+        {
+            if (token is PdfKeyword keyword)
+            {
+                if (keyword.Value == "begincmap")
+                {
+                    if (inside || ended) throw new PdfParseException("multiple ToUnicode CMap programs");
+                    inside = true;
+                }
+                else if (keyword.Value == "endcmap")
+                {
+                    if (!inside) throw new PdfParseException("unmatched ToUnicode endcmap");
+                    inside = false;
+                    ended = true;
+                }
+                else if (keyword.Value is "beginbfchar" or "beginbfrange" or "begincodespacerange")
+                {
+                    if (!inside || previousCount is not { } count)
+                        throw new PdfParseException("invalid ToUnicode mapping count");
+                    for (var i = 0; i < count; i++)
+                    {
+                        var first = Source();
+                        if (keyword.Value == "beginbfchar") Set(first, Hex());
+                        else
+                        {
+                            var last = Source();
+                            if (first.Length != last.Length || first.Code > last.Code)
+                                throw new PdfParseException("invalid ToUnicode source range");
+                            if (keyword.Value == "begincodespacerange") continue;
+                            if ((long)last.Code - first.Code + 1 > 65536 - entries)
+                                throw new PdfParseException("ToUnicode expanded-mapping limit");
+                            lexer.SkipWhite();
+                            if (lexer.Pos < data.Length && data[lexer.Pos] == '[')
+                            {
+                                Read();
+                                for (var code = (long)first.Code; code <= last.Code; code++)
+                                    Set((first.Length, (uint)code), Hex());
+                                if (Read() is not PdfKeyword { Value: "]" })
+                                    throw new PdfParseException("ToUnicode range-array length mismatch");
+                            }
+                            else
+                            {
+                                var destination = Hex();
+                                if (destination.Length == 0 || last.Code - first.Code > 255 - destination[^1])
+                                    throw new PdfParseException("undefined ToUnicode range-byte overflow");
+                                for (var code = (long)first.Code; code <= last.Code; code++)
+                                {
+                                    var value = (byte[])destination.Clone();
+                                    value[^1] += (byte)(code - first.Code);
+                                    Set((first.Length, (uint)code), value);
+                                }
+                            }
+                        }
+                    }
+                    var end = keyword.Value.Replace("begin", "end", StringComparison.Ordinal);
+                    if (Read() is not PdfKeyword close || close.Value != end)
+                        throw new PdfParseException("unmatched ToUnicode mapping block");
+                }
+                else if (keyword.Value is not ("findresource" or "begin" or "dict" or "dup" or "def" or "currentdict"
+                    or "defineresource" or "pop" or "end" or "CMapName"))
+                    throw new PdfParseException($"unsupported ToUnicode operator {keyword.Value}");
+            }
+            previousCount = null;
+            if (token is PdfInteger { Value: >= 0 and <= 65536 } integer)
+            {
+                var literal = data.AsSpan(tokenStart, tokenEnd - tokenStart);
+                if (literal.Length > 0 && literal[0] == '+') literal = literal[1..];
+                if (literal.Length > 0 && literal.IndexOfAnyExceptInRange((byte)'0', (byte)'9') < 0)
+                    previousCount = (int)integer.Value;
+            }
+        }
+        if (!ended || inside) throw new PdfParseException("incomplete ToUnicode CMap program");
+        return mappings.Values.Any(value => Enumerable.Range(0, value.Length / 2)
+            .Any(i => (value[i * 2] << 8 | value[i * 2 + 1]) is 0 or 0xfeff or 0xfffe));
     }
 
     /// <summary>Verifies that page content is marked content with an MCID that the structure tree knows, or an Artifact (ISO 14289-1 7.1).</summary>

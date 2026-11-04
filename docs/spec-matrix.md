@@ -309,6 +309,19 @@ one old false positive. All 11800 Release tests pass. Unsupported execution/
 decoding surfaces, embedding exemptions and full glyph/program validity
 remain partial; historical corpus totals are not replaced.
 
+The [PDF/UA forbidden ToUnicode destination slice](spec-backlog.md#2026-11-04-pdfua-forbidden-tounicode-destinations)
+adds bounded literal bfchar/bfrange inspection, UTF-16BE multi-character
+values, effective overrides, final-byte range arithmetic and explicit
+incomplete decoding/inheritance/procedures/limits. Thirty-eight of 40
+real-font controls agree exactly/whole-file (24 new negatives/14 clean
+positives); two unused forbidden mappings are explicit all-values versus
+used-glyph reference disagreements. A fresh FreeDF run of 435 public
+files/870 profile results closes exactly six missed file verdicts:
+**6 UA-1 / 2 UA-2 misses remain**, zero reference-positive regressions
+or new internal/incomplete findings. The full Release suite passes
+12174/12174. Complete glyph mapping, UTF-16/CMap validity, metrics and
+overall font parity remain partial; dated earlier totals are preserved.
+
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
 adds strict A1 parameter/frame/tag inspection while preserving tolerant
 reader recovery. All 30 valid encodings have independent byte checks;

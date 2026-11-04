@@ -4,6 +4,56 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA forbidden ToUnicode destinations
+
+PDF/UA-1 and UA-2 now reject effective literal ToUnicode destinations
+containing U+0000, U+FEFF or U+FFFE, including within multi-character
+UTF-16BE strings. Source codes and comments are not mistaken for
+destinations. Counted bfchar, sequential bfrange and array bfrange blocks
+are inspected; later mappings replace earlier mappings of the same
+source code and byte length. Sequential ranges increment only the final
+destination byte, not a Unicode scalar or the whole string; overflow is
+explicitly incomplete, as ISO 32000-1 9.10.3 defines it as undefined
+(public edition printed page 295).
+
+Requirement provenance is the published veraPDF Consortium v1.30.3
+[UA-1 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-1.xml)
+7.21.7-2 and
+[UA-2 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2.xml)
+8.4.5.8-2, under CC BY 4.0; this is profile cross-checking, not a claim
+that the full ISO PDF/UA clause text was independently obtained.
+The decoder/scanner is independently implemented. No reference-engine
+source, profile XML, external font or PDF is bundled.
+
+The check uses strict complete supported filter decoding and bounds input
+to 16 MiB, tokens to one million, expanded mappings to 65536 and each
+destination to 512 bytes. Malformed strings/counts/blocks/arrays, undefined
+range-byte overflow, inherited mappings, unsupported procedures/operators
+or filters, and limits produce `PDFUA-FONT-TOUNICODE-INCOMPLETE` Errors
+instead of silent success or guessed Unicode values. This does not
+validate every CMap rule, UTF-16 scalar sequence, code-space coverage or
+used-glyph mapping; normal text-extraction recovery is unchanged.
+
+Forty independent real-font controls cover direct, compressed, multi-code
+unit, range, array, comment, supplementary/ligature and override cases.
+An independent Python mapping/UTF-16BE check verifies all 40. Thirty-eight
+agree with veraPDF 1.30.3 on exact rule and whole-file verdict: 24 formerly
+missed negatives and 14 clean positives. Two unused U+0000 mappings are
+deliberate disagreements: the profiles describe all specified Unicode
+values, while the reference engine only checks used glyphs. FreeDF
+rejects them; they are not counted as reference agreement.
+
+A fresh FreeDF pass over all 435 retained public files (870 UA profile
+results), compared with the retained reference and prior FreeDF results,
+closes exactly six file-verdict misses and adds only this rule's findings:
+three UA-1 and three UA-2 forbidden-value files. Remaining misses are
+**6 UA-1 / 2 UA-2**, with zero reference-positive regressions, internal
+errors or new incomplete results. Historical dated totals are preserved.
+The initial 59 authored cases exposed 37 baseline failures; the final
+74 cases include malformed decoding and bound controls. The full Release
+suite passes 12174/12174, and the solution builds. Full font metrics,
+subset/glyph validity, mapping completeness and overall parity remain open.
+
 ## 2026-11-04 Complete Flate predictor inspection
 
 The internal A1 content scan now validates integer predictor parameters,

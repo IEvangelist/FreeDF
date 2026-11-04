@@ -27,6 +27,15 @@ The image Alternates/OPI and BPC/mask conditions (image tests 1/2/4/5), and Form
 OPI/PS/Subtype2 bans (19005-1 6.2.4/6.2.5; 19005-2/3 6.2.9), were likewise
 cross-checked against those CC BY 4.0 profiles and independently implemented.
 
+The forbidden ToUnicode destination values in `ValidationPdfUADeep.cs`
+were cross-checked against the veraPDF Consortium's
+[v1.30.3 PDF/UA-1 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-1.xml)
+(7.21.7-2) and
+[PDF/UA-2 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2.xml)
+(8.4.5.8-2), under the same CC BY 4.0 licence. The bounded literal CMap
+scanner and UTF-16BE destination inspection are independently implemented;
+unused mappings are also checked, unlike the reference's used-glyph scope.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
