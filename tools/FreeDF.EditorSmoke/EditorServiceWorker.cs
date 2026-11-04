@@ -89,10 +89,12 @@ static partial class EditorServiceWorker
         {
             File.WriteAllText(swPath, legacySw);
             await using var context = await browser.NewContextAsync();
+            var migrationErrors = new ConcurrentQueue<string>();
             async Task<IPage> Open(bool silent = false)
             {
                 var tab = await context.NewPageAsync();
                 tab.SetDefaultTimeout(90000);
+                tab.PageError += (_, error) => migrationErrors.Enqueue(error);
                 if (silent) await tab.AddInitScriptAsync(silentClient);
                 await tab.GotoAsync(url);
                 await waitReady(tab);
@@ -101,9 +103,13 @@ static partial class EditorServiceWorker
             async Task Accept(IPage tab)
             {
                 await tab.WaitForFunctionAsync("!!document.getElementById('update-banner')");
-                await tab.EvaluateAsync("window.__stale = true");
+                await tab.EvaluateAsync("() => { window.__stale = true; window.__updates = []; new MutationObserver(() => window.__updates.push({at:Date.now(),text:document.getElementById('update-banner')?.textContent})).observe(document.getElementById('update-banner'), {childList:true,subtree:true}); }");
                 await tab.Locator("#update-banner button.primary").ClickAsync();
-                await tab.WaitForFunctionAsync("window.__stale === undefined");
+                try { await tab.WaitForFunctionAsync("window.__stale === undefined"); }
+                catch (TimeoutException)
+                {
+                    throw new Exception("Service worker migration reload stalled: " + await tab.EvaluateAsync<string>("async () => { const r = await navigator.serviceWorker.getRegistration(); return JSON.stringify({updates:window.__updates,controller:navigator.serviceWorker.controller?.state,waiting:r?.waiting?.state,active:r?.active?.state,visibility:document.visibilityState,banner:document.getElementById('update-banner')?.textContent,status:document.getElementById('status')?.textContent,dirty:document.getElementById('dstate')?.dataset.dirty,busy:pdfHost.busy,modal:document.querySelector('.mdl')?.textContent}); }") + " | " + string.Join(" | ", migrationErrors));
+                }
                 await waitReady(tab);
             }
 
@@ -148,7 +154,35 @@ static partial class EditorServiceWorker
         }
     }
 
-    public static async Task Run(string source, string output, bool migrationOnly = false)
+    static async Task CheckUpdateFeedback(IPage page)
+    {
+        await page.EvaluateAsync("""
+            () => {
+              document.getElementById('update-banner').addEventListener('click', event => {
+                new MutationObserver((_, observer) => {
+                  if (document.getElementById('update-banner').getAttribute('aria-busy') !== 'true') return;
+                  observer.disconnect();
+                  requestAnimationFrame(() => { window.updateFeedbackMs = performance.now() - event.timeStamp; });
+                }).observe(document.getElementById('update-banner'), {childList:true});
+              }, {once:true,capture:true});
+              const has = caches.has.bind(caches);
+              caches.has = name => new Promise((resolve, reject) => {
+                window.releaseUpdatePins = () => { caches.has = has; has(name).then(resolve, reject); };
+              });
+            }
+            """);
+        await page.Locator("#update-banner button.primary").ClickAsync();
+        await page.WaitForFunctionAsync("!!window.releaseUpdatePins && Number.isFinite(window.updateFeedbackMs)");
+        Console.WriteLine($"Update click-to-progress frame: {await page.EvaluateAsync<double>("window.updateFeedbackMs"):F1} ms.");
+        Check(await page.EvaluateAsync<bool>("document.getElementById('update-banner').getAttribute('aria-busy') === 'true' && document.getElementById('update-banner').textContent.startsWith('Updating') && !!document.querySelector('#update-banner progress') && !document.querySelector('#update-banner button')"),
+            "Reload immediately paints busy progress and prevents duplicate clicks while cache work is pending.");
+        await page.EvaluateAsync("window.releaseUpdatePins(); delete window.releaseUpdatePins");
+        await page.WaitForFunctionAsync("document.getElementById('update-banner')?.textContent.includes('another editor tab')");
+        Check(await page.EvaluateAsync<bool>("!document.getElementById('update-banner').hasAttribute('aria-busy') && !!document.querySelector('#update-banner button.primary')"),
+            "blocked updates restore an actionable Reload control.");
+    }
+
+    public static async Task Run(string source, string output, bool migrationOnly = false, bool updateFeedbackOnly = false)
     {
         Directory.CreateDirectory(output);
         var site = Path.Combine(output, "site");
@@ -266,6 +300,32 @@ static partial class EditorServiceWorker
             catch (TimeoutException) { throw new Exception("Service worker: timed out waiting for " + what); }
         }
 
+        if (updateFeedbackOnly)
+        {
+            await page.GotoAsync(url);
+            await Ready();
+            await page.EvaluateAsync("navigator.serviceWorker.ready.then(() => true)");
+            await page.ReloadAsync();
+            await Ready();
+            File.WriteAllText(Path.Combine(site, "worker.js"), originalWorker + "\n// update feedback build\n");
+            Reseal(site, "eeeeeeeeeeeeeeee");
+            await page.EvaluateAsync("navigator.serviceWorker.getRegistration().then(r => r.update())");
+            await WaitFor("!!document.getElementById('update-banner')", "update banner");
+            var dirtyTabForFeedback = await context.NewPageAsync();
+            await dirtyTabForFeedback.GotoAsync(url);
+            await WaitReady(dirtyTabForFeedback);
+            await MakeDirty(dirtyTabForFeedback);
+            await CheckUpdateFeedback(page);
+            Check(await Version() == manifestA.Version, "a dirty tab blocks activation while progress resolves.");
+            await dirtyTabForFeedback.CloseAsync();
+            await AcceptUpdate();
+            Check(await Version() == "eeeeeeeeeeeeeeee", "Reload activates the update and boots the new editor.");
+            Check((await page.EvaluateAsync<string>("fetch('worker.js').then(r => r.text())")).Contains("update feedback build", StringComparison.Ordinal),
+                "the reloaded editor receives the new assets.");
+            Check(errors.IsEmpty, "no update feedback browser errors: " + string.Join(" | ", errors));
+            Console.WriteLine("PASS: immediate update progress, stalled cache acknowledgement, duplicate-click prevention, dirty-tab blocking and actual new-build reload.");
+            return;
+        }
         await CheckLegacyMigration(browser, site, url, originalSw, originalWorker, WaitReady);
         if (migrationOnly)
         {
@@ -395,8 +455,7 @@ static partial class EditorServiceWorker
         // A tab with unsaved edits blocks activation: nothing reloads and the old build keeps serving everyone.
         await MakeDirty(second);
         await second.EvaluateAsync("window.__stale = true");
-        await page.Locator("#update-banner button.primary").ClickAsync();
-        await WaitFor("document.getElementById('update-banner')?.textContent.includes('another editor tab')", "blocked-by-dirty-tab notice");
+        await CheckUpdateFeedback(page);
         Check(await Version() == manifestA.Version, "a dirty tab blocks activation of the new worker.");
         Check(await second.EvaluateAsync<bool>("window.__stale === true && document.getElementById('dstate').dataset.dirty === 'true'"), "the dirty tab was not reloaded.");
         Check((await CacheNames()).Length == 2, "both versions stay cached while activation is blocked.");

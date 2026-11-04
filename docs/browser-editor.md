@@ -267,6 +267,15 @@ clients' caches until they close. An asset absent from an older pinned cache
 returns 503 instead of fetching a different build; an older tab can therefore
 need a reload before using a previously uncached sample or fallback font.
 Unsaved edits, inline edits and in-flight requests defer update reloads.
+Choosing **Reload** immediately replaces the update actions with an **Updating**
+status and indeterminate progress indicator, painted before cache preservation
+begins. The status follows activation and reload; duplicate clicks are ignored.
+Cache or activation failures, other tabs with unsaved work, and a 15-second
+timeout restore an actionable notice rather than leaving the update silently
+pending. Unsaved-work protection is unchanged.
+`FreeDF.EditorSmoke --update-feedback <published-wwwroot> <evidence-directory>`
+holds cache preservation open to check visible feedback, then verifies dirty-tab
+blocking and a successful reload onto a newly deployed build.
 `Publish-EditorPages.ps1 -KillServiceWorker` publishes a rollback that removes
 the editor cache and client pins without discarding unsaved edits.
 
@@ -338,6 +347,22 @@ Properties without creating an overlay, changing dirty state, or rewriting text
 operators. Focusing, unchanged input, Escape, deselection and a save/reopen retain
 the original font, text matrix, glyph positioning and rendered pixels. Plain
 selection of an existing overlay or graphic also does not enqueue a no-op edit.
+
+Dragging and resizing update only the selected element's geometry, at most once
+per animation frame; release commits the final pointer position even when a frame
+is pending. Other page objects and Properties controls remain mounted, preserving
+focus and panel scroll position. Selecting an original graphic updates its
+selection affordances in place. Properties sections do not replay fade-in
+animations on selection, and a same-size raster refresh does not rebuild the
+object layer. `FreeDF.EditorSmoke --interactions <published-wwwroot>` checks DOM
+identity, sidebar stability, focus, and persisted move/resize/line/object geometry.
+It also profiles three 192-event drags on a 40-object page with 4x CPU slowdown:
+no object/control removals, focus/scroll loss, PDF renders or mid-drag item saves
+are allowed. The scheduled performance chunk enforces p95 event-to-frame latency below 50 ms
+and p95 pointer handlers below 8 ms; functional CI reports timing without gating.
+Set `EDITOR_SMOKE_ARTIFACTS` to retain `interaction-profile.json`.
+`--interaction-profile` runs the same workload without performance/stability
+gates for measuring an older build as a control; final geometry is still checked.
 
 The first actual content change creates a replacement. Supported original
 embedded glyphs retain their font resource; horizontal scale, shear, baseline,
