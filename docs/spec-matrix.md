@@ -396,6 +396,15 @@ full language determinability and registry semantics remain outside this
 slice. The tooltip inheritance/reference discrepancy is documented, not
 silently resolved in favour of reference rejection.
 
+The [UA-1 embedded-file name boundary fix](spec-backlog.md#2026-11-04-ua-1-embedded-file-unicode-name-boundaries)
+rejects marker-only Unicode UF names and treats resolved-null EF as
+omission. Independent native-document controls show three corrected
+verdicts and 16/18 exact-rule/whole-file agreements; F encoding and
+indirect-null reference disagreements remain explicit. All UA-2 outputs
+are unchanged. Full Release passes 13087/13087; fresh 435-file/870-result
+public-corpus outputs are unchanged. Complete file-specification parity
+is not claimed.
+
 The [UA-1 encrypted-permission presence fix](spec-backlog.md#2026-11-04-ua-1-encryption-permission-presence)
 rejects missing/null P without changing reader authentication or UA-2.
 Four independent absent/null controls change from compliant to rejected;

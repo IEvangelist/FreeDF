@@ -604,6 +604,54 @@ public class DeepValidationTests
         Assert.False(U(Ua(TaggedText, "8 0 R", extras: [Para, "<< /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F 10 0 R >> >>", ObjPdf.Stream("x", "/Type /EmbeddedFile")])).Has("PDFUA-FILESPEC-UF"));
     }
 
+    public static IEnumerable<object[]> FileSpecificationNameCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var key in new[] { "F", "UF" })
+        foreach (var indirect in new[] { false, true })
+        foreach (var value in new[] { "(a.txt)", "<FEFF0061>", "<FEFF>", "()", "null", "( )" })
+            yield return [part, key, indirect, value,
+                value is "()" or "null" || part == 1 && key == "UF" && value == "<FEFF>"];
+    }
+
+    [Theory]
+    [MemberData(nameof(FileSpecificationNameCases))]
+    public void EmbeddedFileUnicodeNameMustHaveDecodedText(
+        int part, string key, bool indirect, string value, bool missing)
+    {
+        var names = "/F (a.txt) /UF (a.txt)".Replace($"/{key} (a.txt)", $"/{key} {(indirect ? "11 0 R" : value)}");
+        var pdf = Ua(TaggedText, "8 0 R", extras:
+            [Para, $"<< /Type /Filespec {names} /EF << /F 10 0 R >> >>",
+             ObjPdf.Stream("x", "/Type /EmbeddedFile"), value]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missing, report.Has("PDFUA-FILESPEC-UF"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    public static IEnumerable<object[]> FileSpecificationEmbeddedEntryCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var names in new[] { false, true })
+        foreach (var ef in new[] { "", "/EF null", "/EF 11 0 R", "/EF 99 0 R",
+            "/EF << /F 10 0 R >>", "/EF 12 0 R" })
+            yield return [part, names, ef,
+                !names && (part == 1 ? ef is "/EF << /F 10 0 R >>" or "/EF 12 0 R" : ef.Length > 0)];
+    }
+
+    [Theory]
+    [MemberData(nameof(FileSpecificationEmbeddedEntryCases))]
+    public void Ua1NullEmbeddedFileEntryIsEquivalentToOmission(int part, bool names, string ef, bool missing)
+    {
+        var pdf = Ua(TaggedText, "8 0 R", extras:
+            [Para, $"<< /Type /Filespec {(names ? "/F (a.txt) /UF (a.txt)" : "")} {ef} >>",
+             ObjPdf.Stream("x", "/Type /EmbeddedFile"), "null", "<< /F 10 0 R >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missing, report.Has("PDFUA-FILESPEC-UF"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
     [Fact]
     public void FontsNeedUnicodeMappingAndCidToGid()
     {

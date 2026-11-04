@@ -84,6 +84,13 @@ required-entry fact in ISO 32000-1:2008 Table 21. Presence checking in
 `ValidationPdfUA.cs` is independently implemented; authentication and
 complete permission-dictionary validation are not changed.
 
+The UA-1 non-empty embedded-file UF requirement was cross-checked
+against the same CC BY 4.0 PDF/UA-1 profile, 7.11-1. Decoded UF emptiness
+and resolved-null EF classification in `ValidationPdfUADeep.cs` are
+independently implemented using ISO 32000-1 text-string/null semantics;
+F encoding and indirect-null reference disagreements are retained in
+the specification backlog rather than represented as full agreement.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

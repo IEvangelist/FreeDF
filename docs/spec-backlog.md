@@ -4,6 +4,58 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 UA-1 embedded-file Unicode name boundaries
+
+The existing `PDFUA-FILESPEC-UF` check now measures the decoded UF text
+length for UA-1 rather than accepting a UTF-16BE byte-order marker alone
+as a non-empty name. Direct/indirect strings retain the same treatment.
+The UA-1 embedding trigger also resolves EF before classifying null as
+omission; absent, direct-null, indirect-null and dangling-reference EF
+do not alone require embedded-file names. Actual direct/indirect EF
+dictionaries still require names. UA-2 and reader decoding are unchanged.
+
+The non-empty requirement is cross-checked against the pinned CC BY 4.0
+veraPDF v1.30.3 UA-1 7.11-1 predicate. Independently, public ISO
+32000-1:2008 Table 44, printed p102/physical p110, defines UF as a
+Unicode text string; 7.9.2.2 defines its leading UTF-16BE marker.
+Clause 7.3.9, printed p21/physical p29, makes a null dictionary value
+equivalent to omission and a nonexistent indirect object equivalent to
+null. Table 44's EF entry, printed p103, identifies embedded streams.
+
+There are 72 authored controls across both profiles, direct/indirect
+names, ASCII/UTF-16BE names, marker-only/empty/null/whitespace values,
+and six EF states with/without names. The pre-fix run has five failures:
+two marker-only UF cases and three resolved-null EF cases. Focused
+deep-validation passes 607 tests; full Release passes **13087/13087**,
+zero skipped. Solution build has zero errors and the two retained
+machine-feed NU1507 warnings.
+
+Eighteen independently mutated native UA-1 PDFs produce 16 exact-rule
+and whole-file agreements. FreeDF has 12 clean positives and six
+negatives; three verdicts change: marker-only UF is newly rejected,
+while missing names with direct/indirect null EF are newly accepted.
+Every corresponding UA-2 result is unchanged. The two disagreements
+are retained explicitly, not called agreement or complete parity:
+
+- The reference rejects marker-only F, whereas FreeDF preserves its
+  existing byte-length treatment. Table 44 defines F as a file
+  specification string rather than UF's Unicode text string, and
+  7.11.2.4 allows multiple-byte file specification strings. A stricter
+  Unicode interpretation of F was not established and does not ship.
+- The reference rejects indirect-null EF with missing names while
+  accepting direct-null/absent EF. FreeDF treats both null forms as
+  absent under the primary null-equivalence requirement.
+
+The UA-2 reference also reports description errors for these reachable
+file specifications even when EF is absent. Its semantics are therefore
+not inferred from UA-1; no new UA-2 filename/description restrictions or
+relaxations ship. Fresh public-corpus measurement, 435 PDFs/870 profile
+results, is identical to the preceding permissions run with no finding
+or verdict changes, regressions or new incomplete/internal results.
+Malformed non-null EF values, complete filename encoding/path validity,
+broader UF decoding and full UA-2 file-description classification remain
+open. External PDFs/profiles stay session-only evidence.
+
 ## 2026-11-04 UA-1 encryption permission presence
 
 The reporting audit exposed a real partial predicate: a readable encrypted

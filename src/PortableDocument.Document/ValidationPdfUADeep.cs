@@ -46,7 +46,9 @@ internal static class PdfUADeepChecks
         {
             if (reported) break;
             if (o is PdfDictionary d && d.Get("EF") is not null && f.Resolve(d.Get("Type")).AsName() is "Filespec" or null
-                && !(f.Resolve(d.Get("F")) is PdfString { Bytes.Length: > 0 } && f.Resolve(d.Get("UF")) is PdfString { Bytes.Length: > 0 }))
+                && (c.Part != 1 || f.Resolve(d.Get("EF")) is not (null or PdfNull))
+                && !(f.Resolve(d.Get("F")) is PdfString { Bytes.Length: > 0 }
+                    && f.Resolve(d.Get("UF")) is PdfString { Bytes.Length: > 0 } uf && (c.Part != 1 || uf.Text.Length > 0)))
             { reported = true; c.Add("PDFUA-FILESPEC-UF", ValidationSeverity.Error, "embedded-file specification must have both /F and /UF", Clause(c, "7.11", "8.9")); }
         }
         if (c.Doc.Pages.Count > 20 && f.Resolve(f.Catalog.Get("Outlines")) is not PdfDictionary)
