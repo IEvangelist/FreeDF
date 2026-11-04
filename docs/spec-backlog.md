@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-2/3 embedded CIDFont mapping entries
+
+Embedded CIDFontType2 `/CIDToGIDMap` in PDF/A-2/3 must now resolve to
+a stream or the literal name `/Identity`; merely containing the key is no
+longer sufficient. The existing `PDFA-FONT-CIDTOGID` Error, page attribution
+and ISO 19005-2/3 6.2.11.3.2 clause are retained. The embedding predicate and
+resolved-value test follow the existing PDF/UA entry check.
+
+The pinned veraPDF profiles (validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`) express 6.2.11.3.2 test 1
+for embedded Type 2 CIDFonts without a rendering-mode exemption. All 52
+independently mutated real-font controls agree with veraPDF 1.30.3 on that
+exact predicate: 12 map positives and 40 map negatives, across PDF/A-2/3
+and text rendering modes 0/3. They derive from the verified public
+UA-1 CIDFont positive and are not clean PDF/A documents: **all whole-file
+verdicts remain noncompliant**, so they establish exact-rule behavior, not
+new whole-file conformance or corpus-miss reductions. No external PDF/XML
+is bundled.
+
+There are 224 authored cases spanning embedded/unembedded fonts,
+CIDFontType0/2, visible/invisible text and 14 map representations including
+direct/indirect Identity, stream, null, wrong kinds and a cyclic reference.
+Forty failed against the original implementation; all now pass.
+The integrated PDF/A, UA CID-map and deep-validation selector passed 2320
+tests. This is entry-type validation, not stream mapping/glyph completeness.
+
+PDF/A-1 is deliberately unchanged: its separate rendering-mode-dependent
+6.3.3.2 rule still needs a use-aware implementation, and the old missing-key
+check/clause is not claimed complete. General malformed-reference diagnosis,
+unused font traversal and complete embedding semantics remain open.
+
 ## 2026-11-04 PDF/A Hide/GoToE action policy
 
 The existing known-action scan now rejects `/Hide` in all three parts and

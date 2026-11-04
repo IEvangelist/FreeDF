@@ -107,8 +107,13 @@ internal static class PdfAChecks
             if (!FontChecks.IsEmbedded(c.F, u.Font))
                 c.Add("PDFA-FONT-EMBEDDED", ValidationSeverity.Error, $"font {FontChecks.Name(c.F, u.Font)} is not embedded", Clause(c, "6.3.4", "6.2.11.4.1", "6.2.11.4.1"), u.Page);
             else if (c.F.Resolve(u.Font.Get("Subtype")).AsName() == "Type0" && c.F.Resolve(u.Font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df
-                && c.F.Resolve(df[0]) is PdfDictionary cid && c.F.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2" && cid.Get("CIDToGIDMap") is null)
-                c.Add("PDFA-FONT-CIDTOGID", ValidationSeverity.Error, $"CIDFontType2 {FontChecks.Name(c.F, cid)} has no /CIDToGIDMap", Clause(c, "6.3.5", "6.2.11.3.2", "6.2.11.3.2"), u.Page);
+                && c.F.Resolve(df[0]) is PdfDictionary cid && c.F.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2"
+                && (c.Part == 1 ? cid.Get("CIDToGIDMap") is null
+                    : c.F.Resolve(cid.Get("CIDToGIDMap")) is not (PdfStream or PdfName { Value: "Identity" })))
+                c.Add("PDFA-FONT-CIDTOGID", ValidationSeverity.Error,
+                    c.Part == 1 ? $"CIDFontType2 {FontChecks.Name(c.F, cid)} has no /CIDToGIDMap"
+                        : $"embedded CIDFontType2 {FontChecks.Name(c.F, cid)} requires /CIDToGIDMap to be a stream or /Identity",
+                    Clause(c, "6.3.5", "6.2.11.3.2", "6.2.11.3.2"), u.Page);
         }
     }
 

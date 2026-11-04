@@ -78,6 +78,12 @@ Type from bypassing the known-action scan. All 36 independent controls
 agree on exact rules and verdicts. Unknown/deprecated action kinds and
 complete context/target validation remain open.
 
+The [PDF/A-2/3 embedded CIDFont map check](spec-backlog.md#2026-11-04-pdfa-23-embedded-cidfont-mapping-entries)
+requires a stream or `/Identity`, including invisible text. All 52
+real-font controls agree on the exact predicate, but remain non-PDF/A
+whole files and do not close measured corpus verdicts. PDF/A-1's distinct
+rendering-mode requirement and full map/glyph validity remain open.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,
