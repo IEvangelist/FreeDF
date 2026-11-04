@@ -4,6 +4,77 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-03 full PDF/UA corpus remeasurement
+
+All 435 public PDFs at veraPDF-corpus commit
+`bb75f4f0073d9350dfd058c0162a367e6fadf25e` were downloaded and verified
+against their Git blob SHA-1 and byte length: 297 UA-1 and 138 UA-2 files.
+FreeDF validation code `46e8daa26f3cbde9eb84e3e56c1c8cdfbc16e289`
+was compared with veraPDF 1.30.3 on JDK 25.0.5.8. Raw JSON/XML, logs,
+the manifest and assembly/runtime SHA-256 values are retained as session
+artifacts, not bundled external data. The corrected repository tool below
+independently reproduces the same whole-file results.
+
+| Reference profile | Total / compared | Both pass | Both fail | Reference fail / FreeDF pass | Reference pass / FreeDF fail | Excluded |
+|---|---|---|---|---|---|---|
+| UA-1 | 297 / 297 | 141 | 142 | 14 | 0 | 0 |
+| UA-2 standalone, explicit XML | 138 / 138 | 54 | 75 | 9 | 0 | 0 |
+| UA-2 + ISO 32005, explicit XML | 138 / 138 | 54 | 75 | 9 | 0 | 0 |
+
+Profile selection matters: **veraPDF 1.30.3 `-f ua2` selects the combined
+profile**, byte-identical to the pinned combined XML, not the standalone
+92-rule XML. The standalone source has no Table 5 rules. Both explicit files
+come from validation-profiles commit `c4f57effb0d3618827c87bd71882930d752be6e3`:
+`PDF_UA/PDFUA-2.xml` (SHA-256
+`9ca42e3f19474bf3eb2dbf253a223eed491a979921c89d74b6314e0d4c7cd782`)
+and `PDF_UA/PDFUA-2-ISO32005.xml` (SHA-256
+`7f7bb7be37c7f89026ce4e5733341d339a92d8cb004349055aac685d1765655b`).
+The latter contains 92 UA-2 plus 1636 Table 5 rules. Its only reported
+Table 5 failure in this UA-2 corpus is `StructTreeRoot-Document` in
+`8.2.5.2-t01-fail-a.pdf`; identical file verdicts do not establish exhaustive
+containment coverage or eliminate the deferred 55 grouping-dependent rules.
+
+Eight UA-2 role-mapping negatives report `PDFUA2-NESTING-INCOMPLETE` alongside
+the independent missing/circular-role errors: `8.2.4-t01-fail-a/b/c`,
+`t02-fail-a/b/c`, `t03-fail-b`, and `t04-fail-a`. They remain negative
+whole-file comparisons, not complete nesting checks or hidden exclusions.
+No FreeDF file-parse failures, `VALIDATION-INTERNAL` warnings or abnormal
+reference jobs occurred. Family-ID overlap remains weaker than exact-predicate
+evidence: the per-rule output still contains unmapped rules and cases rejected
+only through other findings.
+
+The remaining whole-file misses are:
+
+| Area | UA-1 clause / files | UA-2 clause / files |
+|---|---|---|
+| CIDFonts | 7.21.3.2 / 2 | 8.4.5.3.2 / 2 |
+| CMaps | 7.21.3.3 / 1 | 8.4.5.4 / 1 |
+| Subset embedding | 7.21.4.2 / 3 | None in this run |
+| Font metrics | 7.21.5 / 1 | 8.4.5.6 / 1 |
+| Character encodings | 7.21.6 / 1 | 8.4.5.7 / 1 |
+| Unicode maps | 7.21.7 / 3 | 8.4.5.8 / 3 |
+| `.notdef` use | 7.21.8 / 1 | 8.4.5.9 / 1 |
+| Widget description | 7.18.1 / 1 (`t03-fail-d`) | None in this run |
+| Table header connection | 7.5 / 1 (`t01-fail-c`) | None in this run |
+
+Reproduce after installing veraPDF and setting `VERAPDF`/`JAVA_HOME`:
+
+```powershell
+python tools\ua_crosscheck.py corpus <corpus>\PDF_UA-1 1 --misses --strict
+python tools\ua_crosscheck.py corpus <corpus>\PDF_UA-2 2 --profile <profiles>\PDF_UA\PDFUA-2.xml --misses --strict
+python tools\ua_crosscheck.py corpus <corpus>\PDF_UA-2 2 --profile <profiles>\PDF_UA\PDFUA-2-ISO32005.xml --misses --strict
+```
+
+The old tool failed on this host before running UaDump: its UA-1 command was
+43,343 characters (`WinError 206`). It now batches quoted UTF-16 command lines
+below 24,000 units, builds only the first batch and aborts on any failed batch
+instead of publishing a partial matrix. It prints the actual reference profile,
+preserves per-file parse diagnostics and excludes incomplete internal checks.
+Fifteen standard-library regressions run in the existing `node` CI chunk.
+No production validation behavior or public profile is changed by this
+remeasurement. The older dated totals below remain historical; these new
+14/9/9 misses are not a claim of full rule coverage or PDF/UA certification.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects
@@ -440,6 +511,9 @@ Status stays **Partial** for the annotation, form, action and rendering rows: au
 
 ## Tagged PDF and PDF/UA reconciliation (2026-10-31)
 
+This is the historical checkpoint. See the [2026-11-03 full remeasurement](#2026-11-03-full-pdfua-corpus-remeasurement)
+for current counts and verified standalone/combined profile selection.
+
 Independent evidence: veraPDF 1.30.3 (JDK 17, installed user-locally; nothing vendored) was cross-run with `tools/ua_crosscheck.py` against the generated samples and the public veraPDF-corpus (`PDF_UA-1`: 297 files, `PDF_UA-2`: 138; not committed). Baseline before this work on PDF_UA-1: 36 false positives, 42 misses. Now: PDF_UA-1 0 false positives / 17 misses of 156 failing (297 compared, 0 excluded); PDF_UA-2 4 -> 0 false positives, 40 -> 11 misses of 84 failing (138 compared, 0 excluded). Reproduce with `python tools/ua_crosscheck.py corpus <corpus>/PDF_UA-1 1 --misses` (and `PDF_UA-2 2`); the script prints total/compared/excluded, the matrix and a per-rule overlap table. These are file-verdict figures: the per-rule table shows many veraPDF rules without a mapped rule of ours (unmapped, marked `*`) and a few mapped rules where files fail only through other rules (e.g. 7.2-29, 7.5-1, 8.2.4-3), so rule-level conformance is not established. The two samples that cannot be read without a password (17) are excluded; no other sample (01-26) disagrees on the pass/fail verdict; sample 19 gained an XMP packet and is veraPDF-clean for UA-1.
 
 Closed (validator): RFC 3066 language tags and per-text language determinability instead of a blanket catalog `/Lang`; PDF 1.7 role vocabulary, circular and unused-remap handling; outside-CropBox/hidden annotations; Annot/Link/TrapNet/PrinterMark/Popup rules; Link `/Contents` only in UA-1; TD header connections; Form XObject invocation context, Artifact/tagged nesting and Ref XObjects; pdfuaid prefixes and `rev`; CMap/CIDSystemInfo and TrueType encodings; UA-2 structure namespaces (`/NS`, `RoleMapNS`), PDF 2.0 version, pdf2 Document root, H/Note/Math/ListNumbering/Caption/LI content, structure destinations, file-spec Desc/AFRelationship.
@@ -460,7 +534,8 @@ were compared with veraPDF 1.30.3: both failures now fail the exact mapped
 excluded). Self-authored `PdfUaLinkTargetTests` cover this slice without
 vendoring the external PDFs. URI/remote target grouping, general destination
 validity and exhaustive named-tree syntax validation remain open. The dated
-corpus-wide counts above have not been remeasured.
+corpus-wide counts above were not remeasured by this slice; see the later
+full remeasurement linked at the start of this section.
 
 PDF/UA-1 media clip data now requires string `/CT` and multilingual `/Alt`
 string pairs with nonempty description strings (7.18.6.2; published veraPDF
@@ -474,8 +549,8 @@ accepted (5 compared, 0 excluded). `PdfUaMediaClipTests` uses self-authored
 fixtures. This checks syntax, not MIME grammar, language suitability or useful
 human descriptions; empty `/CT` strings and empty `/Alt` arrays are not rejected
 by these rules, matching the published controls. Media is never accessed,
-decoded or played. UA-2 is unchanged; broader media conformance and dated
-corpus-wide remeasurement remain open.
+decoded or played. UA-2 is unchanged; broader media conformance remains open.
+Corpus-wide remeasurement was deferred at this checkpoint and is recorded above.
 
 PDF/UA-2 clause 8.8 page-destination detection also follows named destinations
 and `/SD`/`/D` dictionaries, catalog `/OpenAction`, and GoTo actions reached
@@ -519,6 +594,7 @@ proof that the authored fixtures fully conform. The remaining 55 grouping-depend
 predicates (including four conditional occurrence limits) are deferred, as are Ruby/Warichu
 sequences; existing checks may overlap individual deferred predicates, but
 complete coverage is not established. See [provenance and narrow controls](validation-compat.md#2026-11-03-pdfua-2-containment-slice).
-The dated corpus comparison above has not been rerun.
+The later full corpus comparison is recorded in the dated remeasurement above;
+it does not replace these predicate-specific controls.
 
 Still open: arbitrary owner graphs and external (`/Stm`) streams in text extraction; per-invocation tagging of reused Form XObjects (UA-1 7.20-2 is only a heuristic `PDFUA-FORM-REUSED-TAGGED`); editing `/Stm` content, structure namespaces and role maps in the editor; auto-tagging of links/forms/figures/tables/headings and alternate text; remaining veraPDF misses listed above (font-program completeness 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clips, URI/remote link-target grouping, remaining ISO/TS 32005 nesting conditions); logical-order checks against an independent renderer/reader for malformed or reused forms. Empirical, not spec-derived: `PDFUA-TABLE-HEADER-CONNECTION`. Status stays Partial.

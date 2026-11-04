@@ -39,6 +39,7 @@ if ($Chunk -eq 'node') {
     if ($cjs) { Run 'host, worker and selection invariants' { node --test $cjs.FullName } }
     Run 'sample, outline and publish bundle integrity' { node --test tools/FreeDF.EditorWeb/samples.test.mjs tools/FreeDF.EditorWeb/outline_map.test.mjs tools/bundle-editor-site.test.mjs }
     Run 'build-driven deployment and visible test failures' { node --test tools/editor-pages.test.cjs }
+    Run 'PDF/UA cross-check tool regressions' { python -m unittest discover -s tools -p test_ua_crosscheck.py }
     return
 }
 Prepare

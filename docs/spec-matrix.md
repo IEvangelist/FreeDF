@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [2026-11-03 full PDF/UA corpus remeasurement](spec-backlog.md#2026-11-03-full-pdfua-corpus-remeasurement)
+compares all 297 UA-1 and 138 UA-2 files with veraPDF 1.30.3: 14 UA-1 misses
+and 9 UA-2 misses, zero false positives/exclusions. Explicit standalone and
+combined UA-2 XML profiles give the same file verdicts; `-f ua2` selects the
+combined profile in this runtime. Eight rejected role-mapping cases explicitly
+have incomplete nesting checks. Unmapped predicates and limited Table 5 corpus
+coverage remain; these figures are not full conformance or certification.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded
