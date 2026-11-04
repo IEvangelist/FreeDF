@@ -51,7 +51,13 @@ profile-invalid image/mask bit depths. Fifty-one independent controls close
 standalone-stencil disagreements where FreeDF enforces the base standard's
 one-bit constraint. Null-key controls remain accepted. See
 [dictionary-policy evidence and limits](spec-backlog.md#pdfa-imageform-dictionary-policies);
-inline parsing, general image validity and standalone PS XObjects remain open.
+inline parsing and general image validity remain open.
+
+The [standalone PostScript XObject check](spec-backlog.md#2026-11-04-pdfa-standalone-postscript-xobjects)
+now rejects typed `/Subtype /PS` streams across PDF/A-1/2/3, including unused
+objects. Nine painted negatives and three image positives agree with veraPDF;
+three unused-object controls explicitly disagree (FreeDF rejects, veraPDF
+accepts). This is a file-wide prohibition, not complete XObject well-formedness.
 
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved

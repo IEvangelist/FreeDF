@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A standalone PostScript XObjects
+
+The existing all-object dictionary scan now rejects streams with resolved
+`/Type /XObject` and `/Subtype /PS` through `PDFA-XOBJECT-POSTSCRIPT`.
+The clause is ISO 19005-1 6.2.7 or ISO 19005-2/3 6.2.9. The pinned
+veraPDF validation profiles at commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` express the prohibition as
+`PDXObject`, test 1 for PDF/A-1 or test 3 for PDF/A-2/3:
+"A conforming file shall not contain any PostScript XObjects."
+Form `/PS` and `/Subtype2 /PS` checks remain separate and unchanged.
+
+There are 195 authored cases across PDF/A-1b/2b/3b: direct and indirect
+Type/Subtype names, painted and unused objects, non-stream dictionaries,
+other/missing types, other/string/null subtypes and finding deduplication.
+The initial 96-case set had 12 failures before the implementation.
+Fifteen external controls were independently mutated from the retained clean
+image PDFs and checked with veraPDF 1.30.3. Nine painted PS negatives,
+including indirect Type/Subtype names, and three image positives agree on
+the exact rule and whole-file verdict. The three unused PS controls are
+**explicit disagreements**: veraPDF accepts them, whereas FreeDF's
+all-object scan rejects them under the file-wide prohibition. They remain
+in the retained XML/JSON evidence, not excluded or counted as agreement.
+These controls establish 12/15 agreement, not reference equivalence.
+
+This adds a typed-stream prohibition, not general XObject well-formedness,
+PostScript execution or a claim that malformed/missing-Type objects are
+covered. No external PDFs/XML or executable PostScript are bundled.
+The integrated Release suite passed 4439 tests with none failed or skipped.
+
 ## 2026-11-03 full PDF/UA corpus remeasurement
 
 All 435 public PDFs at veraPDF-corpus commit

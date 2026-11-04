@@ -216,6 +216,8 @@ internal static class PdfAChecks
             if (o is PdfStream st)
             {
                 var subtype = f.Resolve(dict.Get("Subtype")).AsName();
+                if (subtype == "PS" && f.Resolve(dict.Get("Type")).AsName() == "XObject")
+                    XObjectFinding("PDFA-XOBJECT-POSTSCRIPT", "a standalone PostScript XObject is not permitted", "6.2.7", "6.2.9");
                 if (subtype == "Image")
                 {
                     if (f.Resolve(dict.Get("Interpolate")) is PdfBoolean { Value: true })
