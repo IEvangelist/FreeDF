@@ -396,6 +396,14 @@ full language determinability and registry semantics remain outside this
 slice. The tooltip inheritance/reference discrepancy is documented, not
 silently resolved in favour of reference rejection.
 
+The [remaining implemented-family reconciliation](spec-backlog.md#2026-11-04-remaining-implemented-family-reconciliation)
+adds twelve reporting mappings without changing validation: 31/33 newly
+mapped reference-rule/file occurrences have Error-family overlap; two font
+occurrences remain explicitly unmatched. Current native counts are UA-1
+56/97 failing reference tests mapped, 42 with no observed overlap; UA-2
+45/48 mapped, three with no overlap. These are not predicate-completeness
+or standards-coverage measures.
+
 The [private-use language-string check](spec-backlog.md#2026-11-04-pdfua-2-private-use-language-strings)
 adds a distinct UA-2 8.6 finding for catalog/structure/visited Span language
 strings across all three Unicode PUA ranges. All 78 independent controls

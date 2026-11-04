@@ -73,6 +73,18 @@ class RuleOverlapTests(unittest.TestCase):
         (2, "8.7-1", "PDFUA-OC-NAME"),
         (2, "8.4.4-2", "PDFUA-LANG-INVALID"),
         (2, "8.6-1", "PDFUA2-TEXT-STRING-PUA"),
+        (1, "7.10-1", "PDFUA-OC-NAME"),
+        (1, "7.10-2", "PDFUA-OC-AS"),
+        (1, "7.11-1", "PDFUA-FILESPEC-UF"),
+        (1, "7.16-1", "PDFUA-ENCRYPT-ACCESS"),
+        (2, "5-1", "PDFUA-XMP-ID-MISSING"),
+        (2, "5-3", "PDFUA-XMP-ID-PREFIX"),
+        (2, "8.4.4-1", "PDFUA-LANG"),
+        (2, "8.4.5.3.1-1", "PDFUA-FONT-CMAP-SYSTEMINFO"),
+        (2, "8.4.5.3.2-1", "PDFUA-FONT-CIDTOGID"),
+        (2, "8.4.5.4-1", "PDFUA-FONT-CMAP-EMBEDDED"),
+        (2, "8.4.5.5.1-1", "PDFUA-FONT-EMBEDDED"),
+        (2, "8.4.5.8-1", "PDFUA-FONT-TOUNICODE"),
     ]
 
     def overlap(self, part, rule, errors):

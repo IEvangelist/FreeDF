@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 remaining implemented-family reconciliation
+
+A second reporting audit adds twelve missing reference-to-Error-family
+mappings: UA-1 optional-content Name/AS, embedded-file F/UF and accessibility
+permissions; UA-2 identification presence/prefix, catalog language, composite
+CIDSystemInfo, CIDToGIDMap, CMap embedding, font embedding and ToUnicode
+availability. Existing validator behaviour is unchanged. The related Error
+implementations were compared with the pinned v1.30.3 standalone profile
+predicates; these are family mappings, not claims of complete predicates.
+In particular, the permissions implementation does not yet reject missing P,
+and composite ToUnicode inspection remains scoped and partly heuristic.
+
+The expanded tool controls initially fail 24 subtests (mapped overlap and
+other-rule-only agreement for each addition); all 18 tool tests then pass.
+Reconciliation reuses retained complete reference rules and the latest
+435-file/870-result FreeDF run from the private-use slice, without rerunning
+Java or changing validation outputs. All 10 UA-1 occurrences of the four
+new mappings overlap. The eight UA-2 mappings overlap 21/23 occurrences:
+`8.4.5.4-t01-fail-a.pdf` has no matching CIDSystemInfo finding, and
+`8.4.5.4-t03-fail-a.pdf` has a CMap-reference Error rather than the mapped
+CMap-embedding Error. Neither is silently counted as predicate coverage.
+
+Current native reference counts are UA-1 97 distinct failing tests, 56
+mapped families and 42 with no observed family overlap (including one
+mapped test); UA-2 48 distinct failing tests, 45 mapped and three with no
+observed overlap. Partially covered families can still have missed
+occurrences, as the two font cases demonstrate. These are conservative
+reporting counts, not standards-coverage percentages or new runtime fixes.
+Historical reconciliation counts below remain dated evidence.
+
 ## 2026-11-04 PDF/UA-2 private-use language strings
 
 The next masked reference failure is now reported by its own rule:

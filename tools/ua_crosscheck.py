@@ -52,6 +52,8 @@ RULE_MAP = {
         "7.21.6-3": ["PDFUA-FONT-TRUETYPE-ENCODING"], "7.21.6-4": ["PDFUA-FONT-SYMBOLIC-CMAP"], "7.21.7-1": ["PDFUA-FONT-TOUNICODE"],
         "7.21.4.2-1": ["PDFUA-FONT-CHARSET-LIST"], "7.21.4.2-2": ["PDFUA-FONT-CIDSET-LIST"],
         "7.21.5-1": ["PDFUA-FONT-WIDTH"], "7.21.7-2": ["PDFUA-FONT-TOUNICODE-VALUE"], "7.21.8-1": ["PDFUA-FONT-NOTDEF"],
+        "7.10-1": ["PDFUA-OC-NAME"], "7.10-2": ["PDFUA-OC-AS"],
+        "7.11-1": ["PDFUA-FILESPEC-UF"], "7.16-1": ["PDFUA-ENCRYPT-ACCESS"],
     },
     2: {
         "5-2": ["PDFUA-XMP-ID-PART"], "5-4": ["PDFUA-XMP-ID-PREFIX"], "5-5": ["PDFUA2-XMP-ID-REV"], "6.1-1": ["PDFUA2-VERSION"], "6.2-1": ["PDFUA-MARKINFO"],
@@ -70,6 +72,11 @@ RULE_MAP = {
         "8.7-1": ["PDFUA-OC-NAME"],
         "8.4.4-2": ["PDFUA-LANG-INVALID"],
         "8.6-1": ["PDFUA2-TEXT-STRING-PUA"],
+        "5-1": ["PDFUA-XMP-ID-MISSING"], "5-3": ["PDFUA-XMP-ID-PREFIX"],
+        "8.4.4-1": ["PDFUA-LANG"],
+        "8.4.5.3.1-1": ["PDFUA-FONT-CMAP-SYSTEMINFO"], "8.4.5.3.2-1": ["PDFUA-FONT-CIDTOGID"],
+        "8.4.5.4-1": ["PDFUA-FONT-CMAP-EMBEDDED"], "8.4.5.5.1-1": ["PDFUA-FONT-EMBEDDED"],
+        "8.4.5.8-1": ["PDFUA-FONT-TOUNICODE"],
     },
 }
 
