@@ -75,6 +75,38 @@ No production validation behavior or public profile is changed by this
 remeasurement. The older dated totals below remain historical; these new
 14/9/9 misses are not a claim of full rule coverage or PDF/UA certification.
 
+## 2026-11-04 PDF/UA embedded CIDFont mapping entries
+
+The embedded CIDFontType2 check now resolves `/CIDToGIDMap` and accepts only
+a stream or the name `/Identity`. Merely having a key no longer accepts
+`/NoIdentity`, an empty name, null, numbers, strings, arrays or dictionaries.
+Indirect entries follow the same rule, including unresolved/cyclic references.
+The existing nonembedded-font and CIDFontType0 exemptions remain unchanged.
+The finding is still `PDFUA-FONT-CIDTOGID`; its UA-2 clause is corrected to
+8.4.5.3.2 (UA-1 remains 7.21.3.2). This verifies the dictionary entry's
+representation, not stream decoding/length, CID/glyph coverage, font-program
+validity or actual glyph use. PDF/A behavior is unchanged by this slice.
+
+All eight pinned public CIDFont controls agree on the exact veraPDF 1.30.3
+rule: six negatives and two positives, zero exclusions. Four formerly missed
+negatives (`t01-fail-a/c` in each profile) now fail the intended finding.
+The retained reference reports from the full remeasurement above were compared
+against fresh FreeDF results for all 435 SHA-verified PDFs; exactly these four
+whole-file verdicts change and no public positive changes.
+
+| Reference profile | Compared | Both pass | Both fail | Misses | False positives | Excluded |
+|---|---|---|---|---|---|---|
+| UA-1 | 297 | 141 | 144 | 12 | 0 | 0 |
+| UA-2 standalone, explicit XML | 138 | 54 | 77 | 7 | 0 | 0 |
+| UA-2 + ISO 32005, explicit XML | 138 | 54 | 77 | 7 | 0 | 0 |
+
+`PdfUaCidToGidTests` adds 112 rule-specific cases for both profiles,
+embedded/nonembedded Type0/Type2 descendants and direct/indirect/null/invalid
+map values. Twenty-one fail before the fix (including the old UA-2 clause).
+Synthetic font streams exercise the validator and are not conformant real
+fonts. The baseline 14/9/9 totals above remain dated evidence; remaining font,
+widget, table, grouping/sequence and semantic gaps stay open under #11.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects

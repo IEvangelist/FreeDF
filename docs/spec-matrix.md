@@ -12,6 +12,12 @@ combined profile in this runtime. Eight rejected role-mapping cases explicitly
 have incomplete nesting checks. Unmapped predicates and limited Table 5 corpus
 coverage remain; these figures are not full conformance or certification.
 
+The [2026-11-04 embedded CIDFont entry correction](spec-backlog.md#2026-11-04-pdfua-embedded-cidfont-mapping-entries)
+subsequently closes four missed invalid `/CIDToGIDMap` cases. Fresh FreeDF
+results against the same retained reference reports give 12 UA-1 and 7 UA-2
+misses, zero false positives/exclusions, with exactly those four verdicts
+changed. This is entry-type validation, not complete font/glyph conformance.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded
