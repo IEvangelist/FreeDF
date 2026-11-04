@@ -309,6 +309,21 @@ one old false positive. All 11800 Release tests pass. Unsupported execution/
 decoding surfaces, embedding exemptions and full glyph/program validity
 remain partial; historical corpus totals are not replaced.
 
+The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
+adds strict A1 parameter/frame/tag inspection while preserving tolerant
+reader recovery. All 30 valid encodings have independent byte checks;
+18 eligible controls agree exactly/whole-file (nine positives/nine
+negatives). Eight packed TIFF controls expose a logged reference decoder
+limit and are not counted as agreement; four PDF 1.5-only 16-bit controls
+retain A1 incompleteness. Thirteen conservative invisible-use rejections
+are removed. Ten malformed controls retain explicit Errors, with four
+reference acceptances/four rejections/two exceptions recorded. Other
+profiles' full findings/verdicts remain unchanged across all 40 controls;
+the full Release suite passes 12100/12100. Existing PDF/A LZW prohibition
+already rejects all 48 direct/chained investigation controls, so no
+unnecessary strict LZW extension was shipped. Full execution and font
+validity remain partial.
+
 The [strict RunLength content-filter slice](spec-backlog.md#2026-11-04-strict-runlength-content-filter-inspection)
 adds complete bounded packets/EOD and chains without changing normal reader
 recovery. Twelve valid independent controls agree exactly and whole-file

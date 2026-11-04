@@ -301,6 +301,97 @@ public class PdfA1CidToGidUseTests
     }
 
     [Theory]
+    [InlineData(0, 2, false)]
+    [InlineData(3, 2, false)]
+    [InlineData(0, 10, false)]
+    [InlineData(3, 10, false)]
+    [InlineData(0, 15, false)]
+    [InlineData(3, 15, false)]
+    [InlineData(0, 2, true)]
+    [InlineData(3, 2, true)]
+    [InlineData(0, 10, true)]
+    [InlineData(3, 10, true)]
+    [InlineData(0, 15, true)]
+    [InlineData(3, 15, true)]
+    public void CompletePredictorChainsPreserveRenderingMode(int mode, int predictor, bool hex)
+    {
+        var doc = Document("");
+        var text = Encoding.ASCII.GetBytes($"BT /F1 12 Tf {mode} Tr (A) Tj ET");
+        var predicted = predictor == 2 ? text : text.SelectMany((value, i) =>
+            new byte[] { (byte)(predictor == 15 ? 2 : 0),
+                predictor == 15 ? unchecked((byte)(value - (i == 0 ? 0 : text[i - 1]))) : value }).ToArray();
+        var encoded = PdfFilters.DeflateEncode(predicted);
+        PdfObject filter = new PdfName("FlateDecode");
+        PdfObject parameters = new PdfDictionary { Entries = { ["Predictor"] = new PdfInteger(predictor) } };
+        if (hex)
+        {
+            encoded = Encoding.ASCII.GetBytes(Convert.ToHexString(encoded) + ">");
+            filter = new PdfArray([new PdfName("ASCIIHexDecode"), filter]);
+            parameters = new PdfArray([PdfNull.Instance, parameters]);
+        }
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(new PdfDictionary
+        {
+            Entries = { ["Filter"] = filter, ["DecodeParms"] = parameters },
+        }, encoded);
+        var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has("PDFA-CONTENT-SCAN-INCOMPLETE"));
+        Assert.False(report.Has("PDFA-FONT-USAGE-INCOMPLETE"));
+        Assert.Equal(mode != 3, report.Has("PDFA-FONT-CIDTOGID"));
+    }
+
+    [Theory]
+    [InlineData(15, 4, new byte[] { 0, 65 })]
+    [InlineData(15, 4, new byte[] { 5, 65, 65, 65, 65 })]
+    [InlineData(3, 4, new byte[] { 0, 65, 65, 65, 65 })]
+    [InlineData(15, 0, new byte[] { 0, 65, 65, 65, 65 })]
+    public void InvalidPredictorFramesDoNotProveTheExemption(int predictor, int columns, byte[] raw)
+    {
+        var doc = Document("");
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(new PdfDictionary
+        {
+            Entries =
+            {
+                ["Filter"] = new PdfName("FlateDecode"),
+                ["DecodeParms"] = new PdfDictionary
+                {
+                    Entries = { ["Predictor"] = new PdfInteger(predictor), ["Columns"] = new PdfInteger(columns) },
+                },
+            },
+        }, PdfFilters.DeflateEncode(raw));
+        var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
+        Assert.Contains(report.Findings, finding => finding.RuleId == "PDFA-CONTENT-SCAN-INCOMPLETE"
+            && finding.Severity == ValidationSeverity.Error);
+        Assert.True(report.Has("PDFA-FONT-USAGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has("PDFA-FONT-CIDTOGID"));
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(15)]
+    public void Pdf15OnlySixteenBitPredictorsDoNotEstablishPdfA1Exemption(int predictor)
+    {
+        var doc = Document("");
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(new PdfDictionary
+        {
+            Entries =
+            {
+                ["Filter"] = new PdfName("FlateDecode"),
+                ["DecodeParms"] = new PdfDictionary
+                {
+                    Entries = { ["Predictor"] = new PdfInteger(predictor), ["BitsPerComponent"] = new PdfInteger(16) },
+                },
+            },
+        }, [0x78, 0x9c, 3, 0, 0, 0, 0, 1]);
+        var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
+        Assert.True(report.Has("PDFA-FONT-USAGE-INCOMPLETE"));
+        Assert.False(report.Has("PDFA-CONTENT-SCAN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has("PDFA-FONT-CIDTOGID"));
+    }
+
+    [Theory]
     [InlineData(3, 0, 1)]
     [InlineData(0, 3, 0)]
     [InlineData(3, 3, -1)]

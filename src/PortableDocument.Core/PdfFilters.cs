@@ -44,7 +44,8 @@ public static class PdfFilters
             if (ImageCodecs.Contains(name)) return (data, name, parms);
             data = name switch
             {
-                "FlateDecode" => Predict(strictContentFilters ? StrictFlate(data) : Flate(data), parms, resolve),
+                "FlateDecode" => strictContentFilters ? StrictPredict(StrictFlate(data), parms, resolve)
+                    : Predict(Flate(data), parms, resolve),
                 "LZWDecode" => Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
                 "ASCIIHexDecode" => strictContentFilters ? StrictAsciiHex(data) : AsciiHex(data),
                 "ASCII85Decode" => strictContentFilters ? StrictAscii85(data) : Ascii85(data),
@@ -269,6 +270,37 @@ public static class PdfFilters
             bits = n >= 4096 ? 12 : n >= 2048 ? 12 : n >= 1024 ? 11 : n >= 512 ? 10 : 9;
         }
         return o.ToArray();
+    }
+
+    static byte[] StrictPredict(byte[] data, PdfDictionary? parameters, Func<PdfObject?, PdfObject?> resolve)
+    {
+        long Integer(string key, int fallback)
+        {
+            var value = resolve(parameters?.Get(key));
+            if (value is null or PdfNull) return fallback;
+            if (value is PdfInteger number) return number.Value;
+            throw new InvalidDataException($"Invalid content-stream predictor {key} parameter");
+        }
+        var predictor = Integer("Predictor", 1);
+        if (predictor == 1) return data;
+        if (predictor is not (2 or >= 10 and <= 15))
+            throw new InvalidDataException("Unknown content-stream predictor");
+        var colors = Integer("Colors", 1);
+        var bits = Integer("BitsPerComponent", 8);
+        var columns = Integer("Columns", 1);
+        const long maxRowBits = 1 << 28;
+        if (colors < 1 || columns < 1 || bits is not (1 or 2 or 4 or 8 or 16)
+            || colors > maxRowBits / bits || columns > maxRowBits / (colors * bits))
+            throw new InvalidDataException("Invalid or oversized content-stream predictor parameters");
+        var rowBytes = (int)((colors * bits * columns + 7) / 8);
+        var frameBytes = rowBytes + (predictor == 2 ? 0 : 1);
+        if (data.Length % frameBytes != 0)
+            throw new InvalidDataException("Incomplete content-stream predictor row");
+        if (predictor != 2)
+            for (var offset = 0; offset < data.Length; offset += frameBytes)
+                if (data[offset] > 4)
+                    throw new InvalidDataException("Unknown content-stream PNG predictor row tag");
+        return Predict(data, parameters, resolve);
     }
 
     static byte[] Predict(byte[] data, PdfDictionary? p, Func<PdfObject?, PdfObject?> r)

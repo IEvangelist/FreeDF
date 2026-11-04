@@ -8,14 +8,15 @@ public class FilterPredictorTests
 {
     static string Dir => Path.Combine(AppContext.BaseDirectory, "fixtures", "filters");
 
-    static byte[] Run(byte[] z, int predictor, int colors, int bpc, int columns)
+    static byte[] Run(byte[] z, int predictor, int colors, int bpc, int columns, bool strict = false)
     {
         var parms = new PdfDictionary();
         parms.Entries["Predictor"] = new PdfInteger(predictor);
         parms.Entries["Colors"] = new PdfInteger(colors);
         parms.Entries["BitsPerComponent"] = new PdfInteger(bpc);
         parms.Entries["Columns"] = new PdfInteger(columns);
-        return PdfFilters.Decode(z, [("FlateDecode", parms)], o => o).Data;
+        return strict ? PdfFilters.Decode(z, [("FlateDecode", parms)], o => o, strictContentFilters: true).Data
+            : PdfFilters.Decode(z, [("FlateDecode", parms)], o => o).Data;
     }
 
     // pred2-16 is verified by libtiff (tools/make_filter_fixtures.py asserts it); pred2-4 is hand-derived.
@@ -103,13 +104,17 @@ public class FilterPredictorTests
         var z = new MemoryStream();
         using (var zs = new ZLibStream(z, CompressionMode.Compress, true)) zs.Write(diff);
         Assert.Equal(plain, Run(z.ToArray(), 2, colors, bpc, columns));
+        Assert.Equal(plain, Run(z.ToArray(), 2, colors, bpc, columns, strict: true));
     }
 
     [Theory]
     [InlineData("pred2-16", 16, 9)]
     [InlineData("pred2-4", 4, 7)]
-    public void TiffPredictor2AtNon8BitDepths(string name, int bpc, int columns) =>
+    public void TiffPredictor2AtNon8BitDepths(string name, int bpc, int columns)
+    {
         Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".exp")), Run(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), 2, 1, bpc, columns));
+        Assert.Equal(File.ReadAllBytes(Path.Combine(Dir, name + ".exp")), Run(File.ReadAllBytes(Path.Combine(Dir, name + ".bin")), 2, 1, bpc, columns, strict: true));
+    }
 
     [Theory]
     [InlineData(0, 1, 8)]
@@ -135,6 +140,7 @@ public class FilterPredictorTests
         using var z = new MemoryStream();
         using (var zs = new ZLibStream(z, CompressionMode.Compress, true)) zs.Write(encoded);
         Assert.Equal(new byte[] { 0x12, 0x34, 0x56 }, Run(z.ToArray(), 11, 3, 4, 2));
+        Assert.Equal(new byte[] { 0x12, 0x34, 0x56 }, Run(z.ToArray(), 11, 3, 4, 2, strict: true));
     }
 
     [Fact]

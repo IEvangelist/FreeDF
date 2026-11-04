@@ -277,7 +277,10 @@ internal sealed class ValidationContext
             || parms is PdfArray parameters && (parameters.Count != filters.Count
                 || parameters.Items.Any(x => F.Resolve(x) is not (null or PdfNull or PdfDictionary)))
             || filters.Any(x => x.Name is not ("FlateDecode" or "ASCIIHexDecode" or "ASCII85Decode" or "RunLengthDecode")
-                || F.Resolve(x.Parms?.Get("Predictor")) is { } predictor and not PdfNull && predictor.AsNumber() != 1))
+                || x.Name != "FlateDecode" && F.Resolve(x.Parms?.Get("Predictor")) is { } predictor and not PdfNull
+                    && predictor.AsNumber() != 1
+                || F.Resolve(x.Parms?.Get("Predictor")).AsNumber() > 1
+                    && F.Resolve(x.Parms?.Get("BitsPerComponent")).AsNumber() == 16))
             FontUsageComplete = false;
         try { return PdfFilters.Decode(stream.RawData, filters, F.Resolve, strictContentFilters: true).Data; }
         catch (Exception e) when (e is InvalidDataException or IOException or PdfParseException)

@@ -4,6 +4,48 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 Complete Flate predictor inspection
+
+The internal A1 content scan now validates integer predictor parameters,
+supported algorithms, bounded row sizes, complete TIFF/PNG frames and PNG
+algorithm tags before reusing the existing predictor decoder. TIFF packed
+components and PNG byte prediction retain their existing semantics;
+PNG tags need not match the particular Predictor value from 10 through 15.
+The normal reader's partial-row recovery is unchanged. ISO 32000-1
+7.4.4.4 and Tables 8-10 (public edition printed pages 27-29) establish
+these requirements. A1 still cannot establish an exemption using 16-bit
+predictors: those were introduced in PDF 1.5, beyond A1's PDF 1.4 base.
+This conservative limit is not a new complete PDF-version validator.
+
+Forty retained real-font controls include 30 valid predictor encodings and
+ten malformed parameter/frame controls. A separate Python sample/row
+decoder, standard outer filters/zlib and PyMuPDF reproduce every byte of
+all 30 valid encodings. Eighteen eligible controls agree exactly and
+whole-file with veraPDF 1.30.3: nine rendered negatives/nine invisible
+positives. Eight packed TIFF controls are not counted as reference
+agreements: the reference logs unsupported 1/2/4-bit decoding while
+reporting compliance, including for rendered invalid maps. FreeDF follows
+the normative algorithm and independent byte checks instead. Four PDF
+1.5-only 16-bit controls retain explicit font-usage-incomplete errors.
+Thirteen eligible invisible controls lose their former conservative
+incomplete rejection, including four independently decoded packed cases.
+
+All ten malformed controls retain explicit content/font-usage Errors.
+The reference accepts four, rejects four and throws on two; these are not
+counted as exact agreements. Other profiles' complete findings/verdicts
+are unchanged across all 40. Thirty-one initial filter cases exposed
+20 baseline failures; 18 document cases cover rendering modes, chains,
+errors and the A1 version limit. Existing packed/16-bit TIFF and packed
+PNG fixtures now also exercise the strict decoder. The full Release
+suite passes 12100/12100 and the solution builds. No external PDF/font
+is bundled; no historical public-corpus totals are changed.
+
+An investigated LZW extension was deliberately not shipped: existing
+`PDFA-FILTER-LZW` enforcement already rejects all 48 direct/chained
+controls because PDF/A prohibits LZW (6.1.10). Strict exemption decoding
+for it would add no compliance coverage. Other unsupported execution,
+complete font/glyph validity and broader PDF-spec parity remain open.
+
 ## 2026-11-04 Strict RunLength content-filter inspection
 
 The internal A1 content-decoding path now checks complete RunLength literal
