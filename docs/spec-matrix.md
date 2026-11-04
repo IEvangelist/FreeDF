@@ -159,6 +159,12 @@ empty-Link-action misses are closed (157/168 prior verdicts now agree,
 11 indirect-null differences retained). Unknown AA events, root-kind
 validity, arbitrary action sources and target/required-key semantics remain open.
 
+The [field-tree AA check](spec-backlog.md#2026-11-04-pdfa-field-additional-action-entries)
+now covers non-Widget terminal fields and ancestors, with explicit
+depth/work/finding/cycle/malformed-child incompleteness.
+Across 63 controls, 54 rules and verdicts agree; nine indirect-null
+differences are retained. Field A and general tree validity remain open.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

@@ -106,6 +106,7 @@ internal static class PdfAChecks
         c.Guard("icc profiles", () => PdfADeepChecks.IccProfiles(c));
         c.Guard("font dictionaries", () => PdfADeepChecks.FontDictionaries(c));
         c.Guard("actions and forms", () => PdfADeepChecks.ActionsAndForms(c));
+        c.Guard("field additional actions", () => PdfADeepChecks.FieldAdditionalActions(c));
     }
 
     internal static string Clause(ValidationContext c, string a1, string a2, string a3) => c.Part switch { 1 => $"ISO 19005-1 {a1}", 2 => $"ISO 19005-2 {a2}", _ => $"ISO 19005-3 {a3}" };

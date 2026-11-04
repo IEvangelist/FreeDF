@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A field additional-action entries
+
+The AcroForm Fields/Kids tree now receives a dedicated additional-action
+entry scan, including nonterminal ancestors and terminal non-Widget fields,
+not just page Widget annotations. Any resolved non-null AA value produces
+`PDFA-FIELD-AA` Error under ISO 19005-1 6.6.2 or ISO 19005-2/3 6.4.1.
+These are test 2 in each pinned validation profile at commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`.
+
+The scan reuses the shared form-detail depth/work constants (64 and
+100000), with cycle/repeated-node detection and a 1000-finding bound.
+Malformed child nodes/Kids kinds or exhausted bounds emit
+`PDFA-FIELD-INCOMPLETE` Error rather than silently validating omitted
+fields. Root Fields presence/type validity, orphan fields and arbitrary
+field-tree membership are not established by this traversal.
+The limits are library resources, not normative tree-size constraints.
+
+Of 63 independent ancestor/terminal controls, 54 exact predicates and
+whole-file verdicts agree with veraPDF 1.30.3. All nine indirect-null AA
+differences remain explicit: FreeDF treats resolved null as omitted under
+ISO 32000-1 7.3.9 while veraPDF rejects. No controls are excluded.
+Raw reference XML and per-file hashes remain session artifacts.
+The 72 authored tests include internal 64/65 depth, 100000/100001 work
+and 1000/1001 finding boundaries plus cycles/malformed children.
+The initial 69 tests had 42 failures. All 5411 integrated PDF/A/deep
+tests now pass; the solution builds without new warnings. The preceding
+full 9252 run predates this field-tree correction and is not represented
+as a current full-suite measurement.
+
+This closes bounded field AA entry checking, not non-Widget field A,
+form appearance association, required field attributes or general
+field-tree/reference validity. Historical corpus totals and broad
+Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A action-context subtype vocabulary
 
 The existing inert bounded action report now supplies actual action

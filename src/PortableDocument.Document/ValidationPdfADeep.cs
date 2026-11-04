@@ -242,6 +242,46 @@ internal static partial class PdfADeepChecks
                 clause, page);
     }
 
+    public static void FieldAdditionalActions(ValidationContext c)
+    {
+        var f = c.F;
+        if (f.Resolve(f.Catalog.Get("AcroForm")) is not PdfDictionary form
+            || f.Resolve(form.Get("Fields")) is not PdfArray fields) return;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var work = 0;
+        var findings = 0;
+        var incomplete = false;
+        var stopped = false;
+        void Walk(PdfObject? value, int depth)
+        {
+            if (stopped) return;
+            if (++work > FormFieldDetailFeatures.MaxFields) { incomplete = stopped = true; return; }
+            if (depth >= FormFieldDetailFeatures.MaxDepth
+                || f.Resolve(value) is not PdfDictionary field || !seen.Add(field))
+            { incomplete = true; return; }
+            if (f.Resolve(field.Get("AA")) is not null and not PdfNull)
+            {
+                if (findings++ >= 1000) { incomplete = stopped = true; return; }
+                c.Add("PDFA-FIELD-AA", ValidationSeverity.Error, "form field additional-actions entry is not permitted", Clause(c, "6.6.2", "6.4.1", "6.4.1"));
+            }
+            var kids = f.Resolve(field.Get("Kids"));
+            if (kids is null or PdfNull) return;
+            if (kids is not PdfArray children) { incomplete = true; return; }
+            foreach (var child in children.Items)
+            {
+                Walk(child, depth + 1);
+                if (stopped) break;
+            }
+        }
+        foreach (var field in fields.Items)
+        {
+            Walk(field, 0);
+            if (stopped) break;
+        }
+        if (incomplete)
+            c.Add("PDFA-FIELD-INCOMPLETE", ValidationSeverity.Error, "field additional-action inspection is incomplete due to malformed/repeated/cyclic field nodes or the 64-depth, 100000-node or 1000-finding bound", Clause(c, "6.6.2", "6.4.1", "6.4.1"));
+    }
+
     public static void ActionsAndForms(ValidationContext c)
     {
         var f = c.F;
