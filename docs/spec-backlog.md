@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-2/3 XFA and NeedsRendering policy
+
+Parts 2/3 now reject non-null AcroForm XFA with `PDFA-FORM-XFA`, and
+catalog NeedsRendering values other than absent/null/boolean false with
+`PDFA-NEEDSRENDERING`. Both are Errors under ISO 19005-2/3 6.4.2.
+This follows tests 1/2 in pinned validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`. False XFA is still a present
+entry and prohibited; non-boolean NeedsRendering is not silently treated
+as false. Part 1 remains outside these new predicates.
+
+Of 108 independent controls, 104 agree with veraPDF 1.30.3 on exact
+rule sets and whole-file verdicts. Four indirect-null controls (XFA and
+NeedsRendering in each of parts 2/3) are explicit verdict disagreements:
+FreeDF treats resolved null as omitted, while veraPDF rejects. ISO 32000-1
+7.3.9 makes null dictionary values equivalent to omission, as documented
+in the Widget inheritance checkpoint. The differences are retained, not
+excluded or called agreement. Inputs are inert values/streams; no XFA
+content is executed or rendered. Raw reference XML and per-file hashes
+remain session artifacts.
+
+There are 156 authored cases spanning direct/indirect AcroForms and
+entry values across all parts. The initial set exposed 48 failures before
+the reference comparison additionally established malformed NeedsRendering
+rejection. All 5000 integrated PDF/A/deep cases now pass; the solution
+builds without new warnings. The preceding full 8373 run predates this
+and the last two scoped corrections, not a current full-suite result.
+
+This closes these two PDF/A-2/3 policy predicates, not arbitrary form-tree
+validity, XFA parsing/preservation, rendering completeness or PDF/A-1 XFA
+validity. Existing missing/cyclic-reference-to-null resolution remains a
+limit. Historical corpus totals and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A-1 annotation colour arrays
 
 Annotation C/IC arrays, including empty and indirect arrays, now require

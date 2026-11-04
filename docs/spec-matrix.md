@@ -138,6 +138,12 @@ the generated/version-4 and header-mutated ICC controls are not claimed
 clean PDF/A-1 colour conformance positives. General array and ICC
 validity remain open.
 
+The [PDF/A-2/3 XFA and NeedsRendering checks](spec-backlog.md#2026-11-04-pdfa-23-xfa-and-needsrendering-policy)
+reject present non-null XFA and require absent/null/false NeedsRendering.
+Across 108 controls, 104 rule sets and verdicts agree; four indirect-null
+verdict disagreements are retained under ISO null-as-omitted semantics.
+PDF/A-1 is unchanged; general form/XFA validity remains open.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

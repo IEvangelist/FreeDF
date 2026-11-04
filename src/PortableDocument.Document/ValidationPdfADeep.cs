@@ -247,6 +247,13 @@ internal static partial class PdfADeepChecks
         var f = c.F;
         if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary form && f.Resolve(form.Get("NeedAppearances")) is PdfBoolean { Value: true })
             c.Add("PDFA-FORM-NEEDAPPEARANCES", ValidationSeverity.Error, "AcroForm /NeedAppearances must be absent or false", Clause(c, "6.9", "6.4.1", "6.4.1"));
+        if (c.Part != 1)
+        {
+            if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary acroForm && f.Resolve(acroForm.Get("XFA")) is not null and not PdfNull)
+                c.Add("PDFA-FORM-XFA", ValidationSeverity.Error, "AcroForm /XFA is not permitted", Clause(c, "6.9", "6.4.2", "6.4.2"));
+            if (f.Resolve(f.Catalog.Get("NeedsRendering")) is { } rendering and not PdfNull && rendering is not PdfBoolean { Value: false })
+                c.Add("PDFA-NEEDSRENDERING", ValidationSeverity.Error, "catalog /NeedsRendering must be absent or false", Clause(c, "6.9", "6.4.2", "6.4.2"));
+        }
         var reported = false;
         foreach (var o in c.AllObjects())
         {
