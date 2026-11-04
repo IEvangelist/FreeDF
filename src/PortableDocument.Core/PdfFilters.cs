@@ -33,10 +33,10 @@ public static class PdfFilters
 
     /// <summary>Decodes until an image codec filter is reached; returns the remaining image filter name, if any.</summary>
     public static (byte[] Data, string? ImageFilter, PdfDictionary? ImageParms) Decode(byte[] raw, List<(string Name, PdfDictionary? Parms)> filters, Func<PdfObject?, PdfObject?> resolve)
-        => Decode(raw, filters, resolve, strictFlate: false);
+        => Decode(raw, filters, resolve, strictContentFilters: false);
 
     internal static (byte[] Data, string? ImageFilter, PdfDictionary? ImageParms) Decode(byte[] raw,
-        List<(string Name, PdfDictionary? Parms)> filters, Func<PdfObject?, PdfObject?> resolve, bool strictFlate)
+        List<(string Name, PdfDictionary? Parms)> filters, Func<PdfObject?, PdfObject?> resolve, bool strictContentFilters)
     {
         var data = raw;
         foreach (var (name, parms) in filters)
@@ -44,10 +44,10 @@ public static class PdfFilters
             if (ImageCodecs.Contains(name)) return (data, name, parms);
             data = name switch
             {
-                "FlateDecode" => Predict(strictFlate ? StrictFlate(data) : Flate(data), parms, resolve),
+                "FlateDecode" => Predict(strictContentFilters ? StrictFlate(data) : Flate(data), parms, resolve),
                 "LZWDecode" => Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
-                "ASCIIHexDecode" => AsciiHex(data),
-                "ASCII85Decode" => Ascii85(data),
+                "ASCIIHexDecode" => strictContentFilters ? StrictAsciiHex(data) : AsciiHex(data),
+                "ASCII85Decode" => strictContentFilters ? StrictAscii85(data) : Ascii85(data),
                 "RunLengthDecode" => RunLength(data),
                 "Crypt" => data,
                 _ => throw new NotSupportedException($"Filter {name}")
@@ -118,6 +118,53 @@ public static class PdfFilters
         var ms = new MemoryStream();
         using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true)) z.Write(data);
         return ms.ToArray();
+    }
+
+    static byte[] StrictAsciiHex(byte[] data)
+    {
+        foreach (var c in data)
+        {
+            if (c == '>') return AsciiHex(data);
+            if (!PdfLexer.IsWhite(c) && c is not (>= (byte)'0' and <= (byte)'9'
+                or >= (byte)'a' and <= (byte)'f' or >= (byte)'A' and <= (byte)'F'))
+                throw new InvalidDataException("Invalid ASCIIHex content-stream character");
+        }
+        throw new InvalidDataException("ASCIIHex content-stream end marker was not found");
+    }
+
+    static byte[] StrictAscii85(byte[] data)
+    {
+        ulong group = 0;
+        var count = 0;
+        for (var i = 0; i < data.Length; i++)
+        {
+            var c = data[i];
+            if (PdfLexer.IsWhite(c)) continue;
+            if (c == '~')
+            {
+                if (i + 1 >= data.Length || data[i + 1] != '>' || count == 1)
+                    throw new InvalidDataException("Invalid ASCII85 content-stream end marker or final group");
+                if (count > 1)
+                {
+                    for (var n = count; n < 5; n++) group = group * 85 + 84;
+                    if (group > uint.MaxValue)
+                        throw new InvalidDataException("ASCII85 content-stream final group overflows");
+                }
+                return Ascii85(data);
+            }
+            if (c == 'z' && count == 0) continue;
+            if (c is < (byte)'!' or > (byte)'u')
+                throw new InvalidDataException("Invalid ASCII85 content-stream character or zero group");
+            group = group * 85 + (uint)(c - '!');
+            if (++count == 5)
+            {
+                if (group > uint.MaxValue)
+                    throw new InvalidDataException("ASCII85 content-stream group overflows");
+                count = 0;
+                group = 0;
+            }
+        }
+        throw new InvalidDataException("ASCII85 content-stream end marker was not found");
     }
 
     static byte[] AsciiHex(byte[] s)

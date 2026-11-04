@@ -4,6 +4,46 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 Strict ASCII content-filter inspection
+
+The A1 font-use scan can now establish complete ASCIIHex/ASCII85 decoding,
+including chains preceding Flate, instead of conservatively marking every
+non-Flate filter incomplete. The internal strict path verifies hexadecimal
+characters/odd-nibble padding, base-85 groups and partial groups, zero-group
+placement, numeric overflow and complete EOD markers. PDF whitespace is
+accepted; the PostScript ASCII85 opening delimiter is not PDF filter data.
+The existing public decoder and its recovery behavior are unchanged.
+
+ISO 32000-1 7.4.2 and 7.4.3 (public edition printed pages 24-25) supply the
+character/group/error semantics. Missing complete markers are conservatively
+incomplete inspections, not an invented PDF/A filter-specific violation.
+Invalid or unterminated decoding emits `PDFA-CONTENT-SCAN-INCOMPLETE`;
+an invalid-map candidate additionally retains `PDFA-FONT-USAGE-INCOMPLETE`,
+without inventing a rendered-use mapping verdict from undecoded bytes.
+Other profiles retain their existing decoding behavior.
+
+Thirty-two real-font controls preserve the clean A1 metadata, embedded
+program and mapping candidate. Sixteen valid direct/chained encodings
+agree with veraPDF 1.30.3 on exact 6.3.3.2 and whole-file verdicts:
+eight rendered negatives and eight invisible positives. The latter remove
+eight old conservative incomplete rejections. Python standard-library
+base85/hex/zlib decoding and PyMuPDF independently reproduce every valid
+decoded byte, including whitespace, odd hex digits and zero groups.
+
+The remaining sixteen malformed controls all emit both incomplete Errors,
+not silent success. The reference accepts eleven and rejects five; these
+results are retained explicitly, not counted as sixteen exact agreements.
+No malformed control is excluded, and no new reference-negative closure
+is claimed for an already-incomplete input. Other profiles' complete
+findings and verdicts are unchanged across all 32 controls.
+
+The initial 33 authored filter cases had 15 baseline failures; boundary
+and document-integration controls add 15 more cases. All 8649 combined
+PDF/A/UA/deep/filter/discovery cases pass and the solution builds.
+The preceding full11980 measurement predates this slice. No external
+PDF/font is bundled; full font validity and unsupported RunLength/LZW,
+predictor and executable-content interpretation remain open.
+
 ## 2026-11-04 ExtGState-only shown-font discovery
 
 The shared content walk now follows Tf and ExtGState Font under every

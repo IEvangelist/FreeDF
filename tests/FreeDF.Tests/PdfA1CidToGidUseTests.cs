@@ -227,6 +227,47 @@ public class PdfA1CidToGidUseTests
     }
 
     [Theory]
+    [InlineData("ASCIIHexDecode", false)]
+    [InlineData("ASCIIHexDecode", true)]
+    [InlineData("ASCII85Decode", false)]
+    [InlineData("ASCII85Decode", true)]
+    public void CompleteAsciiFilterChainsProveTheInvisibleUseExemption(string filter, bool flate)
+    {
+        var doc = Document("");
+        var text = Encoding.ASCII.GetBytes("BT /F1 12 Tf 3 Tr (A) Tj ET");
+        var data = flate ? PdfFilters.DeflateEncode(text) : text;
+        var encoded = filter == "ASCIIHexDecode" ? Convert.ToHexString(data) + ">"
+            : flate ? "Garg^;:'MC<%p.,#Y@rK<X:-Pcu@K6#g#t`%06H.3!MJ~>" : "6<#'\\7PQ#?1*BP.+>Y->EZcbr.3MT)+@T6~>";
+        PdfObject filters = flate ? new PdfArray([new PdfName(filter), new PdfName("FlateDecode")]) : new PdfName(filter);
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(
+            new PdfDictionary { Entries = { ["Filter"] = filters } }, Encoding.ASCII.GetBytes(encoded));
+        var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has("PDFA-CONTENT-SCAN-INCOMPLETE"));
+        Assert.False(report.Has("PDFA-FONT-USAGE-INCOMPLETE"));
+        Assert.False(report.Has("PDFA-FONT-CIDTOGID"));
+    }
+
+    [Theory]
+    [InlineData("ASCIIHexDecode", "x>")]
+    [InlineData("ASCIIHexDecode", "4254")]
+    [InlineData("ASCII85Decode", "uuuuu~>")]
+    [InlineData("ASCII85Decode", "!z~>")]
+    [InlineData("ASCII85Decode", "!~>")]
+    [InlineData("ASCII85Decode", "!!!!!~x")]
+    public void MalformedAsciiContentDoesNotProveTheExemption(string filter, string encoded)
+    {
+        var doc = Document("");
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(
+            new PdfDictionary { Entries = { ["Filter"] = new PdfName(filter) } }, Encoding.ASCII.GetBytes(encoded));
+        var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
+        Assert.True(report.Has("PDFA-CONTENT-SCAN-INCOMPLETE"));
+        Assert.True(report.Has("PDFA-FONT-USAGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has("PDFA-FONT-CIDTOGID"));
+    }
+
+    [Theory]
     [InlineData(3, 0, 1)]
     [InlineData(0, 3, 0)]
     [InlineData(3, 3, -1)]
@@ -269,7 +310,7 @@ public class PdfA1CidToGidUseTests
         }
         else
             doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(
-                new PdfDictionary { Entries = { ["Filter"] = new PdfName("ASCIIHexDecode") } }, [(byte)'>']);
+                new PdfDictionary { Entries = { ["Filter"] = new PdfName("RunLengthDecode") } }, [128]);
         var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfA1b);
         Assert.Contains(report.Findings, finding => finding.RuleId == "PDFA-FONT-USAGE-INCOMPLETE"
             && finding.Severity == ValidationSeverity.Error);

@@ -309,6 +309,16 @@ one old false positive. All 11800 Release tests pass. Unsupported execution/
 decoding surfaces, embedding exemptions and full glyph/program validity
 remain partial; historical corpus totals are not replaced.
 
+The [strict ASCII content-filter slice](spec-backlog.md#2026-11-04-strict-ascii-content-filter-inspection)
+extends A1 exemption inspection to complete ASCIIHex/ASCII85, including
+Flate chains, without changing ordinary reader recovery. Sixteen valid
+real-font controls give eight positives/eight negatives in exact and whole
+agreement, removing eight conservative incomplete rejections. Sixteen
+malformed controls remain explicit incomplete Errors; eleven reference
+acceptances/five rejections are not misreported as exact agreement.
+All 8649 selected profile/filter/discovery tests pass. Other decoding
+and full font-use/program validity remain partial.
+
 The [ExtGState-only shown-font correction](spec-backlog.md#2026-11-04-extgstate-only-shown-font-discovery)
 extends discovery to A2/3 and UA1/2, including mode-3 text, while preserving
 A1's exemption and ignoring unused/unshown state-only fonts. Existing
