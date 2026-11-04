@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-1 null Differences entries
+
+The non-symbolic TrueType encoding check now resolves Differences before
+applying the PDF/A-1 no-Differences restriction. Absent and direct/indirect
+null are treated as omitted under ISO 32000-1 7.3.9. Required WinAnsiEncoding
+or MacRomanEncoding remains enforced, and non-null arrays, including
+empty arrays, remain prohibited by ISO 19005-1 6.3.7 test 1 in pinned
+profile commit `c4f57effb0d3618827c87bd71882930d752be6e3`.
+Parts 2/3 are unchanged.
+
+Thirty independent controls use a locally installed Arial TrueType program,
+paint an A with its measured advance, and vary both permitted base
+encodings with absent/null/indirect-null and two non-null array values.
+Of these, 28 exact predicates and whole-file verdicts agree with
+veraPDF 1.30.3. Two direct-null false rejections are corrected.
+Two A1 indirect-null verdict disagreements are explicit: FreeDF accepts
+resolved null as omission while veraPDF rejects. No controls are excluded.
+The installed font is used only in private session artifacts and is not
+bundled or published. Earlier barcode/Liberation mutation attempts had
+unrelated used-glyph/width failures; no-text controls exercised no reference
+font predicate at all. All attempts remain separate artifacts, not
+claimed as clean evidence.
+
+The 90 authored cases include direct/indirect encoding dictionaries and an
+unsupported base encoding; eight failed before this correction.
+All 6368 integrated PDF/A/deep tests pass and the solution builds with
+existing machine source warnings unchanged. The full 9951 measurement
+predates this and both latest subset-entry prerequisites. General used-glyph,
+width, font-program and mapping completeness remain open. Historical corpus
+figures and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A-1 CharSet entry kinds
 
 The existing `PDFA1-FONT-CHARSET` presence check now requires a resolved

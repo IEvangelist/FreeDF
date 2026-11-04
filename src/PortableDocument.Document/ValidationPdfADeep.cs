@@ -210,7 +210,7 @@ internal static partial class PdfADeepChecks
         {
             var baseOk = enc.AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
                 || (enc is PdfDictionary ed && f.Resolve(ed.Get("BaseEncoding")).AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
-                    && (c.Part != 1 || ed.Get("Differences") is null));
+                    && (c.Part != 1 || f.Resolve(ed.Get("Differences")) is null or PdfNull));
             if (!baseOk)
                 c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error,
                     c.Part == 1 ? $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding without /Differences"

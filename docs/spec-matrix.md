@@ -204,6 +204,13 @@ seven A1 wrong-kind misses are closed and all three empty-string
 listing misses remain explicit. Parts 2/3 and listing completeness
 remain unchanged.
 
+The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
+resolves null as omission while retaining base-encoding and non-null-array
+restrictions. Across 30 painted real-font controls, 28 exact rules and
+verdicts agree; two direct-null false rejections are corrected and two
+indirect-null policy disagreements remain explicit. Parts 2/3 and general
+glyph/program completeness are unchanged.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource
