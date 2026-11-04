@@ -56,16 +56,20 @@ public static class PngWriter
 
     public static (int W, int H, byte[] Rgba) Decode(byte[] png)
     {
-        var pos = 8; int w = 0, h = 0, ct = 6; using var idat = new MemoryStream();
+        var pos = 8; int w = 0, h = 0, ct = 6, depth = 8, interlace = 0; using var idat = new MemoryStream();
         while (pos < png.Length)
         {
             var len = png[pos] << 24 | png[pos + 1] << 16 | png[pos + 2] << 8 | png[pos + 3];
             var type = System.Text.Encoding.ASCII.GetString(png, pos + 4, 4);
-            if (type == "IHDR") { w = png[pos + 8] << 24 | png[pos + 9] << 16 | png[pos + 10] << 8 | png[pos + 11]; h = png[pos + 12] << 24 | png[pos + 13] << 16 | png[pos + 14] << 8 | png[pos + 15]; ct = png[pos + 17]; }
+            if (type == "IHDR") { w = png[pos + 8] << 24 | png[pos + 9] << 16 | png[pos + 10] << 8 | png[pos + 11]; h = png[pos + 12] << 24 | png[pos + 13] << 16 | png[pos + 14] << 8 | png[pos + 15]; depth = png[pos + 16]; ct = png[pos + 17]; interlace = png[pos + 20]; }
             else if (type == "IDAT") idat.Write(png, pos + 8, len);
             pos += 12 + len;
         }
-        var bpp = ct == 6 ? 4 : ct == 2 ? 3 : throw new NotSupportedException($"PNG colour type {ct}");
+        var channels = ct == 6 ? 4 : ct == 2 ? 3 : throw new NotSupportedException($"PNG colour type {ct}");
+        if (depth is not (8 or 16)) throw new NotSupportedException($"PNG bit depth {depth}");
+        if (interlace != 0) throw new NotSupportedException($"PNG interlace method {interlace}");
+        var sampleBytes = depth / 8;
+        var bpp = channels * sampleBytes;
         idat.Position = 0;
         using var zs = new ZLibStream(idat, CompressionMode.Decompress);
         var stride = w * bpp; var raw = new byte[(stride + 1) * h];
@@ -87,8 +91,9 @@ public static class PngWriter
             }
             for (var xp = 0; xp < w; xp++)
             {
-                o[(y * w + xp) * 4] = cur[xp * bpp]; o[(y * w + xp) * 4 + 1] = cur[xp * bpp + 1]; o[(y * w + xp) * 4 + 2] = cur[xp * bpp + 2];
-                o[(y * w + xp) * 4 + 3] = bpp == 4 ? cur[xp * bpp + 3] : (byte)255;
+                // PNG filters operate on bytes; reduce big-endian 16-bit samples only after unfiltering.
+                o[(y * w + xp) * 4] = cur[xp * bpp]; o[(y * w + xp) * 4 + 1] = cur[xp * bpp + sampleBytes]; o[(y * w + xp) * 4 + 2] = cur[xp * bpp + 2 * sampleBytes];
+                o[(y * w + xp) * 4 + 3] = channels == 4 ? cur[xp * bpp + 3 * sampleBytes] : (byte)255;
             }
             (prev, cur) = (cur, prev);
         }

@@ -11,6 +11,53 @@ public class EditorSessionTests
             body is null ? null : JsonSerializer.SerializeToUtf8Bytes(body, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SideBySideEightAndSixteenBitImagesMatchInThumbnailsPrintAndSavedPdf(bool sixteenBitFirst)
+    {
+        var session = new EditorSession(new FontCatalog());
+        Call(session, "POST", "/api/new");
+        var items = new List<Item>();
+        foreach (var depth in sixteenBitFirst ? new[] { 16, 8 } : new[] { 8, 16 })
+        {
+            var (png, _) = FreeDF.Tests.PngDecodeTests.Fixture(depth, false);
+            using var reply = JsonDocument.Parse(session.Handle("POST", "/api/asset", new Dictionary<string, string>(), png).Data);
+            var asset = reply.RootElement.GetProperty("id").GetString()!;
+            Assert.Equal(png, Call(session, "GET", "/api/asset/" + asset).Data);
+            items.Add(Image($"image-{depth}", asset) with { X = depth == 8 ? 20 : 100, Y = 20, W = 60, H = 100 });
+        }
+        Call(session, "PUT", "/api/page/0/items", items);
+        foreach (var dpi in new[] { 48, 150 })
+        {
+            var preview = PngWriter.Decode(Call(session, "GET", "/api/page/0.png", query: [("dpi", $"{dpi}"), ("bare", "false")]).Data);
+            var saved = PdfDocument.Load(Call(session, "GET", "/api/export/pdf").Data);
+            Assert.Equal(preview.Rgba, Pdf.RenderPage(saved.Pages[0], dpi).Rgba);
+            var (_, expected) = FreeDF.Tests.PngDecodeTests.Fixture(8, false);
+            for (var y = 0; y < 5; y++)
+                for (var x = 0; x < 3; x++)
+                    foreach (var left in new[] { 20, 100 })
+                    {
+                        var px = (int)((left + x * 20 + 10) * dpi / 72.0);
+                        var py = (int)((20 + y * 20 + 10) * dpi / 72.0);
+                        Assert.Equal(expected.AsSpan((y * 3 + x) * 4, 4).ToArray(),
+                            preview.Rgba.AsSpan((py * preview.W + px) * 4, 4).ToArray());
+                    }
+        }
+    }
+
+    [Theory]
+    [InlineData(4, 0)]
+    [InlineData(8, 1)]
+    [InlineData(16, 1)]
+    public void UnsupportedPngEncodingIsRejectedAtUploadBeforeItCanAppearInTheEditor(int depth, int interlace)
+    {
+        var session = new EditorSession(new FontCatalog());
+        var (png, _) = FreeDF.Tests.PngDecodeTests.Fixture(depth, false, interlace);
+        Assert.Throws<NotSupportedException>(() =>
+            session.Handle("POST", "/api/asset", new Dictionary<string, string>(), png));
+    }
+
+    [Theory]
     [InlineData("1 0 0 1 0 0", "100", "0", "0")]
     [InlineData("1.2 0 0.18 0.85 12 20", "73", "0.4", "1.5")]
     public void OriginalTextReplacementRetainsTransformSpacingAndPdfPreview(string matrix, string scale, string characterSpace, string wordSpace)

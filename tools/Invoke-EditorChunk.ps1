@@ -27,7 +27,7 @@ function Prepare {
 $unitFilters = @{
     'dotnet-editor' = 'FullyQualifiedName~Editor|FullyQualifiedName~ExistingObjectTransform|FullyQualifiedName~PageTreeTests|FullyQualifiedName~NamedDestinationTests|FullyQualifiedName~LexerKeywordTests'
     'dotnet-codecs' = 'FullyQualifiedName~Jpeg|FullyQualifiedName~Jpx'
-    'dotnet-render' = 'FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~ImageDecoderFastPathTests'
+    'dotnet-render' = 'FullyQualifiedName~RenderTests|FullyQualifiedName~PngStreamingTests|FullyQualifiedName~PngDecodeTests|FullyQualifiedName~ImageDecoderFastPathTests'
 }
 if ($unitFilters.ContainsKey($Chunk)) {
     Run $Chunk { dotnet test tests/FreeDF.Tests -c Release --filter $unitFilters[$Chunk] }
