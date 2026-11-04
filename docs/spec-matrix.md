@@ -171,6 +171,12 @@ Widgets. All 87 independent controls agree on the exact rule and verdict,
 including off-page and separate-child controls. Parts 2/3 presence rules
 are unchanged; general field/data association and visual validity remain open.
 
+The [NeedAppearances kind correction](spec-backlog.md#2026-11-04-pdfa-needappearances-value-kinds)
+rejects wrong-kind values rather than only boolean true, preserving absent,
+null and false. Across 42 controls, 39 exact rules and verdicts agree;
+three indirect-null differences remain explicit under null-as-omitted
+semantics. This is not general AcroForm validity.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

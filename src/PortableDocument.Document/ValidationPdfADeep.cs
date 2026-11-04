@@ -285,7 +285,9 @@ internal static partial class PdfADeepChecks
     public static void ActionsAndForms(ValidationContext c)
     {
         var f = c.F;
-        if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary form && f.Resolve(form.Get("NeedAppearances")) is PdfBoolean { Value: true })
+        if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary form
+            && f.Resolve(form.Get("NeedAppearances")) is { } needAppearances and not PdfNull
+            && needAppearances is not PdfBoolean { Value: false })
             c.Add("PDFA-FORM-NEEDAPPEARANCES", ValidationSeverity.Error, "AcroForm /NeedAppearances must be absent or false", Clause(c, "6.9", "6.4.1", "6.4.1"));
         if (c.Part != 1)
         {

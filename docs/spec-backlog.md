@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A NeedAppearances value kinds
+
+The existing `PDFA-FORM-NEEDAPPEARANCES` Error now rejects every resolved
+non-null value other than boolean false, rather than only boolean true.
+This closes number, name, string, array and dictionary values without
+changing the rule ID, clauses or null-as-omitted policy. Pinned profiles
+at commit `c4f57effb0d3618827c87bd71882930d752be6e3` require
+`NeedAppearances == null || NeedAppearances == false`: ISO 19005-1
+6.9 test 1 and ISO 19005-2/3 6.4.1 test 3.
+
+Of 42 independent controls, 39 exact predicates and whole-file verdicts
+agree with veraPDF 1.30.3. All three indirect-null differences are retained:
+FreeDF accepts resolved null as omission under ISO 32000-1 7.3.9;
+veraPDF rejects. The controls close 21 wrong-kind reference-reported
+misses, not those deliberate null-policy disagreements. Raw reports,
+per-file hashes and FreeDF outputs remain session artifacts.
+The 57 authored direct/indirect cases had 36 baseline failures.
+The full Release suite now passes 9468 tests, zero failed/skipped,
+including the latest field AA and page Widget appearance changes.
+The solution builds with existing machine NuGet source warnings unchanged.
+
+This is the AcroForm flag predicate, not general form validity, appearance
+generation/association, XFA interpretation or field value correctness.
+Historical corpus figures and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A-1 page Widget appearance presence
 
 `PDFA1-FIELD-APPEARANCE` now rejects page Widget annotations without a
