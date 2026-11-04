@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-1 annotation colour arrays
+
+Annotation C/IC arrays, including empty and indirect arrays, now require
+an RGB PDF/A DestOutputProfile in part 1. `PDFA1-ANNOT-COLORSPACE` is a
+page-attributed Error under ISO 19005-1 6.5.3 test 3 in pinned
+validation-profiles commit `c4f57effb0d3618827c87bd71882930d752be6e3`.
+The check reuses the already decoded OutputIntent colour-space set, not
+a second ICC scanner. DefaultRGB alone does not satisfy this separate
+annotation requirement; parts 2/3 are not given the part-1 restriction.
+Absent/null/non-array entries do not fail this array-presence predicate.
+
+All 144 independent controls agree with veraPDF 1.30.3 on the exact rule
+and whole-file verdict: 128 rule positives and 16 rule negatives. These
+are predicate counts, not clean conformance positives: the generated RGB
+ICC is version 4, and the CMYK control deliberately mutates its header
+without rebuilding its RGB tags. Both profile classes fail separate
+PDF/A-1 ICC checks. The no-profile source is the retained clean calibrated
+PDF/A control. No valid CMYK profile or clean PDF/A-1 RGB-profile control
+is claimed by this experiment. Raw XML, per-file hashes and whole-file
+findings remain session artifacts.
+
+There are 192 authored cases spanning absent/RGB/CMYK/Gray output profiles,
+both keys, direct/indirect/null values and all three parts, with DefaultRGB
+present to prevent conflating the two policies. Initially 24 failed;
+all 4844 integrated PDF/A/deep cases now pass and the solution builds
+without new warnings. The previous full 8373 run predates opacity and
+this correction, not a current full-suite measurement.
+
+General C/IC kinds, array lengths/components, complete ICC validity and
+malformed/conflicting OutputIntents remain outside this predicate.
+Historical corpus totals and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A-1 annotation opacity
 
 The page annotation scan now rejects optional numeric CA values other than

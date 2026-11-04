@@ -94,12 +94,13 @@ internal static class PdfAChecks
 
     public static void Run(ValidationContext c)
     {
+        var outputSpaces = new HashSet<string>(StringComparer.Ordinal);
         c.Guard("file structure", () => FileStructure(c));
         c.Guard("metadata", () => Metadata(c));
         c.Guard("fonts", () => Fonts(c));
-        c.Guard("output intent", () => OutputIntent(c));
+        c.Guard("output intent", () => OutputIntent(c, outputSpaces));
         c.Guard("transparency", () => Transparency(c));
-        c.Guard("annotations", () => Annotations(c));
+        c.Guard("annotations", () => Annotations(c, outputSpaces));
         c.Guard("object scan", () => ObjectScan(c));
         c.Guard("metadata consistency", () => PdfADeepChecks.Metadata(c));
         c.Guard("icc profiles", () => PdfADeepChecks.IccProfiles(c));
@@ -181,7 +182,7 @@ internal static class PdfAChecks
         }
     }
 
-    static void OutputIntent(ValidationContext c)
+    static void OutputIntent(ValidationContext c, HashSet<string> outputSpaces)
     {
         var f = c.F;
         c.EnsureWalked();
@@ -193,7 +194,6 @@ internal static class PdfAChecks
             return;
         }
         PdfStream? profile = null;
-        var outputSpaces = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in intents.Items)
         {
             if (f.Resolve(item) is not PdfDictionary oi) continue;
@@ -270,7 +270,7 @@ internal static class PdfAChecks
         return false;
     }
 
-    static void Annotations(ValidationContext c)
+    static void Annotations(ValidationContext c, HashSet<string> outputSpaces)
     {
         const int annotationLimit = 10_000;
         var f = c.F;
@@ -290,6 +290,9 @@ internal static class PdfAChecks
                     c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub ?? "(missing or non-name)"} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
                 if (c.Part == 1 && f.Resolve(ad.Get("CA")).AsNumber() is { } opacity && opacity != 1)
                     c.Add("PDFA1-ANNOT-OPACITY", ValidationSeverity.Error, "annotation opacity must be 1 in PDF/A-1", "ISO 19005-1 6.5.3", i);
+                if (c.Part == 1 && !outputSpaces.Contains("RGB ")
+                    && (f.Resolve(ad.Get("C")) is PdfArray || f.Resolve(ad.Get("IC")) is PdfArray))
+                    c.Add("PDFA1-ANNOT-COLORSPACE", ValidationSeverity.Error, "annotation /C or /IC array requires an RGB PDF/A output profile", "ISO 19005-1 6.5.3", i);
                 var appearance = f.Resolve(ad.Get("AP")) as PdfDictionary;
                 var normal = f.Resolve(appearance?.Get("N"));
                 var normalOnly = appearance is not null && normal is not null and not PdfNull
