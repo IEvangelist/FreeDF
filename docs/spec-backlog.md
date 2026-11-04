@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 UA-1 encryption permission presence
+
+The reporting audit exposed a real partial predicate: a readable encrypted
+file with no P entry could be reported as UA-1 compliant. The existing
+`PDFUA-ENCRYPT-ACCESS` Error now also rejects missing or resolved-null P
+for UA-1. Existing numeric bit-10 checking and all UA-2 behaviour are
+unchanged. This supersedes the missing-P limitation recorded in the
+preceding reconciliation below, without claiming complete permission
+dictionary validation.
+
+The pinned veraPDF v1.30.3 UA-1 7.16-1 predicate requires P presence as
+well as bit 10. Independently, public ISO 32000-1:2008 7.6.3.2 Table 21,
+printed p60/physical p68, makes P a required integer for the standard
+security handler; the same clause explains its permission flags.
+The implementation adds no reader/authentication restriction and does
+not modify decryption or editor permission enforcement.
+
+Four serialized AES-256 authored controls initially have two failures
+(missing/null P) and two passes (bit enabled/disabled); all pass after the
+fix. An unencrypted control also confirms no P requirement is introduced
+for unencrypted documents. The focused encryption/security/deep-validation
+run passes 568 tests before that final unencrypted control is added; the
+final full Release suite passes **13015/13015**, zero skipped. Solution
+build has zero errors and the two retained machine-feed NU1507 warnings.
+
+Six independent AES-256 controls are derived from a public native UA-1
+positive using PyMuPDF encryption and length-preserving P mutations.
+FreeDF now has one clean positive and five negatives: all four missing/null
+variants were previously compliant and are now rejected. Both original
+bit-value variants retain their outcomes; all six UA-2 outputs are
+unchanged. PyMuPDF can open all six. veraPDF produces only two complete
+reports, with exact-rule/whole-file agreement on those two bit-value
+controls. Its four missing/null variants fail to open as encrypted files,
+even on explicit owner-password retry. These four are **reference
+exclusions, not exact-rule agreement or clean reference negatives**.
+The primary requirement and reproducible before/after controls justify
+the narrow fix; an incomplete oracle is not represented as full coverage.
+
+Fresh measurement of all 435 public PDFs/870 profile results is byte-for-
+byte equivalent as decoded result objects to the preceding private-use
+run: no finding/verdict changes, regressions or new incomplete/internal
+results. No external PDFs or encryption runtime are bundled. Malformed
+non-null P types, complete permission/security-handler validation and
+reader authentication edge cases remain outside this slice.
+
 ## 2026-11-04 remaining implemented-family reconciliation
 
 A second reporting audit adds twelve missing reference-to-Error-family

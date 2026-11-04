@@ -396,6 +396,15 @@ full language determinability and registry semantics remain outside this
 slice. The tooltip inheritance/reference discrepancy is documented, not
 silently resolved in favour of reference rejection.
 
+The [UA-1 encrypted-permission presence fix](spec-backlog.md#2026-11-04-ua-1-encryption-permission-presence)
+rejects missing/null P without changing reader authentication or UA-2.
+Four independent absent/null controls change from compliant to rejected;
+one clean enabled-bit positive and the disabled-bit negative retain their
+outcomes. veraPDF completes only those two bit-value controls; its four
+absent/null encryption failures are exclusions, not predicate agreements.
+Full Release passes 13015/13015; fresh 435-file/870-result corpus outputs
+are unchanged. Complete permission-dictionary validation is not claimed.
+
 The [remaining implemented-family reconciliation](spec-backlog.md#2026-11-04-remaining-implemented-family-reconciliation)
 adds twelve reporting mappings without changing validation: 31/33 newly
 mapped reference-rule/file occurrences have Error-family overlap; two font

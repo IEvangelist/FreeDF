@@ -82,8 +82,14 @@ internal static partial class PdfUAChecks
     {
         var f = c.F;
         if (!f.IsEncrypted && f.Trailer.Get("Encrypt") is null) return;
-        if (f.Resolve(f.Trailer.Get("Encrypt")) is PdfDictionary enc && f.Resolve(enc.Get("P")).AsNumber() is { } p && ((long)p & 0x200) == 0)
-            c.Add("PDFUA-ENCRYPT-ACCESS", ValidationSeverity.Error, "encrypted document does not permit content extraction for accessibility (P bit 10)", Clause(c, "7.16", "8.9"));
+        if (f.Resolve(f.Trailer.Get("Encrypt")) is PdfDictionary enc)
+        {
+            var permissions = f.Resolve(enc.Get("P"));
+            if (c.Part == 1 && permissions is (null or PdfNull))
+                c.Add("PDFUA-ENCRYPT-ACCESS", ValidationSeverity.Error, "encrypted document has no /P accessibility permissions entry", "ISO 14289-1 7.16");
+            else if (permissions.AsNumber() is { } p && ((long)p & 0x200) == 0)
+                c.Add("PDFUA-ENCRYPT-ACCESS", ValidationSeverity.Error, "encrypted document does not permit content extraction for accessibility (P bit 10)", Clause(c, "7.16", "8.9"));
+        }
     }
 
     static void Fonts(ValidationContext c)

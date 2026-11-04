@@ -78,6 +78,12 @@ same CC BY 4.0 PDF/UA-2 profile, 8.6-1. Decoded scalar inspection in
 are independently implemented; broader human-readable string classification
 is not claimed.
 
+The UA-1 missing/null encryption P check was cross-checked against the
+same CC BY 4.0 PDF/UA-1 profile, 7.16-1, and independently against the
+required-entry fact in ISO 32000-1:2008 Table 21. Presence checking in
+`ValidationPdfUA.cs` is independently implemented; authentication and
+complete permission-dictionary validation are not changed.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
