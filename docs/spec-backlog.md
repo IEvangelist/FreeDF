@@ -4,6 +4,41 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 ExtGState-only shown-font discovery
+
+The shared content walk now follows Tf and ExtGState Font under every
+PDF/A/UA profile, not only A1, and collects a supplied font when a valid
+text-showing operator uses it. Fonts absent from Resources Font therefore
+no longer bypass existing embedding, CID mapping and encoding metadata
+checks. A2/3 and UA1/2 include mode-3 text; A1's mode-3 exemption and
+existing resource-font policy are unchanged. An unused graphics-state
+definition, or selecting it without showing text, does not discover a
+new font. No duplicate font checks or new metadata-rule semantics are added.
+
+The same q/Q restoration and inherited/local Form font state are reused.
+Other profiles retain their existing resource/report-page policy rather
+than adopting A1's rendering-page label. Malformed state interpretation
+and complete font traversal/usage remain broader limits, not new claims
+of glyph or full program validity.
+
+Thirty-two clean real-font controls cover selected/unselected/no-text
+versus visible/invisible use. Embedded A2/3 CIDFontType2 controls exercise
+Identity versus Other; tagged UA1/standalone-UA2 simple-TrueType controls
+exercise Unicode versus Roman-only cmap with Differences. All agree with
+veraPDF 1.30.3 on exact rules and whole-file verdicts: 24 clean positives
+and eight newly rejected negatives, with no collateral failures/exclusions.
+These reuse the retained program and cmap variants; no external fonts/PDFs
+are bundled.
+
+The initial 150 authored profile/state/embedding/map cases had 60 baseline
+failures. Thirty further q/Q and inherited/local Form cases pass, including
+mode-3 use and the same Form under different inherited fonts. The full
+Release suite passes 11980 cases, zero failed/skipped; the solution builds.
+Fresh pre/post execution of all 435 public UA files (870 profile results)
+has zero changed verdicts or findings, no reference-positive regressions
+and no internal/incomplete-cmap errors. Historical corpus totals and broad
+Partial status are unchanged.
+
 ## 2026-11-04 PDF/A-1 rendering-aware CID mapping entries
 
 Embedded CIDFontType2 fonts used for rendering now require a resolved

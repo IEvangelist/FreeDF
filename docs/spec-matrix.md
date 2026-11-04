@@ -309,6 +309,16 @@ one old false positive. All 11800 Release tests pass. Unsupported execution/
 decoding surfaces, embedding exemptions and full glyph/program validity
 remain partial; historical corpus totals are not replaced.
 
+The [ExtGState-only shown-font correction](spec-backlog.md#2026-11-04-extgstate-only-shown-font-discovery)
+extends discovery to A2/3 and UA1/2, including mode-3 text, while preserving
+A1's exemption and ignoring unused/unshown state-only fonts. Existing
+embedding, mapping and encoding checks now reach these fonts, including
+restored and inherited/local Form state. All 32 independent controls agree
+on exact rules and whole-file verdicts (24 clean positives/eight new negatives).
+The full11980 suite passes, and fresh public UA pre/post runs have zero
+changed verdicts/findings or reference-positive regressions. Complete
+traversal, malformed-state interpretation and font/glyph validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

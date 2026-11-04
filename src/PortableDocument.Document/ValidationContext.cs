@@ -450,7 +450,7 @@ internal sealed class ValidationContext
                     if (states.TryPop(out var saved)) (fill, stroke, renderMode, font) = saved;
                     else FontUsageComplete = false;
                     break;
-                case "Tf" when Profile == PdfValidationProfile.PdfA1b:
+                case "Tf":
                     font = null;
                     if (operands.Count == 2 && operands[0] is PdfName fontName
                         && operands[1].AsNumber() is { } fontSize && double.IsFinite(fontSize)
@@ -459,7 +459,7 @@ internal sealed class ValidationContext
                         font = selectedFont;
                     else FontUsageComplete = false;
                     break;
-                case "gs" when Profile == PdfValidationProfile.PdfA1b:
+                case "gs":
                     if (operands.Count != 1 || operands[0] is not PdfName gsName
                         || F.Resolve(resources.Get("ExtGState")) is not PdfDictionary graphicsStates
                         || F.Resolve(graphicsStates.Get(gsName.Value)) is not PdfDictionary graphicsState)
@@ -567,22 +567,23 @@ internal sealed class ValidationContext
                         path = false;
                     else if (op is "Tj" or "TJ" or "'" or "\"")
                     {
-                        if (Profile == PdfValidationProfile.PdfA1b)
+                        var text = operands.LastOrDefault();
+                        var valid = operands.Count == (op == "\"" ? 3 : 1)
+                            && (op == "TJ" ? text is PdfArray array
+                                && array.Items.All(x => x is PdfString || x.AsNumber() is { } n && double.IsFinite(n))
+                                : text is PdfString);
+                        if (op == "\"")
+                            valid &= operands.Take(2).All(x => x.AsNumber() is { } n && double.IsFinite(n));
+                        if (!valid) FontUsageComplete = false;
+                        if (valid && (Profile != PdfValidationProfile.PdfA1b || renderMode != 3))
                         {
-                            var text = operands.LastOrDefault();
-                            var valid = operands.Count == (op == "\"" ? 3 : 1)
-                                && (op == "TJ" ? text is PdfArray array
-                                    && array.Items.All(x => x is PdfString || x.AsNumber() is { } n && double.IsFinite(n))
-                                    : text is PdfString);
-                            if (op == "\"")
-                                valid &= operands.Take(2).All(x => x.AsNumber() is { } n && double.IsFinite(n));
-                            if (!valid) FontUsageComplete = false;
-                            if (valid && renderMode != 3)
+                            if (font is null) FontUsageComplete = false;
+                            else
                             {
-                                if (font is null) FontUsageComplete = false;
-                                else
+                                var use = FontFor(font, page);
+                                if (Profile == PdfValidationProfile.PdfA1b)
                                 {
-                                    FontFor(font, page).RenderingPage ??= page;
+                                    use.RenderingPage ??= page;
                                     if (F.Resolve(font.Get("Subtype")).AsName() == "Type3") FontUsageComplete = false;
                                 }
                             }
