@@ -287,6 +287,14 @@ Fresh 435-file/870-result UA controls have zero changed verdicts or
 reference-positive regressions. Focused integration passes 8361 cases;
 glyph lookup, Differences-dependent (3,1) and full font validity remain open.
 
+The [Differences cmap prerequisite](spec-backlog.md#2026-11-04-differences-unicode-cmap-prerequisite)
+requires embedded Microsoft Unicode (3,1) for non-symbolic A2/3 and UA1/2
+fonts defining an array, even empty/indirect; null is absent and A1 is unchanged.
+All 144 clean independent controls agree on exact rules and whole-file verdicts
+(112 positives/32 newly detected negatives), with no collateral failures.
+Focused integration passes 8523 cases; public UA file verdicts remain unchanged.
+Glyph lookup, mapping/width agreement and full font validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

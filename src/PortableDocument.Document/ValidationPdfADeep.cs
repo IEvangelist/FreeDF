@@ -356,7 +356,8 @@ internal static partial class PdfADeepChecks
         var symbolic = ((int)flags & 4) != 0;
         var enc = f.Resolve(font.Get("Encoding"));
         var clause = Clause(c, "6.3.7", "6.2.11.6", "6.2.11.6");
-        if (symbolic || c.Part != 1) TrueTypeCmap(c, desc, name, page, clause, symbolic);
+        var hasDifferences = enc is PdfDictionary encoding && f.Resolve(encoding.Get("Differences")) is PdfArray;
+        if (symbolic || c.Part != 1) TrueTypeCmap(c, desc, name, page, clause, symbolic, hasDifferences);
         if (symbolic && enc is not null and not PdfNull)
             c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", clause, page);
         else if (!symbolic)
@@ -379,7 +380,7 @@ internal static partial class PdfADeepChecks
         }
     }
 
-    static void TrueTypeCmap(ValidationContext c, PdfDictionary descriptor, string name, int page, string clause, bool symbolic)
+    static void TrueTypeCmap(ValidationContext c, PdfDictionary descriptor, string name, int page, string clause, bool symbolic, bool hasDifferences)
     {
         if (FontChecks.TrueTypeProgram(c.F, descriptor) is not { } program) return;
         FontChecks.CmapRecords? records;
@@ -390,8 +391,11 @@ internal static partial class PdfADeepChecks
             return;
         }
         if (records is not { } found)
+        {
             c.Add("PDFA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"embedded TrueType cmap headers of {name} are truncated, malformed or unsupported; encoding validation is incomplete", clause, page);
-        else if (symbolic && found.Count != 1 && (c.Part == 1 || !found.Symbol))
+            return;
+        }
+        if (symbolic && found.Count != 1 && (c.Part == 1 || !found.Symbol))
             c.Add("PDFA-FONT-SYMBOLIC-CMAP", ValidationSeverity.Error,
                 c.Part == 1 ? $"symbolic TrueType font {name} needs exactly one cmap encoding"
                     : $"symbolic TrueType font {name} needs exactly one cmap encoding or Microsoft Symbol (3,0)",
@@ -399,6 +403,9 @@ internal static partial class PdfADeepChecks
         else if (!symbolic && !found.NonSymbolic)
             c.Add("PDFA-FONT-NONSYMBOLIC-CMAP", ValidationSeverity.Error,
                 $"non-symbolic TrueType font {name} needs at least one non-symbolic cmap encoding", clause, page);
+        if (!symbolic && hasDifferences && !found.Unicode)
+            c.Add("PDFA-FONT-DIFFERENCES-CMAP", ValidationSeverity.Error,
+                $"embedded non-symbolic TrueType font {name} with a Differences array needs Microsoft Unicode (3,1) cmap encoding", clause, page);
     }
 
     public static void FieldAdditionalActions(ValidationContext c)

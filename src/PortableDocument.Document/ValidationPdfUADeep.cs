@@ -72,7 +72,7 @@ internal static class PdfUADeepChecks
             ? ((f.Resolve(si.Get("Registry")) as PdfString)?.Text, (f.Resolve(si.Get("Ordering")) as PdfString)?.Text, (long)(f.Resolve(si.Get("Supplement")).AsNumber() ?? 0))
             : (null, null, 0);
 
-    static void TrueTypeCmap(ValidationContext c, ValidationContext.FontUse use, PdfDictionary descriptor, bool symbolic)
+    static void TrueTypeCmap(ValidationContext c, ValidationContext.FontUse use, PdfDictionary descriptor, bool symbolic, bool hasDifferences)
     {
         if (FontChecks.TrueTypeProgram(c.F, descriptor) is not { } program) return;
         var name = FontChecks.Name(c.F, use.Font);
@@ -84,8 +84,11 @@ internal static class PdfUADeepChecks
             return;
         }
         if (records is not { } found)
+        {
             c.Add("PDFUA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"embedded TrueType cmap headers of {name} are truncated, malformed or unsupported; encoding validation is incomplete", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
-        else if (symbolic && (c.Part == 1 ? found.Count != 1 && !found.Symbol : !found.Symbol && !found.Roman))
+            return;
+        }
+        if (symbolic && (c.Part == 1 ? found.Count != 1 && !found.Symbol : !found.Symbol && !found.Roman))
             c.Add("PDFUA-FONT-SYMBOLIC-CMAP", ValidationSeverity.Error,
                 c.Part == 1 ? $"symbolic TrueType font {name} needs exactly one cmap encoding or Microsoft Symbol (3,0)"
                     : $"symbolic TrueType font {name} needs Microsoft Symbol (3,0) or Macintosh Roman (1,0) cmap encoding",
@@ -94,6 +97,10 @@ internal static class PdfUADeepChecks
             c.Add("PDFUA-FONT-NONSYMBOLIC-CMAP", ValidationSeverity.Error,
                 c.Part == 1 ? $"non-symbolic TrueType font {name} needs at least one non-symbolic cmap encoding"
                     : $"non-symbolic TrueType font {name} needs Microsoft Unicode (3,1) or Macintosh Roman (1,0) cmap encoding",
+                Clause(c, "7.21.6", "8.4.5.7"), use.Page);
+        if (!symbolic && hasDifferences && !found.Unicode)
+            c.Add("PDFUA-FONT-DIFFERENCES-CMAP", ValidationSeverity.Error,
+                $"embedded non-symbolic TrueType font {name} with a Differences array needs Microsoft Unicode (3,1) cmap encoding",
                 Clause(c, "7.21.6", "8.4.5.7"), use.Page);
     }
 
@@ -179,8 +186,9 @@ internal static class PdfUADeepChecks
         if (subtype == "TrueType" && f.Resolve(font.Get("FontDescriptor")) is PdfDictionary desc && f.Resolve(desc.Get("Flags")).AsNumber() is { } flags)
         {
             var symbolic = ((int)flags & 4) != 0;
-            TrueTypeCmap(c, use, desc, symbolic);
             var enc = f.Resolve(font.Get("Encoding"));
+            var hasDifferences = enc is PdfDictionary encoding && f.Resolve(encoding.Get("Differences")) is PdfArray;
+            TrueTypeCmap(c, use, desc, symbolic, hasDifferences);
             if (symbolic && enc is not null and not PdfNull)
                 c.Add("PDFUA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
             else if (!symbolic && !(enc.AsName() is "MacRomanEncoding" or "WinAnsiEncoding"

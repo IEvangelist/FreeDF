@@ -4,6 +4,46 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 Differences Unicode cmap prerequisite
+
+Embedded non-symbolic simple-TrueType fonts defining a Differences array
+now also require Microsoft Unicode (3,1) cmap encoding under PDF/A-2/3
+6.2.11.6, PDF/UA-1 7.21.6 and PDF/UA-2 8.4.5.7. Empty and indirect arrays
+are included; explicit null is absent. Existing AGL-name validation and
+A1's Differences prohibition remain unchanged. The shared raw/OpenType
+metadata pass is reused, not decoded twice. Missing (3,1) emits
+`PDFA-FONT-DIFFERENCES-CMAP` or `PDFUA-FONT-DIFFERENCES-CMAP`; malformed
+selected metadata retains its incomplete error without an invented
+missing-record verdict. Unembedded programs do not invent cmap findings.
+
+The independent control design avoids the prior symbolic-to-WinAnsi
+used-glyph/width side effects: FontTools adds actual Roman/Unicode cmap
+tables to the retained Liberation Sans glyf program, explicitly mapping
+A to independently retained GID 36 and preserving its exact scaled width.
+Three cmap variants (Roman-only, Unicode-only, both), raw/OpenType
+placement and six direct/indirect/null/absent array variants produce
+72 clean A2/3 controls. Matching 72 UA1/standalone-UA2 controls preserve
+the source tag tree and MCID while painting that same glyph.
+All 144 agree with veraPDF 1.30.3 on exact test 2 and whole-file verdicts:
+112 clean positives and 32 new negatives. No unrelated reference rule
+fails, no controls are excluded, and no external fonts/PDFs are bundled.
+These are three derived variants of one retained font, not 144 programs.
+
+There are 162 authored cases, 32 failing before implementation, covering
+profile/wrapper/array/record combinations, unembedded and malformed scope
+and A1's unchanged ban. All 8523 combined PDF/A/UA/deep/reader/cmap cases
+pass; the solution builds with existing machine source warnings unchanged.
+Fresh execution of all 435 public UA files (870 profile results) against
+the immediately preceding runtime shows zero changed verdicts, no
+reference-positive regressions and no incomplete-header/internal errors.
+The preceding full11344 measurement predates the last three cmap follow-ups.
+
+Required record presence and AGL names still do not establish all glyph
+lookups, mapping correctness, width agreement or valid subtables/programs.
+Complete font/outline validity, legacy Type1 and used-glyph/width/Unicode
+completeness remain open; no new decode-byte cap is implied. Broad Partial
+status and historical corpus measurements are unchanged.
+
 ## 2026-11-04 Non-symbolic TrueType cmap records
 
 Embedded non-symbolic simple-TrueType fonts now receive bounded cmap
