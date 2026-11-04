@@ -106,14 +106,14 @@ public class PdfUaSymbolicCmapTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    public void OpenTypeFontFile3IsExplicitlyOutsideThisSlice(int part)
+    public void FontFile3WithoutOpenTypeSubtypeIsOutsideThisSlice(int part)
     {
         var report = Validate(part, [], programKey: "FontFile3");
         Assert.False(report.Has("PDFUA-FONT-SYMBOLIC-CMAP"));
         Assert.False(report.Has("PDFUA-FONT-CMAP-INCOMPLETE"));
     }
 
-    static ValidationReport Validate(int part, byte[]? program, bool symbolic = true, string programKey = "FontFile2", string? filter = null)
+    internal static ValidationReport Validate(int part, byte[]? program, bool symbolic = true, string programKey = "FontFile2", string? filter = null, bool openType = false)
     {
         var doc = PdfDocument.Load(ObjPdf.Build(
             "<< /Type /Catalog /Pages 2 0 R >>",
@@ -127,7 +127,8 @@ public class PdfUaSymbolicCmapTests
         {
             var dictionary = new PdfDictionary();
             if (filter is not null) dictionary.Entries["Filter"] = new PdfName(filter);
-            descriptor.Entries[programKey] = new PdfStream(dictionary, program);
+            if (openType) dictionary.Entries["Subtype"] = new PdfName("OpenType");
+            descriptor.Entries[openType ? "FontFile3" : programKey] = new PdfStream(dictionary, program);
         }
         return PdfValidator.ValidatePdfUA(doc, part);
     }

@@ -78,7 +78,7 @@ public class PdfASymbolicCmapTests
     [InlineData(PdfValidationProfile.PdfA1b)]
     [InlineData(PdfValidationProfile.PdfA2b)]
     [InlineData(PdfValidationProfile.PdfA3b)]
-    public void NonSymbolicUnembeddedAndFontFile3RemainOutsideThisCheck(PdfValidationProfile profile)
+    public void NonSymbolicUnembeddedAndUnlabelledFontFile3RemainOutsideThisCheck(PdfValidationProfile profile)
     {
         foreach (var program in new byte[]?[] { null, [] })
         {
@@ -102,8 +102,8 @@ public class PdfASymbolicCmapTests
             f => Assert.Equal(ValidationSeverity.Error, f.Severity));
     }
 
-    static ValidationReport Validate(PdfValidationProfile profile, byte[]? program,
-        bool symbolic = true, string programKey = "FontFile2", string? filter = null)
+    internal static ValidationReport Validate(PdfValidationProfile profile, byte[]? program,
+        bool symbolic = true, string programKey = "FontFile2", string? filter = null, bool openType = false)
     {
         var doc = PdfDocument.Load(ObjPdf.Build(
             "<< /Type /Catalog /Pages 2 0 R >>",
@@ -117,12 +117,13 @@ public class PdfASymbolicCmapTests
         {
             var dictionary = new PdfDictionary();
             if (filter is not null) dictionary.Entries["Filter"] = new PdfName(filter);
-            descriptor.Entries[programKey] = new PdfStream(dictionary, program);
+            if (openType) dictionary.Entries["Subtype"] = new PdfName("OpenType");
+            descriptor.Entries[openType ? "FontFile3" : programKey] = new PdfStream(dictionary, program);
         }
         return PdfValidator.Validate(doc, profile);
     }
 
-    static byte[] Program((ushort Platform, ushort Encoding)[] records)
+    internal static byte[] Program((ushort Platform, ushort Encoding)[] records)
     {
         var size = 4 + records.Length * 8 + 10;
         var bytes = new byte[28 + size];

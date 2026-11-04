@@ -4,6 +4,45 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 OpenType symbolic cmap inspection
+
+PDF/A-2/3 and PDF/UA-1/2 symbolic simple-TrueType checks now inspect
+FontFile3 OpenType programs, not just FontFile2. The same selection
+helper serves the preceding glyf CIDSet path, retaining raw FontFile2
+priority and requiring the resolved OpenType subtype for FontFile3.
+Malformed selected cmap/SFNT metadata or unsupported stream filters
+produce the existing profile-specific incomplete errors; unknown
+FontFile3 subtypes and unembedded/non-symbolic fonts remain outside
+the cmap check. Record requirements are unchanged: A2/3 and UA1
+require one encoding or Microsoft Symbol; UA2 requires Microsoft Symbol
+or Macintosh Roman. This does not establish glyph mapping, used-glyph
+availability, complete subtable validity or full OpenType conformance.
+The existing cmap path has no new decoded-program byte cap.
+
+Ten retained real-font symbolic cmap controls are relabeled from
+FontFile2 to FontFile3 OpenType without changing embedded bytes.
+FontTools independently reads their intended encoding records.
+Twenty external profile/control pairs (A2, A3, UA1 and standalone UA2)
+agree exactly with veraPDF 1.30.3: 12 record positives and eight newly
+detected record negatives. The PDF/A controls are UA-derived and are
+not clean PDF/A positives or new whole-file corpus closures.
+Some UA controls independently fail used-glyph availability; every raw
+reference failure is retained, not relabeled as symbolic-cmap failure.
+Five UA controls are whole-file reference positives. No external
+font/PDF is bundled and no controls are excluded.
+
+The 44 authored profile cases cover encoding combinations, missing and
+malformed headers, every wrapper truncation, filters and excluded scope;
+21 failed before implementation. An additional shared-selection case
+pins raw priority, null-as-absent handling and the required OpenType
+subtype. All 8279 combined PDF/A/UA/deep/reader/OpenType cases pass and
+the solution builds with existing machine source warnings unchanged.
+Independent glyf CIDSet outcomes remain 126/136 with their same ten
+mandatory-CID0 disagreements. The preceding full11344 measurement
+predates this small selection follow-up. Complete font/program/outline
+validity, legacy Type1 and used-glyph/width/Unicode completeness remain
+open; broad Partial status and historical corpus measurements are unchanged.
+
 ## 2026-11-04 PDF/A OpenType glyf CIDSet completeness
 
 The subset CIDFontType2 CIDSet path now also selects FontFile3 OpenType

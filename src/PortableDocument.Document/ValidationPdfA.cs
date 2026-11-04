@@ -22,6 +22,13 @@ internal static class FontChecks
 
     public static string Name(PdfFile f, PdfDictionary font) => f.Resolve(font.Get("BaseFont")).AsName() ?? "(unnamed)";
 
+    public static PdfStream? TrueTypeProgram(PdfFile f, PdfDictionary descriptor)
+    {
+        if (f.Resolve(descriptor.Get("FontFile2")) is PdfStream raw) return raw;
+        return f.Resolve(descriptor.Get("FontFile3")) is PdfStream openType
+            && f.Resolve(openType.Dict.Get("Subtype")).AsName() == "OpenType" ? openType : null;
+    }
+
     static bool TrySfntTable(ReadOnlySpan<byte> data, ReadOnlySpan<byte> tag, out (int Offset, int Length)? result, bool cff = false)
     {
         result = null;

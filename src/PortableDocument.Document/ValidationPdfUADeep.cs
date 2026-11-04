@@ -74,7 +74,7 @@ internal static class PdfUADeepChecks
 
     static void SymbolicTrueTypeCmap(ValidationContext c, ValidationContext.FontUse use, PdfDictionary descriptor)
     {
-        if (c.F.Resolve(descriptor.Get("FontFile2")) is not PdfStream program) return;
+        if (FontChecks.TrueTypeProgram(c.F, descriptor) is not { } program) return;
         var name = FontChecks.Name(c.F, use.Font);
         (int Count, bool Symbol, bool Roman)? records;
         try { records = FontChecks.TrueTypeCmapRecords(c.F.DecodeStream(program)); }

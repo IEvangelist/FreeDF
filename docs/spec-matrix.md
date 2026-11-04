@@ -270,6 +270,14 @@ OpenType CIDFontType2 programs. All 44 independent reference negatives close;
 Full integrated Release tests pass 11344/11344. Simple-TrueType OpenType
 encoding inspection and complete font validity remain open.
 
+The [OpenType symbolic cmap slice](spec-backlog.md#2026-11-04-opentype-symbolic-cmap-inspection)
+also selects FontFile3 OpenType for symbolic simple-TrueType A2/3 and
+UA1/2 checks, preserving each profile's record policy and raw FontFile2
+priority. All 20 independent exact-rule pairs agree (12 positives/eight
+new negatives); UA-derived PDF/A controls are not whole-file closures.
+Malformed selected metadata reports incomplete; full subtable/glyph/font
+validity remains open. Latest focused integration passes 8279 cases.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and
