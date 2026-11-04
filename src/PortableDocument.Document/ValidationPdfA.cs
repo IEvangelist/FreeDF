@@ -249,8 +249,10 @@ internal static class PdfAChecks
                     if (name is "LZWDecode" or "LZW" && !reportedLzw) { reportedLzw = true; c.Add("PDFA-FILTER-LZW", ValidationSeverity.Error, "LZWDecode filter is not permitted", Clause(c, "6.1.10", "6.1.10", "6.1.10")); }
                     if (name == "JPXDecode" && c.Part == 1 && !reportedJpx) { reportedJpx = true; c.Add("PDFA1-FILTER-JPX", ValidationSeverity.Error, "JPXDecode is not permitted in PDF/A-1", "ISO 19005-1 6.2.8"); }
                 }
-                if (st.Dict.Get("F") is not null || st.Dict.Get("FFilter") is not null || st.Dict.Get("FDecodeParms") is not null)
-                    c.Add("PDFA-STREAM-EXTERNAL", ValidationSeverity.Error, "stream refers to an external file (/F, /FFilter or /FDecodeParms)", Clause(c, "6.1.7", "6.1.7", "6.1.7"));
+                if (f.Resolve(st.Dict.Get("F")) is not null and not PdfNull
+                    || f.Resolve(st.Dict.Get("FFilter")) is not null and not PdfNull
+                    || f.Resolve(st.Dict.Get("FDecodeParms")) is not null and not PdfNull)
+                    c.Add("PDFA-STREAM-EXTERNAL", ValidationSeverity.Error, "stream refers to an external file (/F, /FFilter or /FDecodeParms)", Clause(c, "6.1.7", "6.1.7.1", "6.1.7.1"));
                 if (c.Part == 1 && !reportedObjStm && f.Resolve(st.Dict.Get("Type")).AsName() is "ObjStm" or "XRef")
                 { reportedObjStm = true; c.Add("PDFA1-OBJSTM", ValidationSeverity.Error, "object streams and cross-reference streams are not permitted in PDF/A-1", "ISO 19005-1 6.1.4"); }
             }

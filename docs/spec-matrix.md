@@ -66,6 +66,12 @@ PDF/A-2/3 Popup may omit it but supplied flags must be valid. All 108
 independent controls agree on exact rules and verdicts. General annotation
 validity remains partial.
 
+The [external-stream null correction](spec-backlog.md#2026-11-04-pdfa-external-stream-null-entries)
+accepts null `/F`, `/FFilter` and `/FDecodeParms` while retaining the
+non-null prohibition and exact part-specific clauses. All 36 independent
+controls agree on exact rules and verdicts. General stream/reference
+validity remains outside this check.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

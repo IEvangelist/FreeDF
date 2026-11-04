@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A external-stream null entries
+
+The all-object stream scan now resolves `/F`, `/FFilter` and `/FDecodeParms`
+and rejects only non-null values, preserving `PDFA-STREAM-EXTERNAL` Error
+severity. Direct null and indirect references to null no longer produce
+false positives. The PDF/A-2/3 clause is corrected to 6.1.7.1; PDF/A-1
+remains 6.1.7. Pinned veraPDF validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` expresses test 3 as
+`F == null && FFilter == null && FDecodeParms == null` in each part.
+
+There are 126 authored cases across three keys, direct/indirect values and
+three parts. Ninety failed against the original implementation (null
+false positives and PDF/A-2/3 clause attribution); all now pass.
+All 36 independently mutated page-content stream controls agree with
+veraPDF 1.30.3 on the exact rule and whole-file verdict: 18 null positives
+and 18 non-null negatives. No external file is provided or loaded by FreeDF;
+the reference reports and mutated PDFs remain session artifacts.
+The integrated PDF/A/deep-validation selector passed 1444 tests.
+
+This corrects optional-entry semantics, not general stream well-formedness,
+filter completeness or object-resolution diagnostics. `PdfFile.Resolve`
+already collapses missing/cyclic references to null; this slice does not
+distinguish them from intentional nulls or claim new malformed-reference
+validation. Historical corpus measurements below remain unchanged.
+
 ## 2026-11-04 PDF/A annotation visibility flags
 
 The annotation scan now rejects the Invisible bit in PDF/A-1/2/3 and
