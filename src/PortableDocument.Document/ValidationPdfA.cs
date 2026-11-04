@@ -191,10 +191,12 @@ internal static class PdfAChecks
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
                 if (sub is "Sound" or "Movie" or "Screen" or "3D" && c.Part == 1 || sub is "Sound" or "Movie")
                     c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
-                if (sub == "Popup") continue;
-                var flags = (int)(f.Resolve(ad.Get("F")).AsNumber() ?? 0);
+                var flagValue = f.Resolve(ad.Get("F"));
+                if (c.Part != 1 && sub == "Popup" && flagValue is null or PdfNull) continue;
+                var flags = (int)(flagValue.AsNumber() ?? 0);
                 if ((flags & 4) == 0) c.Add("PDFA-ANNOT-PRINT", ValidationSeverity.Error, "annotation lacks the Print flag", Clause(c, "6.5.3", "6.3.2", "6.3.2"), i);
-                if ((flags & (2 | 32)) != 0) c.Add("PDFA-ANNOT-HIDDEN", ValidationSeverity.Error, "annotation has the Hidden or NoView flag", Clause(c, "6.5.3", "6.3.2", "6.3.2"), i);
+                if ((flags & (1 | 2 | 32 | (c.Part == 1 ? 0 : 256))) != 0)
+                    c.Add("PDFA-ANNOT-HIDDEN", ValidationSeverity.Error, $"annotation visibility flags are not permitted in this PDF/A part (/F {flags})", Clause(c, "6.5.3", "6.3.2", "6.3.2"), i);
             }
         }
     }

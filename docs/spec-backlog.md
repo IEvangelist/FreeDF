@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A annotation visibility flags
+
+The annotation scan now rejects the Invisible bit in PDF/A-1/2/3 and
+ToggleNoView in PDF/A-2/3, alongside the existing Hidden/NoView prohibitions
+and Print requirement. Existing rule IDs, Error severity, page attribution
+and ISO 19005-1 6.5.3 / ISO 19005-2/3 6.3.2 clauses are retained.
+ToggleNoView remains permitted by this rule in PDF/A-1.
+
+Popup is no longer a blanket exemption. PDF/A-1 requires valid flags on
+Popup annotations too. PDF/A-2/3 exempt Popup only from `/F` presence;
+if supplied, its bits must meet the same visibility/Print requirements.
+All non-Popup annotations still require `/F` in every part. The
+`if present` wording of PDF/A-2/3 test 2 does not remove test 1's separate
+non-Popup presence requirement. Explicit null is treated as absent.
+
+The exact pinned veraPDF predicates (validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`) are PDF/A-1 6.5.3 test 2
+and PDF/A-2/3 6.3.2 tests 1/2. All 108 independently mutated Square/Popup
+controls agree with veraPDF 1.30.3 on those predicates and whole-file
+verdicts: 36 positives and 72 negatives. Popup controls include a valid
+parent annotation. Direct and indirect flags, absent/null, individual
+forbidden bits, Print and allowed extra bits are covered without bundling
+the external PDFs/XML.
+
+The 792 authored cases cover all combinations of Print, Invisible, Hidden,
+NoView and ToggleNoView, with/without allowed extra bits, direct/indirect
+entries, Popup/non-Popup and all three parts, plus absent/null controls.
+Against the original implementation 436 failed and 356 passed; all now pass.
+The integrated PDF/A/deep-validation selector passed 1318 tests, and the
+solution builds without new warnings. This is flag-policy validation, not
+complete annotation type/range, appearance or general PDF/A conformance.
+Historical corpus measurements below have not been overwritten.
+
 ## 2026-11-04 PDF/A standalone PostScript XObjects
 
 The existing all-object dictionary scan now rejects streams with resolved
