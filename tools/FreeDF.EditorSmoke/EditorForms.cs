@@ -163,20 +163,8 @@ static class EditorForms
         Check(await page.Locator("#layer .wgt").CountAsync() == live.Count, name + ": one overlay per fillable widget");
         Check(await page.EvaluateAsync<int>("document.querySelectorAll('.wgt.push, .wgt button').length") == 0, name + ": push buttons get no interactive overlay");
 
-        Check(await page.EvaluateAsync<bool>("""
-            () => new Promise(resolve => {
-              const layer = document.getElementById('layer'), input = layer.querySelector('.wgt.text');
-              input.focus();
-              const start = input.selectionStart, end = input.selectionEnd;
-              const observer = new MutationObserver(() => {
-                observer.disconnect();
-                resolve(input.isConnected && document.activeElement === input &&
-                  input.selectionStart === start && input.selectionEnd === end);
-              });
-              observer.observe(layer, { childList: true });
-              window.dispatchEvent(new Event('resize'));
-            })
-            """), name + ": repainting unchanged form geometry preserves the focused input and caret");
+        await page.Locator("#layer .wgt.text").First.FocusAsync();
+        Check(await LayoutKeepsFocus(page), name + ": refreshing unchanged form geometry preserves the focused input and caret");
 
         // A plain click on a widget edits it; it must not select a page-level group.
         var firstText = page.Locator("#layer .wgt.text").First;
@@ -370,17 +358,7 @@ static class EditorForms
         if (formPage > 0)
         {
             await page.Locator("#pn").FillAsync((formPage + 1).ToString());
-            Check(await page.EvaluateAsync<bool>("""
-                () => new Promise(resolve => {
-                  const input = document.getElementById('pn'), value = input.value;
-                  const observer = new MutationObserver(() => {
-                    observer.disconnect();
-                    resolve(document.activeElement === input && input.value === value);
-                  });
-                  observer.observe(document.getElementById('layer'), { childList: true });
-                  window.dispatchEvent(new Event('resize'));
-                })
-                """), name + ": repainting preserves a page number being entered");
+            Check(await LayoutKeepsFocus(page), name + ": layout refresh preserves a page number being entered");
             await page.Locator("#pn").PressAsync("Enter");
         }
         try
@@ -422,13 +400,7 @@ static class EditorForms
     static async Task GoPage(IPage page, int number)
     {
         await page.Locator("#pn").FillAsync(number.ToString());
-        await page.EvaluateAsync("""
-            async () => {
-              const refreshed = new Promise(resolve => addEventListener('editor-page-change', resolve, { once: true }));
-              dispatchEvent(new Event('resize'));
-              await refreshed;
-            }
-            """);
+        Check(await LayoutKeepsFocus(page), "Background layout refresh preserves page-number focus and selection");
         Check(await page.Locator("#pn").InputValueAsync() == number.ToString(),
             "Background layout refresh must preserve the page number being entered");
         await page.Locator("#pn").PressAsync("Enter");
@@ -441,6 +413,7 @@ static class EditorForms
                     && !document.getElementById('view').inert && image?.naturalWidth > 0
                     && image.dataset.loadedUrl?.includes(`/api/page/${p - 1}.png?`);
                 }
+
                 """, number);
         }
         catch (TimeoutException error)
@@ -462,6 +435,24 @@ static class EditorForms
             throw new Exception($"Form navigation to page {number} did not settle: {snapshot}", error);
         }
     }
+
+    static Task<bool> LayoutKeepsFocus(IPage page) => page.EvaluateAsync<bool>("""
+        () => new Promise((resolve, reject) => {
+          const input = document.activeElement, value = input.value;
+          const start = input.selectionStart, end = input.selectionEnd;
+          const refreshed = () => {
+            clearTimeout(timeout);
+            resolve(input.isConnected && document.activeElement === input && input.value === value &&
+              input.selectionStart === start && input.selectionEnd === end);
+          };
+          const timeout = setTimeout(() => {
+            removeEventListener('editor-page-change', refreshed);
+            reject(new Error('The same-layout form refresh did not finish.'));
+          }, 10000);
+          addEventListener('editor-page-change', refreshed, {once:true});
+          dispatchEvent(new Event('resize'));
+        })
+        """);
 
     static async Task<List<Widget>> Widgets(IPage page, int index) =>
         JsonSerializer.Deserialize<List<Widget>>(await page.EvaluateAsync<string>("async i => JSON.stringify(await (await pdfHost.request(`/api/page/${i}/widgets`)).json())", index),
