@@ -319,7 +319,11 @@ used-glyph reference disagreements. A fresh FreeDF run of 435 public
 files/870 profile results closes exactly six missed file verdicts:
 **6 UA-1 / 2 UA-2 misses remain**, zero reference-positive regressions
 or new internal/incomplete findings. The full Release suite passes
-12174/12174. Complete glyph mapping, UTF-16/CMap validity, metrics and
+12174/12174 before the subsequent odd-hex boundary correction. That
+correction has six further exact/whole reference controls (four clean
+positives/two U+0000 negatives), independent padding/UTF-16BE checks and
+79 passing focused cases; no repeat corpus/full-suite count is claimed.
+Complete glyph mapping, UTF-16/CMap validity, metrics and
 overall font parity remain partial; dated earlier totals are preserved.
 
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)

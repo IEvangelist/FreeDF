@@ -50,8 +50,22 @@ three UA-1 and three UA-2 forbidden-value files. Remaining misses are
 **6 UA-1 / 2 UA-2**, with zero reference-positive regressions, internal
 errors or new incomplete results. Historical dated totals are preserved.
 The initial 59 authored cases exposed 37 baseline failures; the final
-74 cases include malformed decoding and bound controls. The full Release
-suite passes 12174/12174, and the solution builds. Full font metrics,
+74 cases include malformed decoding and bound controls. At that delivery,
+the full Release suite passed 12174/12174 and the solution built.
+
+A subsequent boundary correction preserves zero-padding of an odd final
+hexadecimal nibble, reusing the normal lexer instead of treating valid
+strings as incomplete. ISO 32000-1 7.3.4.3 (public printed page 16)
+describes the padding; six additional real-font controls agree exactly
+and whole-file with the reference and an independent Python UTF-16BE
+check: four clean positives (`<004>` becomes U+0040, `<FEF>` becomes
+U+FEF0) and two U+0000 negatives (`<000>`). The four former conservative
+rejections are removed; the two negatives now receive the specific value
+error instead of incomplete. No newly detected reference-negative file
+is claimed for that correction. All 79 focused cases pass, including six
+new baseline failures. The full12174 run precedes this small correction;
+no repeated full-corpus or full-suite measurement is claimed.
+Full font metrics,
 subset/glyph validity, mapping completeness and overall parity remain open.
 
 ## 2026-11-04 Complete Flate predictor inspection

@@ -17,6 +17,9 @@ public class PdfUaToUnicodeValueTests
             ("1 beginbfchar <01> <0041FEFF0042> endbfchar", true),
             ("1 beginbfchar <01> <0041FFFE0042> endbfchar", true),
             ("1 beginbfchar <01> <0041> endbfchar", false),
+            ("1 beginbfchar <01> <004> endbfchar", false),
+            ("1 beginbfchar <01> <FEF> endbfchar", false),
+            ("1 beginbfchar <01> <000> endbfchar", true),
             ("1 beginbfchar <0000> <0041> endbfchar", false),
             ("1 beginbfchar <FEFF> <0041> endbfchar", false),
             ("1 beginbfchar <01> <D83DDE00> endbfchar", false),
@@ -59,7 +62,6 @@ public class PdfUaToUnicodeValueTests
     [InlineData("1 beginbfchar <01> <0041>")]
     [InlineData("2 beginbfchar <01> <0041> endbfchar")]
     [InlineData("1 beginbfchar <01> <00xz> endbfchar")]
-    [InlineData("1 beginbfchar <01> <004> endbfchar")]
     [InlineData("1 beginbfchar <01> <> endbfchar")]
     [InlineData("1 beginbfrange <02> <01> <0041> endbfrange")]
     [InlineData("1 beginbfrange <01> <02> [<0041>] endbfrange")]

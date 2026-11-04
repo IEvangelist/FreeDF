@@ -328,15 +328,12 @@ internal static class PdfUADeepChecks
             if (value is not PdfString text || start >= data.Length || data[start] != '<'
                 || lexer.Pos > data.Length || data[lexer.Pos - 1] != '>')
                 throw new PdfParseException("non-literal ToUnicode mapping string");
-            var digits = 0;
             foreach (var b in data.AsSpan(start + 1, lexer.Pos - start - 2))
                 if (!PdfLexer.IsWhite(b))
                 {
                     if (b is not (>= (byte)'0' and <= (byte)'9' or >= (byte)'a' and <= (byte)'f' or >= (byte)'A' and <= (byte)'F'))
                         throw new PdfParseException("invalid ToUnicode hexadecimal string");
-                    digits++;
                 }
-            if (digits % 2 != 0) throw new PdfParseException("partial ToUnicode hexadecimal byte");
             return text.Bytes;
         }
         (int Length, uint Code) Source()
