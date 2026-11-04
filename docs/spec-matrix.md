@@ -111,6 +111,11 @@ All 225 independent controls agree on exact rules and verdicts (201 positives,
 24 negatives). PDF/A-1 is unchanged; appearance keys, N stream/state
 validity and general annotation well-formedness remain open.
 
+Exceeding the existing 10000-entry per-page PDF/A annotation budget now
+produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
+rather than silently omitting later entries. The limit is a library resource
+bound, not a normative annotation-count restriction.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

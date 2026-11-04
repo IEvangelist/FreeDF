@@ -250,11 +250,14 @@ internal static class PdfAChecks
 
     static void Annotations(ValidationContext c)
     {
+        const int annotationLimit = 10_000;
         var f = c.F;
         for (var i = 0; i < c.Doc.Pages.Count; i++)
         {
             if (f.Resolve(c.Doc.Pages[i].Dict.Get("Annots")) is not PdfArray annots) continue;
-            foreach (var a in annots.Items.Take(10_000))
+            if (annots.Count > annotationLimit)
+                c.Add("PDFA-ANNOT-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect {annots.Count} page annotation entries: limit is {annotationLimit}", Clause(c, "6.5", "6.3", "6.3"), i);
+            foreach (var a in annots.Items.Take(annotationLimit))
             {
                 if (f.Resolve(a) is not PdfDictionary ad) continue;
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();

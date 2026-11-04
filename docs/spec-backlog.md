@@ -4,6 +4,23 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 explicit PDF/A annotation traversal incompleteness
+
+The existing 10000-entry per-page annotation limit is retained, but
+exceeding it now reports `PDFA-ANNOT-INCOMPLETE` Error on the affected page
+under the annotation section (ISO 19005-1 6.5 / ISO 19005-2/3 6.3).
+Earlier entries are still checked, and entries beyond the bound are not
+silently treated as validated. The numeric limit is a FreeDF resource
+bound, not an ISO constraint or a veraPDF predicate.
+
+Thirty authored cases cover zero, 9999, 10000 and 10001 entries; valid and
+invalid final entries; all parts; and independent two-page budgets/page
+attribution. Six of the initial 24 cases failed before the change.
+Exactly 10000 entries remain inspectable, and a prohibited subtype beyond
+the bound is reported as incomplete inspection, not falsely claimed found.
+This closes silent budget exhaustion only, not unbounded traversal,
+malformed annotation-array handling or full conformance.
+
 ## 2026-11-04 PDF/A-2/3 annotation appearance presence
 
 Non-exempt PDF/A-2/3 annotations now require an appearance dictionary.
