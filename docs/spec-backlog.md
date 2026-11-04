@@ -4,6 +4,41 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A OpenType glyf CIDSet completeness
+
+The subset CIDFontType2 CIDSet path now also selects FontFile3 OpenType
+programs when FontFile2 is absent. It reuses the bounded TrueType maxp
+reader and existing Identity/stream CIDToGIDMap comparison without
+changing raw FontFile2 selection. ISO 32000-1 Table 126 and 9.9 permit
+OpenType TrueType outlines for CIDFontType2. CFF/OTTO programs cannot
+pass the TrueType metadata reader. Existing explicit incomplete results,
+16 MiB decoded-program, 1 MiB bitmap and 131072-byte map bounds remain.
+This only establishes selected metadata, not all required-table,
+outline or checksum validity.
+
+Independent A2/3 controls reuse one retained real Liberation Sans glyf
+program under FontFile3 OpenType: 40 Identity and 96 explicit stream-map
+controls (aliases, unused-GID permutations and short maps included).
+FontTools confirms 2589 glyphs and the required glyf/head/hhea/hmtx/loca/maxp
+tables; independent Python set comparison confirms every intended bitmap.
+All 44 reference negatives now fail their exact 6.2.11.4.2 test 2 predicate.
+Exact-rule/whole-file agreement with veraPDF 1.30.3 is 126/136.
+The ten normative disagreements all omit mandatory CID 0 and are
+reference-positive but FreeDF-negative. No collateral reference rule fails,
+no controls are excluded, and no external fonts/PDFs are bundled.
+
+There are 184 new authored cases (76 failed before implementation),
+covering both map kinds, subset/plain scope, indirect Identity, malformed
+maxp/CFF metadata, invalid map bounds/GIDs and exact program-byte bounds.
+Minimal fixtures isolate metadata and do not claim full OpenType validity.
+Full Release verification of all integrated font slices passes 11344 tests,
+zero failed/skipped; the solution builds with existing machine source
+warnings unchanged. Independent OpenType CFF CIDSet (72/80) and CharSet
+(22/24) outcomes retain exactly their documented disagreements.
+OpenType simple-TrueType encoding inspection, full wrapper/program
+validity, legacy Type1 and used-glyph/width/Unicode completeness remain
+open; broad Partial status and historical corpus measurements are unchanged.
+
 ## 2026-11-04 PDF/A OpenType CFF CIDSet completeness
 
 The CIDFontType0 subset CIDSet path now follows FontFile3 OpenType

@@ -149,7 +149,7 @@ public class PdfAIdentityCidSetListingTests
             ObjPdf.Stream("BT /F 12 Tf <0001> Tj ET"),
             $"<< /Type /Font /Subtype /Type0 /BaseFont /{name} /Encoding /Identity-H /DescendantFonts [6 0 R] >>",
             $"<< /Type /Font /Subtype /{(cff ? "CIDFontType0" : "CIDFontType2")} /BaseFont /{name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> {(cff ? "" : "/CIDToGIDMap " + (map ?? (mapping is not null ? "12 0 R" : indirectMap ? "11 0 R" : "/Identity")))} /FontDescriptor 7 0 R >>",
-            $"<< /Type /FontDescriptor /FontName /{name} /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /{(cff ? "FontFile3" : "FontFile2")} 8 0 R /CIDSet 10 0 R >>",
+            $"<< /Type /FontDescriptor /FontName /{name} /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /{(cff || openType ? "FontFile3" : "FontFile2")} 8 0 R /CIDSet 10 0 R >>",
             ObjPdf.Stream(Encoding.Latin1.GetString(program), openType ? "/Subtype /OpenType" : cff ? "/Subtype /CIDFontType0C" : ""),
             "null",
             ObjPdf.Stream(Encoding.Latin1.GetString(bitmap)),

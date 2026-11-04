@@ -199,9 +199,15 @@ internal static partial class PdfADeepChecks
                     && f.Resolve(cid.Get("CIDToGIDMap")) is { } cidMapping
                     && cidMapping is (PdfStream or PdfName { Value: "Identity" })
                     && f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cidDescriptor
-                    && f.Resolve(cidDescriptor.Get("CIDSet")) is PdfStream cidSet
-                    && f.Resolve(cidDescriptor.Get("FontFile2")) is PdfStream cidProgram)
-                    TrueTypeCidSet(c, cidProgram, cidSet, cidMapping, FontChecks.Name(f, cid), u.Page);
+                    && f.Resolve(cidDescriptor.Get("CIDSet")) is PdfStream cidSet)
+                {
+                    var cidProgram = f.Resolve(cidDescriptor.Get("FontFile2")) as PdfStream;
+                    if (cidProgram is null && f.Resolve(cidDescriptor.Get("FontFile3")) is PdfStream openTypeProgram
+                        && f.Resolve(openTypeProgram.Dict.Get("Subtype")).AsName() == "OpenType")
+                        cidProgram = openTypeProgram;
+                    if (cidProgram is not null)
+                        TrueTypeCidSet(c, cidProgram, cidSet, cidMapping, FontChecks.Name(f, cid), u.Page);
+                }
                 if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType0"
                     && SubsetPrefix().IsMatch(FontChecks.Name(f, cid))
                     && f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cffDescriptor
