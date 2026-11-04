@@ -61,6 +61,11 @@ cross-checked against the same CC BY 4.0 PDF/UA-1 profile, 7.5 tests 1/2.
 `ValidationPdfUA.cs` independently implements this necessary presence
 condition; complete directional/semantic header association is not claimed.
 
+The conditional optional-content configuration Name requirement and AS
+prohibition were cross-checked against the same CC BY 4.0 PDF/UA-2 profile,
+8.7 tests 1/2. Configuration selection, decoded-name emptiness and null-entry
+handling in `ValidationPdfUADeep.cs` are independently implemented.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

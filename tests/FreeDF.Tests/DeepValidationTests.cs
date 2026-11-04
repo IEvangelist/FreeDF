@@ -402,6 +402,67 @@ public class DeepValidationTests
         Assert.True(U(Encoding.Latin1.GetBytes(suspects)).Has("PDFUA-SUSPECTS"));
     }
 
+    public static IEnumerable<object[]> OptionalContentNameCases()
+    {
+        string[] configurations = ["", "/Configs null", "/Configs []",
+            "/Configs [9 0 R]", "/Configs [<< /Name (Alternative) >>]"];
+        foreach (var part in new[] { 1, 2 })
+        for (var index = 0; index < configurations.Length; index++)
+        foreach (var name in new[] { "", "/Name ()", "/Name (Default)", "/Name /NotAString" })
+        foreach (var automaticState in new[] { "", "/AS []", "/AS null", "/AS 10 0 R", "/AS 11 0 R" })
+            yield return [part, configurations[index], name, automaticState,
+                (part == 1 || index >= 3) && name != "/Name (Default)"];
+    }
+
+    [Theory]
+    [MemberData(nameof(OptionalContentNameCases))]
+    public void ConfigurationNameRequirementIsConditionalOnlyForUa2(
+        int part, string configurations, string name, string automaticState, bool missingName)
+    {
+        var properties = $"/OCProperties << /OCGs [] /D << {name} {automaticState} >> {configurations} >>";
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: properties,
+            extras: [Para, "<< /Name (Alternative) >>", "null", "[]"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missingName, report.Has("PDFUA-OC-NAME"));
+        Assert.Equal(automaticState is "/AS []" or "/AS 11 0 R", report.Has("PDFUA-OC-AS"));
+    }
+
+    [Theory]
+    [InlineData(1, "", true)]
+    [InlineData(1, "/Name ()", true)]
+    [InlineData(1, "/Name /NotAString", true)]
+    [InlineData(1, "/Name (Alternative)", false)]
+    [InlineData(2, "", true)]
+    [InlineData(2, "/Name ()", true)]
+    [InlineData(2, "/Name /NotAString", true)]
+    [InlineData(2, "/Name (Alternative)", false)]
+    public void NonDefaultConfigurationStillRequiresNameAndForbidsAutomaticState(int part, string name, bool missingName)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: "/OCProperties << /OCGs [] /D << /Name (Default) >> /Configs [9 0 R] >>",
+            extras: [Para, $"<< {name} /AS [] >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missingName, report.Has("PDFUA-OC-NAME"));
+        Assert.True(report.Has("PDFUA-OC-AS"));
+    }
+
+    [Theory]
+    [InlineData(1, "<FEFF>", true)]
+    [InlineData(1, "<FEFF004E>", false)]
+    [InlineData(2, "<FEFF>", true)]
+    [InlineData(2, "<FEFF004E>", false)]
+    public void RequiredConfigurationNameUsesDecodedTextLength(int part, string name, bool missingName)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: $"/OCProperties << /OCGs [] /D << /Name {name} >> /Configs [9 0 R] >>",
+            extras: [Para, "<< /Name (Alternative) >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missingName, report.Has("PDFUA-OC-NAME"));
+    }
+
     [Fact]
     public void EmbeddedFileSpecificationNeedsFAndUf()
     {

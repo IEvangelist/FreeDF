@@ -60,7 +60,7 @@ class CommandBatchTests(unittest.TestCase):
             self.assertEqual(2, process.call_count)
 
 
-class FontRuleOverlapTests(unittest.TestCase):
+class RuleOverlapTests(unittest.TestCase):
     mappings = [
         (1, "7.21.4.2-1", "PDFUA-FONT-CHARSET-LIST"),
         (1, "7.21.4.2-2", "PDFUA-FONT-CIDSET-LIST"),
@@ -70,6 +70,7 @@ class FontRuleOverlapTests(unittest.TestCase):
         (2, "8.4.5.6-1", "PDFUA-FONT-WIDTH"),
         (2, "8.4.5.8-2", "PDFUA-FONT-TOUNICODE-VALUE"),
         (2, "8.4.5.9-1", "PDFUA-FONT-NOTDEF"),
+        (2, "8.7-1", "PDFUA-OC-NAME"),
     ]
 
     def overlap(self, part, rule, errors):
@@ -83,7 +84,7 @@ class FontRuleOverlapTests(unittest.TestCase):
             crosscheck.corpus("directory", part)
         return output.getvalue()
 
-    def test_delivered_font_findings_count_as_mapped_family_overlap(self):
+    def test_delivered_findings_count_as_mapped_family_overlap(self):
         for part, rule, finding in self.mappings:
             with self.subTest(part=part, rule=rule):
                 self.assertIn(f"  {rule}: 1 / 1 / 0", self.overlap(part, rule, [finding]))

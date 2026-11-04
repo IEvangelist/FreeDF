@@ -25,15 +25,16 @@ internal static class PdfUADeepChecks
             c.Add("PDFUA-XFA-DYNAMIC", ValidationSeverity.Error, "dynamic XFA rendering is required (/NeedsRendering true with an XFA form)", Clause(c, "7.15", "8.9"));
         if (f.Resolve(f.Catalog.Get("OCProperties")) is PdfDictionary oc)
         {
+            var requireNames = c.Part == 1 || f.Resolve(oc.Get("Configs")) is PdfArray { Count: > 0 };
             var configs = new List<PdfDictionary>();
             if (f.Resolve(oc.Get("D")) is PdfDictionary d) configs.Add(d);
             if (f.Resolve(oc.Get("Configs")) is PdfArray arr) configs.AddRange(arr.Items.Take(1000).Select(f.Resolve).OfType<PdfDictionary>());
             foreach (var cfg in configs)
             {
-                if (f.Resolve(cfg.Get("Name")) is not PdfString { Bytes.Length: > 0 })
-                    c.Add("PDFUA-OC-NAME", ValidationSeverity.Error, "optional content configuration has no /Name", Clause(c, "7.10", "8.9"));
-                if (cfg.Get("AS") is not null)
-                    c.Add("PDFUA-OC-AS", ValidationSeverity.Error, "optional content configuration must not contain /AS", Clause(c, "7.10", "8.9"));
+                if (requireNames && f.Resolve(cfg.Get("Name")) is not PdfString { Text.Length: > 0 })
+                    c.Add("PDFUA-OC-NAME", ValidationSeverity.Error, "optional content configuration has no non-empty text /Name", Clause(c, "7.10", "8.7"));
+                if (f.Resolve(cfg.Get("AS")) is not (null or PdfNull))
+                    c.Add("PDFUA-OC-AS", ValidationSeverity.Error, "optional content configuration must not contain /AS", Clause(c, "7.10", "8.7"));
             }
         }
         if (c.Part == 1)

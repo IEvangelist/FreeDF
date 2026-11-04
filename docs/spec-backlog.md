@@ -4,6 +4,48 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA optional-content configuration boundaries
+
+The clause-level review after corpus exhaustion found an over-rejection:
+UA-2 requires non-empty configuration names only when the optional-content
+`Configs` array contains a configuration. Default-only, absent/null Configs
+and empty-array cases no longer acquire that Error. UA-1's name requirement
+is unchanged. Names use decoded text length, so a UTF-16BE BOM alone is not
+a non-empty name. Direct/indirect null `AS` is treated as absent in both
+profiles; actual automatic-state arrays remain prohibited. The UA-2 finding
+references now correctly cite 8.7, not 8.9.
+
+The conditional requirement and AS prohibition were cross-checked against
+the veraPDF Consortium's CC BY 4.0 v1.30.3 standalone UA-2 profile,
+8.7 tests 1/2, at pinned commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`.
+Public ISO 32000-1 7.3.9 (printed p21) specifies that a null-valued dictionary
+entry is equivalent to omission. Full ISO PDF/UA clause text was not
+independently obtained for this slice.
+
+There are 212 authored controls: the initial conditional-name cases had
+18 baseline failures, subsequent null-AS controls exposed 80 failures, and
+the BOM-only controls exposed two more. The final focused selector passes
+249 tests; full Release passes **12724/12724**, zero skipped. Solution build
+has zero errors and the same two machine-feed NU1507 warnings; all 18 Python
+cross-check tool tests pass. The UA-2 name family is now mapped by the tool.
+
+Independent mutations of the real public optional-content fixture give
+**58 exact-rule and whole-file agreements: 13 clean positives, 45 negatives**.
+These include null/empty/non-empty Configs, direct/indirect configuration
+dictionaries, AS-null versus actual AS, and four decoded-name BOM controls.
+The first reference comparison exposed the AS-null bug before it shipped.
+They are mutations of one document, not 58 independent document layouts.
+
+Fresh measurement of all 435 public PDFs/870 profile results retains
+**0 UA-1 / 0 UA-2 file-verdict misses**. Native UA-1 and UA-2 results are
+unchanged. Exactly two cross-profile UA-2 evaluations of UA-1 optional-content
+negatives lose the unnecessary name Error; their other Errors and verdicts
+are unchanged. No new internal or incomplete findings. Existing configuration
+traversal bounds and malformed-structure limitations remain; complete
+optional-content validation, rule-level parity and certification are not
+claimed. External PDFs/profiles remain session-only evidence.
+
 ## 2026-11-04 PDF/UA-1 tables without Headers require complete Scope
 
 When a table has TD cells and none supplies a Headers attribute,

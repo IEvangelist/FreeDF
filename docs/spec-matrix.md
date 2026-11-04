@@ -375,6 +375,15 @@ The full Release suite passes 12512/12512. Scope direction, mixed
 Headers inference and full per-rule/semantic coverage remain partial;
 this is corpus exhaustion, not full PDF/UA parity or certification.
 
+The [optional-content boundary correction](spec-backlog.md#2026-11-04-pdfua-optional-content-configuration-boundaries)
+conditions UA-2 configuration names on non-empty Configs, checks decoded
+name length, and treats direct/indirect null AS as absent. All 58 independent
+controls agree exactly/whole-file (13 positives, 45 negatives). The full
+Release suite passes 12724/12724. A fresh 435-file/870-result measurement
+has no verdict changes: native UA-1/UA-2 outputs are unchanged, and two
+cross-profile UA-2-on-UA-1 evaluations lose an unnecessary name Error.
+Existing traversal bounds and incomplete rule/semantic coverage remain.
+
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
 adds strict A1 parameter/frame/tag inspection while preserving tolerant
 reader recovery. All 30 valid encodings have independent byte checks;
