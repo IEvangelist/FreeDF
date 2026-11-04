@@ -350,6 +350,19 @@ internal errors or new incomplete findings. The full Release suite passes
 12295/12295. Other font mappings, fallback glyphs, complete content
 coverage and metrics remain partial.
 
+The [rendered ASCII TrueType-width slice](spec-backlog.md#2026-11-04-pdfua-rendered-ascii-truetype-widths)
+compares actually shown, non-mode-3 ASCII bytes for non-symbolic
+WinAnsi FontFile2 fonts through bounded (3,1) format-4 cmap and
+hmtx inspection. Forty-six of 48 real-font controls agree on exact
+rule and whole-file verdict; two reference-accepted double-quote
+negatives remain explicit disagreements, independently confirmed
+as shown by PyMuPDF. A fresh 435-file/870-result run closes both
+public metrics misses: **1 UA-1 / 0 UA-2 misses remain**, zero
+reference-positive regressions, internal errors or new incomplete
+findings. The full Release suite passes 12445/12445. Other encodings,
+font types, fallbacks and full glyph/metric validity remain partial;
+zero measured UA-2 misses is not complete conformance.
+
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
 adds strict A1 parameter/frame/tag inspection while preserving tolerant
 reader recovery. All 30 valid encodings have independent byte checks;

@@ -4,6 +4,81 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA rendered ASCII TrueType widths
+
+PDF/UA-1 and UA-2 now compare the widths of actually shown printable
+ASCII bytes (32-126) in non-symbolic simple TrueType fonts with raw
+FontFile2, WinAnsiEncoding and no Differences overrides. Resolved
+encoding dictionaries with that BaseEncoding and absent/null Differences
+are included. The selected Microsoft Unicode (3,1) format-4 cmap maps
+these ASCII Unicode values to glyph indices; hmtx advance widths are
+scaled by head.unitsPerEm to 1000-unit PDF widths. The repeated final
+hmtx advance is supported, as are format-4 delta and range-offset maps.
+Widths differ by more than one unit before `PDFUA-FONT-WIDTH` is emitted.
+Text rendering mode 3 is exempt; mode 7 and all other rendering modes
+are checked. Existing Tf/ExtGState, q/Q, Form and appearance state
+determines which bytes are referenced for rendering.
+
+Requirement provenance is the published veraPDF Consortium v1.30.3
+[UA-1 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-1.xml)
+7.21.5-1 and
+[UA-2 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2.xml)
+8.4.5.6-1, under CC BY 4.0, including their one-unit tolerance and
+mode-3 exemption. This is profile cross-checking, not independent
+access to the full ISO PDF/UA clauses. Public ISO 32000-1 Table 111
+(printed page 255) defines the PDF width array and units; 9.6.6.4
+(printed page 266) defines the non-symbolic (3,1) mapping path.
+The [OpenType cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap#format-4-segment-mapping-to-delta-values)
+and [hmtx](https://learn.microsoft.com/en-us/typography/opentype/spec/hmtx)
+specifications supply the independently implemented binary layout.
+
+Existing SFNT table-directory checks are shared. The new bounded
+inspection checks required metric tables, maxp glyph count,
+head/hhea versions and units, hmtx bounds, selected cmap uniqueness,
+format-4 array bounds, ordered segments, terminal segment and glyph
+indices. Unsupported/malformed inspected metadata and invalid supplied
+width arrays produce `PDFUA-FONT-WIDTH-INCOMPLETE` Errors, not guessed
+advances. The decoded font bound is 16777216 bytes, applied after
+existing stream decoding rather than through a new streaming decoder.
+The scan records at most 95 distinct byte codes/pages per font, not
+unbounded glyph occurrences.
+
+Both missed public files specify width 192 for space, while independent
+FontTools inspection gives advance 512 / unitsPerEm 2048 = 250.
+Forty-eight mutations of those files cover 192, 249, 250, 251,
+248.99 and 251.01, modes 0/3/7, Tj/TJ/single-quote/double-quote.
+Independent saved-file width, program cmap/hmtx and byte-use checks
+verify all 48. All were accepted before the fix; 18 are now rejected.
+Forty-six agree with veraPDF 1.30.3 on exact rule and whole-file verdict
+(30 clean positives, 16 negatives). Two invalid double-quote cases
+are explicit disagreements: reference accepts, FreeDF rejects;
+PyMuPDF traces independently confirm that the space glyph is shown.
+They are not counted as reference agreement. No external PDF, font,
+profile XML or reference-engine source is bundled.
+
+A fresh FreeDF pass over 435 public files / 870 UA profile results
+against retained reference and prior output closes exactly the two
+metrics file-verdict misses. Four finding sets change solely by this
+rule, including opposite-profile evaluations already rejected for
+version/metadata. **1 UA-1 / 0 UA-2 misses remain**, with zero
+reference-positive regressions, internal errors or new width-incomplete
+findings. Final parser-boundary corrections preserve all 870 results.
+The initial 128 authored cases exposed 61 baseline failures; the final
+150 cover tolerance, rendering-state, mapping/dictionary exclusions,
+every truncated metadata prefix, malformed tables and resource bounds.
+The final full Release suite passes 12445/12445 and the solution builds
+with the same two machine-feed NU1507 warnings.
+
+This is not full glyph-width conformance: non-ASCII WinAnsi, other
+encodings, Differences, symbolic fonts, CIDFonts, CFF/Type1/Type3,
+FontFile3, other cmap formats, missing-width fallback and post-table
+glyph-name recovery remain open. Unmapped glyphs are not assigned
+guessed widths. Complete font/outline validity, unsupported content
+and exhausted traversal bounds remain outside this slice. Zero measured
+UA-2 corpus misses is not full PDF/UA-2 parity or certification;
+the remaining UA-1 table-scope advisory and historical measurements
+remain explicit.
+
 ## 2026-11-04 PDF/UA explicit Identity CFF notdef references
 
 The shared content walk records complete high-byte-first two-byte zero

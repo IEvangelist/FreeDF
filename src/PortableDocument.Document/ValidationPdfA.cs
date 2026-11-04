@@ -67,6 +67,87 @@ internal static class FontChecks
         return data.Slice(t.Offset, t.Length).ToArray();
     }
 
+    public static double?[] TrueTypeAsciiWidths(byte[] data)
+    {
+        if (data.Length > 16_777_216) throw new InvalidDataException("decoded font exceeds 16777216 bytes");
+        ReadOnlySpan<byte> Table(ReadOnlySpan<byte> tag, int minimum)
+        {
+            if (!TrySfntTable(data, tag, out var table) || table is not { } t || t.Length < minimum)
+                throw new InvalidDataException("missing, duplicate or malformed TrueType metric/cmap table");
+            return data.AsSpan(t.Offset, t.Length);
+        }
+        var glyphCount = TrueTypeGlyphCount(data)
+            ?? throw new InvalidDataException("malformed TrueType maxp metadata");
+        var head = Table("head"u8, 54);
+        var units = BinaryPrimitives.ReadUInt16BigEndian(head[18..]);
+        if (BinaryPrimitives.ReadUInt32BigEndian(head) != 0x00010000
+            || BinaryPrimitives.ReadUInt32BigEndian(head[12..]) != 0x5F0F3CF5 || units is < 16 or > 16384)
+            throw new InvalidDataException("unsupported head version, magic or unitsPerEm");
+        var hhea = Table("hhea"u8, 36);
+        var metrics = BinaryPrimitives.ReadUInt16BigEndian(hhea[34..]);
+        if (BinaryPrimitives.ReadUInt32BigEndian(hhea) != 0x00010000 || metrics == 0 || metrics > glyphCount)
+            throw new InvalidDataException("unsupported hhea version or numberOfHMetrics");
+        var hmtx = Table("hmtx"u8, metrics * 4 + (glyphCount - metrics) * 2);
+        var cmap = Table("cmap"u8, 4);
+        var records = BinaryPrimitives.ReadUInt16BigEndian(cmap[2..]);
+        var recordsEnd = 4 + records * 8;
+        if (BinaryPrimitives.ReadUInt16BigEndian(cmap) != 0 || recordsEnd > cmap.Length)
+            throw new InvalidDataException("malformed cmap records");
+        int? selected = null;
+        for (var i = 0; i < records; i++)
+        {
+            var record = cmap.Slice(4 + i * 8, 8);
+            if (BinaryPrimitives.ReadUInt16BigEndian(record) != 3
+                || BinaryPrimitives.ReadUInt16BigEndian(record[2..]) != 1) continue;
+            var offset = BinaryPrimitives.ReadUInt32BigEndian(record[4..]);
+            if (selected is not null || offset < recordsEnd || offset > cmap.Length - 16)
+                throw new InvalidDataException("missing, duplicate or invalid Microsoft Unicode cmap");
+            selected = (int)offset;
+        }
+        if (selected is not { } start) throw new InvalidDataException("Microsoft Unicode (3,1) cmap is not present");
+        var map = cmap[start..];
+        var length = BinaryPrimitives.ReadUInt16BigEndian(map[2..]);
+        var segCountX2 = BinaryPrimitives.ReadUInt16BigEndian(map[6..]);
+        if (BinaryPrimitives.ReadUInt16BigEndian(map) != 4 || length > map.Length || length < 16 || length % 2 != 0
+            || segCountX2 == 0 || segCountX2 % 2 != 0 || 16 + segCountX2 * 4 > length)
+            throw new InvalidDataException("malformed or unsupported Unicode cmap format 4");
+        map = map[..length];
+        var segments = segCountX2 / 2;
+        var starts = 16 + segCountX2;
+        var deltas = starts + segCountX2;
+        var offsets = deltas + segCountX2;
+        var glyphArray = offsets + segCountX2;
+        if (BinaryPrimitives.ReadUInt16BigEndian(map[(14 + segCountX2)..]) != 0)
+            throw new InvalidDataException("invalid cmap reservedPad");
+        var result = new double?[127];
+        var previousEnd = -1;
+        for (var i = 0; i < segments; i++)
+        {
+            var end = BinaryPrimitives.ReadUInt16BigEndian(map[(14 + 2 * i)..]);
+            var first = BinaryPrimitives.ReadUInt16BigEndian(map[(starts + 2 * i)..]);
+            var delta = BinaryPrimitives.ReadUInt16BigEndian(map[(deltas + 2 * i)..]);
+            var offset = BinaryPrimitives.ReadUInt16BigEndian(map[(offsets + 2 * i)..]);
+            if (first > end || first <= previousEnd || offset % 2 != 0 || i == segments - 1 && first != 65535)
+                throw new InvalidDataException("unordered/overlapping cmap segments or odd glyph offset");
+            var glyphStart = offsets + 2 * i + offset;
+            if (offset != 0 && (glyphStart < glyphArray || glyphStart + 2 * (end - first) + 2 > map.Length))
+                throw new InvalidDataException("cmap glyph array is outside subtable bounds");
+            previousEnd = end;
+            for (var code = Math.Max(32, (int)first); code <= Math.Min(126, (int)end); code++)
+            {
+                var glyph = offset == 0 ? (code + delta) & 65535
+                    : BinaryPrimitives.ReadUInt16BigEndian(map[(glyphStart + 2 * (code - first))..]);
+                if (offset != 0 && glyph != 0) glyph = (glyph + delta) & 65535;
+                if (glyph >= glyphCount) throw new InvalidDataException("cmap glyph index exceeds maxp glyph count");
+                if (glyph == 0) continue;
+                var advance = BinaryPrimitives.ReadUInt16BigEndian(hmtx[(Math.Min(glyph, metrics - 1) * 4)..]);
+                result[code] = advance * 1000.0 / units;
+            }
+        }
+        if (previousEnd != 65535) throw new InvalidDataException("cmap format 4 has no terminal segment");
+        return result;
+    }
+
     public readonly record struct CmapRecords(int Count, bool Symbol, bool Roman, bool Unicode, bool NonSymbolic);
 
     public static CmapRecords? TrueTypeCmapRecords(ReadOnlySpan<byte> data)

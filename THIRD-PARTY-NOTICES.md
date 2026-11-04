@@ -49,6 +49,13 @@ Content-state collection in `ValidationContext.cs` and scoped rejection
 in `ValidationPdfUADeep.cs` are independently implemented; other glyph
 lookup surfaces remain incomplete.
 
+The rendered ASCII TrueType width check was cross-checked against the
+same CC BY 4.0 PDF/UA-1 profile 7.21.5-1 and PDF/UA-2 profile 8.4.5.6-1,
+including the mode-3 exemption and one-unit tolerance. The bounded
+format-4 cmap/hmtx inspection in `ValidationPdfA.cs`, content-state
+collection and scoped PDF/UA comparison are independently implemented.
+No reference-engine source or external font program is bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

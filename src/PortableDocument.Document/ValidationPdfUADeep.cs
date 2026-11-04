@@ -233,6 +233,7 @@ internal static class PdfUADeepChecks
                 && f.Resolve(cid.Get("CIDToGIDMap")) is not (PdfStream or PdfName { Value: "Identity" }))
                 c.Add("PDFUA-FONT-CIDTOGID", ValidationSeverity.Error, $"embedded CIDFontType2 {FontChecks.Name(f, cid)} requires /CIDToGIDMap to be a stream or /Identity", Clause(c, "7.21.3.2", "8.4.5.3.2"), u.Page);
             CompositeAndTrueTypeEncoding(c, u, font, subtype);
+            TrueTypeWidths(c, u, subtype);
             if (c.Part == 1) PdfADeepChecks.SubsetListings(c, font, subtype, FontChecks.Name(f, font), u.Page);
             if (u.ZeroTwoByteCodePage is { } zeroPage && subtype == "Type0"
                 && f.Resolve(font.Get("Encoding")) is PdfName { Value: "Identity-H" or "Identity-V" }
@@ -266,6 +267,50 @@ internal static class PdfUADeepChecks
                 if (subtype == "Type3" || !standardEnc || (symbolic && FontChecks.IsEmbedded(f, font)))
                     c.Add("PDFUA-FONT-TOUNICODE", ValidationSeverity.Warning, $"font {name} has no /ToUnicode CMap and no standard text encoding (heuristic: glyph-level mapping is not evaluated)", Clause(c, "7.21.7", "8.8"), u.Page);
             }
+        }
+    }
+
+    static void TrueTypeWidths(ValidationContext c, ValidationContext.FontUse use, string? subtype)
+    {
+        var f = c.F;
+        var font = use.Font;
+        if (subtype != "TrueType" || use.RenderingAsciiCodes.Count == 0
+            || f.Resolve(font.Get("FontDescriptor")) is not PdfDictionary descriptor
+            || f.Resolve(descriptor.Get("Flags")) is not PdfInteger flags || (flags.Value & 4) != 0 || (flags.Value & 32) == 0
+            || f.Resolve(descriptor.Get("FontFile2")) is not PdfStream program) return;
+        var encoding = f.Resolve(font.Get("Encoding"));
+        if (encoding is PdfDictionary dictionary)
+        {
+            if (f.Resolve(dictionary.Get("Differences")) is not (null or PdfNull)) return;
+            encoding = f.Resolve(dictionary.Get("BaseEncoding"));
+        }
+        if (encoding is not PdfName { Value: "WinAnsiEncoding" } || f.Resolve(font.Get("Widths")) is null or PdfNull) return;
+        var clause = Clause(c, "7.21.5", "8.4.5.6");
+        try
+        {
+            if (f.Resolve(font.Get("FirstChar")) is not PdfInteger { Value: >= 0 and <= 255 } first
+                || f.Resolve(font.Get("LastChar")) is not PdfInteger { Value: >= 0 and <= 255 } last
+                || last.Value < first.Value || f.Resolve(font.Get("Widths")) is not PdfArray widths
+                || widths.Count != last.Value - first.Value + 1)
+                throw new InvalidDataException("malformed FirstChar/LastChar/Widths metadata");
+            var advances = FontChecks.TrueTypeAsciiWidths(f.DecodeStream(program));
+            foreach (var (code, page) in use.RenderingAsciiCodes)
+            {
+                if (code < first.Value || code > last.Value || advances[code] is not { } advance) continue;
+                if (f.Resolve(widths[(int)(code - first.Value)]).AsNumber() is not { } width || !double.IsFinite(width))
+                    throw new InvalidDataException("non-numeric or non-finite used glyph width");
+                if (Math.Abs(advance - width) <= 1) continue;
+                c.Add("PDFUA-FONT-WIDTH", ValidationSeverity.Error,
+                    $"font {FontChecks.Name(f, font)} code {code} dictionary width {width} differs from embedded advance {advance} by more than 1",
+                    clause, page);
+                break;
+            }
+        }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or IOException or NotSupportedException)
+        {
+            c.Add("PDFUA-FONT-WIDTH-INCOMPLETE", ValidationSeverity.Error,
+                $"cannot completely inspect rendered ASCII TrueType widths of {FontChecks.Name(f, font)}: {e.Message}",
+                clause, use.RenderingAsciiCodes.First().Value);
         }
     }
 

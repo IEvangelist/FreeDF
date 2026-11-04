@@ -177,6 +177,13 @@ internal sealed class ValidationContext
     {
         public int? RenderingPage { get; set; }
         public int? ZeroTwoByteCodePage { get; private set; }
+        public Dictionary<byte, int> RenderingAsciiCodes { get; } = [];
+
+        public void NoteRenderingAscii(PdfString text, int page)
+        {
+            foreach (var code in text.Bytes)
+                if (code is >= 32 and <= 126) RenderingAsciiCodes.TryAdd(code, page);
+        }
 
         public void NoteTwoByteCodes(PdfString text, int page)
         {
@@ -594,10 +601,18 @@ internal sealed class ValidationContext
                                 var use = FontFor(font, page);
                                 if (Profile is PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)
                                 {
-                                    if (text is PdfString shown) use.NoteTwoByteCodes(shown, page);
+                                    if (text is PdfString shown)
+                                    {
+                                        use.NoteTwoByteCodes(shown, page);
+                                        if (renderMode != 3) use.NoteRenderingAscii(shown, page);
+                                    }
                                     else if (text is PdfArray shownArray)
                                         foreach (var value in shownArray.Items)
-                                            if (value is PdfString shownItem) use.NoteTwoByteCodes(shownItem, page);
+                                            if (value is PdfString shownItem)
+                                            {
+                                                use.NoteTwoByteCodes(shownItem, page);
+                                                if (renderMode != 3) use.NoteRenderingAscii(shownItem, page);
+                                            }
                                 }
                                 if (Profile == PdfValidationProfile.PdfA1b)
                                 {
