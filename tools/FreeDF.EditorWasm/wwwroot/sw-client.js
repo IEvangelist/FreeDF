@@ -77,6 +77,7 @@ export async function registerServiceWorker() {
     }
     const text = document.createElement('span');
     text.textContent = message;
+    element.removeAttribute('aria-busy');
     element.replaceChildren(text, ...actions.map(([label, handler, primary]) => {
       const button = document.createElement('button');
       button.type = 'button'; button.textContent = label; if (primary) button.className = 'primary';
@@ -85,37 +86,86 @@ export async function registerServiceWorker() {
     }));
     return element;
   };
+  const progress = message => {
+    const element = banner(message);
+    element.setAttribute('aria-busy', 'true');
+    const indicator = document.createElement('progress');
+    indicator.setAttribute('aria-label', 'Updating the editor');
+    indicator.style.cssText = 'width:100%;height:4px';
+    element.append(indicator);
+  };
+  const painted = () => new Promise(resolve => {
+    // Hidden tabs can suspend animation frames, but must still finish an accepted update.
+    const timer = setTimeout(resolve, 100);
+    requestAnimationFrame(() => { clearTimeout(timer); setTimeout(resolve, 0); });
+  });
+  let reloading = false;
+  async function reload(discard = false) {
+    if (reloading) return;
+    reloading = true;
+    progress('Reloading... Opening the updated editor.');
+    await painted();
+    if (!discard && dirty()) { reloading = false; applyUpdate('A new version of the editor is ready.'); return; }
+    location.reload();
+  }
   // A new version or kill switch took over: reload when clean, otherwise wait (persistent notice) until the work is saved.
   let waitingToReload = false;
   function applyUpdate(reason) {
-    if (!dirty()) { location.reload(); return; }
+    if (!dirty()) { reload(); return; }
     banner(`${reason} You have unsaved changes: save, then reload to finish updating.`, [['Reload now', () => {
-      if (!dirty() || window.confirm('Reload and discard unsaved or in-progress work in this tab?')) location.reload();
+      if (!dirty()) reload();
+      else if (window.confirm('Reload and discard unsaved or in-progress work in this tab?')) reload(true);
     }, true]]);
     if (waitingToReload) return;
     waitingToReload = true;
-    const timer = setInterval(() => { if (!dirty()) { clearInterval(timer); location.reload(); } }, 1000);
+    const timer = setInterval(() => { if (!dirty()) { clearInterval(timer); reload(); } }, 1000);
   }
   const controlled = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (controlled) applyUpdate('A new version of the editor is ready.'); });
+  let finishUpdate = () => {};
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (controlled) { finishUpdate(); applyUpdate('A new version of the editor is ready.'); }
+  });
   const offer = worker => {
     if (!navigator.serviceWorker.controller || document.getElementById('update-banner')) return;
+    let attempt = 0, pending = false;
     const later = () => element.remove();
     const ask = async () => {
+      if (pending || reloading) return;
       if (dirty()) { banner('A new version is ready. Finish or save your work in this tab, then reload.', [['Reload', ask, true], ['Later', later]]); return; }
-      try {
-        await mirrorPinsForRollback(caches);
-      } catch (error) {
-        banner(`The update could not preserve open tabs: ${error.message}`, [['Retry', ask, true], ['Later', later]]);
-        return;
-      }
-      const channel = new MessageChannel();
-      const timer = setTimeout(() => banner('The update check did not finish. Try Reload again.', [['Reload', ask, true], ['Later', later]]), 10000);
-      channel.port1.onmessage = ({ data }) => {
-        clearTimeout(timer);
-        if (data.type === 'BLOCKED') banner('A new version is ready, but another editor tab has unsaved or in-progress work. Save it there, then reload.', [['Reload', ask, true], ['Later', later]]);
+      if (worker.state === 'activated') { applyUpdate('A new version of the editor is ready.'); return; }
+      pending = true;
+      const current = ++attempt;
+      let channel;
+      const finish = () => {
+        if (current !== attempt) return;
+        attempt++; pending = false; clearTimeout(timer);
+        channel?.port1.close(); channel?.port2.close();
       };
-      worker.postMessage({ type: 'REQUEST_ACTIVATE' }, [channel.port2]);
+      const failed = message => {
+        if (current !== attempt || reloading) return;
+        finish();
+        banner(message, [['Reload', ask, true], ['Later', later]]);
+      };
+      // Include cache preservation in the deadline, not just the worker's reply.
+      const timer = setTimeout(() => failed('The update did not finish. Try Reload again.'), 15000);
+      finishUpdate = finish;
+      progress('Updating... Preparing the new version.');
+      try {
+        await painted();
+        await mirrorPinsForRollback(caches);
+        if (current !== attempt || reloading) return;
+        if (dirty()) { failed('A new version is ready. Finish or save your work in this tab, then reload.'); return; }
+        progress('Updating... Checking open tabs and activating the new version.');
+        channel = new MessageChannel();
+        channel.port1.onmessage = ({ data }) => {
+          if (current !== attempt || reloading) return;
+          if (data.type === 'BLOCKED') failed('A new version is ready, but another editor tab has unsaved or in-progress work. Save it there, then reload.');
+          else if (data.type === 'ACTIVATING') progress('Updating... Loading the new version.');
+        };
+        worker.postMessage({ type: 'REQUEST_ACTIVATE' }, [channel.port2]);
+      } catch (error) {
+        failed(`The update could not finish: ${error.message}`);
+      }
     };
     const element = banner('A new version of the editor is ready.', [['Reload', ask, true], ['Later', later]]);
   };

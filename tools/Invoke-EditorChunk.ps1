@@ -54,6 +54,10 @@ switch ($Chunk) {
     }
     'forms' { Run 'on-page form filling and field authoring' { Smoke @('--forms', $Site) } }
     'authoring' {
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-interactions'
+        $env:EDITOR_PERF_REPORT_ONLY = '1'
+        Run 'stable selection, dragging and sidebar focus' { Smoke @('--interactions', $Site) }
+        Remove-Item Env:EDITOR_PERF_REPORT_ONLY
         Run 'New document preview and choice controls' { Smoke @('--choices', $Site) }
         Run 'Merge PDFs flow' { Smoke @('--merge', $Site) }
         Run 'one-click sample collection' { Smoke @('--samples', $Site) }
@@ -69,6 +73,9 @@ switch ($Chunk) {
         $workerWork = WorkDir 'editor-worker-migration'
         Run 'offline worker migration and rollback' { Smoke @('--service-worker-migration', $Site, $workerWork) }
         Remove-Item -LiteralPath (Join-Path $workerWork 'site') -Recurse -Force
+        $updateWork = WorkDir 'editor-update-feedback'
+        Run 'immediate update feedback and safe reload' { Smoke @('--update-feedback', $Site, $updateWork) }
+        Remove-Item -LiteralPath (Join-Path $updateWork 'site') -Recurse -Force
     }
     'viewport' {
         $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-viewport'
@@ -93,8 +100,11 @@ switch ($Chunk) {
     'perf' {
         # Non-blocking (scheduled workflow): thresholds are unchanged, a regression is reported not deployed against.
         $report = Join-Path $Work 'editor-profile.json'
-        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-save-overlap'
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-interactions'
         $failed = @()
+        try { Run 'interaction frame and pointer-handler ceilings' { Smoke @('--interactions', $Site) } }
+        catch { $failed += $_.Exception.Message; Write-Host "::error::$($_.Exception.Message)" }
+        $env:EDITOR_SMOKE_ARTIFACTS = WorkDir 'editor-save-overlap'
         try { Run 'save-overlap input-to-frame ceiling' { Smoke @($Site) } }
         catch { $failed += $_.Exception.Message; Write-Host "::error::$($_.Exception.Message)" }
         $env:EDITOR_PROFILE_REPORT_ONLY = '1'

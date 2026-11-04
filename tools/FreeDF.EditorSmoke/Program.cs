@@ -51,9 +51,9 @@ if (args.Length == 2 && args[0] == "--culture")
     return;
 }
 
-if (args.Length == 3 && args[0] is "--service-worker" or "--service-worker-migration")
+if (args.Length == 3 && args[0] is "--service-worker" or "--service-worker-migration" or "--update-feedback")
 {
-    await EditorServiceWorker.Run(args[1], args[2], migrationOnly: args[0] == "--service-worker-migration");
+    await EditorServiceWorker.Run(args[1], args[2], migrationOnly: args[0] == "--service-worker-migration", updateFeedbackOnly: args[0] == "--update-feedback");
     return;
 }
 
@@ -70,6 +70,8 @@ if (args.Length == 4 && args[0] == "--page-image")
 }
 
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
+var interactionsOnly = args.Length == 2 && args[0] == "--interactions";
+var interactionProfileOnly = args.Length == 2 && args[0] == "--interaction-profile";
 var choicesOnly = args.Length == 2 && args[0] == "--choices";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
 var mergeOnly = args.Length == 2 && args[0] == "--merge";
@@ -89,7 +91,7 @@ var a11yOnly = args.Length == 3 && args[0] == "--a11y";
 var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
 var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !browserOnly && !textSelectionOnly && !choicesOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--choices|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !interactionsOnly && !interactionProfileOnly && !choicesOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--interactions|--interaction-profile|--choices|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
 var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/FreeDF/")
@@ -258,6 +260,18 @@ try
         await EditorOutline.Run(page, shots, root);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: Contents tab highlights/expands/reveals the active page's outline entry (keyboard, Go to page, thumbnails, outline click), 10k outline windowed, empty state, no document scroll or focus theft. Screenshots: " + shots);
+        return;
+    }
+    if (interactionsOnly)
+    {
+        await EditorInteractions.Run(page);
+        if (!errors.IsEmpty) throw new Exception(string.Join("\n", errors));
+        return;
+    }
+    if (interactionProfileOnly)
+    {
+        await EditorInteractions.Profile(page, enforce: false);
+        Check(network.IsEmpty && errors.IsEmpty, "No unexpected network requests or browser errors during profiling.");
         return;
     }
     if (textSelectionOnly)
