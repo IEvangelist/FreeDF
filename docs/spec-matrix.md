@@ -256,6 +256,13 @@ bytes and 852 names agree with FontTools for one real OpenType program.
 Malformed selected-table metadata reports incomplete; full wrapper validity,
 OpenType CIDSet and legacy Type1 completeness remain open.
 
+The [OpenType CFF CIDSet slice](spec-backlog.md#2026-11-04-pdfa-opentype-cff-cidset-completeness)
+extends bounded extraction to CIDFontType0 with both keyed and name-keyed
+CFF selection. Independent controls agree on exact table bytes/CIDs for two
+programs: 72/80 verdict agreements, 28/32 reference negatives rejected, eight
+explicit normative disagreements (including four complete-list positives
+accepted by FreeDF). OpenType glyf CIDSet and full font validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

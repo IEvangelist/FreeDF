@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A OpenType CFF CIDSet completeness
+
+The CIDFontType0 subset CIDSet path now follows FontFile3 OpenType
+wrappers through the same bounded CFF extraction as Type1 CharSet.
+CID-keyed CFF selects actual charset CIDs; name-keyed CFF validates its
+charset names and selects sequential GIDs as CIDs. ISO 32000-1
+9.7.4.2 and Table 126/9.9 define this selection. The complete decoded
+wrapper retains the 16777216-byte program limit; malformed wrapper or
+CFF metadata yields `PDFA-FONT-CIDSET-INCOMPLETE`. Bitmap limits and
+exact all-defined-CID comparison, including CID 0, remain unchanged.
+
+Eighty A2/3 controls wrap two retained real raw CFF programs with
+FontTools-generated OTTO directories and cmap tables: Kozuka Mincho
+CID-keyed and Adobe Naskh name-keyed. Source widths are preserved and
+the name-keyed control paints the independently verified C GID 3.
+FontTools independently agrees on exact selected CFF bytes and ordered
+CIDs for both programs. No unrelated reference rule fails.
+Exact-rule and whole-file agreement is 72/80; 28 of 32 reference negatives
+are rejected. Eight explicit normative disagreements comprise two
+CID-keyed omitted-CID0 lists, two name-keyed empty lists, and four
+complete/zero-padded name-keyed lists rejected by the reference.
+FreeDF accepts those four complete-list positives. No controls are
+excluded or relabelled; source fonts/PDFs are not bundled.
+
+The 172 authored cases cover keyed/name-keyed selection, charset formats
+0/1/2, subset/plain scope, malformed selected wrapper/CFF metadata and
+exact whole-wrapper byte limits; 63 failed before implementation.
+Their minimal wrapper fixtures isolate metadata, not full font validity.
+All 8050 combined PDF/A/UA/deep/reader cases pass and the solution
+builds with existing machine source warnings unchanged. Independent
+OpenType CharSet outcomes remain 22/24 with the same two explicit
+disagreements. The latest full10914 predates these wrapper slices.
+OpenType glyf CIDSet support, full required-table/checksum/program
+validity, legacy Type1 and used-glyph/width/Unicode completeness remain
+open; broad Partial status and historical corpus measurements are unchanged.
+
 ## 2026-11-04 PDF/A OpenType CFF CharSet completeness
 
 The Type1 subset CharSet check now follows FontFile3 OpenType wrappers

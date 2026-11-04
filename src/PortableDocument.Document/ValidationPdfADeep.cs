@@ -207,8 +207,8 @@ internal static partial class PdfADeepChecks
                     && f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cffDescriptor
                     && f.Resolve(cffDescriptor.Get("CIDSet")) is PdfStream cffSet
                     && f.Resolve(cffDescriptor.Get("FontFile3")) is PdfStream cffProgram
-                    && f.Resolve(cffProgram.Dict.Get("Subtype")).AsName() == "CIDFontType0C")
-                    CffCidSet(c, cffProgram, cffSet, FontChecks.Name(f, cid), u.Page);
+                    && f.Resolve(cffProgram.Dict.Get("Subtype")) is PdfName { Value: "CIDFontType0C" or "OpenType" } cffType)
+                    CffCidSet(c, cffProgram, cffSet, FontChecks.Name(f, cid), u.Page, cffType.Value == "OpenType");
                 if (f.Resolve(font.Get("Encoding")) is PdfStream cmap && SystemInfo(f, cmap.Dict) is { } a && SystemInfo(f, cid) is { } b && a != b)
                     c.Add("PDFA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"embedded CMap of {name} has CIDSystemInfo {a} but the CIDFont has {b}", Clause(c, "6.3.3.1", "6.2.11.3.3", "6.2.11.3.3"), u.Page);
             }
@@ -251,7 +251,7 @@ internal static partial class PdfADeepChecks
         }
     }
 
-    static void CffCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, string name, int page)
+    static void CffCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, string name, int page, bool openType)
     {
         var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
         void Incomplete(string reason) =>
@@ -260,6 +260,7 @@ internal static partial class PdfADeepChecks
         {
             var data = c.F.DecodeStream(program);
             if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
+            if (openType) data = FontChecks.OpenTypeCff(data);
             var cids = CffGlyphNames.ReadCids(data);
             var expected = new byte[(cids.Max() + 8) / 8];
             foreach (var cid in cids) expected[cid / 8] |= (byte)(128 >> (cid % 8));

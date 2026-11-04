@@ -105,7 +105,7 @@ public class PdfACffCidSetListingTests
         Assert.Equal(incomplete, report.Has("PDFA-FONT-CIDSET-INCOMPLETE"));
     }
 
-    static byte[] CffProgram(int format) => CffGlyphNamesTests.Build(4, format switch
+    internal static byte[] CffProgram(int format) => CffGlyphNamesTests.Build(4, format switch
     {
         0 => [0, 0, 1, 0, 41, 255, 255],
         1 => [1, 0, 1, 0, 0, 41, 0, 255, 255, 0],
