@@ -132,35 +132,12 @@ internal static class PdfUADeepChecks
 
     static void TrueTypeDifferences(ValidationContext c, ValidationContext.FontUse use, PdfDictionary encoding)
     {
-        var raw = encoding.Get("Differences");
-        if (raw is null || c.F.Resolve(raw) is PdfNull) return;
+        var result = FontChecks.InspectDifferences(c.F, encoding);
         var name = FontChecks.Name(c.F, use.Font);
-        if (c.F.Resolve(raw) is PdfArray { Count: <= 10_000 } differences)
-        {
-            long? code = null;
-            foreach (var item in differences.Items)
-            {
-                switch (c.F.Resolve(item))
-                {
-                    case PdfInteger { Value: >= 0 and <= 255 } next:
-                        code = next.Value;
-                        break;
-                    case PdfName glyph when code is >= 0 and <= 255:
-                        if (glyph.Value != ".notdef" && !GlyphList.ContainsName(glyph.Value))
-                        {
-                            c.Add("PDFUA-FONT-TRUETYPE-DIFFERENCES", ValidationSeverity.Error, $"non-symbolic TrueType font {name} has a /Differences name /{glyph.Value} not listed in the Adobe Glyph List", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
-                            return;
-                        }
-                        code++;
-                        break;
-                    default:
-                        c.Add("PDFUA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect malformed /Differences of {name}: expected a byte character code followed by glyph names", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
-                        return;
-                }
-            }
-        }
-        else
-            c.Add("PDFUA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot inspect /Differences of {name}: non-array value or more than 10000 entries", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
+        if (result.InvalidName is { } glyph)
+            c.Add("PDFUA-FONT-TRUETYPE-DIFFERENCES", ValidationSeverity.Error, $"non-symbolic TrueType font {name} has a /Differences name /{glyph} not listed in the Adobe Glyph List", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
+        else if (result.IncompleteReason is { } reason)
+            c.Add("PDFUA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect /Differences of {name}: {reason}", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
     }
 
     static int? LiteralCmapWMode(byte[] data, bool hasParent)

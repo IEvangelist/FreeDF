@@ -205,9 +205,20 @@ internal static partial class PdfADeepChecks
         else if (!symbolic)
         {
             var baseOk = enc.AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
-                || (enc is PdfDictionary ed && f.Resolve(ed.Get("BaseEncoding")).AsName() is "MacRomanEncoding" or "WinAnsiEncoding" && ed.Get("Differences") is null);
+                || (enc is PdfDictionary ed && f.Resolve(ed.Get("BaseEncoding")).AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
+                    && (c.Part != 1 || ed.Get("Differences") is null));
             if (!baseOk)
-                c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding without /Differences", clause, page);
+                c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error,
+                    c.Part == 1 ? $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding without /Differences"
+                        : $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding", clause, page);
+            if (c.Part != 1 && enc is PdfDictionary differencesEncoding)
+            {
+                var result = FontChecks.InspectDifferences(f, differencesEncoding);
+                if (result.InvalidName is { } glyph)
+                    c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"non-symbolic TrueType font {name} has a /Differences name /{glyph} not listed in the Adobe Glyph List", clause, page);
+                else if (result.IncompleteReason is { } reason)
+                    c.Add("PDFA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect /Differences of {name}: {reason}", clause, page);
+            }
         }
     }
 

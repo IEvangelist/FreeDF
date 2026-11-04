@@ -4,6 +4,48 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-2/3 literal TrueType Differences
+
+Non-symbolic TrueType fonts in PDF/A-2/3 may now use `/Differences` with
+literal Adobe Glyph List names (plus the reserved `.notdef`), instead of
+rejecting every Differences array. MacRomanEncoding or WinAnsiEncoding is
+still required directly or through BaseEncoding. PDF/A-1's separate
+Differences prohibition and symbolic-font Encoding prohibition are unchanged.
+Invalid names retain the existing `PDFA-FONT-TRUETYPE-ENCODING` Error and
+ISO 19005-2/3 6.2.11.6 clause. Algorithmic extraction names such as
+`uni0060`, `u0060`, suffix and underscore combinations are not literal AGL
+members and remain invalid.
+
+The bounded PDF/UA scanner is extracted into internal `FontChecks` and
+reused, not duplicated. Official AGL resources and text extraction are
+unchanged. Malformed arrays and the 10000-entry limit produce explicit
+`PDFA-FONT-ENCODING-INCOMPLETE` Errors rather than being accepted as valid
+Differences. PDF/UA rule IDs/severities/clauses and scan outcomes are
+preserved; incomplete diagnostic wording is now shared.
+
+Pinned veraPDF validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` distinguishes PDF/A-1 6.3.7
+test 1 from PDF/A-2/3 6.2.11.6 test 2. All 30 independently mutated
+real-font controls agree on the exact predicate: 10 valid-name positives
+in parts 2/3 and 20 negatives, including all part-1 Differences arrays.
+These UA-derived files are not claimed clean PDF/A controls or new
+whole-file corpus closures.
+
+There are 294 authored cases: direct/indirect names, symbolic/non-symbolic
+and embedded/unembedded fonts, profile differences, malformed/null/budget
+boundaries and valid/invalid BaseEncoding. The initial 270-case set had
+70 failures before the fix. Final full Release passed 6415 tests, none
+failed/skipped; the solution builds without new warnings. All 435 public
+UA PDFs (870 profile rows) retain their previous verdicts and exact
+error/warning ID sets after the shared extraction. The retained reference
+comparisons remain 9 UA-1 and 5 UA-2 misses with zero false positives or
+exclusions; historical corpus measurements below are not overwritten.
+
+This is literal-name policy, not complete character mapping. Embedded
+Microsoft Unicode (3,1) cmap requirements, actual-use glyph lookup and font
+program completeness remain open. Existing null-resolution limitations
+also remain. No external PDF/XML is bundled or full conformance claimed.
+
 ## 2026-11-04 PDF/A-2/3 embedded CIDFont mapping entries
 
 Embedded CIDFontType2 `/CIDToGIDMap` in PDF/A-2/3 must now resolve to

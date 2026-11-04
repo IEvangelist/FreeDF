@@ -84,6 +84,13 @@ real-font controls agree on the exact predicate, but remain non-PDF/A
 whole files and do not close measured corpus verdicts. PDF/A-1's distinct
 rendering-mode requirement and full map/glyph validity remain open.
 
+The [PDF/A-2/3 literal Differences correction](spec-backlog.md#2026-11-04-pdfa-23-literal-truetype-differences)
+accepts AGL names instead of banning every array, reusing bounded PDF/UA
+inspection. PDF/A-1's ban and base-encoding requirements remain. Thirty
+exact-rule real-font controls agree; all 435 public UA verdicts and finding
+ID sets are unchanged. Embedded (3,1) cmap and glyph-use requirements remain
+open; this is not complete font conformance.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

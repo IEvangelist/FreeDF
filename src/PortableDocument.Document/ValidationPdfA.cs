@@ -20,6 +20,32 @@ internal static class FontChecks
     }
 
     public static string Name(PdfFile f, PdfDictionary font) => f.Resolve(font.Get("BaseFont")).AsName() ?? "(unnamed)";
+
+    public static (string? InvalidName, string? IncompleteReason) InspectDifferences(PdfFile f, PdfDictionary encoding)
+    {
+        var raw = encoding.Get("Differences");
+        if (raw is null || f.Resolve(raw) is PdfNull) return (null, null);
+        if (f.Resolve(raw) is not PdfArray { Count: <= 10_000 } differences)
+            return (null, "non-array value or more than 10000 entries");
+        long? code = null;
+        foreach (var item in differences.Items)
+        {
+            switch (f.Resolve(item))
+            {
+                case PdfInteger { Value: >= 0 and <= 255 } next:
+                    code = next.Value;
+                    break;
+                case PdfName glyph when code is >= 0 and <= 255:
+                    if (glyph.Value != ".notdef" && !GlyphList.ContainsName(glyph.Value))
+                        return (glyph.Value, null);
+                    code++;
+                    break;
+                default:
+                    return (null, "expected a byte character code followed by glyph names");
+            }
+        }
+        return (null, null);
+    }
 }
 
 /// <summary>PDF/A-1b/2b/3b basic checks (ISO 19005-1/2/3).</summary>
