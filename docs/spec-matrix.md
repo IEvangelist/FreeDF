@@ -113,7 +113,12 @@ All 225 independent controls agree on exact rules and verdicts (201 positives,
 applies to all three parts, ignoring null-valued extra keys while rejecting
 empty/rollover/down/custom active keys. All 66 independent controls agree
 on its exact rule and whole-file verdict (18 positives, 48 negatives).
-N stream/state validity and general annotation well-formedness remain open.
+The [non-Widget N stream check](spec-backlog.md#2026-11-04-pdfa-non-widget-normal-appearance-streams)
+now rejects scalar/array/dictionary normal values. All 144 non-Widget
+control verdicts agree; 135 exact stream predicates agree and nine
+indirect-null diagnostic disagreements are retained explicitly.
+Widget N stream/state validity, inherited field types, Form/content validity
+and general annotation well-formedness remain open.
 
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),

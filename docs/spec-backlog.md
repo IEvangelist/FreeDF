@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A non-Widget normal appearance streams
+
+For a non-Widget annotation with a normal-only AP dictionary, its N value
+must resolve to a stream. `PDFA-ANNOT-APPEARANCE-STREAM` reports an Error
+with page attribution under ISO 19005-1 6.5.3 or ISO 19005-2/3 6.3.3.
+This applies even to Link/Popup or point rectangles: exceptions to AP
+presence do not permit wrong-kind supplied normal appearances. Widget
+annotations are deliberately excluded pending inherited field-type and
+button appearance-state validation.
+
+The pinned validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` supplies the exact non-button
+predicates: PDF/A-1 6.5.3 test 6 and PDF/A-2/3 6.3.3 test 4.
+Of 144 independently mutated non-Widget controls, all whole-file verdicts
+agree with veraPDF 1.30.3 (18 positives, 126 negatives); 135 also agree on
+the exact stream predicate. The nine indirect-null N controls are retained
+diagnostic disagreements, not excluded or called exact agreement:
+FreeDF resolves null and reports the normal-only key violation, while
+veraPDF reports the stream-type violation. Both reject. This also exposes
+an indirect-null limitation in the earlier normal-only key comparison;
+its original 66 controls did not contain indirect N null values.
+
+The remaining 96 exploratory controls are Widgets; no Widget conformance
+or rule closure is claimed. All PDFs/XML, per-file hashes and disagreements
+remain session artifacts. The 528 authored cases cover wrong scalar/array/
+dictionary N values, direct/indirect resolution, nulls, invalid extra AP
+keys, presence exceptions and the deliberate Widget exclusion. The initial
+384-case set had 144 failures; all 4091 integrated PDF/A/deep cases now pass.
+The preceding full 7476-case run predates this stream correction and is
+not represented as a new full-suite result.
+
+This establishes a non-Widget type check, not valid Form dictionaries,
+stream content/rendering, button states, inherited field metadata or
+general annotation well-formedness. Historical corpus totals and broad
+Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A normal-only appearance dictionary keys
 
 Resolved annotation appearance dictionaries now require exactly one effective
