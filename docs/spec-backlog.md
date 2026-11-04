@@ -162,6 +162,49 @@ Unindexed/malformed field graphs retain the existing fallback and are not
 claimed as complete ownership validation. No PDF is bundled; remaining
 font/table/grouping/semantic work stays open under #11.
 
+## 2026-11-04 PDF/UA symbolic TrueType cmap records
+
+Simple symbolic TrueType fonts with an embedded `/FontFile2` now have their
+sfnt directory and `cmap` encoding records inspected. The requirements differ:
+UA-1 (7.21.6, profile test 4) permits exactly one encoding of any platform
+or the presence of Microsoft Symbol (3,0); UA-2 (8.4.5.7, test 4) requires
+Microsoft Symbol (3,0) or Macintosh Roman (1,0), regardless of count.
+`PDFUA-FONT-SYMBOLIC-CMAP` reports the missing required records.
+Bounds cover directories, table lengths, encoding-record counts and subtable
+offsets; malformed/unsupported headers or stream filters produce the explicit
+Error `PDFUA-FONT-CMAP-INCOMPLETE`, not a successful symbolic-encoding check.
+A well-formed directory with no `cmap` has zero encodings and fails the rule.
+
+Twenty-six authored cases include profile-specific positive/negative record
+sets, missing tables, truncated/oversized headers, unsupported filters and
+non-symbolic/nonembedded/FontFile3 scope controls. Eleven of the initial
+22 cases fail before the fix. Ten mutated public-font PDFs independently
+agree with veraPDF 1.30.3 on the exact profile test: four rule failures and
+six rule positives. In particular, a single Microsoft Unicode (3,1) record
+passes UA-1 but fails UA-2; a pair containing Macintosh Roman without Symbol
+fails UA-1 but passes UA-2. These are isolated font-rule controls, not ten
+wholly conformant PDF/UA documents. Raw reports and mutations are retained as
+session artifacts, not bundled.
+
+Fresh results on all 435 verified corpus files preserve every whole-file
+verdict relative to the field-description checkpoint: 10 UA-1 and 6 UA-2
+misses, zero false positives/exclusions, and no incomplete font headers.
+The pinned profile facts above and Microsoft's public OpenType
+[`cmap` header/encoding-record specification](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)
+define the inspected metadata. This does not validate subtable mappings,
+glyph programs/checksums, actual glyph lookups, non-symbolic rendering use,
+FontFile3 OpenType programs or TrueType collections. Remaining character
+encoding misses concern `/Differences` glyph names, not these symbolic record
+requirements. Font/glyph and other PDF/UA parity gaps remain open under #11.
+
+The final integrated Release suite passes 3958/3958, with a successful solution
+build (two machine-feed NU1507 warnings) and 15 comparison-tool regressions.
+An earlier integrated run had one fuzz failure; it did not reproduce alone,
+with the new invocation disabled (3932/3932), or in the restored final suite.
+The first quiet log does not establish its cause; no deterministic cause or
+unrelated-failure attribution is claimed. Diagnostic final/control TRX files
+are retained.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects

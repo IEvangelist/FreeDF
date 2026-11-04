@@ -28,6 +28,12 @@ then closes the widget-only-tooltip miss: 10 UA-1 / 6 UA-2 remaining misses,
 zero false positives/exclusions. Actual field tooltips and each widget's
 structure Alt are distinguished; UA-2 rows are unchanged.
 
+The [symbolic TrueType cmap-record check](spec-backlog.md#2026-11-04-pdfua-symbolic-truetype-cmap-records)
+adds profile-specific `/FontFile2` encoding-record requirements and explicit
+incomplete-header errors. Ten mutated real-font controls agree with the exact
+reference rules; all 435 corpus verdicts remain unchanged (10/6 misses).
+Subtable mappings, glyph programs, non-symbolic use and FontFile3 remain open.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded
