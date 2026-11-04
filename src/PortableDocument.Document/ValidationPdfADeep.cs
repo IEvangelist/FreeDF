@@ -185,8 +185,8 @@ internal static partial class PdfADeepChecks
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid)
             {
                 if (c.Part == 1 && SubsetPrefix().IsMatch(FontChecks.Name(f, cid)) && FontChecks.IsEmbedded(f, font)
-                    && !(f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cd && cd.Get("CIDSet") is not null))
-                    c.Add("PDFA1-FONT-CIDSET", ValidationSeverity.Error, $"subset CIDFont {FontChecks.Name(f, cid)} has no /CIDSet in its descriptor (listing completeness is not verified)", "ISO 19005-1 6.3.5", u.Page);
+                    && !(f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cd && f.Resolve(cd.Get("CIDSet")) is PdfStream))
+                    c.Add("PDFA1-FONT-CIDSET", ValidationSeverity.Error, $"subset CIDFont {FontChecks.Name(f, cid)} has no /CIDSet stream in its descriptor (listing completeness is not verified)", "ISO 19005-1 6.3.5", u.Page);
                 if (f.Resolve(font.Get("Encoding")) is PdfStream cmap && SystemInfo(f, cmap.Dict) is { } a && SystemInfo(f, cid) is { } b && a != b)
                     c.Add("PDFA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"embedded CMap of {name} has CIDSystemInfo {a} but the CIDFont has {b}", Clause(c, "6.3.3.1", "6.2.11.3.3", "6.2.11.3.3"), u.Page);
             }

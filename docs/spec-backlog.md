@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-1 CIDSet entry kinds
+
+The existing `PDFA1-FONT-CIDSET` presence check now requires a resolved
+stream for embedded subset CIDFonts, not merely a raw non-null dictionary
+entry. Null, indirect null, number, name, string, array and dictionary
+entries no longer satisfy it. The rule ID, subset/embedding scope and
+ISO 19005-1 6.3.5 reference remain unchanged; parts 2/3 are unchanged.
+Pinned profile commit `c4f57effb0d3618827c87bd71882930d752be6e3`
+supplies A1 test 3. This implements its stream-presence prerequisite,
+not the complete glyph-list predicate.
+
+Sixty independent controls use the retained public UA corpus's embedded
+Liberation Sans CIDFontType2 program (2589 glyphs), subset/plain PDF font
+names and ten CIDSet kinds. A maxp-sized all-glyph bitmap supplies a
+reference-positive stream; an empty stream deliberately exposes the
+remaining listing gap. Across all controls, 57 exact predicates and
+whole-file verdicts agree with veraPDF 1.30.3. Seven previous A1
+wrong-kind misses are closed. All three empty-stream subset misses
+(one per part) remain explicitly reference-negative/FreeDF-positive;
+no controls are excluded. The initial DeviceGray attempt had a separate
+missing-output-intent failure and is retained separately, not called
+clean evidence. Corrected calibrated-RGB controls isolate the font rule.
+Reports, font-source provenance, hashes and before/after results remain
+session artifacts; no font program or external PDF is bundled.
+
+The 108 authored cases cover subset/plain, embedded/unembedded and all
+three parts; seven failed before this correction. All 6146 integrated
+PDF/A/deep tests pass and the solution builds with existing machine feed
+warnings unchanged. The full 9951 measurement predates this correction.
+CIDSet bit decoding, font-program/CID mapping completeness, CharSet
+string kinds/listing and general font validity remain open.
+Historical corpus figures and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A known-prohibited action context correction
 
 The legacy `PDFA-ACTION` check now shares the bounded inert action
