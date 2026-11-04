@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A OpenType CFF CharSet completeness
+
+The Type1 subset CharSet check now follows FontFile3 OpenType wrappers
+to their CFF table and reuses the raw name-keyed glyph-list comparison.
+The existing bounded SFNT directory reader is shared while preserving
+the TrueType signature policy of cmap/maxp checks. OpenType CFF extraction
+requires the OTTO signature, a unique nonempty CFF table and in-file
+table bounds; missing, duplicate or malformed selected tables produce
+`PDFA-FONT-CHARSET-INCOMPLETE`, not an omitted successful check.
+This does not validate all required OpenType tables or SFNT checksums.
+ISO 32000-1 Table 126 and 9.9 (PDF pages 298/299) define these wrappers
+and Type1 CFF glyph selection. The complete decoded wrapper, not just
+its selected table, remains subject to the 16777216-byte program limit.
+
+Twenty-four independent A2/3 controls reuse the retained real Myriad Pro
+OpenType program, with subset/plain names and six list mutations.
+FontTools 4.68.0 independently agrees on the extracted CFF table bytes
+and all 852 ordered names. All eight reference-negative controls now
+fail their exact 6.2.11.4.2 test 1 predicate. Of the 24 controls, 22 agree
+with veraPDF 1.30.3 on exact rules and whole-file verdicts; two explicit
+normative disagreements retain the prohibition on listing `.notdef`.
+No controls are excluded. This is one reused real font, not 24 programs;
+no external PDF or font is bundled.
+
+The 68 authored cases cover subset/plain, indirect strings, PDF escapes,
+malformed/truncated/missing/duplicate table metadata and exact decoded
+wrapper limits; 23 failed on the preceding implementation. Their minimal
+table fixtures isolate selected metadata and are not claimed as complete
+OpenType fonts. All 7878 combined PDF/A, PDF/UA, deep-validation and reader
+cases pass; the solution builds with existing machine feed warnings
+unchanged. Prior TrueType CIDSet controls retain their measured outcomes.
+The latest full 10914-case measurement predates this and the name-keyed
+CID selection follow-up. OpenType CIDSet wrappers, full wrapper/program
+validity, legacy Type1 and used-glyph/width/Unicode completeness remain
+open. Historical corpus measurements and broad Partial status are unchanged.
+
 ## 2026-11-04 PDF/A name-keyed CFF CIDSet selection
 
 The raw CFF CIDSet metadata path now also handles a Top DICT without

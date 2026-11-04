@@ -22,10 +22,12 @@ internal static class FontChecks
 
     public static string Name(PdfFile f, PdfDictionary font) => f.Resolve(font.Get("BaseFont")).AsName() ?? "(unnamed)";
 
-    static bool TryTrueTypeTable(ReadOnlySpan<byte> data, ReadOnlySpan<byte> tag, out (int Offset, int Length)? result)
+    static bool TrySfntTable(ReadOnlySpan<byte> data, ReadOnlySpan<byte> tag, out (int Offset, int Length)? result, bool cff = false)
     {
         result = null;
-        if (data.Length < 12 || BinaryPrimitives.ReadUInt32BigEndian(data) is not (0x00010000 or 0x74727565)) return false;
+        if (data.Length < 12) return false;
+        var signature = BinaryPrimitives.ReadUInt32BigEndian(data);
+        if (cff ? signature != 0x4F54544F : signature is not (0x00010000 or 0x74727565)) return false;
         var tables = BinaryPrimitives.ReadUInt16BigEndian(data[4..]);
         var directoryEnd = 12 + tables * 16;
         if (directoryEnd > data.Length) return false;
@@ -44,16 +46,23 @@ internal static class FontChecks
 
     public static int? TrueTypeGlyphCount(ReadOnlySpan<byte> data)
     {
-        if (!TryTrueTypeTable(data, "maxp"u8, out var table) || table is not { Length: >= 32 } t) return null;
+        if (!TrySfntTable(data, "maxp"u8, out var table) || table is not { Length: >= 32 } t) return null;
         var maxp = data.Slice(t.Offset, t.Length);
         if (BinaryPrimitives.ReadUInt32BigEndian(maxp) != 0x00010000) return null;
         var count = BinaryPrimitives.ReadUInt16BigEndian(maxp[4..]);
         return count == 0 ? null : count;
     }
 
+    public static byte[] OpenTypeCff(ReadOnlySpan<byte> data)
+    {
+        if (!TrySfntTable(data, "CFF "u8, out var table, cff: true) || table is not { Length: > 0 } t)
+            throw new InvalidDataException("missing, duplicate or malformed OpenType CFF table");
+        return data.Slice(t.Offset, t.Length).ToArray();
+    }
+
     public static (int Count, bool Symbol, bool Roman)? TrueTypeCmapRecords(ReadOnlySpan<byte> data)
     {
-        if (!TryTrueTypeTable(data, "cmap"u8, out var table)) return null;
+        if (!TrySfntTable(data, "cmap"u8, out var table)) return null;
         if (table is not { } t) return (0, false, false);
         if (t.Length < 4) return null;
         var cmap = data.Slice(t.Offset, t.Length);

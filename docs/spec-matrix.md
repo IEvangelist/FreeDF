@@ -248,6 +248,14 @@ The initial width-failing experiment remains separate. Raw name-keyed
 and CID-keyed CFF are covered within this scope; OpenType wrappers and
 full font validity remain open.
 
+The [OpenType CFF CharSet slice](spec-backlog.md#2026-11-04-pdfa-opentype-cff-charset-completeness)
+reads a bounded unique CFF table and reuses complete glyph-name checks.
+All eight independent A2/3 reference negatives are closed; 22/24 controls
+agree, with two explicit `.notdef` disagreements. Exact selected table
+bytes and 852 names agree with FontTools for one real OpenType program.
+Malformed selected-table metadata reports incomplete; full wrapper validity,
+OpenType CIDSet and legacy Type1 completeness remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

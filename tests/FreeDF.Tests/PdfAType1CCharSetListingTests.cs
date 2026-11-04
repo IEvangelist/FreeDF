@@ -130,7 +130,7 @@ public class PdfAType1CCharSetListingTests
         Assert.Equal(incomplete, report.Has("PDFA-FONT-CHARSET-INCOMPLETE"));
     }
 
-    static PdfDocument Document(string charset, byte[] program, bool subset = true, bool indirect = false)
+    internal static PdfDocument Document(string charset, byte[] program, bool subset = true, bool indirect = false, bool openType = false)
     {
         var name = (subset ? "ABCDEF+" : "") + "TestCff";
         return PdfDocument.Load(ObjPdf.Build(
@@ -140,7 +140,7 @@ public class PdfAType1CCharSetListingTests
             ObjPdf.Stream("BT /F 12 Tf (A) Tj ET"),
             $"<< /Type /Font /Subtype /Type1 /BaseFont /{name} /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 65 /Widths [600] /FontDescriptor 6 0 R >>",
             $"<< /Type /FontDescriptor /FontName /{name} /Flags 32 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile3 7 0 R /CharSet {(indirect ? "8 0 R" : "(" + charset + ")")} >>",
-            ObjPdf.Stream(Encoding.Latin1.GetString(program), "/Subtype /Type1C"),
+            ObjPdf.Stream(Encoding.Latin1.GetString(program), openType ? "/Subtype /OpenType" : "/Subtype /Type1C"),
             "(" + charset + ")"));
     }
 

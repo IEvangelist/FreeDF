@@ -187,8 +187,8 @@ internal static partial class PdfADeepChecks
                 && f.Resolve(font.Get("FontDescriptor")) is PdfDictionary type1Descriptor
                 && f.Resolve(type1Descriptor.Get("CharSet")) is PdfString charset
                 && f.Resolve(type1Descriptor.Get("FontFile3")) is PdfStream type1Program
-                && f.Resolve(type1Program.Dict.Get("Subtype")).AsName() == "Type1C")
-                Type1CCharSet(c, type1Program, charset, name, u.Page);
+                && f.Resolve(type1Program.Dict.Get("Subtype")) is PdfName { Value: "Type1C" or "OpenType" } programType)
+                Type1CCharSet(c, type1Program, charset, name, u.Page, programType.Value == "OpenType");
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid)
             {
                 if (c.Part == 1 && SubsetPrefix().IsMatch(FontChecks.Name(f, cid)) && FontChecks.IsEmbedded(f, font)
@@ -291,7 +291,7 @@ internal static partial class PdfADeepChecks
         }
     }
 
-    static void Type1CCharSet(ValidationContext c, PdfStream program, PdfString charset, string name, int page)
+    static void Type1CCharSet(ValidationContext c, PdfStream program, PdfString charset, string name, int page, bool openType)
     {
         var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
         void Incomplete(string reason) =>
@@ -303,6 +303,7 @@ internal static partial class PdfADeepChecks
             if (charset.Bytes.Length > 1_048_576) { Incomplete("CharSet exceeds 1048576 bytes"); return; }
             var data = c.F.DecodeStream(program);
             if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
+            if (openType) data = FontChecks.OpenTypeCff(data);
             var names = CffGlyphNames.Read(data);
             var expected = new HashSet<string>(StringComparer.Ordinal);
             for (var gid = 1; gid < names.Length; gid++)
