@@ -4,6 +4,54 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A stream-mapped TrueType CIDSet completeness
+
+The preceding raw TrueType CIDSet check now also handles resolved
+CIDToGIDMap streams, not just Identity names. Table 117 in
+[ISO 32000-1 9.7.4.2](https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf)
+defines each two-byte entry as an explicit CID-to-GID assignment.
+Every in-range entry defines a CID, including assignments to GID 0;
+zero entries are not inferred holes. Unmapped program GIDs are not
+silently treated as CID values. The separate mandatory CID 0 requirement
+is retained, including empty maps. Odd-length maps, more than 131072
+decoded map bytes, or GIDs outside the inspected maxp range produce
+`PDFA-FONT-CIDSET-INCOMPLETE` Errors. These checks occur only within the
+existing subset/embedded raw FontFile2/CIDSet-stream scope, not as a claim
+of exhaustive standalone CIDToGIDMap validation.
+
+The 144 corrected independent controls reuse the retained Liberation Sans
+program with identity streams, nonzero aliases, unused-GID permutations
+and short maps, varying subset/plain names and six bitmap layouts across
+all three parts. All 38 reference-negative controls now fail their exact
+mapped rules. Of these, 125 agree with veraPDF 1.30.3 on exact rules and
+whole-file verdicts; 19 normative disagreements remain explicit:
+12 omit CID 0, and seven A1 cases use extra bits or GID-indexed lists in
+place of the full assigned CID set. No controls are excluded.
+FontTools confirms the reused program's 2589 glyphs and an independent
+Python CID-set comparison checks every corrected control.
+
+The initial sparse-map experiment incorrectly excluded explicit GID 0
+entries, so several supposed full-list positives failed A2/3. Its 144
+PDFs and reports remain separate, not claimed as clean positive evidence.
+Table 117 and inspection of the shipped 1.30.3
+`CIDToGIDMapping.contains` / `CIDFontType2Program.containsCID` logic
+confirmed that explicit zero entries count before the corrected control
+set and implementation were selected. No reference implementation code
+was copied. Both experiment stages and source/hash evidence remain
+private session artifacts; no external font or PDF is bundled.
+
+The 159 authored stream-map cases cover alias/zero assignments, CID/GID
+distinctions, empty maps, invalid GID ranges and exact 131072-byte bounds;
+69 cases failed in the initial baseline. Existing Identity/kind controls
+retain their previous 112/120 agreement and eight explicit disagreements.
+All 7656 combined PDF/A, PDF/UA and deep-validation tests pass, and the
+solution builds with existing machine feed warnings unchanged.
+The full 10480-case measurement predates both CIDSet completeness slices.
+All byte limits apply after existing stream decoding.
+CID-keyed CFF, OpenType wrappers, complete font/outline validity and
+used-glyph/width/Unicode completeness remain open. Historical corpus
+measurements and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A Identity CIDSet completeness
 
 Embedded subset CIDFontType2 fonts with an explicit resolved Identity

@@ -221,6 +221,15 @@ eight explicit complete-list/CID0 disagreements. Malformed or bounded-out
 metadata produces an incomplete Error. Non-Identity mappings, CID-keyed
 CFF, OpenType wrappers and full font validity remain open.
 
+The subsequent [stream-mapped CIDSet slice](spec-backlog.md#2026-11-04-pdfa-stream-mapped-truetype-cidset-completeness)
+extends raw TrueType checking to explicit map streams, including GID 0
+aliases. All 38 reference negatives are closed; 125/144 corrected controls
+agree, with 19 explicit all-CID/CID0 disagreements. The first sparse-map
+experiment is retained separately, not called clean evidence.
+Odd, oversized or out-of-range map metadata reports incomplete.
+Identity/kind outcomes are unchanged; CID-keyed CFF, OpenType wrappers
+and complete font validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

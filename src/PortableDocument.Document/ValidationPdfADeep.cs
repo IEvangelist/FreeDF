@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using PortableDocument.Core;
@@ -195,28 +196,43 @@ internal static partial class PdfADeepChecks
                     c.Add("PDFA1-FONT-CIDSET", ValidationSeverity.Error, $"subset CIDFont {FontChecks.Name(f, cid)} has no /CIDSet stream in its descriptor", "ISO 19005-1 6.3.5", u.Page);
                 if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2"
                     && SubsetPrefix().IsMatch(FontChecks.Name(f, cid))
-                    && f.Resolve(cid.Get("CIDToGIDMap")) is PdfName { Value: "Identity" }
+                    && f.Resolve(cid.Get("CIDToGIDMap")) is { } cidMapping
+                    && cidMapping is (PdfStream or PdfName { Value: "Identity" })
                     && f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cidDescriptor
                     && f.Resolve(cidDescriptor.Get("CIDSet")) is PdfStream cidSet
                     && f.Resolve(cidDescriptor.Get("FontFile2")) is PdfStream cidProgram)
-                    IdentityCidSet(c, cidProgram, cidSet, FontChecks.Name(f, cid), u.Page);
+                    TrueTypeCidSet(c, cidProgram, cidSet, cidMapping, FontChecks.Name(f, cid), u.Page);
                 if (f.Resolve(font.Get("Encoding")) is PdfStream cmap && SystemInfo(f, cmap.Dict) is { } a && SystemInfo(f, cid) is { } b && a != b)
                     c.Add("PDFA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"embedded CMap of {name} has CIDSystemInfo {a} but the CIDFont has {b}", Clause(c, "6.3.3.1", "6.2.11.3.3", "6.2.11.3.3"), u.Page);
             }
         }
     }
 
-    static void IdentityCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, string name, int page)
+    static void TrueTypeCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, PdfObject mapping, string name, int page)
     {
         var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
         void Incomplete(string reason) =>
-            c.Add("PDFA-FONT-CIDSET-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect Identity CIDSet of {name}: {reason}", clause, page);
+            c.Add("PDFA-FONT-CIDSET-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect TrueType CIDSet of {name}: {reason}", clause, page);
         try
         {
             var data = c.F.DecodeStream(program);
             if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
-            if (FontChecks.TrueTypeGlyphCount(data) is not { } count)
+            if (FontChecks.TrueTypeGlyphCount(data) is not { } glyphCount)
             { Incomplete("malformed or unsupported TrueType maxp metadata"); return; }
+            var count = glyphCount;
+            if (mapping is PdfStream map)
+            {
+                var mapData = c.F.DecodeStream(map);
+                if (mapData.Length > 131_072 || mapData.Length % 2 != 0)
+                { Incomplete("CIDToGIDMap has an odd byte count or exceeds 131072 bytes"); return; }
+                count = Math.Max(1, mapData.Length / 2);
+                for (var cid = 0; cid < mapData.Length / 2; cid++)
+                {
+                    if (BinaryPrimitives.ReadUInt16BigEndian(mapData.AsSpan(cid * 2)) < glyphCount) continue;
+                    Incomplete("CIDToGIDMap refers to a GID outside the font program");
+                    return;
+                }
+            }
             var bitmap = c.F.DecodeStream(cidSet);
             if (bitmap.Length > 1_048_576) { Incomplete("decoded CIDSet exceeds 1048576 bytes"); return; }
             for (var i = 0; i < Math.Max(bitmap.Length, (count + 7) / 8); i++)
@@ -226,7 +242,7 @@ internal static partial class PdfADeepChecks
                 var actual = i < bitmap.Length ? bitmap[i] : 0;
                 if (actual == expected) continue;
                 c.Add("PDFA-FONT-CIDSET-LIST", ValidationSeverity.Error,
-                    $"Identity CIDSet of {name} must identify exactly CIDs 0 through {count - 1} defined by the font program", clause, page);
+                    $"TrueType CIDSet of {name} must identify exactly CIDs 0 through {count - 1} defined by the font program and CIDToGIDMap", clause, page);
                 return;
             }
         }

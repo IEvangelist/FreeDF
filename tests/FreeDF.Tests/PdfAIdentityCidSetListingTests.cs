@@ -118,7 +118,6 @@ public class PdfAIdentityCidSetListingTests
     [Theory]
     [InlineData("/Other")]
     [InlineData("null")]
-    [InlineData("12 0 R")]
     public void OtherCidMappingsRemainOutsideThisSlice(string map)
     {
         var report = PdfValidator.Validate(Document([], [], map: map), PdfValidationProfile.PdfA1b);
@@ -127,7 +126,7 @@ public class PdfAIdentityCidSetListingTests
         Assert.False(report.Has("PDFA-FONT-CIDSET-LIST"));
     }
 
-    static byte[] Program(int count)
+    internal static byte[] Program(int count)
     {
         var data = new byte[60];
         BinaryPrimitives.WriteUInt32BigEndian(data, 0x00010000);
@@ -140,7 +139,7 @@ public class PdfAIdentityCidSetListingTests
         return data;
     }
 
-    static PdfDocument Document(byte[] program, byte[] bitmap, bool subset = true, bool indirectMap = false, string? map = null)
+    internal static PdfDocument Document(byte[] program, byte[] bitmap, bool subset = true, bool indirectMap = false, string? map = null, byte[]? mapping = null)
     {
         var name = (subset ? "ABCDEF+" : "") + "TestFont";
         return PdfDocument.Load(ObjPdf.Build(
@@ -149,16 +148,16 @@ public class PdfAIdentityCidSetListingTests
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Font << /F 5 0 R >> >> /Contents 4 0 R >>",
             ObjPdf.Stream("BT /F 12 Tf <0001> Tj ET"),
             $"<< /Type /Font /Subtype /Type0 /BaseFont /{name} /Encoding /Identity-H /DescendantFonts [6 0 R] >>",
-            $"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /CIDToGIDMap {map ?? (indirectMap ? "11 0 R" : "/Identity")} /FontDescriptor 7 0 R >>",
+            $"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /CIDToGIDMap {map ?? (mapping is not null ? "12 0 R" : indirectMap ? "11 0 R" : "/Identity")} /FontDescriptor 7 0 R >>",
             $"<< /Type /FontDescriptor /FontName /{name} /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 8 0 R /CIDSet 10 0 R >>",
             ObjPdf.Stream(Encoding.Latin1.GetString(program)),
             "null",
             ObjPdf.Stream(Encoding.Latin1.GetString(bitmap)),
             "/Identity",
-            ObjPdf.Stream("")));
+            ObjPdf.Stream(Encoding.Latin1.GetString(mapping ?? []))));
     }
 
-    static void AssertClauses(ValidationReport report, PdfValidationProfile profile)
+    internal static void AssertClauses(ValidationReport report, PdfValidationProfile profile)
     {
         Assert.All(report.Findings.Where(f => f.RuleId is "PDFA-FONT-CIDSET-LIST" or "PDFA-FONT-CIDSET-INCOMPLETE"), finding =>
         {
