@@ -140,8 +140,8 @@ internal static class PdfAChecks
             c.Add("PDFA-VERSION", ValidationSeverity.Error, $"PDF version {version} is not allowed (PDF/A-1/2/3 are based on PDF 1.x)", Clause(c, "6.1.2", "6.1.2", "6.1.2"));
         if (c.Part == 1 && f.Resolve(f.Catalog.Get("OCProperties")) is not null and not PdfNull)
             c.Add("PDFA-OPTIONAL-CONTENT", ValidationSeverity.Error, "optional content is not permitted in PDF/A-1", "ISO 19005-1 6.1.13");
-        if (f.Resolve(f.Catalog.Get("AA")) is PdfDictionary)
-            c.Add("PDFA-CATALOG-AA", ValidationSeverity.Error, "catalog additional-actions dictionary is not permitted", Clause(c, "6.6.2", "6.6.1", "6.6.1"));
+        if (f.Resolve(f.Catalog.Get("AA")) is not null and not PdfNull)
+            c.Add("PDFA-CATALOG-AA", ValidationSeverity.Error, "catalog additional-actions entry is not permitted", Clause(c, "6.6.2", "6.5.2", "6.5.2"));
     }
 
     static void Metadata(ValidationContext c)
@@ -276,6 +276,8 @@ internal static class PdfAChecks
         var f = c.F;
         for (var i = 0; i < c.Doc.Pages.Count; i++)
         {
+            if (c.Part != 1 && f.Resolve(c.Doc.Pages[i].Dict.Get("AA")) is not null and not PdfNull)
+                c.Add("PDFA-PAGE-AA", ValidationSeverity.Error, "page additional-actions entry is not permitted", Clause(c, "6.6.2", "6.5.2", "6.5.2"), i);
             if (f.Resolve(c.Doc.Pages[i].Dict.Get("Annots")) is not PdfArray annots) continue;
             if (annots.Count > annotationLimit)
                 c.Add("PDFA-ANNOT-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect {annots.Count} page annotation entries: limit is {annotationLimit}", Clause(c, "6.5", "6.3", "6.3"), i);
@@ -288,6 +290,13 @@ internal static class PdfAChecks
                     || c.Part != 1 && sub is "Polygon" or "PolyLine" or "Caret" or "FileAttachment" or "Watermark" or "Redact";
                 if (!allowed)
                     c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub ?? "(missing or non-name)"} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
+                if (sub == "Widget")
+                {
+                    if (f.Resolve(ad.Get("A")) is not null and not PdfNull)
+                        c.Add("PDFA-WIDGET-ACTIONS", ValidationSeverity.Error, "Widget /A action entry is not permitted", Clause(c, "6.6.1", "6.4.1", "6.4.1"), i);
+                    if (f.Resolve(ad.Get("AA")) is not null and not PdfNull)
+                        c.Add("PDFA-WIDGET-ACTIONS", ValidationSeverity.Error, "Widget /AA additional-actions entry is not permitted", Clause(c, "6.6.2", "6.4.1", "6.4.1"), i);
+                }
                 if (c.Part == 1 && f.Resolve(ad.Get("CA")).AsNumber() is { } opacity && opacity != 1)
                     c.Add("PDFA1-ANNOT-OPACITY", ValidationSeverity.Error, "annotation opacity must be 1 in PDF/A-1", "ISO 19005-1 6.5.3", i);
                 if (c.Part == 1 && !outputSpaces.Contains("RGB ")

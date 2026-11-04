@@ -144,6 +144,13 @@ Across 108 controls, 104 rule sets and verdicts agree; four indirect-null
 verdict disagreements are retained under ISO null-as-omitted semantics.
 PDF/A-1 is unchanged; general form/XFA validity remains open.
 
+The [context-specific action-entry checks](spec-backlog.md#2026-11-04-context-specific-pdfa-action-entries)
+prohibit catalog AA, parts-2/3 page AA and Widget A/AA with correct
+part/clause attribution, without banning ordinary Link actions.
+Across 168 controls, 157 scoped predicates and 151 verdicts agree;
+11 indirect-null differences and six real empty-Link-action misses remain
+explicit. Non-Widget fields and complete action classification remain open.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

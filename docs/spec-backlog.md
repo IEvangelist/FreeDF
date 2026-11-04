@@ -4,6 +4,44 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 context-specific PDF/A action entries
+
+The existing catalog AA prohibition now rejects every resolved non-null
+entry, not only dictionaries, and its part-2/3 attribution is corrected
+to ISO 19005-2/3 6.5.2 (part 1 remains 6.6.2).
+New `PDFA-PAGE-AA` Errors reject page AA entries in parts 2/3, including
+pages without annotations. Widget A/AA entries produce separate
+`PDFA-WIDGET-ACTIONS` Errors in all parts; part 1 attributes A to 6.6.1
+and AA to 6.6.2, while parts 2/3 use 6.4.1.
+These checks prohibit the entries even when their action would otherwise
+be permitted. Link actions are not indiscriminately banned, and part-1
+page AA is not given the separate part-2/3 prohibition.
+
+The pinned validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` provides part-1 catalog 6.6.2
+test 3 and Widget 6.6.1 test 3 / 6.6.2 test 1, plus parts-2/3 catalog/page
+6.5.2 tests 1/2 and Widget 6.4.1 test 1. Across 168 independent controls,
+157 scoped predicates and 151 whole-file verdicts agree with veraPDF
+1.30.3. All 17 verdict differences are retained: 11 indirect-null entries
+treated as omitted in FreeDF under ISO 32000-1 7.3.9, and six empty Link
+A dictionaries rejected by the reference's action-subtype rule but not
+yet by FreeDF. The latter are real remaining validator misses, not clean
+positives or exclusions. The exact predicate comparison does not hide
+that broader action-dictionary gap.
+
+There are 174 authored cases: the initial final-policy 168 cases exposed
+41 failures, and six additional cases cover pages without Annots and
+simultaneous Widget A/AA findings. Full Release now passes 9087 tests,
+none failed/skipped; the solution builds without new warnings. This
+full run includes the preceding opacity, colour and XFA corrections.
+External PDFs/XML and per-file hashes remain session artifacts.
+
+This establishes catalog/page/Widget entry policies, not complete action
+classification or field-tree traversal. Non-Widget field A/AA, malformed
+and unknown action subtypes, arbitrary action-bearing structures and
+reference-resolution limits remain open. Historical corpus totals and
+broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A-2/3 XFA and NeedsRendering policy
 
 Parts 2/3 now reject non-null AcroForm XFA with `PDFA-FORM-XFA`, and
