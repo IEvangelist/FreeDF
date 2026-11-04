@@ -197,6 +197,13 @@ controls, 57 exact rules and verdicts agree; seven A1 wrong-kind misses
 are closed and all three empty-stream listing misses remain explicit.
 Parts 2/3 and glyph-list completeness remain unchanged.
 
+The [PDF/A-1 CharSet kind correction](spec-backlog.md#2026-11-04-pdfa-1-charset-entry-kinds)
+likewise requires a resolved string for embedded Type1 subsets.
+Across 66 real-font controls, 63 exact rules and verdicts agree;
+seven A1 wrong-kind misses are closed and all three empty-string
+listing misses remain explicit. Parts 2/3 and listing completeness
+remain unchanged.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

@@ -180,8 +180,8 @@ internal static partial class PdfADeepChecks
                 if (subtype == "TrueType") TrueTypeEncoding(c, font, name, u.Page);
             }
             if (c.Part == 1 && subtype == "Type1" && SubsetPrefix().IsMatch(name) && FontChecks.IsEmbedded(f, font)
-                && !(f.Resolve(font.Get("FontDescriptor")) is PdfDictionary fd && fd.Get("CharSet") is not null))
-                c.Add("PDFA1-FONT-CHARSET", ValidationSeverity.Error, $"subset font {name} has no /CharSet in its descriptor (listing completeness is not verified)", "ISO 19005-1 6.3.5", u.Page);
+                && !(f.Resolve(font.Get("FontDescriptor")) is PdfDictionary fd && f.Resolve(fd.Get("CharSet")) is PdfString))
+                c.Add("PDFA1-FONT-CHARSET", ValidationSeverity.Error, $"subset font {name} has no /CharSet string in its descriptor (listing completeness is not verified)", "ISO 19005-1 6.3.5", u.Page);
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid)
             {
                 if (c.Part == 1 && SubsetPrefix().IsMatch(FontChecks.Name(f, cid)) && FontChecks.IsEmbedded(f, font)

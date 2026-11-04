@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-1 CharSet entry kinds
+
+The existing `PDFA1-FONT-CHARSET` presence check now requires a resolved
+string for embedded Type1 subsets instead of raw key presence.
+Null, indirect null, number, name, array, dictionary and stream entries
+no longer satisfy it. The rule ID, subset/embedding scope and
+ISO 19005-1 6.3.5 reference remain unchanged; parts 2/3 are unchanged.
+Pinned profile commit `c4f57effb0d3618827c87bd71882930d752be6e3`
+supplies A1 test 2. This is its string-presence prerequisite, not its
+complete glyph-list predicate.
+
+Sixty-six independent controls transplant the retained public UA corpus's
+positive Adobe Naskh Type1C font into calibrated-RGB documents, varying
+subset/plain names and eleven CharSet kinds. Complete direct/indirect
+strings remain reference-positive; empty strings deliberately expose
+the still-open listing requirement. Of these controls, 63 exact predicates
+and whole-file verdicts agree with veraPDF 1.30.3, closing seven A1
+wrong-kind misses. All three empty-string subset listing misses remain
+explicitly reference-negative/FreeDF-positive, one per part; none are
+excluded. Reports, source provenance, hashes and before/after results
+remain session artifacts; no font program or external PDF is bundled.
+
+The 132 authored metadata cases cover subset/plain, embedded/unembedded
+and all three parts; seven failed before this correction.
+All 6278 integrated PDF/A/deep tests pass and the solution builds with
+existing machine feed warnings unchanged. The full 9951 measurement
+predates both latest subset-entry corrections. CharSet name parsing,
+embedded-program/listing completeness, CIDSet bitmap/program checks
+and complete font validity remain open. Historical corpus figures and
+broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A-1 CIDSet entry kinds
 
 The existing `PDFA1-FONT-CIDSET` presence check now requires a resolved
