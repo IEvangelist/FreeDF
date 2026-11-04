@@ -497,6 +497,18 @@ internal static partial class PdfUAChecks
     {
         var f = c.F;
         var objectRefs = new Dictionary<StructElement, HashSet<PdfDictionary>>();
+        var widgetFields = new Dictionary<PdfDictionary, PdfDictionary>(ReferenceEqualityComparer.Instance);
+        if (c.Part == 1)
+        {
+            var fields = c.Doc.GetFormFieldDetails();
+            var incomplete = fields.Truncated;
+            foreach (var field in fields.Fields)
+                foreach (var widget in field.Widgets)
+                    if (!widgetFields.TryAdd(widget, field.Dictionary) && !ReferenceEquals(widgetFields[widget], field.Dictionary))
+                        incomplete = true;
+            if (incomplete)
+                c.Add("PDFUA-FORM-INCOMPLETE", ValidationSeverity.Error, "terminal field/widget description ownership is truncated or ambiguous", "ISO 14289-1 7.18.1");
+        }
         for (var i = 0; i < c.Doc.Pages.Count; i++)
         {
             if (f.Resolve(c.Doc.Pages[i].Dict.Get("Annots")) is not PdfArray annots) continue;
@@ -556,7 +568,10 @@ internal static partial class PdfUAChecks
                 {
                     if (parent is not null && parent.StandardType != "Form")
                         c.Add("PDFUA-FORM-STRUCT", ValidationSeverity.Error, $"Widget annotation is nested in /{parent.Type}, expected Form", Clause(c, "7.18.4", "8.9"), i);
-                    if (HasFieldType(f, ad) && !HasText(f, ad, "TU") && (c.Part == 1 || !HasText(f, ad, "Contents")) && parent?.Alt is not { Length: > 0 })
+                    var hasTooltip = c.Part == 1 && widgetFields.TryGetValue(ad, out var field)
+                        ? f.Resolve(field.Get("TU")) is PdfString { Bytes.Length: > 0 }
+                        : HasText(f, ad, "TU");
+                    if (HasFieldType(f, ad) && !hasTooltip && (c.Part == 1 || !HasText(f, ad, "Contents")) && parent?.Alt is not { Length: > 0 })
                         c.Add("PDFUA-FORM-TU", ValidationSeverity.Error, "form field has no /TU tooltip (nor structure /Alt)", Clause(c, "7.18.1", "8.9"), i);
                 }
                 else

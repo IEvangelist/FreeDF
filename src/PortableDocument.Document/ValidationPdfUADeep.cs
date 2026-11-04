@@ -100,6 +100,9 @@ internal static class PdfUADeepChecks
                     c.Add("PDFUA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"CIDSystemInfo of {name} ({cidInfo.Registry}-{cidInfo.Ordering}) does not match predefined CMap /{cmapName.Value} (Adobe-{ordering})", Clause(c, "7.21.3.1", "8.8"), use.Page);
                 break;
             case PdfStream cmap:
+                if (f.Resolve(cmap.Dict.Get("UseCMap")) is PdfName parentCMap
+                    && parentCMap.Value is not ("Identity-H" or "Identity-V") && !PredefinedCMapOrdering.ContainsKey(parentCMap.Value))
+                    c.Add("PDFUA-FONT-CMAP-REFERENCE", ValidationSeverity.Error, $"CMap of {name} references non-predefined /{parentCMap.Value} through /UseCMap", Clause(c, "7.21.3.3", "8.4.5.4"), use.Page);
                 var cmapInfo = SystemInfoOf(f, cmap.Dict);
                 if (cmapInfo.Registry != cidInfo.Registry || cmapInfo.Ordering != cidInfo.Ordering || cidInfo.Supplement > cmapInfo.Supplement)
                     c.Add("PDFUA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"CIDSystemInfo of {name} and its embedded CMap differ (Registry/Ordering must match; CIDFont Supplement must not exceed the CMap's)", Clause(c, "7.21.3.1", "8.8"), use.Page);
@@ -123,8 +126,9 @@ internal static class PdfUADeepChecks
             var font = u.Font;
             var subtype = f.Resolve(font.Get("Subtype")).AsName();
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid
-                && f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2" && cid.Get("CIDToGIDMap") is null && FontChecks.IsEmbedded(f, font))
-                c.Add("PDFUA-FONT-CIDTOGID", ValidationSeverity.Error, $"CIDFontType2 {FontChecks.Name(f, cid)} has no /CIDToGIDMap", Clause(c, "7.21.3.2", "8.8"), u.Page);
+                && f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2" && FontChecks.IsEmbedded(f, font)
+                && f.Resolve(cid.Get("CIDToGIDMap")) is not (PdfStream or PdfName { Value: "Identity" }))
+                c.Add("PDFUA-FONT-CIDTOGID", ValidationSeverity.Error, $"embedded CIDFontType2 {FontChecks.Name(f, cid)} requires /CIDToGIDMap to be a stream or /Identity", Clause(c, "7.21.3.2", "8.4.5.3.2"), u.Page);
             CompositeAndTrueTypeEncoding(c, u, font, subtype);
             if (f.Resolve(font.Get("ToUnicode")) is PdfStream) continue;
             var name = FontChecks.Name(f, font);

@@ -12,6 +12,22 @@ combined profile in this runtime. Eight rejected role-mapping cases explicitly
 have incomplete nesting checks. Unmapped predicates and limited Table 5 corpus
 coverage remain; these figures are not full conformance or certification.
 
+The [2026-11-04 embedded CIDFont entry correction](spec-backlog.md#2026-11-04-pdfua-embedded-cidfont-mapping-entries)
+subsequently closes four missed invalid `/CIDToGIDMap` cases. Fresh FreeDF
+results against the same retained reference reports give 12 UA-1 and 7 UA-2
+misses, zero false positives/exclusions, with exactly those four verdicts
+changed. This is entry-type validation, not complete font/glyph conformance.
+
+The [named encoding CMap reference check](spec-backlog.md#2026-11-04-pdfua-named-encoding-cmap-references)
+closes two more public misses with no positive changes: 11 UA-1 / 6 UA-2
+misses, zero false positives/exclusions. This covers named dictionary parents,
+not program-level `usecmap`, stream parents or complete CMap validity.
+
+The [UA-1 terminal-field description correction](spec-backlog.md#2026-11-04-pdfua-1-terminal-field-descriptions)
+then closes the widget-only-tooltip miss: 10 UA-1 / 6 UA-2 remaining misses,
+zero false positives/exclusions. Actual field tooltips and each widget's
+structure Alt are distinguished; UA-2 rows are unchanged.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded
