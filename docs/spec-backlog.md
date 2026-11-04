@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-1 page Widget appearance presence
+
+`PDFA1-FIELD-APPEARANCE` now rejects page Widget annotations without a
+resolved appearance dictionary, including point rectangles and Widgets
+not registered in AcroForm. ISO 19005-1 6.9 test 2 in pinned
+validation-profiles commit `c4f57effb0d3618827c87bd71882930d752be6e3`
+targets PDWidgetAnnot and requires `AP != null`. This is separate from
+the parts 2/3 general annotation appearance-presence rule, whose
+point-rectangle exception remains unchanged.
+
+All 87 independent controls agree with veraPDF 1.30.3 on the exact
+predicate and whole-file verdict: 75 rule positives and 12 negatives.
+Sixty-three controls distinguish field-only, merged Widget and separate
+child Widget layouts with seven AP kinds in all three parts; 24 further
+controls vary page membership, AcroForm registration and point rectangles.
+Missing, direct/indirect null and number-valued AP fail on A1 page Widgets;
+empty dictionaries satisfy this presence predicate but still fail the
+separate normal-only-key check. The reference does not reject off-page
+Widgets under this predicate, even when registered in AcroForm.
+Raw reference reports, hashes and FreeDF outputs remain session artifacts.
+
+The 87 authored tests had 16 baseline failures. All 5498 integrated
+PDF/A/deep tests pass and the solution builds, with the existing machine
+NuGet source warnings unchanged. The preceding full 9252 run predates
+both this correction and the field AA traversal. This establishes only
+page Widget presence, not general field/data appearance association,
+off-page validity, field-tree membership, all-state selection or visual
+appearance correctness. Historical corpus measurements remain unchanged.
+
 ## 2026-11-04 PDF/A field additional-action entries
 
 The AcroForm Fields/Kids tree now receives a dedicated additional-action

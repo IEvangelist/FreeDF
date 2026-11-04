@@ -165,6 +165,12 @@ depth/work/finding/cycle/malformed-child incompleteness.
 Across 63 controls, 54 rules and verdicts agree; nine indirect-null
 differences are retained. Field A and general tree validity remain open.
 
+The [PDF/A-1 page Widget appearance check](spec-backlog.md#2026-11-04-pdfa-1-page-widget-appearance-presence)
+requires AP dictionaries even for point rectangles or unregistered page
+Widgets. All 87 independent controls agree on the exact rule and verdict,
+including off-page and separate-child controls. Parts 2/3 presence rules
+are unchanged; general field/data association and visual validity remain open.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

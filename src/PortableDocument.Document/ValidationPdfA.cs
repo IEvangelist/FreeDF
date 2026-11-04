@@ -304,6 +304,8 @@ internal static class PdfAChecks
                     && (f.Resolve(ad.Get("C")) is PdfArray || f.Resolve(ad.Get("IC")) is PdfArray))
                     c.Add("PDFA1-ANNOT-COLORSPACE", ValidationSeverity.Error, "annotation /C or /IC array requires an RGB PDF/A output profile", "ISO 19005-1 6.5.3", i);
                 var appearance = f.Resolve(ad.Get("AP")) as PdfDictionary;
+                if (c.Part == 1 && sub == "Widget" && appearance is null)
+                    c.Add("PDFA1-FIELD-APPEARANCE", ValidationSeverity.Error, "page Widget field has no appearance dictionary", "ISO 19005-1 6.9", i);
                 var normal = f.Resolve(appearance?.Get("N"));
                 var normalOnly = appearance is not null && normal is not null and not PdfNull
                     && !appearance.Entries.Any(entry => entry.Key != "N" && f.Resolve(entry.Value) is not null and not PdfNull);
