@@ -3,10 +3,33 @@ using System.Text;
 
 namespace PortableDocument.Core;
 
-/// <summary>Reads CFF 1 Type1C glyph-name metadata without interpreting charstrings.</summary>
+/// <summary>Reads raw CFF 1 glyph-name and CID metadata without interpreting charstrings.</summary>
 internal static class CffGlyphNames
 {
     public static string[] Read(byte[] data)
+    {
+        var (sids, custom, isCid) = Metadata(data);
+        if (isCid) throw new InvalidDataException("CID-keyed CFF is not a Type1C glyph-name program");
+        return sids.Select(sid => String(sid, custom)).ToArray();
+    }
+
+    public static int[] ReadCids(byte[] data)
+    {
+        var (cids, _, isCid) = Metadata(data);
+        if (!isCid) throw new InvalidDataException("name-keyed CFF CIDSet inspection is not supported");
+        if (cids.Distinct().Count() != cids.Length)
+            throw new InvalidDataException("CFF charset contains duplicate CIDs");
+        return cids;
+    }
+
+    static string String(int sid, string[] custom)
+    {
+        if (sid < CffStandardStrings.Strings.Length) return CffStandardStrings.Strings[sid];
+        if (sid - CffStandardStrings.Strings.Length < custom.Length) return custom[sid - CffStandardStrings.Strings.Length];
+        throw new InvalidDataException("undefined CFF string identifier");
+    }
+
+    static (int[] Charset, string[] Custom, bool IsCid) Metadata(byte[] data)
     {
         InvalidDataException Invalid() => new("truncated, malformed or unsupported Type1C glyph-name metadata");
         void Require(int offset, int length)
@@ -64,6 +87,7 @@ internal static class CffGlyphNames
         var charset = 0;
         var charsetSeen = false;
         var charstrings = -1;
+        (int Registry, int Ordering)? ros = null;
         pos = tops[0].Start;
         var topEnd = tops[0].End;
         void TopBytes(int count)
@@ -113,7 +137,14 @@ internal static class CffGlyphNames
                 if (b > 21) throw Invalid();
                 var op = (int)b;
                 if (b == 12) { TopBytes(1); op = 1200 + data[pos++]; }
-                if (op == 1230) throw new InvalidDataException("CID-keyed CFF is not a Type1C glyph-name program");
+                if (op == 1230)
+                {
+                    if (ros is not null || operands.Count != 3 || operands[0] is not { } registry
+                        || operands[1] is not { } ordering || operands[2] is not { } supplement
+                        || registry < 0 || ordering < 0 || supplement < 0)
+                        throw Invalid();
+                    ros = (registry, ordering);
+                }
                 if (op is 15 or 17)
                 {
                     if (operands.Count != 1 || operands[0] is not { } offset || offset < 0) throw Invalid();
@@ -139,6 +170,7 @@ internal static class CffGlyphNames
         pos = charstrings;
         var glyphs = Index(ref pos);
         if (glyphs.Length == 0) throw Invalid();
+        if (ros is not null && (!charsetSeen || charset <= 2)) throw Invalid();
         var sids = new int[glyphs.Length];
         if (charset <= 2)
         {
@@ -169,14 +201,11 @@ internal static class CffGlyphNames
             }
         }
         var custom = strings.Select(s => Encoding.Latin1.GetString(data, s.Start, s.End - s.Start)).ToArray();
-        var result = new string[sids.Length];
-        for (var gid = 0; gid < result.Length; gid++)
+        if (ros is { } system)
         {
-            var sid = sids[gid];
-            if (sid < CffStandardStrings.Strings.Length) result[gid] = CffStandardStrings.Strings[sid];
-            else if (sid - CffStandardStrings.Strings.Length < custom.Length) result[gid] = custom[sid - CffStandardStrings.Strings.Length];
-            else throw Invalid();
+            if (String(system.Registry, custom).Length == 0 || String(system.Ordering, custom).Length == 0)
+                throw Invalid();
         }
-        return result;
+        return (sids, custom, ros is not null);
     }
 }

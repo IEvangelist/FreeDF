@@ -230,6 +230,15 @@ Odd, oversized or out-of-range map metadata reports incomplete.
 Identity/kind outcomes are unchanged; CID-keyed CFF, OpenType wrappers
 and complete font validity remain open.
 
+The [raw CID-keyed CFF CIDSet slice](spec-backlog.md#2026-11-04-pdfa-raw-cid-keyed-cff-cidset-completeness)
+reads actual sparse charset CIDs, not glyph indices. All 16 reference
+negatives are closed; 52/60 clean controls agree, with eight explicit
+all-CID/CID0 disagreements. FontTools independently agrees on ordered CIDs
+for five distinct programs. Malformed/unsupported metadata reports incomplete.
+A name-keyed transplant experiment with unrelated width failures is
+retained separately, not called clean evidence. Name-keyed CFF CIDFonts,
+OpenType wrappers and full program validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

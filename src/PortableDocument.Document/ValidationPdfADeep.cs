@@ -202,6 +202,13 @@ internal static partial class PdfADeepChecks
                     && f.Resolve(cidDescriptor.Get("CIDSet")) is PdfStream cidSet
                     && f.Resolve(cidDescriptor.Get("FontFile2")) is PdfStream cidProgram)
                     TrueTypeCidSet(c, cidProgram, cidSet, cidMapping, FontChecks.Name(f, cid), u.Page);
+                if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType0"
+                    && SubsetPrefix().IsMatch(FontChecks.Name(f, cid))
+                    && f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cffDescriptor
+                    && f.Resolve(cffDescriptor.Get("CIDSet")) is PdfStream cffSet
+                    && f.Resolve(cffDescriptor.Get("FontFile3")) is PdfStream cffProgram
+                    && f.Resolve(cffProgram.Dict.Get("Subtype")).AsName() == "CIDFontType0C")
+                    CffCidSet(c, cffProgram, cffSet, FontChecks.Name(f, cid), u.Page);
                 if (f.Resolve(font.Get("Encoding")) is PdfStream cmap && SystemInfo(f, cmap.Dict) is { } a && SystemInfo(f, cid) is { } b && a != b)
                     c.Add("PDFA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"embedded CMap of {name} has CIDSystemInfo {a} but the CIDFont has {b}", Clause(c, "6.3.3.1", "6.2.11.3.3", "6.2.11.3.3"), u.Page);
             }
@@ -233,23 +240,54 @@ internal static partial class PdfADeepChecks
                     return;
                 }
             }
-            var bitmap = c.F.DecodeStream(cidSet);
-            if (bitmap.Length > 1_048_576) { Incomplete("decoded CIDSet exceeds 1048576 bytes"); return; }
-            for (var i = 0; i < Math.Max(bitmap.Length, (count + 7) / 8); i++)
-            {
-                var remaining = count - i * 8;
-                var expected = remaining >= 8 ? 255 : remaining > 0 ? 255 << (8 - remaining) & 255 : 0;
-                var actual = i < bitmap.Length ? bitmap[i] : 0;
-                if (actual == expected) continue;
-                c.Add("PDFA-FONT-CIDSET-LIST", ValidationSeverity.Error,
-                    $"TrueType CIDSet of {name} must identify exactly CIDs 0 through {count - 1} defined by the font program and CIDToGIDMap", clause, page);
-                return;
-            }
+            var expected = new byte[(count + 7) / 8];
+            for (var cid = 0; cid < count; cid++) expected[cid / 8] |= (byte)(128 >> (cid % 8));
+            CidSetListing(c, cidSet, expected, name, page);
         }
         catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException
             or InvalidOperationException or ArgumentException or IndexOutOfRangeException or KeyNotFoundException or OverflowException)
         {
             Incomplete(e.Message);
+        }
+    }
+
+    static void CffCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, string name, int page)
+    {
+        var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+        void Incomplete(string reason) =>
+            c.Add("PDFA-FONT-CIDSET-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect CFF CIDSet of {name}: {reason}", clause, page);
+        try
+        {
+            var data = c.F.DecodeStream(program);
+            if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
+            var cids = CffGlyphNames.ReadCids(data);
+            var expected = new byte[(cids.Max() + 8) / 8];
+            foreach (var cid in cids) expected[cid / 8] |= (byte)(128 >> (cid % 8));
+            CidSetListing(c, cidSet, expected, name, page);
+        }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException
+            or InvalidOperationException or ArgumentException or IndexOutOfRangeException or KeyNotFoundException or OverflowException)
+        {
+            Incomplete(e.Message);
+        }
+    }
+
+    static void CidSetListing(ValidationContext c, PdfStream cidSet, byte[] expected, string name, int page)
+    {
+        var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+        var bitmap = c.F.DecodeStream(cidSet);
+        if (bitmap.Length > 1_048_576)
+        {
+            c.Add("PDFA-FONT-CIDSET-INCOMPLETE", ValidationSeverity.Error,
+                $"cannot completely inspect CIDSet of {name}: decoded CIDSet exceeds 1048576 bytes", clause, page);
+            return;
+        }
+        for (var i = 0; i < Math.Max(bitmap.Length, expected.Length); i++)
+        {
+            if ((i < bitmap.Length ? bitmap[i] : 0) == (i < expected.Length ? expected[i] : 0)) continue;
+            c.Add("PDFA-FONT-CIDSET-LIST", ValidationSeverity.Error,
+                $"CIDSet of {name} must identify exactly the CIDs defined by the font program and applicable CIDToGIDMap", clause, page);
+            return;
         }
     }
 

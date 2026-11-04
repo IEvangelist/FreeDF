@@ -94,6 +94,40 @@ public class CffGlyphNamesTests
             Assert.Throws<InvalidDataException>(() => CffGlyphNames.Read(Build(2, [0, 0, 34], prefix: prefix)));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void CidCharsetsUseCidsNotStringIdentifiers(int format)
+    {
+        var charset = format switch
+        {
+            0 => new byte[] { 0, 0, 1, 0, 41, 255, 255 },
+            1 => [1, 0, 1, 0, 0, 41, 0, 255, 255, 0],
+            _ => [2, 0, 1, 0, 0, 0, 41, 0, 0, 255, 255, 0, 0],
+        };
+        var data = Build(4, charset, prefix: [173, 174, 139, 12, 30]);
+        Assert.Equal(new[] { 0, 1, 41, 65535 }, CffGlyphNames.ReadCids(data));
+        Assert.Throws<InvalidDataException>(() => CffGlyphNames.Read(data));
+    }
+
+    [Fact]
+    public void CidMetadataRejectsDuplicatesPredefinedCharsetsAndInvalidRos()
+    {
+        foreach (var charset in new byte[][] { [0, 0, 0], [0, 0, 1, 0, 1] })
+            Assert.Throws<InvalidDataException>(() =>
+                CffGlyphNames.ReadCids(Build(charset.Length == 3 ? 2 : 3, charset, prefix: [173, 174, 139, 12, 30])));
+        foreach (var prefix in new byte[][]
+        {
+            [], [173, 174, 12, 30], [173, 174, 138, 12, 30], [173, 174, 139, 139, 12, 30],
+            [28, 255, 255, 174, 139, 12, 30], [28, 1, 135, 174, 139, 12, 30],
+            [173, 174, 139, 12, 30, 173, 174, 139, 12, 30],
+        })
+            Assert.Throws<InvalidDataException>(() => CffGlyphNames.ReadCids(Build(2, [0, 0, 1], prefix: prefix)));
+        Assert.Throws<InvalidDataException>(() =>
+            CffGlyphNames.ReadCids(Build(2, null, prefix: [173, 174, 139, 12, 30])));
+    }
+
     internal static byte[] Build(int glyphs, byte[]? charset, int predefined = 0, string[]? strings = null, byte[]? prefix = null)
     {
         prefix ??= [];

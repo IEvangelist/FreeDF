@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A raw CID-keyed CFF CIDSet completeness
+
+Embedded subset CIDFontType0 fonts with a raw CIDFontType0C program and
+CIDSet stream now compare the exact CIDs in the program's charset.
+The shared bounded Core reader distinguishes ROS-bearing CID charsets
+from glyph-name SIDs, supports custom formats 0/1/2, validates ROS string
+references and rejects duplicate CIDs or predefined CID charsets.
+The glyph-name API continues rejecting CID-keyed programs. Neither API
+interprets charstrings or establishes complete CFF/outline validity.
+The existing high-bit-first CIDSet comparison is shared with the
+TrueType paths, preserving their controls, limits and findings.
+
+ISO 32000-1 9.7.4.2 (PDF page 278) explicitly selects a CID-keyed CFF's
+GID through its charset; GIDs must not be mistaken for CIDs.
+The same clause requires CID 0, and Table 124 defines CIDSet bit order.
+The pinned profile commit `c4f57effb0d3618827c87bd71882930d752be6e3`
+supplies A1 6.3.5 test 3 and A2/3 6.2.11.4.2 test 2.
+Sixty clean listing controls reuse the retained positive Kozuka Mincho
+CID-keyed program with sparse CIDs, subset/plain names and ten bitmap
+variants. All 16 reference-negative controls now fail their exact rules.
+Of the 60 controls, 52 agree on exact rules and whole-file verdicts with
+veraPDF 1.30.3. Eight explicit disagreements retain the complete-defined-CID
+policy: A1 accepts some unused/extra-bit lists, and all three parts accept
+omitted CID 0. No clean keyed controls are excluded.
+
+FontTools 4.68.0 independently agrees on the exact ordered CIDs for five
+distinct retained raw CID-keyed programs, not just the one reused by
+these mutations. A separate Python set comparison checks every clean
+bitmap control. A name-keyed Type1C-to-CIDFontType0C transplant experiment
+has unrelated width failures and unexpected reference CID-list behavior;
+its 60 PDFs and reports remain separate, not claimed as clean positive
+evidence. Name-keyed inspection in this CIDFontType0C path explicitly
+reports incomplete rather than inferring a CID set. External fonts/PDFs
+remain private artifacts and are not bundled.
+
+The 133 authored validator cases and four added reader cases cover sparse
+CID 65535, all custom formats, unused/missing/extra bits, duplicate CID/ROS
+metadata, every truncation, unsupported name-keyed data and exact decoded
+font/bitmap byte boundaries. Fifty validator cases failed before wiring
+the new check. All 10914 full Release tests pass, zero failed/skipped;
+the solution builds with existing machine feed warnings unchanged.
+Prior Identity/kind and stream-map reference outcomes remain unchanged.
+Limits apply after existing stream decoding. Name-keyed CFF CIDFonts,
+OpenType wrappers, complete program/outline validity and used-glyph,
+width and Unicode completeness remain open. Historical corpus measurements
+and broad Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A stream-mapped TrueType CIDSet completeness
 
 The preceding raw TrueType CIDSet check now also handles resolved
