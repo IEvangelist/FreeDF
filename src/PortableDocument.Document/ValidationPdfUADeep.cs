@@ -163,6 +163,70 @@ internal static class PdfUADeepChecks
             c.Add("PDFUA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot inspect /Differences of {name}: non-array value or more than 10000 entries", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
     }
 
+    static int? LiteralCmapWMode(byte[] data, bool hasParent)
+    {
+        if (data.Length > 16 * 1024 * 1024) return null;
+        var lexer = new PdfLexer(data);
+        var mode = 0;
+        var defined = false;
+        var procedureDepth = 0;
+        var steps = 0;
+        while (true)
+        {
+            if (++steps > 1_000_000) return null;
+            lexer.SkipWhite();
+            if (lexer.Pos >= lexer.Length) return procedureDepth == 0 && (defined || !hasParent) ? mode : null;
+            var start = lexer.Pos;
+            var token = lexer.ReadObject(false);
+            if (lexer.Pos <= start || lexer.Pos > lexer.Length) return null;
+            if (token is PdfKeyword { Value: "{" })
+            {
+                if (++procedureDepth > 64) return null;
+            }
+            else if (token is PdfKeyword { Value: "}" })
+            {
+                if (--procedureDepth < 0) return null;
+            }
+            else if (token is PdfKeyword { Value: "usecmap" }) hasParent = true;
+            // CMap programs use PostScript names, not PDF's #xx name escapes.
+            else if (token is PdfName { Value: "WMode" } && data.AsSpan(start, lexer.Pos - start).SequenceEqual("/WMode"u8))
+            {
+                if (procedureDepth != 0) return null;
+                lexer.SkipWhite();
+                var valueStart = lexer.Pos;
+                var value = lexer.ReadObject(false);
+                var valueEnd = lexer.Pos;
+                if (value is not PdfInteger { Value: 0 or 1 } integer || valueEnd > data.Length
+                    || valueEnd <= valueStart) return null;
+                var literal = System.Text.Encoding.ASCII.GetString(data, valueStart, valueEnd - valueStart);
+                if (literal is not ("0" or "1" or "+0" or "+1")) return null;
+                if (lexer.ReadObject(false) is not PdfKeyword { Value: "def" }) return null;
+                mode = (int)integer.Value;
+                defined = true;
+            }
+        }
+    }
+
+    static void CmapWritingMode(ValidationContext c, ValidationContext.FontUse use, PdfStream cmap)
+    {
+        var f = c.F;
+        var name = FontChecks.Name(f, use.Font);
+        var dictionary = f.Resolve(cmap.Dict.Get("WMode"));
+        var dictionaryMode = dictionary is null or PdfNull ? 0
+            : dictionary is PdfInteger { Value: 0 or 1 } integer ? (int?)integer.Value : null;
+        int? programMode;
+        try { programMode = LiteralCmapWMode(f.DecodeStream(cmap), f.Resolve(cmap.Dict.Get("UseCMap")) is not (null or PdfNull)); }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException)
+        {
+            c.Add("PDFUA-FONT-CMAP-WMODE-INCOMPLETE", ValidationSeverity.Error, $"cannot inspect WMode of embedded CMap of {name}: {e.Message}", Clause(c, "7.21.3.3", "8.4.5.4"), use.Page);
+            return;
+        }
+        if (dictionaryMode is null || programMode is null)
+            c.Add("PDFUA-FONT-CMAP-WMODE-INCOMPLETE", ValidationSeverity.Error, $"WMode validation of embedded CMap of {name} is incomplete: invalid dictionary value, non-literal/procedural or inherited definition, malformed program or scan limit", Clause(c, "7.21.3.3", "8.4.5.4"), use.Page);
+        else if (dictionaryMode != programMode)
+            c.Add("PDFUA-FONT-CMAP-WMODE", ValidationSeverity.Error, $"WMode of embedded CMap of {name} ({programMode}) differs from its stream dictionary ({dictionaryMode})", Clause(c, "7.21.3.3", "8.4.5.4"), use.Page);
+    }
+
     /// <summary>ISO 14289-1 7.21.3.1/7.21.3.3 (CMaps and CIDSystemInfo) and 7.21.6 (TrueType encodings); see veraPDF PDFUA-1 7.21.3.1-1, 7.21.3.3-1/2, 7.21.6-2/3.</summary>
     static void CompositeAndTrueTypeEncoding(ValidationContext c, ValidationContext.FontUse use, PdfDictionary font, string? subtype)
     {
@@ -199,13 +263,7 @@ internal static class PdfUADeepChecks
                 var cmapInfo = SystemInfoOf(f, cmap.Dict);
                 if (cmapInfo.Registry != cidInfo.Registry || cmapInfo.Ordering != cidInfo.Ordering || cidInfo.Supplement > cmapInfo.Supplement)
                     c.Add("PDFUA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"CIDSystemInfo of {name} and its embedded CMap differ (Registry/Ordering must match; CIDFont Supplement must not exceed the CMap's)", Clause(c, "7.21.3.1", "8.8"), use.Page);
-                if (f.Resolve(cmap.Dict.Get("WMode")).AsNumber() is { } dictWMode)
-                {
-                    var text = System.Text.Encoding.Latin1.GetString(f.DecodeStream(cmap));
-                    var m = System.Text.RegularExpressions.Regex.Match(text, @"/WMode\s+(\d+)\s+def");
-                    if (m.Success && int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) != (int)dictWMode)
-                        c.Add("PDFUA-FONT-CMAP-WMODE", ValidationSeverity.Error, $"WMode of the embedded CMap of {name} differs from the CMap stream dictionary", Clause(c, "7.21.3.3", "8.8"), use.Page);
-                }
+                CmapWritingMode(c, use, cmap);
                 break;
         }
     }

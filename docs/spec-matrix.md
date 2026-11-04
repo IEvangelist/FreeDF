@@ -40,6 +40,11 @@ zero false positives/exclusions. The shared official AGL data now resides in
 Core; extraction's algorithmic-name support is unchanged. Twenty exact-rule
 controls agree; glyph lookup and embedded-program requirements remain partial.
 
+The [literal CMap WMode comparison](spec-backlog.md#2026-11-04-pdfua-literal-cmap-writing-modes)
+replaces regex matching with bounded token inspection, defaults and explicit
+incompleteness. Twenty-eight exact-rule reference controls agree; all 435
+corpus verdicts remain unchanged. General PostScript/inheritance is not evaluated.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded

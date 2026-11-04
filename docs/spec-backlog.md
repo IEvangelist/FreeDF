@@ -250,6 +250,41 @@ corrections, the full Release suite passes 4164/4164 (zero skipped), the
 solution build has zero errors/two machine-feed NU1507 warnings, and all
 15 comparison-tool regressions pass.
 
+## 2026-11-04 PDF/UA literal CMap writing modes
+
+The embedded Type0 encoding-CMap `/WMode` comparison no longer uses a regex.
+A bounded token scan reads literal `/WMode 0 def` or `/WMode 1 def` definitions
+(including `+0`/`+1`), ignores comments/strings/array literals, and uses the
+last definition. Missing/null dictionary values default to zero, as specified
+by ISO 32000-1 Table 120 (printed page 277, PDF page 285). With no inherited
+CMap or explicit program definition, the program default is also zero.
+PostScript names are literal: `/W#4Dode` is not `/WMode`, unlike PDF name
+escape syntax. No external CMap or PostScript code is executed.
+
+`PDFUA-FONT-CMAP-WMODE` remains the mismatch finding, now with the exact UA-2
+8.4.5.4 citation (UA-1 7.21.3.3, both profile test 2).
+`PDFUA-FONT-CMAP-WMODE-INCOMPLETE` is an Error for invalid dictionary values,
+non-literal/procedural definitions, inherited mode without an explicit
+override, malformed tokenization, unsupported filters, or the 16 MiB /
+one-million-step / procedure-depth-64 limits. The scanner is not an
+arbitrary PostScript interpreter, full CMap evaluator or inheritance resolver.
+
+Eighty authored cases cover lexical definitions, redefinitions, dictionary
+defaults/indirection, false matches and explicit incompleteness/scan limits.
+Forty-six of the initial 78 cases fail before the fix. Twenty-eight mutated
+public-font controls independently agree with veraPDF 1.30.3 on exact test 2:
+14 rule negatives and 14 rule positives, including signs, comments, strings,
+dictionary/program absence and final-definition precedence. These controls
+do not establish whole-file conformance. All 435 verified corpus verdicts
+remain unchanged relative to the Differences checkpoint: 9 UA-1 / 5 UA-2
+misses, zero false positives/exclusions, and no incomplete WMode scans.
+Raw reference reports, mutations and hashes remain session artifacts.
+Actual glyph mappings, program semantics and other open parity gaps remain.
+
+The integrated Release suite passes 4244/4244, zero skipped; the solution
+build has zero errors/two machine-feed NU1507 warnings, and all 15
+comparison-tool regressions pass.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects
