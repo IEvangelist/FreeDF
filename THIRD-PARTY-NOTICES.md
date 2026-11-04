@@ -36,6 +36,13 @@ were cross-checked against the veraPDF Consortium's
 scanner and UTF-16BE destination inspection are independently implemented;
 unused mappings are also checked, unlike the reference's used-glyph scope.
 
+The PDF/UA-1 supplied subset CharSet/CIDSet requirements were cross-checked
+against the same CC BY 4.0 PDF/UA-1 profile, 7.21.4.2 tests 1/2.
+`ValidationPdfUADeep.cs` reuses independently implemented PDF/A listing
+inspection in `ValidationPdfADeep.cs`; PDF/UA-2 is not given these rules.
+The retained maxp-derived glyph-slot policy and its sparse-font reference
+disagreement are documented in the specification backlog.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

@@ -183,45 +183,52 @@ internal static partial class PdfADeepChecks
             if (c.Part == 1 && subtype == "Type1" && SubsetPrefix().IsMatch(name) && FontChecks.IsEmbedded(f, font)
                 && !(f.Resolve(font.Get("FontDescriptor")) is PdfDictionary fd && f.Resolve(fd.Get("CharSet")) is PdfString))
                 c.Add("PDFA1-FONT-CHARSET", ValidationSeverity.Error, $"subset font {name} has no /CharSet string in its descriptor", "ISO 19005-1 6.3.5", u.Page);
-            if (subtype == "Type1" && SubsetPrefix().IsMatch(name)
-                && f.Resolve(font.Get("FontDescriptor")) is PdfDictionary type1Descriptor
-                && f.Resolve(type1Descriptor.Get("CharSet")) is PdfString charset
-                && f.Resolve(type1Descriptor.Get("FontFile3")) is PdfStream type1Program
-                && f.Resolve(type1Program.Dict.Get("Subtype")) is PdfName { Value: "Type1C" or "OpenType" } programType)
-                Type1CCharSet(c, type1Program, charset, name, u.Page, programType.Value == "OpenType");
+            SubsetListings(c, font, subtype, name, u.Page);
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid)
             {
                 if (c.Part == 1 && SubsetPrefix().IsMatch(FontChecks.Name(f, cid)) && FontChecks.IsEmbedded(f, font)
                     && !(f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cd && f.Resolve(cd.Get("CIDSet")) is PdfStream))
                     c.Add("PDFA1-FONT-CIDSET", ValidationSeverity.Error, $"subset CIDFont {FontChecks.Name(f, cid)} has no /CIDSet stream in its descriptor", "ISO 19005-1 6.3.5", u.Page);
-                if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2"
-                    && SubsetPrefix().IsMatch(FontChecks.Name(f, cid))
-                    && f.Resolve(cid.Get("CIDToGIDMap")) is { } cidMapping
-                    && cidMapping is (PdfStream or PdfName { Value: "Identity" })
-                    && f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cidDescriptor
-                    && f.Resolve(cidDescriptor.Get("CIDSet")) is PdfStream cidSet)
-                {
-                    if (FontChecks.TrueTypeProgram(f, cidDescriptor) is { } cidProgram)
-                        TrueTypeCidSet(c, cidProgram, cidSet, cidMapping, FontChecks.Name(f, cid), u.Page);
-                }
-                if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType0"
-                    && SubsetPrefix().IsMatch(FontChecks.Name(f, cid))
-                    && f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cffDescriptor
-                    && f.Resolve(cffDescriptor.Get("CIDSet")) is PdfStream cffSet
-                    && f.Resolve(cffDescriptor.Get("FontFile3")) is PdfStream cffProgram
-                    && f.Resolve(cffProgram.Dict.Get("Subtype")) is PdfName { Value: "CIDFontType0C" or "OpenType" } cffType)
-                    CffCidSet(c, cffProgram, cffSet, FontChecks.Name(f, cid), u.Page, cffType.Value == "OpenType");
                 if (f.Resolve(font.Get("Encoding")) is PdfStream cmap && SystemInfo(f, cmap.Dict) is { } a && SystemInfo(f, cid) is { } b && a != b)
                     c.Add("PDFA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"embedded CMap of {name} has CIDSystemInfo {a} but the CIDFont has {b}", Clause(c, "6.3.3.1", "6.2.11.3.3", "6.2.11.3.3"), u.Page);
             }
         }
     }
 
+    internal static void SubsetListings(ValidationContext c, PdfDictionary font, string? subtype, string name, int page)
+    {
+        var f = c.F;
+        if (subtype == "Type1" && SubsetPrefix().IsMatch(name)
+            && f.Resolve(font.Get("FontDescriptor")) is PdfDictionary type1Descriptor
+            && f.Resolve(type1Descriptor.Get("CharSet")) is PdfString charset
+            && f.Resolve(type1Descriptor.Get("FontFile3")) is PdfStream type1Program
+            && f.Resolve(type1Program.Dict.Get("Subtype")) is PdfName { Value: "Type1C" or "OpenType" } programType)
+            Type1CCharSet(c, type1Program, charset, name, page, programType.Value == "OpenType");
+        if (subtype != "Type0" || f.Resolve(font.Get("DescendantFonts")) is not PdfArray { Count: > 0 } descendants
+            || f.Resolve(descendants[0]) is not PdfDictionary cid || !SubsetPrefix().IsMatch(FontChecks.Name(f, cid))
+            || f.Resolve(cid.Get("FontDescriptor")) is not PdfDictionary descriptor
+            || f.Resolve(descriptor.Get("CIDSet")) is not PdfStream cidSet) return;
+        if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2"
+            && f.Resolve(cid.Get("CIDToGIDMap")) is (PdfStream or PdfName { Value: "Identity" }) and { } mapping
+            && FontChecks.TrueTypeProgram(f, descriptor) is { } program)
+            TrueTypeCidSet(c, program, cidSet, mapping, FontChecks.Name(f, cid), page);
+        if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType0"
+            && f.Resolve(descriptor.Get("FontFile3")) is PdfStream cff
+            && f.Resolve(cff.Dict.Get("Subtype")) is PdfName { Value: "CIDFontType0C" or "OpenType" } type)
+            CffCidSet(c, cff, cidSet, FontChecks.Name(f, cid), page, type.Value == "OpenType");
+    }
+
+    static string SubsetClause(ValidationContext c) => c.Profile == PdfValidationProfile.PdfUA1
+        ? "ISO 14289-1 7.21.4.2" : Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+
+    static string SubsetRule(ValidationContext c, string suffix) =>
+        (c.Profile == PdfValidationProfile.PdfUA1 ? "PDFUA-FONT-" : "PDFA-FONT-") + suffix;
+
     static void TrueTypeCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, PdfObject mapping, string name, int page)
     {
-        var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+        var clause = SubsetClause(c);
         void Incomplete(string reason) =>
-            c.Add("PDFA-FONT-CIDSET-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect TrueType CIDSet of {name}: {reason}", clause, page);
+            c.Add(SubsetRule(c, "CIDSET-INCOMPLETE"), ValidationSeverity.Error, $"cannot completely inspect TrueType CIDSet of {name}: {reason}", clause, page);
         try
         {
             var data = c.F.DecodeStream(program);
@@ -255,9 +262,9 @@ internal static partial class PdfADeepChecks
 
     static void CffCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, string name, int page, bool openType)
     {
-        var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+        var clause = SubsetClause(c);
         void Incomplete(string reason) =>
-            c.Add("PDFA-FONT-CIDSET-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect CFF CIDSet of {name}: {reason}", clause, page);
+            c.Add(SubsetRule(c, "CIDSET-INCOMPLETE"), ValidationSeverity.Error, $"cannot completely inspect CFF CIDSet of {name}: {reason}", clause, page);
         try
         {
             var data = c.F.DecodeStream(program);
@@ -277,18 +284,18 @@ internal static partial class PdfADeepChecks
 
     static void CidSetListing(ValidationContext c, PdfStream cidSet, byte[] expected, string name, int page)
     {
-        var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+        var clause = SubsetClause(c);
         var bitmap = c.F.DecodeStream(cidSet);
         if (bitmap.Length > 1_048_576)
         {
-            c.Add("PDFA-FONT-CIDSET-INCOMPLETE", ValidationSeverity.Error,
+            c.Add(SubsetRule(c, "CIDSET-INCOMPLETE"), ValidationSeverity.Error,
                 $"cannot completely inspect CIDSet of {name}: decoded CIDSet exceeds 1048576 bytes", clause, page);
             return;
         }
         for (var i = 0; i < Math.Max(bitmap.Length, expected.Length); i++)
         {
             if ((i < bitmap.Length ? bitmap[i] : 0) == (i < expected.Length ? expected[i] : 0)) continue;
-            c.Add("PDFA-FONT-CIDSET-LIST", ValidationSeverity.Error,
+            c.Add(SubsetRule(c, "CIDSET-LIST"), ValidationSeverity.Error,
                 $"CIDSet of {name} must identify exactly the CIDs defined by the font program and applicable CIDToGIDMap", clause, page);
             return;
         }
@@ -296,11 +303,11 @@ internal static partial class PdfADeepChecks
 
     static void Type1CCharSet(ValidationContext c, PdfStream program, PdfString charset, string name, int page, bool openType)
     {
-        var clause = Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+        var clause = SubsetClause(c);
         void Incomplete(string reason) =>
-            c.Add("PDFA-FONT-CHARSET-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect Type1C CharSet of {name}: {reason}", clause, page);
+            c.Add(SubsetRule(c, "CHARSET-INCOMPLETE"), ValidationSeverity.Error, $"cannot completely inspect Type1C CharSet of {name}: {reason}", clause, page);
         void Invalid(string reason) =>
-            c.Add("PDFA-FONT-CHARSET-LIST", ValidationSeverity.Error, $"Type1C CharSet of {name} {reason}", clause, page);
+            c.Add(SubsetRule(c, "CHARSET-LIST"), ValidationSeverity.Error, $"Type1C CharSet of {name} {reason}", clause, page);
         try
         {
             if (charset.Bytes.Length > 1_048_576) { Incomplete("CharSet exceeds 1048576 bytes"); return; }

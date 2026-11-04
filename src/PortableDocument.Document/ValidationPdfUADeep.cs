@@ -233,6 +233,7 @@ internal static class PdfUADeepChecks
                 && f.Resolve(cid.Get("CIDToGIDMap")) is not (PdfStream or PdfName { Value: "Identity" }))
                 c.Add("PDFUA-FONT-CIDTOGID", ValidationSeverity.Error, $"embedded CIDFontType2 {FontChecks.Name(f, cid)} requires /CIDToGIDMap to be a stream or /Identity", Clause(c, "7.21.3.2", "8.4.5.3.2"), u.Page);
             CompositeAndTrueTypeEncoding(c, u, font, subtype);
+            if (c.Part == 1) PdfADeepChecks.SubsetListings(c, font, subtype, FontChecks.Name(f, font), u.Page);
             if (f.Resolve(font.Get("ToUnicode")) is PdfStream toUnicode)
             {
                 ToUnicodeValues(c, u, toUnicode);

@@ -4,6 +4,60 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA-1 supplied subset font listings
+
+PDF/UA-1 now inspects supplied CharSet and CIDSet listings for embedded
+subset fonts through the existing PDF/A CFF/TrueType inspection helpers.
+The requirement provenance is the published veraPDF Consortium v1.30.3
+[UA-1 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-1.xml)
+7.21.4.2 tests 1/2, under CC BY 4.0. This is profile cross-checking,
+not independent access to the full ISO PDF/UA clause text. The parsers
+are independently implemented; no external PDF, font or profile XML
+is bundled.
+
+Type1 FontFile3 Type1C/OpenType CharSet compares glyph names excluding
+.notdef, accepting reordered/duplicate names and valid PDF name escapes.
+CIDFontType0 raw/OpenType CFF compares actual charset CIDs, including
+name-keyed CFF's sequential GIDs. CIDFontType2 raw/OpenType glyf follows
+resolved Identity or supported CIDToGIDMap streams. Missing and extra
+entries produce `PDFUA-FONT-CHARSET-LIST` or `PDFUA-FONT-CIDSET-LIST`
+Errors; unsupported/malformed inspected metadata and bounds produce the
+corresponding `-INCOMPLETE` Error. Existing decoding, parser bounds and
+PDF/A behavior are retained rather than duplicated. Absent listings and
+non-subset fonts are not made subject to new presence requirements.
+PDF/UA-2 receives no subset-listing rule.
+
+Twenty-four mutated real-font controls use public name-keyed CFF,
+CID-keyed CFF and TrueType programs. FontTools independently enumerates
+their names/CIDs/glyph counts; Python set/bitmap checks verify the saved
+controls. Twenty agree with veraPDF 1.30.3 on exact rule and whole-file
+verdict (12 clean positives, eight negatives). Three malformed-program
+controls are explicitly incomplete in FreeDF and fail a different
+embedding rule in the reference; these are not exact-rule agreements.
+One disagreement is retained explicitly: the shared maxp/Identity policy
+requires every glyph slot, while veraPDF accepts omission of unused empty
+slot 1531 in the sparse FreeMonoBold program. FreeDF rejects it; this is
+not counted as independent conformance evidence. General sparse-glyph
+interpretation remains a limit, not a proven normative disagreement.
+
+A fresh FreeDF pass over all 435 retained public files (870 UA profile
+results), compared with the retained reference and prior output, closes
+exactly three UA-1 file-verdict misses: both CharSet cases and the CIDSet
+case. Only those three finding sets change; all UA-2 rows are unchanged.
+**3 UA-1 / 2 UA-2 misses remain**, with zero reference-positive
+regressions, internal errors or new subset-incomplete findings.
+Eighteen of the initial 56 authored controls failed before implementation;
+the final 66 include actual CID charsets, zero-valued mappings,
+direct/indirect entries, optional absence and malformed programs.
+The full Release suite passes 12245/12245 and the solution builds with
+the same two machine-feed NU1507 warnings.
+
+Legacy Type1 FontFile programs, unsupported font/mapping shapes, complete
+font/outline validity, sparse-slot semantics, full metrics, used-glyph
+validity and general PDF/UA parity remain open. The PDF/A helpers' decoded
+size limits apply after existing stream decoding, not through a new
+bounded streaming decompressor. Historical measurements are preserved.
+
 ## 2026-11-04 PDF/UA forbidden ToUnicode destinations
 
 PDF/UA-1 and UA-2 now reject effective literal ToUnicode destinations

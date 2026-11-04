@@ -326,6 +326,18 @@ positives/two U+0000 negatives), independent padding/UTF-16BE checks and
 Complete glyph mapping, UTF-16/CMap validity, metrics and
 overall font parity remain partial; dated earlier totals are preserved.
 
+The [PDF/UA-1 supplied subset-listing slice](spec-backlog.md#2026-11-04-pdfua-1-supplied-subset-font-listings)
+reuses the PDF/A CFF/TrueType inspectors without adding UA-2 requirements.
+Twenty of 24 real-font controls agree on exact rule and whole-file verdict;
+three malformed programs are explicitly incomplete, and one sparse
+TrueType empty-slot omission exposes a retained maxp-policy disagreement.
+A fresh 435-file/870-result FreeDF run closes exactly the three UA-1
+subset-listing misses: **3 UA-1 / 2 UA-2 misses remain**, zero
+reference-positive regressions, internal errors or new subset-incomplete
+findings. All UA-2 findings/verdicts are unchanged. The full Release suite
+passes 12245/12245. Sparse-slot semantics, legacy Type1 programs,
+unsupported mappings and complete font/glyph validity remain partial.
+
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
 adds strict A1 parameter/frame/tag inspection while preserving tolerant
 reader recovery. All 30 valid encodings have independent byte checks;
