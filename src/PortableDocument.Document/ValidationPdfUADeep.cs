@@ -100,6 +100,9 @@ internal static class PdfUADeepChecks
                     c.Add("PDFUA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"CIDSystemInfo of {name} ({cidInfo.Registry}-{cidInfo.Ordering}) does not match predefined CMap /{cmapName.Value} (Adobe-{ordering})", Clause(c, "7.21.3.1", "8.8"), use.Page);
                 break;
             case PdfStream cmap:
+                if (f.Resolve(cmap.Dict.Get("UseCMap")) is PdfName parentCMap
+                    && parentCMap.Value is not ("Identity-H" or "Identity-V") && !PredefinedCMapOrdering.ContainsKey(parentCMap.Value))
+                    c.Add("PDFUA-FONT-CMAP-REFERENCE", ValidationSeverity.Error, $"CMap of {name} references non-predefined /{parentCMap.Value} through /UseCMap", Clause(c, "7.21.3.3", "8.4.5.4"), use.Page);
                 var cmapInfo = SystemInfoOf(f, cmap.Dict);
                 if (cmapInfo.Registry != cidInfo.Registry || cmapInfo.Ordering != cidInfo.Ordering || cidInfo.Supplement > cmapInfo.Supplement)
                     c.Add("PDFUA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"CIDSystemInfo of {name} and its embedded CMap differ (Registry/Ordering must match; CIDFont Supplement must not exceed the CMap's)", Clause(c, "7.21.3.1", "8.8"), use.Page);

@@ -18,6 +18,11 @@ results against the same retained reference reports give 12 UA-1 and 7 UA-2
 misses, zero false positives/exclusions, with exactly those four verdicts
 changed. This is entry-type validation, not complete font/glyph conformance.
 
+The [named encoding CMap reference check](spec-backlog.md#2026-11-04-pdfua-named-encoding-cmap-references)
+closes two more public misses with no positive changes: 11 UA-1 / 6 UA-2
+misses, zero false positives/exclusions. This covers named dictionary parents,
+not program-level `usecmap`, stream parents or complete CMap validity.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded

@@ -107,6 +107,31 @@ Synthetic font streams exercise the validator and are not conformant real
 fonts. The baseline 14/9/9 totals above remain dated evidence; remaining font,
 widget, table, grouping/sequence and semantic gaps stay open under #11.
 
+## 2026-11-04 PDF/UA named encoding CMap references
+
+`PDFUA-FONT-CMAP-REFERENCE` rejects a non-predefined name in `/UseCMap`
+of an embedded Type0 encoding CMap dictionary. Indirect names are resolved;
+Identity-H/V and the existing PDF standard CMap vocabulary remain accepted.
+Clauses are ISO 14289-1 7.21.3.3 and ISO 14289-2 8.4.5.4 (profile test 3).
+This is not a general CMap evaluator: program-level `usecmap`, stream-valued
+parents, ToUnicode references, inheritance and malformed-reference completeness
+remain open. No external CMap is loaded or executed.
+
+All four pinned public `t03` CMap controls agree on the exact veraPDF rule
+(two negatives/two positives, zero excluded). Both former missed negatives
+reference `/Adobe-Korea1-2`; the positives reference `/H`. Forty-eight
+authored cases cover eight accepted names and four rejected names, both UA
+profiles and direct/indirect representation; sixteen fail before the fix.
+Their synthetic CMap/font data establishes only the selected check.
+
+Fresh results for all 435 verified corpus files against the retained explicit
+reference profiles change exactly these two verdicts relative to the CIDFont
+checkpoint: UA-1 has 145 both-fail, 141 both-pass and 11 misses; both UA-2
+profiles have 78 both-fail, 54 both-pass and 6 misses. No false positives or
+exclusions arise, and no positive changes. Family-rule overlap mappings in
+`ua_crosscheck.py` name the new finding, not exhaustive predicate coverage.
+Earlier measurements remain dated; remaining scope stays open under #11.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects
