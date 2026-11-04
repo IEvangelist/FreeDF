@@ -36,7 +36,20 @@ public class PdfACidToGidTests
     public void EmbeddedType2RequiresIdentityOrStreamEvenForInvisibleText(PdfValidationProfile profile,
         bool embedded, string subtype, int mode, string value, string target, bool invalid)
     {
-        var doc = PdfDocument.Load(ObjPdf.Build(
+        var report = PdfValidator.Validate(Document(embedded, subtype, mode, value, target), profile);
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.Equal(invalid, report.Has("PDFA-FONT-CIDTOGID"));
+        Assert.All(report.Findings.Where(f => f.RuleId == "PDFA-FONT-CIDTOGID"), finding =>
+        {
+            Assert.Equal(ValidationSeverity.Error, finding.Severity);
+            Assert.Equal(0, finding.PageIndex);
+            Assert.Equal(profile == PdfValidationProfile.PdfA2b
+                ? "ISO 19005-2 6.2.11.3.2" : "ISO 19005-3 6.2.11.3.2", finding.Clause);
+        });
+    }
+
+    internal static PdfDocument Document(bool embedded, string subtype, int mode, string value, string target) =>
+        PdfDocument.Load(ObjPdf.Build(
             "<< /Type /Catalog /Pages 2 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
@@ -48,15 +61,4 @@ public class PdfACidToGidTests
             ObjPdf.Stream("synthetic font program"),
             target,
             "9 0 R"));
-        var report = PdfValidator.Validate(doc, profile);
-        Assert.False(report.Has("VALIDATION-INTERNAL"));
-        Assert.Equal(invalid, report.Has("PDFA-FONT-CIDTOGID"));
-        Assert.All(report.Findings.Where(f => f.RuleId == "PDFA-FONT-CIDTOGID"), finding =>
-        {
-            Assert.Equal(ValidationSeverity.Error, finding.Severity);
-            Assert.Equal(0, finding.PageIndex);
-            Assert.Equal(profile == PdfValidationProfile.PdfA2b
-                ? "ISO 19005-2 6.2.11.3.2" : "ISO 19005-3 6.2.11.3.2", finding.Clause);
-        });
-    }
 }

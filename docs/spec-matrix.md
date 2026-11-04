@@ -295,6 +295,20 @@ All 144 clean independent controls agree on exact rules and whole-file verdicts
 Focused integration passes 8523 cases; public UA file verdicts remain unchanged.
 Glyph lookup, mapping/width agreement and full font validity remain open.
 
+The [A1 rendering-aware CID mapping correction](spec-backlog.md#2026-11-04-pdfa-1-rendering-aware-cid-mapping-entries)
+checks resolved stream/Identity kinds under 6.3.3.2 while preserving the
+mode-3 exemption and A2/3's unchanged policy. Font use follows Tf/gs,
+q/Q, inherited/local Form state, appearances and shared pages; later
+rendered uses cannot be masked by earlier invisible ones. Strict A1 Flate
+inspection and explicit incomplete errors prevent failed or unsupported
+scans from proving an exemption. Of 51 independent controls, 48 agree
+on exact rules and whole-file verdicts (24 positives/24 negatives);
+three accepted reference controls with later rendered use remain explicit
+normative disagreements. This closes 23 reference negatives and removes
+one old false positive. All 11800 Release tests pass. Unsupported execution/
+decoding surfaces, embedding exemptions and full glyph/program validity
+remain partial; historical corpus totals are not replaced.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

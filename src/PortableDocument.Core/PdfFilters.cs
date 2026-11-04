@@ -33,6 +33,10 @@ public static class PdfFilters
 
     /// <summary>Decodes until an image codec filter is reached; returns the remaining image filter name, if any.</summary>
     public static (byte[] Data, string? ImageFilter, PdfDictionary? ImageParms) Decode(byte[] raw, List<(string Name, PdfDictionary? Parms)> filters, Func<PdfObject?, PdfObject?> resolve)
+        => Decode(raw, filters, resolve, strictFlate: false);
+
+    internal static (byte[] Data, string? ImageFilter, PdfDictionary? ImageParms) Decode(byte[] raw,
+        List<(string Name, PdfDictionary? Parms)> filters, Func<PdfObject?, PdfObject?> resolve, bool strictFlate)
     {
         var data = raw;
         foreach (var (name, parms) in filters)
@@ -40,7 +44,7 @@ public static class PdfFilters
             if (ImageCodecs.Contains(name)) return (data, name, parms);
             data = name switch
             {
-                "FlateDecode" => Predict(Flate(data), parms, resolve),
+                "FlateDecode" => Predict(strictFlate ? StrictFlate(data) : Flate(data), parms, resolve),
                 "LZWDecode" => Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
                 "ASCIIHexDecode" => AsciiHex(data),
                 "ASCII85Decode" => Ascii85(data),
@@ -87,6 +91,26 @@ public static class PdfFilters
             catch (Exception e) when (e is InvalidDataException or IOException) { }
         }
         return output.ToArray();
+    }
+
+    static byte[] StrictFlate(byte[] src)
+    {
+        if (src.Length < 6 || (src[0] & 15) != 8 || src[0] >> 4 > 7
+            || (src[0] * 256 + src[1]) % 31 != 0 || (src[1] & 32) != 0)
+            throw new InvalidDataException("Invalid zlib header in content stream");
+        using var output = new MemoryStream();
+        using (var z = new ZLibStream(new MemoryStream(src), CompressionMode.Decompress))
+            InflateInto(z, output);
+        var decoded = output.ToArray();
+        uint a = 1, b = 0;
+        foreach (var value in decoded)
+        {
+            a = (a + value) % 65521;
+            b = (b + a) % 65521;
+        }
+        if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(src.AsSpan(src.Length - 4)) != (b << 16 | a))
+            throw new InvalidDataException("Incomplete or corrupt zlib content stream");
+        return decoded;
     }
 
     public static byte[] DeflateEncode(byte[] data)

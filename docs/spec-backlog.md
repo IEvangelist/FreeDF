@@ -4,6 +4,62 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-1 rendering-aware CID mapping entries
+
+Embedded CIDFontType2 fonts used for rendering now require a resolved
+CIDToGIDMap stream or Identity name under ISO 19005-1 6.3.3.2, not the
+previous 6.3.5 citation. Direct/indirect null, other names, wrong kinds and
+cyclic references no longer satisfy the entry requirement. The mode-3
+exemption is preserved: resource presence or Tf alone does not establish
+rendered use. Every valid text-showing operator counts, including empty
+strings/arrays; mode 7 is not exempt. A2/3 still require the entry even
+for mode-3-only text. This does not change embedding-policy exemptions.
+
+The existing bounded content scanner tracks Tf and ExtGState Font,
+q/Q restoration, Form-local and inherited font/rendering state, annotation
+appearances and shared fonts across pages. Form memoization includes the
+inherited font, and a later rendered use cannot be hidden by an earlier
+invisible use. Findings identify the first observed rendering page.
+Resource-based font discovery remains in place for other checks.
+
+The ordinary decoder intentionally recovers partial Flate output, which
+cannot prove the exemption. An internal, A1-only path verifies the zlib
+header and Adler-32 checksum without changing the existing public decoder
+or normal reader recovery. Decode failures emit an explicit content-scan
+Error, not only an internal Warning. Invalid mapping candidates whose
+exemption cannot be established receive `PDFA-FONT-USAGE-INCOMPLETE`.
+Malformed/limited scans, unresolved font state, Form cycles/depth limits,
+heuristic inline-image skipping, selected tiling patterns, rendered Type3
+procedures, non-Flate filters, ignored/unsupported DecodeParms shapes and
+predictors other than 1 do not silently
+establish that exemption. Complete interpretation of these deferred
+surfaces is not claimed; already valid mapping entries need no exemption.
+
+The pinned veraPDF 1.30.3 PDF/A-1 profile describes the rendering requirement
+and mode-3 exemption in clause 6.3.3.2 test 1. Independent controls preserve
+the clean A1 metadata, embedded Liberation Sans program, complete CIDSet,
+actual CID 36 widths and device-independent colour. Twenty-six entry-kind/
+mode controls agree on exact rules and whole-file verdicts. Twenty-five
+additional text-state/Form/appearance controls give 22 further agreements.
+Together these are 24 clean agreed positives and 24 agreed negatives,
+including 23 reference negatives newly rejected and one old false positive
+removed. Other profiles' finding IDs/clauses and verdicts are unchanged.
+
+Three reference disagreements remain explicit, with no collateral failures
+or excluded controls: the reference accepts a font first shown invisibly
+then rendered after Tr or Q, and the same Form invoked under two different
+inherited fonts. FreeDF rejects the later rendered use of the invalid map,
+as required by the rendering condition; reference acceptance is not treated
+as evidence that such a use is exempt.
+
+The initial 144 authored cases had 34 baseline failures. Follow-up decode,
+empty-text, shared-page and unsupported-surface controls bring the total
+to 167. The complete Release suite passes 11800 cases, zero failed/skipped;
+the solution builds with existing machine source warnings unchanged.
+No external fonts/PDFs are bundled. These controls reuse one real program,
+not 51 independent fonts. Full glyph-map/width/Unicode validity and complete
+font/outline validity remain open; historical corpus totals are unchanged.
+
 ## 2026-11-04 Differences Unicode cmap prerequisite
 
 Embedded non-symbolic simple-TrueType fonts defining a Differences array
