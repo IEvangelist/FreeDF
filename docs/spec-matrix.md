@@ -91,6 +91,13 @@ exact-rule real-font controls agree; all 435 public UA verdicts and finding
 ID sets are unchanged. Embedded (3,1) cmap and glyph-use requirements remain
 open; this is not complete font conformance.
 
+The [PDF/A symbolic cmap record check](spec-backlog.md#2026-11-04-pdfa-symbolic-truetype-cmap-records)
+requires one encoding in PDF/A-1 or one/Symbol (3,0) in PDF/A-2/3,
+reusing the unchanged bounded PDF/UA scanner. Fifteen real-font controls
+agree on exact predicates; malformed/unsupported headers produce explicit
+incomplete Errors. Subtable, glyph, non-symbolic and FontFile3 completeness
+remain open.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

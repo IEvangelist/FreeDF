@@ -200,6 +200,7 @@ internal static partial class PdfADeepChecks
         var symbolic = ((int)flags & 4) != 0;
         var enc = f.Resolve(font.Get("Encoding"));
         var clause = Clause(c, "6.3.7", "6.2.11.6", "6.2.11.6");
+        if (symbolic) SymbolicTrueTypeCmap(c, desc, name, page, clause);
         if (symbolic && enc is not null and not PdfNull)
             c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", clause, page);
         else if (!symbolic)
@@ -220,6 +221,25 @@ internal static partial class PdfADeepChecks
                     c.Add("PDFA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect /Differences of {name}: {reason}", clause, page);
             }
         }
+    }
+
+    static void SymbolicTrueTypeCmap(ValidationContext c, PdfDictionary descriptor, string name, int page, string clause)
+    {
+        if (c.F.Resolve(descriptor.Get("FontFile2")) is not PdfStream program) return;
+        (int Count, bool Symbol, bool Roman)? records;
+        try { records = FontChecks.TrueTypeCmapRecords(c.F.DecodeStream(program)); }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException)
+        {
+            c.Add("PDFA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"cannot inspect embedded TrueType cmap records of {name}: {e.Message}", clause, page);
+            return;
+        }
+        if (records is not { } found)
+            c.Add("PDFA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"embedded TrueType cmap headers of {name} are truncated, malformed or unsupported; symbolic encoding validation is incomplete", clause, page);
+        else if (found.Count != 1 && (c.Part == 1 || !found.Symbol))
+            c.Add("PDFA-FONT-SYMBOLIC-CMAP", ValidationSeverity.Error,
+                c.Part == 1 ? $"symbolic TrueType font {name} needs exactly one cmap encoding"
+                    : $"symbolic TrueType font {name} needs exactly one cmap encoding or Microsoft Symbol (3,0)",
+                clause, page);
     }
 
     public static void ActionsAndForms(ValidationContext c)

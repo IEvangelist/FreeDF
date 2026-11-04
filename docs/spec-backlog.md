@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A symbolic TrueType cmap records
+
+Simple symbolic TrueType `/FontFile2` programs now receive part-specific
+cmap encoding-record checks. PDF/A-1 requires exactly one record;
+PDF/A-2/3 accept exactly one or at least one Microsoft Symbol (3,0) record.
+Missing required records report `PDFA-FONT-SYMBOLIC-CMAP` Error under
+ISO 19005-1 6.3.7 or ISO 19005-2/3 6.2.11.6. Truncated, malformed or
+unsupported headers and stream filters report a separate explicit
+`PDFA-FONT-CMAP-INCOMPLETE` Error rather than silently skipping the check.
+
+The existing bounded sfnt directory/record scanner is relocated from the
+PDF/UA implementation to internal `FontChecks`, with a byte-identical body
+(SHA-256 `66d73aed7728890414e95a5fe98fd3005decb770ec8eab4d1a502e484deedf60`).
+PDF/UA's distinct predicates remain unchanged. No new font parser or
+duplicated production scanner is introduced.
+
+The pinned veraPDF predicates (validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3`) are PDF/A-1 6.3.7 test 3
+and PDF/A-2/3 6.2.11.6 test 4. All 15 independently mutated real-font
+controls agree on those exact rules: eight record positives and seven
+record negatives. They reuse the retained UA-derived one/two-record
+controls (Macintosh Roman, Unicode and Symbol combinations), not clean
+PDF/A files or new whole-file conformance measurements.
+
+There are 33 authored cases, including all parts, missing cmap, malformed
+offset/header boundaries, unsupported filters and excluded font kinds.
+Sixteen failed before the implementation; all now pass. The integrated
+PDF/A, UA symbolic/Differences and deep-validation selector passed 2751
+tests; the solution builds without new warnings. The preceding full
+Release 6415-test result remains a dated earlier checkpoint, not a new
+full-suite claim for these additional cases.
+
+This validates record headers only, not cmap subtable mappings, checksums,
+glyph programs or used-glyph completeness. Non-symbolic requirements,
+FontFile3/OpenType and collections remain outside this check. Existing
+bounded-decoding/resolution limitations and broad PDF/A gaps remain.
+
 ## 2026-11-04 PDF/A-2/3 literal TrueType Differences
 
 Non-symbolic TrueType fonts in PDF/A-2/3 may now use `/Differences` with

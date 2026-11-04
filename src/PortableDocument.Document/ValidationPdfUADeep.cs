@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using PortableDocument.Core;
 
 namespace PortableDocument.Document;
@@ -73,49 +72,12 @@ internal static class PdfUADeepChecks
             ? ((f.Resolve(si.Get("Registry")) as PdfString)?.Text, (f.Resolve(si.Get("Ordering")) as PdfString)?.Text, (long)(f.Resolve(si.Get("Supplement")).AsNumber() ?? 0))
             : (null, null, 0);
 
-    static (int Count, bool Symbol, bool Roman)? SymbolicCmapRecords(ReadOnlySpan<byte> data)
-    {
-        if (data.Length < 12 || BinaryPrimitives.ReadUInt32BigEndian(data) is not (0x00010000 or 0x74727565)) return null;
-        var tables = BinaryPrimitives.ReadUInt16BigEndian(data[4..]);
-        var directoryEnd = 12 + tables * 16;
-        if (directoryEnd > data.Length) return null;
-        (int Count, bool Symbol, bool Roman)? result = null;
-        for (var i = 0; i < tables; i++)
-        {
-            var entry = data.Slice(12 + i * 16, 16);
-            if (!entry[..4].SequenceEqual("cmap"u8)) continue;
-            if (result is not null) return null;
-            var offset = BinaryPrimitives.ReadUInt32BigEndian(entry[8..]);
-            var length = BinaryPrimitives.ReadUInt32BigEndian(entry[12..]);
-            if (offset < directoryEnd || offset > data.Length || length < 4 || length > data.Length - offset) return null;
-            var cmap = data.Slice((int)offset, (int)length);
-            if (BinaryPrimitives.ReadUInt16BigEndian(cmap) != 0) return null;
-            var count = BinaryPrimitives.ReadUInt16BigEndian(cmap[2..]);
-            var recordsEnd = 4 + count * 8;
-            if (recordsEnd > cmap.Length) return null;
-            var symbol = false;
-            var roman = false;
-            for (var j = 0; j < count; j++)
-            {
-                var record = cmap.Slice(4 + j * 8, 8);
-                var subtable = BinaryPrimitives.ReadUInt32BigEndian(record[4..]);
-                if (subtable < recordsEnd || subtable > cmap.Length - 2) return null;
-                var platform = BinaryPrimitives.ReadUInt16BigEndian(record);
-                var encoding = BinaryPrimitives.ReadUInt16BigEndian(record[2..]);
-                symbol |= platform == 3 && encoding == 0;
-                roman |= platform == 1 && encoding == 0;
-            }
-            result = (count, symbol, roman);
-        }
-        return result ?? (0, false, false);
-    }
-
     static void SymbolicTrueTypeCmap(ValidationContext c, ValidationContext.FontUse use, PdfDictionary descriptor)
     {
         if (c.F.Resolve(descriptor.Get("FontFile2")) is not PdfStream program) return;
         var name = FontChecks.Name(c.F, use.Font);
         (int Count, bool Symbol, bool Roman)? records;
-        try { records = SymbolicCmapRecords(c.F.DecodeStream(program)); }
+        try { records = FontChecks.TrueTypeCmapRecords(c.F.DecodeStream(program)); }
         catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException)
         {
             c.Add("PDFUA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"cannot inspect embedded TrueType cmap records of {name}: {e.Message}", Clause(c, "7.21.6", "8.4.5.7"), use.Page);
