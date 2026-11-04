@@ -366,6 +366,57 @@ public class DeepValidationTests
         Assert.True(report.Has("PDFUA-LANG-INVALID"));
     }
 
+    public static IEnumerable<object[]> PrivateUseTextCases()
+    {
+        int[] codepoints = [0xD7FF, 0xE000, 0xF00C, 0xF8FF, 0xF900,
+            0xEFFFF, 0xF0000, 0xFFFFD, 0xFFFFE, 0x100000, 0x10FFFD, 0x10FFFE];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var target in new[] { "catalog", "structure", "property" })
+        foreach (var codepoint in codepoints)
+        foreach (var utf8 in new[] { false, true })
+            yield return [part, target, codepoint, utf8,
+                part == 2 && (codepoint is >= 0xE000 and <= 0xF8FF or >= 0xF0000 and <= 0xFFFFD or >= 0x100000 and <= 0x10FFFD)];
+    }
+
+    [Theory]
+    [MemberData(nameof(PrivateUseTextCases))]
+    public void Ua2LanguageStringsExcludePrivateUseCodepoints(
+        int part, string target, int codepoint, bool utf8, bool privateUse)
+    {
+        var text = "a" + char.ConvertFromUtf32(codepoint) + "b";
+        var bytes = utf8 ? Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(text)).ToArray()
+            : Encoding.BigEndianUnicode.GetPreamble().Concat(Encoding.BigEndianUnicode.GetBytes(text)).ToArray();
+        var value = $"<{Convert.ToHexString(bytes)}>";
+        var pdf = Ua(target == "property" ? $"/P << /MCID 0 >> BDC /Span << /Lang {value} >> BDC BT (x) Tj ET EMC EMC" : TaggedText,
+            "8 0 R", extras: target == "structure" ? Para.Replace("/K 0", $"/K 0 /Lang {value}") : Para);
+        if (target == "catalog")
+            pdf = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(pdf).Replace("/Lang (en)", $"/Lang {value}"));
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(privateUse, report.Has("PDFUA2-TEXT-STRING-PUA"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Fact]
+    public void UnclassifiedFieldStringsDoNotBecomePrivateUseViolations()
+    {
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T <FEFFE000> /TU <FEFFE000> /TM <FEFFE000> >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf), PdfValidationProfile.PdfUA2);
+        Assert.False(report.Has("PDFUA2-TEXT-STRING-PUA"));
+    }
+
+    [Fact]
+    public void EarlierInvalidTagDoesNotHideLaterPrivateUseAndRepeatedPrivateUseIsBounded()
+    {
+        var pdf = Ua("/P << /MCID 0 >> BDC /Span << /Lang (-en) >> BDC EMC " +
+            "/Span << /Lang <FEFFE000> >> BDC EMC /Span << /Lang <FEFFF8FF> >> BDC EMC EMC",
+            "8 0 R", extras: Para);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf), PdfValidationProfile.PdfUA2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-LANG-INVALID");
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-TEXT-STRING-PUA");
+    }
+
     [Fact]
     public void ContentTaggingConformantPageIsClean()
     {

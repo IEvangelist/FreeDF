@@ -69,6 +69,7 @@ RULE_MAP = {
         "8.11.1-2": ["PDFUA-XMP-MISSING"], "8.11.2-1": ["PDFUA-DISPLAYDOCTITLE"], "8.14.1-1": ["PDFUA2-FILESPEC-DESC"],
         "8.7-1": ["PDFUA-OC-NAME"],
         "8.4.4-2": ["PDFUA-LANG-INVALID"],
+        "8.6-1": ["PDFUA2-TEXT-STRING-PUA"],
     },
 }
 

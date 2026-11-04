@@ -1,3 +1,4 @@
+using System.Text;
 using PortableDocument.Core;
 
 namespace PortableDocument.Document;
@@ -24,6 +25,18 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 link targets", () => LinkTargets(c, tree));
         c.Guard("PDF/UA-2 destinations", () => Destinations(c));
         c.Guard("PDF/UA-2 file specifications", () => Files(c));
+    }
+
+    internal static bool LanguagePrivateUse(ValidationContext c, string language, int? page = null)
+    {
+        if (c.Part == 2 && language.EnumerateRunes().Any(r =>
+            r.Value is >= 0xE000 and <= 0xF8FF or >= 0xF0000 and <= 0xFFFFD or >= 0x100000 and <= 0x10FFFD))
+        {
+            c.Add("PDFUA2-TEXT-STRING-PUA", ValidationSeverity.Error,
+                "language text string contains a Unicode private-use codepoint", "ISO 14289-2 8.6", page);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>8.14.1-1 (Desc on embedded-file specifications) and 8.9.2.4.10-1 (AFRelationship on file-attachment targets). Specifications are found by scanning all objects, a superset of the EmbeddedFiles name tree.</summary>

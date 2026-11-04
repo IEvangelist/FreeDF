@@ -72,6 +72,7 @@ class RuleOverlapTests(unittest.TestCase):
         (2, "8.4.5.9-1", "PDFUA-FONT-NOTDEF"),
         (2, "8.7-1", "PDFUA-OC-NAME"),
         (2, "8.4.4-2", "PDFUA-LANG-INVALID"),
+        (2, "8.6-1", "PDFUA2-TEXT-STRING-PUA"),
     ]
 
     def overlap(self, part, rule, errors):

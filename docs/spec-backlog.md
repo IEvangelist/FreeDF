@@ -4,6 +4,59 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/UA-2 private-use language strings
+
+The next masked reference failure is now reported by its own rule:
+`PDFUA2-TEXT-STRING-PUA` checks catalog, parsed structure and visited Span
+property-list language strings. It enumerates decoded Unicode scalars,
+not UTF-16 code units, covering U+E000..U+F8FF, U+F0000..U+FFFFD and
+U+100000..U+10FFFD. Neighbouring non-private codepoints are not classified
+as PUA. UA-1 and base-reader behaviour are unchanged. Property-list PUA
+and grammar diagnostics have separate per-page/invoked-Form budgets, so
+an earlier non-PUA syntax error cannot hide a later private-use finding.
+
+The predicate provenance is the veraPDF Consortium's CC BY 4.0 v1.30.3
+standalone UA-2 profile 8.6-1, pinned at
+`c4f57effb0d3618827c87bd71882930d752be6e3`.
+The [Unicode private-use FAQ](https://www.unicode.org/faq/private_use.html)
+independently defines the three immutable ranges. The public UA-2 normative
+preview stops before clause 8.6; full ISO clause text was not independently
+obtained. The change is explicitly a language-string subset, not a complete
+classification of all human-readable PDF strings.
+
+The corrected authored set has 146 cases, with 43 failures when the new PUA
+predicate is disabled. It includes both UTF-16BE and PDF 2.0 UTF-8 strings,
+all range edges, UA-1 exclusions, field-string exclusions and diagnostic
+ordering/bounding. Final full Release passes **13010/13010**, zero skipped;
+the 535-test focused class passes after correcting two new xUnit2031
+assertion-style warnings. The final solution has zero errors and only the
+two retained machine-feed NU1507 warnings. All 18 Python tool tests pass.
+
+Independent mutations of one native UA-2 document produce **78 exact-rule
+and whole-file agreements**: 42 PUA rejections and 36 non-PUA predicate
+controls. Only six are clean whole-file positives; the other 30 non-PUA
+strings remain grammar-invalid language tags and are not counted as clean
+positives. The retained pre-fix UaDump has no PUA finding on any of these
+controls, although grammar already rejects the invalid tags.
+
+Fresh measurement of all 435 public PDFs/870 profile results adds exactly
+one finding, to native UA-2 `8.6-t01-fail-a.pdf`, without changing its verdict.
+UA-1 outputs are unchanged. There are no reference-positive regressions,
+internal or new incomplete findings. Native reference 8.6-1 now has mapped
+family overlap 1/1; zero file-verdict misses remains distinct from full
+rule coverage or certification.
+
+Rejected draft: an initial 96-control field-name/tooltip/mapping-name probe
+had 42 reference acceptances of field PUA. The source document's Document
+element has empty children, and several P elements are unused; those
+acceptances do not settle human-readable field classification or normative
+permission. A first structure mutation also hit an unused P; final controls
+instead mutate the reachable Document element. No unverified field-string
+rejection or field-traversal requirement ships. Other human-readable strings,
+binary-versus-text classification, non-string Lang values, unused/non-Span
+properties, appearance-only streams and existing traversal limits remain
+open. External PDFs/profiles stay session-only evidence.
+
 ## 2026-11-04 PDF/UA property-list language syntax
 
 The existing page/invoked-Form content walk now checks string-valued `Lang`

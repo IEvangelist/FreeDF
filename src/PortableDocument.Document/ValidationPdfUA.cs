@@ -56,6 +56,7 @@ internal static partial class PdfUAChecks
         }
         if (lang is not null && !LangTag().IsMatch(lang))
             c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"catalog /Lang '{lang}' is not a well-formed language tag", Clause(c, "7.2", "8.4.4"));
+        if (lang is not null) PdfUA2Checks.LanguagePrivateUse(c, lang);
         if (f.Resolve(f.Catalog.Get("ViewerPreferences")) is not PdfDictionary vp || f.Resolve(vp.Get("DisplayDocTitle")) is not PdfBoolean { Value: true })
             c.Add("PDFUA-DISPLAYDOCTITLE", ValidationSeverity.Error, "ViewerPreferences /DisplayDocTitle is not true", Clause(c, "7.1", "8.5"));
     }
@@ -252,6 +253,7 @@ internal static partial class PdfUAChecks
         {
             if (e.Lang is { } l && !LangTag().IsMatch(l))
                 c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"element /{e.Type} has malformed /Lang '{l}'", Clause(c, "7.2", "8.4.4"), e.PageIndex);
+            if (e.Lang is { } language) PdfUA2Checks.LanguagePrivateUse(c, language, e.PageIndex);
             if (!reported && string.IsNullOrEmpty(e.EffectiveLang) && e.MarkedContent.Any(m => c.TextMcids.Contains((m.PageIndex ?? e.PageIndex ?? -1, m.Mcid))))
             {
                 reported = true;

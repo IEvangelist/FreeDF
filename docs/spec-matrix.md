@@ -396,6 +396,16 @@ full language determinability and registry semantics remain outside this
 slice. The tooltip inheritance/reference discrepancy is documented, not
 silently resolved in favour of reference rejection.
 
+The [private-use language-string check](spec-backlog.md#2026-11-04-pdfua-2-private-use-language-strings)
+adds a distinct UA-2 8.6 finding for catalog/structure/visited Span language
+strings across all three Unicode PUA ranges. All 78 independent controls
+agree exactly/whole-file: 42 PUA rejections and 36 non-PUA controls, of which
+six are clean positives and 30 still have invalid language syntax.
+Full Release passes 13010/13010. A fresh 435-file/870-result run adds one
+correct finding without verdict changes; UA-1 is unchanged. Broader
+human-readable string classification remains open; unverified field-string
+rejections were removed before shipping.
+
 The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
 adds strict A1 parameter/frame/tag inspection while preserving tolerant
 reader recovery. All 30 valid encodings have independent byte checks;

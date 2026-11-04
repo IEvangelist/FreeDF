@@ -72,6 +72,12 @@ Page/invoked-Form Span-property inspection and shared grammar validation
 in `ValidationPdfUA.cs` and `ValidationPdfUADeep.cs` are independently
 implemented; no profile XML or reference-engine source is bundled.
 
+The language-string private-use exclusion was cross-checked against the
+same CC BY 4.0 PDF/UA-2 profile, 8.6-1. Decoded scalar inspection in
+`ValidationPdfUA2.cs` and its catalog/structure/Span-language integration
+are independently implemented; broader human-readable string classification
+is not claimed.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
