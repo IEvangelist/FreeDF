@@ -132,6 +132,36 @@ exclusions arise, and no positive changes. Family-rule overlap mappings in
 `ua_crosscheck.py` name the new finding, not exhaustive predicate coverage.
 Earlier measurements remain dated; remaining scope stays open under #11.
 
+## 2026-11-04 PDF/UA-1 terminal field descriptions
+
+For widgets indexed through the AcroForm field tree, the UA-1 description
+check now reads `/TU` from the actual terminal field, not a widget-only
+dictionary or a nonterminal ancestor. A field without a nonempty tooltip
+still passes when each visible widget has `/Alt` on its own enclosing
+structure element. Hidden/outside-CropBox exemptions and merged field/widget
+dictionaries are preserved. UA-2 is unchanged. The existing bounded field-detail
+walker supplies ownership; truncation or multiple terminal owners reports
+`PDFUA-FORM-INCOMPLETE` as an Error rather than a complete check.
+
+All ten public UA-1 `7.18.1-t03` controls match the exact veraPDF rule
+(four negatives/six positives, zero excluded). The previously missed
+`t03-fail-d` has tooltips only on its two widget dictionaries, not on their
+shared terminal field. Sixty-four authored cases cover tooltip placement,
+null/empty/indirect text, per-widget Alt, hidden widgets, ambiguous owners
+and the depth-64/65 boundary; ten of the initial 61 fail before the fix.
+ISO 32000-1 Table 220 (printed page 433, PDF page 441) defines `/TU` on the
+field without the inheritable designation. This checks presence/ownership,
+not the description's human usefulness.
+
+All 435 verified corpus files were compared again with the retained reports.
+Exactly one UA-1 whole-file verdict changes relative to the CMap checkpoint:
+146 both-fail, 141 both-pass, 10 misses; both UA-2 profiles remain at
+78 both-fail, 54 both-pass, 6 misses with identical error/warning rows.
+There are no false positives/exclusions or changed public positives.
+Unindexed/malformed field graphs retain the existing fallback and are not
+claimed as complete ownership validation. No PDF is bundled; remaining
+font/table/grouping/semantic work stays open under #11.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects
