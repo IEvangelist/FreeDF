@@ -258,8 +258,11 @@ internal static class PdfAChecks
             {
                 if (f.Resolve(a) is not PdfDictionary ad) continue;
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
-                if (sub is "Sound" or "Movie" or "Screen" or "3D" && c.Part == 1 || sub is "Sound" or "Movie")
-                    c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
+                var allowed = sub is "Text" or "Link" or "FreeText" or "Line" or "Square" or "Circle" or "Highlight" or "Underline"
+                    or "Squiggly" or "StrikeOut" or "Stamp" or "Ink" or "Popup" or "Widget" or "PrinterMark" or "TrapNet"
+                    || c.Part != 1 && sub is "Polygon" or "PolyLine" or "Caret" or "FileAttachment" or "Watermark" or "Redact";
+                if (!allowed)
+                    c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub ?? "(missing or non-name)"} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
                 var flagValue = f.Resolve(ad.Get("F"));
                 if (c.Part != 1 && sub == "Popup" && flagValue is null or PdfNull) continue;
                 var flags = (int)(flagValue.AsNumber() ?? 0);

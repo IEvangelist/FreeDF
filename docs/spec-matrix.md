@@ -98,6 +98,13 @@ agree on exact predicates; malformed/unsupported headers produce explicit
 incomplete Errors. Subtable, glyph, non-symbolic and FontFile3 completeness
 remain open.
 
+The [PDF/A annotation subtype vocabulary](spec-backlog.md#2026-11-04-pdfa-annotation-subtype-vocabulary)
+now applies explicit part-specific allowed types, including Screen/3D
+prohibitions in PDF/A-2/3 and PDF 1.4-only types in PDF/A-1. All 198
+independent controls agree on exact rules and verdicts (120 positives,
+78 negatives). Other annotation dictionary/appearance requirements remain
+partial.
+
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
 flags remain deferred. Six targeted veraPDF 1.30.3 image-rule comparisons agree,

@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A annotation subtype vocabulary
+
+The page annotation scan now enforces the explicit PDF/A subtype
+vocabularies rather than a short media-type blacklist. PDF/A-1 permits
+the 16 PDF 1.4 types in ISO 19005-1 6.5.2 test 1; PDF/A-2/3 additionally
+permit Polygon, PolyLine, Caret, FileAttachment, Watermark and Redact under
+6.3.1 test 1. Screen and 3D remain prohibited in parts 2/3 as well as part 1.
+Unknown, missing, null, non-name and wrong-case subtypes produce the existing
+`PDFA-ANNOT-TYPE` Error with page/clause attribution.
+
+The pinned veraPDF profiles at commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` provide those exact vocabularies.
+All 198 independently mutated controls agree with veraPDF 1.30.3 on the
+exact predicate and whole-file verdict: 120 clean subtype positives and
+78 negatives, spanning direct/indirect entries and all three parts.
+The controls use retained clean PDF/A source files with inert appearances;
+external PDFs/XML remain session artifacts. A first control-generation
+attempt collided `Text`/`text` filenames on Windows; it was discarded from
+comparison. The final collision-free batch asserts all 198 distinct files
+and retains its own raw outputs.
+
+The 198 authored cases had 62 failures against the original implementation;
+all now pass. The integrated PDF/A/deep-validation selector passed 2733
+tests and the solution builds without new warnings. This establishes
+subtype vocabulary, not complete annotation dictionaries, appearance,
+file-attachment or form validity. The 10000-annotation traversal limit and
+broader conformance gaps remain; historical corpus totals are unchanged.
+
 ## 2026-11-04 PDF/A symbolic TrueType cmap records
 
 Simple symbolic TrueType `/FontFile2` programs now receive part-specific
