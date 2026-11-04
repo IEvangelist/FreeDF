@@ -126,6 +126,11 @@ disagreements, all retained with ISO null/inheritance provenance.
 All-state/AS/V validity, field-tree membership, Form/content validity and
 general annotation well-formedness remain open.
 
+The [PDF/A-1 annotation opacity check](spec-backlog.md#2026-11-04-pdfa-1-annotation-opacity)
+rejects optional numeric CA other than 1 without imposing that restriction
+on parts 2/3. All 192 controls agree on the exact rule and verdict
+(172 positives, 20 negatives); general CA type/range validity remains open.
+
 Exceeding the existing 10000-entry per-page PDF/A annotation budget now
 produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
 rather than silently omitting later entries. The limit is a library resource

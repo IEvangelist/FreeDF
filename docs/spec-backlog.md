@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A-1 annotation opacity
+
+The page annotation scan now rejects optional numeric CA values other than
+1 in PDF/A-1 with `PDFA1-ANNOT-OPACITY` Error, page attribution and
+ISO 19005-1 6.5.3. This includes Link/Popup and Widget annotations and
+resolves indirect values. Absent/null values and integer/real 1 do not
+violate this predicate. Parts 2/3 are not given the PDF/A-1-only restriction.
+
+The pinned validation-profiles commit
+`c4f57effb0d3618827c87bd71882930d752be6e3` supplies PDF/A-1 6.5.3 test 1.
+All 192 independently mutated controls agree with veraPDF 1.30.3 on
+the exact rule and whole-file verdict: 172 positives and 20 negatives.
+There are 192 matching authored cases, initially with 20 failures;
+the integrated PDF/A/deep selector now passes 4652 tests and the solution
+builds without new warnings. The preceding full 8373 run predates this
+opacity correction, not a new full-suite result. External PDFs/XML and
+per-file hashes remain session artifacts.
+
+This is the optional numeric PDF/A-1 opacity restriction, not general
+annotation transparency or CA well-formedness. Non-numeric CA kinds and
+general numeric range validity are not established by this predicate;
+reference-positive malformed-kind/out-of-range controls are not claimed
+generally valid PDFs. Historical corpus totals and broad Partial status
+remain unchanged.
+
 ## 2026-11-04 PDF/A inherited Widget normal appearances
 
 The normal-appearance type check now also classifies Widgets using the

@@ -288,6 +288,8 @@ internal static class PdfAChecks
                     || c.Part != 1 && sub is "Polygon" or "PolyLine" or "Caret" or "FileAttachment" or "Watermark" or "Redact";
                 if (!allowed)
                     c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub ?? "(missing or non-name)"} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
+                if (c.Part == 1 && f.Resolve(ad.Get("CA")).AsNumber() is { } opacity && opacity != 1)
+                    c.Add("PDFA1-ANNOT-OPACITY", ValidationSeverity.Error, "annotation opacity must be 1 in PDF/A-1", "ISO 19005-1 6.5.3", i);
                 var appearance = f.Resolve(ad.Get("AP")) as PdfDictionary;
                 var normal = f.Resolve(appearance?.Get("N"));
                 var normalOnly = appearance is not null && normal is not null and not PdfNull
