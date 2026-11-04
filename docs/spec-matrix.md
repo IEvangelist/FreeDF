@@ -213,6 +213,14 @@ Malformed, unsupported or bounded-out metadata produces an incomplete Error.
 Legacy Type1/OpenType/CID-keyed programs, CIDSet and full font validity
 remain outside this slice; broad status stays Partial.
 
+The [Identity CIDSet completeness slice](spec-backlog.md#2026-11-04-pdfa-identity-cidset-completeness)
+compares all program CIDs for explicit Identity-mapped subset CIDFontType2
+fonts with raw TrueType programs. All 60 retained kind controls now agree;
+52/60 bitmap controls agree, including all 16 reference negatives, with
+eight explicit complete-list/CID0 disagreements. Malformed or bounded-out
+metadata produces an incomplete Error. Non-Identity mappings, CID-keyed
+CFF, OpenType wrappers and full font validity remain open.
+
 The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
 resolves null as omission while retaining base-encoding and non-null-array
 restrictions. Across 30 painted real-font controls, 28 exact rules and

@@ -22,41 +22,58 @@ internal static class FontChecks
 
     public static string Name(PdfFile f, PdfDictionary font) => f.Resolve(font.Get("BaseFont")).AsName() ?? "(unnamed)";
 
-    public static (int Count, bool Symbol, bool Roman)? TrueTypeCmapRecords(ReadOnlySpan<byte> data)
+    static bool TryTrueTypeTable(ReadOnlySpan<byte> data, ReadOnlySpan<byte> tag, out (int Offset, int Length)? result)
     {
-        if (data.Length < 12 || BinaryPrimitives.ReadUInt32BigEndian(data) is not (0x00010000 or 0x74727565)) return null;
+        result = null;
+        if (data.Length < 12 || BinaryPrimitives.ReadUInt32BigEndian(data) is not (0x00010000 or 0x74727565)) return false;
         var tables = BinaryPrimitives.ReadUInt16BigEndian(data[4..]);
         var directoryEnd = 12 + tables * 16;
-        if (directoryEnd > data.Length) return null;
-        (int Count, bool Symbol, bool Roman)? result = null;
+        if (directoryEnd > data.Length) return false;
         for (var i = 0; i < tables; i++)
         {
             var entry = data.Slice(12 + i * 16, 16);
-            if (!entry[..4].SequenceEqual("cmap"u8)) continue;
-            if (result is not null) return null;
+            if (!entry[..4].SequenceEqual(tag)) continue;
+            if (result is not null) return false;
             var offset = BinaryPrimitives.ReadUInt32BigEndian(entry[8..]);
             var length = BinaryPrimitives.ReadUInt32BigEndian(entry[12..]);
-            if (offset < directoryEnd || offset > data.Length || length < 4 || length > data.Length - offset) return null;
-            var cmap = data.Slice((int)offset, (int)length);
-            if (BinaryPrimitives.ReadUInt16BigEndian(cmap) != 0) return null;
-            var count = BinaryPrimitives.ReadUInt16BigEndian(cmap[2..]);
-            var recordsEnd = 4 + count * 8;
-            if (recordsEnd > cmap.Length) return null;
-            var symbol = false;
-            var roman = false;
-            for (var j = 0; j < count; j++)
-            {
-                var record = cmap.Slice(4 + j * 8, 8);
-                var subtable = BinaryPrimitives.ReadUInt32BigEndian(record[4..]);
-                if (subtable < recordsEnd || subtable > cmap.Length - 2) return null;
-                var platform = BinaryPrimitives.ReadUInt16BigEndian(record);
-                var encoding = BinaryPrimitives.ReadUInt16BigEndian(record[2..]);
-                symbol |= platform == 3 && encoding == 0;
-                roman |= platform == 1 && encoding == 0;
-            }
-            result = (count, symbol, roman);
+            if (offset < directoryEnd || offset > data.Length || length > data.Length - offset) return false;
+            result = ((int)offset, (int)length);
         }
-        return result ?? (0, false, false);
+        return true;
+    }
+
+    public static int? TrueTypeGlyphCount(ReadOnlySpan<byte> data)
+    {
+        if (!TryTrueTypeTable(data, "maxp"u8, out var table) || table is not { Length: >= 32 } t) return null;
+        var maxp = data.Slice(t.Offset, t.Length);
+        if (BinaryPrimitives.ReadUInt32BigEndian(maxp) != 0x00010000) return null;
+        var count = BinaryPrimitives.ReadUInt16BigEndian(maxp[4..]);
+        return count == 0 ? null : count;
+    }
+
+    public static (int Count, bool Symbol, bool Roman)? TrueTypeCmapRecords(ReadOnlySpan<byte> data)
+    {
+        if (!TryTrueTypeTable(data, "cmap"u8, out var table)) return null;
+        if (table is not { } t) return (0, false, false);
+        if (t.Length < 4) return null;
+        var cmap = data.Slice(t.Offset, t.Length);
+        if (BinaryPrimitives.ReadUInt16BigEndian(cmap) != 0) return null;
+        var count = BinaryPrimitives.ReadUInt16BigEndian(cmap[2..]);
+        var recordsEnd = 4 + count * 8;
+        if (recordsEnd > cmap.Length) return null;
+        var symbol = false;
+        var roman = false;
+        for (var j = 0; j < count; j++)
+        {
+            var record = cmap.Slice(4 + j * 8, 8);
+            var subtable = BinaryPrimitives.ReadUInt32BigEndian(record[4..]);
+            if (subtable < recordsEnd || subtable > cmap.Length - 2) return null;
+            var platform = BinaryPrimitives.ReadUInt16BigEndian(record);
+            var encoding = BinaryPrimitives.ReadUInt16BigEndian(record[2..]);
+            symbol |= platform == 3 && encoding == 0;
+            roman |= platform == 1 && encoding == 0;
+        }
+        return (count, symbol, roman);
     }
 
     public static (string? InvalidName, string? IncompleteReason) InspectDifferences(PdfFile f, PdfDictionary encoding)

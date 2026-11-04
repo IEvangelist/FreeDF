@@ -4,6 +4,56 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-04 PDF/A Identity CIDSet completeness
+
+Embedded subset CIDFontType2 fonts with an explicit resolved Identity
+CIDToGIDMap, raw FontFile2 program and CIDSet stream now compare the exact
+defined CID set against the TrueType maxp glyph count. Missing CIDs,
+including unused glyphs and CID 0, and extra set bits produce
+`PDFA-FONT-CIDSET-LIST`. Zero trailing bytes are permitted.
+Malformed/unsupported SFNT/maxp metadata or exhausted resource bounds
+produce `PDFA-FONT-CIDSET-INCOMPLETE` Errors. The existing A1 stream-presence
+rule is unchanged. The table-directory bounds checks are shared with the
+existing cmap inspection, retaining its missing/invalid-table distinction.
+
+The pinned profile commit `c4f57effb0d3618827c87bd71882930d752be6e3`
+supplies A1 6.3.5 test 3 and A2/3 6.2.11.4.2 test 2.
+[ISO 32000-1](https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf)
+9.7.4.2 and Table 117 define Identity CID/GID mapping; the same clause
+requires every CIDFont to contain a CID 0 description (PDF pages 278/279).
+Table 124 in 9.8.3.1 defines CIDSet as high-bit-first CID-indexed data
+(PDF page 293). No arbitrary CID mapping or painted-glyph inference is used.
+
+Sixty new bitmap controls reuse the retained public Liberation Sans
+CIDFontType2 program and paint CID 36 in calibrated-RGB documents.
+FontTools independently confirms 2589 program glyphs; a separate Python
+set comparison verifies every listing control against their Identity-mapped
+CIDs. All 16 reference-negative listing controls now fail their exact
+mapped rules. Of the 60 controls, 52 agree on exact rules and whole-file
+verdicts with veraPDF 1.30.3. Eight explicit normative disagreements remain:
+the reference accepts A1 omitted unused CIDs, only-used lists and extra
+bits, and omission of CID 0 in all three parts; FreeDF requires the complete defined CID set,
+including the required CID 0. No controls are excluded.
+All 60 retained kind controls now agree, closing their three remaining
+empty-stream misses. This reuses one font program, not 120 independent
+programs. Raw reports, hashes and before/after results remain session
+artifacts; no external PDF or font is bundled.
+
+The 139 authored metadata cases include direct/indirect Identity names,
+byte and maximum glyph-count boundaries, missing/duplicate/truncated
+SFNT/maxp metadata, zero padding, explicit scope exclusions and exact
+resource bounds; 55 failed on the preceding implementation. These
+self-authored maxp-only fixtures isolate metadata, not complete font
+validity. All 7498 combined PDF/A, PDF/UA and deep-validation cases pass,
+and the solution builds with existing machine feed warnings unchanged.
+The latest full 10480-case measurement predates this slice.
+Decoded font and CIDSet limits are 16777216 and 1048576 bytes respectively,
+both checked after existing stream decoding, not by a new streaming
+decompressor. Non-Identity mapping streams, CID-keyed CFF, OpenType
+wrappers, complete font/outline validity and used-glyph/width/Unicode
+completeness remain open. Historical corpus measurements and broad
+Partial status remain unchanged.
+
 ## 2026-11-04 PDF/A Type1C CharSet completeness
 
 Embedded Type1 subsets with a string CharSet and raw FontFile3 Type1C
