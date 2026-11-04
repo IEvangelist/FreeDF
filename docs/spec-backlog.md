@@ -2628,3 +2628,22 @@ The later full corpus comparison is recorded in the dated remeasurement above;
 it does not replace these predicate-specific controls.
 
 Still open: arbitrary owner graphs and external (`/Stm`) streams in text extraction; per-invocation tagging of reused Form XObjects (UA-1 7.20-2 is only a heuristic `PDFUA-FORM-REUSED-TAGGED`); editing `/Stm` content, structure namespaces and role maps in the editor; auto-tagging of links/forms/figures/tables/headings and alternate text; remaining veraPDF misses listed above (font-program completeness 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clips, URI/remote link-target grouping, remaining ISO/TS 32005 nesting conditions); logical-order checks against an independent renderer/reader for malformed or reused forms. Empirical, not spec-derived: `PDFUA-TABLE-HEADER-CONNECTION`. Status stays Partial.
+### 2026-11-04 PDF/UA rule-family overlap after file-verdict closure
+
+The cross-check tool now maps the eight delivered subset-listing, font-width,
+forbidden ToUnicode value and explicit `.notdef` finding families to their pinned
+UA-1/UA-2 profile tests. Incomplete-inspection Errors do **not** count as overlap;
+neither does rejecting the same file for an unrelated rule. Tests preserve those
+distinctions and keep unimplemented rules unmapped.
+
+Reconciled the latest 870 FreeDF results with retained exact reference rules,
+without rerunning Java: native UA-1 remains 141 pass/156 fail agreements and UA-2
+54 pass/84 fail agreements, with no exclusions. The eight new mappings overlap
+all their 13 observed rule/file occurrences. Of 97 distinct failing UA-1 reference
+tests, 52 are mapped and 46 have no observed mapped-family overlap (including one
+mapped test); of 48 UA-2 tests, 34 are mapped and 14 have no overlap. These are
+**mapping lower bounds**, not counts of missing implementation: existing checks
+may still lack mappings, and a family match does not prove an exact predicate.
+No percentages of standards coverage are inferred. Classify those unmapped and
+other-rule-only cases before choosing further fixes; the prior zero file-verdict
+misses do not close this work.

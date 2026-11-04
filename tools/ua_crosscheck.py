@@ -31,8 +31,8 @@ VERA = os.environ.get("VERAPDF", os.path.expanduser(r"~\tools\verapdf\verapdf.ba
 FLAVOURS = {1: "ua1", 2: "ua2"}
 COMMAND_LINE_LIMIT = 24000
 
-# veraPDF rule key (clause-testNumber) -> our rule ids that cover it. Keys absent here are reported as unmapped
-# (marked *), never silently counted as caught.
+# veraPDF rule key (clause-testNumber) -> related implemented finding families, not complete predicates.
+# Incomplete-inspection findings deliberately do not count as overlap. Absent keys remain unmapped (*).
 RULE_MAP = {
     1: {
         "5-1": ["PDFUA-XMP-ID-MISSING"], "5-2": ["PDFUA-XMP-ID-PART"], "5-3": ["PDFUA-XMP-ID-PREFIX"], "5-4": ["PDFUA-XMP-ID-PREFIX"], "5-5": ["PDFUA-XMP-ID-PREFIX"],
@@ -50,6 +50,8 @@ RULE_MAP = {
         "7.21.3.3-2": ["PDFUA-FONT-CMAP-WMODE"], "7.21.4.1-1": ["PDFUA-FONT-EMBEDDED"], "7.21.6-2": ["PDFUA-FONT-TRUETYPE-ENCODING", "PDFUA-FONT-TRUETYPE-DIFFERENCES"],
         "7.21.3.3-3": ["PDFUA-FONT-CMAP-REFERENCE"],
         "7.21.6-3": ["PDFUA-FONT-TRUETYPE-ENCODING"], "7.21.6-4": ["PDFUA-FONT-SYMBOLIC-CMAP"], "7.21.7-1": ["PDFUA-FONT-TOUNICODE"],
+        "7.21.4.2-1": ["PDFUA-FONT-CHARSET-LIST"], "7.21.4.2-2": ["PDFUA-FONT-CIDSET-LIST"],
+        "7.21.5-1": ["PDFUA-FONT-WIDTH"], "7.21.7-2": ["PDFUA-FONT-TOUNICODE-VALUE"], "7.21.8-1": ["PDFUA-FONT-NOTDEF"],
     },
     2: {
         "5-2": ["PDFUA-XMP-ID-PART"], "5-4": ["PDFUA-XMP-ID-PREFIX"], "5-5": ["PDFUA2-XMP-ID-REV"], "6.1-1": ["PDFUA2-VERSION"], "6.2-1": ["PDFUA-MARKINFO"],
@@ -63,6 +65,7 @@ RULE_MAP = {
         "8.4.5.4-2": ["PDFUA-FONT-CMAP-WMODE"], "8.4.5.4-3": ["PDFUA-FONT-CMAP-REFERENCE"],
         "8.4.5.7-2": ["PDFUA-FONT-TRUETYPE-ENCODING", "PDFUA-FONT-TRUETYPE-DIFFERENCES"], "8.4.5.7-3": ["PDFUA-FONT-TRUETYPE-ENCODING"],
         "8.4.5.7-4": ["PDFUA-FONT-SYMBOLIC-CMAP"],
+        "8.4.5.6-1": ["PDFUA-FONT-WIDTH"], "8.4.5.8-2": ["PDFUA-FONT-TOUNICODE-VALUE"], "8.4.5.9-1": ["PDFUA-FONT-NOTDEF"],
         "8.11.1-2": ["PDFUA-XMP-MISSING"], "8.11.2-1": ["PDFUA-DISPLAYDOCTITLE"], "8.14.1-1": ["PDFUA2-FILESPEC-DESC"],
     },
 }

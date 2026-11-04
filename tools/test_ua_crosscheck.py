@@ -60,6 +60,45 @@ class CommandBatchTests(unittest.TestCase):
             self.assertEqual(2, process.call_count)
 
 
+class FontRuleOverlapTests(unittest.TestCase):
+    mappings = [
+        (1, "7.21.4.2-1", "PDFUA-FONT-CHARSET-LIST"),
+        (1, "7.21.4.2-2", "PDFUA-FONT-CIDSET-LIST"),
+        (1, "7.21.5-1", "PDFUA-FONT-WIDTH"),
+        (1, "7.21.7-2", "PDFUA-FONT-TOUNICODE-VALUE"),
+        (1, "7.21.8-1", "PDFUA-FONT-NOTDEF"),
+        (2, "8.4.5.6-1", "PDFUA-FONT-WIDTH"),
+        (2, "8.4.5.8-2", "PDFUA-FONT-TOUNICODE-VALUE"),
+        (2, "8.4.5.9-1", "PDFUA-FONT-NOTDEF"),
+    ]
+
+    def overlap(self, part, rule, errors):
+        path = os.path.abspath("a.pdf")
+        truth = {path: (False, [rule])}
+        mine = {(path, part): {"file": path, "part": part, "compliant": False, "errors": errors}}
+        output = io.StringIO()
+        with patch.object(crosscheck, "collect", return_value=[path]), \
+                patch.object(crosscheck, "vera_batch", return_value=truth), \
+                patch.object(crosscheck, "ours", return_value=mine), contextlib.redirect_stdout(output):
+            crosscheck.corpus("directory", part)
+        return output.getvalue()
+
+    def test_delivered_font_findings_count_as_mapped_family_overlap(self):
+        for part, rule, finding in self.mappings:
+            with self.subTest(part=part, rule=rule):
+                self.assertIn(f"  {rule}: 1 / 1 / 0", self.overlap(part, rule, [finding]))
+
+    def test_incomplete_or_other_findings_are_only_file_verdict_agreement(self):
+        for part, rule, finding in self.mappings:
+            with self.subTest(part=part, rule=rule):
+                self.assertIn(f"  {rule}: 1 / 0 / 1",
+                              self.overlap(part, rule, ["PDFUA-FONT-WIDTH-INCOMPLETE", "PDFUA-TITLE"]))
+
+    def test_unimplemented_reference_rule_remains_unmapped(self):
+        self.assertIn("  unimplemented-1*: 1 / 0 / 1",
+                      self.overlap(2, "unimplemented-1", ["PDFUA-FONT-WIDTH"]))
+
+
 class ProfileSelectionTests(unittest.TestCase):
     def test_default_and_explicit_profiles_are_mutually_exclusive(self):
         xml = '<?xml version="1.0"?><report><jobs/></report>'
