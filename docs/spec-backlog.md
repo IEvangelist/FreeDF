@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed keyword and missing values
+
+ISO 32000-1 7.3.1 (printed p13) defines PDF object types; 7.5.7
+(printed p46) requires N object values and explicitly excludes obj/endobj
+keywords from their representation. Lazy loading now rejects a parsed
+PdfKeyword or missing value before caching instead of returning keywords
+or silently replacing whitespace/comment-only bodies with PdfNull.
+Literal null remains a valid object.
+
+Eighteen added controls include fourteen initially red keyword/missing
+value/isolation cases, repeated lookup in normal/forced-recovery paths,
+and valid false, real, name and commented literal-null values. Existing
+standalone-reference/nested-reference controls remain unchanged. Full
+Release: 18,665 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Thirty-six native PDFs preserve twelve valid outputs unchanged. Twenty-four
+keyword/missing-value inputs now give the explicit diagnostic instead of
+returning a keyword or substituted null. MuPDF returns null for those probes
+without surfacing an error. Positive lookup outputs agree; MuPDF additionally
+reports repair on the normal-index literal-null and commented-null controls.
+Fresh pinned 435-PDF/870-result corpus full JSON is wholly unchanged against
+the stream-value baseline.
+
+Only the requested top-level member value is checked; this does not change
+the general lexer, recursively validate keyword values inside containers,
+or claim complete closing-delimiter/trailing-token validation. Remaining
+object-stream dictionary/forbidden-object rules and budgets are separate.
+
 ## 2026-11-05 forbidden compressed stream values
 
 ISO 32000-1 7.5.7 (printed p45) explicitly prohibits stream objects inside

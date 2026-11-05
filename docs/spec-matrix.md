@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed keyword/missing-value check](spec-backlog.md#2026-11-05-compressed-keyword-and-missing-values)
+requires an actual object value before caching rather than accepting a
+keyword or substituting null at EOF. Literal null, names, reals and booleans
+remain supported; other members remain lazy. Reference differences and
+unchanged corpus JSON are recorded. Recursive container grammar, complete
+delimiter/trailing-token validation and budgets remain separate.
+
 The [compressed stream-value check](spec-backlog.md#2026-11-05-forbidden-compressed-stream-values)
 rejects dictionary-plus-stream syntax within a member boundary before it
 can be cached as a dictionary. Ordinary names, strings, Type entries and

@@ -190,9 +190,11 @@ public sealed class PdfFile
         if (map.Parsed.TryGetValue(objNum, out var hit)) return hit;
         // Objects are parsed on demand; a malformed member only affects requests for that member.
         var lexer = new PdfLexer(map.Data, map.First + member.Offset);
-        var parsed = lexer.ReadObject() ?? PdfNull.Instance;
+        var parsed = lexer.ReadObject();
         if (lexer.Pos > map.First + member.End)
             throw new PdfParseException("object stream member exceeds its boundary");
+        if (parsed is null or PdfKeyword)
+            throw new PdfParseException("object stream member must contain an object value");
         if (parsed is PdfRef)
             throw new PdfParseException("object stream member cannot be an indirect reference");
         if (parsed is PdfDictionary)
