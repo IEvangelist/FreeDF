@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [table section correction](spec-backlog.md#2026-11-05-ua-2-table-section-containment)
+retains legacy section constraints for UA-1 only and uses existing
+namespace-aware containment for UA-2. Eighteen native outcomes agree,
+correcting eleven false rejections. Ten redundant corpus diagnostics
+are removed with independent reference evidence; all file verdicts
+and UA-1 output are unchanged. Grouping and complete geometry remain deferred.
+
 The [table namespace correction](spec-backlog.md#2026-11-05-namespace-aware-table-row-and-header-endpoints)
 resolves table, row, cell and header-ID endpoints. Twelve native width
 controls agree, correcting four false rejections and one missed violation;

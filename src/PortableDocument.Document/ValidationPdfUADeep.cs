@@ -722,11 +722,11 @@ internal static class PdfUADeepChecks
                 case "Table":
                     if (kids.Count(k => k.StandardType == "THead") > 1) c.Add("PDFUA-TABLE-THEAD-MULTIPLE", ValidationSeverity.Error, "Table has more than one THead", sec, e.PageIndex);
                     if (kids.Count(k => k.StandardType == "TFoot") > 1) c.Add("PDFUA-TABLE-TFOOT-MULTIPLE", ValidationSeverity.Error, "Table has more than one TFoot", sec, e.PageIndex);
-                    if (!kids.Any(k => k.StandardType == "TBody") && kids.Any(k => k.StandardType is "THead" or "TFoot"))
+                    if (c.Part != 2 && !kids.Any(k => k.StandardType == "TBody") && kids.Any(k => k.StandardType is "THead" or "TFoot"))
                         c.Add("PDFUA-TABLE-TBODY", ValidationSeverity.Error, "Table has THead or TFoot but no TBody (veraPDF PDFUA-1 7.2-13/14)", sec, e.PageIndex);
                     CaptionRules(c, e, kids, "PDFUA-TABLE-CAPTION", sec, firstOrLast: true);
                     break;
-                case "THead" or "TBody" or "TFoot":
+                case "THead" or "TBody" or "TFoot" when c.Part != 2:
                     if (e.Parent?.StandardType != "Table") c.Add("PDFUA-TABLE-SECTION-PARENT", ValidationSeverity.Error, $"{e.StandardType} is not a child of Table", sec, e.PageIndex);
                     if (kids.Any(k => k.StandardType != "TR")) c.Add("PDFUA-TABLE-SECTION-CHILD", ValidationSeverity.Error, $"{e.StandardType} contains a child other than TR", sec, e.PageIndex);
                     break;

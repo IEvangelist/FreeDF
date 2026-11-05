@@ -17,6 +17,11 @@ disables legacy raw-role checks in favor of these namespace-resolved
 ISO 32005 facts. Six native controls and two corpus negatives were
 independently cross-checked against the pinned combined profile.
 Standalone UA-2 profile verdicts alone do not cover these exclusions.
+The analogous UA-2 table-section correction retains the UA-1-specific
+section and TBody constraints for UA-1 only. Eighteen native controls
+and ten corpus fixtures were cross-checked against the combined profile;
+known illegal section pairs retain the independently implemented nesting
+checks. This does not establish grouping or full table-geometry semantics.
 
 The namespace-aware list numbering/direct-content checks in
 `ValidationPdfUA2.cs` were cross-checked against the Consortium's

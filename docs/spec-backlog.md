@@ -4,6 +4,29 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 table section containment
+
+Legacy THead/TBody/TFoot parent/child checks and the UA-1-specific
+THead/TFoot-requires-TBody check now run only for UA-1. UA-2 already
+enforces namespace-resolved ISO 32005 Table 5 containment and table
+regularity. This removes raw-role false rejections without accepting
+known illegal parent/child pairs or expanding grouping predicates.
+
+Eighteen native controls completed normally against the combined profile:
+all file/containment outcomes agree (twelve clean positives, six negatives),
+correcting eleven false rejections across direct/mapped tables and rows
+and all three section types. THead-only and TFoot-only tables are accepted
+by the reference; no UA-1 TBody requirement is inferred for UA-2.
+Twelve authored section cases initially had eleven failures.
+
+Fresh 435-PDF/870-result comparison removes ten redundant UA-2 diagnostics
+on UA-1 negative fixtures run as UA-2. Independent reference jobs confirm
+the eight illegal section parent/child exclusions; the two THead/TFoot-only
+fixtures have no reference table/containment failures but remain invalid
+UA-2 files for version/metadata reasons. All file verdicts and UA-1 outputs
+are unchanged. Full grouping, table geometry and algorithmic header
+determination remain incomplete. No external PDFs or XML are bundled.
+
 ## 2026-11-05 namespace-aware table row and header endpoints
 
 UA-2 table selection, row/cell selection, header-ID targets, cell-parent
