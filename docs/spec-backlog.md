@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary structure child array nulls
+
+The official [PDF 2.0 errata, 14.7.2 Tables 354/355](https://pdf-issues.pdfa.org/32000-2-2020/clause14.html#H14.7.2)
+prohibits null children in structure-root and structure-element K arrays.
+UA-2 now reports PDFUA2-STRUCT-K-NULL for resolved null array entries,
+including dangling references. Root and every parsed element are checked.
+Reference cycles, depth beyond 32 and arrays exceeding 200,000 inspected
+items report separate PDFUA2-STRUCT-K-INCOMPLETE. A known null discovered
+before a later incomplete item is retained. The bounded array scan is shared
+with the existing Ref check without changing Ref behavior.
+
+Fifteen native controls cover root, Document, Table, TR and a content-bearing
+leaf: five unchanged positives remain accepted; ten explicit/dangling null
+negatives now fail the primary constraint. All fifteen independent combined
+reference jobs completed normally and accepted every control: **ten explicit
+primary/reference file disagreements**, not reference-verified corrections.
+The unchanged FreeDF implementation also accepted all fifteen.
+
+The initial 36 authored cases had 16 failures; six additional cases pin
+depth and known-null/incomplete coexistence. Optional scalar null/omission
+policy is unchanged. Empty arrays, nested arrays and complete child type,
+identity and traversal validation are outside this null-item slice; a clean
+null check does not establish their validity. Fresh 435-PDF/870-result corpus
+JSON output is unchanged, including UA-1. No reference family mapping, external
+PDF or standard text is bundled.
+
+Release validation: 151 focused child/Ref/nesting cases passed; full suite
+passed 14,948 cases with no failures/skips. Solution build had no errors
+and two retained machine-feed NU1507 warnings.
+
 ## 2026-11-05 namespace-resolved heading cardinality
 
 Legacy raw H-child counts now remain UA-1-only. UA-2 retains resolved

@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary K-array null check](spec-backlog.md#2026-11-05-primary-structure-child-array-nulls)
+rejects null child entries under published PDF 2.0 errata, with separate
+bounded-inspection errors. Fifteen native controls retain five positives and
+reject ten primary negatives accepted by the reference: ten explicit
+primary/profile differences, not reference-verified parity. Corpus/UA-1
+JSON results remain unchanged; complete child shape and identity are deferred.
+
 The [heading-cardinality correction](spec-backlog.md#2026-11-05-namespace-resolved-heading-cardinality)
 uses existing resolved limits instead of legacy raw H-child counts.
 Six independent native outcomes agree, correcting two false rejections;

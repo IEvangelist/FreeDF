@@ -290,6 +290,14 @@ The pinned veraPDF UA-2 profile accepts the three malformed native cases
 that these primary-based checks reject. No reference-engine predicate
 mapping or full target-identity conformance is claimed.
 
+The bounded structure K-array null-child check follows Tables 354/355
+at the same official errata source. It shares the independently implemented
+Ref array scan; no standard text or external control PDFs are bundled.
+All fifteen native combined-profile jobs accepted the controls, while
+ten null/dangling cases now reject against the primary requirement.
+These are explicit primary/reference disagreements, not a reference
+family mapping or complete child shape/identity conformance.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

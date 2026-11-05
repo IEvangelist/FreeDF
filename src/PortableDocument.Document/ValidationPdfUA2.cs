@@ -397,8 +397,10 @@ internal static class PdfUA2Checks
     static void Elements(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
+        StructureKidNulls(c, tree.Root, "ISO 32000-2 14.7.2 Table 354", null);
         foreach (var e in tree.Elements())
         {
+            StructureKidNulls(c, e.Dict, "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureReferenceShape(c, e);
             var outcome = Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out var standardType, out var resolvedNamespace);
             if (outcome == RoleOutcome.Standard && resolvedNamespace == MathMlNamespace)
@@ -507,18 +509,45 @@ internal static class PdfUA2Checks
                 "structure Ref must be an array", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
             return;
         }
+        if (ArrayContainsNull(c, references, Incomplete))
+            c.Add("PDFUA2-STRUCT-REF-NULL", ValidationSeverity.Error,
+                "structure Ref array contains a null element", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+    }
+
+    static void StructureKidNulls(ValidationContext c, PdfDictionary dictionary, string clause, int? page)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-STRUCT-K-INCOMPLETE", ValidationSeverity.Error,
+                "structure K null-child inspection exceeds its reference/work bound", clause, page);
+        }
+        var value = ResolveBounded(c.F, dictionary.Get("K"), Incomplete);
+        if (!incomplete && value is PdfArray children && ArrayContainsNull(c, children, Incomplete))
+            c.Add("PDFUA2-STRUCT-K-NULL", ValidationSeverity.Error,
+                "structure K array contains a null child", clause, page);
+    }
+
+    static bool ArrayContainsNull(ValidationContext c, PdfArray array, Action incompleteInspection)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            incomplete = true;
+            incompleteInspection();
+        }
         int work = 0;
         bool foundNull = false;
-        foreach (var raw in references.Items)
+        foreach (var raw in array.Items)
         {
             if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
             var item = ResolveBounded(c.F, raw, Incomplete);
             if (incomplete) break;
             foundNull |= item is null or PdfNull;
         }
-        if (foundNull)
-            c.Add("PDFUA2-STRUCT-REF-NULL", ValidationSeverity.Error,
-                "structure Ref array contains a null element", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+        return foundNull;
     }
 
     static void FenoteType(ValidationContext c, StructureTree tree, StructElement element)
