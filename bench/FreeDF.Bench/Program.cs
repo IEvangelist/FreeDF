@@ -43,6 +43,9 @@ if (args is ["--raster-bench", var rdpi, var riter, ..var rrest])
 if (args.Contains("--preflight"))
 {
     Console.WriteLine($"Accepted documents: {string.Join(", ", ComparisonCorpus.ValidatedFiles)}");
+    foreach (var members in new[] { 1, 1000 })
+        foreach (var encrypted in new[] { false, true })
+            new ObjectStreamBench { MemberCount = members, Encrypted = encrypted }.Setup();
     return;
 }
 

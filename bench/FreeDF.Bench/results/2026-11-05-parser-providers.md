@@ -1,0 +1,57 @@
+```
+
+BenchmarkDotNet v0.15.8, Windows 11 (10.0.26200.9711/25H2/2025Update/HudsonValley2)
+Intel Core i7-14700K 3.40GHz, 1 CPU, 28 logical and 20 physical cores
+.NET SDK 10.0.403
+  [Host]     : .NET 10.0.14 (10.0.14, 10.0.1426.52326), X64 RyuJIT x86-64-v3
+  Job-TSMBOA : .NET 10.0.14 (10.0.14, 10.0.1426.52326), X64 RyuJIT x86-64-v3
+
+IterationCount=8  IterationTime=500ms  LaunchCount=1
+WarmupCount=3
+
+```
+| Type              | Method               | MemberCount | Encrypted | CorpusFile           | Mean           | Error           | StdDev         | Ratio | RatioSD | Gen0     | Gen1     | Gen2     | Allocated | Alloc Ratio |
+|------------------ |--------------------- |------------ |---------- |--------------------- |---------------:|----------------:|---------------:|------:|--------:|---------:|---------:|---------:|----------:|------------:|
+| **ObjectStreamBench** | **LoadOnly**             | **1**           | **False**     | **?**                    |  **10,497.849 ns** |     **787.9033 ns** |    **412.0887 ns** |     **?** |       **?** |  **10.4091** |   **0.1810** |        **-** |  **180872 B** |           **?** |
+| ObjectStreamBench | FreshFirstMember     | 1           | False     | ?                    |  11,665.876 ns |     963.2206 ns |    503.7830 ns |     ? |       ? |  10.5120 |   0.1907 |        - |  182088 B |           ? |
+| ObjectStreamBench | FreshAllMembers      | 1           | False     | ?                    |  11,593.654 ns |   2,811.8005 ns |  1,470.6260 ns |     ? |       ? |  10.5202 |   0.1864 |        - |  182088 B |           ? |
+| ObjectStreamBench | CachedMember         | 1           | False     | ?                    |       1.878 ns |       0.0785 ns |      0.0410 ns |     ? |       ? |        - |        - |        - |         - |           ? |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **ObjectStreamBench** | **LoadOnly**             | **1**           | **True**      | **?**                    |  **41,019.249 ns** |   **4,828.5972 ns** |  **2,525.4497 ns** |     **?** |       **?** |  **12.0098** |   **0.3268** |        **-** |  **209011 B** |           **?** |
+| ObjectStreamBench | FreshFirstMember     | 1           | True      | ?                    |  39,245.421 ns |   2,279.1462 ns |  1,011.9550 ns |     ? |       ? |  12.1189 |   0.3049 |        - |  210475 B |           ? |
+| ObjectStreamBench | FreshAllMembers      | 1           | True      | ?                    |  48,817.781 ns |   3,436.0461 ns |  1,797.1185 ns |     ? |       ? |  12.1118 |   0.3106 |        - |  210475 B |           ? |
+| ObjectStreamBench | CachedMember         | 1           | True      | ?                    |       2.318 ns |       0.3770 ns |      0.1972 ns |     ? |       ? |        - |        - |        - |         - |           ? |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **ObjectStreamBench** | **LoadOnly**             | **1000**        | **False**     | **?**                    |  **90,402.459 ns** |   **4,805.4861 ns** |  **2,513.3622 ns** |     **?** |       **?** |  **20.3927** |   **5.0982** |        **-** |  **355114 B** |           **?** |
+| ObjectStreamBench | FreshFirstMember     | 1000        | False     | ?                    |  93,859.765 ns |   8,525.0976 ns |  4,458.7909 ns |     ? |       ? |  20.4772 |   4.9858 |        - |  356329 B |           ? |
+| ObjectStreamBench | FreshAllMembers      | 1000        | False     | ?                    | 710,704.505 ns | 131,203.1652 ns | 68,621.7923 ns |     ? |       ? | 168.8830 |  77.1277 |        - | 2926083 B |           ? |
+| ObjectStreamBench | CachedMember         | 1000        | False     | ?                    |       1.898 ns |       0.3291 ns |      0.1721 ns |     ? |       ? |        - |        - |        - |         - |           ? |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **ObjectStreamBench** | **LoadOnly**             | **1000**        | **True**      | **?**                    | **129,457.737 ns** |  **11,145.1543 ns** |  **5,829.1312 ns** |     **?** |       **?** |  **22.3394** |   **5.5221** |        **-** |  **388288 B** |           **?** |
+| ObjectStreamBench | FreshFirstMember     | 1000        | True      | ?                    | 124,279.852 ns |   5,629.1496 ns |  2,944.1541 ns |     ? |       ? |  22.4156 |   6.3291 |        - |  389752 B |           ? |
+| ObjectStreamBench | FreshAllMembers      | 1000        | True      | ?                    | 906,749.375 ns | 144,317.8394 ns | 75,481.0206 ns |     ? |       ? | 175.0000 |  70.3125 |        - | 2991477 B |           ? |
+| ObjectStreamBench | CachedMember         | 1000        | True      | ?                    |       1.965 ns |       0.2788 ns |      0.1458 ns |     ? |       ? |        - |        - |        - |         - |           ? |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **PdfOpenBench**      | **PortableDocumentOpen** | **?**           | **?**         | **03-ty(...)d.pdf [26]** |   **7,688.216 ns** |     **589.2674 ns** |    **308.1982 ns** |  **1.00** |    **0.05** |   **1.6920** |   **0.0604** |        **-** |   **29384 B** |        **1.00** |
+| PdfOpenBench      | PdfPigOpen           | ?           | ?         | 03-ty(...)d.pdf [26] |  29,444.032 ns |   1,334.9404 ns |    698.1997 ns |  3.83 |    0.16 |   4.6480 |   0.3670 |        - |   81176 B |        2.76 |
+| PdfOpenBench      | PdfSharpOpen         | ?           | ?         | 03-ty(...)d.pdf [26] | 135,476.590 ns |   6,384.7121 ns |  3,339.3279 ns | 17.65 |    0.77 |  25.2717 |  12.5000 |        - |  440507 B |       14.99 |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **PdfOpenBench**      | **PortableDocumentOpen** | **?**           | **?**         | **06-pa(...)s.pdf [24]** |  **15,429.471 ns** |   **1,101.7904 ns** |    **576.2577 ns** |  **1.00** |    **0.05** |   **3.2520** |   **0.2478** |        **-** |   **56504 B** |        **1.00** |
+| PdfOpenBench      | PdfPigOpen           | ?           | ?         | 06-pa(...)s.pdf [24] |  42,398.163 ns |   3,074.7924 ns |  1,608.1759 ns |  2.75 |    0.14 |   6.0657 |   0.6740 |        - |  105992 B |        1.88 |
+| PdfOpenBench      | PdfSharpOpen         | ?           | ?         | 06-pa(...)s.pdf [24] |  91,939.236 ns |   8,058.9196 ns |  4,214.9708 ns |  5.97 |    0.33 |  14.6199 |   4.9342 |        - |  253494 B |        4.49 |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **PdfOpenBench**      | **PortableDocumentOpen** | **?**           | **?**         | **09-images.pdf**        |   **5,647.062 ns** |     **148.8326 ns** |     **66.0826 ns** |  **1.00** |    **0.02** |   **1.3665** |   **0.0336** |        **-** |   **23752 B** |        **1.00** |
+| PdfOpenBench      | PdfPigOpen           | ?           | ?         | 09-images.pdf        |  23,530.663 ns |     419.4489 ns |    186.2379 ns |  4.17 |    0.05 |   3.7434 |   0.0924 |        - |   64840 B |        2.73 |
+| PdfOpenBench      | PdfSharpOpen         | ?           | ?         | 09-images.pdf        | 259,817.810 ns |  12,530.8521 ns |  5,563.7760 ns | 46.01 |    1.05 | 124.4518 | 124.4518 | 124.4518 |  812021 B |       34.19 |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **PdfOpenBench**      | **PortableDocumentOpen** | **?**           | **?**         | **image.pdf**            |   **4,063.009 ns** |      **56.1119 ns** |     **24.9140 ns** |  **1.00** |    **0.01** |   **1.0448** |   **0.0165** |        **-** |   **18032 B** |        **1.00** |
+| PdfOpenBench      | PdfPigOpen           | ?           | ?         | image.pdf            |  17,130.153 ns |   1,296.5548 ns |    678.1232 ns |  4.22 |    0.16 |   3.0836 |   0.1989 |        - |   53512 B |        2.97 |
+| PdfOpenBench      | PdfSharpOpen         | ?           | ?         | image.pdf            | 150,901.661 ns |   2,244.5487 ns |  1,173.9424 ns | 37.14 |    0.35 | 124.6981 | 124.6981 | 124.6981 |  441477 B |       24.48 |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **PdfOpenBench**      | **PortableDocumentOpen** | **?**           | **?**         | **text.pdf**             |  **10,210.420 ns** |     **170.8914 ns** |     **89.3795 ns** |  **1.00** |    **0.01** |   **2.3999** |   **0.1220** |        **-** |   **41680 B** |        **1.00** |
+| PdfOpenBench      | PdfPigOpen           | ?           | ?         | text.pdf             |  31,700.119 ns |     767.3528 ns |    340.7094 ns |  3.10 |    0.04 |   4.6063 |   0.3637 |        - |   80352 B |        1.93 |
+| PdfOpenBench      | PdfSharpOpen         | ?           | ?         | text.pdf             |  23,551.372 ns |     917.5494 ns |    479.8961 ns |  2.31 |    0.05 |   4.1982 |   0.4613 |        - |   72649 B |        1.74 |
+|                   |                      |             |           |                      |                |                 |                |       |         |          |          |          |           |             |
+| **PdfOpenBench**      | **PortableDocumentOpen** | **?**           | **?**         | **vector.pdf**           |   **7,092.874 ns** |     **346.2017 ns** |    **181.0702 ns** |  **1.00** |    **0.03** |   **1.7036** |   **0.0545** |        **-** |   **29536 B** |        **1.00** |
+| PdfOpenBench      | PdfPigOpen           | ?           | ?         | vector.pdf           |  23,718.343 ns |     643.2503 ns |    336.4323 ns |  3.35 |    0.09 |   3.7384 |   0.3692 |        - |   64896 B |        2.20 |
+| PdfOpenBench      | PdfSharpOpen         | ?           | ?         | vector.pdf           |  27,300.850 ns |   3,268.1383 ns |  1,709.2995 ns |  3.85 |    0.25 |  11.5223 |   4.5890 |        - |  199605 B |        6.76 |

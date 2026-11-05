@@ -2,6 +2,13 @@
 
 BenchmarkDotNet 0.15.8 compares FreeDF with PdfPig 0.1.16 using the same PDF byte arrays. PdfPig's official package is `PdfPig`, verified against the [v0.1.16 release](https://github.com/UglyToad/PdfPig/releases/tag/v0.1.16). It is an Apache-2.0 dependency of this benchmark executable only, not a production library dependency.
 
+Open/page-count comparisons additionally include PDFsharp 6.2.4 (MIT). This
+version is intentionally pinned: PDFsharp 6.5.0 changed to AGPL-3.0-only and
+requires license initialization. PDFsharp is a benchmark-only dependency.
+It is not included in text comparisons because this harness has no equivalent
+PDFsharp decoded-text operation. Results describe these versions, not the
+latest version of every provider or complete spec-conformance rankings.
+
 ## Reproduce
 
 From the repository root, with the .NET 10 SDK:
@@ -22,7 +29,7 @@ dotnet run -c Release --no-build --project bench\FreeDF.Bench -- --filter "*PdfO
 
 Candidates are `bench\fixtures\text.pdf`, `vector.pdf`, `image.pdf`, and `samples\03-typography-embedded.pdf`, `06-patterns-shadings.pdf`, `09-images.pdf`. They cover text, embedded typography, vector graphics, patterns/shadings, and images. Setup reads bytes outside timing.
 
-Before any comparison, preflight opens every candidate with both engines twice. It requires equal page counts, stable text across independent opens, and equal per-page decoded text after removing whitespace. Only whitespace is normalized to account for text-layout differences; text is not reordered, case-folded, or replaced. Mismatches and exceptions fail preflight visibly: no candidate is silently skipped to improve results. `PASS` lines include byte length, SHA-256, page count, and normalized character count so a run's exact corpus can be checked. Blank/image-only pages are valid equal inputs but should not be interpreted as text-heavy workloads.
+Before any comparison, preflight opens every candidate with all three engines twice. It requires equal page counts across all engines, stable text across independent FreeDF/PdfPig opens, and equal per-page decoded text for those two engines after removing whitespace. Only whitespace is normalized to account for text-layout differences; text is not reordered, case-folded, or replaced. Mismatches and exceptions fail preflight visibly: no candidate is silently skipped to improve results. `PASS` lines include byte length, SHA-256, page count, and normalized character count so a run's exact corpus can be checked. Blank/image-only pages are valid equal inputs but should not be interpreted as text-heavy workloads.
 
 Both extraction paths return materialized arrays of per-page strings in content order: FreeDF concatenates `PortableDocument.Render.PortableDocument.ExtractText` spans and PdfPig concatenates `Page.Letters` values. Preflight normalization is not timed.
 
@@ -36,11 +43,81 @@ Both extraction paths return materialized arrays of per-page strings in content 
 
 Both engines receive the same existing `byte[]`. PdfPig 0.1.16 supports `Open(byte[])` directly, so no harness `MemoryStream` adapter or disk I/O is introduced. Any internal copying/adaptation is part of the engine's cost. PdfPig disposal is timed for fresh-open cases; FreeDF documents have no disposal API.
 
+PDFsharp opens the same bytes via a non-writable `MemoryStream`, in `Import`
+mode. Creating and disposing that adapter and disposing the document are timed.
+Open/page-count is equivalent at the caller boundary, not a requirement for
+identical internal eager/lazy parsing or validation work. These are warm-process,
+fresh-document measurements, not cold process or disk I/O benchmarks.
+
 The already-open case opens a batch of 32 fresh documents in `IterationSetup` and disposes them in `IterationCleanup`, outside timing. BenchmarkDotNet uses one invocation and an unroll factor of one per iteration, with `OperationsPerInvoke=32` so times and allocations are reported per document. Each document is extracted exactly once, preventing PdfPig's decoded-page cache from turning later invocations into cache lookups while FreeDF repeats interpretation. This measures first extraction after open, not warm cached access. Batching increases measurement time, but blank pages can still produce minimum-iteration-time warnings. Setup-induced GC/cache effects and keeping both engines' unopened document batches alive can affect results; use fresh-open extraction for end-to-end decoding cost. Do not subtract separate benchmark means to estimate extraction cost.
 
-`MemoryDiagnoser` reports managed allocations, not total process/native memory. Ratios are PdfPig divided by the FreeDF baseline for the same document and operation. Results are specific to corpus, runtime, CPU, build, and cache state, not general speed guarantees. BenchmarkDotNet writes mean/error, allocations, ratios, exact commands, OS, CPU, runtime, JIT, and GC information under `BenchmarkDotNet.Artifacts`; preserve those reports when sharing measurements.
+`MemoryDiagnoser` reports managed allocations, not total process/native memory. Provider ratios are divided by the FreeDF baseline for the same document and operation. Results are specific to corpus, runtime, CPU, build, and cache state, not general speed guarantees. BenchmarkDotNet writes mean/error, allocations, ratios, exact commands, OS, CPU, runtime, JIT, and GC information under `BenchmarkDotNet.Artifacts`; preserve those reports when sharing measurements.
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
+
+## Object-stream parser workloads
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamBench*"
+```
+
+`ObjectStreamBench` measures one and 1,000 dictionary members with both plaintext
+and AES-128 object streams. Setup generates parser-only fixtures outside timing,
+checks every member's compressed xref status, type and exact integer value,
+rejects repaired loads, and verifies the full traversal checksum. These synthetic
+fixtures are not full document/conformance controls. Encryption uses fixed
+credentials/FileId but random cryptographic material; per-process hashes and byte
+counts are printed for provenance, not claimed byte identity across launches.
+The writer packs up to 100 objects per stream (including the root); 1,000
+members exercise multiple containers, not a single 1,000-member index.
+The standalone `--preflight` command also validates all four parser configurations.
+
+| Method | Timed boundary |
+|---|---|
+| `LoadOnly` | Fresh `PdfFile.Load`; not compressed-member materialization |
+| `FreshFirstMember` | Fresh load plus first compressed dictionary lookup, including shared index construction |
+| `FreshAllMembers` | Fresh load, every member and value, checksum consumption |
+| `CachedMember` | One lookup on the setup-loaded, fully primed file |
+
+Results expose encryption, index construction, scaling and cache costs separately.
+Cached timing is deliberately not comparable to fresh access; no cross-operation
+baseline/ratio is assigned. Timed methods return the parsed object or checksum
+to BenchmarkDotNet. Loading encrypted files includes encryption dictionary
+resolution/authentication. These are new baselines, not evidence that the recent
+parity fixes sped up or regressed parsing; attributing a change requires matched
+before/after source builds with the same fixture bytes and timing settings.
+
+## Parser/provider baseline: 2026-11-05
+
+The [complete 34-case report](results/2026-11-05-parser-providers.md) and
+[CSV](results/2026-11-05-parser-providers.csv) retain all measurements against
+production revision `b7ab3c5b49f9b5f2c70219baf5f60c6a6493a107`.
+The run took 6m 56s on Windows 11 / Core i7-14700K / .NET 10.0.14,
+with three warmups and eight 500 ms measurement iterations, one launch:
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamBench*" "*PdfOpenBench*" --join --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+All six input page counts agree across the three engines; FreeDF/PdfPig text
+preflight also passes. On this corpus, fresh open/page-count FreeDF means are
+4.06-15.43 us; PdfPig 17.13-42.40 us; PDFsharp 23.55-259.82 us.
+These are not full parsing, text, rendering or validation rankings. Reported
+provider work can differ because of eager/lazy internals and adapter costs.
+
+The new plaintext one-member parser load allocates 180,872 managed bytes; full
+1,000-member traversal allocates 2,926,083 bytes. These allocation baselines
+identify optimization targets rather than justify a claim of exceptional
+performance. First-member vs load-only means overlap in several configurations;
+do not subtract them. Cached lookup reports approximately 1.9-2.3 ns with no
+managed allocation, subject to normal sub-nanosecond harness/JIT limitations.
+All parser configurations pass member-value/compressed-xref preflight.
+
+Unlike the older run below, this machine has an i7-14700K, and the sample PDFs
+have the hashes printed by the current preflight, not the historical sample
+hashes. No exclusive OS-wide load guarantee was established; distributions
+include visible noise and outlier removals. Do not infer cross-date speedups
+or attribute a regression to a specific parity correction from these means.
 
 ## Serialized refresh: 2026-10-30
 

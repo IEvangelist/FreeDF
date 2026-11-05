@@ -5,6 +5,8 @@ using PortablePdfDocument = global::PortableDocument.Document.PdfDocument;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using PdfPigDocument = UglyToad.PdfPig.PdfDocument;
+using PdfSharpReader = PdfSharp.Pdf.IO.PdfReader;
+using PdfSharpOpenMode = PdfSharp.Pdf.IO.PdfDocumentOpenMode;
 
 public static class ComparisonCorpus
 {
@@ -43,6 +45,10 @@ public static class ComparisonCorpus
             var repeatedPortableDocument = Text(PortablePdfDocument.Load(bytes)).Select(Normalize).ToArray();
             using var repeatedPdfPig = PdfPigDocument.Open(bytes);
             var repeatedPdfPigText = Text(repeatedPdfPig).Select(Normalize).ToArray();
+            using var sharpStream = new MemoryStream(bytes, writable: false);
+            using var sharp = PdfSharpReader.Open(sharpStream, PdfSharpOpenMode.Import);
+            using var repeatedSharpStream = new MemoryStream(bytes, writable: false);
+            using var repeatedSharp = PdfSharpReader.Open(repeatedSharpStream, PdfSharpOpenMode.Import);
             if (!portableDocumentText.SequenceEqual(repeatedPortableDocument) ||
                 !pdfPigText.SequenceEqual(repeatedPdfPigText))
             {
@@ -50,12 +56,14 @@ public static class ComparisonCorpus
             }
 
             if (portableDocument.Pages.Count != pdfPig.NumberOfPages ||
+                portableDocument.Pages.Count != sharp.PageCount || sharp.PageCount != repeatedSharp.PageCount ||
                 !portableDocumentText.SequenceEqual(pdfPigText))
             {
                 throw new InvalidOperationException(
                     $"FAIL {file}: unequal page counts or per-page text after removing whitespace. " +
                     $"PortableDocument pages/chars={portableDocument.Pages.Count}/{portableDocumentText.Sum(t => t.Length)}, " +
-                    $"PdfPig pages/chars={pdfPig.NumberOfPages}/{pdfPigText.Sum(t => t.Length)}.");
+                    $"PdfPig pages/chars={pdfPig.NumberOfPages}/{pdfPigText.Sum(t => t.Length)}, " +
+                    $"PDFsharp pages={sharp.PageCount}/{repeatedSharp.PageCount}.");
             }
 
             Console.WriteLine(
@@ -91,6 +99,14 @@ public class PdfOpenBench
     {
         using var document = PdfPigDocument.Open(_pdf);
         return document.NumberOfPages;
+    }
+
+    [Benchmark]
+    public int PdfSharpOpen()
+    {
+        using var stream = new MemoryStream(_pdf, writable: false);
+        using var document = PdfSharpReader.Open(stream, PdfSharpOpenMode.Import);
+        return document.PageCount;
     }
 }
 
