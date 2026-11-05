@@ -366,6 +366,10 @@ internal static partial class PdfUAChecks
                 foreach (var key in carry.Keys.ToList()) if (--carry[key] <= 0) carry.Remove(key);
             }
             if (!hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
+            if (c.Part == 2 && carry.Values.Any(remaining => remaining > 0))
+                c.Add("PDFUA2-TABLE-ROWSPAN-END", ValidationSeverity.Error,
+                    "table cell RowSpan extends beyond the final table row",
+                    "ISO 14289-2 8.2.5.26", t.PageIndex);
             if (widths.Distinct().Count() > 1)
                 c.Add("PDFUA-TABLE-IRREGULAR", ValidationSeverity.Error, "table rows have differing column counts (veraPDF PDFUA-1 7.2-42/43, PDFUA-2 8.2.5.26-3/4)", Clause(c, "7.2", "8.2.5.26"), t.PageIndex);
             TableHeaderAssociations(c, tree, rows, idCounts, headerTargets);

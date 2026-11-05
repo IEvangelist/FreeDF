@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 terminal table RowSpan overflow
+
+UA-2 table validation now reports PDFUA2-TABLE-ROWSPAN-END when a cell's
+resolved owned RowSpan remains active after the final flattened table
+row. Previously the carry state was discarded. Span lookup/clamping and
+UA-1 behavior are retained. A legitimate two-row span ending at the
+final row remains valid; row-group boundaries and intersections are
+not newly evaluated by this terminal check.
+
+Six native controls completed normally against the combined profile;
+all rule/file outcomes agree (three positives, three negatives, test
+8.2.5.26-2). Three missed violations are corrected, including a class
+span and overflow on every data cell. Seven authored cases initially
+had two failing assertions and cover valid terminal spans and UA-1.
+
+Fresh 435-PDF/870-result comparison adds two diagnostics to already
+invalid width-irregular fixtures, with every verdict and UA-1 output
+unchanged. Independent reference jobs reject both under 8.2.5.26-3,
+not test 2: this is an explicit diagnostic difference. Both fixtures
+actually contain RowSpan 5 in tables of three rows; the terminal
+overflow is independently inspectable but exact predicate agreement
+is not claimed for those fixtures. Rule-overlap mapping for test 2
+only reflects this measured slice, not full column-height/group regularity.
+Full geometry, grouping and header fallback remain incomplete.
+
 ## 2026-11-05 owned table span and class attributes
 
 UA-2 table spans now use /O /Table local/ClassMap attributes, not generic

@@ -404,6 +404,44 @@ public class ValidationTests
         Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-HEADERS-FORMAT");
     }
 
+    [Theory]
+    [InlineData(1, 1, false)]
+    [InlineData(1, 2, false)]
+    [InlineData(2, 1, false)]
+    [InlineData(2, 2, true)]
+    [InlineData(2, 1000, true)]
+    public void Ua2TableRejectsSpansBeyondFinalRow(int part, int span, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH /A << /O /Table /Scope /Column >> >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>",
+            $"<< /S /TD /A << /O /Table /RowSpan {span} >> >>")), part);
+        Assert.Equal(invalid, report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaTableRowSpanEndingAtFinalRowIsValid(int part)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K 13 0 R >>",
+            "<< /S /TH /A << /O /Table /Scope /Column /RowSpan 2 >> >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>")), part);
+        Assert.False(report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> TableSpanAttributeCases()
     {
         foreach (var part in new[] { 1, 2 })

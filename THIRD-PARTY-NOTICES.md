@@ -44,6 +44,10 @@ Owned local/ClassMap span lookup was additionally cross-checked against
 test 4 with eight native owner/precedence controls. The independently
 implemented bounded attribute helper is reused; full geometry and
 attribute inheritance/revision are not claimed.
+The terminal RowSpan overflow check was cross-checked against test 2
+with six native controls. Two additional corpus diagnostics differ
+from the reference's test-3-only reports; exact predicate agreement
+and full table/group column-height coverage are not claimed.
 
 The null annotation StructParent boundary in `ValidationPdfUA.cs` follows
 ISO 32000-1 7.3.9 and was independently cross-checked against the same

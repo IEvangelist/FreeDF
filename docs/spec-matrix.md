@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [terminal RowSpan check](spec-backlog.md#2026-11-05-terminal-table-rowspan-overflow)
+rejects spans remaining past the final table row. Six native outcomes
+agree, correcting three missed violations; two new corpus diagnostics
+retain explicit reference predicate differences. All file verdicts and
+UA-1 output are unchanged. Full column/group geometry remains deferred.
+
 The [owned table-span correction](spec-backlog.md#2026-11-05-owned-table-span-and-class-attributes)
 uses bounded /Table local/ClassMap lookup for UA-2 spans and header attributes.
 Eight native width controls agree, correcting two false rejections and two
