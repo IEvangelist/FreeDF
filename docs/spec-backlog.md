@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 completed Flate inflation
+
+ISO 32000-1 7.4.4.1 (printed p25) incorporates RFCs 1950/1951 for Flate.
+RFC 1951 3.2.3 defines BFINAL for the last deflate block. A matching Adler-32
+value in the last four source bytes does not prove that the inflater reached
+the final block and consumed its actual zlib trailer. Previously, a nonfinal
+stored block followed only by a matching checksum could publish member bytes.
+
+The strict path now supplies an input stream that throws if the inflater
+requests nonempty input at physical EOF. The .NET 10 inflater's
+[ReadCore implementation](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.IO.Compression/src/System/IO/Compression/DeflateZLib/DeflateStream.cs)
+requests input only while unfinished; a normally finished inflater returns
+without requesting it. Header/checksum validation, bounded pooled output reads
+and output limits remain. Ordinary Flate partial recovery is unchanged.
+No process-global compression setting, reflection, per-byte input throttling
+or second compressed-bit scan is introduced.
+
+Eleven tests reproduce three unchanged-production failures/eight passes:
+three matching-checksum soft-EOF probes plus eight complete multiblock controls
+(nonfinal stored block followed by a complete empty final stored block).
+They check exact ordinary bytes, strict rejection, normal/forced-repair member
+absence and valid cached identity. The initial eight-negative construction
+incorrectly assumed every checksum suffix preserved the same ordinary bytes;
+five instead produced decoder errors or different partial output. Those
+premises were corrected before production changes. The retained three probes
+are independently decoded to the exact body by Python zlib with eof false;
+all eight complete controls have eof true.
+
+Final focused selector: 981 passed. Full Release: 19,442 passed, zero failed/
+skipped. Solution: zero warnings/errors. Twenty-eight independently encoded/
+retained native controls comprise six unfinished streams and twenty-two valid
+files, including six encrypted positives. The six negatives previously
+published Target and now leave the member absent after repair; all valid
+outcomes remain identical. MuPDF exposes Target for all twenty-eight.
+Fresh pinned 435-PDF/870-result full corpus JSON remains wholly unchanged.
+
+The [matched valid-path measurements](../bench/FreeDF.Bench/README.md#flate-completion-follow-up-2026-11-05)
+retain all eight Flate/LZW metadata configurations. Input hashes and reported
+allocations are identical to the exact preceding production control. Three
+Flate means fall and one rises; all four reported intervals overlap. Unchanged
+LZW controls also vary. No zero-cost or speedup guarantee is inferred.
+
+This proves completion through the existing inflater, not exact source
+consumption: buffered input may still contain bytes after a valid zlib stream.
+That separate boundary, other codec extent rules, global resource budgets
+and complete filter/spec parity remain open.
+
 ## 2026-11-05 LZW end-of-data extent
 
 ISO 32000-1 7.3.8.2 (printed p20) requires stream Length, decoded size and

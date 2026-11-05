@@ -247,6 +247,32 @@ directions. No speedup, zero-cost or exclusive-load guarantee is inferred.
 The [scoped extent record](../../docs/spec-backlog.md#2026-11-05-lzw-end-of-data-extent)
 separates invalid excess-byte controls from these valid operations.
 
+### Flate completion follow-up: 2026-11-05
+
+The [completion candidate](results/2026-11-05-flate-completion.md)
+([CSV](results/2026-11-05-flate-completion.csv)) adds a strict-only input
+stream that throws on unexpected requested EOF while the inflater is unfinished.
+It neither reads compressed data one byte at a time nor scans compressed bits
+twice. The matched control is the extent candidate immediately above,
+production revision `54abed8eee1b1a7dd2930b5cec6840b41658a6c6`.
+The harness, all eight fixture hashes and measurement settings are unchanged;
+all provider/parser/parameter preflight configurations pass.
+
+| Flate filters / indirect | Previous mean (us) | Completion mean (us) | Both allocated (KiB) |
+|---|---:|---:|---:|
+| 1 / No | 7.468 | 7.459 | 19.24 |
+| 1 / Yes | 7.708 | 7.597 | 18.87 |
+| 2 / No | 9.166 | 8.502 | 21.04 |
+| 2 / Yes | 9.946 | 10.043 | 20.44 |
+
+All eight reported managed allocations are identical. Three Flate means fall
+and one rises; all four reported intervals overlap. The unchanged LZW means
+also vary. Results retain the prior LZW allocation reduction, not a universal
+speedup or zero-cost assertion. The
+[scoped completion record](../../docs/spec-backlog.md#2026-11-05-completed-flate-inflation)
+distinguishes actual inflater completion from the remaining buffered
+consumed-input boundary.
+
 ### Matched parameter-schema control: 2026-11-05
 
 The [metadata control report](results/2026-11-05-filter-metadata-control.md)

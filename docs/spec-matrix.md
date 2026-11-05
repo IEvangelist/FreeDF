@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [completed Flate guard](spec-backlog.md#2026-11-05-completed-flate-inflation)
+rejects matching-checksum inputs whose inflater still needs bytes at EOF.
+Complete multiblock streams and ordinary partial recovery remain supported,
+without a second bit scan or process-global compression setting. Buffered
+extra bytes after a valid zlib stream still need a separate consumption check;
+complete Flate/filter parity is not claimed.
+
 The [strict LZW extension](spec-backlog.md#2026-11-05-strict-lzw-code-streams)
 requires initial clear, completed EOD, zero final-byte padding and valid
 dictionary references before object-stream publication. Both EarlyChange modes,
