@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 forbidden compressed stream values
+
+ISO 32000-1 7.5.7 (printed p45) explicitly prohibits stream objects inside
+object streams. Lazy loading now checks whether a parsed dictionary is
+followed by a stream keyword within that member's recorded boundary and
+raises PdfParseException before caching it as an ordinary dictionary.
+Whitespace/comments are recognized by the existing lexer; names, strings,
+dictionary Type entries and comments containing the word stream are not
+mistaken for a stream body.
+
+Ten controls include six initially red stream-value/isolation cases and
+four dictionary positives, through normal and forced-recovery paths.
+Repeated invalid requests cannot become cache hits. A valid dictionary
+remains usable when another unrequested member is a prohibited stream.
+Full Release: 18,647 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Sixteen native PDFs preserve eight valid dictionary outputs unchanged.
+Eight prohibited values now give the explicit diagnostic instead of
+silently returning their dictionary. MuPDF still exposes the dictionary
+Type in two malformed ObjStm-typed cases; other malformed probes lack a
+Type, without an exception. All positive outputs/repair states agree.
+These differing dispositions are documented, not normative authority.
+Fresh pinned 435-PDF/870-result corpus full JSON is wholly unchanged against
+the member-boundary baseline.
+
+This does not parse a nested stream's payload or validate its Length/filter
+schema. Remaining forbidden encryption/length objects, complete delimiter/
+trailing-token validation, object-stream schema and global budgets remain
+separate. Other members are still parsed only on demand.
+
 ## 2026-11-05 compressed member consumption boundaries
 
 ISO 32000-1 7.5.7 (printed p46) identifies each member's start by its

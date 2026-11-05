@@ -195,6 +195,13 @@ public sealed class PdfFile
             throw new PdfParseException("object stream member exceeds its boundary");
         if (parsed is PdfRef)
             throw new PdfParseException("object stream member cannot be an indirect reference");
+        if (parsed is PdfDictionary)
+        {
+            lexer.SkipWhite();
+            if (lexer.Pos < map.First + member.End && lexer.ReadObject(false) is PdfKeyword { Value: "stream" }
+                && lexer.Pos <= map.First + member.End)
+                throw new PdfParseException("stream objects cannot be stored in an object stream");
+        }
         map.Parsed[objNum] = parsed;
         return parsed;
     }

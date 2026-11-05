@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed stream-value check](spec-backlog.md#2026-11-05-forbidden-compressed-stream-values)
+rejects dictionary-plus-stream syntax within a member boundary before it
+can be cached as a dictionary. Ordinary names, strings, Type entries and
+comments remain supported; other members remain lazy. Reference differences
+and unchanged corpus JSON are recorded. Remaining forbidden objects,
+delimiter/trailing-token validation and budgets are separate.
+
 The [compressed member consumption check](spec-backlog.md#2026-11-05-compressed-member-consumption-boundaries)
 records next-offset boundaries and rejects a parsed value that consumes a
 following member before caching. Other members remain independently lazy;
