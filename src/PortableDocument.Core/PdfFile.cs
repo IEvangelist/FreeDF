@@ -482,6 +482,7 @@ public sealed class PdfFile
                     lx.SkipWhite();
                     if (TryFixedXrefEntry(lx.Pos, out var foff, out var fgen, out var fuse))
                     {
+                        if (fgen > 65535) throw new PdfParseException("xref generation exceeds 65535");
                         lx.Pos += 18;
                         if (!Xref.ContainsKey(num))
                         {
@@ -493,8 +494,8 @@ public sealed class PdfFile
                     if (lx.ReadObject(false) is not PdfInteger off || lx.ReadObject(false) is not PdfInteger gen
                         || lx.ReadObject(false) is not PdfKeyword k || k.Value is not ("n" or "f"))
                         throw new PdfParseException("bad xref entry");
-                    if (gen.Value < 0 || gen.Value > int.MaxValue)
-                        throw new PdfParseException("xref generation exceeds supported range");
+                    if (gen.Value is < 0 or > 65535)
+                        throw new PdfParseException("xref generation outside 0..65535");
                     if (!Xref.ContainsKey(num)) { Xref[num] = new XrefEntry(k.Value == "n", false, off.Value, (int)gen.Value); if (k.Value != "n") _tableFree.Add(num); }
                 }
             }

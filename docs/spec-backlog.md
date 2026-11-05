@@ -4,6 +4,49 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 classic cross-reference generation bounds
+
+ISO 32000-1 7.5.4 (printed p41) caps generations at 65,535.
+Both classic table paths previously accepted larger generations without
+reporting repair: the fixed-width path accepted five-digit 65,536/99,999,
+and the token-based recovery path accepted values through int.MaxValue.
+Both now explicitly recover instead of publishing an unrepaired index.
+Ordinary object-header scanning is unchanged: five-digit 99,999 remains
+lossless after repair, whereas ten-digit int.MaxValue is not resurrected.
+
+Twenty-two new controls cover ten oversized cases across free/in-use and
+fixed/fallback parsing, plus twelve representable boundary dispositions.
+The actual unchanged-production run including the nine older generation
+tests has ten failures/21 passes. Two older tests intentionally change
+their clean-index assumptions to explicit repair. The controls assert
+index disposition and recoverable target identity, not free-list topology,
+new-file initial generations or reuse lifecycle conformance.
+
+Final focused xref/object-stream/reference-generation checks pass 1,320;
+full Release passes 20,174 with zero failed/skipped. Solution/benchmark
+builds have zero warnings/errors. Fresh final rebuilt UaDump yields
+identical complete JSON for the pinned 435-PDF/870-result corpus;
+all provider/parser benchmark correctness preflights pass.
+
+Twenty-two independently encoded native-reference fixtures use the same
+range/disposition cases with an ordinary generation-zero target.
+MuPDF 1.28.5 accepts all ten fixed-width fixtures unrepaired, including
+65,536/99,999: in-use targets publish, free targets stay null. All twelve
+token-based fallback fixtures repair and recover the physical target,
+including representable boundaries. These mixed dispositions remain
+explicit; permissive reference acceptance is not normative authority.
+No external PDFs are bundled.
+
+New matched classic-xref benchmarks compare fresh PdfFile.Load on identical
+64/4,096-row inputs before/after this bound. Fixed-width means change
+2.728/202.029 to 2.702/199.027 microseconds; fallback compatibility means
+4.243/321.416 to 4.216/318.211. All 99.9% intervals overlap; no speedup,
+proven regression or zero-overhead claim is made. Rounded managed
+allocations are unchanged; raw counters/input hashes and distinct engine
+identifiers are retained in the benchmark reports. The fallback input is
+deliberately nonconforming table syntax accepted by the recovery parser,
+not a valid-file performance or conformance control.
+
 ## 2026-11-05 cross-reference stream object header ranges
 
 ISO 32000-1 7.3.10 (printed p21) requires positive indirect-object numbers

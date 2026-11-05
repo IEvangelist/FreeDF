@@ -9,6 +9,47 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Classic xref generation bound: 2026-11-05
+
+`XrefClassicBench` times fresh `PdfFile.Load` for 64/4,096-row classic
+tables. Setup verifies indexed loading without repair, row count,
+target type and reference/cache identity outside the timed method.
+`FixedEntry=true` uses fixed-width entries. The token-based
+`FixedEntry=false` input deliberately exercises nonconforming compatibility
+syntax, not valid-file conformance. Neither case establishes complete
+generation/free-list lifecycle compliance.
+
+The control is production fcbe2021 before the generation-bound edit;
+the final changes only fixed/fallback generation checks. Identical input
+lengths/SHA256 and distinct engine MVIDs are verified. BDN 0.15.8 on
+.NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K uses one launch,
+three warmups and eight 500 ms measurement iterations:
+
+| Rows / path | Control mean +/- 99.9% half-width (us) | Final (us) |
+|---|---:|---:|
+| 64 / fixed | 2.728 +/- 0.0759 | 2.702 +/- 0.0278 |
+| 4,096 / fixed | 202.029 +/- 6.1551 | 199.027 +/- 3.6679 |
+| 64 / fallback compatibility | 4.243 +/- 0.0955 | 4.216 +/- 0.0825 |
+| 4,096 / fallback compatibility | 321.416 +/- 4.1745 | 318.211 +/- 5.3483 |
+
+All intervals overlap: no verified speedup, regression or zero-overhead
+claim. Managed allocations remain 13.94/718.81 KB fixed and
+16.11/910.81 KB fallback, rounded by BDN; raw values are retained rather
+than asserted exactly equal. These are nonzero managed allocations, not
+native/retained-memory or whole-document rendering measurements.
+An initial overlapping test/benchmark build hit a file lock before any
+measurement; its serial retry succeeded. Both timed runs were isolated
+from this slice's test/corpus workloads.
+
+[Control report](results/2026-11-05-xref-classic-bound-control.md),
+[final report](results/2026-11-05-xref-classic-bound-final.md), matching CSV
+reports and [eight raw GC/input identity rows](results/2026-11-05-xref-classic-bound-gc.csv)
+are retained.
+
+```powershell
+dotnet run -c Release --no-build --project bench\FreeDF.Bench -- --filter "*XrefClassicBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
 ## Reproduce
 
 From the repository root, with the .NET 10 SDK:

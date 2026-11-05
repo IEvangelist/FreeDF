@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [classic xref generation guard](spec-backlog.md#2026-11-05-classic-cross-reference-generation-bounds)
+explicitly recovers generations above 65,535 in both fixed-width and
+fallback parsing. Lossless ordinary header recovery is preserved within
+its scanning limits. Free-list topology and reuse lifecycle remain open;
+matched classic load benchmark intervals all overlap.
+
 The [xref header-range guard](spec-backlog.md#2026-11-05-cross-reference-stream-object-header-ranges)
 explicitly recovers invalid or unsupported object identifiers at the
 startxref entry point. Sparse supported identifiers and matching

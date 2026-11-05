@@ -43,25 +43,25 @@ public class XrefClassicGenerationTests
     [InlineData(0)]
     [InlineData(65535)]
     [InlineData(99999)]
-    public void Fixed_and_fallback_lossless_compatibility_remains_unchanged(int generation)
+    public void Fixed_and_fallback_keep_representable_indexing_and_lossless_header_recovery(int generation)
     {
         foreach (var fixedEntry in new[] { false, true })
         {
             var file = PdfFile.Load(Build(generation, generation, fixedEntry: fixedEntry));
-            Assert.False(file.Repaired);
+            Assert.Equal(generation > 65535, file.Repaired);
             Assert.Equal(generation, file.Xref[2].GenOrIndex);
             Assert.Equal("Target", Assert.IsType<PdfDictionary>(file.GetObject(new PdfRef(2, generation))).Get("Type").AsName());
-            Assert.False(file.Repaired);
+            Assert.Equal(generation > 65535, file.Repaired);
         }
     }
 
     [Fact]
-    public void Fallback_int_generation_boundary_is_preserved_without_narrowing()
+    public void Fallback_int_generation_boundary_repairs_without_resurrecting_unscannable_header()
     {
         var file = PdfFile.Load(Build(int.MaxValue, int.MaxValue));
-        Assert.False(file.Repaired);
-        Assert.Equal(int.MaxValue, file.Xref[2].GenOrIndex);
-        Assert.Equal("Target", Assert.IsType<PdfDictionary>(file.GetObject(new PdfRef(2, int.MaxValue))).Get("Type").AsName());
-        Assert.False(file.Repaired);
+        Assert.True(file.Repaired);
+        Assert.False(file.Xref.ContainsKey(2));
+        Assert.IsType<PdfNull>(file.GetObject(new PdfRef(2, int.MaxValue)));
+        Assert.True(file.Repaired);
     }
 }
