@@ -4,6 +4,46 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary text-field V declared types
+
+Official PDF Association PDF 2.0 errata 12.7.5.3 requires a non-null text
+field V to be a text string or stream. The text-field value pass now
+inspects inherited V before RV, so this declared-type requirement also
+applies without a rich value. Known non-string/non-stream values emit
+PDFUA2-FORM-TEXT-V-TYPE; existing RV presence/equality/incomplete findings
+remain separate and unchanged. Choice/button fields are not classified
+as text fields.
+
+The existing bounded V/Parent traversal is reused: 32 reference hops,
+64 parent dictionaries beyond the terminal field, identity-cycle detection,
+and field-reader truncation. Null/omission/indirect null/dangling local
+values retain inherited fallback; a known non-null override stops lookup.
+Unknown V/parent traversal explicitly retains FORM-VALUE-INCOMPLETE even
+without RV. Known V type errors survive later unresolved RV.
+String/stream decoding, XML equality and UA-1 behavior are unchanged.
+
+The initial 320 authored part/type/RV/V/indirect/inherited/reference cases
+had thirty-five failures. Six additional parent-depth/cycle/malformed/known
+override controls pass. Focused Release: 3,577 passed; full Release:
+16,434 passed, zero failed/skipped. Solution zero errors/two retained
+machine-feed NU1507 warnings.
+
+Twenty native controls contain six null/string/stream type controls
+(five retained clean positives; rich/null already fails RV presence)
+and fourteen type negatives. All type negatives now receive the new
+type finding. Seven no-RV negatives newly reject and remain reference-
+accepted: **seven explicit primary/reference disagreements**. Seven rich
+negatives already reject under FORM-VALUE-INCOMPLETE; those and rich/null
+retain their existing findings. All combined-reference jobs complete
+normally; rich negatives reject under 8.10.3.3-1, not independent declared-
+type agreement. Native UA-1 and fresh 435-PDF/870-result corpus JSON are
+wholly unchanged against committed class-array baseline.
+
+This covers terminal fields recognized by the existing field reader,
+not complete field schema/ownership/traversal. Full RV inheritance/schema,
+text encodings, layout/CSS and MaxLen remain separate. No standard text
+or external controls are bundled; hosted CI/full parity are not claimed.
+
 ## 2026-11-05 primary attribute-class array item types
 
 Official PDF Association 14.7.6.2 requires C class names or arrays of class

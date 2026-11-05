@@ -449,6 +449,15 @@ ten primary negatives accepted by the reference; these disagreements are
 explicit. ClassMap schema and complete element K types remain separate.
 No standard text or external controls are bundled.
 
+The terminal text-field V type check follows the official PDF Association
+12.7.5.3 errata's non-null text string/stream requirement. Existing bounded
+inherited value traversal and rich equality are independently reused.
+Twenty native controls include five retained clean positives, seven newly
+rejected no-RV negatives accepted by the reference and existing rich-value
+negatives whose diagnostics are retained; these differences are explicit.
+Full field schema/traversal and appearance semantics remain separate.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

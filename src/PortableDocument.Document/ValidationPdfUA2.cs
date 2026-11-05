@@ -32,10 +32,10 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 link targets", () => LinkTargets(c, tree));
         c.Guard("PDF/UA-2 destinations", () => Destinations(c));
         c.Guard("PDF/UA-2 file specifications", () => Files(c));
-        c.Guard("PDF/UA-2 rich field values", () => RichFieldValues(c));
+        c.Guard("PDF/UA-2 text field values", () => TextFieldValues(c));
     }
 
-    static void RichFieldValues(ValidationContext c)
+    static void TextFieldValues(ValidationContext c)
     {
         var fields = c.Doc.GetFormFieldDetails();
         bool incomplete = false;
@@ -45,9 +45,6 @@ internal static class PdfUA2Checks
             if (field.FieldType?.Value != "Tx") continue;
             bool complete = true;
             void Unresolved() { complete = false; Incomplete(); }
-            var rich = ResolveBounded(c.F, field.Dictionary.Get("RV"), Unresolved);
-            if (!complete || rich is null or PdfNull) continue;
-            if (rich is not (PdfString or PdfStream)) { Incomplete(); continue; }
             var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
             PdfDictionary? dictionary = field.Dictionary;
             PdfObject? value = null;
@@ -61,6 +58,13 @@ internal static class PdfUA2Checks
                 dictionary = parent as PdfDictionary;
             }
             if (!complete) continue;
+            if (value is not (null or PdfNull or PdfString or PdfStream))
+                c.Add("PDFUA2-FORM-TEXT-V-TYPE", ValidationSeverity.Error,
+                    "a non-null text field V value must be a text string or stream",
+                    "ISO 32000-2 12.7.5.3");
+            var rich = ResolveBounded(c.F, field.Dictionary.Get("RV"), Unresolved);
+            if (!complete || rich is null or PdfNull) continue;
+            if (rich is not (PdfString or PdfStream)) { Incomplete(); continue; }
             if (value is null or PdfNull)
                 c.Add("PDFUA2-FORM-RV-V", ValidationSeverity.Error,
                     "a text field with /RV must also provide a plain /V value",
@@ -90,7 +94,7 @@ internal static class PdfUA2Checks
             if (incomplete) return;
             incomplete = true;
             c.Add("PDFUA2-FORM-VALUE-INCOMPLETE", ValidationSeverity.Error,
-                "rich-field value inspection is truncated, cyclic, malformed or bounded",
+                "text-field value inspection is truncated, cyclic, malformed or bounded",
                 "ISO 14289-2 8.10.3.3");
         }
     }

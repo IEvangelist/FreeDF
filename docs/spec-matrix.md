@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary text-field V type check](spec-backlog.md#2026-11-05-primary-text-field-v-declared-types)
+requires resolved non-null terminal Tx values to be strings/streams
+independently of RV, preserving bounded inheritance and existing rich-value
+findings. Twenty native controls retain five clean positives; seven newly
+rejected no-RV negatives remain reference-accepted. Pre-existing rich
+negative findings, corpus and UA-1 JSON are unchanged. Complete field
+schema/traversal, RV inheritance/layout and MaxLen remain separate.
+
 The [primary class-array item type check](spec-backlog.md#2026-11-05-primary-attribute-class-array-item-types)
 rejects non-name/non-number C items independently of ClassMap/local-A
 lookup, preserving existing explicit null/reference/work findings.

@@ -3573,6 +3573,106 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> TextFieldValueTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Tx", "Ch", "Btn" })
+        foreach (var rich in new[] { "", "/RV null", "/RV 10 0 R", "/RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>)" })
+        foreach (var value in new[] { "", "null", "(plain)", "0", "1.5", "true", "/Name", "[]", "<< >>",
+            "10 0 R", "11 0 R", "12 0 R", "99 0 R" })
+            yield return [part, type, rich, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(TextFieldValueTypeCases))]
+    public void Ua2TextFieldValueTypesApplyWithoutRichValue(int part, string type, string rich, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /{type} /T (field) {rich} {(value == "" ? "" : $"/V {value}")} >>",
+            "null", "/Name", ObjPdf.Stream("plain"),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = value is "0" or "1.5" or "true" or "/Name" or "[]" or "<< >>" or "11 0 R";
+        Assert.Equal(part == 2 && type == "Tx" && invalid, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/V null", true)]
+    [InlineData("/V 12 0 R", true)]
+    [InlineData("/V 99 0 R", true)]
+    [InlineData("/V (override)", false)]
+    public void Ua2TextFieldValueTypesUseInheritedValueUntilNonNullOverride(string local, bool invalid)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (parent) /V /Wrong /Kids [10 0 R] >>",
+            $"<< /T (child) /Parent 9 0 R {local} >>", "null", "null",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2TextFieldValueTypesReferenceBoundsAreExplicitWithoutRichValue(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "/Wrong" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /V 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TextFieldValueTypesRetainKnownTypeErrorWithCyclicRichValue()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, "<< /FT /Tx /T (field) /V /Wrong /RV 10 0 R >>", "10 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2TextFieldValueTypesInheritanceDepthIsExplicitWithoutRichValue(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, depth).Select(n => n == 9 + depth
+            ? "<< /V /Wrong >>" : $"<< /Parent {n + 1} 0 R >>");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /Parent 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/V 10 0 R", "10 0 R", true)]
+    [InlineData("/Parent 10 0 R", "<< /Parent 9 0 R >>", true)]
+    [InlineData("/Parent 10 0 R", "0", true)]
+    [InlineData("/V /Wrong /Parent 10 0 R", "0", false)]
+    public void Ua2TextFieldValueTypesUnknownValueOrParentIsIncompleteWithoutRichValue(string entry, string target, bool incomplete)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) {entry} >>", target])), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })
