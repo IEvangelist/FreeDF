@@ -4,6 +4,15 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary parent-key integer type check](spec-backlog.md#2026-11-05-primary-structure-parent-integer-key-types)
+checks both resolved keys across existing page, annotation, appearance and
+known resource-XObject surfaces, preserving explicit incomplete/conflict
+findings. Thirty-nine native controls retain twelve clean positives; all
+twenty-six type negatives reject, twenty-three remain reference-accepted.
+Three pre-existing PrinterMark negatives are kept separate. Corpus and
+UA-1 JSON are wholly unchanged. Full traversal, key ranges, required-key
+conditions and parent-tree identity remain open.
+
 The [nested appearance resource parent-key check](spec-backlog.md#2026-11-05-primary-nested-appearance-resource-parent-key-exclusivity)
 adds Form/Image resource graphs under direct/state annotation appearances
 using the shared iterative page-resource walker, explicit combined work

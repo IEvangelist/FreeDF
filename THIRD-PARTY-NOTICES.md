@@ -429,6 +429,17 @@ are explicit. Patterns, soft masks, other stream references and complete
 key type/identity remain separate. No standard text or external controls
 are bundled.
 
+The structure-parent integer type check follows the official 14.7.5.4
+paragraph's integer-key requirement and Table 359's StructParents integer
+type. Existing bounded page/annotation/appearance/resource traversal is
+independently reused; no key ranges or parent-tree identity are inferred.
+Thirty-nine native controls contain thirteen integer controls (twelve
+retained clean positives) and twenty-six type negatives. Three of these
+controls already have PrinterMark errors. Twenty-three type negatives
+remain reference-accepted; reference
+negative predicates are recorded separately from type agreement. No
+standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

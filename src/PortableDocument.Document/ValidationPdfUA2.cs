@@ -352,7 +352,7 @@ internal static class PdfUA2Checks
         for (int page = 0; page < c.Doc.Pages.Count; page++)
         {
             var dictionary = c.Doc.Pages[page].Dict;
-            if (StructureParentConflict(c, dictionary, () =>
+            if (InspectStructureParentKeys(c, dictionary, "PDFUA2-PAGE-STRUCT-PARENT-TYPE", page, () =>
                 c.Add("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
                     "page structure parent key inspection exceeds its reference bound", StructureParentClause, page)))
                 c.Add("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
@@ -362,12 +362,16 @@ internal static class PdfUA2Checks
 
     const string StructureParentClause = "ISO 32000-2 14.7.5.4 Table 359";
 
-    static bool StructureParentConflict(ValidationContext c, PdfDictionary dictionary, Action incompleteInspection)
+    static bool InspectStructureParentKeys(ValidationContext c, PdfDictionary dictionary, string typeRule, int page,
+        Action incompleteInspection)
     {
         bool incomplete = false;
         void Incomplete() => incomplete = true;
         var single = ResolveBounded(c.F, dictionary.Get("StructParent"), Incomplete);
         var multiple = ResolveBounded(c.F, dictionary.Get("StructParents"), Incomplete);
+        if (single is not (null or PdfNull or PdfInteger) || multiple is not (null or PdfNull or PdfInteger))
+            c.Add(typeRule, ValidationSeverity.Error,
+                "StructParent and StructParents values must be integers when present", StructureParentClause, page);
         if (incomplete) { incompleteInspection(); return false; }
         return single is not (null or PdfNull) && multiple is not (null or PdfNull);
     }
@@ -388,7 +392,7 @@ internal static class PdfUA2Checks
             int work = 0;
             VisitPageAnnotations(c, page, annotation =>
             {
-                if (StructureParentConflict(c, annotation, Incomplete))
+                if (InspectStructureParentKeys(c, annotation, "PDFUA2-ANNOT-STRUCT-PARENT-TYPE", page, Incomplete))
                     c.Add("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
                         "annotation must not contain both StructParent and StructParents", StructureParentClause, page);
                 return !incomplete;
@@ -440,7 +444,7 @@ internal static class PdfUA2Checks
                 if (value is null or PdfNull) return true;
                 if (value is not PdfStream stream) { Incomplete(); return false; }
                 if (!seen.Add(stream)) return true;
-                if (StructureParentConflict(c, stream.Dict, Incomplete))
+                if (InspectStructureParentKeys(c, stream.Dict, "PDFUA2-AP-STRUCT-PARENT-TYPE", page, Incomplete))
                     c.Add("PDFUA2-AP-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
                         "appearance stream must not contain both StructParent and StructParents", StructureParentClause, page);
                 if (incomplete) return false;
@@ -449,7 +453,7 @@ internal static class PdfUA2Checks
                 if (resources is PdfDictionary dictionary)
                     VisitXObjectResources(c, dictionary, child =>
                     {
-                        if (StructureParentConflict(c, child.Dict, Incomplete))
+                        if (InspectStructureParentKeys(c, child.Dict, "PDFUA2-AP-STRUCT-PARENT-TYPE", page, Incomplete))
                             c.Add("PDFUA2-AP-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
                                 "appearance resource XObject must not contain both StructParent and StructParents",
                                 StructureParentClause, page);
@@ -519,7 +523,7 @@ internal static class PdfUA2Checks
             int work = 0;
             VisitXObjectResources(c, resources, stream =>
             {
-                if (StructureParentConflict(c, stream.Dict, Incomplete))
+                if (InspectStructureParentKeys(c, stream.Dict, "PDFUA2-XOBJECT-STRUCT-PARENT-TYPE", page, Incomplete))
                     c.Add("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
                         "XObject must not contain both StructParent and StructParents", StructureParentClause, page);
                 return !incomplete;

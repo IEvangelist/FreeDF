@@ -4,6 +4,47 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary structure-parent integer key types
+
+The official PDF Association 14.7.5.4 paragraph requires integer values
+for StructParent/StructParents; the public Table 359 row also declares
+StructParents integer. The existing bounded key resolver now checks both
+types on pages, page annotations, AP direct/state streams and known
+Form/Image XObjects in page/nested appearance resource graphs. It emits
+one PDFUA2-{PAGE,ANNOT,AP,XOBJECT}-STRUCT-PARENT-TYPE finding per checked
+dictionary when either resolved non-null key is non-integer.
+
+Omission, explicit/indirect null and dangling references remain absent.
+Signed integers, including zero and negative values, pass this type-only
+check; no key-range or parent-tree identity requirement is inferred.
+Known type errors survive incomplete resolution of the other key; both
+non-null keys still independently trigger the existing conflict finding.
+Reference/work bounds, deduplication and UA-1 behavior remain unchanged.
+
+The initial 399 authored surface/part/key/type/indirect/cycle cases had
+105 failures after isolating the page fixture's default StructParents key.
+Thirty-five additional exact-reference-bound and two-invalid-key aggregation
+cases pass. Focused Release: 939 passed; full integrated Release: 15,936
+passed, zero failed/skipped, including the earlier four appearance-alias
+cases. Solution zero errors/two retained machine-feed NU1507 warnings.
+
+Thirty-nine native controls retain twelve clean integer positives and
+reject all twenty-six type negatives. Three PrinterMark/StructParent
+controls already carried PDFUA-ANNOT-PRINTERMARK, including the integer
+control; they are explicitly not clean positives/new verdict corrections.
+Twenty-four previously compliant negatives now reject. All reference jobs
+complete normally; twenty-three type negatives remain reference-accepted,
+including one already rejected by FreeDF before this slice: twenty-two
+new verdict disagreements. The reference rejects the two page negatives
+under 8.2.2-1 untagged content and the PrinterMark string under 8.9.2.4.14-1,
+not explicit integer-type agreement.
+
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against the committed nested-appearance baseline. No standard text/external
+controls are bundled. Full object traversal, key ranges, required-key
+conditions, parent-tree identity and full PDF/UA/spec parity remain open.
+Earlier dated exclusions below describe their delivery-time scope.
+
 ## 2026-11-05 primary nested appearance resource parent-key exclusivity
 
 The Table 359 at-most-one StructParent/StructParents fact now also covers

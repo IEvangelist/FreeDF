@@ -3204,6 +3204,115 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    static byte[] StructureParentKeyTypePdf(string surface, string keys, params string[] tail)
+    {
+        string pageExtra = "";
+        string[] objects = surface switch
+        {
+            "PAGE" => [],
+            "ANNOT" => [$"<< /Subtype /PrinterMark {keys} >>"],
+            "FORM" => [ObjPdf.Stream("", $"/Subtype /Form {keys}")],
+            "IMAGE" => [ObjPdf.Stream("", $"/Subtype /Image {keys}")],
+            "AP" => ["<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>", ObjPdf.Stream("", keys)],
+            "AP-FORM" => ["<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>",
+                ObjPdf.Stream("", "/Resources << /XObject << /Unused 10 0 R >> >>"),
+                ObjPdf.Stream("", $"/Subtype /Form {keys}")],
+            "AP-IMAGE" => ["<< /Subtype /PrinterMark /AP << /N << /Off 9 0 R >> >> >>",
+                ObjPdf.Stream("", "/Resources << /XObject << /Unused 10 0 R >> >>"),
+                ObjPdf.Stream("", $"/Subtype /Image {keys}")],
+            _ => throw new ArgumentOutOfRangeException(nameof(surface)),
+        };
+        if (surface == "PAGE") pageExtra = "/StructParents null " + keys;
+        else if (surface is "FORM" or "IMAGE") pageExtra = "/Resources << /XObject << /Unused 8 0 R >> >>";
+        else pageExtra = "/Annots [8 0 R]";
+        var extras = objects.Concat(Enumerable.Repeat("null", 12 - objects.Length)).Concat(tail).ToArray();
+        return Ua("", "", pageExtra: pageExtra, extras: extras);
+    }
+
+    public static IEnumerable<object[]> StructureParentKeyTypeCases()
+    {
+        foreach (var surface in new[] { "PAGE", "ANNOT", "FORM", "IMAGE", "AP", "AP-FORM", "AP-IMAGE" })
+        foreach (var part in new[] { 1, 2 })
+        foreach (var key in new[] { "StructParent", "StructParents" })
+        foreach (var value in new[] { "", "null", "99 0 R", "0", "-1", "1.5", "/Name", "(key)", "true",
+            "[]", "<< >>", "20 0 R", "21 0 R", "22 0 R" })
+            yield return [surface, part, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureParentKeyTypeCases))]
+    public void Ua2StructureParentKeyTypesRequireIntegerOnEveryKnownSurface(string surface, int part, string key, string value)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            value == "" ? "" : $"/{key} {value}", "0", "(indirect)", "null")), part);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        bool invalid = value is "1.5" or "/Name" or "(key)" or "true" or "[]" or "<< >>" or "21 0 R";
+        Assert.Equal(part == 2 && invalid, report.Has($"PDFUA2-{family}-STRUCT-PARENT-TYPE"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("PAGE")]
+    [InlineData("ANNOT")]
+    [InlineData("FORM")]
+    [InlineData("IMAGE")]
+    [InlineData("AP")]
+    [InlineData("AP-FORM")]
+    [InlineData("AP-IMAGE")]
+    public void Ua2StructureParentKeyTypesRetainKnownErrorWithOtherCyclicKey(string surface)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            "/StructParent (wrong) /StructParents 20 0 R", "20 0 R")), 2);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        Assert.True(report.Has($"PDFUA2-{family}-STRUCT-PARENT-TYPE"));
+        Assert.True(report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> StructureParentKeyTypeBoundaryCases()
+    {
+        foreach (var surface in new[] { "PAGE", "ANNOT", "FORM", "IMAGE", "AP", "AP-FORM", "AP-IMAGE" })
+        foreach (var count in new[] { 32, 33 })
+        foreach (var invalid in new[] { false, true })
+            yield return [surface, count, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureParentKeyTypeBoundaryCases))]
+    public void Ua2StructureParentKeyTypesResolveOnlyWithinExplicitBound(string surface, int count, bool invalid)
+    {
+        var chain = Enumerable.Range(20, count).Select(n => n == 19 + count ? invalid ? "(key)" : "0" : $"{n + 1} 0 R").ToArray();
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            "/StructParent 20 0 R", chain)), 2);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        Assert.Equal(count == 32 && invalid, report.Has($"PDFUA2-{family}-STRUCT-PARENT-TYPE"));
+        Assert.Equal(count == 33, report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("PAGE")]
+    [InlineData("ANNOT")]
+    [InlineData("FORM")]
+    [InlineData("IMAGE")]
+    [InlineData("AP")]
+    [InlineData("AP-FORM")]
+    [InlineData("AP-IMAGE")]
+    public void Ua2StructureParentKeyTypesAggregateBothInvalidKeysWithIndependentConflict(string surface)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            "/StructParent (wrong) /StructParents /Wrong")), 2);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        Assert.Single(report.Findings, finding => finding.RuleId == $"PDFUA2-{family}-STRUCT-PARENT-TYPE");
+        Assert.True(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })
