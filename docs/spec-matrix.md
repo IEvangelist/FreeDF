@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [local FENote NoteType-name check](spec-backlog.md#2026-11-05-local-fenote-notetype-names)
+rejects explicit invalid names in local FENote-owned attributes and reports
+bounded inspection separately. Twenty-four native controls agree,
+correcting six false negatives; UA-1 and fresh 435-PDF/870-result corpus
+output are unchanged. Class maps, inheritance, complete revision/type
+syntax and reciprocal FENote references remain outside this slice.
+
 The [UA-2 namespace-aware Note correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-note-restriction)
 resolves Note restriction/ID selectors and rejects Note in the PDF-2.0
 vocabulary. Eleven native file verdicts agree, correcting one false negative

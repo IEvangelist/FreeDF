@@ -49,6 +49,13 @@ namespace resolver. Cyclic-role classification disagreements are documented;
 reciprocal FENote references and NoteType semantics are not implemented
 by this slice. No reference-engine source or external PDF is bundled.
 
+The explicit local FENote NoteType-name check in `ValidationPdfUA2.cs`
+was cross-checked against the same CC BY 4.0 UA-2 profile, 8.2.5.14-4.
+The bounded owner/value inspection is independently implemented;
+class maps, inheritance, revision selection and non-name syntax are
+not implemented by this slice. No engine source, profile XML or
+external note PDF is bundled.
+
 The PDF/A image-XObject interpolation prohibition in `ValidationPdfA.cs` was
 also cross-checked against the veraPDF Consortium's
 [v1.30.3 PDF/A profiles](https://github.com/veraPDF/veraPDF-validation-profiles/tree/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_A),

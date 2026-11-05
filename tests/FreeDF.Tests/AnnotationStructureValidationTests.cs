@@ -226,6 +226,87 @@ public class AnnotationStructureValidationTests
         Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
     }
 
+    public static IEnumerable<object[]> FenoteTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var mapped in new[] { false, true })
+        foreach (var attribute in new[] { "", "/A null", "/A << /O /FENote /NoteType null >>",
+            "/A << /O /FENote /NoteType /None >>", "/A << /O /FENote /NoteType /Footnote >>",
+            "/A << /O /FENote /NoteType /Endnote >>", "/A << /O /FENote /NoteType /Other >>",
+            "/A << /O /FENote /NoteType (Footnote) >>", "/A << /O /Layout /NoteType /Other >>",
+            "/A [<< /O /FENote /NoteType /Other >>]",
+            "/A [<< /O /FENote /NoteType /Other >> << /O /FENote /NoteType /None >>]",
+            "/A [<< /O /FENote /NoteType /None >> << /O /FENote /NoteType /Other >>]",
+            "/A [<< /O /Layout /NoteType /Other >> << /O /FENote /NoteType /None >>]" })
+            yield return [part, mapped, attribute];
+    }
+
+    [Theory]
+    [MemberData(nameof(FenoteTypeCases))]
+    public void Ua2FenoteTypeChecksOnlyTheFirstExplicitOwnedName(int part, bool mapped, string attribute)
+    {
+        var ns = mapped ? "/NS << /NS (urn:fenote-type) /RoleMapNS << /CustomNote [/FENote << /NS (http://iso.org/pdf2/ssn) >>] >> >>"
+            : "/NS << /NS (http://iso.org/pdf2/ssn) >>";
+        var doc = Load(part,
+            (8, Element.Replace("/S /Annot", $"/S /{(mapped ? "CustomNote" : "FENote")} {ns} {attribute}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var invalid = attribute is "/A << /O /FENote /NoteType /Other >>"
+            or "/A [<< /O /FENote /NoteType /Other >>]"
+            or "/A [<< /O /FENote /NoteType /Other >> << /O /FENote /NoteType /None >>]";
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-FENOTE-TYPE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+    }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("O")]
+    [InlineData("NoteType")]
+    public void Ua2FenoteAttributeReferenceCyclesReportIncomplete(string key)
+    {
+        var attribute = key == "A" ? "/A 13 0 R"
+            : $"/A << /O {(key == "O" ? "13 0 R" : "/FENote")} /NoteType {(key == "NoteType" ? "13 0 R" : "/Other")} >>";
+        var doc = Load(2, (8, Element.Replace("/S /Annot", $"/S /FENote /NS 14 0 R {attribute}")), (13, "13 0 R"));
+        var report = Validate(doc, 2);
+        Assert.True(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2FenoteNameReferenceBoundaryIsExplicit(int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(8, length).Select(n => n == 7 + length ? "/Other" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(ObjPdf.Build(new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+            ObjPdf.Stream(""),
+            "<< /Type /StructTreeRoot /K 6 0 R >>",
+            "<< /Type /StructElem /S /Document /P 5 0 R /K 7 0 R >>",
+            "<< /Type /StructElem /S /FENote /NS << /NS (http://iso.org/pdf2/ssn) >> /P 6 0 R /A << /O /FENote /NoteType 8 0 R >> >>",
+        }.Concat(chain).ToArray()));
+        var report = Validate(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2FenoteAttributeWorkBoundaryIsExplicit(int count, bool incomplete)
+    {
+        var doc = Load(2, (8, Element.Replace("/S /Annot", "/S /FENote /NS 14 0 R")));
+        var note = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        note.Entries["A"] = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfDictionary(), count - 1)
+            .Append(new PdfDictionary { Entries = { ["O"] = new PdfName("FENote"), ["NoteType"] = new PdfName("Other") } }).ToList());
+        var report = Validate(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
     public static IEnumerable<object[]> NoteNamespaceCases()
     {
         foreach (var part in new[] { 1, 2 })

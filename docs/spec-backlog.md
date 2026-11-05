@@ -4,6 +4,44 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 local FENote NoteType names
+
+Resolved UA-2 FENote elements now report `PDFUA2-FENOTE-TYPE` for a
+local, explicit FENote-owned NoteType name other than Footnote, Endnote
+or None. The check resolves the element's A dictionary/array and matches
+the O owner before reading NoteType. The first non-null owned value wins,
+consistent with the independent ordering controls and existing local
+attribute lookup behavior. Unrelated owners, omission/null, allowed names
+and UA-1 retain their behavior.
+
+This is the explicit local-name portion of pinned veraPDF v1.30.3
+8.2.5.14-4, not complete attribute conformance. ClassMap/C lookup,
+inheritance, revision-selection semantics and non-name value syntax are
+not evaluated. In particular the reference accepts a Footnote string;
+the check does not reinterpret it as a PDF name or claim syntax validity.
+Reciprocal FENote references remain deferred.
+
+Bounded resolution is reused for A, O and NoteType. Malformed outer
+attribute containers, cyclic references and exhausted reference/work
+bounds produce separate `PDFUA2-FENOTE-INCOMPLETE` Error, rather than
+an inaccurate known-name finding. Integer revision markers in A arrays
+are skipped; they do not implement complete revision selection.
+Fifty-two authored profile/mapping/value cases, three cycle cases and
+four exact 32/33-reference and 200,000/200,001-work boundaries were added.
+The initial 55-case selector had nine failures before correction.
+
+Twenty-four native direct/mapped controls agree on all rule/file outcomes
+(18 clean positives, six negatives), correcting six false-negative
+file verdicts. Array controls include invalid-then-valid, valid-then-invalid
+and unrelated-owner-then-valid values. All 24 corresponding UA-1 outputs
+and fresh 435-PDF/870-result public-corpus output are unchanged.
+Every native reference job completed normally. Full Release suite:
+14,327 passed, zero failed/skipped. Solution build: zero errors and two
+retained machine-feed NU1507 warnings. Reporting tool: 20 passing tests;
+the 8.2.5.14-4 overlap maps only this scoped predicate portion.
+External controls/profile reports remain session-only; full PDF/UA
+parity is not claimed.
+
 ## 2026-11-05 signature verification-fixture control
 
 The intermittent signature path-length test failure observed during the

@@ -307,6 +307,9 @@ internal static class PdfUA2Checks
                     if (e.MarkedContent.Any())
                         c.Add("PDFUA2-LI-CONTENT", ValidationSeverity.Error, "content directly inside LI must be enclosed in Lbl or LBody", "ISO 14289-2 8.2.5.25", e.PageIndex);
                     break;
+                case "FENote":
+                    FenoteType(c, e);
+                    break;
             }
             if (e.StandardType is not ("Table" or "L" or "TOC"))
             {
@@ -316,6 +319,52 @@ internal static class PdfUA2Checks
                     { c.Add("PDFUA2-CAPTION-POSITION", ValidationSeverity.Error, $"Caption must be the first or last child of /{e.Type}", "ISO 14289-2 8.2.5.27", e.PageIndex); break; }
             }
         }
+    }
+
+    static void FenoteType(ValidationContext c, StructElement element)
+    {
+        bool incomplete = false;
+        PdfObject? Resolve(PdfObject? value) => ResolveBounded(c.F, value, Incomplete);
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FENOTE-INCOMPLETE", ValidationSeverity.Error,
+                "local FENote attribute inspection is malformed or exceeds its reference/work bound",
+                "ISO 14289-2 8.2.5.14", element.PageIndex);
+        }
+
+        PdfObject? Find(PdfDictionary dictionary)
+        {
+            var owner = Resolve(dictionary.Get("O"));
+            if (incomplete || owner.AsName() != "FENote") return null;
+            return Resolve(dictionary.Get("NoteType"));
+        }
+
+        var attributes = Resolve(element.Dict.Get("A"));
+        PdfObject? noteType = null;
+        if (attributes is PdfDictionary dictionary) noteType = Find(dictionary);
+        else if (attributes is PdfArray array)
+        {
+            int work = 0;
+            foreach (var item in array.Items)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                var value = Resolve(item);
+                if (incomplete) break;
+                if (value is PdfDictionary attribute)
+                {
+                    noteType = Find(attribute);
+                    if (incomplete || noteType is not (null or PdfNull)) break;
+                }
+                else if (value is not (null or PdfNull or PdfInteger)) Incomplete();
+            }
+        }
+        else if (attributes is not (null or PdfNull)) Incomplete();
+        if (!incomplete && noteType is PdfName name && name.Value is not ("Footnote" or "Endnote" or "None"))
+            c.Add("PDFUA2-FENOTE-TYPE", ValidationSeverity.Error,
+                $"local FENote NoteType name /{name.Value} is not Footnote, Endnote or None",
+                "ISO 14289-2 8.2.5.14", element.PageIndex);
     }
 
     static void LinkTargets(ValidationContext c, StructureTree tree)
