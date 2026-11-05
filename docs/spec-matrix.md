@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [recursive object-stream index-metadata check](spec-backlog.md#2026-11-05-recursive-object-stream-index-metadata)
+bounds reentry while building a container index, preserving ordinary indirect
+metadata. Two isolated pre-fix process overflows now terminate explicitly.
+Reference differences and unchanged corpus JSON are recorded; general
+reference cycles, Length recursion and dependency-depth budgets remain separate.
+
 The [object-stream container self-identity check](spec-backlog.md#2026-11-05-object-stream-container-self-identities)
 rejects the container's own number before member publication, preserving
 uncompressed recovery identities. Safe index-state controls, native

@@ -15,6 +15,7 @@ public sealed class PdfFile
     readonly Dictionary<int, PdfObject> _cache = [];
     readonly Dictionary<int, ObjStmIndex> _objStmCache = [];
     readonly HashSet<PdfDictionary> _resolvingObjectStreamTypes = [];
+    readonly HashSet<int> _readingObjectStreamIndexes = [];
 
     PdfFile(byte[] data) { Data = data; }
 
@@ -246,6 +247,14 @@ public sealed class PdfFile
     }
 
     ObjStmIndex ReadObjectStreamIndex(PdfStream stream, int streamNumber)
+    {
+        if (!_readingObjectStreamIndexes.Add(streamNumber))
+            throw new PdfParseException("cyclic object stream metadata");
+        try { return ReadObjectStreamIndexCore(stream, streamNumber); }
+        finally { _readingObjectStreamIndexes.Remove(streamNumber); }
+    }
+
+    ObjStmIndex ReadObjectStreamIndexCore(PdfStream stream, int streamNumber)
     {
         if (!IsObjectStream(stream.Dict))
             throw new PdfParseException("bad object stream type");

@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 recursive object-stream index metadata
+
+ISO 32000-1 Table 16 in 7.5.7 (printed p46) requires integer N/First;
+7.3.10 (printed p22) permits indirect values unless otherwise specified.
+The shared index reader now detects reentry for the same container while
+its metadata/index is still being built, with cleanup in finally. Ordinary
+indirect metadata remains supported. A reference to a member requiring
+that unfinished index can no longer recurse until process stack exhaustion.
+
+Pre-fix probes ran in separate bounded processes, not the unit-test host:
+both normal own-member N/First cases exited with Windows stack-overflow
+status 3221225725 and explicit stderr. Forced-repair cases already returned
+null because their compressed entries were not yet available. Twelve tests
+added after the guard cover normal/forced cases, direct and one-hop
+uncompressed reference chains, repeat access and ordinary indirect metadata.
+Full Release: 19,091 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Eight native PDFs preserve four valid ordinary-indirect outputs and two
+forced-repair null results. The two former process crashes now terminate
+with `bad object stream header` after repair discards the cyclic members.
+MuPDF returns null for the two N negatives, still exposes Target for the two
+First negatives and agrees on four positives. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the
+self-member baseline.
+
+This bounds same-index reentrancy, not arbitrary object/reference cycles,
+stream-byte Length recursion, maximum distinct-container dependency depth,
+eager metadata schema or global resource budgets. No broad cycle-safety
+or full-file conformance claim is made.
+
 ## 2026-11-05 object-stream container self identities
 
 ISO 32000-1 7.5.7 (printed p45) prohibits stream objects as compressed
