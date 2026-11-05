@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [conditional parameter-alignment guard](spec-backlog.md#2026-11-05-conditional-nondefault-filter-parameter-alignment)
+rejects strict multi-filter metadata with mismatched known nondefault
+Flate/LZW parameters, preserving ordinary recovery and default-only
+compatibility forms. Detection is stage-aware and explicitly not complete
+parameter-schema validation; permissive reference-reader disagreement is retained.
+
 The [measured LZW dictionary change](spec-backlog.md#2026-11-05-measured-lzw-dictionary-allocation-removal)
 replaces per-entry byte arrays with pooled output-offset/length pairs,
 preserving strict completion and ordinary recovery. Matched decoded-output

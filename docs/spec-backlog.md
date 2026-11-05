@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 conditional nondefault filter-parameter alignment
+
+ISO 32000-1 Table 5 (printed p20) requires one DecodeParms array entry
+per filter when a multi-filter stream has nondefault parameters. It does
+not justify blanket rejection of every mismatched default-only compatibility
+form. Table 8 (pp27-28) defines Predictor default 1 and LZW EarlyChange
+default 1; other predictor dimensions may be used only with Predictor > 1.
+
+Strict object-stream metadata now rejects a non-array or wrong-length array
+when a known Flate/LZW stage supplies an integer Predictor other than 1,
+or an LZW stage supplies integer EarlyChange other than 1. Array detection
+honors the corresponding filter: a Predictor field on ASCIIHex or EarlyChange
+on Flate is not treated as that stage's nondefault parameter. A top-level
+dictionary cannot identify a stage, so detection considers the supported
+Flate/LZW filters in the pipeline. Parameter dictionaries and values use
+the existing strict metadata resolver/reference budgets.
+
+This is deliberately scoped detection, not complete DecodeParms schema
+validation: unknown filter parameters, non-integer values, surplus-only
+parameter dictionaries without a corresponding stage and all conditional
+requiredness remain separate work. Aligned arrays retain the existing
+parameter application and are not eagerly scanned for parameter values.
+Single-filter behavior and ordinary-stream recovery are unchanged;
+default-only compatibility shapes remain accepted, not declared conforming.
+
+Eighteen initial controls give eight failures/ten passes on unchanged
+production. Two independently encoded object-stream negatives previously
+published a valid member despite short/long nondefault arrays; they now
+reject publication in both normal/recovery loading, while ordinary decoding
+still returns exact expected bytes. Six added controls cover stage-specific
+detection, indirect values and no eager value resolution for aligned arrays.
+Final filter/object-stream/LZW checks pass 995; full Release passes 19,710,
+zero failed/skipped; solution zero warnings/errors. Fresh pinned 435-PDF/
+870-result complete validation JSON is unchanged.
+
+Three independently encoded reference PDFs contain identical predicted
+payload bytes with aligned/short/long parameter arrays. PyMuPDF 2.0 /
+MuPDF 1.28.5 publishes the member for all three without repair, including
+both normative negatives. That permissive disagreement is retained, not
+counted as conformance agreement. No external PDFs are bundled.
+
+The additional scan is restricted to strict multi-filter metadata with a
+non-array/wrong-length parameter value; aligned and ordinary paths do
+not scan parameter fields for this guard. No new timing was run and no
+throughput/allocation claim follows. The preceding LZW measurements do not
+measure this metadata change. Complete parser/filter parity remains open.
+
 ## 2026-11-05 measured LZW dictionary allocation removal
 
 The existing ordinary/strict LZW decoder allocated a byte array for every

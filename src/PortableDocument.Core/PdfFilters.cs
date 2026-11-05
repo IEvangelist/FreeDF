@@ -51,6 +51,27 @@ public static class PdfFilters
             }
         else if (strictMetadata && f is not null and not PdfNull)
             throw new PdfParseException("stream Filter must be a name or an array of names");
+        if (strictMetadata && list.Count > 1 && (p is not PdfArray aligned || aligned.Count != list.Count))
+        {
+            var prediction = false;
+            var lzw = false;
+            foreach (var filter in list)
+            {
+                prediction |= filter.Item1 is "FlateDecode" or "LZWDecode";
+                lzw |= filter.Item1 == "LZWDecode";
+            }
+            bool Nondefault(PdfDictionary parameters, bool usesPrediction, bool usesLzw) =>
+                usesPrediction && resolveMetadata(parameters.Get("Predictor")) is PdfInteger { Value: not 1 }
+                || usesLzw && resolveMetadata(parameters.Get("EarlyChange")) is PdfInteger { Value: not 1 };
+            var nondefault = p is PdfDictionary dictionary && Nondefault(dictionary, prediction, lzw);
+            if (p is PdfArray candidates)
+                for (var i = 0; i < Math.Min(candidates.Count, list.Count); i++)
+                    if (resolveMetadata(candidates[i]) is PdfDictionary candidateParameters)
+                        nondefault |= Nondefault(candidateParameters,
+                            list[i].Item1 is "FlateDecode" or "LZWDecode", list[i].Item1 == "LZWDecode");
+            if (nondefault)
+                throw new PdfParseException("nondefault stream DecodeParms must have one array entry per filter");
+        }
         if (strictMetadata && p is PdfArray parameters)
             for (var i = list.Count; i < parameters.Count; i++)
                 ResolveDecodeParms(parameters[i], resolveMetadata, strictMetadata);
