@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream opening EOL
+
+ISO 32000-1 7.3.8.1 (printed p19) explicitly requires the stream keyword
+to be followed by LF or CRLF, not CR alone. Object streams now enforce that
+opening before resolving Length or decrypting data. Missing opening EOL cannot
+be disguised as correctly counted whitespace/comment padding in the member
+header. Both direct and indirect Type are covered. Ordinary-stream opening
+recovery remains permissive.
+
+Fourteen new tests cover CR-only/missing-EOL openings, correctly counted
+space/tab/NUL/form-feed/comment prefixes, valid LF/CRLF, empty object streams,
+indirect Type, normal/forced repair, repeated missing-member lookups and ordinary
+stream bytes. Unchanged-production baseline: seven failed/seven passed.
+Focused selector: 666 passed. Full Release: 19,177 passed, zero failed/skipped.
+Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Twenty-four native controls preserve ten valid outputs exactly, including six
+retained independently generated AES-128/AES-256/RC4 controls. Fourteen formerly
+accepted malformed openings now yield seven explicit normal-load errors and
+seven repaired-null results without member publication. MuPDF still exposes
+Target in four CR-only direct/indirect-Type probes and returns null for the ten
+counted-prefix probes; it agrees on all ten positives. These lookup results do
+not establish whole-file conformance. Fresh pinned 435-PDF/870-result full corpus
+JSON is wholly unchanged against the endstream-boundary baseline.
+
+The object-stream opening-EOL limitation is closed. Object endobj grammar,
+complete filter EOD consistency, external-stream schemas, general strict stream
+parsing and resource budgets remain separate.
+
 ## 2026-11-05 object-stream endstream boundaries
 
 ISO 32000-1 7.3.8.2/Table 5 (printed p20) permits one additional

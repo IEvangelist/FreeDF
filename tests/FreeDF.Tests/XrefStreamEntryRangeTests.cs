@@ -7,7 +7,7 @@ public class XrefStreamEntryRangeTests
 {
     internal static byte[] Build(ulong type, ulong? second = null, ulong third = 0, bool compressed = false, int generation = 0,
         string count = "1", string first = "4", bool indirectBounds = false, string value = "<< /Type /Target >>",
-        string header = "2 0 ", string? length = null, string terminator = "\nendstream")
+        string header = "2 0 ", string? length = null, string terminator = "\nendstream", string opening = "\n")
     {
         using var data = new MemoryStream();
         void Write(string text) => data.Write(Encoding.ASCII.GetBytes(text));
@@ -20,7 +20,7 @@ public class XrefStreamEntryRangeTests
         if (compressed)
         {
             var body = header + value;
-            Write($"3 0 obj\n<< /Type /ObjStm /N {(indirectBounds ? "5 0 R" : count)} /First {(indirectBounds ? "6 0 R" : first)} /Length {length ?? body.Length.ToString()} >>\nstream\n{body}{terminator}\nendobj\n");
+            Write($"3 0 obj\n<< /Type /ObjStm /N {(indirectBounds ? "5 0 R" : count)} /First {(indirectBounds ? "6 0 R" : first)} /Length {length ?? body.Length.ToString()} >>\nstream{opening}{body}{terminator}\nendobj\n");
         }
         var countOffset = data.Position;
         if (indirectBounds) Write($"5 0 obj\n{count}\nendobj\n");

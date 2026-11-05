@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream opening-EOL check](spec-backlog.md#2026-11-05-object-stream-opening-eol)
+requires LF or CRLF after stream, rejecting CR-only and disguised counted
+header-prefix alternatives before decryption. Valid empty/encrypted containers
+and ordinary-stream recovery remain supported. Native differences and unchanged
+corpus JSON are recorded. Object endobj grammar, filter EOD consistency and
+resource budgets remain separate.
+
 The [object-stream endstream-boundary check](spec-backlog.md#2026-11-05-object-stream-endstream-boundaries)
 requires the complete keyword at Length, allowing only one uncounted LF, CR or
 CRLF. Counted trivia and ordinary-stream recovery remain supported; EOF and

@@ -162,6 +162,8 @@ public sealed class PdfFile
         var p = lx.Pos;
         if (p < Data.Length && Data[p] == 13) p++;
         if (p < Data.Length && Data[p] == 10) p++;
+        if ((p == lx.Pos || Data[p - 1] != 10) && IsObjectStream(d))
+            throw new PdfParseException("object stream keyword must be followed by LF or CRLF");
         var length = d.Get("Length");
         if (length is PdfRef) length = Resolve(length);
         long len = length switch
