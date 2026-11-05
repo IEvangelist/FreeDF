@@ -292,13 +292,15 @@ internal static class PdfUA2Checks
                 c.Add("PDFUA2-HEADING-H", ValidationSeverity.Error, "the unnumbered H structure type must not be used (use Hn or H within Sect)", "ISO 14289-2 8.2.5.12", e.PageIndex);
             if (inPdf17 && e.Type == "Note" && !tree.RoleMap.ContainsKey("Note"))
                 c.Add("PDFUA2-NOTE", ValidationSeverity.Error, "the Note structure type is only permitted when role mapped to a PDF 2.0 namespace element", "ISO 14289-2 8.2.5.14", e.PageIndex);
-            if (StandardType(c, tree, e) == "Form"
+            var standardType = StandardType(c, tree, e);
+            if (standardType == "Form"
                 && e.Children.OfType<StructObjectRef>().Count(o => o.Object is PdfDictionary d && f.Resolve(d.Get("Subtype")).AsName() == "Widget") > 1)
                 c.Add("PDFUA2-FORM-WIDGETS", ValidationSeverity.Error, "a Form structure element must contain at most one widget annotation", "ISO 14289-2 8.10.1", e.PageIndex);
-            switch (e.StandardType)
+            switch (standardType)
             {
                 case "L":
-                    if (e.ChildElements.Any(li => li.StandardType == "LI" && li.ChildElements.Any(l => l.StandardType == "Lbl"))
+                    if (e.ChildElements.Any(li => StandardType(c, tree, li) == "LI"
+                        && li.ChildElements.Any(l => StandardType(c, tree, l) == "Lbl"))
                         && (e.Attribute(f, "ListNumbering").AsName() is null or "None"))
                         c.Add("PDFUA2-LIST-NUMBERING", ValidationSeverity.Error, "L contains Lbl elements but has no ListNumbering attribute other than None", "ISO 14289-2 8.2.5.25", e.PageIndex);
                     break;

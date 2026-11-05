@@ -4,6 +4,16 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 namespace-aware list correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-list-checks)
+resolves L/LI/Lbl roles for numbering and direct content, and aligns
+list-shape endpoints without treating unresolved roles as known violations.
+Eighteen native namespace controls give exact numbering-rule agreement,
+correcting five false-positive file verdicts; two additional native LI
+content negatives agree. Four standalone-reference disagreements retain
+their existing ISO/TS 32005 findings and are independently rejected by
+the combined reference too. UA-1 and fresh 435-PDF/870-result corpus
+output are unchanged; grouping and complete list semantics remain scoped.
+
 The [UA-1 null reference-XObject correction](spec-backlog.md#2026-11-05-ua-1-null-reference-xobject-entries)
 distinguishes resolved non-null Ref presence from null/omission, retaining
 genuine reference prohibitions and reporting incomplete chains separately.

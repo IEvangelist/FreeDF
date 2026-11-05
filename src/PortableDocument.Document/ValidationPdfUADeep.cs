@@ -734,7 +734,9 @@ internal static class PdfUADeepChecks
                     CaptionRules(c, e, kids, "PDFUA-LIST-CAPTION", sec, firstOrLast: false);
                     break;
                 case "LBody":
-                    if (e.Parent?.StandardType != "LI") c.Add("PDFUA-LBODY-PARENT", ValidationSeverity.Error, "LBody is not inside an LI", sec, e.PageIndex);
+                    var listItemType = e.Parent is null ? null : c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, e.Parent) : e.Parent.StandardType;
+                    if (listItemType != "LI" && (c.Part != 2 || e.Parent is null || listItemType is not null))
+                        c.Add("PDFUA-LBODY-PARENT", ValidationSeverity.Error, "LBody is not inside an LI", sec, e.PageIndex);
                     break;
                 case "TOC":
                     if (kids.Any(k => k.StandardType is not ("TOC" or "TOCI" or "Caption"))) c.Add("PDFUA-TOC-CHILD", ValidationSeverity.Error, "TOC contains a child other than TOC, TOCI or Caption", sec, e.PageIndex);

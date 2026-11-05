@@ -510,16 +510,28 @@ internal static partial class PdfUAChecks
 
     static void Lists(ValidationContext c, StructureTree tree)
     {
-        foreach (var l in tree.Elements().Where(e => e.StandardType == "L"))
+        string? Type(StructElement? element) => element is null ? null
+            : c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, element) : element.StandardType;
+        foreach (var l in tree.Elements().Where(e => Type(e) == "L"))
             foreach (var ch in l.ChildElements)
-                if (ch.StandardType is not ("LI" or "Caption" or "L"))
+            {
+                var childType = Type(ch);
+                if (c.Part == 2 && childType is null) continue;
+                if (childType is not ("LI" or "Caption" or "L"))
                     c.Add("PDFUA-LIST-CHILD", ValidationSeverity.Error, $"L contains /{ch.Type}, expected LI", Clause(c, "7.6", "8.2.5.24"), l.PageIndex);
-        foreach (var li in tree.Elements().Where(e => e.StandardType == "LI"))
+            }
+        foreach (var li in tree.Elements().Where(e => Type(e) == "LI"))
         {
-            if (li.Parent?.StandardType != "L") c.Add("PDFUA-LI-PARENT", ValidationSeverity.Error, "LI is not inside an L", Clause(c, "7.6", "8.2.5.24"), li.PageIndex);
+            var parentType = Type(li.Parent);
+            if (parentType != "L" && (c.Part != 2 || li.Parent is null || parentType is not null))
+                c.Add("PDFUA-LI-PARENT", ValidationSeverity.Error, "LI is not inside an L", Clause(c, "7.6", "8.2.5.24"), li.PageIndex);
             foreach (var ch in li.ChildElements)
-                if (ch.StandardType is not ("Lbl" or "LBody"))
+            {
+                var childType = Type(ch);
+                if (c.Part == 2 && childType is null) continue;
+                if (childType is not ("Lbl" or "LBody"))
                     c.Add("PDFUA-LI-CHILD", ValidationSeverity.Error, $"LI contains /{ch.Type}, expected Lbl or LBody", Clause(c, "7.6", "8.2.5.24"), li.PageIndex);
+            }
         }
     }
 

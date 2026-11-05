@@ -1160,6 +1160,111 @@ public class DeepValidationTests
         Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
     }
 
+    public static IEnumerable<object[]> ListNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default", "mapped-list", "mapped-item", "mapped-label", "mapped-body", "mapped-all",
+            "foreign-list", "mapped-div-list", "mapped-span-label" })
+        foreach (var numbering in new[] { "", "/ListNumbering /None", "/ListNumbering /Decimal" })
+            yield return [part, kind, numbering];
+    }
+
+    [Theory]
+    [MemberData(nameof(ListNamespaceCases))]
+    public void Ua2ListNumberingAndListChildrenUseNamespaceRoles(int part, string kind, string numbering)
+    {
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /A << /O /List {numbering} >> /K 9 0 R >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        void Map(int number, string role, string? target)
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(number));
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:list-test")) } };
+            if (target is not null)
+                ns.Entries["RoleMapNS"] = new PdfDictionary
+                {
+                    Entries = { [role] = new PdfArray([new PdfName(target), pdf2]) },
+                };
+            element.Entries["S"] = new PdfName(role);
+            element.Entries["NS"] = ns;
+        }
+        if (kind is "mapped-list" or "mapped-all") Map(8, "CustomList", "L");
+        if (kind is "mapped-item" or "mapped-all") Map(9, "CustomItem", "LI");
+        if (kind is "mapped-label" or "mapped-all") Map(10, "CustomLabel", "Lbl");
+        if (kind is "mapped-body" or "mapped-all") Map(11, "CustomBody", "LBody");
+        if (kind == "foreign-list") Map(8, "L", null);
+        if (kind == "mapped-div-list") Map(8, "L", "Div");
+        if (kind == "mapped-span-label") Map(10, "Lbl", "Span");
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var list = kind is not ("foreign-list" or "mapped-div-list");
+        var label = kind != "mapped-span-label";
+        Assert.Equal(part == 2 && list && label && numbering != "/ListNumbering /Decimal",
+            report.Has("PDFUA2-LIST-NUMBERING"));
+        if (part == 2 && kind.StartsWith("mapped-", StringComparison.Ordinal) && kind is not ("mapped-div-list" or "mapped-span-label"))
+            Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-LIST-CHILD" or "PDFUA-LI-PARENT" or "PDFUA-LI-CHILD" or "PDFUA-LBODY-PARENT");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, true)]
+    public void Ua2MappedListItemDirectContentIsRejected(int part, bool expected)
+    {
+        var pdf = Ua("/CustomItem << /MCID 0 >> BDC 0 0 10 10 re f EMC", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R >>",
+            "<< /Type /StructElem /S /CustomItem /P 8 0 R /K 0 /NS << /NS (urn:list-content) /RoleMapNS << /CustomItem [/LI << /NS (http://iso.org/pdf2/ssn) >>] >> >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(expected, report.Has("PDFUA2-LI-CONTENT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("L", "P", "PDFUA-LIST-CHILD")]
+    [InlineData("LI", "P", "PDFUA-LI-CHILD")]
+    [InlineData("Document", "LI", "PDFUA-LI-PARENT")]
+    [InlineData("Document", "LBody", "PDFUA2-NESTING")]
+    public void Ua2MappedListRolesRetainInvalidContainmentFindings(string parent, string child, string rule)
+    {
+        var ns = $"/NS << /NS (urn:list-containment) /RoleMapNS << /CustomParent [/{parent} << /NS (http://iso.org/pdf2/ssn) >>] /CustomChild [/{child} << /NS (http://iso.org/pdf2/ssn) >>] >> >>";
+        var pdf = Ua("", "8 0 R", extras: parent == "Document"
+            ? [$"<< /Type /StructElem /S /CustomChild /P 7 0 R {ns} >>"]
+            : [$"<< /Type /StructElem /S /CustomParent /P 7 0 R /K 9 0 R {ns} >>",
+               $"<< /Type /StructElem /S /CustomChild /P 8 0 R {ns} >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has(rule));
+        Assert.True(report.Has("PDFUA2-NESTING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("L", "Custom", "PDFUA-LIST-CHILD", false)]
+    [InlineData("L", "Custom", "PDFUA-LIST-CHILD", true)]
+    [InlineData("Custom", "LI", "PDFUA-LI-PARENT", false)]
+    [InlineData("Custom", "LI", "PDFUA-LI-PARENT", true)]
+    [InlineData("Custom", "LBody", "PDFUA-LBODY-PARENT", false)]
+    [InlineData("Custom", "LBody", "PDFUA-LBODY-PARENT", true)]
+    public void Ua2UnresolvedListRolesRetainIncompleteWithoutKnownShapeErrors(string parent, string child, string rule, bool cyclic)
+    {
+        var ns = $"/NS << /NS (urn:list-unresolved) /RoleMapNS << {(cyclic ? "/Custom /Custom" : "")} >> >>";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{parent} /P 7 0 R /K 9 0 R {(parent == "Custom" ? ns : "")} >>",
+            $"<< /Type /StructElem /S /{child} /P 8 0 R {(child == "Custom" ? ns : "")} >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has(rule));
+        Assert.True(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> ReferenceXObjectCases()
     {
         foreach (var part in new[] { 1, 2 })

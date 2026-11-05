@@ -4,6 +4,56 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 namespace-aware list checks
+
+The existing `PDFUA2-LIST-NUMBERING` and `PDFUA2-LI-CONTENT` checks
+now select resolved UA-2 L/LI roles. Direct LI/Lbl endpoints used for
+label detection, the shared list-child/LI-parent/LI-child checks and the
+LBody parent check use the same namespace-aware resolver for UA-2.
+Custom RoleMapNS names no longer escape numbering/direct-content checks
+or create legacy-name list-shape errors. Foreign types merely named L
+or Lbl are not treated as those PDF roles. UA-1 behavior is unchanged.
+
+The factual numbering/direct-content predicates were cross-checked
+against pinned veraPDF v1.30.3 UA-2 8.2.5.25 tests 1/2, with existing
+family mappings retained. Direct-child label detection, attribute lookup,
+caption policy and list-shape policy are not broadened. Grouping,
+descendant labels, attribute inheritance and complete list semantics
+remain outside this slice. Unresolved/non-PDF endpoint types are not
+asserted to violate a known list-shape predicate; unresolved mappings
+retain the existing namespace/role and `PDFUA2-NESTING-INCOMPLETE`
+Errors rather than gaining misleading known-containment findings.
+
+Sixty-six authored cases cover both profiles, L/LI/Lbl/LBody mappings,
+missing/None/Decimal numbering, foreign names mapped to Div/Span,
+direct LI content, invalid mapped containment and unresolved/cyclic
+roles. The original 50-case selector had 18 failures before correction.
+Eighteen independently executed native namespace controls give all
+18 numbering-rule agreements and 14 whole-file agreements (six clean
+positives, eight negatives). Five mapped-list false-positive file verdicts
+are corrected. Four missing numbering findings are added on files already
+rejected by legacy shape errors; those are not counted as corrected
+false-negative file verdicts. Two additional native direct-content
+controls (default and mapped LI) both agree on 8.2.5.25-2 rejection.
+All 18 corresponding pre/post UA-1 namespace-control outputs are unchanged.
+
+Four standalone UA-2 reference disagreements are explicitly retained:
+Div-mapped lists and Span-mapped labels, each with None/Decimal.
+All four were already rejected by FreeDF's ISO/TS 32005 containment
+checks. Independent combined UA-2 reference execution also rejects
+all four, with Table 5 Document-LI/Document-Caption or LI-Span findings.
+They are not counted as clean standalone-reference positives, and the
+incorporated normative nesting implementation is not weakened to match
+the standalone profile.
+
+Fresh 435-PDF/870-result public-corpus output is identical to the immediate
+baseline, including the two circular-role negatives that exposed the
+unknown-endpoint boundary during development. Full Release suite:
+14,082 passed, zero failed/skipped. Solution build: zero errors and two
+retained machine-feed NU1507 warnings. Reporting tool: 20 passing tests.
+External native PDFs/profile reports remain session-only; full PDF/UA
+parity is not claimed.
+
 ## 2026-11-05 UA-1 null reference-XObject entries
 
 The UA-1 reference-XObject prohibition now requires resolved non-null
