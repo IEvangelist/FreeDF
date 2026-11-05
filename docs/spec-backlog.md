@@ -4,6 +4,32 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed numeric token spelling
+
+ISO 32000-1 7.3.3 (printed p14) defines decimal numbers with an
+optional single sign and, for reals, a decimal period. Compressed-member
+lexing now rejects repeated signs, digitless periods and trailing garbage
+that the shared permissive number parser previously normalized/truncated.
+It preserves the default lexer's existing recovery behavior.
+
+Twenty-eight controls cover malformed direct/nested tokens, signed integers,
+leading/trailing decimal periods, leading zeroes, exact ordinary numeric
+values, repeated lookup, lazy isolation and default lexer compatibility.
+The initial selector had fifteen failures. Full Release: 18,837 passed,
+zero failed/skipped. Solution: zero errors/two retained machine-feed NU1507
+warnings.
+
+Forty-eight native PDFs preserve twenty-two valid outputs unchanged and
+reject twenty-six previously accepted malformed tokens with explicit
+diagnostics. MuPDF reports no probe exceptions; absent Type is not numeric
+value agreement. Positive ordinary numeric values are pinned in unit
+controls. Fresh pinned 435-PDF/870-result full corpus JSON is wholly
+unchanged against the dictionary-entry baseline.
+
+This is spelling validation, not a change to numeric precision/ranges,
+reference generation policy, name grammar or object-stream headers.
+Parser-wide strictness and byte-limited/resource enforcement remain separate.
+
 ## 2026-11-05 compressed dictionary entry grammar
 
 ISO 32000-1 7.3.7 (printed p18) requires name keys, object values and

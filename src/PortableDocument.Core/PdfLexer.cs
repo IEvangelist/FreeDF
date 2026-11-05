@@ -85,6 +85,8 @@ public sealed class PdfLexer
         var token = _d.AsSpan(start, Pos - start);
         if (TryNumber(token, out var num))
         {
+            if (_objectStreamMember && !IsNumericToken(token))
+                throw new PdfParseException("invalid numeric token in object stream member");
             if (resolveRefs && num is PdfInteger n1 && n1.Value >= 0) return TryRef(n1, start) ?? num;
             return num;
         }
@@ -119,6 +121,22 @@ public sealed class PdfLexer
         }
         Pos = save;
         return null;
+    }
+
+    static bool IsNumericToken(ReadOnlySpan<byte> token)
+    {
+        var i = 0;
+        if (i < token.Length && token[i] is (byte)'+' or (byte)'-') i++;
+        var start = i;
+        while (i < token.Length && token[i] is >= (byte)'0' and <= (byte)'9') i++;
+        var digits = i - start;
+        if (i < token.Length && token[i] == '.')
+        {
+            start = ++i;
+            while (i < token.Length && token[i] is >= (byte)'0' and <= (byte)'9') i++;
+            digits += i - start;
+        }
+        return digits > 0 && i == token.Length;
     }
 
     static bool TryNumber(ReadOnlySpan<byte> t, out PdfObject o)
