@@ -119,6 +119,83 @@ hashes. No exclusive OS-wide load guarantee was established; distributions
 include visible noise and outlier removals. Do not infer cross-date speedups
 or attribute a regression to a specific parity correction from these means.
 
+## Flate decoder workloads
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*FlateBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+`FlateBench` uses 256-byte and 1 MiB decoded payloads, each patterned or seeded
+pseudorandom. Generation, zlib compression and exact decoded-byte preflight are
+outside timing; decoding and materializing the result are timed. Printed
+encoded-byte SHA-256 values allow matched-build comparisons on the same
+runtime. `--preflight` validates all four cases.
+
+The inflater borrows an 81,920-byte scratch range from `ArrayPool<byte>.Shared`,
+retaining the previous read request size and output-limit checks. A `finally`
+returns the whole rental with clearing enabled, including decoder errors and
+limit exceptions, so decrypted stream bytes are not retained uncleared in the
+shared pool. This removes repeated scratch-array allocation, not decoded-result
+allocation. The current pool bucket is 128 KiB and can remain retained per
+thread; first use can allocate that larger rental. Warm managed-allocation
+reductions do not establish lower cold-process or total retained memory.
+Existing permissive recovery, strict checksum checks and the 1 GiB inflated
+size limit are unchanged.
+
+The output stream starts with capacity equal to the encoded length capped at
+64 KiB, rather than sizing itself from the first short native read. This avoids
+unfavorable repeated growth on large incompressible inputs while bounding the
+up-front allocation. It does not preallocate the inferred decoded size.
+
+### Matched decoder follow-up: 2026-11-05
+
+The [original control](results/2026-11-05-flate-before.md)
+([CSV](results/2026-11-05-flate-before.csv)) retains the original inflater/output
+allocation implementation from `bf48d4bd`. The
+[final report](results/2026-11-05-flate-after.md)
+([CSV](results/2026-11-05-flate-after.csv)) uses pooled scratch plus bounded
+initial output capacity. Both use the same four encoded-byte hashes, runtime,
+machine and three-warmup/eight-500-ms-iteration/one-launch settings above.
+
+| Decoded bytes / input | Original mean (us) | Final mean (us) | Original allocated (KiB) | Final allocated (KiB) |
+|---|---:|---:|---:|---:|
+| 256 / patterned | 2.454 | 2.279 | 80.94 | 0.97 |
+| 256 / random | 2.203 | 2.045 | 80.94 | 0.93 |
+| 1 MiB / patterned | 889.409 | 781.331 | 3585.19 | 3511.19 |
+| 1 MiB / random | 467.571 | 363.783 | 5193.24 | 3009.03 |
+
+Small-input timing intervals overlap; the reliable result is approximately
+98.8% less managed allocation, not a small-input speedup claim. Large-input
+means are about 12% and 22% lower in this matched control, with the random-input
+allocation about 42% lower. One shared-machine launch is not a universal
+throughput guarantee. Original-vs-final reports expose confidence intervals.
+
+The intermediate
+[pooling-only control](results/2026-11-05-flate-pooling-only.md)
+([CSV](results/2026-11-05-flate-pooling-only.csv)) is deliberately preserved:
+it reduced allocation but made large random-data decoding slower. A repeated
+original-code control confirmed the signal; the pooling-only change was not
+retained on its own. Bounded output capacity addresses that measured growth
+cliff without changing read sizes or recovery policy.
+
+Nine boundary/concurrency/corruption tests pass on both original and final
+code, including a canonical independently encoded empty-zlib fixture.
+Final Release: 19,238 passed, zero failed/skipped. Final solution build:
+zero warnings/errors. A fresh pinned 435-PDF/870-result full JSON corpus and
+the sixteen retained encryption-chain native outcomes are wholly unchanged.
+This behavior-preserving performance change does not add a spec-parity claim.
+
+The [final sixteen parser cases](results/2026-11-05-objectstream-flate-after.md)
+([CSV](results/2026-11-05-objectstream-flate-after.csv)) retain the same timing
+settings as the original 34-case baseline. Both plaintext fixture SHA-256
+hashes are identical before/after. One-member fresh-load allocation falls
+from 180,872 to 17,152 bytes (about 90.5%); 1,000-member fresh full traversal
+falls from 2,926,083 to 1,954,024 bytes (about 33.2%). These are warm-process
+managed allocations, with the pool-retention caveat above. Encrypted controls
+also pass and their full measurements are retained, but random encryption
+material makes their bytes differ across builds; no matched-byte encrypted
+speedup is attributed. Cached lookup still has no managed allocation.
+
 ## Serialized refresh: 2026-10-30
 
 The [43-case report](results/2026-10-30.md) and [CSV](results/2026-10-30.csv)

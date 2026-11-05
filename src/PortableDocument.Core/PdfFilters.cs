@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO.Compression;
 
 namespace PortableDocument.Core;
@@ -61,18 +62,23 @@ public static class PdfFilters
 
     static void InflateInto(Stream z, MemoryStream output)
     {
-        var buf = new byte[81920];
-        int n;
-        while ((n = z.Read(buf, 0, buf.Length)) > 0)
+        const int bufferSize = 81920;
+        var buf = ArrayPool<byte>.Shared.Rent(bufferSize);
+        try
         {
-            output.Write(buf, 0, n);
-            if (output.Length > MaxInflated) throw new PdfParseException("Decompressed stream exceeds the size limit");
+            int n;
+            while ((n = z.Read(buf, 0, bufferSize)) > 0)
+            {
+                output.Write(buf, 0, n);
+                if (output.Length > MaxInflated) throw new PdfParseException("Decompressed stream exceeds the size limit");
+            }
         }
+        finally { ArrayPool<byte>.Shared.Return(buf, clearArray: true); }
     }
 
     public static byte[] Flate(byte[] src)
     {
-        var output = new MemoryStream();
+        var output = new MemoryStream(Math.Min(src.Length, 65536));
         try
         {
             using var z = new ZLibStream(new MemoryStream(src), CompressionMode.Decompress);
@@ -99,7 +105,7 @@ public static class PdfFilters
         if (src.Length < 6 || (src[0] & 15) != 8 || src[0] >> 4 > 7
             || (src[0] * 256 + src[1]) % 31 != 0 || (src[1] & 32) != 0)
             throw new InvalidDataException("Invalid zlib header in content stream");
-        using var output = new MemoryStream();
+        using var output = new MemoryStream(Math.Min(src.Length, 65536));
         using (var z = new ZLibStream(new MemoryStream(src), CompressionMode.Decompress))
             InflateInto(z, output);
         var decoded = output.ToArray();
