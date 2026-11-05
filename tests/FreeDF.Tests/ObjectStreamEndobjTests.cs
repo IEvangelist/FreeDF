@@ -84,7 +84,7 @@ public class ObjectStreamEndobjTests
     public void Indirect_Type_cannot_bypass_the_required_endobj(bool repair)
     {
         var source = Encoding.Latin1.GetString(ObjectStreamTypeTests.Build("/ObjStm", repair, indirect: true));
-        var changed = source.Replace("endstream\nendobj", "endstream\nendobX", StringComparison.Ordinal);
+        var changed = source.Replace("endstream\nendobj\n5 0 obj", "endstream\nendobX\n5 0 obj", StringComparison.Ordinal);
         Assert.NotEqual(source, changed);
         var file = PdfFile.Load(Encoding.Latin1.GetBytes(changed));
         if (repair) Assert.IsType<PdfNull>(file.GetObject(2));

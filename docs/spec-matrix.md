@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref framing guard](spec-backlog.md#2026-11-05-cross-reference-stream-framing)
+extends existing object-stream framing checks to direct Type XRef:
+LF/CRLF opening, exact declared physical extent and closing delimiters.
+Malformed framing explicitly recovers; ordinary-stream behavior remains
+unchanged. Length schema/pre-index references and wider grammar/identity
+remain incomplete; no new performance claim is made.
+
 The [external xref source guard](spec-backlog.md#2026-11-05-declared-external-cross-reference-stream-sources)
 prevents declared external F sources from silently indexing inline rows.
 Unsupported or pre-index unresolved sources explicitly recover; absent

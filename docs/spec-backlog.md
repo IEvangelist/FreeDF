@@ -4,6 +4,52 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 cross-reference stream framing
+
+ISO 32000-1 7.3.8.1 (printed p19) requires LF or CRLF after stream,
+not CR alone, exact dictionary-described stream bytes, and endobj after
+endstream without intervening values. Clause 7.3.8.2 (printed p20)
+allows at most an extra physical EOL outside Length before endstream.
+The existing object-stream guards enforced these constraints, but xref
+streams could use ordinary framing recovery and still report a clean
+index.
+
+ReadStream now applies those same guards to direct Type XRef streams,
+with specific cross-reference-stream errors. Existing object-stream
+messages, indirect object-stream Type handling and ordinary-stream
+recovery are preserved. No additional stream scanner or decoder is
+introduced. Mismatched nonnegative integer Length cannot silently
+substitute recovered bytes for the declared extent.
+
+Forty-one new controls cover raw/Flate opening delimiters, endstream
+separators, endobj values/suffixes, short/long/huge Length and legal
+opening/closing trivia. The actual unchanged-production baseline is
+23 failures/18 passes: seven malformed variants already caused repair
+through other checks; eleven legal controls remain clean.
+Final focused xref/object-stream/stream-length checks pass 1,220;
+full Release passes 20,081, zero failed/skipped. Solution and benchmark
+builds have zero warnings/errors. Fresh pinned 435-PDF/870-result complete
+validation JSON from the rebuilt final tool is unchanged; all final
+benchmark/provider/parser correctness preflights pass.
+
+One existing indirect-Type object-stream test replaced every endstream/
+endobj pair, inadvertently corrupting the xref closer as well. With xref
+framing enforced this correctly caused earlier recovery, invalidating
+its expected later exception. The fixture now targets only the intended
+object-stream closer, retaining its original lazy-error assertion.
+
+Eighteen independently encoded reference parser fixtures cover four
+raw/Flate LF/CRLF positives and fourteen malformed opening, closing and
+Length variants. PyMuPDF 2.0 / MuPDF 1.28.5 publishes the target without
+repair for all eighteen. Permissive negative acceptance is retained as a
+disagreement, not normative evidence. No external PDFs are bundled.
+
+No new timing was run: earlier xref reports do not measure this guard.
+The direct XRef check short-circuits object-stream Type resolution, but
+no speedup or zero-overhead claim is established. Length value schema,
+pre-index indirect-Length resolution, generic object grammar/identity,
+resource budgets and full parser parity remain separate work.
+
 ## 2026-11-05 declared external cross-reference stream sources
 
 ISO 32000-1 Table 5 (printed p20) defines F as the file containing
