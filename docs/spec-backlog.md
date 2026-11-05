@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary local choice option shape
+
+ISO 32000-1 12.7.4.4/Table 231 (printed p445) declares the choice Opt
+array's items to be text strings or exact two-text-string export/display
+pairs. PDF 2.0 12.7.5.4/Table 234 retains the Opt-index relationship in
+the public errata; this slice uses the legacy primary item definition,
+not the reference validator's acceptance as evidence.
+Recognized terminal Ch dictionaries now check local raw Opt shape:
+PDFUA2-FORM-CHOICE-OPT-TYPE reports a non-array, non-string/non-pair
+item, wrong pair length or known non-string pair member, once per field.
+Optional null/dangling root entries remain absent; null/dangling items
+or pair members are not strings. Empty arrays/strings remain valid shapes.
+
+Root/item/pair-member references reuse the 32-hop/cycle guard. Shared
+200,000-item work includes option items and pair members across all fields.
+Truncation, cyclic/bounded resolution and work exhaustion produce
+PDFUA2-FORM-CHOICE-OPT-INCOMPLETE. Known shape errors survive later
+unknowns or work exhaustion; unknowns alone do not claim a type failure.
+Nonterminal parent Opt is not projected onto children by this local pass.
+Encoding, inherited-option policy, selected-value matching and complete
+choice semantics remain separate; raw reader/editor behavior is unchanged.
+
+Initial 169 authored controls had 25 failures. Focused Release:
+5,449 passed; full Release: 18,392 passed, zero failed/skipped. Solution
+zero errors/two retained machine-feed NU1507 warnings.
+Eleven isolated native controls retain four raw-shape positives and reject
+seven primary negatives. All pinned combined-reference jobs complete
+normally and accept: **seven explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against range baseline 6b0f79f0. No standard text or external controls
+are bundled; full form/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary explicit local choice index bounds
 
 Official PDF Association PDF 2.0 errata 12.7.5.4/Table 234 defines I

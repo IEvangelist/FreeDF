@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [local choice option shape check](spec-backlog.md#2026-11-05-primary-local-choice-option-shape)
+checks terminal Ch local Opt raw string/exact two-string-pair shape with
+bounded references and shared work. Eleven native controls retain four
+raw-shape positives; seven primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Encoding, inherited options and
+selected-value matching remain separate.
+
 The [explicit local choice index bound check](spec-backlog.md#2026-11-05-primary-explicit-local-choice-index-bounds)
 checks reached I integers against explicitly resolved local Opt array length,
 with separate option-resolution incompleteness. Eight native controls retain

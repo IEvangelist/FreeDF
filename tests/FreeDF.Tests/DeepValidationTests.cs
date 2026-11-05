@@ -5253,6 +5253,106 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> ChoiceLocalOptionShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Ch", "Tx", "Btn", "Sig" })
+        foreach (var options in new[] { "null", "[]", "[(a)]", "[() [(a) (A)]]", "[[(a) (A)] (b)]",
+            "(a)", "42", "[null]", "[/Name]", "[[]]", "[[(a)]]", "[[(a) (A) (extra)]]",
+            "[[(a) /Name]]", "[[42 (A)]]", "[[[(a)] (A)]]", "[11 0 R]", "[99 0 R]", "11 0 R", "99 0 R" })
+            yield return [part, type, options];
+    }
+
+    [Theory]
+    [MemberData(nameof(ChoiceLocalOptionShapeCases))]
+    public void Ua2ChoiceLocalOptionsHaveDeclaredStringOrPairShape(int part, string type, string options)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (choice) /Opt {options} >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = options is "null" or "[]" or "[(a)]" or "[() [(a) (A)]]" or "[[(a) (A)] (b)]" or "11 0 R" or "99 0 R";
+        Assert.Equal(part == 2 && type == "Ch" && !valid, report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("[11 0 R (a)]", false)]
+    [InlineData("[11 0 R /Bad]", true)]
+    [InlineData("[/Bad 11 0 R]", true)]
+    [InlineData("[[11 0 R (A)]]", false)]
+    [InlineData("[[11 0 R /Bad]]", true)]
+    [InlineData("[[11 0 R]]", true)]
+    [InlineData("[[(a) 11 0 R]]", false)]
+    public void Ua2ChoiceLocalOptionUnknownPreservesKnownShapeError(string options, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt {options} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("root", 32, false)]
+    [InlineData("root", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    [InlineData("pair", 32, false)]
+    [InlineData("pair", 33, true)]
+    public void Ua2ChoiceLocalOptionReferenceBoundIsExplicit(string route, int count, bool incomplete)
+    {
+        var last = route == "root" ? "[(a)]" : "(a)";
+        var options = route == "root" ? "10 0 R" : route == "item" ? "[10 0 R]" : "[[10 0 R (A)]]";
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? last : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Ch /T (choice) /Opt {options} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ChoiceLocalOptionWorkBoundRetainsKnownType(int count, bool incomplete)
+    {
+        var options = "/Bad " + string.Concat(Enumerable.Repeat("() ", count - 1));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt [{options}] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceLocalOptionWorkBudgetIncludesPairMembersAndAllFields()
+    {
+        var options = string.Concat(Enumerable.Repeat("[() ()] ", 66666));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (one) /Opt [{options}] >>",
+                "<< /FT /Ch /T (two) /Opt [() [() /Bad]] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceLocalOptionDoesNotInheritParentOptions()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (parent) /Opt [/Bad] /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

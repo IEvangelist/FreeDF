@@ -587,6 +587,15 @@ retain four bounded-range positives and reject four primary negatives
 accepted by the pinned reference; disagreements are explicit.
 No standard text or external controls are bundled.
 
+The local choice Opt raw string/exact two-string-pair shape check follows
+ISO 32000-1 12.7.4.4/Table 231 (printed p445), with the Opt-index relationship
+retained in official PDF Association PDF 2.0 12.7.5.4/Table 234 errata.
+Bounded traversal and shared option/pair-member work are independently
+implemented. Eleven native controls retain four raw-shape positives and
+reject seven primary negatives accepted by the pinned reference;
+disagreements are explicit. Encoding, inheritance and full choice semantics
+remain separate. No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

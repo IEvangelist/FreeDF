@@ -41,6 +41,7 @@ internal static class PdfUA2Checks
         FieldEntryTypes(c, fields);
         DefaultAppearances(c, fields);
         ChoiceFieldIndices(c, fields);
+        ChoiceFieldOptions(c, fields);
         SignatureLockFields(c, fields);
         SignatureSeedDigests(c, fields);
         SignatureSeedScalars(c, fields);
@@ -300,6 +301,48 @@ internal static class PdfUA2Checks
             if (type)
                 c.Add("PDFUA2-FORM-LOCK-FIELDS-TYPE", ValidationSeverity.Error,
                     "signature-lock Fields must be an array of text strings", clause);
+        }
+    }
+
+    static void ChoiceFieldOptions(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.4 Table 234";
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE", ValidationSeverity.Error,
+                "choice-field option inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Ch") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("Opt"), Incomplete);
+            if (value is null or PdfNull) continue;
+            bool type = value is not PdfArray;
+            if (value is PdfArray options)
+                foreach (var item in options.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var option = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (!resolved || option is PdfString) continue;
+                    if (option is not PdfArray pair) { type = true; continue; }
+                    if (pair.Count != 2) type = true;
+                    foreach (var member in pair.Items)
+                    {
+                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                        resolved = true;
+                        var text = ResolveBounded(c.F, member, () => { resolved = false; Incomplete(); });
+                        if (resolved && text is not PdfString) type = true;
+                    }
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-CHOICE-OPT-TYPE", ValidationSeverity.Error,
+                    "choice-field Opt must be an array of text strings or exact two-text-string pairs", clause);
         }
     }
 
