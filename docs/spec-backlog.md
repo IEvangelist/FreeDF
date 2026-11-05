@@ -2,7 +2,56 @@
 
 This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md), plus known limitations recorded under rows currently marked Done. Full spec parity is the target. “Safe support” for PDF JavaScript, XFA, RichMedia, and related executable content means parsing, preserving, and exposing the structures without running embedded code.
 
-The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
+The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
+
+## 2026-11-05 single-filter array parameters
+
+ISO 32000-1 Table 5 (printed p20) permits Filter to be a name or an array
+containing zero, one or several names. With one parameterized filter,
+DecodeParms is that filter's dictionary; using a one-element Filter array
+does not turn it into a multiple-filter pipeline.
+
+The shared filter reader previously ignored dictionary parameters whenever
+Filter was an array. It now applies the resolved dictionary when the array
+contains one filter, for both ordinary decoding and strict object-stream
+validation. Nondefault TIFF Predictor 2 data therefore decodes correctly
+instead of remaining differenced or losing its compressed object. Direct and
+indirect filter arrays, indirect filter names and indirect parameter dictionaries
+retain the existing bounded metadata resolution. Parameter dictionary identity
+and alias canonicalization are preserved. Previously accepted default/compatibility
+forms, including empty parameter arrays, remain accepted; no wider cardinality
+rejection is introduced.
+
+Nineteen regressions have an actual unchanged-production baseline of twelve
+failures/seven passes. The first attempted baseline did not run tests because
+a generated Core reference assembly was corrupt; rebuilding that project,
+without production edits, enabled the reported red baseline. The focused
+stream/codec selector passes 884 cases; full Release passes 19,482, zero failed/
+skipped; the solution builds with zero warnings/errors.
+
+Thirty-eight native checks use independently encoded Flate and literal LZW
+payloads, normal/forced repair, and retained encrypted fixtures. Sixteen
+array/dictionary forms previously lacked Target and now resolve it; twenty-two
+default/compatibility/encrypted outcomes remain identical. Exact fixture hashes
+are retained. Fresh pinned 435-PDF/870-result full corpus JSON is unchanged.
+
+The reference disagreement is retained, not counted as agreement: PyMuPDF 2.0 /
+MuPDF 1.28.5 exposes no Target for the sixteen new forms, throwing for eight;
+all twenty-two retained controls expose Target. For the direct Flate and LZW
+fixtures, its decoded stream remains the pre-predictor difference bytes.
+The expected new behavior follows Table 5 and independently reconstructed
+Predictor 2 bytes, not a claim that every reference reader accepts these forms.
+
+The [parameter workload follow-up](../bench/FreeDF.Bench/README.md#single-filter-array-parameters-2026-11-05)
+adds four fresh-load/member cases for Flate/LZW and direct/indirect parameter
+dictionaries, reusing the existing fixture/preflight without duplicating
+pipeline configurations. Newly successful operations have no successful old
+timing baseline; they are not reported as speedups over failed decoding.
+All eight existing metadata inputs retain exact hashes and measured managed
+bytes per operation. Five timing means fall and three rise, with all reported
+mean/error intervals overlapping; no isolated speedup or zero-cost claim is made.
+Broader parameter alignment/default/cardinality rules, generic grammar,
+object inventories and resource budgets remain separate.
 
 ## 2026-11-05 exact Flate input extent
 

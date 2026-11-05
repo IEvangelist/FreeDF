@@ -15,6 +15,8 @@ public class ObjectStreamMetadataBench
     [Params("FlateDecode", "LZWDecode")]
     public string CompressionFilter { get; set; } = "FlateDecode";
 
+    internal bool SingleFilterArray { get; set; }
+
     byte[] _pdf = [];
 
     [GlobalSetup]
@@ -28,6 +30,7 @@ public class ObjectStreamMetadataBench
         var encoded = FilterCount == 1 ? Encoding.Latin1.GetString(compressed)
             : Convert.ToHexString(compressed) + ">";
         var filters = FilterCount == 1 ? $"/{CompressionFilter}" : $"[/ASCIIHexDecode /{CompressionFilter}]";
+        if (SingleFilterArray && FilterCount == 1) filters = $"[{filters}]";
         var predictor = $"<< /Predictor 2 /Columns {decoded.Length} >>";
         var parms = FilterCount == 1 ? predictor : $"[null {predictor}]";
         var data = new StringBuilder("%PDF-1.7\n");
@@ -54,7 +57,7 @@ public class ObjectStreamMetadataBench
                 || !ReferenceEquals(member, file.GetObject(2)) || file.Repaired || !file.Xref[2].Compressed)
                 throw new InvalidOperationException("Object-stream filter-metadata preflight failed.");
         }
-        Console.WriteLine($"PASS object-stream metadata: filters={FilterCount}, indirect={IndirectParameters}, codec={CompressionFilter}, " +
+        Console.WriteLine($"PASS object-stream metadata{(SingleFilterArray ? " single-array" : "")}: filters={FilterCount}, indirect={IndirectParameters}, codec={CompressionFilter}, " +
             $"bytes={_pdf.Length}, SHA256={Convert.ToHexString(SHA256.HashData(_pdf))}.");
     }
 

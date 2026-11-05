@@ -53,6 +53,12 @@ if (args.Contains("--preflight"))
                 {
                     FilterCount = filters, IndirectParameters = indirect, CompressionFilter = codec
                 }.Setup();
+    foreach (var indirect in new[] { false, true })
+        foreach (var codec in new[] { "FlateDecode", "LZWDecode" })
+            new SingleFilterArrayMetadataBench
+            {
+                IndirectParameters = indirect, CompressionFilter = codec
+            }.Setup();
     foreach (var size in new[] { 256, 1048576 })
         foreach (var random in new[] { false, true })
             foreach (var strict in new[] { false, true })

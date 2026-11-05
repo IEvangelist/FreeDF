@@ -184,6 +184,55 @@ subtract separate means or compare unlike operations as validation overhead.
 dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamMetadataBench*" "*ObjectStreamBench.FreshAllMembers*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
 ```
 
+### Single-filter array parameters: 2026-11-05
+
+`SingleFilterArrayMetadataBench` reuses the existing fixture and correctness
+preflight with `Filter [/FlateDecode]` or `[/LZWDecode]` and a single nondefault
+Predictor 2 dictionary. Four configurations cover direct/indirect parameter
+dictionaries without duplicating the two-filter pipelines. All four are now
+included in standalone preflight. The ordinary named-filter and two-filter
+configurations retain their exact prior bytes and hashes.
+
+The [new-operation report](results/2026-11-05-single-filter-array-new.md)
+([CSV](results/2026-11-05-single-filter-array-new.csv)) measures the shared-reader
+correction on production base `2fff5e9d76fae30372067518347ab1b7069097b1`.
+The array/dictionary fixtures failed before the correction, so these are
+successful-operation baselines, not speedups over failed decoding.
+
+| Codec | Indirect parameters | Mean +/- error (us) | Managed B/op |
+|---|---|---:|---:|
+| Flate | false | 7.684 +/- 1.3861 | 19,976 |
+| Flate | true | 6.603 +/- 0.1540 | 19,600 |
+| LZW | false | 5.980 +/- 0.0735 | 37,256 |
+| LZW | true | 6.174 +/- 0.1798 | 36,880 |
+
+The [eight existing operations](results/2026-11-05-single-filter-array-existing.md)
+([CSV](results/2026-11-05-single-filter-array-existing.csv)) were measured in
+the same invocation. Compared with the retained
+[preceding-source report](results/2026-11-05-flate-extent-final.md), five means
+fell and three rose; every reported mean/error interval overlaps. Exact input
+hashes and managed bytes per operation match for all eight. This does not
+establish an isolated timing change, zero overhead or universal performance.
+The new array inputs differ from named-filter inputs, so their separate means
+must not be subtracted as a decoder-validation cost.
+
+The [diagnostic CSV](results/2026-11-05-single-filter-array-gc.csv) preserves
+input lengths/hashes and raw allocated-byte/operation totals for all twelve
+cases. Byte-per-operation values use BenchmarkDotNet 0.15.8's .NET 10
+round-to-even calculation, not reverse conversion from its rounded KB display.
+The run uses Windows 11 / Core i7-14700K / .NET 10.0.14, three warmups,
+eight 500-ms iterations and one launch; no exclusive machine load was established.
+All provider/parser preflight passed, but no provider timing was rerun here.
+Managed allocations exclude native/total-process memory.
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamMetadataBench*" "*SingleFilterArrayMetadataBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-single-filter-array-parameters)
+retains the independent reference disagreement and primary Table 5 basis;
+these workloads do not establish full filter or document conformance.
+
 ### Matched strict LZW control: 2026-11-05
 
 The [original control](results/2026-11-05-strict-lzw-control.md)

@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [single-filter array correction](spec-backlog.md#2026-11-05-single-filter-array-parameters)
+applies a parameter dictionary to a one-element Filter array in ordinary and
+strict decoding, including resolved metadata. Nondefault predictor bytes now
+decode correctly; accepted default/compatibility forms remain unchanged.
+MuPDF's differing result is recorded against the primary Table 5 requirement,
+not counted as reference agreement. Wider parameter/cardinality and complete
+filter conformance remain open.
+
 The [exact Flate extent follow-up](spec-backlog.md#2026-11-05-exact-flate-input-extent)
 reserves only the last source byte from bulk reads and requires completed
 inflation at exactly the input length. Native checksum validation now replaces

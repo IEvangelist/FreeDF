@@ -45,7 +45,8 @@ public static class PdfFilters
                     continue;
                 }
                 var pp = p is PdfArray pa && i < pa.Count
-                    ? ResolveDecodeParms(pa[i], resolveMetadata, strictMetadata) : null;
+                    ? ResolveDecodeParms(pa[i], resolveMetadata, strictMetadata)
+                    : fa.Count == 1 ? p as PdfDictionary : null;
                 list.Add((Canon(nm), pp));
             }
         else if (strictMetadata && f is not null and not PdfNull)
