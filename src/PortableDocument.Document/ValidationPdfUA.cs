@@ -628,7 +628,7 @@ internal static partial class PdfUAChecks
     static bool HasFieldType(PdfFile f, PdfDictionary? d)
     {
         for (var n = 0; d is not null && n < 64; n++, d = f.Resolve(d.Get("Parent")) as PdfDictionary)
-            if (d.Get("FT") is not null) return true;
+            if (f.Resolve(d.Get("FT")) is not (null or PdfNull)) return true;
         return false;
     }
 

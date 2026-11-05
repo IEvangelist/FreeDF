@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [null field-type equivalence correction](spec-backlog.md#2026-11-05-pdfua-null-field-type-equivalence)
+makes missing/null/dangling FT entries consistent without suppressing real
+parent field types. Seventy-two authored cases and 36 independent native
+controls cover the boundary; only 18 whole-file verdicts agree with the
+reference, with the remaining field/label/ownership disagreements retained.
+Fresh 435-PDF/870-result corpus output is unchanged.
+
 The [UA-2 widget additional-action context check](spec-backlog.md#2026-11-05-ua-2-widget-additional-action-context)
 requires own Contents on tagged, non-Artifact field widgets with AA.
 Thirty-two controls give exact-rule agreement and ten newly corrected

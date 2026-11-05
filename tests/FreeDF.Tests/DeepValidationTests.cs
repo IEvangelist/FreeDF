@@ -527,6 +527,33 @@ public class DeepValidationTests
         Assert.False(r.Has("PDFUA-FORM-TU"));
     }
 
+    public static IEnumerable<object[]> WidgetFieldTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var fieldType in new[] { "", "/FT null", "/FT 11 0 R", "/FT 999 0 R", "/FT /Tx", "/FT 12 0 R" })
+        foreach (var parentType in new[] { "", "/FT null", "/FT /Tx" })
+        foreach (var tooltip in new[] { "", "/TU (Name)" })
+            yield return [part, fieldType, parentType, tooltip];
+    }
+
+    [Theory]
+    [MemberData(nameof(WidgetFieldTypeCases))]
+    public void UaNullFieldTypeDoesNotEstablishFieldDescriptionRequirement(int part, string fieldType, string parentType, string tooltip)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            "<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+            $"<< /Type /Annot /Subtype /Widget /Parent 10 0 R /Rect [0 0 10 10] /F 4 {fieldType} {tooltip} >>",
+            $"<< {parentType} >>",
+            "null",
+            "/Tx",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        var hasType = fieldType is "/FT /Tx" or "/FT 12 0 R" || parentType == "/FT /Tx";
+        Assert.Equal(hasType && tooltip == "", report.Has("PDFUA-FORM-TU"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> WidgetActionContextCases()
     {
         foreach (var part in new[] { 1, 2 })

@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 PDF/UA null field-type equivalence
+
+The shared widget tooltip prerequisite now resolves FT before deciding
+that a field type exists. Omission, direct null, indirect null and a
+nonexistent indirect object are equivalent; a null on the widget does not
+hide a real FT on its parent. Non-null malformed FT values retain the
+previous behaviour. This is a dictionary-entry correction for both UA
+profiles, not a new field-widget classifier or tooltip/label policy.
+
+Primary provenance is ISO 32000-1 7.3.9 (printed p21, public Adobe PDF
+physical p29): null dictionary values are equivalent to omission, and
+references to nonexistent objects are null. Seventy-two authored cases
+cover both profiles, direct/indirect types, parent inheritance and
+tooltips; fourteen failed before the one-line correction.
+
+Thirty-six independent native-profile PDF controls verify the null/
+omission invariant in six profile/parent contexts. Six native file
+verdicts change: three UA-2 controls become reference-agreeing positives;
+three UA-1 controls become equivalent to the already-accepted omission
+control, but disagree with the reference's stricter widget-description
+requirement. Only 18/36 whole-file verdicts agree. The eighteen explicit
+disagreements also include six UA-1 null-T widget-child ownership cases,
+six UA-2 tooltip-versus-label cases and two UA-2 nameless-field
+classification cases. These are not claimed as full field conformance.
+In particular, raw null T in field-tree traversal can misidentify a
+terminal field; that separate mechanism remains pending.
+
+The existing 32 widget-context controls gain two UA-2 reference-agreeing
+nonfield positives; their cross-profile UA-1 runs only lose the spurious
+tooltip finding and remain invalid for version/identification. Historical
+additional-action counts above/below are not rewritten. Fresh measurements
+of all 435 corpus PDFs/870 profile results are identical to the previous
+baseline. Full Release suite: 13,534 passed, zero failed/skipped. Solution
+build: zero errors and the two retained machine-feed NU1507 warnings.
+No reference engine, profile XML or external PDF is bundled.
+
 ## 2026-11-05 UA-2 widget additional-action context
 
 `PDFUA2-WIDGET-AA-CONTENTS` checks the independently verified
