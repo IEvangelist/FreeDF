@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary attribute and class array nulls
+
+The official PDF 2.0 errata, 14.7.2 Table 355, prohibits null A attribute/
+revision entries and C class-name/revision entries. UA-2 now checks these
+arrays on every parsed structure element with the same bounded scanner
+as K and Ref. PDFUA2-STRUCT-A-NULL/PDFUA2-STRUCT-C-NULL are separate
+from their respective INCOMPLETE diagnostics. Known nulls survive a later
+cyclic item; owner-aware value lookup, local/ClassMap precedence and
+revision-marker handling are not changed.
+
+Ten native controls completed normally against the combined reference:
+four valid/revision positives remain accepted, while six explicit null,
+indirect null and dangling entries now reject against the primary constraint.
+The previous implementation and the reference accept all ten: **six explicit
+primary/reference disagreements**, not reference-verified parity. Thirty-six
+authored cases initially had fourteen failures. Fresh 435-PDF/870-result
+corpus JSON output, including all UA-1 results, is unchanged.
+
+This slice only checks immediate A/C array items on parsed elements.
+Optional scalar null/omission, nested arrays, ClassMap-defined attribute
+arrays, complete attribute syntax, revision and inheritance semantics are
+not established. Existing K and Ref findings are preserved (K diagnostic
+wording now says null-item rather than null-child). No reference family
+mapping, external PDFs or standard text is bundled.
+
+Release validation: 206 focused structure/owned-lookup cases passed.
+The initial full run passed 14,983 and failed the unchanged signature
+fixture during certificate creation: its later notAfter exceeded the
+issuer by one second, matching the independently reproduced pre-slice
+timestamp control. The isolated case and unchanged full rerun passed
+(14,984 cases, no skips). Signature code was not changed. Solution build
+had no errors and two retained machine-feed NU1507 warnings.
+
 ## 2026-11-05 primary structure child array nulls
 
 The official [PDF 2.0 errata, 14.7.2 Tables 354/355](https://pdf-issues.pdfa.org/32000-2-2020/clause14.html#H14.7.2)

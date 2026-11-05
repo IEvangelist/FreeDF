@@ -298,6 +298,13 @@ ten null/dangling cases now reject against the primary requirement.
 These are explicit primary/reference disagreements, not a reference
 family mapping or complete child shape/identity conformance.
 
+The direct A/C array null-item checks follow the attribute/revision and
+class-name/revision constraints in Table 355 at the same official source.
+The independent bounded K/Ref scan is reused without changing owned lookup.
+All ten combined-profile native jobs accepted the controls; six primary
+null/dangling negatives now reject. These disagreements are explicit,
+not a reference family mapping or full attribute/revision conformance.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

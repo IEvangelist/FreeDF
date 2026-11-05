@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary A/C-array null checks](spec-backlog.md#2026-11-05-primary-attribute-and-class-array-nulls)
+reject null attribute/class array items with separate bounded-inspection
+errors. Ten native controls retain four positives and reject six primary
+negatives accepted by the reference: six explicit primary/profile differences.
+Corpus/UA-1 JSON results are unchanged; ClassMap arrays and full revision/
+inheritance/attribute syntax remain deferred.
+
 The [primary K-array null check](spec-backlog.md#2026-11-05-primary-structure-child-array-nulls)
 rejects null child entries under published PDF 2.0 errata, with separate
 bounded-inspection errors. Fifteen native controls retain five positives and

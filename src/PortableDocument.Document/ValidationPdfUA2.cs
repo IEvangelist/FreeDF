@@ -397,10 +397,12 @@ internal static class PdfUA2Checks
     static void Elements(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
-        StructureKidNulls(c, tree.Root, "ISO 32000-2 14.7.2 Table 354", null);
+        StructureArrayNulls(c, tree.Root, "K", "ISO 32000-2 14.7.2 Table 354", null);
         foreach (var e in tree.Elements())
         {
-            StructureKidNulls(c, e.Dict, "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            StructureArrayNulls(c, e.Dict, "K", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            StructureArrayNulls(c, e.Dict, "A", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            StructureArrayNulls(c, e.Dict, "C", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureReferenceShape(c, e);
             var outcome = Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out var standardType, out var resolvedNamespace);
             if (outcome == RoleOutcome.Standard && resolvedNamespace == MathMlNamespace)
@@ -514,20 +516,20 @@ internal static class PdfUA2Checks
                 "structure Ref array contains a null element", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
     }
 
-    static void StructureKidNulls(ValidationContext c, PdfDictionary dictionary, string clause, int? page)
+    static void StructureArrayNulls(ValidationContext c, PdfDictionary dictionary, string key, string clause, int? page)
     {
         bool incomplete = false;
         void Incomplete()
         {
             if (incomplete) return;
             incomplete = true;
-            c.Add("PDFUA2-STRUCT-K-INCOMPLETE", ValidationSeverity.Error,
-                "structure K null-child inspection exceeds its reference/work bound", clause, page);
+            c.Add($"PDFUA2-STRUCT-{key}-INCOMPLETE", ValidationSeverity.Error,
+                $"structure {key} null-item inspection exceeds its reference/work bound", clause, page);
         }
-        var value = ResolveBounded(c.F, dictionary.Get("K"), Incomplete);
-        if (!incomplete && value is PdfArray children && ArrayContainsNull(c, children, Incomplete))
-            c.Add("PDFUA2-STRUCT-K-NULL", ValidationSeverity.Error,
-                "structure K array contains a null child", clause, page);
+        var value = ResolveBounded(c.F, dictionary.Get(key), Incomplete);
+        if (!incomplete && value is PdfArray array && ArrayContainsNull(c, array, Incomplete))
+            c.Add($"PDFUA2-STRUCT-{key}-NULL", ValidationSeverity.Error,
+                $"structure {key} array contains a null item", clause, page);
     }
 
     static bool ArrayContainsNull(ValidationContext c, PdfArray array, Action incompleteInspection)
