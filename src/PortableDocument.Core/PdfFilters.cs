@@ -79,7 +79,8 @@ public static class PdfFilters
             {
                 "FlateDecode" => strictContentFilters ? StrictPredict(StrictFlate(data), parms, resolve)
                     : Predict(Flate(data), parms, resolve),
-                "LZWDecode" => Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
+                "LZWDecode" => strictContentFilters ? StrictPredict(StrictLzw(data, parms, resolve), parms, resolve)
+                    : Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
                 "ASCIIHexDecode" => strictContentFilters ? StrictAsciiHex(data) : AsciiHex(data),
                 "ASCII85Decode" => strictContentFilters ? StrictAscii85(data) : Ascii85(data),
                 "RunLengthDecode" => strictContentFilters ? StrictRunLength(data) : RunLength(data),
@@ -289,29 +290,61 @@ public static class PdfFilters
         return o.ToArray();
     }
 
-    static byte[] Lzw(byte[] s, int early)
+    static byte[] StrictLzw(byte[] data, PdfDictionary? parms, Func<PdfObject?, PdfObject?> resolve)
+    {
+        var value = resolve(parms?.Get("EarlyChange"));
+        var early = value is null or PdfNull ? 1 : value is PdfInteger { Value: 0 or 1 } number
+            ? (int)number.Value : throw new InvalidDataException("Invalid LZW EarlyChange parameter");
+        return Lzw(data, early, strict: true);
+    }
+
+    static byte[] Lzw(byte[] s, int early, bool strict = false)
     {
         var o = new List<byte>();
         var table = new List<byte[]>();
         void Reset() { table.Clear(); for (var i = 0; i < 256; i++) table.Add([(byte)i]); table.Add([]); table.Add([]); }
-        Reset();
+        // Strict streams initialize at the required first clear code.
+        if (!strict) Reset();
         var bits = 9; var bitBuf = 0; var bitCnt = 0; var pos = 0;
+        var first = true;
         byte[]? prev = null;
         while (true)
         {
             while (bitCnt < bits && pos < s.Length) { bitBuf = (bitBuf << 8) | s[pos++]; bitCnt += 8; }
-            if (bitCnt < bits) break;
+            if (bitCnt < bits)
+            {
+                if (strict) throw new InvalidDataException("LZW end marker was not found");
+                break;
+            }
             var code = (bitBuf >> (bitCnt - bits)) & ((1 << bits) - 1);
             bitCnt -= bits;
             bitBuf &= (1 << bitCnt) - 1;
+            if (strict && first && code != 256)
+                throw new InvalidDataException("LZW stream must start with a clear-table code");
+            first = false;
             if (code == 256) { Reset(); bits = 9; prev = null; continue; }
-            if (code == 257) break;
+            if (code == 257)
+            {
+                if (strict && bitBuf != 0) throw new InvalidDataException("LZW final byte padding must be zero");
+                break;
+            }
             byte[] entry;
             if (code < table.Count) entry = table[code];
-            else if (prev is not null) entry = [.. prev, prev[0]];
-            else break;
+            else if (prev is not null && (!strict || code == table.Count)) entry = [.. prev, prev[0]];
+            else
+            {
+                if (strict) throw new InvalidDataException("Invalid LZW dictionary code");
+                break;
+            }
+            if (strict && entry.Length > MaxInflated - o.Count)
+                throw new PdfParseException("Decompressed stream exceeds the size limit");
             o.AddRange(entry);
-            if (prev is not null) table.Add([.. prev, entry[0]]);
+            if (prev is not null)
+            {
+                if (strict && table.Count >= 4096)
+                    throw new InvalidDataException("LZW table must be cleared when full");
+                table.Add([.. prev, entry[0]]);
+            }
             prev = entry;
             var n = table.Count + early;
             bits = n >= 4096 ? 12 : n >= 2048 ? 12 : n >= 1024 ? 11 : n >= 512 ? 10 : 9;

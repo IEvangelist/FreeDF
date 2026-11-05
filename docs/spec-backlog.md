@@ -4,6 +4,52 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 strict LZW code streams
+
+ISO 32000-1 7.4.4.2 (printed pp26-27) defines initial clear-table code 256,
+EOD 257, MSB-first 9-12-bit codes, table entry 4095 as the last entry and
+zero padding in the final byte. Table 8 in 7.4.4.3 defines integer EarlyChange
+0 or 1. The existing strict filter path previously still used permissive LZW:
+missing/truncated EOD, missing initial clear, nonzero padding and an undefined
+code could silently yield bytes subsequently published as object-stream members.
+
+Strict decoding now validates these boundaries and parameter type/range, accepts
+the legal next-entry special case, bounds dictionary growth and output size,
+and applies the existing strict predictor checks. The shared LZW algorithm
+retains ordinary permissive recovery; object streams already select strict
+decoding. Other strict-filter consumers receive the same decoder checks rather
+than a separate object-stream implementation. Extra source bytes after EOD,
+exhaustive code-table lifecycle/parameter interactions and complete filter
+conformance are not claimed.
+
+Twenty-two tests cover malformed streams and unchanged ordinary recovery,
+normal/forced-repair member absence, valid cached identities, complete empty
+streams, the independent libtiff fixture, both EarlyChange modes, random-byte
+9-12-bit width transitions/reset, invalid parameter types/ranges and dictionary
+growth beyond the full table. The initial ten-test unchanged-production baseline
+was five failures/five passes; later controls expand the supported boundaries.
+Final focused selector: 946 passed. Full Release: 19,407 passed, zero failed/
+skipped. Solution: zero warnings/errors.
+
+Twenty-eight independently encoded/retained native controls comprise fourteen
+malformed and fourteen valid files. Every malformed probe previously published
+Target; strict decoding now leaves the member absent after repair. All fourteen
+valid outcomes remain identical, including both EarlyChange modes, four large
+width/reset controls and six retained encrypted positives. MuPDF exposes Target
+for all twenty-eight, including the malformed inputs: permissive reference
+recovery is not normative acceptance. Fresh pinned 435-PDF/870-result full
+corpus JSON remains wholly unchanged against the strict-filter baseline.
+
+The [matched eight-case measurements](../bench/FreeDF.Bench/README.md#matched-strict-lzw-control-2026-11-05)
+retain exact original production and the strict candidate using the same new
+LZW harness plus unchanged Flate controls. A required initial clear now
+initializes the strict dictionary once, rather than allocating its 256 literals
+before the code and again at the code. Each measured LZW operation allocates
+8 KiB less (about 17-18%); Flate allocations are identical. LZW means fall, but
+three unchanged Flate controls also become substantially faster between runs:
+the timing shift cannot be attributed solely to LZW validation/initialization.
+No universal throughput or zero-validation-cost claim is made.
+
 ## 2026-11-05 object-stream strict filter decoding
 
 ISO 32000-1 7.4.2 (printed p24) requires ASCIIHex characters and its EOD marker;

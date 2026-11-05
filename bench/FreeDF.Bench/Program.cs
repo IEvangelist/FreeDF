@@ -48,7 +48,11 @@ if (args.Contains("--preflight"))
             new ObjectStreamBench { MemberCount = members, Encrypted = encrypted }.Setup();
     foreach (var filters in new[] { 1, 2 })
         foreach (var indirect in new[] { false, true })
-            new ObjectStreamMetadataBench { FilterCount = filters, IndirectParameters = indirect }.Setup();
+            foreach (var codec in new[] { "FlateDecode", "LZWDecode" })
+                new ObjectStreamMetadataBench
+                {
+                    FilterCount = filters, IndirectParameters = indirect, CompressionFilter = codec
+                }.Setup();
     foreach (var size in new[] { 256, 1048576 })
         foreach (var random in new[] { false, true })
             new FlateBench { DecodedBytes = size, RandomInput = random }.Setup();

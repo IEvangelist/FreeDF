@@ -4,12 +4,20 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [strict LZW extension](spec-backlog.md#2026-11-05-strict-lzw-code-streams)
+requires initial clear, completed EOD, zero final-byte padding and valid
+dictionary references before object-stream publication. Both EarlyChange modes,
+9-12-bit transitions, full-table resets and the next-entry special case remain
+supported; ordinary recovery is unchanged. Strict paths reject invalid parameter
+types and dictionary growth beyond entry 4095. This is bounded code-stream
+validation, not complete LZW/filter or full-spec parity.
+
 The [object-stream strict-filter path](spec-backlog.md#2026-11-05-object-stream-strict-filter-decoding)
 uses existing ASCIIHex/ASCII85/RunLength and zlib/predictor checks before
 publishing members; ordinary partial recovery is unchanged. Bounded Adler
 accumulation avoids per-byte modulo without relaxing checksum validation.
 Native/reference differences, retained initial/final performance costs and
-unchanged corpus JSON are recorded. LZW, full deflate lifecycle, parameter
+unchanged corpus JSON are recorded. Full deflate lifecycle, parameter
 cardinality and resource-budget parity remain incomplete.
 
 The [object-stream external-payload guard](spec-backlog.md#2026-11-05-object-stream-external-payload-containment)

@@ -164,12 +164,14 @@ records malformed controls separately from these valid Flate workloads.
 ## Object-stream parameter workloads
 
 `ObjectStreamMetadataBench.FreshMember` measures fresh load and one compressed
-dictionary lookup with nondefault TIFF predictor 2. Four configurations cover
-one Flate filter with dictionary parameters and an ASCIIHex/Flate pipeline
-with aligned `[null, dictionary]` parameters, each direct or indirect.
+dictionary lookup with nondefault TIFF predictor 2. Eight configurations cover
+one Flate or LZW filter with dictionary parameters and an ASCIIHex/Flate or
+ASCIIHex/LZW pipeline with aligned `[null, dictionary]` parameters, each
+direct or indirect. The LZW fixture is a short literal-only nine-bit stream;
+it does not benchmark compression, code-width transitions or table resets.
 Fixture construction, encoding and preflight are outside timing. Two
 independent opens must return the exact member type, preserve cached identity,
-retain compressed xref status and avoid repair. All four configurations are
+retain compressed xref status and avoid repair. All eight configurations are
 also part of standalone `--preflight`.
 
 These are complete synthetic parser inputs, not page-rendering or full
@@ -181,6 +183,46 @@ subtract separate means or compare unlike operations as validation overhead.
 ```powershell
 dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamMetadataBench*" "*ObjectStreamBench.FreshAllMembers*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
 ```
+
+### Matched strict LZW control: 2026-11-05
+
+The [original control](results/2026-11-05-strict-lzw-control.md)
+([CSV](results/2026-11-05-strict-lzw-control.csv)) uses production sources
+byte-identical to `0a7fefebe5678d6a345a3af03d042763b2f9b345`, with the new
+eight-case harness. The [strict candidate](results/2026-11-05-strict-lzw-final.md)
+([CSV](results/2026-11-05-strict-lzw-final.csv)) validates LZW code streams,
+uses strict predictors and initializes the literal table at the required first
+clear code, avoiding a redundant initialization. Both use three warmups,
+eight 500 ms measurement iterations and one launch, on the same Windows 11 /
+i7-14700K / .NET 10.0.14 machine. All eight preflight input hashes match.
+The four original Flate hashes below remain unchanged; new LZW hashes are:
+
+| Filters | Indirect parameters | Bytes | SHA-256 |
+|---|---|---:|---|
+| 1 | No | 479 | `AB67D73FDDB7F0A40E179F4675A030538B072276E5A884CC1061E551C5A86065` |
+| 1 | Yes | 480 | `B5E5C79C5227B7ADB9EDAD20CEF37995319BC77AA1D0536539B46DA899D56BD8` |
+| 2 | No | 544 | `D0773263D94E6BB4EFD77F279D7F91FB44E90D7EBE8EDAE7FB088FC5EF0C0F18` |
+| 2 | Yes | 545 | `CF473F0DB7728640E39B3C321ACE601509C08304780C1B3B8526A43B545BBA58` |
+
+| LZW filters / indirect | Original mean (us) | Strict mean (us) | Original / strict allocated (KiB) |
+|---|---:|---:|---:|
+| 1 / No | 12.627 | 9.050 | 44.12 / 36.12 |
+| 1 / Yes | 12.332 | 8.706 | 43.74 / 35.74 |
+| 2 / No | 13.476 | 9.823 | 45.90 / 37.90 |
+| 2 / Yes | 13.244 | 8.582 | 45.30 / 37.30 |
+
+Each LZW operation allocates 8 KiB less, about 17-18% of these complete
+fresh-load/member operations. Managed allocations in all four Flate controls
+remain identical. Timing is less attributable: the unchanged one-filter/direct
+Flate control changes from 8.148 to 8.855 us, while the other three Flate
+controls fall from 14.279-15.095 to 8.397-9.479 us. The LZW means' decline
+therefore cannot isolate validation or initialization cost from machine/run
+state. Both complete reports retain errors, distributions and all eight cases.
+No exclusive machine load, universal speedup or total/native-memory saving is
+claimed. Earlier dated four-case metadata reports below are Flate-only.
+Provider correctness preflight passes; provider timings were not rerun here.
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-strict-lzw-code-streams)
+keeps malformed-stream acceptance separate from these valid-path measurements.
 
 ### Matched parameter-schema control: 2026-11-05
 

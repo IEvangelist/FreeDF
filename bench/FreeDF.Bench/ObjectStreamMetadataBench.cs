@@ -12,6 +12,9 @@ public class ObjectStreamMetadataBench
     [Params(false, true)]
     public bool IndirectParameters { get; set; }
 
+    [Params("FlateDecode", "LZWDecode")]
+    public string CompressionFilter { get; set; } = "FlateDecode";
+
     byte[] _pdf = [];
 
     [GlobalSetup]
@@ -21,10 +24,10 @@ public class ObjectStreamMetadataBench
         var differences = decoded.ToArray();
         for (var i = 1; i < decoded.Length; i++)
             differences[i] = unchecked((byte)(decoded[i] - decoded[i - 1]));
-        var compressed = PdfFilters.DeflateEncode(differences);
+        var compressed = CompressionFilter == "LZWDecode" ? LiteralLzw(differences) : PdfFilters.DeflateEncode(differences);
         var encoded = FilterCount == 1 ? Encoding.Latin1.GetString(compressed)
             : Convert.ToHexString(compressed) + ">";
-        var filters = FilterCount == 1 ? "/FlateDecode" : "[/ASCIIHexDecode /FlateDecode]";
+        var filters = FilterCount == 1 ? $"/{CompressionFilter}" : $"[/ASCIIHexDecode /{CompressionFilter}]";
         var predictor = $"<< /Predictor 2 /Columns {decoded.Length} >>";
         var parms = FilterCount == 1 ? predictor : $"[null {predictor}]";
         var data = new StringBuilder("%PDF-1.7\n");
@@ -51,8 +54,18 @@ public class ObjectStreamMetadataBench
                 || !ReferenceEquals(member, file.GetObject(2)) || file.Repaired || !file.Xref[2].Compressed)
                 throw new InvalidOperationException("Object-stream filter-metadata preflight failed.");
         }
-        Console.WriteLine($"PASS object-stream metadata: filters={FilterCount}, indirect={IndirectParameters}, " +
+        Console.WriteLine($"PASS object-stream metadata: filters={FilterCount}, indirect={IndirectParameters}, codec={CompressionFilter}, " +
             $"bytes={_pdf.Length}, SHA256={Convert.ToHexString(SHA256.HashData(_pdf))}.");
+    }
+
+    static byte[] LiteralLzw(byte[] data)
+    {
+        // This short literal-only fixture stays within the initial nine-bit code width.
+        var codes = new[] { 256 }.Concat(data.Select(x => (int)x)).Append(257);
+        var bits = string.Concat(codes.Select(x => Convert.ToString(x, 2).PadLeft(9, '0')));
+        bits = bits.PadRight((bits.Length + 7) / 8 * 8, '0');
+        return Enumerable.Range(0, bits.Length / 8)
+            .Select(i => Convert.ToByte(bits.Substring(i * 8, 8), 2)).ToArray();
     }
 
     [Benchmark]
