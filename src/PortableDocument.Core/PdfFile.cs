@@ -304,6 +304,8 @@ public sealed class PdfFile
             && (map.Members.ContainsKey(length.Number)
                 || Xref.TryGetValue(length.Number, out var lengthEntry) && lengthEntry is { InUse: true, Compressed: true }))
             throw new PdfParseException("object stream Length value cannot be compressed");
+        if (Resolve(stream.Dict.Get("Length")) is not PdfInteger { Value: >= 0 })
+            throw new PdfParseException("object stream Length must be a nonnegative integer");
         return map;
     }
 

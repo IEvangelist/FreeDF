@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [required object-stream Length-type check](spec-backlog.md#2026-11-05-required-object-stream-length-type)
+requires resolved non-negative integer metadata before member publication,
+without making ordinary stream recovery strict. Earlier compressed-Length
+recovery ordering is now atomic. Native disagreement and unchanged corpus
+JSON are recorded; exact physical byte-count validation remains separate.
+
 The [cyclic indirect stream-Length loading check](spec-backlog.md#2026-11-05-cyclic-indirect-stream-length-loading)
 rejects active physical-object reentry, eliminating six isolated baseline
 stack overflows while preserving direct/indirect valid stream bytes.

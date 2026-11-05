@@ -66,11 +66,9 @@ public class ObjectStreamLengthTests
     public void Compressed_length_cannot_supply_object_stream_members(bool forceRepair, bool indirectType, bool lengthStreamFirst)
     {
         var file = PdfFile.Load(Build(true, forceRepair, indirectType, lengthStreamFirst));
-        if (lengthStreamFirst)
-            Assert.IsType<PdfNull>(file.GetObject(2));
-        else
-            Assert.Throws<PdfParseException>(() => file.GetObject(2));
+        Assert.IsType<PdfNull>(file.GetObject(2));
         Assert.True(file.Repaired);
+        Assert.False(file.Xref.ContainsKey(2));
     }
 
     [Theory]

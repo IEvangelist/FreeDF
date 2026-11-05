@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 required object-stream Length type
+
+ISO 32000-1 7.3.8/Table 5 (printed p20) requires an integer Length byte
+count. Before publishing members, the shared index reader now requires the
+resolved Length to be a non-negative integer. Recovery locating stream bytes
+through endstream does not by itself satisfy this required metadata.
+Ordinary stream byte recovery and valid uncompressed indirect Length values
+remain supported.
+
+Seventeen new controls cover missing/null/real/negative/wrong-type/unresolved
+Length, valid integer spellings and unchanged ordinary-stream recovery.
+Initial selector: ten failed/seven passed. The existing eight compressed
+Length negatives now uniformly assert atomic repaired-null/no-member results:
+an unavailable compressed Length can no longer provisionally install members
+before a later container is scanned. This deliberately supersedes the earlier
+order-dependent repaired-null versus subsequent-error behavior.
+Full Release: 19,120 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Twenty-six native PDFs preserve six positive outputs unchanged. Twenty
+formerly accepted malformed metadata targets are no longer indexed.
+MuPDF still exposes Target for all twenty negatives and agrees on six
+positives. Fresh pinned 435-PDF/870-result full corpus JSON is wholly
+unchanged against the stream-Length-reentrancy baseline.
+
+This enforces required presence/type/non-negativity for object-stream
+indexing, not exact declared-versus-physical byte counts, complete stream
+schemas, generic strict parsing, arbitrary forbidden-Length reference-chain
+inventory or decode budgets. Those remain separate.
+
 ## 2026-11-05 cyclic indirect stream Length loading
 
 ISO 32000-1 7.3.8/Table 5 (printed p20) requires an integer Length byte
