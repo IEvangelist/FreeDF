@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream Extends collection links
+
+ISO 32000-1 7.5.7 Table 16 (printed p46) defines Extends as a
+reference to another object stream and requires collection links to form a
+directed acyclic graph; printed p47 requires generation zero for object
+streams. Before publishing a member index, an iterative metadata-only walk
+now checks link shape, current uncompressed stream identity, ObjStm type and
+cycles. Null optional entries remain absent under 7.3.7.
+
+Eighteen controls cover non-reference/missing/non-stream/wrong-type targets,
+generations, self/two-node cycles, invalid ancestor links, null/absent links,
+valid chains and indirect type names. Valid linked ancestors deliberately
+contain a malformed unrequested member, demonstrating that collection checks
+do not decode or parse ancestor bodies. The initial selector had thirteen
+failures. Full Release: 18,957 passed, zero failed/skipped. Solution: zero
+errors/two retained machine-feed NU1507 warnings.
+
+Thirty-six native PDFs preserve ten valid target outputs unchanged and
+remove twenty-six previously accepted targets, ending repaired/null. MuPDF
+still returns all twenty-six malformed targets and agrees on all ten positives.
+Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged against
+the header-padding baseline.
+
+Collection traversal does not merge member sets, bypass xref identity,
+validate all ancestor stream schemas or claim eager whole-file conformance.
+Traversal is iterative with repeated object numbers rejected, not a new
+parser-wide work budget or resource guarantee.
+
 ## 2026-11-05 object-stream header padding
 
 ISO 32000-1 7.5.7 (printed p46) requires N integer pairs followed by

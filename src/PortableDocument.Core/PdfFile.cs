@@ -133,13 +133,15 @@ public sealed class PdfFile
     }
 
     /// <summary>Returns the dictionary of the stream object at <paramref name="offset"/> without copying its data, or null for non-stream or malformed objects.</summary>
-    PdfDictionary? PeekStreamDict(long offset, int expectNum)
+    PdfDictionary? PeekStreamDict(long offset, int expectNum, int? expectGeneration = null)
     {
         if (offset < 0 || offset >= Data.Length) return null;
         try
         {
             var lx = new PdfLexer(Data, (int)offset);
-            if (lx.ReadObject(false) is not PdfInteger n || lx.ReadObject(false) is not PdfInteger || lx.ReadObject(false) is not PdfKeyword { Value: "obj" } || n.Value != expectNum) return null;
+            if (lx.ReadObject(false) is not PdfInteger n || lx.ReadObject(false) is not PdfInteger g
+                || lx.ReadObject(false) is not PdfKeyword { Value: "obj" } || n.Value != expectNum
+                || expectGeneration is { } generation && g.Value != generation) return null;
             return lx.ReadObject() is PdfDictionary d && lx.ReadObject() is PdfKeyword { Value: "stream" } ? d : null;
         }
         catch (PdfParseException) { return null; }
@@ -242,6 +244,7 @@ public sealed class PdfFile
     {
         if (!IsObjectStream(stream.Dict))
             throw new PdfParseException("bad object stream type");
+        ValidateObjectStreamCollection(stream.Dict);
         var data = DecodeStream(stream);
         var (n, first) = ObjectStreamBounds(stream, data.Length);
         var lx = new PdfLexer(data, 0, objectStreamMember: true);
@@ -284,6 +287,23 @@ public sealed class PdfFile
                 || Xref.TryGetValue(length.Number, out var lengthEntry) && lengthEntry is { InUse: true, Compressed: true }))
             throw new PdfParseException("object stream Length value cannot be compressed");
         return map;
+    }
+
+    void ValidateObjectStreamCollection(PdfDictionary dictionary)
+    {
+        var seen = new HashSet<int>();
+        while (dictionary.Get("Extends") is { } extends && extends is not PdfNull)
+        {
+            if (extends is not PdfRef { Generation: 0 } reference
+                || !Xref.TryGetValue(reference.Number, out var entry)
+                || entry is not { InUse: true, Compressed: false, GenOrIndex: 0 }
+                || PeekStreamDict(entry.OffsetOrStream, reference.Number, 0) is not { } parent
+                || !IsObjectStream(parent))
+                throw new PdfParseException("object stream Extends must reference an object stream");
+            if (!seen.Add(reference.Number))
+                throw new PdfParseException("cyclic object stream Extends links");
+            dictionary = parent;
+        }
     }
 
     sealed class ObjStmIndex(byte[] data, int first)
