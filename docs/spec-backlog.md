@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed-reference generation bounds
+
+ISO 32000-1 7.5.4 (printed p41) specifies a maximum generation number
+of 65,535. The strict object-stream member lexer previously accepted any
+five significant digits after handling signs and leading zero padding,
+so references with generations 65,536 through 99,999 could be published.
+
+Recognized references in compressed members now reject generation values
+above 65,535 explicitly. Existing positive signs, negative zero, leading
+zero padding and comment/white-space separators remain supported within
+the bound. A generation of 65,535 is representable; this does not authorize
+reusing a free entry at that generation. Ordinary lexer/xref/header recovery
+is intentionally unchanged, including its wider lossless generation
+storage. This is not a blanket file-conformance validator.
+
+Thirteen new test cases give six failures/seven passes on unchanged
+production. Final controls exercise six invalid spellings in top-level,
+array and dictionary values under normal/recovery loading, five valid
+boundary spellings with cached identity, and two ordinary-lexer recovery
+cases. Focused object-stream/xref/lexer checks pass 1,030; full Release
+passes 19,803, zero failed/skipped; solution zero warnings/errors.
+Fresh pinned 435-PDF/870-result complete validation JSON is unchanged;
+all benchmark/provider/parser correctness preflights pass.
+
+Six independently encoded reference PDFs include two valid boundary
+controls and four out-of-range spellings. PyMuPDF 2.0 / MuPDF 1.28.5
+preserves the valid references and replaces the invalid Ref values with
+null without repair, retaining their containing dictionaries. FreeDF's
+strict member path rejects the malformed member instead. Both avoid
+publishing an out-of-range PdfRef, but recovery/output parity is not
+claimed. No external PDFs are bundled.
+
+The change adds an integer comparison only when a compressed-member
+reference has been recognized. No new benchmark timing was run and no
+zero-overhead or throughput improvement is claimed. Broader generation
+lifecycle, generic grammar and parser parity remain open.
+
 ## 2026-11-05 integer types in conditional filter alignment
 
 ISO 32000-1 Table 8 (printed pp27-28) specifies integer Predictor and

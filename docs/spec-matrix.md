@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed-reference generation guard](spec-backlog.md#2026-11-05-compressed-reference-generation-bounds)
+rejects recognized member references above 65,535 while preserving valid
+signed/padded spellings and ordinary-reader recovery. Reference-reader
+null substitution differs from strict member rejection; this does not
+complete generation-lifecycle or generic-parser parity.
+
 The [typed alignment guard](spec-backlog.md#2026-11-05-integer-types-in-conditional-filter-alignment)
 rejects noninteger recognized Predictor/LZW EarlyChange values in strict
 misaligned multi-filter metadata, including discarded dictionary bypasses.

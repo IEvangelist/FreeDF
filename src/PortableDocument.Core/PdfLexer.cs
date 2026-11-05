@@ -134,6 +134,8 @@ public sealed class PdfLexer
             SkipWhite();
             if (Pos < _end && _d[Pos] == 'R' && (Pos + 1 >= _d.Length || !IsRegular(_d[Pos + 1])))
             {
+                if (_objectStreamMember && gen > 65535)
+                    throw new PdfParseException("indirect reference generation exceeds 65535 in object stream member");
                 if (_objectStreamMember && Pos == generationEnd)
                     throw new PdfParseException("indirect reference requires white space in object stream member");
                 if (first.Value > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
