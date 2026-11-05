@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [temporary event-state correction](spec-backlog.md#2026-11-05-temporary-optional-content-event-overlays)
+applies viewer Print/Export recommendations over manual/current View state
+without persisting temporary changes. Missing recommendations retain that
+state across shared-state rendering and direct interpretation. Caller-supplied
+zoom/context, measured fallback cost and standalone printing-policy limits
+are explicit; this is not complete optional-content lifecycle parity.
+
 The [conditional parameter-alignment guard](spec-backlog.md#2026-11-05-conditional-nondefault-filter-parameter-alignment)
 rejects strict multi-filter metadata with mismatched known nondefault
 Flate/LZW parameters, preserving ordinary recovery and default-only
@@ -47,7 +54,8 @@ recorded rather than counted as equivalent reference confirmation.
 The [optional-content recommendation correction](spec-backlog.md#2026-11-05-optional-content-usage-recommendations)
 conjoins selected categories across applications, lets in-range Zoom enable
 an initially OFF group, and permits categories independent of event names.
-Configured state is retained when no recommendation is available.
+Current View/manual state is retained when no temporary Print/Export
+recommendation is available, as detailed in the later event-state correction.
 The [corrected default-configuration controls](spec-backlog.md#2026-11-05-conforming-optional-content-default-controls)
 use BaseState ON plus an OFF array, as Table 101 requires; earlier event
 timings are retained but no longer labelled valid default-config controls.
@@ -59,8 +67,9 @@ entries are diagnosed rather than treated as selecting all groups.
 
 The [optional-content zoom boundary correction](spec-backlog.md#2026-11-05-optional-content-upper-zoom-boundary)
 uses Table 102's half-open range, min <= zoom < max, in shared state/render
-visibility evaluation. Exact upper-bound content is now OFF; lower inclusion,
-other display events and existing caller-driven policy remain unchanged.
+visibility evaluation. Exact upper-bound content is now OFF; lower inclusion
+is retained. Temporary Print/Export fallback is detailed in the later
+event-state correction above.
 
 The [strict marker extent correction](spec-backlog.md#2026-11-05-strict-ascii-and-runlength-input-extent)
 requires ASCIIHex/ASCII85/RunLength EOD to finish logical filter input before

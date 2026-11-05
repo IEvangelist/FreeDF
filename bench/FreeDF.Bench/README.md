@@ -55,6 +55,73 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Temporary optional-content events: 2026-11-05
+
+ISO 32000-1 8.11.4.5 p236 requires viewer Print/Export recommendations
+over the current group state, without persisting the temporary change.
+Manual View overrides cannot bypass those recommendations. In the absence
+of a temporary recommendation, queries retain manual state or evaluate
+View state using the supplied zoom/context.
+
+Control production is `d3420550e362fead4630b69c38703da4f8a78920`,
+measured before production edits. The existing `OptionalContentEventBench`
+uses identical PDF bytes/hashes, timed method, parameters and selected-event
+results in control and final. Only an untimed cross-event assertion changes:
+a View-ON group without Print recommendations now stays ON for Print.
+These are queries on an already-open in-memory state, not document
+initialization, rendering, printing or export throughput.
+
+| Event | Control mean +/- error (ns) | Final mean +/- error (ns) | Managed B/query, control -> final |
+|---|---:|---:|---:|
+| Export | 99.06 +/- 6.301 | 75.33 +/- 2.513 | 0 -> 0 |
+| Print | 94.75 +/- 2.260 | 75.94 +/- 4.190 | 0 -> 0 |
+| View | 93.91 +/- 2.675 | 101.95 +/- 13.667 | 0 -> 0 |
+
+Print/Export means are lower with disjoint reported intervals: available
+event recommendations no longer require deriving configured state first.
+View's intervals overlap; neither an improvement nor a regression is
+established by that comparison. These three inputs are not universal
+visibility or rendering performance.
+
+New `OptionalContentTemporaryEventBench` adds eight **final-only** cases:
+Print/Export, manual override absent/present, temporary OFF recommendation
+absent/present. Every fixture starts configured OFF and has a View-ON rule;
+manual cases explicitly set ON. Setup requires correct temporary visibility,
+restored View visibility, unrepaired parsing and no warnings. It logs input
+length/hash and measured engine identity outside timing. Only `IsVisible`
+is timed. The unmodified View fallback scans recommendations for both
+events and is deliberately retained rather than hidden by cheaper cases.
+
+| Event | Manual ON | Temporary OFF rule | Mean +/- error (ns) | Managed B/query |
+|---|---|---|---:|---:|
+| Export | No | No | 177.78 +/- 6.637 | 0 |
+| Export | No | Yes | 84.71 +/- 4.853 | 0 |
+| Export | Yes | No | 75.48 +/- 3.087 | 0 |
+| Export | Yes | Yes | 84.40 +/- 6.861 | 0 |
+| Print | No | No | 179.11 +/- 7.086 | 0 |
+| Print | No | Yes | 79.57 +/- 1.657 | 0 |
+| Print | Yes | No | 70.58 +/- 2.036 | 0 |
+| Print | Yes | Yes | 77.51 +/- 2.819 | 0 |
+
+Reports: [control](results/2026-11-05-ocg-temporary-control.md)
+([CSV](results/2026-11-05-ocg-temporary-control.csv)),
+[final](results/2026-11-05-ocg-temporary-final.md)
+([CSV](results/2026-11-05-ocg-temporary-final.csv)),
+[raw GC/input/output/engine CSV](results/2026-11-05-ocg-temporary-gc.csv).
+All fourteen measured cases have zero raw allocated bytes, not a rounded
+display of a small allocation. Four new correctness cases additionally
+require exactly zero thread allocations over 4096 warmed fallback queries.
+The eight new cases join standalone preflight; they have no pre-edit
+performance comparator. No total/native/retained-memory, cold-start,
+cross-provider ranking or complete lifecycle-parity claim follows.
+
+Commands use three warmups/eight 500-ms iterations/one launch on the
+same runtime/machine, without running the regression suite concurrently:
+
+```powershell
+dotnet run -c Release --no-build --project bench\FreeDF.Bench -- --filter "*OptionalContentEventBench*" "*OptionalContentTemporaryEventBench*" --join --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
 ## LZW output-indexed dictionary: 2026-11-05
 
 `LzwBench.Decode` measures ordinary and strict decoding of two deterministic

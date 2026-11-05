@@ -4,6 +4,57 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 temporary optional-content event overlays
+
+ISO 32000-1 8.11.4.5 (printed p236) distinguishes persistent manual View
+overrides from temporary Print/Export recommendations. Viewer Print/Export
+applications apply over the current group states and revert afterward.
+Previously a manual state bypassed every event's usage applications, while
+an unmodified group without a Print/Export recommendation fell back to
+configured BaseState/ON/OFF instead of its View-derived state.
+
+The shared usage evaluator now returns a nullable recommendation. A
+Print/Export query applies that event's available recommendations first,
+otherwise retaining the manual state or evaluating View state with the
+caller's supplied zoom/context. No temporary query modifies the manual
+dictionary. View manual overrides remain immune to automatic View rules.
+The direct interpreter follows the same View fallback without a shared
+state object; normal rendering uses the shared-state path. Existing
+category/application conjunction, selection and diagnostics remain shared,
+including categories whose names differ from the selected event.
+
+Thirteen initial conforming, unrepaired controls produce nine failures/four
+passes on unchanged production. Twenty-six final controls cover both
+directions of manual override, restoration/repeated/cross-event queries,
+missing usage/state and empty application selection, category/application
+conjunction and allocation-free fallback queries. Render controls compare
+all 200x200 RGBA pixels, including direct interpretation and rendering
+without an explicit state object. Two earlier zoom tests now explicitly
+expect View-derived fallback for Print/Export without a recommendation,
+while retaining a manually overridden View state. Focused optional-content
+checks pass 297; full Release passes 19,736, zero failed/skipped; solution
+zero warnings/errors. Fresh pinned 435-PDF/870-result complete validation
+JSON is unchanged. Standalone provider/parser/benchmark preflight passes.
+
+Matched existing event-query inputs and timed methods are unchanged;
+only an untimed cross-event preflight expectation changes. Print mean
+94.75 -> 75.94 ns and Export 99.06 -> 75.33 ns have disjoint reported
+intervals; event recommendations no longer require deriving configured
+state first. View 93.91 -> 101.95 ns has overlapping intervals, so this is
+not evidence of an improvement or established regression there. Eight
+new final-only overlay/fallback benchmarks expose the extra cost of
+evaluating View recommendations when no temporary recommendation exists.
+All fourteen measured control/final cases report exactly zero managed
+allocation from raw GC totals. The [benchmark record](../bench/FreeDF.Bench/README.md#temporary-optional-content-events-2026-11-05)
+retains timings, input hashes and measured engine identities.
+
+These are caller-driven visibility queries, not a printing/export service,
+event-history cache, automatic PDF-action execution or standalone
+printing/aggregation policy. The latter has distinct initialization rules
+in 8.11.4.5. No equivalent temporary viewer-event operation was exercised
+in the existing reference-provider harness; external agreement is not
+claimed. Broader optional-content lifecycle/schema parity remains open.
+
 ## 2026-11-05 conditional nondefault filter-parameter alignment
 
 ISO 32000-1 Table 5 (printed p20) requires one DecodeParms array entry

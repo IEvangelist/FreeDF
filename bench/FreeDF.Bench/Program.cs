@@ -72,6 +72,13 @@ if (args.Contains("--preflight"))
         new OptionalContentZoomBench { Zoom = zoom }.Setup();
     foreach (var displayEvent in new[] { "View", "Print", "Export" })
         new OptionalContentEventBench { Event = displayEvent }.Setup();
+    foreach (var displayEvent in new[] { "Print", "Export" })
+        foreach (var manual in new[] { false, true })
+            foreach (var recommendation in new[] { false, true })
+                new OptionalContentTemporaryEventBench
+                {
+                    Event = displayEvent, Manual = manual, Recommendation = recommendation
+                }.Setup();
     foreach (var policy in new[] { "AnyOn", "AllOn", "AnyOff", "AllOff" })
         new OptionalContentMembershipBench { Policy = policy }.Setup();
     return;

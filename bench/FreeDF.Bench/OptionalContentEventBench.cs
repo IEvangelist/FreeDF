@@ -35,8 +35,9 @@ public class OptionalContentEventBench
         _group = _state.Groups.Single();
         var otherEvent = _displayEvent == ContentInterpreter.OptionalContentEvent.View
             ? ContentInterpreter.OptionalContentEvent.Print : ContentInterpreter.OptionalContentEvent.View;
+        var otherVisible = _displayEvent == ContentInterpreter.OptionalContentEvent.View;
         if (document.File.Repaired || document.Pages.Count != 1 || !IsVisible()
-            || _state.IsVisible(_group, otherEvent) || _state.Warnings.Count != 0)
+            || _state.IsVisible(_group, otherEvent) != otherVisible || _state.Warnings.Count != 0)
             throw new InvalidOperationException("Optional-content event preflight failed.");
         Console.WriteLine($"PASS optional-content event: event={Event}, bytes={bytes.Length}, " +
             $"SHA256={Convert.ToHexString(SHA256.HashData(bytes))}, " +

@@ -56,10 +56,15 @@ public class OptionalContentZoomBoundaryTests
     [Theory]
     [InlineData(ContentInterpreter.OptionalContentEvent.Print)]
     [InlineData(ContentInterpreter.OptionalContentEvent.Export)]
-    public void Zoom_does_not_change_non_view_events(ContentInterpreter.OptionalContentEvent displayEvent)
+    public void Missing_temporary_recommendations_preserve_the_current_view_zoom(
+        ContentInterpreter.OptionalContentEvent displayEvent)
     {
         var state = new OptionalContentState(Load("/min 1 /max 2"));
-        Assert.True(state.IsVisible(Assert.Single(state.Groups), displayEvent, zoom: 2));
+        var group = Assert.Single(state.Groups);
+        Assert.True(state.IsVisible(group, displayEvent, zoom: 1));
+        Assert.False(state.IsVisible(group, displayEvent, zoom: 2));
+        state.SetVisibility(group, true);
+        Assert.True(state.IsVisible(group, displayEvent, zoom: 2));
     }
 
     [Theory]

@@ -114,6 +114,8 @@ public sealed class OptionalContentState
     /// <summary>
     /// Returns the group's ON/OFF state, including UI overrides and usage rules.
     /// Configuration intent separately determines whether that state affects rendered content.
+    /// Print and Export recommendations temporarily override the current View state without modifying it.
+    /// The supplied zoom and context determine that View state when there is no UI override.
     /// </summary>
     public bool IsVisible(PdfDictionary group,
         ContentInterpreter.OptionalContentEvent displayEvent = ContentInterpreter.OptionalContentEvent.View, double zoom = 1,
@@ -155,9 +157,17 @@ public sealed class OptionalContentState
     }
 
     internal bool IsVisibleCore(PdfDictionary group, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
-        OptionalContentContext? context = null) =>
-        _visibility.TryGetValue(group, out var visible) ? visible
+        OptionalContentContext? context = null)
+    {
+        if (displayEvent is ContentInterpreter.OptionalContentEvent.Print or ContentInterpreter.OptionalContentEvent.Export)
+        {
+            if (RecommendedVisibility(File, group, Configuration, displayEvent, zoom, context, _warn) is { } temporary)
+                return temporary;
+            displayEvent = ContentInterpreter.OptionalContentEvent.View;
+        }
+        return _visibility.TryGetValue(group, out var visible) ? visible
             : !IsOff(File, group, Configuration, DefaultConfiguration, displayEvent, zoom, context, _warn);
+    }
 
     static bool ContainsGroup(PdfFile file, PdfArray groups, PdfDictionary group)
     {
@@ -170,6 +180,12 @@ public sealed class OptionalContentState
         PdfDictionary? defaultConfiguration, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
         OptionalContentContext? context = null, Action<string>? warn = null)
     {
+        if (displayEvent is ContentInterpreter.OptionalContentEvent.Print or ContentInterpreter.OptionalContentEvent.Export)
+        {
+            if (RecommendedVisibility(file, ocg, cfg, displayEvent, zoom, context, warn) is { } temporary)
+                return !temporary;
+            displayEvent = ContentInterpreter.OptionalContentEvent.View;
+        }
         if (cfg is null) return false;
         PdfObject? R(PdfObject? value) => file.Resolve(value);
         var baseState = R(cfg.Get("BaseState")).AsName();
@@ -184,7 +200,16 @@ public sealed class OptionalContentState
                 || !(R(cfg.Get("ON")) is PdfArray onGroups && ContainsGroup(file, onGroups, ocg)) && baseOff;
         }
 
-        if (R(cfg.Get("AS")) is not PdfArray applications) return off;
+        return RecommendedVisibility(file, ocg, cfg, displayEvent, zoom, context, warn) is { } visible
+            ? !visible : off;
+    }
+
+    static bool? RecommendedVisibility(PdfFile file, PdfDictionary ocg, PdfDictionary? cfg,
+        ContentInterpreter.OptionalContentEvent displayEvent, double zoom, OptionalContentContext? context,
+        Action<string>? warn)
+    {
+        PdfObject? R(PdfObject? value) => file.Resolve(value);
+        if (R(cfg?.Get("AS")) is not PdfArray applications) return null;
         var eventName = displayEvent switch
         {
             ContentInterpreter.OptionalContentEvent.View => "View",
@@ -251,7 +276,7 @@ public sealed class OptionalContentState
                     recommendations = (recommendations ?? true) && on;
             }
         }
-        return recommendations is { } visible ? !visible : off;
+        return recommendations;
     }
 
     static bool? UsageRecommendation(PdfFile file, PdfDictionary ocg, PdfDictionary usage, PdfDictionary application,
