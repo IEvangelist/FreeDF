@@ -71,6 +71,13 @@ condition with namespace-aware Artifact exclusion. The separate
 label-or-Contents predicate remains incomplete; no model implementation
 or profile XML is bundled.
 
+The UA-2 text-field RV/V value-presence fact was cross-checked against
+the same CC BY 4.0 UA-2 profile, 8.10.3.3-1. Only the missing-V part
+is implemented; textual equivalence remains deferred. Primary ISO
+32000-1 7.3.9 and 12.7.3/Table 220 establish null equivalence and
+field-value inheritance. Eighteen measured reference disagreements
+remain recorded; no profile XML, runtime or external PDFs are bundled.
+
 The UA-2 file-attachment AFRelationship requirement was cross-checked
 against the same CC BY 4.0 UA-2 profile, 8.9.2.4.10-1. Null handling
 follows primary ISO 32000-1 7.3.9; bounded references are reported

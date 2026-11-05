@@ -25,6 +25,50 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 link targets", () => LinkTargets(c, tree));
         c.Guard("PDF/UA-2 destinations", () => Destinations(c));
         c.Guard("PDF/UA-2 file specifications", () => Files(c));
+        c.Guard("PDF/UA-2 rich field values", () => RichFieldValues(c));
+    }
+
+    static void RichFieldValues(ValidationContext c)
+    {
+        var fields = c.Doc.GetFormFieldDetails();
+        bool incomplete = false;
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Tx") continue;
+            bool complete = true;
+            void Unresolved() { complete = false; Incomplete(); }
+            var rich = ResolveBounded(c.F, field.Dictionary.Get("RV"), Unresolved);
+            if (!complete || rich is null or PdfNull) continue;
+            if (rich is not (PdfString or PdfStream)) { Incomplete(); continue; }
+            var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            PdfDictionary? dictionary = field.Dictionary;
+            PdfObject? value = null;
+            while (dictionary is not null)
+            {
+                if (seen.Count > FormFieldDetailFeatures.MaxDepth || !seen.Add(dictionary)) { Unresolved(); break; }
+                value = ResolveBounded(c.F, dictionary.Get("V"), Unresolved);
+                if (!complete || value is not (null or PdfNull)) break;
+                var parent = ResolveBounded(c.F, dictionary.Get("Parent"), Unresolved);
+                if (parent is not (null or PdfNull or PdfDictionary)) { Unresolved(); break; }
+                dictionary = parent as PdfDictionary;
+            }
+            if (!complete) continue;
+            if (value is null or PdfNull)
+                c.Add("PDFUA2-FORM-RV-V", ValidationSeverity.Error,
+                    "a text field with /RV must also provide a plain /V value; rich/plain text equivalence is not evaluated",
+                    "ISO 14289-2 8.10.3.3");
+            else if (value is not (PdfString or PdfStream)) Incomplete();
+        }
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-VALUE-INCOMPLETE", ValidationSeverity.Error,
+                "rich-field value-presence inspection is truncated, cyclic, malformed or bounded",
+                "ISO 14289-2 8.10.3.3");
+        }
     }
 
     internal static bool LanguagePrivateUse(ValidationContext c, string language, int? page = null)

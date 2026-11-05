@@ -81,6 +81,7 @@ RULE_MAP = {
         "8.10.2.3-2": ["PDFUA2-WIDGET-AA-CONTENTS"],
         "8.10.1-1": ["PDFUA-FORM-STRUCT"],
         "8.10.1-3": ["PDFUA2-XFA"],
+        "8.10.3.3-1": ["PDFUA2-FORM-RV-V"],
     },
 }
 

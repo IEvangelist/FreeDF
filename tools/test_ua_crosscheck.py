@@ -90,6 +90,7 @@ class RuleOverlapTests(unittest.TestCase):
         (2, "8.10.1-1", "PDFUA-FORM-STRUCT"),
         (2, "8.10.1-2", "PDFUA2-FORM-WIDGETS"),
         (2, "8.10.1-3", "PDFUA2-XFA"),
+        (2, "8.10.3.3-1", "PDFUA2-FORM-RV-V"),
         (2, "8.14.1-1", "PDFUA2-FILESPEC-DESC"),
         (2, "8.9.2.4.10-1", "PDFUA2-FILEATTACH-AFRELATIONSHIP"),
     ]

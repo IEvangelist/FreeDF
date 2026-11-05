@@ -4,6 +4,52 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 rich-field plain-value presence
+
+Text fields enumerated by the existing terminal-field reader now report
+`PDFUA2-FORM-RV-V` (Error, 8.10.3.3) when their own non-null RV entry
+has no plain V value. This implements only the value-presence part of
+the pinned veraPDF v1.30.3 UA-2 8.10.3.3-1 predicate, not rich/plain
+textual equivalence. Empty strings and text streams establish presence;
+their semantic equivalence is not inferred. XML and stream payloads
+remain unread for this check, so no XML normalization or execution occurs.
+Choice fields and UA-1 are unchanged.
+
+Primary ISO 32000-1 12.7.3.1/Table 220 (printed 432-433), 12.7.3.4
+and 12.7.4.3 (printed 436-438/443) establish inheritable V, rich XML
+string/stream representation and plain V representation. Together with
+7.3.9 null equivalence, null local V does not shadow an inherited value.
+Only own RV on an enumerated terminal field triggers this check.
+Full primary UA-2 8.10 remains unavailable in the public ISO preview.
+
+The check reuses the terminal-field reader and bounded reference
+resolver. Reader truncation, malformed non-text values, cyclic references
+and exhausted reference/parent bounds produce a separate
+`PDFUA2-FORM-VALUE-INCOMPLETE` Error, not an inaccurate missing-value
+finding. Exact 32-reference, 64-parent/tree-depth and 100,000-reader-work
+boundaries are covered. The reader's existing tolerant field classification
+is not complete malformed-field-tree validation; skipped malformed/cyclic
+branches and rich/plain equivalence remain separate parity work.
+
+There are 186 new authored cases covering both profiles, text/choice
+types, null representations, string/stream values, inheritance and
+incomplete boundaries. The initial 174-case run had 13 failures.
+Forty-four independent native UA-2 controls give 26 exact-rule/file
+agreements (14 clean positives, 12 negatives), including 12 corrected
+false-negative verdicts. Eighteen disagreements remain explicit:
+12 indirect-null/dangling RV cases where primary null equivalence
+exempts RV; two equal XML-stream RV cases rejected by the reference;
+and four inherited V cases rejected by the reference despite primary
+field inheritance. These disagreements are not counted as clean positives.
+All 44 corresponding UA-1 outputs are unchanged.
+
+Fresh 435-PDF/870-result public-corpus output is identical to the
+immediate baseline. Full Release suite: 13,986 passed, zero failed/skipped.
+Solution build: zero errors and two retained machine-feed NU1507 warnings.
+Reporting tool: 20 passing tests. The 8.10.3.3-1 mapping measures this
+scoped presence overlap, not complete coverage of its equality predicate.
+External evidence remains session-only; full PDF/UA parity is not claimed.
+
 ## 2026-11-05 UA-2 null file-attachment relationships
 
 The `PDFUA2-FILEATTACH-AFRELATIONSHIP` check now treats missing,

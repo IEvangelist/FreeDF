@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 rich-field plain-value presence check](spec-backlog.md#2026-11-05-ua-2-rich-field-plain-value-presence)
+requires V when an enumerated terminal text field has own non-null RV.
+It does not evaluate XML/text equivalence. Forty-four native controls
+give 26 exact-rule/file agreements and 12 corrected false negatives;
+18 null/stream/inheritance reference disagreements remain explicit.
+UA-1 and fresh 435-PDF/870-result corpus output are unchanged. Full
+equality and malformed-field classification remain incomplete.
+
 The [UA-2 null attachment-relationship correction](spec-backlog.md#2026-11-05-ua-2-null-file-attachment-relationships)
 rejects omitted/null/dangling AFRelationship values consistently and
 reports unresolved reference boundaries separately. Twelve native
