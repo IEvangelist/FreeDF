@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed Length reference chains
+
+ISO 32000-1 7.5.7 (printed p45) prohibits storing the object representing
+an object stream's Length value in an object stream. Indirect-value semantics
+are equivalent under 7.3.10 (printed p22). An uncompressed reference intermediary
+must not hide a compressed final integer. The shared index reader now checks
+each reference identity while resolving Length, before publishing members,
+instead of checking only the first reference.
+
+The existing 32-reference resolution limit, generation-aware lookup and
+non-negative integer requirement remain unchanged. This is a bounded local
+reference-chain check, not a document-wide forbidden-object inventory.
+Ordinary streams may still use compressed Length integers through references.
+
+Fifteen new tests cover one/two/four intermediaries, both physical container
+orders, normal/forced repair, valid all-uncompressed chains through 32 total
+references, rejection beyond the existing limit, exact cached member identity
+and ordinary-stream bytes. Unchanged-production baseline: six failed/nine
+passed. Focused selector: 705 passed. Full Release: 19,216 passed, zero
+failed/skipped. Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Twenty-six native controls preserve fourteen valid outputs exactly, including
+six retained independently generated AES-128/AES-256/RC4 files. Nine malformed
+chains formerly exposed Target and now produce repaired nulls without publishing
+the target member. Three container-before-Length forced-repair negatives already
+produced the same null and remain unchanged; they are not new rejections.
+MuPDF exposes Target for all twelve malformed chains and agrees on all fourteen
+positives. Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged
+against the endobj-framing baseline.
+
+Remaining gaps include generic indirect-object grammar, complete filter EOD
+consistency, external-stream schemas, complete member lexical source alignment,
+global forbidden-object inventory/lifecycle and resource budgets.
+
 ## 2026-11-05 object-stream endobj grammar
 
 ISO 32000-1 7.3.8.1 (printed p19) permits only whitespace between endstream

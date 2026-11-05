@@ -333,11 +333,16 @@ public sealed class PdfFile
             throw new PdfParseException("object stream header comment crosses First");
         if (lx.Pos != first)
             throw new PdfParseException("extra data after object stream header pairs");
-        if (stream.Dict.Get("Length") is PdfRef { Generation: 0 } length
-            && (map.Members.ContainsKey(length.Number)
+        var lengthValue = stream.Dict.Get("Length");
+        var depth = 0;
+        while (lengthValue is PdfRef length && depth++ < 32)
+        {
+            if (length.Generation == 0 && (map.Members.ContainsKey(length.Number)
                 || Xref.TryGetValue(length.Number, out var lengthEntry) && lengthEntry is { InUse: true, Compressed: true }))
-            throw new PdfParseException("object stream Length value cannot be compressed");
-        if (Resolve(stream.Dict.Get("Length")) is not PdfInteger { Value: >= 0 })
+                throw new PdfParseException("object stream Length value cannot be compressed");
+            lengthValue = GetObject(length);
+        }
+        if (lengthValue is not PdfInteger { Value: >= 0 })
             throw new PdfParseException("object stream Length must be a nonnegative integer");
         return map;
     }

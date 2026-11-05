@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed Length-reference-chain check](spec-backlog.md#2026-11-05-compressed-length-reference-chains)
+checks each resolved reference identity before object-stream member publication,
+preventing uncompressed intermediaries from hiding a compressed Length integer.
+The existing depth limit and ordinary-stream behavior remain unchanged. Nine
+changed native negatives, three stable negatives, reference disagreement and
+unchanged corpus JSON are recorded; global forbidden-object inventory remains
+separate.
+
 The [object-stream endobj-grammar check](spec-backlog.md#2026-11-05-object-stream-endobj-grammar)
 requires the complete closing keyword after whitespace/comments, rejecting
 intervening values, keyword prefixes and missing markers. Valid-boundary Type
