@@ -16,17 +16,35 @@ static class EditorFormAuthoring
         ("Combo box", "f_combo", "Option 2"), ("List box", "f_list", "Option 3"), ("Push button", "f_button", null), ("Signature placeholder", "f_sig", null),
     ];
 
-    static async Task Updated(IPage page, string name) =>
-        await page.WaitForFunctionAsync("n => document.getElementById('status').textContent.includes(n)", $"Updated {name}");
+    static async Task Updated(IPage page, string name, string property, string value, IElementHandle previous)
+    {
+        await page.WaitForFunctionAsync("""
+            ([name, property, value, previous]) => {
+              const input = document.querySelector(`#props [data-ff="${property}"]`);
+              return !previous.isConnected &&
+                document.querySelector('#props [data-ff=name]')?.value === name &&
+                (input ? input.value === value : document.querySelector('#props [data-ffcheck]')?.checked) &&
+                document.getElementById('status').textContent.includes(`Updated ${name}`);
+            }
+            """, new object[] { name, property, value, previous });
+        Check(await page.EvaluateAsync<bool>("""
+            async ([name, property, value]) => {
+              const fields = await (await pdfHost.request('/api/forms?page=0')).json();
+              return fields.some(field => field.name === name && String(field[property]) === value);
+            }
+            """, new[] { name, property, value }), $"persisted {name}.{property} should be '{value}'");
+    }
 
     static async Task<int> Boxes(IPage page) => await page.Locator("#layer .ffbox").CountAsync();
 
     static async Task SetField(IPage page, string selector, string value, string name)
     {
         var input = page.Locator("#props " + selector);
+        var property = await input.GetAttributeAsync("data-ff") ?? throw new Exception("Missing field property.");
+        var previous = await input.ElementHandleAsync() ?? throw new Exception("Missing field control.");
         await input.FillAsync(value);
         await input.PressAsync("Tab");
-        await Updated(page, name);
+        await Updated(page, name, property, value, previous);
     }
 
     static async Task<string> Save(IPage page)
@@ -69,14 +87,16 @@ static class EditorFormAuthoring
             if (value is not null) await SetField(page, "[data-ff=value]", value, name);
             if (label == "Text field")
             {
+                var previous = (await page.Locator("#props [data-ff=alignment]").ElementHandleAsync())!;
                 await EditorChoices.Choose(page, page.Locator("#props").GetByRole(AriaRole.Combobox, new() { Name = "Alignment", Exact = true }), "2");
-                await Updated(page, name);
+                await Updated(page, name, "alignment", "2", previous);
                 Check(await page.Locator("#props [data-ff=alignment]").InputValueAsync() == "2", "custom alignment choice updates field properties");
             }
             if (label == "Check box")
             {
+                var previous = (await page.Locator("#props [data-ffcheck]").ElementHandleAsync())!;
                 await page.Locator("#props [data-ffcheck]").CheckAsync();
-                await Updated(page, name);
+                await Updated(page, name, "value", "Yes", previous);
             }
             if (label == "Radio button")
             {
@@ -122,7 +142,8 @@ static class EditorFormAuthoring
         var names = doc.GetFormFields().Select(f => f.FullName).ToHashSet();
         foreach (var (_, name, _) in Fields) Check(names.Contains(name), $"saved PDF has field {name}");
         var values = doc.GetFormFields().ToDictionary(f => f.FullName, f => f.Value);
-        Check(values["f_text"] == "Ada Lovelace" && values["f_combo"] == "Option 2" && values["f_check"] == "Yes", "saved values");
+        Check(values["f_text"] == "Ada Lovelace" && values["f_combo"] == "Option 2" && values["f_check"] == "Yes",
+            $"saved values: text='{values["f_text"]}', combo='{values["f_combo"]}', check='{values["f_check"]}'");
         Check(Pdf.RenderPage(doc.Pages[0], 72).Rgba.AsSpan().SequenceEqual(blank) is false, "widgets render");
         Check(doc.Pages[0].Dict.Get("Tabs") is PdfName { Value: "R" }, "saved /Tabs /R");
 
