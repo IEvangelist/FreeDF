@@ -83,7 +83,7 @@ public sealed class PdfFile
         if (_cache.TryGetValue(num, out var c)) return c;
         if (!Xref.TryGetValue(num, out var e) || !e.InUse) return PdfNull.Instance;
         PdfObject result;
-        try { result = e.Compressed ? LoadCompressed((int)e.OffsetOrStream, e.GenOrIndex, num) : LoadAt(e.OffsetOrStream, num); }
+        try { result = e.Compressed ? LoadCompressed((int)e.OffsetOrStream, e.GenOrIndex, num) : LoadAt(e.OffsetOrStream, num, e.GenOrIndex); }
         catch (PdfParseException) when (!Repaired) { Repair(); return GetObject(num); }
         if (_dec is not null && !e.Compressed && num != _encObj) result = _dec.Decrypt(result, num, e.GenOrIndex);
         _cache[num] = result;
@@ -105,14 +105,15 @@ public sealed class PdfFile
         if (keep is not null) _cache[_encObj] = keep;
     }
 
-    PdfObject LoadAt(long offset, int expectNum)
+    PdfObject LoadAt(long offset, int expectNum, int? expectGeneration = null)
     {
         if (offset < 0 || offset >= Data.Length) throw new PdfParseException("offset out of range");
         var lx = new PdfLexer(Data, (int)offset);
         var n = lx.ReadObject(false) as PdfInteger;
         var g = lx.ReadObject(false) as PdfInteger;
         var kw = lx.ReadObject(false) as PdfKeyword;
-        if (n is null || g is null || kw?.Value != "obj" || (expectNum >= 0 && n.Value != expectNum)) throw new PdfParseException($"object header mismatch at {offset}");
+        if (n is null || g is null || kw?.Value != "obj" || (expectNum >= 0 && n.Value != expectNum)
+            || (expectGeneration is { } generation && g.Value != generation)) throw new PdfParseException($"object header mismatch at {offset}");
         var obj = lx.ReadObject() ?? throw new PdfParseException("eof in object");
         if (obj is PdfDictionary d)
         {

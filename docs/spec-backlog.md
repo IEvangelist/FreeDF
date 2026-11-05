@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object header generation consistency
+
+The ISO 32000-1 7.3.10/7.5.4 identity requirements also apply to the
+actual object header, not just the reference and xref entry. Uncompressed
+object loads now compare the header generation with the selected xref
+generation, alongside the existing object-number comparison. A mismatch
+uses the existing explicit object-header PdfParseException and repair
+path. Generation-aware one-hop resolution rechecks the repaired xref,
+so a reference to the old erroneous generation cannot alias the recovered
+object. A subsequent reference to the actual generation resolves normally.
+Xref-stream discovery still has no preselected expected object generation.
+
+One new regression, red before correction, covers four actual/indexed
+generation disagreements at correct byte offsets. Focused parser/
+incremental/encryption/signature Release: 179 passed; full Release:
+18,435 passed, zero failed/skipped. Solution zero errors/two retained
+machine-feed NU1507 warnings.
+Eight native PDFs preserve four matching header/xref controls and recover
+four mismatches without resolving the old-generation reference. MuPDF
+resolves all eight: four explicit identity/recovery-policy disagreements,
+not independent negative confirmation. Fresh 435-PDF/870-result corpus
+JSON is wholly unchanged against c07fc7ce.
+This closes the reached uncompressed header-generation omission only;
+complete xref validation, compressed-member identity and malformed-graph
+rewrites remain separate. No standards/external PDFs bundled or hosted
+CI/full parity claimed.
+
 ## 2026-11-05 indirect reference generations and incremental preservation
 
 ISO 32000-1 7.3.10 (printed p21) identifies an object by both number and

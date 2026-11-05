@@ -75,6 +75,21 @@ public class PdfReferenceGenerationTests
     }
 
     [Fact]
+    public void Header_generation_mismatch_repairs_the_xref_without_aliasing()
+    {
+        foreach (var generation in new[] { 0, 1, 7, 65535 })
+        {
+            var file = Load(generation);
+            var indexedGeneration = generation == 0 ? 1 : 0;
+            file.Xref[4] = file.Xref[4] with { GenOrIndex = indexedGeneration };
+            Assert.IsType<PdfNull>(file.Resolve(new PdfRef(4, indexedGeneration)));
+            Assert.True(file.Repaired);
+            Assert.Equal(generation, file.Xref[4].GenOrIndex);
+            Assert.Same(file.GetObject(4), file.Resolve(new PdfRef(4, generation)));
+        }
+    }
+
+    [Fact]
     public void Editor_incremental_metadata_preserves_nonzero_catalog_and_info_generations()
     {
         var source = Load(7, rootGeneration: 3);

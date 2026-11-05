@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object header generation check](spec-backlog.md#2026-11-05-object-header-generation-consistency)
+compares reached uncompressed headers against xref generations, using
+explicit parse errors and existing repair. Four native mismatches no
+longer resolve the old-generation reference; MuPDF's more lenient result
+is recorded as a disagreement. Corpus JSON is unchanged. Complete xref/
+compressed-member identity validation is not claimed.
+
 The [generation-aware reference correction](spec-backlog.md#2026-11-05-indirect-reference-generations-and-incremental-preservation)
 honors current xref generations before/after caching and repair, with a
 shared bounded-consumer one-hop API. Editor incremental writes preserve
