@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed encryption dictionary check](spec-backlog.md#2026-11-05-compressed-encryption-dictionary-references)
+rejects a direct trailer Encrypt reference to a compressed entry before
+authentication. Valid uncompressed dictionaries retain password behavior.
+Native disagreement, repair diagnostics and unchanged corpus JSON are recorded.
+Reference chains, global inventory, complete encryption schema and budgets
+remain separate.
+
 The [object-stream compressed Length check](spec-backlog.md#2026-11-05-object-stream-compressed-length-references)
 rejects direct Length references to compressed objects before publishing an
 affected member index, including own-container members. Valid uncompressed

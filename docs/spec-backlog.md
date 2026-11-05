@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed encryption dictionary references
+
+ISO 32000-1 7.5.7 (printed p45) prohibits storing the document's
+encryption dictionary in an object stream. Encryption setup now checks a
+direct trailer Encrypt reference against the xref before resolving it or
+attempting password authentication. A compressed dictionary produces a parse
+failure instead of being accepted or misreported as a bad password.
+
+Thirteen controls use actual writer-generated RC4-40 dictionaries and the
+same identifiers, testing normal/forced repair, empty/user/owner passwords
+and wrong-password disposition. The initial selector had four failures.
+Valid uncompressed dictionaries retain password behavior. Full Release:
+18,911 passed, zero failed/skipped. Solution: zero errors/two retained
+machine-feed NU1507 warnings.
+
+Four native PDFs independently use a MuPDF-generated encryption dictionary.
+Two uncompressed controls remain unchanged; both compressed controls now
+fail explicitly (one was previously accepted, one already failed during
+repair). Existing repair replaces the initial specific diagnostic with
+bad /Encrypt when the compressed dictionary cannot be rediscovered.
+MuPDF still returns the catalog for both forbidden controls. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the
+compressed-Length baseline.
+
+This checks direct trailer reference identity, not arbitrary indirect-reference
+chains or an eager global forbidden-object inventory. General encryption
+dictionary schema and parser-wide budgets remain separate.
+
 ## 2026-11-05 object-stream compressed Length references
 
 ISO 32000-1 7.5.7 (printed p45) prohibits storing the object
