@@ -122,6 +122,8 @@ public static class PdfFilters
 
     public static byte[] DeflateEncode(byte[] data)
     {
+        // Empty zlib stream: header, final fixed-Huffman block, Adler-32 of empty input.
+        if (data.Length == 0) return [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01];
         var ms = new MemoryStream();
         using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true)) z.Write(data);
         return ms.ToArray();

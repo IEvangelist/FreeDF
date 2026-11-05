@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 complete empty Flate encoding
+
+ISO 32000-1 7.4.4.1 (printed p25) defines Flate through RFCs 1950 and 1951.
+[RFC 1950 sections 2.2-2.3](https://www.rfc-editor.org/rfc/rfc1950.html#section-2.2)
+require the zlib header, compressed data and Adler-32 checksum even for empty
+decoded input. The public Flate encoder previously returned zero bytes for
+empty input on the current runtime. Empty file-attachment annotation streams,
+sample blank pages, sample Form XObjects and sample embedded files consequently
+advertised FlateDecode without a complete encoded stream.
+
+The shared encoder now returns a fresh eight-byte empty zlib stream: header,
+final fixed-Huffman block and the empty-input Adler-32 value of one.
+Annotation appearance/attachment compression uses that encoder. The sample
+builder routes only empty compression through it, preserving its existing
+SmallestSize compression level for nonempty input. The core writer already
+leaves short unfiltered streams uncompressed; its valid zero-length raw stream
+behavior is unchanged. No decoder strictness or permissive recovery is relaxed.
+
+Nineteen tests cover both public entry points, independent mutable return
+buffers, exact nonempty compressed bytes, strict decoding, full/incremental
+attachment saves from classic/object-stream sources, unchanged raw empty
+writer streams, sample blank pages/forms/embedded files and the sample
+builder's unchanged nonempty compression. The initial fourteen-test
+unchanged-production baseline was six failures/eight passes. Five later sample
+controls reproduced three failures/two passes before changing sample production
+code. Final focused selector: 163 passed. Full Release: 19,257 passed,
+zero failed/skipped. Final solution build: zero warnings/errors.
+
+Thirteen native PDF controls retain exact encoded bytes and stream identities.
+Python zlib independently rejects the nine original zero-byte encodings and
+confirms complete EOD, exact decoded bytes and no unused/unconsumed data for
+all corrected streams. The empty encoding matches Python's independently
+generated output; four nonempty encodings remain byte-identical.
+MuPDF opens and decodes every before/after probe, including the original
+incomplete empty streams; permissive acceptance is not conformance evidence.
+Fresh pinned 435-PDF/870-result full corpus JSON remains wholly unchanged
+against the pooled-decoder baseline.
+
+The [encoder benchmark](../bench/FreeDF.Bench/README.md#flate-encoder-workloads)
+records empty, 256-byte and 1 MiB inputs with independent decompression preflight.
+The empty path materializes only its fresh eight-byte result (32 managed bytes
+including array overhead in this run). This is a new valid-encoding baseline,
+not a speedup comparison against the former invalid empty output.
+Full filter EOD/parameter consistency and resource-budget parity remain separate.
+
 ## 2026-11-05 encryption dictionary reference chains
 
 ISO 32000-1 7.5.7 (printed p45) prohibits compressed encryption dictionaries;

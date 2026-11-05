@@ -196,6 +196,31 @@ also pass and their full measurements are retained, but random encryption
 material makes their bytes differ across builds; no matched-byte encrypted
 speedup is attributed. Cached lookup still has no managed allocation.
 
+## Flate encoder workloads
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*FlateEncodeBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+`FlateEncodeBench` measures complete zlib encoding for empty, 256-byte and 1 MiB
+seeded-pseudorandom payloads. Setup generates inputs and independently
+decompresses the output through the runtime's zlib reader; empty input must
+produce the canonical complete eight-byte stream, not a zero-byte result.
+Encoding and result materialization are timed. `--preflight` validates all
+three configurations. SHA-256 values identify the encoded bytes.
+
+The [2026-11-05 report](results/2026-11-05-flate-encode.md)
+([CSV](results/2026-11-05-flate-encode.csv)) uses the same machine/runtime and
+three-warmup/eight-500-ms-iteration/one-launch settings as the decoder follow-up.
+Means are approximately 3.0 ns / 9.40 us / 18.57 ms for empty / 256-byte /
+1 MiB inputs. Empty encoding allocates 32 managed bytes for its independent
+eight-byte array; nanosecond timing is subject to harness/JIT limitations.
+These are new encoding baselines, not performance comparisons with the former
+invalid zero-byte encoding or with other compression levels/providers.
+Nineteen tests additionally preserve exact nonempty compressed bytes and verify
+empty annotation/sample authoring; see the
+[scoped parity record](../../docs/spec-backlog.md#2026-11-05-complete-empty-flate-encoding).
+
 ## Serialized refresh: 2026-10-30
 
 The [43-case report](results/2026-10-30.md) and [CSV](results/2026-10-30.csv)

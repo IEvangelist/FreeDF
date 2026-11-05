@@ -530,10 +530,5 @@ public static class AnnotationAppearance
     }
 
     /// <summary>zlib (RFC 1950) compression for FlateDecode.</summary>
-    public static byte[] Deflate(byte[] data)
-    {
-        using var ms = new MemoryStream();
-        using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.Optimal, true)) z.Write(data);
-        return ms.ToArray();
-    }
+    public static byte[] Deflate(byte[] data) => PdfFilters.DeflateEncode(data);
 }

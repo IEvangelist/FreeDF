@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using BenchmarkDotNet.Attributes;
 using PortableDocument.Core;
@@ -29,4 +30,32 @@ public class FlateBench
 
     [Benchmark]
     public byte[] Decode() => PdfFilters.Flate(_encoded);
+}
+
+[MemoryDiagnoser]
+public class FlateEncodeBench
+{
+    [Params(0, 256, 1048576)]
+    public int DecodedBytes { get; set; }
+
+    byte[] _source = [];
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _source = new byte[DecodedBytes];
+        new Random(42).NextBytes(_source);
+        var encoded = Encode();
+        using var zlib = new ZLibStream(new MemoryStream(encoded), CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        zlib.CopyTo(output);
+        if (encoded.Length < 8 || !_source.AsSpan().SequenceEqual(output.ToArray())
+            || DecodedBytes == 0 && !encoded.AsSpan().SequenceEqual(new byte[] { 0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01 }))
+            throw new InvalidOperationException("Flate encoding preflight produced unequal decoded bytes.");
+        Console.WriteLine($"PASS Flate encode: decoded={DecodedBytes}, encoded={encoded.Length}, " +
+            $"SHA256={Convert.ToHexString(SHA256.HashData(encoded))}.");
+    }
+
+    [Benchmark]
+    public byte[] Encode() => PdfFilters.DeflateEncode(_source);
 }

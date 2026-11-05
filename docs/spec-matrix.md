@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [empty Flate encoding correction](spec-backlog.md#2026-11-05-complete-empty-flate-encoding)
+emits a complete zlib stream for empty public-encoder input, annotation
+attachments and sample blank-page/Form/embedded-file streams. Nonempty bytes
+and raw unfiltered empty streams are preserved. Independent zlib EOD checks,
+native/reference differences, encoder benchmarks and unchanged corpus JSON
+are recorded; exhaustive filter consistency remains separate.
+
 The [encryption-dictionary-reference-chain check](spec-backlog.md#2026-11-05-encryption-dictionary-reference-chains)
 rejects compressed terminal dictionaries hidden by uncompressed aliases and
 preserves the terminal dictionary's unencrypted bytes/cache identity.
