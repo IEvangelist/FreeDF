@@ -117,6 +117,39 @@ internal static class PdfUA2Checks
         int work = 0;
         int bytes = 0;
         var seen = new HashSet<PdfString>(ReferenceEqualityComparer.Instance);
+        PdfDictionary? formDictionary = null, fonts = null;
+        bool resourcesInspected = false, resourcesComplete = true, fontIncomplete = false;
+        void FontIncomplete()
+        {
+            if (fontIncomplete) return;
+            fontIncomplete = true;
+            c.Add("PDFUA2-FORM-DA-FONT-INCOMPLETE", ValidationSeverity.Error,
+                "default appearance font-resource inspection is unresolved, cyclic or unsupported",
+                "ISO 32000-2 12.7.4.3");
+        }
+        bool MissingFont(PdfName name)
+        {
+            void Unknown() { resourcesComplete = false; FontIncomplete(); }
+            if (!resourcesInspected)
+            {
+                resourcesInspected = true;
+                var resources = ResolveBounded(c.F, formDictionary?.Get("DR"), Unknown);
+                if (resources is PdfDictionary dictionary)
+                {
+                    var value = ResolveBounded(c.F, dictionary.Get("Font"), Unknown);
+                    fonts = value as PdfDictionary;
+                    if (value is not (null or PdfNull or PdfDictionary)) Unknown();
+                }
+                else if (resources is not (null or PdfNull)) Unknown();
+            }
+            if (!resourcesComplete) return false;
+            bool complete = true;
+            var font = ResolveBounded(c.F, fonts?.Get(name.Value), () => { complete = false; FontIncomplete(); });
+            if (!complete) return false;
+            if (font is null or PdfNull) return true;
+            if (font is not PdfDictionary) FontIncomplete();
+            return false;
+        }
         void Incomplete()
         {
             if (incomplete) return;
@@ -133,7 +166,9 @@ internal static class PdfUA2Checks
                 bytes += text.Bytes.Length;
                 var lexer = new PdfLexer(text.Bytes);
                 int matrices = 0;
-                bool scanned = true, textFont = false;
+                int operandCount = 0;
+                PdfObject? firstOperand = null, secondOperand = null;
+                bool scanned = true, textFont = false, missingFont = false;
                 try
                 {
                     while (true)
@@ -142,11 +177,26 @@ internal static class PdfUA2Checks
                         if (lexer.Pos >= lexer.Length) break;
                         if (++work > PdfTreeDiagnostics.MaxWork) { scanned = false; Incomplete(); break; }
                         var item = lexer.ReadObject(false);
-                        if (item is not PdfKeyword keyword) continue;
+                        if (item is not PdfKeyword keyword)
+                        {
+                            if (operandCount == 0) firstOperand = item;
+                            if (operandCount == 1) secondOperand = item;
+                            if (operandCount < 3) operandCount++;
+                            continue;
+                        }
                         if (keyword.Value is "BI" or "ID" or "EI" or "]" or ">>" or ">" or ")" or "{" or "}")
                         { scanned = false; Incomplete(); break; }
                         if (keyword.Value == "Tm" && matrices < 2) matrices++;
-                        if (keyword.Value == "Tf") textFont = true;
+                        if (keyword.Value == "Tf")
+                        {
+                            textFont = true;
+                            if (operandCount == 2 && firstOperand is PdfName name
+                                && secondOperand?.AsNumber() is { } size && double.IsFinite(size))
+                                missingFont |= MissingFont(name);
+                            else FontIncomplete();
+                        }
+                        operandCount = 0;
+                        firstOperand = secondOperand = null;
                     }
                 }
                 catch (PdfParseException) { scanned = false; Incomplete(); }
@@ -158,6 +208,10 @@ internal static class PdfUA2Checks
                     c.Add("PDFUA2-FORM-DA-TF-MISSING", ValidationSeverity.Error,
                         "a default appearance byte string must include a Tf operator",
                         "ISO 32000-2 12.7.4.3");
+                if (missingFont)
+                    c.Add("PDFUA2-FORM-DA-FONT-RESOURCE", ValidationSeverity.Error,
+                        "a default appearance Tf font name must match an AcroForm DR Font resource",
+                        "ISO 32000-2 12.7.4.3");
             }
             else if (appearance is not (null or PdfNull))
                 c.Add("PDFUA2-FORM-DA-TYPE", ValidationSeverity.Error,
@@ -165,6 +219,7 @@ internal static class PdfUA2Checks
         }
         if (fields.Truncated) Incomplete();
         var form = ResolveBounded(c.F, c.F.Catalog.Get("AcroForm"), Incomplete);
+        formDictionary = form as PdfDictionary;
         if (form is PdfDictionary dictionary)
             Inspect(ResolveBounded(c.F, dictionary.Get("DA"), Incomplete));
         else if (form is not (null or PdfNull)) Incomplete();

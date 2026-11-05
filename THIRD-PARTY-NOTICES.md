@@ -494,6 +494,16 @@ reference; disagreements are explicit. Font/size operands, font-resource
 matching, complete syntax and appearance generation remain separate.
 No standard text or external controls are bundled.
 
+The default appearance font-resource matching check follows the same
+official 12.7.4.3 requirement to match Tf font names against AcroForm
+DR/Font. Independently implemented operand tracking and bounded resource
+lookup retain explicit uncertainty for malformed operands or unknown
+resources. Twenty-four isolated native controls retain nine positives and
+reject fifteen primary negatives accepted by the pinned reference.
+Three already-negative corpus fixtures gain a missing-default-/Helv
+finding without verdict changes. Full font schema, strict grammar and
+layout remain separate; no standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

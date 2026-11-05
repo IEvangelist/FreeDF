@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary DA font-resource check](spec-backlog.md#2026-11-05-primary-default-appearance-font-resource-matching)
+matches recognizable Tf font names against bounded AcroForm DR/Font
+lookup, with independent incomplete results for ambiguous operands/resources.
+Twenty-four isolated native controls retain nine positives; fifteen
+primary negatives remain reference-accepted. Three existing corpus
+negatives gain a missing-/Helv finding without verdict changes; UA-1 JSON
+is unchanged. Complete grammar/font schema and layout remain separate.
+
 The [primary DA text-font presence check](spec-backlog.md#2026-11-05-primary-default-appearance-text-font-presence)
 requires a top-level Tf in completely inspected known defaults, without
 claiming absence after an incomplete scan. Eighteen native controls

@@ -4155,6 +4155,153 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> DefaultAppearanceFontResourceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var resources in new[]
+        {
+            "", "/DR null", "/DR << >>", "/DR << /Font << >> >>",
+            "/DR << /Font << /F1 11 0 R >> >>", "/DR << /Font << /Other 11 0 R >> >>",
+            "/DR << /Font << /F1 null >> >>", "/DR << /Font << /F1 99 0 R >> >>",
+        })
+            yield return [part, scope, resources];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceFontResourceCases))]
+    public void Ua2DefaultAppearanceFontNameMustMatchAcroFormDefaultResource(int part, string scope, string resources)
+    {
+        var form = $"/Fields [9 0 R] {resources}" + (scope == "document" ? " /DA (/F1 12 Tf)" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? "<< /FT /Tx /T (parent) /DA (/F1 12 Tf) /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) {(scope == "field" ? "/DA (/F1 12 Tf)" : "")} >>",
+            "<< /T (child) /Parent 9 0 R >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && resources != "/DR << /Font << /F1 11 0 R >> >>",
+            report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/DR 11 0 R", "11 0 R")]
+    [InlineData("/DR << /Font 11 0 R >>", "11 0 R")]
+    [InlineData("/DR << /Font << /F1 11 0 R >> >>", "11 0 R")]
+    [InlineData("/DR 42", "null")]
+    [InlineData("/DR << /Font 42 >>", "null")]
+    [InlineData("/DR << /Font << /F1 42 >> >>", "null")]
+    public void Ua2DefaultAppearanceUnknownFontResourcesAreIncomplete(string resources, string target)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << /Fields [9 0 R] {resources} >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (/F1 12 Tf) >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Tf")]
+    [InlineData("12 Tf")]
+    [InlineData("(F1) 12 Tf")]
+    [InlineData("/F1 (12) Tf")]
+    [InlineData("0 /F1 12 Tf")]
+    public void Ua2DefaultAppearanceMalformedFontOperandsCannotClaimResourceMatch(string content)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA ({content}) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/F1 12 Tf /Missing 0 Tf", false)]
+    [InlineData("/Missing 12 Tf /Unknown 0 Tf", true)]
+    [InlineData("/Missing 12 Tf Tf", true)]
+    [InlineData("/Missing 12 Tf BI ID anything EI", false)]
+    public void Ua2DefaultAppearanceKnownMissingFontSurvivesLaterUncertainty(string content, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] /DR << /Font << /F1 11 0 R /Unknown 12 0 R >> >> >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA ({content}) >>", "null",
+                "<< /Type /Font >>", "12 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-FONT-RESOURCE");
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("DR", 32, false)]
+    [InlineData("DR", 33, true)]
+    [InlineData("Font", 32, false)]
+    [InlineData("Font", 33, true)]
+    [InlineData("F1", 32, false)]
+    [InlineData("F1", 33, true)]
+    public void Ua2DefaultAppearanceFontResourceReferenceBoundary(string key, int hops, bool incomplete)
+    {
+        var terminal = key == "DR" ? "<< /Font << /F1 11 0 R >> >>"
+            : key == "Font" ? "<< /F1 11 0 R >>" : "<< /Type /Font >>";
+        var resources = key == "DR" ? "/DR 12 0 R"
+            : key == "Font" ? "/DR << /Font 12 0 R >>" : "/DR << /Font << /F1 12 0 R >> >>";
+        var chain = Enumerable.Range(12, hops).Select(n => n == 11 + hops ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: $"/AcroForm << /Fields [9 0 R] {resources} >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /DA (/F1 12 Tf) >>", "null", "<< /Type /Font >>" }
+                .Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/F#31 0 Tf")]
+    [InlineData("0 g /F1 12 Tf")]
+    [InlineData("(Tf) Tj /F1 12 Tf")]
+    [InlineData("/F1 12 Tf /F1 0 Tf")]
+    public void Ua2DefaultAppearanceFontResourceUsesDecodedNameAndOperatorBoundaries(string content)
+    {
+        var pdf = Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] /DR << /Font << /F1 11 0 R >> >> >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA ({content}) >>", "null", "<< /Type /Font >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceFontDoesNotUseFieldOrPageResourcesInsteadOfAcroForm()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (/F1 12 Tf) /DR << /Font << /F1 11 0 R >> >> >>",
+                "null", "<< /Type /Font >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceFontResourcesAreNotInspectedWithoutAFontOperator()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [] /DA () /DR 9 0 R >>",
+            extras: [Para, "9 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

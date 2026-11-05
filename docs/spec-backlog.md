@@ -4,6 +4,52 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary default appearance font-resource matching
+
+Official PDF Association PDF 2.0 errata 12.7.4.3 requires a Tf font name
+to match an entry in AcroForm DR/Font. Known document defaults and inherited
+recognized terminal Tx defaults now receive PDFUA2-FORM-DA-FONT-RESOURCE
+when a decoded Tf name has no resolved non-null default font entry.
+Field-local/page resources are not substituted for AcroForm resources.
+All recognizable Tf operators are checked, including zero-size autosizing.
+One resource finding is aggregated per inspected string identity.
+
+The existing bounded content scan retains only the first two operands and
+a count capped at three, clearing them at every operator. Resource matching
+requires exactly a name and finite numeric size; malformed/ambiguous operand
+shapes instead receive PDFUA2-FORM-DA-FONT-INCOMPLETE. This is a matching
+precondition, not complete operand/grammar validation. Default resource maps
+are resolved lazily once; DR, Font and selected entries reuse the existing
+32-reference-hop/cycle bound. Absent/null/dangling entries are missing;
+unresolved/cyclic or unsupported map/entry shapes are explicitly incomplete,
+not silently valid or claimed absent. A known missing name survives later
+unknown entries, malformed Tf operands or unsupported content.
+Full font schema, strict numeric syntax, allowed operators, required DA
+and layout remain separate.
+
+Initial 63 authored controls had thirty-six failures; final seventy-five
+include exact 32/33-hop resource bounds, decoded names, operator boundaries,
+default-resource scope and lazy inspection. Focused Release: 4,052 passed;
+full Release: 16,909 passed, zero failed/skipped. Solution zero errors/two
+retained machine-feed NU1507 warnings. Twenty-four isolated native
+local/inherited/document controls retain nine positives and reject fifteen
+missing-resource negatives; all pinned combined-reference jobs complete
+normally and accept: **fifteen explicit primary/reference disagreements**.
+
+The native fixture originally also carried an unrelated document /Helv
+default. Local/inherited controls explicitly null that default; document
+controls null the nearer field default. Exact committed baseline 7176ca44
+was archived and built session-locally to verify the corrected controls,
+rather than counting contaminated positives. Native UA-1 is unchanged.
+Fresh 435-PDF/870-result corpus measurement adds the resource finding to
+three already-negative UA-2 fixtures, with no removed findings or verdict
+changes; all UA-1 JSON is unchanged. The affected 8.10.1-t02-fail-a,
+8.10.2.3-t01-fail-a and 8.6-t01-fail-a document defaults use /Helv, while
+their resolved DR/Font maps contain only /F1-/F4. Their field /F4 overrides
+remain resolvable, but do not excuse the independently checked document
+default. No standard text or external controls are bundled; full parity
+and hosted CI are not claimed.
+
 ## 2026-11-05 primary default appearance text-font presence
 
 Official PDF Association PDF 2.0 errata 12.7.4.3 explicitly requires
