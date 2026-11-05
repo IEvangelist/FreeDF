@@ -39,6 +39,7 @@ internal static class PdfUA2Checks
     {
         var fields = c.Doc.GetFormFieldDetails();
         DefaultAppearances(c, fields);
+        ChoiceFieldIndices(c, fields);
         bool incomplete = false, limitIncomplete = false;
         if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
@@ -105,6 +106,46 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
                 "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
                 "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void ChoiceFieldIndices(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.4 Table 234";
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-CHOICE-I-INCOMPLETE", ValidationSeverity.Error,
+                "choice-field index inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Ch") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("I"), Incomplete);
+            if (value is null or PdfNull) continue;
+            bool type = value is not PdfArray, order = false;
+            long? previous = null;
+            if (value is PdfArray indices)
+                foreach (var item in indices.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var index = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (!resolved) { previous = null; continue; }
+                    if (index is not PdfInteger integer) { type = true; previous = null; continue; }
+                    if (integer.Value < 0 || previous is { } prior && integer.Value < prior) order = true;
+                    previous = integer.Value;
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-CHOICE-I-TYPE", ValidationSeverity.Error,
+                    "a choice-field I entry must be an array of integers", clause);
+            if (order)
+                c.Add("PDFUA2-FORM-CHOICE-I-ORDER", ValidationSeverity.Error,
+                    "choice-field I indices must be non-negative and sorted in ascending order", clause);
         }
     }
 

@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary choice-field index array shape
+
+Official PDF Association PDF 2.0 errata 12.7.5.4/Table 234 declares a
+choice field's I entry an ascending array of integer zero-based indices,
+without restricting that shape requirement to MultiSelect fields.
+Recognized terminal Ch dictionaries now receive PDFUA2-FORM-CHOICE-I-TYPE
+for a known non-array value or non-integer array item, and
+PDFUA2-FORM-CHOICE-I-ORDER for negative integers or descending adjacent
+known integers. Each diagnostic aggregates per terminal field.
+Omission/null/indirect-null/dangling top-level values remain absent;
+null or dangling array items are not integers. Empty arrays and repeated
+equal indices are retained by this nondecreasing shape check.
+
+The check is local, not inherited from nonterminal parent I entries.
+Existing field-type projection identifies terminal Ch fields; other types
+remain excluded. Root/item references reuse the 32-hop/cycle guard.
+A shared 200,000-item budget and field-reader truncation produce the
+separate PDFUA2-FORM-CHOICE-I-INCOMPLETE. Known type/order errors survive
+later unknown items; unknown/non-integer items break adjacent-order
+comparison, rather than inventing the missing index. Presence conditions,
+Opt upper bounds, duplicate-selection semantics, V consistency, full
+field schema/traversal and layout remain separate.
+
+Initial 102 authored controls had thirteen failures; final 107 also cover
+exact 32/33-hop root/item boundaries and shared work across fields.
+Focused Release: 4,240 passed; full Release: 17,097 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+Eleven isolated native controls retain five shape positives and reject six
+primary shape/order negatives; all pinned combined-reference jobs complete
+normally and accept: **six explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against Tf-count baseline b0636d02. No standard text or external controls
+are bundled; full choice-field/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary default appearance Tf operand count
 
 Official PDF Association PDF 2.0 errata 12.7.4.3 explicitly requires Tf

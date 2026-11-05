@@ -4365,6 +4365,113 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> ChoiceFieldIndexShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Ch", "Tx", "Btn" })
+        foreach (var entry in new[]
+        {
+            "", "/I null", "/I []", "/I [0]", "/I [0 1 2]", "/I [0 0 1]",
+            "/I 0", "/I (0)", "/I [0 (1)]", "/I [0 1.5]", "/I [null]",
+            "/I [-1]", "/I [1 0]", "/I [2 1 0]", "/I [0 11 0 R]", "/I 12 0 R",
+        })
+            yield return [part, type, entry];
+    }
+
+    [Theory]
+    [MemberData(nameof(ChoiceFieldIndexShapeCases))]
+    public void Ua2ChoiceFieldIndicesRequireNonnegativeOrderedIntegers(int part, string type, string entry)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (field) {entry} >>", "null", "1", "[0 1]"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool shape = entry is "/I 0" or "/I (0)" or "/I [0 (1)]" or "/I [0 1.5]" or "/I [null]";
+        bool order = entry is "/I [-1]" or "/I [1 0]" or "/I [2 1 0]";
+        Assert.Equal(part == 2 && type == "Ch" && shape, report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.Equal(part == 2 && type == "Ch" && order, report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/I 11 0 R", "11 0 R", false)]
+    [InlineData("/I [(bad) 11 0 R]", "11 0 R", true)]
+    [InlineData("/I [1 0 11 0 R]", "11 0 R", false)]
+    public void Ua2ChoiceFieldIndexKnownErrorsSurviveUnknownItems(string entry, string target, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (field) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.Equal(entry == "/I [1 0 11 0 R]", report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceFieldIndexErrorsAreNotInheritedFromNonterminalParent()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [Para, "<< /FT /Ch /T (parent) /I (bad) /Kids [10 0 R] >>", "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ChoiceFieldIndexWorkBudgetRetainsKnownTypeError(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (field) >>"]));
+        var items = Enumerable.Repeat<PdfObject>(new PdfInteger(0), count).ToList();
+        items[0] = new PdfName("bad");
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["I"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, 32, false)]
+    [InlineData(false, 33, true)]
+    [InlineData(true, 32, false)]
+    [InlineData(true, 33, true)]
+    public void Ua2ChoiceFieldIndexReferenceBoundaryIsExplicit(bool item, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? item ? "0" : "[0 1]" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Ch /T (field) /I {(item ? "[10 0 R]" : "10 0 R")} >>" }
+                .Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceFieldIndexWorkBudgetIsSharedAcrossFields()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (first) >>", "<< /FT /Ch /T (second) >>"]));
+        foreach (var id in new[] { 9, 10 })
+        {
+            var items = Enumerable.Repeat<PdfObject>(new PdfInteger(0), id == 9 ? 100000 : 100001).ToList();
+            items[0] = new PdfName("bad");
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(id)).Entries["I"] = new PdfArray(items);
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

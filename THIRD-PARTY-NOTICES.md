@@ -512,6 +512,14 @@ and remain accepted by the pinned reference. Full operand-type/numeric/
 operator grammar remains separate. No standard text or external controls
 are bundled.
 
+The choice-field I array-shape check follows official PDF Association
+12.7.5.4/Table 234 integer, ascending, zero-based index facts. It is
+independently implemented with existing bounded reference/field traversal.
+Eleven native controls retain five shape positives and reject six primary
+negatives accepted by the pinned reference; disagreements are explicit.
+Presence, Opt range, duplicate-selection semantics and V matching remain
+separate. No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary choice-field index shape check](spec-backlog.md#2026-11-05-primary-choice-field-index-array-shape)
+checks local terminal Ch I arrays for integer/nonnegative/nondecreasing
+shape with explicit reference/work incompleteness. Eleven native controls
+retain five shape positives; six primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Required presence, Opt range,
+duplicate-selection semantics, V consistency and full field traversal
+remain separate.
+
 The [primary DA Tf operand-count check](spec-backlog.md#2026-11-05-primary-default-appearance-tf-operand-count)
 adds a known wrong-count finding independently of resource-matching
 uncertainty. Twenty-one native controls retain nine positives; twelve
