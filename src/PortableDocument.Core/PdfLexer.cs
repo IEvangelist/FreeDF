@@ -178,10 +178,18 @@ public sealed class PdfLexer
             var c = _d[Pos++];
             if (c == '#' && Pos + 1 < _d.Length && Hex(_d[Pos]) >= 0 && Hex(_d[Pos + 1]) >= 0)
             {
-                sb.Add((byte)(Hex(_d[Pos]) * 16 + Hex(_d[Pos + 1])));
+                var decoded = (byte)(Hex(_d[Pos]) * 16 + Hex(_d[Pos + 1]));
+                if (_objectStreamMember && decoded == 0)
+                    throw new PdfParseException("null byte in name in object stream member");
+                sb.Add(decoded);
                 Pos += 2;
             }
-            else sb.Add(c);
+            else
+            {
+                if (_objectStreamMember && c == '#')
+                    throw new PdfParseException("invalid name escape in object stream member");
+                sb.Add(c);
+            }
         }
         var arr = sb.ToArray();
         string s;

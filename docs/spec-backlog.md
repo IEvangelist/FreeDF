@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed name escape grammar
+
+ISO 32000-1 7.3.5 (printed pp16-17) excludes null from names and
+requires number-sign escapes to contain two hexadecimal digits.
+Compressed-member lexing now rejects malformed escapes and decoded null
+bytes, including dictionary keys and nested values. Default lexer recovery
+is unchanged.
+
+Twenty-three controls cover missing/invalid hex digits, decoded nulls, nested
+names/keys, empty names, escaped delimiters/whitespace/number signs, a high-byte
+fallback, decoded values, repeated lookup, lazy isolation and default lexer
+compatibility. The initial selector had thirteen failures. Full Release:
+18,860 passed, zero failed/skipped. Solution: zero errors/two retained
+machine-feed NU1507 warnings.
+
+Thirty-eight native PDFs preserve sixteen valid outputs unchanged and reject
+twenty-two previously accepted malformed names with explicit diagnostics.
+MuPDF reports no probe exceptions; absent Type is not decoded-name agreement.
+Positive decoded names are pinned in unit controls. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the
+numeric-token baseline.
+
+This does not change the existing Unicode/Latin-1 representation or claim
+complete byte-identity handling for names. Parser-wide strictness,
+object-stream header/reference rules and byte-limited/resource enforcement
+remain separate.
+
 ## 2026-11-05 compressed numeric token spelling
 
 ISO 32000-1 7.3.3 (printed p14) defines decimal numbers with an

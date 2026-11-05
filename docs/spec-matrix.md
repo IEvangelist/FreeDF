@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed name escape check](spec-backlog.md#2026-11-05-compressed-name-escape-grammar)
+rejects malformed hexadecimal escapes and decoded null bytes, including
+nested values and keys. Valid decoded names and default lexer recovery remain
+supported; native/reference limits and unchanged corpus JSON are recorded.
+Name byte identity, parser-wide strictness and resource limits remain separate.
+
 The [compressed numeric token check](spec-backlog.md#2026-11-05-compressed-numeric-token-spelling)
 rejects repeated signs, digitless periods and truncated numeric tokens in
 member-only lexing. Valid ordinary values and default lexer recovery remain
