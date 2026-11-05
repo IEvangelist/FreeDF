@@ -3185,6 +3185,25 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("/Subtype /Unknown")]
+    [InlineData("/Subtype /Form")]
+    [InlineData("/Subtype /Image")]
+    public void Ua2AppearanceResourceParentUnknownSubtypeDoesNotSuppressLaterAppearance(string subtype)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R /D 10 0 R >> >>",
+            ObjPdf.Stream("", "/Resources << /XObject << /Shared 10 0 R >> >>"),
+            ObjPdf.Stream("", $"{subtype} /StructParent 0 /StructParents 0"),
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

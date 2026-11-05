@@ -549,10 +549,11 @@ internal static class PdfUA2Checks
                 if (incomplete) return;
                 if (value is null or PdfNull) continue;
                 if (value is not PdfStream stream) { Incomplete(); return; }
-                if (!seenObjects.Add(stream)) continue;
+                if (seenObjects.Contains(stream)) continue;
                 var subtype = Resolve(stream.Dict.Get("Subtype")).AsName();
                 if (incomplete) return;
                 if (subtype is not ("Form" or "Image")) continue;
+                seenObjects.Add(stream);
                 if (!inspect(stream)) return;
                 if (subtype != "Form") continue;
                 var nested = Resolve(stream.Dict.Get("Resources"));

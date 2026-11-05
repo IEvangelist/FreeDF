@@ -31,6 +31,15 @@ Release: 15,498 passed, zero failed/skipped. Fresh 435-PDF/870-result corpus
 JSON and native UA-1 reports are wholly unchanged. Solution zero errors/two
 retained machine-feed NU1507 warnings.
 
+An additional alias control exposed a deduplication edge: a stream skipped
+as an unknown/non-Form/Image resource must not be marked inspected and
+suppress a later direct appearance check. Inspection identities are now
+recorded only after the resource subtype gate. Four absent/unknown/Form/Image
+alias cases had two failures before this correction; all pass. Follow-up
+focused Release: 505 passed; native and fresh corpus outcomes remain
+unchanged. The 15,498 full-suite count above predates these four cases;
+the full suite was not repeated for this focused correction.
+
 Tiling patterns, soft masks/other referenced streams, full appearance
 schema and parent-key integer types/parent-tree identity remain separate.
 No standard text/external controls are bundled; hosted CI and full parity
