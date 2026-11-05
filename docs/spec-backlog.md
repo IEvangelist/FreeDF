@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 negative classic cross-reference fields
+
+ISO 32000-1 7.5.4 (printed p41) defines the first field as either a
+10-digit byte offset from the file beginning or a 10-digit next-free
+object number. The token-based compatibility parser previously accepted
+negative values and could leave the index unrepaired until an in-use
+target was requested; free entries could stay unrepaired indefinitely.
+Negative values now cause immediate explicit recovery. Nonnegative
+compatibility entries, the fixed-width path and lazy target loading are
+unchanged. This does not validate free-list topology or all offset bounds.
+
+Ten new controls cover three negative values for both statuses and four
+nonnegative fixed/fallback dispositions. The actual unchanged-production
+baseline is four failures/six passes: long.MinValue already causes
+recovery through existing numeric parsing. Final focused checks pass
+1,330; full Release passes 20,184 with zero failed/skipped. Solution and
+benchmark builds have zero warnings/errors; final rebuilt UaDump yields
+identical complete JSON across the pinned 435-PDF/870-result corpus.
+All provider/parser benchmark correctness preflights pass.
+
+Eight independently encoded native-reference fixtures cover six negatives
+and two nonnegative fallback controls. MuPDF 1.28.5 repairs all eight and
+recovers physical targets, including the free controls. Its acceptance
+disposition therefore differs for FreeDF's preserved nonnegative fallback
+behavior; these are compatibility controls, not conforming table syntax.
+No external PDFs are bundled. No new timing claim is made for this guard;
+the classic generation benchmark immediately below predates it.
+
 ## 2026-11-05 classic cross-reference generation bounds
 
 ISO 32000-1 7.5.4 (printed p41) caps generations at 65,535.

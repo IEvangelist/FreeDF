@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [negative classic field guard](spec-backlog.md#2026-11-05-negative-classic-cross-reference-fields)
+explicitly recovers negative offsets and next-free object numbers before
+publishing an unrepaired index. Nonnegative compatibility behavior and
+lazy object loading are preserved; full offset/topology checks remain open.
+
 The [classic xref generation guard](spec-backlog.md#2026-11-05-classic-cross-reference-generation-bounds)
 explicitly recovers generations above 65,535 in both fixed-width and
 fallback parsing. Lossless ordinary header recovery is preserved within

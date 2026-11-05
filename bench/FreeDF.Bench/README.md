@@ -46,6 +46,9 @@ from this slice's test/corpus workloads.
 reports and [eight raw GC/input identity rows](results/2026-11-05-xref-classic-bound-gc.csv)
 are retained.
 
+These measurements predate the later negative-offset/free-number guard;
+they are not timing evidence for that additional check.
+
 ```powershell
 dotnet run -c Release --no-build --project bench\FreeDF.Bench -- --filter "*XrefClassicBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
 ```
