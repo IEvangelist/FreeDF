@@ -1609,6 +1609,29 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData("pdfdoc", false)]
+    [InlineData("utf16", false)]
+    [InlineData("utf8-bom", false)]
+    [InlineData("utf8", true)]
+    public void RichXmlStringUsesPdfTextEncodingBeforeParsing(string encoding, bool mismatch)
+    {
+        const string xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>caf\u00e9</p></body>";
+        byte[] bytes = encoding switch
+        {
+            "pdfdoc" => Encoding.Latin1.GetBytes(xml),
+            "utf16" => Encoding.BigEndianUnicode.GetBytes("\uFEFF" + xml),
+            "utf8-bom" => Encoding.UTF8.GetBytes("\uFEFF" + xml),
+            _ => Encoding.UTF8.GetBytes(xml),
+        };
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV <{Convert.ToHexString(bytes)}> /V <FEFF00630061006600E9> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldPdfDocEncodingCases()
     {
         int[] accents = [0x02D8, 0x02C7, 0x02C6, 0x02D9, 0x02DD, 0x02DB, 0x02DA, 0x02DC];

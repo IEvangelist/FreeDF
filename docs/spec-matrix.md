@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [rich XML string-decoding correction](spec-backlog.md#2026-11-05-rich-xml-string-decoding)
+decodes RV strings as PDF text before XML parsing. Four native string
+controls agree, correcting one false rejection and one missed mismatch;
+stream behavior, explicit disagreements, UA-1 and fresh corpus output
+remain unchanged. Complete text-stream syntax is not claimed.
+
 The [resolved MathML parent correction](spec-backlog.md#2026-11-05-resolved-mathml-parent-rule)
 uses endpoint namespaces for both child selection and Formula/MathML
 parents. Nine native parent-rule outcomes agree, correcting two missed

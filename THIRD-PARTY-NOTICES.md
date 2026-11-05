@@ -155,6 +155,9 @@ The scoped plain-value decoder also uses factual codepoint mappings
 from ISO 32000-1 7.9.2.2 and Annex D.3/Table D.2, independently implemented
 in `ValidationPdfUA2.cs` and cross-checked against the same CC BY 4.0
 8.10.3.3-1 profile. The shared string decoder is unchanged.
+The same scoped decoder is used for RV strings before independently
+implemented XML parsing; retained stream-encoding disagreements are
+documented rather than normalized to the reference.
 
 The UA-2 file-attachment AFRelationship requirement was cross-checked
 against the same CC BY 4.0 UA-2 profile, 8.9.2.4.10-1. Null handling

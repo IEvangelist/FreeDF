@@ -4,6 +4,32 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 rich XML string decoding
+
+RV strings now reuse the scoped PDF text decoder before XML parsing,
+instead of assuming their raw bytes are XML UTF-8. PDFDocEncoding,
+UTF-16 BOM and UTF-8 BOM selection follow the PDF text-string boundary;
+byte streams retain the existing XML-reader byte-encoding path. DTD,
+external resolution, XML depth/work and malformed Unicode limits remain.
+The shared general PdfString decoder is unchanged.
+
+Eight native string/stream/encoding controls completed normally.
+All four string controls agree on rule/file outcomes (three positives,
+one negative), correcting one false rejection of PDFDocEncoded text
+and one missed mismatch from non-BOM UTF-8 bytes interpreted as a PDF
+string. All four stream outputs are unchanged: one UTF-16 stream remains
+a whole-file disagreement, and a non-UTF-8 PDFDocEncoded stream remains
+incomplete rather than the reference's equality violation. This is not
+complete text-stream encoding/syntax conformance, and the prior
+XFA-attribute/inheritance disagreements remain explicit.
+
+All eight UA-1 outputs and fresh 435-PDF/870-result corpus output are
+unchanged. Four authored string-encoding cases were added. Full Release:
+14,760 passed, zero failed/skipped; solution: zero errors and two retained
+machine-feed NU1507 warnings. The decoder was moved from local to shared
+within the existing UA-2 class for reuse; no general decoding behavior
+was broadened. External controls/reports remain session-only.
+
 ## 2026-11-05 resolved MathML parent rule
 
 The MathML parent check now selects resolved namespace endpoints, not
