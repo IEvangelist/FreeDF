@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed member regular-token-start check](spec-backlog.md#2026-11-05-compressed-member-regular-token-starts)
+rejects requested offsets splitting consecutive regular bytes, without
+eagerly parsing adjacent members. Valid delimiter adjacency remains supported.
+Exact reference suffix values and unchanged corpus JSON are recorded;
+complete source alignment and resource budgets remain separate.
+
 The [padded compressed reference-generation check](spec-backlog.md#2026-11-05-padded-compressed-reference-generations)
 applies the existing supported magnitude limit after leading zeros rather
 than rejecting source width. Exact reference values, long padding and

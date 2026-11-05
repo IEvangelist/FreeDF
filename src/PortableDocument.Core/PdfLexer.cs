@@ -40,7 +40,7 @@ public sealed class PdfLexer
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
-    static bool IsRegular(int c) => !IsWhite(c) && !IsDelim(c);
+    internal static bool IsRegular(int c) => !IsWhite(c) && !IsDelim(c);
 
     public void SkipWhite() => SkipWhite(_end);
 

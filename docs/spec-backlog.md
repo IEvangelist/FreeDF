@@ -4,6 +4,32 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed member regular-token starts
+
+ISO 32000-1 7.2.2 (printed p13) defines consecutive regular bytes as
+a single token; 7.5.7 (printed p46) locates member values through offsets.
+A requested member now rejects an offset between two regular bytes, rather
+than exposing a suffix of an existing token as an independent value.
+This local check does not parse the preceding member or change global indexing.
+
+Twelve controls cover split numbers, booleans, null and names, repeated
+failed lookups, valid whitespace/comment boundaries and delimiter adjacency
+without intervening whitespace. Initial selector: six failed/six passed.
+Full Release: 19,071 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Twenty-four native PDFs preserve twelve positive outputs unchanged.
+Twelve formerly accepted suffix lookups now report an explicit token-start
+diagnostic. MuPDF still exposes the six suffix values in both normal/repair
+variants: 43, 23, true, null, 42 and true. These were checked as object values,
+not inferred from absent Type probes. It agrees on twelve positive dictionary
+targets. Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged
+against the padded-generation baseline.
+
+This catches definite regular-token splits, not every offset inside a name,
+string, comment or container. Full source alignment, eager validation and
+decode/resource budgets remain separate; lazy unrelated members stay lazy.
+
 ## 2026-11-05 padded compressed reference generations
 
 ISO 32000-1 7.3.3 (printed p14) defines integer spelling as one or more

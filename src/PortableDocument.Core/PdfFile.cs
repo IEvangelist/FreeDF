@@ -201,8 +201,11 @@ public sealed class PdfFile
         if (!map.Members.TryGetValue(objNum, out var member) || member.Index != index)
             throw new PdfParseException("object stream member index mismatch");
         if (map.Parsed.TryGetValue(objNum, out var hit)) return hit;
+        var start = map.First + member.Offset;
+        if (member.Offset > 0 && PdfLexer.IsRegular(map.Data[start - 1]) && PdfLexer.IsRegular(map.Data[start]))
+            throw new PdfParseException("object stream member starts inside a token");
         // Objects are parsed on demand; a malformed member only affects requests for that member.
-        var lexer = new PdfLexer(map.Data, map.First + member.Offset, objectStreamMember: true,
+        var lexer = new PdfLexer(map.Data, start, objectStreamMember: true,
             end: map.First + member.End);
         var parsed = lexer.ReadObject();
         if (lexer.Pos > map.First + member.End)
