@@ -189,7 +189,10 @@ public sealed class PdfFile
             throw new PdfParseException("object stream member index mismatch");
         if (map.Parsed.TryGetValue(objNum, out var hit)) return hit;
         // Objects are parsed on demand; a malformed member only affects requests for that member.
-        var parsed = new PdfLexer(map.Data, map.First + member.Offset).ReadObject() ?? PdfNull.Instance;
+        var lexer = new PdfLexer(map.Data, map.First + member.Offset);
+        var parsed = lexer.ReadObject() ?? PdfNull.Instance;
+        if (lexer.Pos > map.First + member.End)
+            throw new PdfParseException("object stream member exceeds its boundary");
         if (parsed is PdfRef)
             throw new PdfParseException("object stream member cannot be an indirect reference");
         map.Parsed[objNum] = parsed;
@@ -203,6 +206,7 @@ public sealed class PdfFile
         var lx = new PdfLexer(data);
         var map = new ObjStmIndex(data, first);
         long previousOffset = -1;
+        var previousNumber = -1;
         for (var i = 0; i < n; i++)
         {
             if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off ||
@@ -212,8 +216,14 @@ public sealed class PdfFile
             if (off.Value <= previousOffset)
                 throw new PdfParseException("object stream member offsets must increase");
             previousOffset = off.Value;
-            if (!map.Members.TryAdd((int)on.Value, (i, (int)off.Value)))
+            if (!map.Members.TryAdd((int)on.Value, (i, (int)off.Value, data.Length - first)))
                 throw new PdfParseException("duplicate object stream member number");
+            if (previousNumber >= 0)
+            {
+                var previous = map.Members[previousNumber];
+                map.Members[previousNumber] = (previous.Index, previous.Offset, (int)off.Value);
+            }
+            previousNumber = (int)on.Value;
         }
         return map;
     }
@@ -222,7 +232,7 @@ public sealed class PdfFile
     {
         public readonly byte[] Data = data;
         public readonly int First = first;
-        public readonly Dictionary<int, (int Index, int Offset)> Members = [];
+        public readonly Dictionary<int, (int Index, int Offset, int End)> Members = [];
         public readonly Dictionary<int, PdfObject> Parsed = [];
     }
 

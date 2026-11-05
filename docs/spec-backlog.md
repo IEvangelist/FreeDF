@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed member consumption boundaries
+
+ISO 32000-1 7.5.7 (printed p46) identifies each member's start by its
+header offset and requires N consecutive objects. The validated header
+index now records each member's end (the next offset, or decoded EOF for
+the last member). Lazy loading checks lexer consumption before caching,
+rejecting values that consume bytes from a following member instead of
+silently accepting a cross-member array, dictionary, string or alias.
+
+Ten controls include five initially red cross-member cases, five complete
+value positives and normal/forced-recovery paths. The following member is
+loaded first and remains usable after the malformed member is requested.
+Repeated invalid requests cannot become cache hits. Full Release: 18,637
+passed, zero failed/skipped. Solution: zero errors/two retained machine-feed
+NU1507 warnings.
+
+Twenty native PDFs retain ten complete-value outputs unchanged. Ten
+cross-boundary values now give the explicit diagnostic instead of caching
+the consumed result; two previously aliased the next dictionary. MuPDF
+returns null for the malformed probes rather than surfacing an error.
+Positive outputs agree and repair reporting retains the fixture state.
+Fresh pinned 435-PDF/870-result corpus full JSON is wholly unchanged against
+the standalone-reference baseline.
+
+This is a post-parse consumption check, not a byte-limited lexer or global
+resource bound. It does not claim complete closing-delimiter/last-member
+validation, trailing-token exhaustion, stream-valued-member enforcement or
+all object-stream rules. Bodies remain on demand and no member data is
+copied merely to impose this check.
+
 ## 2026-11-05 compressed standalone reference values
 
 ISO 32000-1 7.5.7 (printed p46) explicitly prohibits an object-stream

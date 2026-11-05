@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed member consumption check](spec-backlog.md#2026-11-05-compressed-member-consumption-boundaries)
+records next-offset boundaries and rejects a parsed value that consumes a
+following member before caching. Other members remain independently lazy;
+reference disposition differences and unchanged corpus JSON are recorded.
+This is post-parse validation, not a bounded lexer or complete delimiter/
+trailing-token validation.
+
 The [compressed standalone-reference correction](spec-backlog.md#2026-11-05-compressed-standalone-reference-values)
 rejects a parsed member that is solely a PdfRef before caching, while
 retaining references nested inside arrays/dictionaries and lazy isolation
