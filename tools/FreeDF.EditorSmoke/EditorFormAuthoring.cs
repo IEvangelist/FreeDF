@@ -101,10 +101,14 @@ static class EditorFormAuthoring
         await page.Keyboard.PressAsync("Control+z");
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .ffbox').length === n", 11);
 
-        // Alignment through the property panel, then row tab order from the Form menu.
+        // Contextual alignment through Edit, then row tab order from the Form menu.
         await page.Locator("#formBtn").ClickAsync();
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Select all fields on page" }).ClickAsync();
-        await page.Locator("#props [data-ffarr=left]").ClickAsync();
+        await page.Locator("#editBtn").ClickAsync();
+        var edit = page.GetByRole(AriaRole.Menu, new() { Name = "Edit", Exact = true });
+        Check(await edit.GetByRole(AriaRole.Menuitem, new() { Name = "Copy" }).IsEnabledAsync(), "Edit exposes field clipboard actions");
+        await edit.GetByRole(AriaRole.Menuitem, new() { Name = "Align fields", Exact = true }).HoverAsync();
+        await page.Locator(".cm.sub .cm-i").Filter(new() { HasTextRegex = new Regex("^Left$") }).ClickAsync();
         await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Updated 11 fields')");
         var xs = await Positions(page);
         Check(xs.Max() - xs.Min() < 0.01, "Align left puts every field on the same X");
@@ -128,10 +132,11 @@ static class EditorFormAuthoring
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .ffbox').length === n", 11);
 
         // Flatten everything: widgets and AcroForm disappear but the rendered page stays populated.
-        page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
         await page.Locator("#formBtn").ClickAsync();
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Flatten form" }).HoverAsync();
         await page.Locator(".cm.sub .cm-i").Filter(new() { HasTextString = "All fields" }).ClickAsync();
+        await page.GetByRole(AriaRole.Dialog, new() { Name = "Flatten form fields", Exact = true })
+            .GetByRole(AriaRole.Button, new() { Name = "Flatten fields", Exact = true }).ClickAsync();
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .ffbox').length === n", 0);
         // A completed file download can precede the Save modal closing; undo must wait for the UI, not just the file.
         await page.EvaluateAsync("""

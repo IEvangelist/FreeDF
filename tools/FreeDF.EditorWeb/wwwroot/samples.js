@@ -141,11 +141,12 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
   async function load(name, { confirmed = false } = {}) {
     if (active) return;
     const opener = doc.activeElement;
-    if (!confirmed && !confirmReplace()) return;
-    const wasDirty = isDirty(), control = new AbortController();
+    const control = new AbortController();
     active = control; renderCta();
-    showPanel(opener); progress('Looking up the sample…');
     try {
+      if (!confirmed && !await confirmReplace()) return;
+      const wasDirty = isDirty();
+      showPanel(opener); progress('Looking up the sample…');
       const entry = findSample(await ensureManifest(), name);
       if (!entry) throw new Error(name === FULL_COLLECTION
         ? 'The full sample collection is not published here. Generate it with: dotnet run --project tools/FreeDF.Samples -- generate samples 27-'
@@ -161,7 +162,7 @@ export function createSamples({ open, isDirty = () => false, confirmReplace = ()
         else { spoken = quarter; progress(`${label}: ${formatSize(done)} of ${formatSize(total)}`, done, total); }
       } });
       if (control.signal.aborted) return;
-      if (!wasDirty && isDirty() && !confirmReplace()) { hidePanel(); return; }
+      if (!wasDirty && isDirty() && !await confirmReplace()) { hidePanel(); return; }
       progress(`Opening ${entry.file}…`);
       try { await open(new File([bytes], entry.file, { type: 'application/pdf' })); }
       catch (error) { throw entry.encrypted ? new Error(`${entry.file} is encrypted and this build could not open it: ${error.message}`) : error; }

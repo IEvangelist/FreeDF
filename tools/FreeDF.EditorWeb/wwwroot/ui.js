@@ -52,7 +52,9 @@
   if (!store.get('editor.colors.v2') && !store.get('editor.primary') && validColor(store.get('editor.accent'))) doc.dataset.primary = store.get('editor.accent');
   setPrimary(primary()); setAccent(accent()); store.set('editor.colors.v2', '1');
   window.editorUi = { toast, say, setTheme, setMotion, setFullMotion, setPrimary, primary, setAccent, accent,
-    enhanceSelect, enhanceSelects, refreshSelect, enhanceEditableCombo };
+    enhanceSelect, enhanceSelects, refreshSelect, enhanceEditableCombo,
+    confirm: options => messageDialog(options),
+    prompt: ({ label, ...options }) => messageDialog({ ...options, inputLabel: label }) };
 
   const enhancedSelects = new WeakMap();
   let choicePopup = null;
@@ -255,6 +257,50 @@
     return close;
   }
 
+  let messageQueue = Promise.resolve();
+  function messageDialog({ title, message = '', confirmLabel = 'Continue', cancelLabel = 'Cancel', inputLabel = null, value = '' }) {
+    const result = messageQueue.then(() => new Promise(resolve => {
+      const opener = document.activeElement;
+      const previous = qa('body > .mdl, body > [data-ui-modal]').filter(e => !e.inert);
+      for (const e of previous) e.inert = true;
+      const scrim = el('div', { className: 'mdl message-dialog' }), box = el('div', { className: 'dlg' });
+      const heading = el('h3', { id: nextId('message-title'), textContent: title });
+      const body = el('div', { className: 'dbody' }), foot = el('div', { className: 'dfoot' });
+      box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', heading.id);
+      if (message) {
+        const description = el('p', { id: nextId('message-description'), className: 'dnote', textContent: message });
+        body.append(description); box.setAttribute('aria-describedby', description.id);
+      }
+      const input = inputLabel === null ? null : el('input', { type: 'text', value, autocomplete: 'off' });
+      if (input) body.append(el('label', {}, el('span', { textContent: inputLabel }), input));
+      const cancel = el('button', { type: 'button', textContent: cancelLabel });
+      const accept = el('button', { type: 'button', className: 'primary', textContent: confirmLabel });
+      let settled = false;
+      const finish = accepted => {
+        if (settled) return; settled = true;
+        const answer = accepted ? (input ? input.value : true) : (input ? null : false);
+        scrim.remove();
+        for (const e of previous) e.inert = false;
+        modalOff();
+        if (opener?.isConnected && !opener.closest('[inert]')) opener.focus(); else restoreFocus();
+        resolve(answer);
+      };
+      cancel.onclick = () => finish(false); accept.onclick = () => finish(true);
+      scrim.onpointerdown = e => { if (e.target === scrim) finish(false); };
+      scrim.onkeydown = e => {
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); finish(true); }
+        else if ((e.ctrlKey || e.metaKey || e.altKey) && !(e.target === input && !e.altKey && ['a','c','v','x','z','y'].includes(e.key.toLowerCase()))) e.preventDefault();
+        trapTab(box, e); e.stopPropagation();
+      };
+      foot.append(cancel, accept); box.append(heading, body, foot); scrim.append(box);
+      document.body.append(scrim); modalOn(scrim);
+      (input || cancel).focus(); input?.select();
+    }));
+    messageQueue = result.then(() => {});
+    return result;
+  }
+
   // Command palette: lists the enabled toolbar controls, so it can never drift from the real UI.
   const split = t => { const m = /^(.*?)\s*\(([^)]+)\)$/.exec(t); return m && /^[A-Z0-9[\]]/.test(m[2]) ? [m[1], m[2]] : [t, '']; };
   function commands() {
@@ -301,8 +347,8 @@
   function about() {
     if (q('.pal-scrim')) return;
     overlay('pal-scrim', 'Keyboard shortcuts and about', (box, close) => {
-      const rows = [['Command palette', mod + 'K'], ['File menu', 'Alt+F or the File button'], ['Select, text, rectangle, ellipse, line, redact', 'V  T  R  E  L  X'], ['Pages and properties panels', '[  ]'], ['Previous and next page', 'PageUp  PageDown'],
-        ['Move the focused page in the list', 'Alt+Arrow Up / Down'], ['Move the selected object', 'Arrow keys (Shift for 10)'], ['Next and previous page object', 'Tab, then Arrow keys'], ['Find', mod + 'F'], ['Undo and redo', mod + 'Z  ' + mod + 'Y'], ['Close menus and dialogs', 'Esc']];
+      const rows = [['Command palette', mod + 'K'], ['File menu', 'Alt+F or the File button'], ['Edit menu', 'Alt+E or the Edit button'], ['Select, text, rectangle, ellipse, line, redact', 'V  T  R  E  L  X'], ['Pages and properties panels', '[  ]'], ['Previous and next page', 'PageUp  PageDown'],
+        ['Move the focused page in the list', 'Alt+Arrow Up / Down'], ['Move the selected object', 'Arrow keys (Shift for 10)'], ['Add or remove from selection', 'Shift+click / Shift+Enter'], ['Next and previous page object', 'Tab, then Arrow keys'], ['Find', mod + 'F'], ['Undo and redo', mod + 'Z  ' + mod + 'Y'], ['Close menus and dialogs', 'Esc']];
       const dl = el('dl'); for (const [k, v] of rows) dl.append(el('dt', { textContent: k }), el('dd', {}, el('kbd', { textContent: v })));
       const done = el('button', { type: 'button', className: 'btn-outline', textContent: 'Close', onclick: close });
       box.classList.add('about');
@@ -377,9 +423,10 @@
   document.addEventListener('focusin', e => { if (!e.target.closest?.('.cm, .mdl, .pal-scrim, .tip')) lastOutside = e.target; });
   const restoreFocus = () => { if ((!document.activeElement || document.activeElement === document.body) && lastOutside?.isConnected) lastOutside.focus(); };
   // A swatch row is one stop in the vertical order (its checked swatch); Left/Right move within it.
-  const items = menu => qa(':scope > .cm-i:not(:disabled), :scope > .cm-sw > button[aria-checked="true"]', menu);
+  const items = menu => qa(':scope > .cm-i:not(:disabled):not([aria-disabled="true"]), :scope > .cm-sw > button[aria-checked="true"]', menu);
   const closeMenus = () => qa('.cm').forEach(m => m.remove());
   addEventListener('keydown', e => {
+    if (q('.message-dialog')) return;
     const open = q('.cm'); if (!open || e.ctrlKey || e.metaKey || e.altKey) return;
     const cur = document.activeElement?.closest?.('.cm'), menu = cur || open, k = e.key, list = items(menu), i = list.indexOf(document.activeElement);
     const sw = document.activeElement?.closest?.('.cm-sw');
@@ -483,14 +530,15 @@
     first.tabIndex = 0; if (!first.getAttribute('role')) { first.setAttribute('role', 'button'); first.setAttribute('aria-label', label(first)); }
   }
   const prep = p => { p.tabIndex = -1; p.setAttribute('role', 'button'); p.setAttribute('aria-label', label(p)); };
-  function activate(p) {
-    const r = p.getBoundingClientRect(), o = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0, pointerId: 41, isPrimary: true, pointerType: 'mouse' };
+  function activate(p, additive = false) {
+    const r = p.getBoundingClientRect(), o = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0, pointerId: 41, isPrimary: true, pointerType: 'mouse', shiftKey: additive };
     p.dispatchEvent(new PointerEvent('pointerdown', o)); window.dispatchEvent(new PointerEvent('pointerup', o));
     requestAnimationFrame(() => { const on = q('#layer > .on'); if (on) { prep(on); on.focus(); } });
   }
   document.addEventListener('keydown', e => {
     const p = e.target.closest?.('#layer > .it, #layer > .obj, #layer > .span'); if (!p || e.ctrlKey || e.metaKey) return;
-    if (e.key === 'Enter' || e.key === ' ') { if (p.isContentEditable || p.onkeydown) return; e.preventDefault(); e.stopPropagation(); activate(p); return; }
+    if (e.key === 'Enter' || e.key === ' ') { if (p.isContentEditable || p.onkeydown) return; e.preventDefault(); e.stopPropagation(); activate(p, e.shiftKey); return; }
+    if (+q('#layer')?.dataset.multi > 1 && e.key.startsWith('Arrow')) return;
     const all = parts(), i = all.indexOf(p), d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
     const to = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : d ? i + d : -1;
     if (to < 0 || to >= all.length || e.altKey || e.shiftKey) { if (d) { e.preventDefault(); e.stopPropagation(); } return; }
@@ -680,6 +728,7 @@
 
   // Palette and shortcuts.
   addEventListener('keydown', e => {
+    if (q('.message-dialog')) return;
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); e.stopImmediatePropagation(); q('.pal-scrim') ? 0 : palette(); }
     else if (e.key === '?' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && !document.activeElement?.isContentEditable && !q('.mdl, .pal-scrim')) { e.preventDefault(); about(); }
     else if (e.key === 'Escape' && !choicePopup && matchMedia('(max-width: 760px)').matches && !q('.cm, .mdl, .pal-scrim')) {

@@ -147,19 +147,11 @@ static class EditorStorageMigration
             """);
         Check(resumed.GetProperty("sameHandle").GetBoolean() && resumed.GetProperty("rotation").GetInt32() == 90,
             "Resume preserves the real file handle and the unsaved page rotation: " + resumed);
-        var clearWarning = await page.EvaluateAsync<string>("""
-            () => {
-              const original = window.confirm;
-              let message = '';
-              try {
-                window.confirm = text => { message = text; return false; };
-                document.getElementById('recovery').click();
-                return message;
-              } finally { window.confirm = original; }
-            }
-            """);
-        Check(clearWarning.Contains("this and previous versions", StringComparison.Ordinal),
+        await page.Locator("#recovery").ClickAsync();
+        var warning = page.GetByRole(AriaRole.Dialog, new() { Name = "Clear local recovery", Exact = true });
+        Check((await warning.InnerTextAsync()).Contains("this and previous versions", StringComparison.Ordinal),
             "The recovery-clear confirmation explains that it affects both generations.");
+        await warning.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
         await page.Keyboard.PressAsync("Control+s");
         await page.WaitForFunctionAsync("document.getElementById('status').textContent.includes('Saved to migration.pdf')");
         Check(await page.EvaluateAsync<bool>("""

@@ -11,10 +11,10 @@ static class EditorAnnotations
         await page.Locator("#annot").ClickAsync();
         await page.Locator("#annot-dock").GetByLabel("Author", new() { Exact = true }).FillAsync("Smoke reviewer");
         await page.Locator("[data-annot-tool=note]").ClickAsync();
-        EventHandler<IDialog>? acceptNote = null;
-        acceptNote = async (_, dialog) => { page.Dialog -= acceptNote; await dialog.AcceptAsync("Public annotation round trip"); };
-        page.Dialog += acceptNote;
         await page.GetByRole(AriaRole.Button, new() { Name = "Add selected tool at page centre", Exact = true }).ClickAsync();
+        var note = page.GetByRole(AriaRole.Dialog, new() { Name = "Add note", Exact = true });
+        await note.GetByRole(AriaRole.Textbox, new() { Name = "Text", Exact = true }).FillAsync("Public annotation round trip");
+        await note.GetByRole(AriaRole.Button, new() { Name = "Add annotation", Exact = true }).ClickAsync();
         await page.WaitForFunctionAsync("document.querySelector('#annot-props textarea')");
         await page.Locator("#annot-props textarea").First.FillAsync("Public annotation round trip");
         await page.Locator("#annot-props").GetByRole(AriaRole.Button, new() { Name = "Apply", Exact = true }).ClickAsync();

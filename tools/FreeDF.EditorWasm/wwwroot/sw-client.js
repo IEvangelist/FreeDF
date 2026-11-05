@@ -112,9 +112,9 @@ export async function registerServiceWorker() {
   let waitingToReload = false;
   function applyUpdate(reason) {
     if (!dirty()) { reload(); return; }
-    banner(`${reason} You have unsaved changes: save, then reload to finish updating.`, [['Reload now', () => {
+    banner(`${reason} You have unsaved changes: save, then reload to finish updating.`, [['Reload now', async () => {
       if (!dirty()) reload();
-      else if (window.confirm('Reload and discard unsaved or in-progress work in this tab?')) reload(true);
+      else if (await window.editorUi.confirm({ title: 'Reload editor', message: 'Reload and discard unsaved or in-progress work in this tab?', confirmLabel: 'Discard and reload', cancelLabel: 'Keep editing' })) reload(true);
     }, true]]);
     if (waitingToReload) return;
     waitingToReload = true;

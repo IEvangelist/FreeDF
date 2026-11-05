@@ -191,7 +191,7 @@ public sealed partial class EditorSession(FontCatalog catalog, IFontFallback? fo
 
     sealed record TextDetails(long Index, string Text, double X, double Y, double Width, double Size, string Font, string Color, double Spacing);
     sealed record ObjectDetails(int Index, string Kind, bool InForm, double X0, double Y0, double X1, double Y1,
-        bool HasFill, bool HasStroke, double LineWidth, string? Fill, string? Stroke, bool FormContentsShared, ObjEdit? Edit);
+        bool HasFill, bool HasStroke, double LineWidth, string? Fill, string? Stroke, bool FormContentsShared, int ParentForm, int FormRef, ObjEdit? Edit);
 
     IEnumerable<TextDetails> TextDetailsFor(int i) =>
         EditableSpans(PageText(i).Spans).Where(s => !s.Vertical && Math.Abs(s.Angle) < 1 && s.Size > 1 && !string.IsNullOrWhiteSpace(s.Text))
@@ -209,7 +209,7 @@ public sealed partial class EditorSession(FontCatalog catalog, IFontFallback? fo
             else if (pristineBack.TryGetValue(o.Form, out var form)) formObjEdits.TryGetValue((form, o.Start, o.End), out edit);
             yield return new(o.Index, o.Kind, o.Form != 0, o.X0, o.Y0, o.X1, o.Y1, o.HasFill, o.HasStroke, o.LineWidth,
                 o.HasFill ? Hex(o.Fill) : null, o.HasStroke ? Hex(o.Stroke) : null,
-                o.Kind == "form" && (SharedFormReferences().Contains(o.Ref) || ambiguous.Any(range => range.Form == o.Ref)), edit);
+                o.Kind == "form" && (SharedFormReferences().Contains(o.Ref) || ambiguous.Any(range => range.Form == o.Ref)), o.Form, o.Kind == "form" ? o.Ref : 0, edit);
         }
     }
 

@@ -111,20 +111,15 @@ static class EditorSamples
         Check(items.Count == 28 && items[0].StartsWith("28 Benchmarks, brand and spec parity") && items[1].StartsWith("Full sample collection (50 pages)") && items[2].StartsWith("01 ") && items[^1].StartsWith("26 "), "Menu lists the showcase first, collection second, then 01-26 (" + items.Count + ").");
         var disabled = await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.Locator(".cm.sub > .cm-i:disabled").AllInnerTextsAsync();
         Check(disabled.Count == 0, "openEncrypted is advertised before the menu renders, so 17 and 18 are offered: " + string.Join(", ", disabled));
-        var asked = 0;
-        EventHandler<IDialog> decline = async (_, d) => { asked++; await d.DismissAsync(); };
-        page.Dialog += decline;
         await page.Locator(".cm.sub > .cm-i", new() { HasTextString = "01 Spec showcase" }).ClickAsync();
-        await page.WaitForTimeoutAsync(400);
-        page.Dialog -= decline;
-        Check(asked == 1 && Samples("01-spec-showcase.pdf") == 0 && await page.Locator("#name").TextContentAsync() == "sample-copy.pdf", "Declining the unsaved-changes prompt keeps the document and fetches nothing.");
-        EventHandler<IDialog> accept = async (_, d) => await d.AcceptAsync();
-        page.Dialog += accept;
+        var discard = page.GetByRole(AriaRole.Dialog, new() { Name = "Discard unsaved changes", Exact = true });
+        await discard.GetByRole(AriaRole.Button, new() { Name = "Keep editing", Exact = true }).ClickAsync();
+        Check(Samples("01-spec-showcase.pdf") == 0 && await page.Locator("#name").TextContentAsync() == "sample-copy.pdf", "Declining the unsaved-changes prompt keeps the document and fetches nothing.");
         await page.Locator("#fileBtn").ClickAsync();
         await page.Locator(".cm-i.has-sub", new() { HasTextString = "Open sample" }).First.HoverAsync();
         await page.Locator(".cm.sub > .cm-i", new() { HasTextString = "01 Spec showcase" }).ClickAsync();
+        await discard.GetByRole(AriaRole.Button, new() { Name = "Discard changes", Exact = true }).ClickAsync();
         await Opened(page, "01-spec-showcase.pdf");
-        page.Dialog -= accept;
 
         // Deep links wait for the recovery decision, load without further clicks and are consumed.
         before = Samples(Full);

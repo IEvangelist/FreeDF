@@ -39,8 +39,12 @@ static class EditorRecovery
             await page.Keyboard.PressAsync("Control+c");
             await page.Keyboard.PressAsync("Delete");
             await page.WaitForFunctionAsync("!document.querySelector('#layer .it img')");
+            await page.Keyboard.PressAsync("Control+z");
+            await page.WaitForFunctionAsync("document.querySelectorAll('#layer .it img').length === 1");
+            await page.Keyboard.PressAsync("Control+z");
+            await page.WaitForFunctionAsync("!document.querySelector('#layer .it img')");
             await Durable(page);
-            Check(await Images(page) == 0, "Deleted image is retained only by clipboard/undo.");
+            Check(await Images(page) == 0, "Undone image is retained only by clipboard/redo.");
             await page.WaitForFunctionAsync("document.getElementById('base').dataset.loadedUrl === document.getElementById('base').dataset.targetUrl");
             var raster = await EditorTextSelection.BasePixelHash(page);
             var state = await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())");
@@ -61,12 +65,16 @@ static class EditorRecovery
             Check(state == await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())"), "Resume retains editable original-text replacement data, not a flattened PDF.");
             Check(await page.EvaluateAsync<bool>("async () => (await (await pdfHost.request('/api/state')).json()).dirty"), "Unsaved state remains unsaved.");
             await EditorHeader.State(page, true);
+            await page.Keyboard.PressAsync("Control+Shift+z");
+            await page.WaitForFunctionAsync("document.querySelectorAll('#layer .it img').length === 1");
+            await page.Keyboard.PressAsync("Control+Shift+z");
+            await page.WaitForFunctionAsync("!document.querySelector('#layer .it img')");
             await page.Keyboard.PressAsync("Control+z");
             await page.WaitForFunctionAsync("document.querySelectorAll('#layer .it img').length === 1");
             await page.Keyboard.PressAsync("Control+v");
             await page.WaitForFunctionAsync("document.querySelectorAll('#layer .it img').length === 2");
             await Durable(page);
-            Check(await Images(page) == 2, "Undo and clipboard paste after resume retain the actual image bytes.");
+            Check(await Images(page) == 2, "Persisted redo, undo and clipboard paste after resume retain the actual image bytes.");
             await page.WaitForFunctionAsync("[...document.querySelectorAll('#layer .it img')].every(i=>i.naturalWidth===2)");
             await page.EvaluateAsync("""
                 () => {
@@ -117,6 +125,8 @@ static class EditorRecovery
             await page.Locator("#recovery").ClickAsync();
             await Durable(page);
             await page.Locator("#recovery").ClickAsync();
+            await page.GetByRole(AriaRole.Dialog, new() { Name = "Clear local recovery", Exact = true })
+                .GetByRole(AriaRole.Button, new() { Name = "Clear recovery", Exact = true }).ClickAsync();
             await page.WaitForFunctionAsync("document.getElementById('recovery').textContent === 'Recovery off'");
             Check(await page.EvaluateAsync<object?>(Read) is null, "Explicit Clear completes a durable delete.");
             Console.WriteLine("PASS: real unsaved text/image state and exact raster, reload gating, durable Resume, image undo/clipboard retention, no pointer-event PDF snapshots, Discard/Clear, encrypted opt-out, corrupt-record retention and quota failure/retry.");
