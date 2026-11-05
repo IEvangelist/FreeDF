@@ -4,6 +4,32 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed nested object values
+
+ISO 32000-1 7.3.1 (printed p13), 7.3.6 and 7.3.7 (printed p18)
+require array elements and dictionary values to be PDF objects. Compressed
+member loading now rejects parsed keywords recursively within these containers
+before caching. It does not resolve nested references or change the shared
+lexer used for content-stream operators.
+
+Seventeen controls cover nested operators, object wrappers and unmatched
+closers, valid references/names/strings/comments, repeated lookup and lazy
+isolation of other members. The initial selector had twelve failures.
+Full Release: 18,722 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Thirty native PDFs preserve ten valid outputs unchanged and reject twenty
+previously accepted invalid containers with an explicit parse diagnostic.
+MuPDF reports no exception for these probes; its absent Type result for
+most containers does not establish acceptance of their complete contents.
+The valid Target dictionaries agree. Fresh pinned 435-PDF/870-result corpus
+full JSON is wholly unchanged against the required-Type baseline.
+
+This validates retained parsed values, not complete source grammar: skipped
+dictionary keys, substituted missing values and missing delimiters in the
+permissive lexer remain separate. No byte-limited parsing or new resource
+budget is claimed.
+
 ## 2026-11-05 required object-stream type
 
 ISO 32000-1 7.5.7 Table 16 (printed p46) requires Type to be the name

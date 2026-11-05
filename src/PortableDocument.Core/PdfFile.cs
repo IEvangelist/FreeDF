@@ -196,6 +196,8 @@ public sealed class PdfFile
             throw new PdfParseException("object stream member exceeds its boundary");
         if (parsed is null or PdfKeyword)
             throw new PdfParseException("object stream member must contain an object value");
+        if (HasKeywordValue(parsed))
+            throw new PdfParseException("object stream member contains a keyword value");
         if (parsed is PdfRef)
             throw new PdfParseException("object stream member cannot be an indirect reference");
         lexer.SkipWhite();
@@ -209,6 +211,14 @@ public sealed class PdfFile
         map.Parsed[objNum] = parsed;
         return parsed;
     }
+
+    static bool HasKeywordValue(PdfObject value) => value switch
+    {
+        PdfKeyword => true,
+        PdfArray array => array.Items.Any(HasKeywordValue),
+        PdfDictionary dictionary => dictionary.Entries.Values.Any(HasKeywordValue),
+        _ => false
+    };
 
     bool IsObjectStream(PdfDictionary dictionary)
     {
