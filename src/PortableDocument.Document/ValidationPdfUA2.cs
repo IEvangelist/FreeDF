@@ -149,6 +149,20 @@ internal static class PdfUA2Checks
         }
     }
 
+    internal static void WidgetAdditionalActions(ValidationContext c, StructureTree tree, PdfDictionary widget, StructElement parent, int page)
+    {
+        var f = c.F;
+        if (f.Resolve(widget.Get("AA")) is not PdfDictionary
+            || f.Resolve(widget.Get("Contents")) is PdfString
+            || !(f.Resolve(widget.Get("FT")) is PdfName || f.Resolve(widget.Get("T")) is PdfString
+                || f.Resolve(widget.Get("Parent")) is PdfDictionary)) return;
+        for (var element = parent; element is not null; element = element.Parent)
+            if (StandardType(c, tree, element) == "Artifact") return;
+        c.Add("PDFUA2-WIDGET-AA-CONTENTS", ValidationSeverity.Error,
+            "a tagged field widget with additional actions requires its own /Contents description",
+            "ISO 14289-2 8.10.2.3", page);
+    }
+
     static void Elements(ValidationContext c, StructureTree tree)
     {
         var f = c.F;

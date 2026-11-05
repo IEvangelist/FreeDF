@@ -4,6 +4,58 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 widget additional-action context
+
+`PDFUA2-WIDGET-AA-CONTENTS` checks the independently verified
+8.10.2.3-2 predicate: a structurally tagged field widget with an AA
+dictionary requires its own string-valued Contents entry. A tooltip,
+structure Alt, label, or inherited field Contents is not a substitute.
+An empty string establishes entry presence; this does not assert that its
+description is semantically adequate. Null AA is omission. Artifact
+ancestors are resolved through the namespace-aware role mapper; untagged
+and nonfield widgets are outside this predicate. Hidden/outside-crop
+widgets with a structure parent are not exempted by their visual state.
+UA-1 and existing widget-description checks are unchanged.
+
+The factual predicate is cross-checked against the pinned veraPDF
+v1.30.3 UA-2 profile, 8.10.2.3-2, and independently implemented in
+`ValidationPdfUA2.cs`. A field widget is recognized through its own
+FT/name or a parent field dictionary; this does not validate field-tree
+ownership or arbitrary malformed field definitions. The public ISO
+14289-2 preview does not include 8.10, so the complete primary clause
+was not independently obtained. No scripting or additional action is
+executed.
+
+Verification:
+
+- The initial 144 authored cases had six failures before implementation.
+  Final coverage adds 148 cases for own/missing/null/empty Contents,
+  AA omission/null/dictionary, both profiles, visual-state boundaries,
+  field-parent inheritance and mapped/ancestor Artifact exclusions.
+- Thirty-two independent native UA-2 controls give 32 exact-rule
+  agreements. Eleven new findings include ten newly rejected files and
+  one control already rejected for an unrelated nesting violation.
+  All 32 corresponding UA-1 outputs are unchanged.
+- Only 18/32 whole-file verdicts agree: six clean positives and twelve
+  negatives. Eight controls still miss the separate 8.10.2.3-1
+  label-or-Contents condition; six other reference-clean controls retain
+  existing FreeDF field-type/Form-structure/ParentTree rejections. Those
+  fourteen disagreements are not additional-action-rule agreements or
+  evidence of complete widget conformance.
+- Label investigation remains open. Initial empty Lbl nodes did not
+  establish a label in the reference; direct non-empty and role-mapped
+  Lbl children did, but grouping them under Div did not. Without primary
+  verification of that containment meaning, no label predicate was
+  guessed and the legacy UA-2 tooltip/Alt proxy remains explicitly
+  incomplete. Raw null FT classification and Artifact/Form structure
+  handling also need separate boundary review.
+- Fresh 435-PDF/870-result corpus output is identical to the rendering-use
+  baseline, including findings and verdicts. Full Release suite: 13,462
+  passed, zero failed/skipped. Solution build: zero errors and two
+  retained machine-feed NU1507 warnings. Reporting tool: 20 passing tests,
+  now including the new rule mapping. External evidence remains
+  session-only.
+
 ## 2026-11-05 PDF/UA rendering-only font embedding
 
 `PDFUA-FONT-EMBEDDED` now requires observed text-showing use in a rendering

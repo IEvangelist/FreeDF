@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 widget additional-action context check](spec-backlog.md#2026-11-05-ua-2-widget-additional-action-context)
+requires own Contents on tagged, non-Artifact field widgets with AA.
+Thirty-two controls give exact-rule agreement and ten newly corrected
+verdicts, but only 18 whole-file agreements; label/Contents coverage and
+existing field/structure disagreements remain explicitly incomplete.
+Fresh 435-PDF/870-result corpus output is unchanged.
+
 The [2026-11-05 rendering-only PDF/UA font embedding correction](spec-backlog.md#2026-11-05-pdfua-rendering-only-font-embedding)
 exempts unused and solely mode-3 font use, preserves clipping/mixed-mode
 embedding requirements, and explicitly reports incomplete usage inspection.

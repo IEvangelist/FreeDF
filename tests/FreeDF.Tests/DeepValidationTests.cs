@@ -527,6 +527,91 @@ public class DeepValidationTests
         Assert.False(r.Has("PDFUA-FORM-TU"));
     }
 
+    public static IEnumerable<object[]> WidgetActionContextCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var contents in new[] { "", "/Contents null", "/Contents ()", "/Contents (description)" })
+        foreach (var context in new[] { "normal", "hidden", "outside", "untagged", "artifact", "nonfield" })
+        foreach (var action in new[] { "", "/AA null", "/AA << >>" })
+            yield return [part, contents, context, action];
+    }
+
+    [Theory]
+    [MemberData(nameof(WidgetActionContextCases))]
+    public void Ua2WidgetAdditionalActionRequiresOwnContents(int part, string contents, string context, string action)
+    {
+        var type = context == "artifact" ? "/Artifact /NS << /NS (http://iso.org/pdf2/ssn) >>" : "/Form";
+        var flags = context == "hidden" ? 2 : 4;
+        var rect = context == "outside" ? "[200 200 210 210]" : "[0 0 10 10]";
+        var structParent = context == "untagged" ? "" : "/StructParent 1";
+        var field = context == "nonfield" ? "" : "/FT /Tx /T (name) /TU (tooltip)";
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]",
+            extras: [$"<< /Type /StructElem /S {type} /P 7 0 R /Alt (alternative) /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+                $"<< /Type /Annot /Subtype /Widget {field} {structParent} /Rect {rect} /F {flags} {contents} {action} >>"]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray([new PdfInteger(1), new PdfRef(8, 0)]) },
+        };
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var expected = part == 2 && action == "/AA << >>"
+            && contents is "" or "/Contents null"
+            && context is "normal" or "hidden" or "outside";
+        Assert.Equal(expected, report.Has("PDFUA2-WIDGET-AA-CONTENTS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("inherited-contents", true)]
+    [InlineData("field-parent", true)]
+    [InlineData("mapped-artifact", false)]
+    [InlineData("ancestor-artifact", false)]
+    public void Ua2WidgetActionContextUsesOwnContentsAndResolvedArtifactAncestors(string context, bool expected)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]",
+            extras: ["<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+                "<< /Type /Annot /Subtype /Widget /Parent 10 0 R /StructParent 1 /Rect [0 0 10 10] /AA << >> >>",
+                "<< /FT /Tx /T (name) /Contents (not the widget description) /Kids [9 0 R] >>"]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray([new PdfInteger(1), new PdfRef(8, 0)]) },
+        };
+        var form = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        if (context == "mapped-artifact")
+        {
+            var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+            form.Entries["S"] = new PdfName("CustomArtifact");
+            form.Entries["NS"] = new PdfDictionary
+            {
+                Entries =
+                {
+                    ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:widget-test")),
+                    ["RoleMapNS"] = new PdfDictionary
+                    {
+                        Entries = { ["CustomArtifact"] = new PdfArray([new PdfName("Artifact"), pdf2]) },
+                    },
+                },
+            };
+        }
+        if (context == "ancestor-artifact")
+        {
+            var document = Assert.IsType<PdfDictionary>(doc.File.GetObject(7));
+            document.Entries["S"] = new PdfName("Artifact");
+            document.Entries["NS"] = new PdfDictionary
+            {
+                Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) },
+            };
+        }
+        if (context == "field-parent")
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Entries.Remove("Contents");
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(expected, report.Has("PDFUA2-WIDGET-AA-CONTENTS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     [Fact]
     public void DocumentFlagsSuspectsAndOptionalContent()
     {

@@ -78,6 +78,7 @@ RULE_MAP = {
         "8.4.5.3.1-1": ["PDFUA-FONT-CMAP-SYSTEMINFO"], "8.4.5.3.2-1": ["PDFUA-FONT-CIDTOGID"],
         "8.4.5.4-1": ["PDFUA-FONT-CMAP-EMBEDDED"], "8.4.5.5.1-1": ["PDFUA-FONT-EMBEDDED"],
         "8.4.5.8-1": ["PDFUA-FONT-TOUNICODE"],
+        "8.10.2.3-2": ["PDFUA2-WIDGET-AA-CONTENTS"],
     },
 }
 

@@ -64,6 +64,13 @@ Observed mixed visible/invisible use remains subject to embedding, unlike
 four explicitly documented reference controls. No profile XML or
 reference-engine source is bundled.
 
+The UA-2 field-widget additional-action Contents requirement was
+cross-checked against the same CC BY 4.0 UA-2 profile, 8.10.2.3-2.
+`ValidationPdfUA2.cs` independently implements this scoped entry-presence
+condition with namespace-aware Artifact exclusion. The separate
+label-or-Contents predicate remains incomplete; no model implementation
+or profile XML is bundled.
+
 The UA-1 complete Scope-presence check for tables without TD Headers was
 cross-checked against the same CC BY 4.0 PDF/UA-1 profile, 7.5 tests 1/2.
 `ValidationPdfUA.cs` independently implements this necessary presence

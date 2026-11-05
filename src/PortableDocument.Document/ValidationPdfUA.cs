@@ -583,6 +583,8 @@ internal static partial class PdfUAChecks
                     if (!objects.Contains(ad))
                         c.Add("PDFUA-ANNOT-OBJR", ValidationSeverity.Error, $"/{sub} annotation's parent structure element has no direct /OBJR child with an indirect /Obj identifying this annotation", "ISO 32000-2 14.7.5.3", i);
                 }
+                if (c.Part == 2 && sub == "Widget" && parent is not null)
+                    PdfUA2Checks.WidgetAdditionalActions(c, tree, ad, parent, i);
                 if (exempt) continue;
                 if (sub == "Link")
                 {
