@@ -1820,6 +1820,52 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> StructureRevisionCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var value in new[] { "null", "0", "7", "-1", "1.0", "1.5", "/Revision", "[]", "99 0 R", "9 0 R" })
+            yield return [part, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureRevisionCases))]
+    public void Ua2StructureRevisionMustBeNonNegativeInteger(int part, string value)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>", "7"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["R"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(value)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && value is "-1" or "1.0" or "1.5" or "/Revision" or "[]",
+            report.Has("PDFUA2-STRUCT-R-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-R-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2StructureRevisionReferenceDepthIsBounded(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "7" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K [] /R 9 0 R >>" }.Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-R-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-R-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2StructureRevisionReferenceCycleIsIncompleteNotInvalidType()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /R 9 0 R >>", "9 0 R"])), 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-R-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-R-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

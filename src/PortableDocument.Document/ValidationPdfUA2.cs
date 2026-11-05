@@ -404,6 +404,7 @@ internal static class PdfUA2Checks
             StructureArrayNulls(c, e.Dict, "A", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureArrayNulls(c, e.Dict, "C", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureReferenceShape(c, e);
+            StructureRevision(c, e);
             var outcome = Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out var standardType, out var resolvedNamespace);
             if (outcome == RoleOutcome.Standard && resolvedNamespace == MathMlNamespace)
             {
@@ -550,6 +551,22 @@ internal static class PdfUA2Checks
             foundNull |= item is null or PdfNull;
         }
         return foundNull;
+    }
+
+    static void StructureRevision(ValidationContext c, StructElement element)
+    {
+        bool incomplete = false;
+        var value = ResolveBounded(c.F, element.Dict.Get("R"), () =>
+        {
+            incomplete = true;
+            c.Add("PDFUA2-STRUCT-R-INCOMPLETE", ValidationSeverity.Error,
+                "structure R revision inspection exceeds its reference bound",
+                "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+        });
+        if (!incomplete && value is not (null or PdfNull or PdfInteger { Value: >= 0 }))
+            c.Add("PDFUA2-STRUCT-R-TYPE", ValidationSeverity.Error,
+                "structure R revision must be a non-negative integer",
+                "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
     }
 
     static void FenoteType(ValidationContext c, StructureTree tree, StructElement element)

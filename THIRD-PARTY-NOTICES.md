@@ -305,6 +305,12 @@ All ten combined-profile native jobs accepted the controls; six primary
 null/dangling negatives now reject. These disagreements are explicit,
 not a reference family mapping or full attribute/revision conformance.
 
+The bounded structure R type/sign check follows Table 355's non-negative
+integer fact at the same official source. It uses independently implemented
+reference resolution. All eight corrected native combined-profile jobs
+accepted the controls; four primary negatives now reject. No reference
+predicate mapping or full revision/inheritance conformance is claimed.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

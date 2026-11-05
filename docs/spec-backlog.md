@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary structure revision shape
+
+The official PDF 2.0 errata, 14.7.2 Table 355, specifies optional deprecated
+R as a non-negative integer. UA-2 now reports PDFUA2-STRUCT-R-TYPE
+for negative integers and non-integer types, including integral real
+objects. Bounded reference resolution reports separate
+PDFUA2-STRUCT-R-INCOMPLETE for cycles or depth beyond 32. Optional
+omission/null (including dangling references under generic null semantics)
+and non-negative integers are retained.
+
+Eight corrected native controls completed normally: four primary positives
+remain accepted and four malformed values now reject. Previous FreeDF and
+the combined reference accept all eight: **four explicit primary/reference
+disagreements**, not reference-verified corrections. The initial native 1.0
+real was canonicalized to integer by the generator; the corrected 1.5 control
+retains a real token. Authored cases separately pin 1.0 real rejection.
+Twenty-three authored cases initially had seven failures. Fresh 435-PDF/
+870-result corpus JSON and all UA-1 outcomes are unchanged.
+
+This does not implement revision selection, inherited attributes, revision
+markers or deprecation enforcement; only the supplied R value's type/sign.
+No reference family mapping, external PDFs or standard text is bundled.
+
+Release validation: 141 focused structure cases passed; full suite passed
+15,007 cases with no failures/skips. Solution build had no errors and
+two retained machine-feed NU1507 warnings.
+
 ## 2026-11-05 primary attribute and class array nulls
 
 The official PDF 2.0 errata, 14.7.2 Table 355, prohibits null A attribute/

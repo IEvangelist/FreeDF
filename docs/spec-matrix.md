@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary R revision check](spec-backlog.md#2026-11-05-primary-structure-revision-shape)
+requires non-negative integer values with a separate incomplete-resolution
+error. Eight native controls retain four positives and reject four primary
+negatives accepted by the reference: four explicit primary/profile differences.
+Corpus/UA-1 JSON results are unchanged; revision selection and inheritance
+semantics remain deferred.
+
 The [primary A/C-array null checks](spec-backlog.md#2026-11-05-primary-attribute-and-class-array-nulls)
 reject null attribute/class array items with separate bounded-inspection
 errors. Ten native controls retain four positives and reject six primary
