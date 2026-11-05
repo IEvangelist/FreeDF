@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [external xref source guard](spec-backlog.md#2026-11-05-declared-external-cross-reference-stream-sources)
+prevents declared external F sources from silently indexing inline rows.
+Unsupported or pre-index unresolved sources explicitly recover; absent
+and direct-null sources preserve indexed loading. Indirect F is not
+claimed forbidden, ordinary APIs are unchanged, and external-stream
+loading/preservation remains incomplete.
+
 The [decoded xref row-extent guard](spec-backlog.md#2026-11-05-exact-decoded-cross-reference-row-extents)
 requires exactly the rows declared by Index/Size and W before publishing
 an index. Surplus decoded bytes now trigger explicit recovery; physical

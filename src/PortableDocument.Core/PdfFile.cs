@@ -496,6 +496,8 @@ public sealed class PdfFile
         }
         var obj = LoadAt(pos, -1);
         if (obj is not PdfStream xs || xs.Dict.Get("Type").AsName() != "XRef") throw new PdfParseException("not an xref stream");
+        if (xs.Dict.Get("F") is not (null or PdfNull))
+            throw new PdfParseException("external or unresolved cross-reference stream source is not supported");
         var rawFilter = xs.Dict.Get("Filter");
         if (rawFilter is PdfRef
             || rawFilter is PdfName or PdfArray { Count: > 0 } && xs.Dict.Get("DecodeParms") is PdfRef)

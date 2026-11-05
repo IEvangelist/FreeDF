@@ -4,6 +4,49 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 declared external cross-reference stream sources
+
+ISO 32000-1 Table 5 (printed p20) defines F as the file containing
+stream data: when present, bytes between stream and endstream shall be
+ignored. An explicitly supplied Filter previously bypassed the generic
+F fallback, allowing usable inline bytes to produce a clean xref index
+despite a declared external source.
+
+The xref reader now explicitly recovers when F is present and not direct
+null, before decoding inline rows. It does not open files, make network
+requests or implement external-stream loading. Absent/direct-null F
+preserve indexed loading. Ordinary stream APIs, including their legacy
+filter-alias behavior, are unchanged.
+
+Indirect F is not forbidden by the specification: 7.5.8.2 (printed p49)
+allows other entries to be indirect. This reader cannot resolve an F
+reference before constructing the index, so unresolved references also
+recover explicitly. Two controls resolve to null after repair; that is
+an explicit fast-path limitation, not a malformed external-source verdict.
+
+Eighteen controls give 14 failures/four passes on unchanged production.
+Final focused xref/filter/object-stream external-source checks pass 684;
+full Release passes 20,040, zero failed/skipped. The full run includes
+the preceding extent slice's 18 late-added omitted-Index controls.
+Solution and benchmark builds have zero warnings/errors. After rebuilding
+the final UaDump tool, fresh pinned 435-PDF/870-result complete validation
+JSON is unchanged against the strict-codec baseline before both new
+guards. All final benchmark/provider/parser correctness preflights pass.
+
+Fourteen independently encoded reference parser fixtures cover absent,
+direct-null, string/dictionary, indirect-file, unresolved and indirect-null
+F with raw/Flate inline bytes. PyMuPDF 2.0 / MuPDF 1.28.5 accepts the four
+absent/null controls without repair. All five other raw forms also publish
+the target without repair; Flate forms give two repaired target results
+(indirect file/null) and three target-resolution errors (direct string,
+dictionary and unresolved reference). This mixed behavior is preserved,
+not summarized as universal agreement or conformance. Reference fixtures
+use a nonexistent local source, not a network destination.
+
+No new timing was run for this guard. Previous xref timings do not measure
+the added F lookup/check, so no zero-overhead or speedup claim is made.
+External-stream loading/preservation and wider parser parity remain open.
+
 ## 2026-11-05 exact decoded cross-reference row extents
 
 ISO 32000-1 7.3.8.2 (printed p20) makes excess stream data an
