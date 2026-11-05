@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed reference keyword-separator check](spec-backlog.md#2026-11-05-compressed-reference-keyword-separators)
+requires whitespace or a complete comment between a generation and R,
+including nested references. Default lexer recovery remains unchanged.
+Native disagreement and unchanged corpus JSON are recorded; complete
+reference spelling/range policy and global validation remain separate.
+
 The [byte-bounded compressed value parser](spec-backlog.md#2026-11-05-byte-bounded-compressed-value-parsing)
 stops consumption at each member's end, preserving full-buffer default
 lexing. A following-byte token-separation check prevents valid prefixes of

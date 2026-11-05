@@ -123,9 +123,12 @@ public sealed class PdfLexer
         {
             var gen = 0;
             for (var i = s; i < Pos; i++) gen = gen * 10 + _d[i] - '0';
+            var generationEnd = Pos;
             SkipWhite();
             if (Pos < _end && _d[Pos] == 'R' && (Pos + 1 >= _d.Length || !IsRegular(_d[Pos + 1])))
             {
+                if (_objectStreamMember && Pos == generationEnd)
+                    throw new PdfParseException("indirect reference requires white space in object stream member");
                 if (first.Value > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
                 Pos++;
                 return new PdfRef((int)first.Value, gen);

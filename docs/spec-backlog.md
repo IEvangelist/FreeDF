@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed reference keyword separators
+
+ISO 32000-1 7.3.10 (printed p21) requires whitespace between each
+indirect-reference component; 7.2.3 (printed p13) treats comments as
+whitespace. Member-only reference parsing now rejects a generation directly
+adjacent to R, such as `7 0R`, instead of constructing a reference from it.
+References inside arrays/dictionaries are covered without resolving them.
+Public/default lexer recovery remains unchanged.
+
+Fourteen controls cover malformed nested references, zero-padded
+generations, PDF whitespace, complete comment separators and existing
+default recovery. Initial selector: six failed/eight passed. Full Release:
+19,025 passed, zero failed/skipped. Solution: zero errors/two retained
+machine-feed NU1507 warnings.
+
+Twenty-two native PDFs preserve ten positive outputs unchanged. Twelve
+formerly accepted missing-separator targets now produce an explicit
+reference-whitespace diagnostic. MuPDF still exposes Target in all twelve
+malformed controls and agrees on ten positives. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the
+byte-bounded-lexer baseline.
+
+This enforces the missing keyword separator in compressed values, not every
+reference spelling/range, undefined-reference inventory or default parser
+strictness. Valid comment separators and existing generation behavior remain
+supported; broader numeric/generation policy remains separate.
+
 ## 2026-11-05 byte-bounded compressed value parsing
 
 ISO 32000-1 7.5.7 (printed p46) supplies the consecutive member offsets;
