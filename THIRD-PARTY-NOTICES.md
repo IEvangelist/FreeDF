@@ -402,6 +402,15 @@ reference; those differences are explicit. XObjects/appearances and
 complete key type/identity remain separate. No standard text or external
 controls are bundled.
 
+The resource Form/Image XObject structure-parent check follows the same
+Table 359 exclusivity fact. Inherited/nested resource-graph traversal,
+identity deduplication and explicit shared bounds are independently
+implemented without decoding stream data. Twelve native unused-XObject
+controls retain six positives and reject six primary negatives accepted
+by the reference; these disagreements are explicit. Appearances, patterns,
+other stream references and full key type/identity remain separate.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

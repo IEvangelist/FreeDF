@@ -4,6 +4,41 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary resource XObject structure-parent exclusivity
+
+The Table 359 at-most-one StructParent/StructParents fact now covers
+Form/Image stream dictionaries reachable through page resource XObject
+maps, including unused entries and nested Form resources. Page resource
+inheritance is inspected with a 32-dictionary ancestor bound; references
+use the existing 32-hop bound. Iterative resource-graph traversal deduplicates
+dictionary/stream identities per page, so shared/cyclic resource graphs are
+visited once without decoding stream data.
+
+PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT uses the shared page/annotation
+key resolver. Null/omission and indirect null/dangling keys remain absent.
+Unsupported resource/map/stream containers, unresolved references and
+more than 200,000 total map entries per page produce
+PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE. The work budget includes
+duplicates and is shared across nested resources; known earlier conflicts
+survive later incomplete inspection. Existing rendering/tagging and UA-1
+behavior are unchanged.
+
+Twelve native unused Form/Image controls retain six positives and reject
+six primary negatives. All combined-reference jobs complete normally and
+accept: **six explicit primary/reference disagreements**. The initial 38
+authored cases had twenty failures; eight additional malformed-resource,
+ancestor-bound and shared-work cases cover exact boundaries. All 46 pass;
+focused Release: 450 passed; full Release: 15,447 passed, zero failed/skipped.
+Fresh 435-PDF/870-result corpus JSON and native UA-1 reports are wholly
+unchanged. Solution zero errors/two retained machine-feed NU1507 warnings.
+
+This is page resource XObject graph coverage, not all stream/object
+coverage. Annotation appearances, tiling patterns, soft-mask/other stream
+references outside those maps, complete parent-key types and parent-tree
+identity remain separate. Unknown non-Form/Image XObject subtypes are not
+interpreted. No standard text/external controls are bundled; hosted CI
+and full parity are not claimed.
+
 ## 2026-11-05 primary annotation structure-parent exclusivity
 
 The Table 359 at-most-one StructParent/StructParents fact now also covers

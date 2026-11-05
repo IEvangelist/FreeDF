@@ -2825,6 +2825,170 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [MemberData(nameof(PageStructureParentConflictCases))]
+    public void Ua2ResourceXObjectStructureParentKeysAreMutuallyExclusive(int part, string single, string multiple, bool conflict)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Resources << /XObject << /Unused 10 0 R >> >>",
+            extras: ["0", "null", ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 1 1]")]));
+        var dictionary = Assert.IsType<PdfStream>(doc.File.GetObject(10)).Dict;
+        if (single.Length > 0) dictionary.Entries["StructParent"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(single)).ReadObject()!;
+        if (multiple.Length > 0) dictionary.Entries["StructParents"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(multiple)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && conflict, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Form", false)]
+    [InlineData("Form", true)]
+    [InlineData("Image", false)]
+    [InlineData("Image", true)]
+    public void Ua2ResourceXObjectParentInspectionIncludesNestedAndInheritedResources(string subtype, bool inherited)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+        [
+            ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject << /Child 9 0 R >> >>"),
+            ObjPdf.Stream("x", $"/Type /XObject /Subtype /{subtype} /StructParent 0 /StructParents 0"),
+        ]));
+        var resources = new PdfLexer(Encoding.ASCII.GetBytes("<< /XObject << /Unused 8 0 R >> >>")).ReadObject()!;
+        (inherited ? Assert.IsType<PdfDictionary>(doc.File.GetObject(2)) : doc.Pages[0].Dict)
+            .Entries["Resources"] = resources;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("resource", 32, false)]
+    [InlineData("resource", 33, true)]
+    [InlineData("xobjects", 32, false)]
+    [InlineData("xobjects", 33, true)]
+    [InlineData("stream", 32, false)]
+    [InlineData("stream", 33, true)]
+    [InlineData("key", 32, false)]
+    [InlineData("key", 33, true)]
+    public void Ua2ResourceXObjectParentReferenceBoundsDoNotGuessConflict(string route, int count, bool incomplete)
+    {
+        var terminal = route switch
+        {
+            "resource" => "<< /XObject << /Unused 8 0 R >> >>",
+            "xobjects" => "<< /Unused 8 0 R >>",
+            "stream" => ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0"),
+            _ => "0",
+        };
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            new[] { ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0") }.Concat(chain).ToArray()));
+        var resource = route == "resource" ? "9 0 R" :
+            route == "xobjects" ? "<< /XObject 9 0 R >>" :
+            $"<< /XObject << /Unused {(route == "stream" ? "9" : "8")} 0 R >> >>";
+        doc.Pages[0].Dict.Entries["Resources"] = new PdfLexer(Encoding.ASCII.GetBytes(resource)).ReadObject()!;
+        if (route == "key") Assert.IsType<PdfStream>(doc.File.GetObject(8)).Dict.Entries["StructParent"] = new PdfRef(9, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ResourceXObjectParentWorkBoundCountsDuplicateEntries(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            [ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var map = new PdfDictionary();
+        for (int i = 0; i < count; i++) map.Entries[$"Unused{i}"] = new PdfRef(8, 0);
+        doc.Pages[0].Dict.Entries["Resources"] = new PdfDictionary { Entries = { ["XObject"] = map } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ResourceXObjectParentInspectionRetainsConflictBeforeLaterReferenceCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "",
+            pageExtra: "/Resources << /XObject << /Known 8 0 R /Unknown 9 0 R >> >>",
+            extras: [ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0"), "9 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.True(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ResourceXObjectParentGraphCycleIsVisitedOnceWithoutDecodingData()
+    {
+        var doc = PdfDocument.Load(Ua("", "",
+            pageExtra: "/Resources 9 0 R",
+            extras: [ObjPdf.Stream("opaque", "/Subtype /Form /StructParent 0 /StructParents 0 /Resources 9 0 R"),
+                "<< /XObject << /Self 8 0 R >> >>"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("<< /XObject 0 >>")]
+    [InlineData("<< /XObject << /Unknown 0 >> >>")]
+    [InlineData("8 0 R")]
+    public void Ua2ResourceXObjectParentMalformedResourcesAreExplicitlyIncomplete(string resources)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: $"/Resources {resources}", extras: ["8 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ResourceXObjectParentInheritanceBoundIsExplicit(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            [ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var ancestor = doc.Pages[0].Dict;
+        for (int i = 1; i < count; i++)
+        {
+            var parent = new PdfDictionary();
+            ancestor.Entries["Parent"] = parent;
+            ancestor = parent;
+        }
+        ancestor.Entries["Resources"] =
+            new PdfLexer(Encoding.ASCII.GetBytes("<< /XObject << /Unused 8 0 R >> >>")).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2ResourceXObjectParentWorkBudgetIsSharedAcrossNestedResources(int nestedCount, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Resources << /XObject << /Container 8 0 R >> >>",
+            extras: [ObjPdf.Stream("", "/Subtype /Form"), ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var nested = new PdfDictionary();
+        for (int i = 0; i < nestedCount; i++) nested.Entries[$"Unused{i}"] = new PdfRef(9, 0);
+        Assert.IsType<PdfStream>(doc.File.GetObject(8)).Dict.Entries["Resources"] =
+            new PdfDictionary { Entries = { ["XObject"] = nested } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

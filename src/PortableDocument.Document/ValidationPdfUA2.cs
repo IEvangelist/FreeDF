@@ -22,6 +22,7 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
         c.Guard("PDF/UA-2 page structure parent keys", () => PageStructureParents(c));
         c.Guard("PDF/UA-2 annotation structure parent keys", () => AnnotationStructureParents(c));
+        c.Guard("PDF/UA-2 XObject structure parent keys", () => XObjectStructureParents(c));
         c.Guard("PDF/UA-2 role map shape", () => RoleMapShape(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
         c.Guard("PDF/UA-2 containment", () => PdfUA2NestingChecks.Run(c, tree));
@@ -400,6 +401,72 @@ internal static class PdfUA2Checks
                     c.Add("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
                         "annotation must not contain both StructParent and StructParents", StructureParentClause, page);
                 if (incomplete) break;
+            }
+        }
+    }
+
+    static void XObjectStructureParents(ValidationContext c)
+    {
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            bool incomplete = false;
+            void Incomplete()
+            {
+                if (incomplete) return;
+                incomplete = true;
+                c.Add("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "XObject structure parent inspection is unsupported or exceeds its reference/work bound",
+                    StructureParentClause, page);
+            }
+            PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw, Incomplete);
+            var ancestors = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            PdfDictionary? ancestor = c.Doc.Pages[page].Dict;
+            PdfObject? root = null;
+            while (ancestor is not null)
+            {
+                if (ancestors.Count >= 32 || !ancestors.Add(ancestor)) { Incomplete(); break; }
+                root = Resolve(ancestor.Get("Resources"));
+                if (incomplete || root is not (null or PdfNull)) break;
+                var parent = Resolve(ancestor.Get("Parent"));
+                if (incomplete) break;
+                if (parent is not (null or PdfNull or PdfDictionary)) { Incomplete(); break; }
+                ancestor = parent as PdfDictionary;
+            }
+            if (incomplete || root is null or PdfNull) continue;
+            if (root is not PdfDictionary resources) { Incomplete(); continue; }
+            var pending = new Stack<PdfDictionary>();
+            var seenResources = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            var seenObjects = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+            pending.Push(resources);
+            int work = 0;
+            while (!incomplete && pending.TryPop(out var current))
+            {
+                if (!seenResources.Add(current)) continue;
+                var rawMap = Resolve(current.Get("XObject"));
+                if (incomplete) break;
+                if (rawMap is null or PdfNull) continue;
+                if (rawMap is not PdfDictionary map) { Incomplete(); break; }
+                foreach (var raw in map.Entries.Values)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    var value = Resolve(raw);
+                    if (incomplete) break;
+                    if (value is null or PdfNull) continue;
+                    if (value is not PdfStream stream) { Incomplete(); break; }
+                    if (!seenObjects.Add(stream)) continue;
+                    var subtype = Resolve(stream.Dict.Get("Subtype")).AsName();
+                    if (incomplete) break;
+                    if (subtype is not ("Form" or "Image")) continue;
+                    if (StructureParentConflict(c, stream.Dict, Incomplete))
+                        c.Add("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                            "XObject must not contain both StructParent and StructParents", StructureParentClause, page);
+                    if (incomplete) break;
+                    if (subtype != "Form") continue;
+                    var nested = Resolve(stream.Dict.Get("Resources"));
+                    if (incomplete) break;
+                    if (nested is PdfDictionary dictionary) pending.Push(dictionary);
+                    else if (nested is not (null or PdfNull)) { Incomplete(); break; }
+                }
             }
         }
     }

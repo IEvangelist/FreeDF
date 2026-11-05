@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary resource XObject parent-key check](spec-backlog.md#2026-11-05-primary-resource-xobject-structure-parent-exclusivity)
+adds Form/Image streams in inherited page and nested Form resource graphs,
+including unused entries, with shared bounds and identity deduplication.
+Twelve native controls retain six positives; six primary negatives remain
+reference-accepted. Corpus and UA-1 reports are wholly unchanged.
+Appearances, patterns, other stream references and full key type/identity
+remain separate.
+
 The [primary annotation parent-key exclusivity check](spec-backlog.md#2026-11-05-primary-annotation-structure-parent-exclusivity)
 adds page Annots dictionaries, including tagging-exempt annotations, using
 the shared page key resolver and explicit bounded raw-array inspection.
