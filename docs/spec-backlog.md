@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 unconditional XFA exclusion
+
+PDF/UA-2 now reports `PDFUA2-XFA` (Error, ISO 14289-2 8.10.1)
+for a resolved non-null AcroForm XFA entry, regardless of NeedsRendering.
+The old dynamic-rendering proxy missed static XFA and omitted/false
+rendering flags. UA-1 configuration inspection and its bounded
+incomplete findings are unchanged; `PDFUA-XFA-DYNAMIC` is now UA-1-only.
+This is an entry-presence exclusion, not XFA packet validity or execution.
+
+The factual predicate was cross-checked against the pinned veraPDF
+v1.30.3 UA-2 profile, 8.10.1-3. Full primary 8.10 is not in the public ISO
+preview. Missing, direct-null, indirect-null and nonexistent-reference
+entries are equivalent under primary ISO 32000-1 7.3.9. The reference
+rejects the latter two representations under UA-2; those six measured
+disagreements are retained rather than copying raw-reference rejection.
+
+Ninety authored cases cover the rendering flags, stream/packet
+configuration values and null/presence boundaries: 30 new cases and 60
+updated expectations, with 36 failures before the fix. Fifty-four
+independent native-profile controls give 48 exact-rule and whole-file
+agreements (27 clean positives, 21 negatives), plus the six explicit
+UA-2 null-reference disagreements. Ten native UA-2 false negatives are
+corrected. Three previous rejections become acceptances: one direct-null
+case agrees with the reference; two indirect-null/dangling cases remain
+reference disagreements. Five other cases change only the finding ID.
+All 54 corresponding UA-1 outputs are unchanged.
+
+A fresh 435-PDF/870-result public-corpus run preserves every verdict
+and every UA-1 output. Its only finding change replaces the old dynamic
+ID with `PDFUA2-XFA` when the UA-1 dynamic-XFA negative is checked as
+UA-2; that cross-profile result is not a clean UA-2 control. Full Release
+suite: 13,601 passed, zero failed/skipped. Solution build: zero errors
+and two retained machine-feed NU1507 warnings. Reporting tool: 20 passing
+tests, including the 8.10.1-3 family mapping. External evidence remains
+session-only; no full PDF/UA parity is claimed.
+
 ## 2026-11-05 UA-2 namespace-aware widget structure
 
 The widget Form-parent check now uses the UA-2 namespace-aware standard

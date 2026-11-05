@@ -940,7 +940,7 @@ public class DeepValidationTests
         foreach (var stream in new[] { false, true })
         foreach (var needs in new[] { "", "/NeedsRendering false", "/NeedsRendering true" })
         foreach (var value in new[] { "required", "forbidden", "", "Required", " required " })
-            yield return [part, stream, needs, value, part == 1 ? value == "required" : needs == "/NeedsRendering true"];
+            yield return [part, stream, needs, value, part == 1 && value == "required"];
     }
 
     [Theory]
@@ -956,6 +956,27 @@ public class DeepValidationTests
         var report = PdfValidator.Validate(PdfDocument.Load(pdf),
             part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
         Assert.Equal(dynamic, report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.Equal(part == 2, report.Has("PDFUA2-XFA"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-XFA-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    public static IEnumerable<object[]> XfaPresenceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var value in new[] { "", "/XFA null", "/XFA 9 0 R", "/XFA 999 0 R", "/XFA []" })
+        foreach (var needs in new[] { "", "/NeedsRendering false", "/NeedsRendering true" })
+            yield return [part, value, needs];
+    }
+
+    [Theory]
+    [MemberData(nameof(XfaPresenceCases))]
+    public void Ua2XfaPresenceDoesNotDependOnRenderingFlag(int part, string value, string needs)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: $"{needs} /AcroForm << /Fields [] {value} >>",
+            extras: [Para, "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && value == "/XFA []", report.Has("PDFUA2-XFA"));
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
         Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-XFA-INCOMPLETE" or "VALIDATION-INTERNAL");
     }
 

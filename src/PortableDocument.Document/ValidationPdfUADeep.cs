@@ -22,8 +22,8 @@ internal static class PdfUADeepChecks
         if (c.Part == 1 && !System.Text.RegularExpressions.Regex.IsMatch(f.Version ?? "", @"^1\.[0-7]$"))
             c.Add("PDFUA-VERSION", ValidationSeverity.Error, $"file header version '{f.Version}' is not PDF 1.0 to 1.7", "ISO 14289-1 6.1");
         if (c.Part == 1) DynamicXfa(c);
-        else if (f.Resolve(f.Catalog.Get("NeedsRendering")) is PdfBoolean { Value: true } && f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary af && af.Get("XFA") is not null)
-            c.Add("PDFUA-XFA-DYNAMIC", ValidationSeverity.Error, "dynamic XFA rendering is required (/NeedsRendering true with an XFA form)", Clause(c, "7.15", "8.9"));
+        else if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary af && f.Resolve(af.Get("XFA")) is not (null or PdfNull))
+            c.Add("PDFUA2-XFA", ValidationSeverity.Error, "XFA forms are not permitted in PDF/UA-2", "ISO 14289-2 8.10.1");
         if (f.Resolve(f.Catalog.Get("OCProperties")) is PdfDictionary oc)
         {
             var requireNames = c.Part == 1 || f.Resolve(oc.Get("Configs")) is PdfArray { Count: > 0 };

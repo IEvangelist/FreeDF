@@ -80,6 +80,7 @@ RULE_MAP = {
         "8.4.5.8-1": ["PDFUA-FONT-TOUNICODE"],
         "8.10.2.3-2": ["PDFUA2-WIDGET-AA-CONTENTS"],
         "8.10.1-1": ["PDFUA-FORM-STRUCT"],
+        "8.10.1-3": ["PDFUA2-XFA"],
     },
 }
 

@@ -71,6 +71,13 @@ condition with namespace-aware Artifact exclusion. The separate
 label-or-Contents predicate remains incomplete; no model implementation
 or profile XML is bundled.
 
+The UA-2 unconditional XFA-presence exclusion was cross-checked against
+the same CC BY 4.0 UA-2 profile, 8.10.1-3. The implementation uses resolved
+non-null entry presence rather than the old dynamic-rendering proxy.
+Indirect-null/nonexistent-reference handling follows primary ISO 32000-1
+7.3.9 and deliberately differs from six measured reference results.
+No XFA packet-validation or complete PDF/UA coverage claim is made.
+
 The UA-2 widget enclosing-Form requirement and Artifact exception were
 cross-checked against the same CC BY 4.0 UA-2 profile, 8.10.1-1.
 `ValidationPdfUA.cs` and `ValidationPdfUA2.cs` independently implement

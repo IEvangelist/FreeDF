@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 unconditional XFA exclusion](spec-backlog.md#2026-11-05-ua-2-unconditional-xfa-exclusion)
+replaces the dynamic-rendering proxy with resolved non-null XFA presence,
+independent of NeedsRendering. Fifty-four native controls give 48 exact-rule
+and whole-file agreements, ten corrected false negatives and six explicit
+null-reference disagreements. UA-1 is unchanged. Fresh 435-PDF/870-result
+verdicts are unchanged; one cross-profile finding ID changes.
+
 The [UA-2 namespace-aware widget structure correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-widget-structure)
 honours mapped Form roles and Artifact ancestry. Nine native controls give
 exact-rule/file agreement, including three corrected false positives;
