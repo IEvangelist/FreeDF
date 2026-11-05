@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 occupied-column table span intersections
+
+UA-2 table geometry now checks every column covered by a cell's owned
+ColSpan, not only whether its starting column is free. Crossing a column
+still occupied by an earlier RowSpan reports PDFUA2-TABLE-SPAN-OVERLAP
+(8.2.5.26). An overlapping new span cannot shorten the earlier carry:
+the longer remaining span is retained so an intersection cannot hide
+terminal RowSpan overflow. UA-1 geometry and diagnostics are unchanged.
+
+Six native controls completed normally against the pinned combined profile:
+four positives and two negatives agree with file outcomes and test 1,
+correcting two missed equal-width intersections, including a ClassMap span.
+The initial trailing control assigned Column Scope to a TD, exposing a
+separate existing stricter Scope policy; the corrected geometry control
+omits that irrelevant attribute and passes both engines. Seven authored
+cases initially had two failures; another protects remaining-span overflow.
+Fresh 435-PDF/870-result comparison has unchanged JSON results:
+no diagnostic, verdict or UA-1 changes.
+
+The test-1 cross-check mapping is scoped overlap only, not complete
+intersection coverage. Existing span clamping and immediate-row flattening
+remain; full group geometry, inheritance/revision, span syntax and
+algorithmic header fallback remain incomplete. No reference engine source,
+profile XML or external control PDF is bundled.
+
+Release validation: 354 table/cardinality cases plus the dedicated
+overflow-retention case passed; full suite passed 14,900 cases with
+no failures/skips. Solution build had no errors and two retained
+machine-feed NU1507 warnings; Python cross-check tests passed all 20.
+
 ## 2026-11-05 namespace-resolved section cardinality
 
 Legacy Table section-count checks now remain UA-1-only; UA-2 already

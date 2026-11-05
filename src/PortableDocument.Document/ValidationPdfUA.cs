@@ -345,6 +345,7 @@ internal static partial class PdfUAChecks
             }
             if (rows.Count == 0) { c.Add("PDFUA-TABLE-ROWS", ValidationSeverity.Error, "Table has no TR rows", Clause(c, "7.5", "8.2.5.26"), t.PageIndex); continue; }
             var hasTh = false;
+            var spanOverlap = false;
             var carry = new Dictionary<int, int>();
             var widths = new List<int>();
             foreach (var r in rows)
@@ -359,13 +360,22 @@ internal static partial class PdfUAChecks
                     while (carry.TryGetValue(col, out var rem) && rem > 0) col++;
                     var cs = Math.Clamp((int)((c.Part == 2 ? TableAttribute(c, tree, cell, "ColSpan") : cell.Attribute(f, "ColSpan")).AsNumber() ?? 1), 1, 1000);
                     var rs = Math.Clamp((int)((c.Part == 2 ? TableAttribute(c, tree, cell, "RowSpan") : cell.Attribute(f, "RowSpan")).AsNumber() ?? 1), 1, 1000);
-                    for (var k = 0; k < cs; k++) if (rs > 1) carry[col + k] = rs;
+                    for (var k = 0; k < cs; k++)
+                    {
+                        carry.TryGetValue(col + k, out var remaining);
+                        if (c.Part == 2 && remaining > 0) spanOverlap = true;
+                        if (rs > 1) carry[col + k] = c.Part == 2 ? Math.Max(rs, remaining) : rs;
+                    }
                     col += cs;
                 }
                 widths.Add(Math.Max(col, carry.Where(kv => kv.Value > 0).Select(kv => kv.Key + 1).DefaultIfEmpty(0).Max()));
                 foreach (var key in carry.Keys.ToList()) if (--carry[key] <= 0) carry.Remove(key);
             }
             if (c.Part == 1 && !hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
+            if (spanOverlap)
+                c.Add("PDFUA2-TABLE-SPAN-OVERLAP", ValidationSeverity.Error,
+                    "table cell ColSpan crosses a column occupied by an earlier RowSpan",
+                    "ISO 14289-2 8.2.5.26", t.PageIndex);
             if (c.Part == 2 && carry.Values.Any(remaining => remaining > 0))
                 c.Add("PDFUA2-TABLE-ROWSPAN-END", ValidationSeverity.Error,
                     "table cell RowSpan extends beyond the final table row",

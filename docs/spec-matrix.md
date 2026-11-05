@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [occupied-column span correction](spec-backlog.md#2026-11-05-occupied-column-table-span-intersections)
+detects ColSpan intersections with active RowSpan carry, preserving the longer
+span after an overlap. Six independent native outcomes agree, correcting
+two missed equal-width intersections. Fresh 435-PDF/870-result corpus output
+is unchanged. Group geometry and full intersection/header algorithms remain deferred.
+
 The [section-cardinality correction](spec-backlog.md#2026-11-05-namespace-resolved-section-cardinality)
 uses existing resolved ISO 32005 limits instead of legacy raw-role counts.
 Six native outcomes agree, correcting two false rejections. Two redundant

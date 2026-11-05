@@ -62,6 +62,7 @@ class CommandBatchTests(unittest.TestCase):
 
 class RuleOverlapTests(unittest.TestCase):
     mappings = [
+        (2, "8.2.5.26-1", "PDFUA2-TABLE-SPAN-OVERLAP"),
         (2, "8.2.5.26-2", "PDFUA2-TABLE-ROWSPAN-END"),
         (1, "7.21.4.2-1", "PDFUA-FONT-CHARSET-LIST"),
         (1, "7.21.4.2-2", "PDFUA-FONT-CIDSET-LIST"),

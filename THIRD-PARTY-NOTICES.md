@@ -52,6 +52,11 @@ The terminal RowSpan overflow check was cross-checked against test 2
 with six native controls. Two additional corpus diagnostics differ
 from the reference's test-3-only reports; exact predicate agreement
 and full table/group column-height coverage are not claimed.
+The occupied-column ColSpan/RowSpan intersection check was independently
+cross-checked against test 1 with six native controls. Existing C# carry
+geometry is extended, not copied from a reference implementation. The
+cross-check mapping is scoped overlap, not complete intersection coverage;
+group geometry and span syntax remain deferred.
 The UA-2 conditional header-presence correction follows the factual
 conditional descriptions in tests 5/6 and six independent native file
 controls. It retains UA-1 behavior and does not claim semantic table

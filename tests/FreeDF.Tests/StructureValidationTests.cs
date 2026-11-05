@@ -405,6 +405,53 @@ public class ValidationTests
     }
 
     [Theory]
+    [InlineData(1, "Table", 2, false)]
+    [InlineData(2, "Table", 2, true)]
+    [InlineData(2, "Table", 1, false)]
+    [InlineData(2, "Layout", 2, false)]
+    [InlineData(2, "", 2, false)]
+    [InlineData(2, "Class", 2, true)]
+    [InlineData(2, "Class", 1, false)]
+    public void Ua2TableDetectsColSpanCrossingAnOccupiedColumn(int part, string owner, int columns, bool overlap)
+    {
+        var attribute = owner == "Class" ? "/C /Span /A << /O /Table /Scope /Column >>" :
+            $"/A [<< /O /Table /Scope /Column >> << {(owner == "" ? "" : $"/O /{owner}")} /RowSpan 2 >>]";
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(UaWithClassMap("8 0 R",
+            "/Span << /O /Table /RowSpan 2 >>",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R 13 0 R 14 0 R] >>",
+            "<< /S /TR /K [15 0 R 16 0 R 17 0 R] >>",
+            "<< /S /TH /A << /O /Table /Scope /Column >> >>",
+            $"<< /S /TH {attribute} >>",
+            "<< /S /TD >>", "<< /S /TD >>",
+            $"<< /S /TD /A << /O /Table /ColSpan {columns} >> >>",
+            "<< /S /TD >>", "<< /S /TD >>")), part);
+        Assert.Equal(overlap, report.Has("PDFUA2-TABLE-SPAN-OVERLAP"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2OverlappingCellCannotEraseAnEarlierRowSpanOverflow()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R 11 0 R] >>",
+            "<< /S /TR /K [12 0 R 13 0 R 14 0 R 15 0 R] >>",
+            "<< /S /TR /K [16 0 R 17 0 R 18 0 R] >>",
+            "<< /S /TR /K [19 0 R 20 0 R] >>",
+            "<< /S /TH /A << /O /Table /Scope /Column >> >>",
+            "<< /S /TH /A << /O /Table /Scope /Column /RowSpan 4 >> >>",
+            "<< /S /TD >>", "<< /S /TD >>",
+            "<< /S /TD /A << /O /Table /ColSpan 2 /RowSpan 2 >> >>",
+            "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>")), 2);
+        Assert.True(report.Has("PDFUA2-TABLE-SPAN-OVERLAP"));
+        Assert.True(report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
     [InlineData(1, 1, false)]
     [InlineData(1, 2, false)]
     [InlineData(2, 1, false)]
