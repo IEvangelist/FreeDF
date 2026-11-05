@@ -55,6 +55,53 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Optional-content zoom: 2026-11-05
+
+`OptionalContentZoomBench.IsVisible` measures a repeated public visibility
+query against one parsed OCG, one View application and one Zoom rule
+`min=1, max=2`. State construction, PDF writing/loading and preflight are
+outside timing; the method returns visibility. Zoom 1 (ON) and 3 (OFF) have
+the same correct outcomes on both revisions. The corrected exact boundary
+at Zoom 2 is tested separately, not timed as an equivalent old operation.
+Both benchmark configurations are included in standalone preflight.
+
+The original production sources are byte-identical to
+`32da37a441aaeff867469c571cb9e0ed99e04739`; subsequent reports isolate
+the boundary comparison, closure removal and final event-name boxing
+removal. All exact fixture lengths/hashes match. The
+[diagnostic CSV](results/2026-11-05-ocg-zoom-gc.csv) preserves raw GC
+totals/operation counts and input hashes for every stage.
+
+| Stage | Zoom 1 mean +/- error (ns) | Zoom 3 mean +/- error (ns) | Managed B/query |
+|---|---:|---:|---:|
+| [Original](results/2026-11-05-ocg-zoom-control.md) ([CSV](results/2026-11-05-ocg-zoom-control.csv)) | 118.5 +/- 2.93 | 120.0 +/- 4.46 | 208 |
+| [Boundary only](results/2026-11-05-ocg-zoom-boundary.md) ([CSV](results/2026-11-05-ocg-zoom-boundary.csv)) | 117.1 +/- 2.83 | 123.6 +/- 9.69 | 208 |
+| [Closure removal](results/2026-11-05-ocg-zoom-closures.md) ([CSV](results/2026-11-05-ocg-zoom-closures.csv)) | 102.6 +/- 1.72 | 107.3 +/- 4.34 | 24 |
+| [Final](results/2026-11-05-ocg-zoom-final.md) ([CSV](results/2026-11-05-ocg-zoom-final.csv)) | 95.72 +/- 0.954 | 98.32 +/- 1.889 | 0 |
+
+Final query means are about 19%/18% lower on this workload, and measured
+managed allocations fall from 208 B/query to zero. Two regressions also
+require zero thread-local bytes across 4,096 warmed queries with correct
+results. The cached warning delegate moves one allocation to state creation;
+this is not a zero-allocation document/state constructor or full-render claim.
+Language/User rules, many-layer/application scaling, direct interpreter
+callbacks and native/total-process memory are not measured here.
+
+Runs use Windows 11 / Core i7-14700K / .NET 10.0.14, three warmups,
+eight 500-ms iterations and one launch; no exclusive machine load was
+established. The boundary-only timing is retained, including its noisier
+OFF case. Original/final reported intervals do not overlap, but these
+measurements do not imply universal throughput or provider rankings.
+All provider/parser correctness preflight passes; provider timing is not rerun.
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*OptionalContentZoomBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-optional-content-upper-zoom-boundary)
+records the primary Table 102 basis and analytic/raster controls, not
+independently established interactive zoom behavior in reference readers.
+
 ## Object-stream parser workloads
 
 ```powershell

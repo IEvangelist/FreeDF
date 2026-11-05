@@ -4,6 +4,62 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 optional-content upper zoom boundary
+
+ISO 32000-1 Table 102 (printed p232) defines Zoom min as the minimum
+recommended factor at which a group is ON, and max as the factor **below**
+which it is ON. The resulting range is half-open: min <= zoom < max.
+The shared optional-content evaluator incorrectly included max.
+
+The upper comparison now excludes equality. State queries and rendering use
+the same evaluator; lower inclusion, absent-bound behavior, non-View events,
+configuration selection and manual visibility overrides are unchanged.
+No new policy, setting or traversal is added by the boundary correction.
+CreatorInfo and PageElement remain application-specific usage metadata; this
+fix does not infer a visibility policy for those hints.
+
+Thirteen regressions cover native visibility plus rendered pixels below,
+at and above both boundaries, adjacent representable floating-point values,
+single bounds, an empty range and Print/Export event controls. The corrected
+unchanged-production baseline is four failures/nine passes. An initial
+six-failure run included two incorrect positive raster assertions (sampling
+the unpainted half of the page); that fixture was corrected to paint the full
+page before production changes. The initial result is retained, not counted
+as six production failures. Two later performance regressions verify zero
+thread-local managed bytes over 4,096 warmed simple Zoom queries, inside
+and outside the range. The final focused optional-content/layer/raster-golden
+selector passes 123 cases; full Release passes 19,518, zero failed/skipped;
+the solution builds with zero warnings/errors.
+Fresh pinned 435-PDF/870-result full corpus JSON remains unchanged; this is
+integration evidence, not equivalent interactive zoom reference coverage.
+
+A new two-case `OptionalContentZoomBench` measures repeated public visibility
+queries on a parsed document with one OCG, one application and one Zoom rule.
+Fixture construction, parsing and correctness preflight remain outside timing.
+Zoom 1 and 3 have equal correct outcomes on both source revisions; the
+previously wrong exact upper boundary is tested for correctness, not compared
+as equivalent successful benchmark work.
+
+The [matched measurements](../bench/FreeDF.Bench/README.md#optional-content-zoom-2026-11-05)
+exposed 208 managed B/query even after the boundary-only fix. The follow-up
+caches the state warning delegate, replaces captured membership predicates
+with an equivalent early-exit loop, and uses fixed event names for View/
+Print/Export instead of boxing the enum. Unsupported enum values keep the
+existing ToString fallback. Diagnostic/warning semantics and membership
+resolution remain unchanged; one cached delegate is created per state,
+outside the query benchmark.
+
+All four stages are retained: original 208 B/query, boundary-only 208,
+closure removal 24 and final 0. Exact input hashes match throughout.
+Final means are 95.72/98.32 ns versus original 118.5/120.0 ns for Zoom 1/3;
+the observed reductions are about 19%/18% for these operations, not a
+universal speedup, whole-render memory reduction or large-layer scaling claim.
+Provider correctness preflight passes; provider timings are not rerun.
+
+This is a specific Table 102 boundary correction, not complete optional-content
+or rendering parity. It does not independently establish a reference renderer's
+interactive zoom/usage behavior.
+
 ## 2026-11-05 strict ASCII and RunLength input extent
 
 ISO 32000-1 7.3.8.2 (printed p20) requires stream Length and explicit EOD

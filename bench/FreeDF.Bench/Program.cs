@@ -65,6 +65,8 @@ if (args.Contains("--preflight"))
                 new FlateBench { DecodedBytes = size, RandomInput = random, Strict = strict }.Setup();
     foreach (var size in new[] { 0, 256, 1048576 })
         new FlateEncodeBench { DecodedBytes = size }.Setup();
+    foreach (var zoom in new[] { 1, 3 })
+        new OptionalContentZoomBench { Zoom = zoom }.Setup();
     return;
 }
 

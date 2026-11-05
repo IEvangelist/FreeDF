@@ -13,6 +13,7 @@ public sealed class OptionalContentState
     readonly HashSet<PdfDictionary> _groups = new(ReferenceEqualityComparer.Instance);
     readonly HashSet<PdfDictionary> _locked = new(ReferenceEqualityComparer.Instance);
     readonly List<string> _warnings = [];
+    readonly Action<string> _warn;
     public PdfDocument Document { get; }
     internal PdfFile File { get; }
     internal PdfDictionary? Configuration { get; }
@@ -23,6 +24,7 @@ public sealed class OptionalContentState
 
     public OptionalContentState(PdfDocument document, string? configurationName = null)
     {
+        _warn = Warn;
         Document = document;
         File = document.File;
         var properties = R(File.Catalog.Get("OCProperties")) as PdfDictionary;
@@ -151,7 +153,14 @@ public sealed class OptionalContentState
     internal bool IsVisibleCore(PdfDictionary group, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
         OptionalContentContext? context = null) =>
         _visibility.TryGetValue(group, out var visible) ? visible
-            : !IsOff(File, group, Configuration, DefaultConfiguration, displayEvent, zoom, context, Warn);
+            : !IsOff(File, group, Configuration, DefaultConfiguration, displayEvent, zoom, context, _warn);
+
+    static bool ContainsGroup(PdfFile file, PdfArray groups, PdfDictionary group)
+    {
+        foreach (var value in groups.Items)
+            if (ReferenceEquals(file.Resolve(value), group)) return true;
+        return false;
+    }
 
     internal static bool IsOff(PdfFile file, PdfDictionary ocg, PdfDictionary? cfg,
         PdfDictionary? defaultConfiguration, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
@@ -167,12 +176,18 @@ public sealed class OptionalContentState
         else
         {
             var baseOff = baseState == "OFF";
-            bool Contains(string key) => R(cfg.Get(key)) is PdfArray arr && arr.Items.Any(x => ReferenceEquals(R(x), ocg));
-            off = Contains("OFF") || !Contains("ON") && baseOff;
+            off = R(cfg.Get("OFF")) is PdfArray offGroups && ContainsGroup(file, offGroups, ocg)
+                || !(R(cfg.Get("ON")) is PdfArray onGroups && ContainsGroup(file, onGroups, ocg)) && baseOff;
         }
 
         if (R(cfg.Get("AS")) is not PdfArray applications) return off;
-        var eventName = displayEvent.ToString();
+        var eventName = displayEvent switch
+        {
+            ContentInterpreter.OptionalContentEvent.View => "View",
+            ContentInterpreter.OptionalContentEvent.Print => "Print",
+            ContentInterpreter.OptionalContentEvent.Export => "Export",
+            _ => displayEvent.ToString()
+        };
         var zoomOutOfRange = false;
         bool? contextRecommendation = null;
         var eventAllowsContext = true;
@@ -184,10 +199,14 @@ public sealed class OptionalContentState
                 || R(app.Get("Category")) is not PdfArray categories)
                 continue;
             if (R(app.Get("OCGs")) is PdfArray groups
-                && !groups.Items.Any(value => ReferenceEquals(R(value), ocg)))
+                && !ContainsGroup(file, groups, ocg))
             {
-                if (groups.Items.Any(value => ResolveGroup(file, value) is null))
-                    warn?.Invoke("invalid optional-content application OCGs reference");
+                foreach (var value in groups.Items)
+                    if (ResolveGroup(file, value) is null)
+                    {
+                        warn?.Invoke("invalid optional-content application OCGs reference");
+                        break;
+                    }
                 continue;
             }
             if (R(app.Get("OCGs")) is PdfDictionary group && !ReferenceEquals(group, ocg))
@@ -216,7 +235,7 @@ public sealed class OptionalContentState
                     var min = R(zoomUsage.Get("min")).AsNumber();
                     var max = R(zoomUsage.Get("max")).AsNumber();
                     if (min is { } minZoom && zoom < minZoom
-                        || max is { } maxZoom && zoom > maxZoom)
+                        || max is { } maxZoom && zoom >= maxZoom)
                         zoomOutOfRange = true;
                 }
                 else if (category is "Language" or "User")
