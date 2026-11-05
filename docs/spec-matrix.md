@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream endstream-boundary check](spec-backlog.md#2026-11-05-object-stream-endstream-boundaries)
+requires the complete keyword at Length, allowing only one uncounted LF, CR or
+CRLF. Counted trivia and ordinary-stream recovery remain supported; EOF and
+keyword prefixes do not suffice. Exact parent controls, reference disagreement
+and unchanged corpus JSON are recorded. Stream-opening EOL, object endobj
+grammar, filter EOD consistency and resource budgets remain separate.
+
 The [recovered object-stream byte-count check](spec-backlog.md#2026-11-05-recovered-object-stream-byte-counts)
 rejects silent replacement of declared integer Length with different scanned
 bytes, before decryption. AES controls distinguish physical and decrypted

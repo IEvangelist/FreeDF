@@ -171,15 +171,31 @@ public sealed class PdfFile
             _ => -1
         };
         if (len >= 0 && len <= Data.Length - p && EndStreamFollows(p + (int)len))
+        {
+            if (!ExactEndStreamFollows(p + (int)len) && IsObjectStream(d))
+                throw new PdfParseException("object stream endstream must follow Length with at most one EOL");
             return new PdfStream(d, Data.AsSpan(p, (int)len).ToArray());
+        }
         var idx = IndexOf(Data, "endstream"u8, p);
         if (idx < 0) idx = Data.Length;
         var end = idx;
         if (end > p && Data[end - 1] == 10) end--;
         if (end > p && Data[end - 1] == 13) end--;
-        if (length is PdfInteger { Value: >= 0 } && len != end - p && IsObjectStream(d))
-            throw new PdfParseException("object stream recovered byte count disagrees with Length");
+        if (length is PdfInteger { Value: >= 0 } && IsObjectStream(d))
+        {
+            if (len != end - p)
+                throw new PdfParseException("object stream recovered byte count disagrees with Length");
+            throw new PdfParseException("object stream is missing a valid endstream marker");
+        }
         return new PdfStream(d, Data.AsSpan(p, end - p).ToArray());
+    }
+
+    bool ExactEndStreamFollows(int pos)
+    {
+        if (pos < Data.Length && Data[pos] == 13) pos++;
+        if (pos < Data.Length && Data[pos] == 10) pos++;
+        return Data.AsSpan(pos).StartsWith("endstream"u8)
+            && (pos + 9 == Data.Length || !PdfLexer.IsRegular(Data[pos + 9]));
     }
 
     bool EndStreamFollows(int pos)

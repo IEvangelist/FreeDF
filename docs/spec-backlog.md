@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream endstream boundaries
+
+ISO 32000-1 7.3.8.2/Table 5 (printed p20) permits one additional
+uncounted EOL before endstream, not arbitrary skipped whitespace/comments.
+Object-stream data now requires the complete endstream keyword at the declared
+physical extent, either immediately or after one LF, CR or CRLF. Uncounted
+spaces, tabs, NUL, form feed, repeated EOL and comments are rejected. Trivia
+included in Length remains stream data and is still parsed normally.
+An EOF or endstream-prefixed non-keyword cannot substitute for the marker.
+These checks precede decryption; ordinary-stream terminator recovery remains
+permissive and invalid Length types retain their separate schema validation.
+
+Twenty-five new tests cover those distinctions, normal/forced repair, absent
+member stability and ordinary recovery. The initial 23-case selector had nine
+failures/fourteen passes on unchanged production. Two later complete-keyword
+suffix cases are also reproduced as accepted by the saved exact parent
+assembly in the native baseline. Focused selector: 652 passed. Full Release:
+19,163 passed, zero failed/skipped. Solution: zero errors/two retained
+machine-feed NU1507 warnings.
+
+Forty-nine native controls preserve twenty-eight valid outputs exactly,
+including six retained independently generated AES-128/AES-256/RC4 controls.
+Twenty-one formerly accepted malformed boundaries now yield ten explicit
+normal-load errors and eleven repaired-null results, without publishing members.
+MuPDF still exposes Target for all twenty-one malformed probes and agrees on
+all twenty-eight positives. Reference permissiveness does not override the
+primary boundary requirement. Fresh pinned 435-PDF/870-result full corpus JSON
+is wholly unchanged against the recovered-byte-count baseline.
+
+This supersedes the earlier normal-terminator-padding limitation for object
+streams. Stream-opening EOL, object endobj grammar, complete filter EOD
+consistency, external-stream schemas, general strict stream parsing and
+resource budgets remain separate; full PDF parser parity is not claimed.
+
 ## 2026-11-05 recovered object-stream byte counts
 
 ISO 32000-1 7.3.8.2/Table 5 (printed p20) requires stream Length and
