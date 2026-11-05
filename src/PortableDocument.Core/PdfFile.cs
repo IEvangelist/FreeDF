@@ -14,6 +14,7 @@ public sealed class PdfFile
     public bool Repaired { get; private set; }
     readonly Dictionary<int, PdfObject> _cache = [];
     readonly Dictionary<int, ObjStmIndex> _objStmCache = [];
+    readonly HashSet<PdfDictionary> _resolvingObjectStreamTypes = [];
 
     PdfFile(byte[] data) { Data = data; }
 
@@ -209,8 +210,18 @@ public sealed class PdfFile
         return parsed;
     }
 
+    bool IsObjectStream(PdfDictionary dictionary)
+    {
+        if (!_resolvingObjectStreamTypes.Add(dictionary))
+            throw new PdfParseException("cyclic object stream type");
+        try { return Resolve(dictionary.Get("Type")) is PdfName { Value: "ObjStm" }; }
+        finally { _resolvingObjectStreamTypes.Remove(dictionary); }
+    }
+
     ObjStmIndex ReadObjectStreamIndex(PdfStream stream)
     {
+        if (!IsObjectStream(stream.Dict))
+            throw new PdfParseException("bad object stream type");
         var data = DecodeStream(stream);
         var (n, first) = ObjectStreamBounds(stream, data.Length);
         var lx = new PdfLexer(data);
@@ -475,22 +486,23 @@ public sealed class PdfFile
         SetupEncryption(_password);
         foreach (var num in Xref.Keys.ToList())
         {
-            if (PeekStreamDict(Xref[num].OffsetOrStream, num)?.Get("Type").AsName() != "ObjStm") continue;
+            if (PeekStreamDict(Xref[num].OffsetOrStream, num) is not { } candidate) continue;
             PdfObject o;
-            try { o = LoadAt(Xref[num].OffsetOrStream, num); } catch (PdfParseException) { continue; }
+            try
+            {
+                if (!IsObjectStream(candidate)) continue;
+                o = LoadAt(Xref[num].OffsetOrStream, num);
+            }
+            catch (PdfParseException) { continue; }
             if (o is not PdfStream st) continue;
             if (_dec is not null && num != _encObj) st = (PdfStream)_dec.Decrypt(st, num, Xref[num].GenOrIndex);
-            var type = st.Dict.Get("Type").AsName();
-            if (type == "ObjStm")
+            try
             {
-                try
-                {
-                    var map = ReadObjectStreamIndex(st);
-                    foreach (var member in map.Members)
-                        Xref[member.Key] = new XrefEntry(true, true, num, member.Value.Index);
-                }
-                catch (Exception e) when (e is PdfParseException or NotSupportedException or InvalidOperationException or ArgumentException or OverflowException) { }
+                var map = ReadObjectStreamIndex(st);
+                foreach (var member in map.Members)
+                    Xref[member.Key] = new XrefEntry(true, true, num, member.Value.Index);
             }
+            catch (Exception e) when (e is PdfParseException or NotSupportedException or InvalidOperationException or ArgumentException or OverflowException) { }
         }
         if (merged.Get("Root") is null)
             foreach (var num in Xref.Keys)

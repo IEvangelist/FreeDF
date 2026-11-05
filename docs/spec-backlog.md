@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 required object-stream type
+
+ISO 32000-1 7.5.7 Table 16 (printed p46) requires Type to be the name
+ObjStm. The shared header reader now validates the resolved value before
+decoding/indexing instead of trusting any stream selected by a compressed
+xref entry. Recovery uses the same resolved-name classification, retaining
+direct names and recovering valid indirect names that it previously skipped.
+No xref-stream-only directness restriction is imposed.
+
+Twenty-one controls cover missing/null/wrong types, case sensitivity,
+indirect names/non-names, cached member lookup and reentrant type resolution.
+The initial fifteen-case selector had twelve failures. A scoped in-progress
+set prevents type resolution from recursively loading the same stream header;
+it is unwound even when resolution fails. This is a dependency-resolution
+guard, not a normative ban on all compressed metadata. Full Release: 18,705
+passed, zero failed/skipped. Solution: zero errors/two retained machine-feed
+NU1507 warnings.
+
+Thirty-four native PDFs preserve three valid outputs unchanged and recover
+one previously lost valid indirect-name target. Thirty malformed/dependent
+controls produce twenty-eight repaired null outcomes and two explicit
+post-repair type errors; fifteen previously exposed targets in normal lookup.
+MuPDF still returns targets for fifteen malformed normal-index inputs, while
+agreeing on all four valid target lookups and fifteen malformed forced-repair
+null results. Dispositions and dependency limits are explicit. Fresh pinned
+435-PDF/870-result corpus full JSON is wholly unchanged against the
+trailing-value baseline.
+
+Type dependencies that themselves require an unfinished object-stream
+header are not claimed supported. Extends collections, other forbidden
+object categories, complete delimiters and parser-wide budgets remain
+separate.
+
 ## 2026-11-05 compressed member trailing tokens
 
 ISO 32000-1 7.5.7 (printed p46) requires N consecutive object values,

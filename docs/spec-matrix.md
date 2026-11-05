@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [required object-stream Type check](spec-backlog.md#2026-11-05-required-object-stream-type)
+validates resolved ObjStm names before decoding/indexing and uses the same
+classification during recovery. Valid indirect names are recovered; wrong
+types cannot supply members. Reentrant header dependency handling, native
+reference differences and unchanged corpus JSON are recorded. Complete
+metadata dependencies, collections and resource limits remain separate.
+
 The [compressed member trailing-token check](spec-backlog.md#2026-11-05-compressed-member-trailing-tokens)
 requires only whitespace/comments after a parsed value up to its recorded
 end. Extra values/keywords/closers cannot silently disappear before caching;
