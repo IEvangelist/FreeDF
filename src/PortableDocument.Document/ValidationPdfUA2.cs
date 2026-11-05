@@ -238,7 +238,7 @@ internal static class PdfUA2Checks
             if (incomplete) return;
             incomplete = true;
             c.Add("PDFUA2-FORM-LOCK-INCOMPLETE", ValidationSeverity.Error,
-                "signature-lock field-name inspection is truncated, unresolved, cyclic or bounded", clause);
+                "signature-lock metadata inspection is truncated, unresolved, cyclic or bounded", clause);
         }
         if (fields.Truncated) Incomplete();
         foreach (var field in fields.Fields)
@@ -247,6 +247,10 @@ internal static class PdfUA2Checks
             var value = ResolveBounded(c.F, field.Dictionary.Get("Lock"), Incomplete);
             if (value is null or PdfNull) continue;
             if (value is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var permissions = ResolveBounded(c.F, dictionary.Get("P"), Incomplete);
+            if (permissions is not (null or PdfNull or PdfInteger or PdfReal))
+                c.Add("PDFUA2-FORM-LOCK-P-TYPE", ValidationSeverity.Error,
+                    "signature-lock P must be a number", clause);
             bool actionComplete = true, namesComplete = true;
             var action = ResolveBounded(c.F, dictionary.Get("Action"), () => { actionComplete = false; Incomplete(); });
             var names = ResolveBounded(c.F, dictionary.Get("Fields"), () => { namesComplete = false; Incomplete(); });

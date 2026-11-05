@@ -555,6 +555,13 @@ by the pinned reference; disagreements are explicit. Full payload semantics,
 flags and signing enforcement remain separate. No standard text or external
 controls are bundled.
 
+The signature-lock P raw number-type check follows official PDF Association
+12.7.5.5/Table 236 declared type facts. It reuses bounded local Lock traversal
+without inferring permission ranges or enforcement from reference behavior.
+Nine native controls retain five raw-type positives and reject four primary
+negatives accepted by the pinned reference; disagreements are explicit.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

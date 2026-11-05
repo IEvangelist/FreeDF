@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary signature-lock permission type check](spec-backlog.md#2026-11-05-primary-signature-lock-permission-type)
+checks local terminal Sig Lock/P raw number type independently of Fields.
+Nine native controls retain five raw-type positives; four primary negatives
+remain reference-accepted. Corpus and UA-1 JSON are unchanged. Permission
+ranges, incremental-update policy and signing enforcement remain separate.
+
 The [primary certificate-seed ASCII-array checks](spec-backlog.md#2026-11-05-primary-certificate-seed-ascii-arrays)
 check local terminal Sig SV/Cert KeyUsage and SignaturePolicyCommitmentType
 raw arrays and 7-bit string bytes, with shared item/byte limits and explicit

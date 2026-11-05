@@ -5012,6 +5012,71 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> SignatureLockPermissionCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var value in new[] { "null", "-1", "0", "3", "1.5", "true", "(1)", "/All", "[]", "<< >>", "11 0 R", "99 0 R" })
+            yield return [part, type, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureLockPermissionCases))]
+    public void Ua2SignatureLockPermissionHasDeclaredNumberType(int part, string type, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /Lock << /Action /All /P {value} >> >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = value is "null" or "-1" or "0" or "3" or "1.5" or "11 0 R" or "99 0 R";
+        Assert.Equal(part == 2 && type == "Sig" && !valid, report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2SignatureLockPermissionReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "1.5" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Sig /T (signature) /Lock << /Action /All /P 10 0 R >> >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/P (bad) /Fields 11 0 R", true, false)]
+    [InlineData("/P 11 0 R /Fields [(name)]", false, false)]
+    [InlineData("/P 11 0 R /Fields [/Bad]", false, true)]
+    [InlineData("/P 11 0 R /Fields null", false, false)]
+    public void Ua2SignatureLockPermissionAndFieldsUncertaintyAreIndependent(string entries, bool permissionType, bool fieldsType)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /Lock << /Action /Include {entries} >> >>",
+                "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(permissionType, report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.Equal(fieldsType, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(entries.EndsWith("null", StringComparison.Ordinal), report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureLockPermissionDoesNotInheritParentLock()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /Lock << /Action /All /P (bad) >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

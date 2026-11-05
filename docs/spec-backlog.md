@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary signature-lock permission type
+
+Official PDF Association PDF 2.0 errata 12.7.5.5/Table 236 declares
+Lock/P a number. The existing bounded local terminal Sig Lock inspection
+now reports PDFUA2-FORM-LOCK-P-TYPE for a known non-number value.
+Both PdfInteger and PdfReal are retained, including zero, negative and
+fractional values: this is not a permission-range or integrality assertion.
+Optional null/dangling entries remain absent. References reuse the existing
+32-hop/cycle guard and PDFUA2-FORM-LOCK-INCOMPLETE, whose message now
+describes metadata rather than only field names. Unknown P does not
+suppress known Fields type/presence errors, and unknown Fields does not
+suppress a known P error. Nonterminal parent Lock is not inherited.
+
+Initial 79 authored controls had ten failures. Focused Release:
+5,002 passed; final full Release: 17,859 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+Nine isolated native controls retain five raw-type positives and reject
+four primary negatives. All pinned combined-reference jobs complete
+normally and accept: **four explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against certificate baseline 59b9151f. Permission ranges, incremental-update
+policy, complete lock schema and signing enforcement remain separate.
+No standard text or external controls are bundled; full signature/PDF
+parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary certificate-seed ASCII arrays
 
 Official PDF Association PDF 2.0 errata 12.7.5.5/Table 238 declares
