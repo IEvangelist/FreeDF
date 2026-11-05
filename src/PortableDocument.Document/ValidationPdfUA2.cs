@@ -421,9 +421,20 @@ internal static class PdfUA2Checks
             {
                 case "L":
                     if (e.ChildElements.Any(li => StandardType(c, tree, li) == "LI"
-                        && li.ChildElements.Any(l => StandardType(c, tree, l) == "Lbl"))
-                        && (e.Attribute(f, "ListNumbering").AsName() is null or "None"))
-                        c.Add("PDFUA2-LIST-NUMBERING", ValidationSeverity.Error, "L contains Lbl elements but has no ListNumbering attribute other than None", "ISO 14289-2 8.2.5.25", e.PageIndex);
+                        && li.ChildElements.Any(l => StandardType(c, tree, l) == "Lbl")))
+                    {
+                        bool complete = true;
+                        var numbering = OwnedAttribute(c, tree, e, "List", "ListNumbering", () =>
+                        {
+                            if (!complete) return;
+                            complete = false;
+                            c.Add("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE", ValidationSeverity.Error,
+                                "ListNumbering attribute inspection is malformed or exceeds its reference/work bound",
+                                "ISO 14289-2 8.2.5.25", e.PageIndex);
+                        });
+                        if (complete && numbering.AsName() is null or "None")
+                            c.Add("PDFUA2-LIST-NUMBERING", ValidationSeverity.Error, "L contains Lbl elements but has no ListNumbering attribute other than None", "ISO 14289-2 8.2.5.25", e.PageIndex);
+                    }
                     break;
                 case "LI":
                     if (e.MarkedContent.Any())
@@ -479,8 +490,6 @@ internal static class PdfUA2Checks
     static void FenoteType(ValidationContext c, StructureTree tree, StructElement element)
     {
         bool incomplete = false;
-        int work = 0;
-        PdfObject? Resolve(PdfObject? value) => ResolveBounded(c.F, value, Incomplete);
         void Incomplete()
         {
             if (incomplete) return;
@@ -490,11 +499,30 @@ internal static class PdfUA2Checks
                 "ISO 14289-2 8.2.5.14", element.PageIndex);
         }
 
+        var noteType = OwnedAttribute(c, tree, element, "FENote", "NoteType", Incomplete);
+        if (!incomplete && noteType is PdfName name && name.Value is not ("Footnote" or "Endnote" or "None"))
+            c.Add("PDFUA2-FENOTE-TYPE", ValidationSeverity.Error,
+                $"FENote NoteType name /{name.Value} is not Footnote, Endnote or None",
+                "ISO 14289-2 8.2.5.14", element.PageIndex);
+    }
+
+    static PdfObject? OwnedAttribute(ValidationContext c, StructureTree tree, StructElement element,
+        string ownerName, string key, Action incompleteInspection)
+    {
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            incompleteInspection();
+        }
+        PdfObject? Resolve(PdfObject? value) => ResolveBounded(c.F, value, Incomplete);
         PdfObject? Find(PdfDictionary dictionary)
         {
             var owner = Resolve(dictionary.Get("O"));
-            if (incomplete || owner.AsName() != "FENote") return null;
-            return Resolve(dictionary.Get("NoteType"));
+            if (incomplete || owner.AsName() != ownerName) return null;
+            return Resolve(dictionary.Get(key));
         }
 
         PdfObject? FindAttributes(PdfObject? raw)
@@ -550,10 +578,7 @@ internal static class PdfUA2Checks
                 else if (rawMap is not (null or PdfNull)) Incomplete();
             }
         }
-        if (!incomplete && noteType is PdfName name && name.Value is not ("Footnote" or "Endnote" or "None"))
-            c.Add("PDFUA2-FENOTE-TYPE", ValidationSeverity.Error,
-                $"FENote NoteType name /{name.Value} is not Footnote, Endnote or None",
-                "ISO 14289-2 8.2.5.14", element.PageIndex);
+        return noteType;
     }
 
     static void LinkTargets(ValidationContext c, StructureTree tree)

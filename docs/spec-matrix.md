@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [owned list-numbering correction](spec-backlog.md#2026-11-05-owned-list-numbering-attributes)
+resolves local and class attributes with owner-aware bounded lookup.
+Nine native controls agree, correcting two missed violations and two false
+rejections. UA-1 and fresh corpus output are unchanged. Full attribute
+inheritance/revision and grouping-dependent list semantics remain deferred.
+
 The [rich XML string-decoding correction](spec-backlog.md#2026-11-05-rich-xml-string-decoding)
 decodes RV strings as PDF text before XML parsing. Four native string
 controls agree, correcting one false rejection and one missed mismatch;

@@ -1160,6 +1160,114 @@ public class DeepValidationTests
         Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
     }
 
+    public static IEnumerable<object[]> ListAttributeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "owner-list", "owner-layout", "owner-omitted", "class-valid", "class-none",
+            "class-layout", "local-valid-class-none", "local-none-class-valid", "local-null-class-valid" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(ListAttributeCases))]
+    public void Ua2ListNumberingUsesOwnedLocalAndClassAttributes(int part, string kind)
+    {
+        var owner = kind == "owner-layout" ? "/O /Layout" : kind == "owner-omitted" ? "" : "/O /List";
+        var localValue = kind == "local-none-class-valid" ? "/None" : kind == "local-null-class-valid" ? "null" : "/Decimal";
+        var local = kind.StartsWith("class", StringComparison.Ordinal) ? "" : $"/A << {owner} /ListNumbering {localValue} >>";
+        var classValue = kind is "class-none" or "local-valid-class-none" ? "/None" : "/Decimal";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {local} /C /First >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfDictionary
+        {
+            Entries =
+            {
+                ["First"] = new PdfDictionary
+                {
+                    Entries =
+                    {
+                        ["O"] = new PdfName(kind == "class-layout" ? "Layout" : "List"),
+                        ["ListNumbering"] = new PdfName(classValue[1..]),
+                    },
+                },
+            },
+        };
+        if (!kind.Contains("class", StringComparison.Ordinal))
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries.Remove("C");
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var required = kind is "owner-layout" or "owner-omitted" or "class-none" or "class-layout" or "local-none-class-valid";
+        Assert.Equal(part == 2 && required, report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("C")]
+    [InlineData("ClassMap")]
+    public void Ua2ListCyclicAttributeLookupIsIncomplete(string key)
+    {
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {(key == "A" ? "/A 12 0 R" : key == "C" ? "/C 12 0 R" : "/C /First")} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+            "12 0 R",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        doc.Structure!.Root.Entries["ClassMap"] = key == "ClassMap" ? new PdfRef(12, 0) : new PdfDictionary();
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2ListClassAndAttributeWorkShareOneBound(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R /C /First >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var attributes = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfDictionary(), count - 1)
+            .Append(new PdfDictionary { Entries = { ["O"] = new PdfName("List"), ["ListNumbering"] = new PdfName("Decimal") } }).ToList());
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfDictionary { Entries = { ["First"] = attributes } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+    }
+
+    [Theory]
+    [InlineData("/C /First /A << /O /List /ListNumbering /Decimal >>")]
+    [InlineData("/C [/First /Second] /A [<< /O /Layout /ListNumbering /None >> << /O /List /ListNumbering /Decimal >>]")]
+    public void Ua2ListLocalValueSkipsUnusedCyclicClassMap(string attributes)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {attributes} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+            "12 0 R",
+        ]));
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfRef(12, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+    }
+
     public static IEnumerable<object[]> ListNamespaceCases()
     {
         foreach (var part in new[] { 1, 2 })

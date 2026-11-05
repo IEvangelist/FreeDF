@@ -18,7 +18,10 @@ The namespace-aware list numbering/direct-content checks in
 8.2.5.25 tests 1/2, under the same CC BY 4.0 licence. Existing C# checks
 and list-shape endpoints reuse the independently implemented namespace
 resolver; no validation-engine source or external control PDF is bundled.
-Direct-child/attribute scope is retained; grouping-dependent list
+Owner-aware local/ClassMap numbering lookup was additionally cross-checked
+with nine native owner/precedence controls against test 1; it reuses the
+independent bounded FENote attribute helper. Inheritance/revision and
+direct-child/attribute scope are retained; grouping-dependent list
 semantics are not derived from the reference's standalone verdicts.
 
 The null annotation StructParent boundary in `ValidationPdfUA.cs` follows

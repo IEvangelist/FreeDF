@@ -4,6 +4,26 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 owned list numbering attributes
+
+UA-2 ListNumbering lookup now selects /O /List dictionaries from local A
+and ClassMap/C, reusing the bounded FENote attribute lookup. Local non-null
+owned values win; null/omission falls through to classes in order.
+Unrelated owners cannot satisfy numbering. Cyclic references, malformed
+containers and shared 200,000-item work exhaustion report a separate
+PDFUA2-LIST-ATTRIBUTE-INCOMPLETE Error, not a guessed missing value.
+Local values avoid inspecting unused cyclic class maps.
+
+Nine native controls completed normally against pinned veraPDF 1.30.3
+UA-2 8.2.5.25-1: all rule/file outcomes agree (four clean positives,
+five negatives). Two missed violations from wrong/omitted owners and
+two false rejections from class values/null fallback are corrected.
+All nine UA-1 outputs and the fresh 435-PDF/870-result corpus are unchanged.
+Authored owner/precedence/cycle/work-bound cases also cover retained
+FENote behavior through the shared helper. Inheritance, revision semantics,
+grouping-dependent list rules and full attribute conformance remain deferred.
+No engine code, external PDFs or XML reports are bundled.
+
 ## 2026-11-05 rich XML string decoding
 
 RV strings now reuse the scoped PDF text decoder before XML parsing,
