@@ -496,7 +496,11 @@ public sealed class PdfFile
         }
         var obj = LoadAt(pos, -1);
         if (obj is not PdfStream xs || xs.Dict.Get("Type").AsName() != "XRef") throw new PdfParseException("not an xref stream");
-        var data = DecodeStream(xs);
+        var filters = PdfFilters.GetFilters(xs.Dict, Resolve);
+        foreach (var filter in filters)
+            if (filter.Name == "Crypt")
+                throw new PdfParseException("cross-reference stream must not use a Crypt filter");
+        var data = PdfFilters.Decode(xs.RawData, filters, Resolve).Data;
         if (xs.Dict.Get("W") is not PdfArray { Items.Count: >= 3 } widths)
             throw new PdfParseException("bad xref stream /W");
         var w = widths.Items.Select(x => x is PdfInteger { Value: >= 0 and <= 8 } n

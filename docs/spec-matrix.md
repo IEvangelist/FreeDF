@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref Crypt-filter guard](spec-backlog.md#2026-11-05-prohibited-cross-reference-crypt-filter)
+routes prohibited Crypt stages through explicit recovery rather than silently
+accepting their rows. Allowed xref filters and ordinary Crypt recovery remain
+unchanged; permissive reference-reader disagreement and broader xref
+metadata/encryption limits are retained.
+
 The [compressed-reference generation guard](spec-backlog.md#2026-11-05-compressed-reference-generation-bounds)
 rejects recognized member references above 65,535 while preserving valid
 signed/padded spellings and ordinary-reader recovery. Reference-reader

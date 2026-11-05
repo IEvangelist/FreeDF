@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 prohibited cross-reference Crypt filter
+
+ISO 32000-1 7.5.8.2 (printed p50) explicitly forbids a Crypt filter in a
+cross-reference stream. The generic filter decoder treats Crypt as a
+pass-through, so xref streams with otherwise usable plaintext rows could
+previously be accepted without reporting recovery.
+
+The xref reader now obtains its existing resolved/canonical filter list,
+rejects any Crypt stage with PdfParseException before decoding, and uses
+the existing repair path. This includes escaped names, array forms,
+repeated stages and Crypt before or after Flate. Ordinary stream Crypt
+handling and allowed xref filter decoding are unchanged.
+
+Thirteen new controls give six failures/seven passes on unchanged
+production. Final tests require explicit Repaired state for all six
+prohibited shapes, preserve indexed loading for four absent/null/Flate
+controls, and preserve three ordinary Crypt pass-through recovery cases.
+Recovered/valid target values and cached identity remain exact. Focused
+xref/encryption/Crypt/object-stream checks pass 1,016; full Release passes
+19,816, zero failed/skipped; solution zero warnings/errors. Fresh pinned
+435-PDF/870-result complete validation JSON is unchanged; standalone
+benchmark/provider/parser correctness preflight passes.
+
+Five independently encoded reference fixtures include raw/Flate controls
+and Crypt alone/before/after Flate. PyMuPDF 2.0 / MuPDF 1.28.5 accepts
+all five without repair, including the three normative negatives.
+FreeDF now explicitly recovers the latter rather than reporting them as
+clean. This permissive disagreement is retained, not counted as primary
+conformance agreement. No external PDFs are bundled.
+
+The check traverses the existing filter list without another list
+allocation. No new timing was run and no allocation/throughput result is
+claimed for it. Directness of encoded xref metadata, wider stream framing,
+strict codec completion and full xref/encryption parity remain separate
+work; this check does not validate all restrictions in 7.5.8.2.
+
 ## 2026-11-05 compressed-reference generation bounds
 
 ISO 32000-1 7.5.4 (printed p41) specifies a maximum generation number
