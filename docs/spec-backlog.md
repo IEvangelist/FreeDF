@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary default RoleMap declared shape
+
+Published PDF 2.0 errata, 14.7.3, requires a RoleMap dictionary with single
+name targets. The parsed RoleMap projects only name values; existing
+used-role checks cannot expose malformed unused values. UA-2 now inspects
+the raw root entry and reports PDFUA2-ROLEMAP-SHAPE for a non-null
+non-dictionary container or non-null non-name mapping value. Optional
+omission/null, null/dangling values treated as absent, and indirect names
+are preserved. Role resolution, namespace RoleMapNS handling and UA-1
+behavior are unchanged.
+
+The independent scan reports PDFUA2-ROLEMAP-SHAPE-INCOMPLETE for cycles,
+more than 32 reference hops or work beyond 200,000 mappings. Known shape
+errors survive a later incomplete value; findings aggregate once per root.
+This bounds this validation scan, not the existing parser's eager RoleMap
+projection or all role/namespace traversal.
+
+Twenty native unused-value/container controls retain eight positives and
+reject twelve primary negatives. All combined-reference jobs complete
+normally and accept: **twelve explicit primary/reference disagreements**.
+All native UA-1 results and the fresh 435-PDF/870-result corpus JSON are
+wholly unchanged. Forty-eight authored type/null/UA-1/depth/work/used-role
+cases had 17 initial failures and now pass. Focused Release: 422 passed;
+full Release: 15,336 passed, zero failed/skipped. Solution zero errors/two
+retained machine-feed NU1507 warnings.
+
+This is declared shape, not global target reachability, complete role
+mapping semantics, RoleMapNS schema/registration, or complete structure
+conformance. No standard text/external controls are bundled; hosted CI
+and full parity are not claimed.
+
 ## 2026-11-05 primary NSO attribute namespace presence
 
 Published PDF 2.0 errata, 14.7.6.1 Table 360, requires an NS entry when

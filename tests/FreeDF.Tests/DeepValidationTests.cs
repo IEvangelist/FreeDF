@@ -2570,6 +2570,102 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> DefaultRoleMapShapeCases()
+    {
+        (string Value, bool Invalid)[] mappings =
+        [
+            ("/P", false), ("null", false), ("0", true), ("1.5", true), ("(P)", true),
+            ("true", true), ("<< >>", true), ("[/P]", true), ("8 0 R", false),
+            ("9 0 R", true), ("10 0 R", true), ("999999 0 R", false),
+        ];
+        (string Value, bool Invalid)[] roots =
+        [
+            ("", false), ("null", false), ("<< >>", false), ("0", true), ("(P)", true),
+            ("[/P]", true), ("10 0 R", true), ("11 0 R", false),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        {
+            foreach (var (value, invalid) in mappings) yield return [part, "value", value, invalid];
+            foreach (var (value, invalid) in roots) yield return [part, "root", value, invalid];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultRoleMapShapeCases))]
+    public void Ua2DefaultRoleMapShapeInspectsUnusedDefinedValues(int part, string route, string value, bool invalid)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            ["/P", "0", ObjPdf.Stream("opaque"), "<< /Unused /P >>"]));
+        if (value.Length > 0)
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+                new PdfLexer(Encoding.ASCII.GetBytes(route == "value" ? $"<< /Unused {value} >>" : value)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("root", 32, false)]
+    [InlineData("root", 33, true)]
+    [InlineData("value", 32, false)]
+    [InlineData("value", 33, true)]
+    public void Ua2DefaultRoleMapShapeReferenceDepthDoesNotGuessInvalidType(string route, int count, bool incomplete)
+    {
+        var terminal = route == "root" ? "<< /Unused /P >>" : "/P";
+        var chain = Enumerable.Range(8, count).Select(n => n == 7 + count ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", extras: chain.ToArray()));
+        var map = route == "root" ? "8 0 R" : "<< /Unused 8 0 R >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2DefaultRoleMapShapeWorkBoundRetainsOneKnownInvalidValue(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", ""));
+        var map = new PdfDictionary { Entries = { ["Bad"] = new PdfInteger(0) } };
+        for (int i = 1; i < count; i++) map.Entries[$"Unused{i}"] = new PdfName("P");
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] = map;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-ROLEMAP-SHAPE");
+        Assert.Equal(incomplete, report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultRoleMapShapeRetainsKnownTypeErrorBeforeLaterCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras: ["8 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes("<< /Bad 0 /Unknown 8 0 R >>")).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.True(report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultRoleMapShapePreservesValidUsedRoleLookup()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /Custom /P 7 0 R >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+            new PdfDictionary { Entries = { ["Custom"] = new PdfName("P") } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-MISSING"));
+        Assert.False(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

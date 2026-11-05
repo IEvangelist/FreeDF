@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary default RoleMap shape check](spec-backlog.md#2026-11-05-primary-default-rolemap-declared-shape)
+inspects raw dictionary/name-valued mappings, including unused entries,
+with explicit reference/work incompleteness. Twenty native controls retain
+eight positives; twelve primary negatives remain reference-accepted.
+Corpus and UA-1 reports are wholly unchanged. Role resolution is unchanged;
+global target semantics, RoleMapNS schema and parser-wide bounds remain open.
+
 The [primary NSO namespace-presence check](spec-backlog.md#2026-11-05-primary-nso-attribute-namespace-presence)
 rejects absent/resolved-null NS for known NSO attribute owners, preserving
 explicit incomplete handling and standard-owner value lookup. Twenty-six

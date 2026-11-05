@@ -20,6 +20,7 @@ internal static class PdfUA2Checks
     {
         c.Guard("PDF/UA-2 version", () => Version(c));
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
+        c.Guard("PDF/UA-2 role map shape", () => RoleMapShape(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
         c.Guard("PDF/UA-2 containment", () => PdfUA2NestingChecks.Run(c, tree));
         c.Guard("PDF/UA-2 namespace registration", () => NamespaceRegistration(c, tree));
@@ -340,6 +341,36 @@ internal static class PdfUA2Checks
     {
         roleResolved = Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type) == RoleOutcome.Standard;
         return type;
+    }
+
+    static void RoleMapShape(ValidationContext c, StructureTree tree)
+    {
+        const string clause = "ISO 32000-2 14.7.3";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE", ValidationSeverity.Error,
+                "RoleMap shape inspection exceeds its reference/work bound", clause);
+        }
+        var map = ResolveBounded(c.F, tree.Root.Get("RoleMap"), Incomplete);
+        if (incomplete || map is null or PdfNull) return;
+        bool invalid = map is not PdfDictionary;
+        if (map is PdfDictionary dictionary)
+        {
+            int work = 0;
+            foreach (var raw in dictionary.Entries.Values)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                var value = ResolveBounded(c.F, raw, Incomplete);
+                if (incomplete) break;
+                invalid |= value is not (null or PdfNull or PdfName);
+            }
+        }
+        if (invalid)
+            c.Add("PDFUA2-ROLEMAP-SHAPE", ValidationSeverity.Error,
+                "RoleMap must be a dictionary with name-valued defined mappings", clause);
     }
 
     static void Roles(ValidationContext c, StructureTree tree)

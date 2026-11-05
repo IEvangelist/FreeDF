@@ -375,6 +375,15 @@ are explicit. Namespace type/schema, owner identity/registration, stream
 interpretation and complete attribute conformance are not derived from
 these controls. No standard text or external controls are bundled.
 
+The default RoleMap declared-shape check follows the dictionary/single-name
+target facts in 14.7.3 at the same official errata source. Raw mapping
+inspection is independently implemented with explicit reference/work
+bounds, without changing the parsed role resolver. Twenty native controls
+retain eight positives and reject twelve primary negatives accepted by
+the reference; these disagreements are explicit. Global target semantics,
+RoleMapNS schema and parser-wide bounds are not established. No standard
+text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
