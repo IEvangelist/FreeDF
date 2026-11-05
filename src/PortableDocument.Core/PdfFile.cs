@@ -98,14 +98,16 @@ public sealed class PdfFile
         _dec = null; _encObj = -1;
         var raw = Trailer.Get("Encrypt");
         if (raw is null) return;
-        if (raw is PdfRef r)
+        var depth = 0;
+        while (raw is PdfRef r && depth++ < 32)
         {
             _encObj = r.Number;
             if (r.Generation == 0 && Xref.TryGetValue(r.Number, out var entry)
                 && entry is { InUse: true, Compressed: true })
                 throw new PdfParseException("encryption dictionary cannot be compressed");
+            raw = GetObject(r);
         }
-        var enc = Resolve(raw) as PdfDictionary ?? throw new PdfParseException("bad /Encrypt");
+        var enc = raw as PdfDictionary ?? throw new PdfParseException("bad /Encrypt");
         var id = Resolve(Trailer.Get("ID")) is PdfArray { Items.Count: > 0 } ia && Resolve(ia.Items[0]) is PdfString s ? s.Bytes : [];
         _dec = PdfDecryptor.Create(enc, id, Resolve, password, _cert);
         // Drop anything parsed before the key was known (strings/streams were still ciphertext).

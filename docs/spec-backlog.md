@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 encryption dictionary reference chains
+
+ISO 32000-1 7.5.7 (printed p45) prohibits compressed encryption dictionaries;
+7.3.10 (printed p22) preserves indirect-value semantics. Encryption setup now
+checks each reference before following it and retains the terminal dictionary's
+object identity, rather than treating the first alias as the encryption object.
+This rejects compressed terminal dictionaries hidden behind uncompressed aliases
+and preserves the valid terminal dictionary's unencrypted O/U bytes after cache
+reset. The existing 32-reference limit and password-error distinction remain.
+
+Thirteen new tests cover one/two/four intermediaries, both normal and forced
+repair, user/owner/wrong passwords, exact O/U bytes, terminal cache identity,
+31 aliases plus the terminal reference and the unchanged depth limit.
+Unchanged-production baseline: ten failed/three passed. Focused selector:
+718 passed. Full Release: 19,229 passed, zero failed/skipped. Solution: zero
+errors/two retained machine-feed NU1507 warnings.
+
+Sixteen native controls use independently generated RC4 encryption metadata.
+All ten valid normal/repair files still open; eight alias cases now preserve
+the exact source O/U bytes that were previously incorrectly decrypted, while
+two direct-reference controls remain unchanged. Three formerly accepted
+compressed-terminal chains are rejected; three forced-repair negatives already
+failed and remain rejected. MuPDF exposes Catalog for all sixteen probes,
+including the malformed compressed chains; opening alone does not establish
+encryption-dictionary conformance. All ten valid terminal O/U byte pairs match
+the independent source. Fresh pinned 435-PDF/870-result full corpus JSON is
+wholly unchanged against the Length-chain baseline.
+
+This is bounded encryption-entry resolution, not a document-wide forbidden-object
+inventory or exhaustive encryption-handler conformance.
+
 ## 2026-11-05 compressed Length reference chains
 
 ISO 32000-1 7.5.7 (printed p45) prohibits storing the object representing

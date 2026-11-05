@@ -5,7 +5,7 @@ namespace FreeDF.Tests;
 
 public class ObjectStreamEncryptionDictionaryTests
 {
-    static byte[] Build(string userPassword, bool compressed, bool forceRepair)
+    internal static byte[] Build(string userPassword, bool compressed, bool forceRepair, int referenceHops = 0)
     {
         var id = new byte[16];
         var source = PdfWriter.Write(new Dictionary<int, PdfObject>
@@ -37,6 +37,12 @@ public class ObjectStreamEncryptionDictionaryTests
             var body = "2 0 " + dictionary;
             Write($"3 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Length {body.Length} >>\nstream\n{body}\nendstream\nendobj\n");
         }
+        var aliases = new List<long>();
+        for (var index = 0; index < referenceHops; index++)
+        {
+            aliases.Add(data.Position);
+            Write($"{5 + index} 0 obj\n{(index + 1 == referenceHops ? 2 : 6 + index)} 0 R\nendobj\n");
+        }
         var xref = data.Position;
         using var rows = new MemoryStream();
         void Row(ulong kind, ulong value, ulong index)
@@ -48,8 +54,9 @@ public class ObjectStreamEncryptionDictionaryTests
         Row(compressed ? 2UL : 1UL, compressed ? 3UL : (ulong)encryption, 0);
         Row(compressed ? 1UL : 0UL, compressed ? (ulong)container : 0, 0);
         Row(1, (ulong)xref, 0);
+        foreach (var offset in aliases) Row(1, (ulong)offset, 0);
         var hex = Convert.ToHexString(id);
-        Write($"4 0 obj\n<< /Type /XRef /Root 1 0 R /Encrypt 2 0 R /ID [<{hex}><{hex}>] /Size 5 /Index [1 4] /W [8 8 8] /Length {rows.Length} >>\nstream\n");
+        Write($"4 0 obj\n<< /Type /XRef /Root 1 0 R /Encrypt {(referenceHops == 0 ? 2 : 5)} 0 R /ID [<{hex}><{hex}>] /Size {5 + referenceHops} /Index [1 {4 + referenceHops}] /W [8 8 8] /Length {rows.Length} >>\nstream\n");
         data.Write(rows.ToArray());
         Write($"\nendstream\nendobj\nstartxref\n{(forceRepair ? -1 : xref)}\n%%EOF\n");
         return data.ToArray();

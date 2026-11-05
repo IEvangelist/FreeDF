@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [encryption-dictionary-reference-chain check](spec-backlog.md#2026-11-05-encryption-dictionary-reference-chains)
+rejects compressed terminal dictionaries hidden by uncompressed aliases and
+preserves the terminal dictionary's unencrypted bytes/cache identity.
+Independent source-byte controls, reference differences and unchanged corpus
+JSON are recorded. Global forbidden-object inventory and exhaustive encryption
+conformance remain separate.
+
 The [compressed Length-reference-chain check](spec-backlog.md#2026-11-05-compressed-length-reference-chains)
 checks each resolved reference identity before object-stream member publication,
 preventing uncompressed intermediaries from hiding a compressed Length integer.
