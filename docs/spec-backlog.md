@@ -4,6 +4,52 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 strict ASCII and RunLength input extent
+
+ISO 32000-1 7.3.8.2 (printed p20) requires stream Length and explicit EOD
+constraints to agree and identifies excess data as an error. ASCIIHex `>`,
+ASCII85 `~>` and RunLength byte 128 are defined by 7.4.2 (p24),
+7.4.3 (p25) and 7.4.5 (p29). Their strict paths previously validated bytes
+only through the first marker, allowing an otherwise complete object-stream
+member to be published despite additional logical encoded input.
+
+Each strict path now requires its marker to finish the supplied logical
+input. This intentionally rejects suffixes previously accepted by strict
+tests; those expectations now explicitly exercise ordinary recovery instead.
+Ordinary decoders still stop at the marker and recover the same bytes.
+Whitespace inside ASCII encoded data remains supported; a CRLF suffix inside
+logical input is distinct from the optional physical EOL before endstream,
+which remains outside Length and supported. Pipeline tests wrap the payload
+in outer ASCIIHex so that encoded suffixes cannot be confused with framing.
+
+Eighteen new tests have an actual unchanged-production baseline of fifteen
+failures/three passes. Fifteen negatives cover zero, garbage, CRLF, repeated
+marker and second complete stream across all three codecs; positives preserve
+empty/exact streams, cached member identity, normal/forced repair and the
+physical EOL exception. Two explicit ordinary ASCII recovery cases accompany
+the relocated strict suffix expectations; ordinary RunLength suffix recovery
+is also asserted. The focused stream/codec selector passes 941 cases.
+Full Release passes 19,503, zero failed/skipped; the solution builds with
+zero warnings/errors.
+
+Forty-two independently encoded/retained native checks comprise thirty suffix
+negatives and twelve valid controls, including six encrypted files. Every
+negative previously exposed Target and now leaves the member absent after
+repair; valid native outcomes remain identical. PyMuPDF 2.0 / MuPDF 1.28.5
+exposes Target for all forty-two: permissive reference acceptance is retained,
+not treated as proof of normative input extent. Fresh pinned 435-PDF/
+870-result full corpus JSON remains unchanged.
+
+The implementation adds marker-position comparisons, not another input scan
+or public configuration. Ordinary decoding and incomplete-packet checks remain
+unchanged. The [matched twelve-case metadata follow-up](../bench/FreeDF.Bench/README.md#strict-marker-extent-2026-11-05)
+retains exact prior input hashes and measured managed B/op. Eight timing means
+fall/four rise, all reported mean/error intervals overlap. Four changed
+ASCIIHex pipelines are measured alongside unchanged controls; this is not
+large-input throughput or ASCII85/RunLength performance evidence, nor an
+isolated speedup claim. This completes the identified excess-input gaps for these three
+strict helpers, not complete codec/parameter, generic grammar or spec parity.
+
 ## 2026-11-05 single-filter array parameters
 
 ISO 32000-1 Table 5 (printed p20) permits Filter to be a name or an array

@@ -184,6 +184,36 @@ subtract separate means or compare unlike operations as validation overhead.
 dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamMetadataBench*" "*ObjectStreamBench.FreshAllMembers*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
 ```
 
+### Strict marker extent: 2026-11-05
+
+The [existing metadata cases](results/2026-11-05-marker-extent-existing.md)
+([CSV](results/2026-11-05-marker-extent-existing.csv)) and
+[single-array cases](results/2026-11-05-marker-extent-new.md)
+([CSV](results/2026-11-05-marker-extent-new.csv)) measure the accompanying
+strict ASCIIHex/ASCII85/RunLength marker-position checks against production
+base `f02910ffa764524073b79060b0c9904d1efb905f`. The preceding
+[single-filter follow-up](#single-filter-array-parameters-2026-11-05) supplies
+the matched control; all twelve exact input hashes and measured managed
+B/op remain identical. Raw diagnostic totals and input provenance are
+retained in the [GC CSV](results/2026-11-05-marker-extent-gc.csv).
+
+Four two-filter cases exercise the changed strict ASCIIHex path. Their
+Flate direct/indirect means move from 7.622/8.204 to 7.379/7.053 us;
+LZW direct/indirect move from 7.595/7.346 to 6.936/6.602 us. Unchanged
+named-filter/single-array controls also move: across all twelve cases,
+eight means fall and four rise, with every reported mean/error interval
+overlapping. This is not evidence of an isolated speedup or zero overhead.
+These are small fresh-load/member workloads, not large ASCII throughput
+measurements, ASCII85/RunLength performance evidence or provider rankings.
+
+The same three-warmup/eight-iteration/500-ms/one-launch command in the
+single-filter follow-up below is used
+on the same Windows 11 / Core i7-14700K / .NET 10.0.14 environment. No exclusive
+machine load was established. Provider/parser preflight passes; no provider
+timings are rerun. Allocations cover managed memory, not total/native memory.
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-strict-ascii-and-runlength-input-extent)
+separates strict rejection from unchanged ordinary recovery.
+
 ### Single-filter array parameters: 2026-11-05
 
 `SingleFilterArrayMetadataBench` reuses the existing fixture and correctness

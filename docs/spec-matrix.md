@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [strict marker extent correction](spec-backlog.md#2026-11-05-strict-ascii-and-runlength-input-extent)
+requires ASCIIHex/ASCII85/RunLength EOD to finish logical filter input before
+object-stream publication. Ordinary suffix recovery and the physical EOL
+outside Length remain supported. Reference readers accept the retained
+negatives permissively; their acceptance does not override stream-extent rules.
+
 The [single-filter array correction](spec-backlog.md#2026-11-05-single-filter-array-parameters)
 applies a parameter dictionary to a one-element Filter array in ordinary and
 strict decoding, including resolved metadata. Nondefault predictor bytes now

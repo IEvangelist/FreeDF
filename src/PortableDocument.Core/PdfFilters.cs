@@ -173,9 +173,15 @@ public static class PdfFilters
 
     static byte[] StrictAsciiHex(byte[] data)
     {
-        foreach (var c in data)
+        for (var i = 0; i < data.Length; i++)
         {
-            if (c == '>') return AsciiHex(data);
+            var c = data[i];
+            if (c == '>')
+            {
+                if (i + 1 != data.Length)
+                    throw new InvalidDataException("Excess data after ASCIIHex content-stream end marker");
+                return AsciiHex(data);
+            }
             if (!PdfLexer.IsWhite(c) && c is not (>= (byte)'0' and <= (byte)'9'
                 or >= (byte)'a' and <= (byte)'f' or >= (byte)'A' and <= (byte)'F'))
                 throw new InvalidDataException("Invalid ASCIIHex content-stream character");
@@ -195,6 +201,8 @@ public static class PdfFilters
             {
                 if (i + 1 >= data.Length || data[i + 1] != '>' || count == 1)
                     throw new InvalidDataException("Invalid ASCII85 content-stream end marker or final group");
+                if (i + 2 != data.Length)
+                    throw new InvalidDataException("Excess data after ASCII85 content-stream end marker");
                 if (count > 1)
                 {
                     for (var n = count; n < 5; n++) group = group * 85 + 84;
@@ -267,7 +275,12 @@ public static class PdfFilters
         for (var i = 0; i < data.Length;)
         {
             var run = data[i++];
-            if (run == 128) return RunLength(data);
+            if (run == 128)
+            {
+                if (i != data.Length)
+                    throw new InvalidDataException("Excess data after RunLength content-stream end marker");
+                return RunLength(data);
+            }
             var input = run < 128 ? run + 1 : 1;
             if (input > data.Length - i)
                 throw new InvalidDataException("Incomplete RunLength content-stream packet");
