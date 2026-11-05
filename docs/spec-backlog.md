@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 cyclic indirect stream Length loading
+
+ISO 32000-1 7.3.8/Table 5 (printed p20) requires an integer Length byte
+count; 7.3.10 (printed p22) permits indirect values. Uncompressed object
+loading now detects reentry at the same physical offset while its value
+is unfinished, with cleanup in finally. Self, one-hop and mutual stream
+Length cycles fail explicitly rather than recursively loading unfinished
+streams until stack exhaustion. Legitimate indirect lengths remain supported.
+
+Pre-fix probes ran in separate bounded processes: six self/chain/mutual
+normal/forced-repair cases exited with Windows stack-overflow status
+3221225725. Twelve tests added after the guard cover those cases, repeated
+errors, unrelated subsequent lookups, direct/indirect/two-hop valid lengths
+and exact cached stream bytes. Full Release: 19,103 passed, zero failed/skipped.
+Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Ten native PDFs preserve four valid outputs with exact `abc` stream bytes.
+Six former process crashes now produce `cyclic indirect object loading`.
+MuPDF recovers `abc` for all normal probes and the forced-repair direct
+positive; it includes an extra LF for the other four forced-repair indirect
+probes, including the valid indirect positive. Neither that recovery nor
+this guard establishes complete stream-Length schema validation.
+Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged against
+the index-reentrancy baseline.
+
+This bounds active physical-object reentry, not all indirect-reference
+cycles, maximum acyclic dependency depth, complete Length type/range
+enforcement, decoding limits or eager whole-file validation.
+
 ## 2026-11-05 recursive object-stream index metadata
 
 ISO 32000-1 Table 16 in 7.5.7 (printed p46) requires integer N/First;

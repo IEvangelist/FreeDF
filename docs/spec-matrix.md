@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [cyclic indirect stream-Length loading check](spec-backlog.md#2026-11-05-cyclic-indirect-stream-length-loading)
+rejects active physical-object reentry, eliminating six isolated baseline
+stack overflows while preserving direct/indirect valid stream bytes.
+Reference recovery differences and unchanged corpus JSON are recorded;
+complete Length schema, general reference cycles and depth budgets remain separate.
+
 The [recursive object-stream index-metadata check](spec-backlog.md#2026-11-05-recursive-object-stream-index-metadata)
 bounds reentry while building a container index, preserving ordinary indirect
 metadata. Two isolated pre-fix process overflows now terminate explicitly.

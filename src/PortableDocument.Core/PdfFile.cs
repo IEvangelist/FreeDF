@@ -16,6 +16,7 @@ public sealed class PdfFile
     readonly Dictionary<int, ObjStmIndex> _objStmCache = [];
     readonly HashSet<PdfDictionary> _resolvingObjectStreamTypes = [];
     readonly HashSet<int> _readingObjectStreamIndexes = [];
+    readonly HashSet<long> _loadingObjectOffsets = [];
 
     PdfFile(byte[] data) { Data = data; }
 
@@ -114,6 +115,14 @@ public sealed class PdfFile
     }
 
     PdfObject LoadAt(long offset, int expectNum, int? expectGeneration = null)
+    {
+        if (!_loadingObjectOffsets.Add(offset))
+            throw new PdfParseException("cyclic indirect object loading");
+        try { return LoadAtCore(offset, expectNum, expectGeneration); }
+        finally { _loadingObjectOffsets.Remove(offset); }
+    }
+
+    PdfObject LoadAtCore(long offset, int expectNum, int? expectGeneration)
     {
         if (offset < 0 || offset >= Data.Length) throw new PdfParseException("offset out of range");
         var lx = new PdfLexer(Data, (int)offset);
