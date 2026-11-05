@@ -170,6 +170,8 @@ public sealed class PdfFile
             throw new PdfParseException($"{kind} keyword must be followed by LF or CRLF");
         var length = d.Get("Length");
         if (length is PdfRef) length = Resolve(length);
+        if (xref && length is not PdfInteger { Value: >= 0 })
+            throw new PdfParseException("cross-reference stream Length must resolve to a nonnegative integer");
         long len = length switch
         {
             PdfInteger integer => integer.Value,

@@ -4,6 +4,49 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 cross-reference Length value schema
+
+ISO 32000-1 Table 5 (printed p20) requires an integer Length; its
+value counts encoded physical bytes. Xref stream loading previously
+accepted real values through integer truncation, or silently recovered
+bytes for missing/null/negative/wrong-type values and unresolved
+references, then reported a clean index.
+
+After existing indirect resolution, ReadStream now requires a nonnegative
+PdfInteger for direct Type XRef. Existing physical-extent checks then
+validate its exact byte count. Ordinary streams and object-stream Length
+handling are unchanged. Valid signed and zero-padded integer spellings
+retain indexed loading.
+
+Indirect Length is not prohibited: it is not one of the entries required
+to be direct by 7.5.8.2 (printed p49). If it cannot resolve before the
+index exists, the reader explicitly repairs rather than silently using
+scanned bytes. Four raw/Flate indirect controls include actual exact
+integer lengths and null values; valid integers can resolve after repair
+and preserve exact raw bytes. This is a pre-index resolution limitation,
+not a blanket reference ban or proof the source is malformed.
+
+Thirty new controls give 24 failures/six passes on unchanged production:
+twenty missing/wrong-type cases, six exact integer spelling controls
+and four qualified indirect cases. Final focused xref/object-stream/
+stream-length run passes 1,250; full Release passes 20,111, zero failed/
+skipped; solution and benchmark builds have zero warnings/errors.
+Fresh pinned 435-PDF/870-result complete validation JSON from the rebuilt
+final tool is unchanged; all final provider/parser benchmark correctness
+preflights pass.
+
+Eighteen independently encoded reference parser fixtures cover four
+integer spelling positives and fourteen missing/real/fractional/null/
+negative/boolean/unresolved Length cases. PyMuPDF 2.0 / MuPDF 1.28.5
+publishes all targets without repair. Permissive negative acceptance is
+retained as disagreement, not normative evidence. No external PDFs are
+bundled.
+
+No new timing was run; existing xref measurements do not measure this
+additional schema guard. No zero-overhead or speedup claim is made.
+Pre-index indirect resolution, generic grammar/identity, resource budgets
+and full parser/spec parity remain incomplete.
+
 ## 2026-11-05 cross-reference stream framing
 
 ISO 32000-1 7.3.8.1 (printed p19) requires LF or CRLF after stream,

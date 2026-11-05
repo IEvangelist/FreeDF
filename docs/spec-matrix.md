@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref Length-schema guard](spec-backlog.md#2026-11-05-cross-reference-length-value-schema)
+requires a resolved nonnegative integer instead of real truncation or
+silent missing/invalid-Length recovery. Valid integer spellings remain
+supported; pre-index unresolved indirect lengths explicitly recover,
+not a claim that indirect Length is forbidden. Ordinary streams and
+broader parser/performance scope remain unchanged or explicitly open.
+
 The [xref framing guard](spec-backlog.md#2026-11-05-cross-reference-stream-framing)
 extends existing object-stream framing checks to direct Type XRef:
 LF/CRLF opening, exact declared physical extent and closing delimiters.
