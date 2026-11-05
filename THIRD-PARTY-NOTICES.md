@@ -579,6 +579,14 @@ not conformance certification. Raw bytes/font decoding, Unicode BOM paths
 and the general reader's pre-existing undefined-byte leniency are retained.
 No standard text or external controls are bundled.
 
+The explicit local choice-field I index upper-bound check follows official
+PDF Association 12.7.5.4/Table 234 zero-based Opt index facts. It reuses
+bounded index traversal, lazily resolving local Opt without inferring
+missing/inherited options or complete option schema. Eight native controls
+retain four bounded-range positives and reject four primary negatives
+accepted by the pinned reference; disagreements are explicit.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

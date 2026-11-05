@@ -306,7 +306,7 @@ internal static class PdfUA2Checks
     static void ChoiceFieldIndices(ValidationContext c, PdfFormFieldDetailSet fields)
     {
         const string clause = "ISO 32000-2 12.7.5.4 Table 234";
-        bool incomplete = false;
+        bool incomplete = false, rangeIncomplete = false;
         int work = 0;
         void Incomplete()
         {
@@ -315,13 +315,21 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-CHOICE-I-INCOMPLETE", ValidationSeverity.Error,
                 "choice-field index inspection is truncated, unresolved, cyclic or bounded", clause);
         }
-        if (fields.Truncated) Incomplete();
+        void RangeIncomplete()
+        {
+            if (rangeIncomplete) return;
+            rangeIncomplete = true;
+            c.Add("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE", ValidationSeverity.Error,
+                "choice-field local option array inspection is truncated, unresolved, cyclic or unsupported", clause);
+        }
+        if (fields.Truncated) { Incomplete(); RangeIncomplete(); }
         foreach (var field in fields.Fields)
         {
             if (field.FieldType?.Value != "Ch") continue;
             var value = ResolveBounded(c.F, field.Dictionary.Get("I"), Incomplete);
             if (value is null or PdfNull) continue;
-            bool type = value is not PdfArray, order = false;
+            bool type = value is not PdfArray, order = false, range = false, optionsRead = false;
+            int? optionCount = null;
             long? previous = null;
             if (value is PdfArray indices)
                 foreach (var item in indices.Items)
@@ -333,6 +341,14 @@ internal static class PdfUA2Checks
                     if (index is not PdfInteger integer) { type = true; previous = null; continue; }
                     if (integer.Value < 0 || previous is { } prior && integer.Value < prior) order = true;
                     previous = integer.Value;
+                    if (!optionsRead)
+                    {
+                        optionsRead = true;
+                        var options = ResolveBounded(c.F, field.Dictionary.Get("Opt"), RangeIncomplete);
+                        if (options is PdfArray array) optionCount = array.Count;
+                        else if (options is not (null or PdfNull)) RangeIncomplete();
+                    }
+                    if (optionCount is { } count && integer.Value >= count) range = true;
                 }
             if (type)
                 c.Add("PDFUA2-FORM-CHOICE-I-TYPE", ValidationSeverity.Error,
@@ -340,6 +356,9 @@ internal static class PdfUA2Checks
             if (order)
                 c.Add("PDFUA2-FORM-CHOICE-I-ORDER", ValidationSeverity.Error,
                     "choice-field I indices must be non-negative and sorted in ascending order", clause);
+            if (range)
+                c.Add("PDFUA2-FORM-CHOICE-I-RANGE", ValidationSeverity.Error,
+                    "choice-field I index exceeds the explicit local Opt array bounds", clause);
         }
     }
 

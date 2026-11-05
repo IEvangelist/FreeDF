@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary explicit local choice index bounds
+
+Official PDF Association PDF 2.0 errata 12.7.5.4/Table 234 defines I
+as zero-based indices into Opt. The existing bounded terminal Ch index
+pass now reports PDFUA2-FORM-CHOICE-I-RANGE when a reached integer
+is at least the length of an explicitly resolved local Opt array.
+Negative indices retain the existing order finding. Option count is checked
+without inspecting or certifying the option items' types.
+
+Opt resolution is lazy, once per field, only after a known integer is reached.
+Cyclic/over-32-hop references or unsupported non-array Opt produce separate
+PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE. Reader truncation reports both
+index and range incompleteness. Known range errors survive unknown indices
+and existing shared 200,000-item exhaustion; no extra unbounded scan is added.
+Absent/null/dangling local Opt is outside this explicit-array predicate,
+not inferred to be an empty array. Parent options are not substituted.
+Missing options, inheritance policy, complete option schema, duplicate
+selection semantics, required I presence and V precedence remain separate.
+
+Initial 109 authored controls had sixteen failures; final 111 include
+exact shared-work boundaries. Focused Release: 5,280 passed;
+full Release: 18,223 passed, zero failed/skipped. Solution zero errors/two
+retained machine-feed NU1507 warnings. Eight native controls retain four
+bounded-range positives and reject four primary negatives. All pinned
+combined-reference jobs complete normally and accept:
+**four explicit primary/reference disagreements**. Native UA-1 and fresh
+435-PDF/870-result corpus JSON are wholly unchanged against shared-text
+baseline fdb71d55. No standard text or external controls are bundled;
+full form/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 shared PDFDocEncoding text-string decoding
 
 ISO 32000-1 7.9.2.2/.3 and Annex D.3/Table D.2 specify PDFDocEncoding

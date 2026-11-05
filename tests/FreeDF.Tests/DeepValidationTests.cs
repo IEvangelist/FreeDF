@@ -5145,6 +5145,114 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> ChoiceLocalIndexRangeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Ch", "Tx", "Btn", "Sig" })
+        foreach (var options in new[] { "[]", "[(a)]", "[(a) [(b) (B)]]" })
+        foreach (var index in new[] { "0", "1", "2", "9223372036854775807" })
+            yield return [part, type, options, index];
+    }
+
+    [Theory]
+    [MemberData(nameof(ChoiceLocalIndexRangeCases))]
+    public void Ua2ChoiceLocalIndexMustFitExplicitOptionArray(int part, string type, string options, string index)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (choice) /Opt {options} /I [{index}] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        int count = options == "[]" ? 0 : options == "[(a)]" ? 1 : 2;
+        Assert.Equal(part == 2 && type == "Ch" && long.Parse(index, System.Globalization.CultureInfo.InvariantCulture) >= count,
+            report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("null", false)]
+    [InlineData("99 0 R", false)]
+    [InlineData("11 0 R", true)]
+    [InlineData("42", true)]
+    [InlineData("(options)", true)]
+    public void Ua2ChoiceLocalIndexOptionUncertaintyIsExplicit(string options, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt {options} /I [3] >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ChoiceLocalIndexOptionReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "[(a)]" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Ch /T (choice) /Opt 10 0 R /I [1] >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("[1 11 0 R]")]
+    [InlineData("[11 0 R 1]")]
+    public void Ua2ChoiceLocalIndexKnownRangeErrorSurvivesUnknownIndex(string indices)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt [(a)] /I {indices} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("[(not an integer)]")]
+    public void Ua2ChoiceLocalIndexDoesNotInspectUnknownOptionsWithoutKnownIndex(string indices)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt 11 0 R /I {indices} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceLocalIndexRangeDoesNotSubstituteParentOptions()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (parent) /Opt [] /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R /I [1] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ChoiceLocalIndexRangeSurvivesItemWorkLimit(int count, bool incomplete)
+    {
+        var indices = string.Concat(Enumerable.Repeat("1 ", count));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt [(a)] /I [{indices}] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

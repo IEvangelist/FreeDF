@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [explicit local choice index bound check](spec-backlog.md#2026-11-05-primary-explicit-local-choice-index-bounds)
+checks reached I integers against explicitly resolved local Opt array length,
+with separate option-resolution incompleteness. Eight native controls retain
+four bounded-range positives; four primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Missing/inherited options, full option
+schema and V precedence remain separate.
+
 The [shared PDFDocEncoding text-string correction](spec-backlog.md#2026-11-05-shared-pdfdocencoding-text-string-decoding)
 replaces Latin-1 fallback for forty defined text-string codes across metadata,
 field values/names and ActualText, preserving raw bytes, glyph interpretation
