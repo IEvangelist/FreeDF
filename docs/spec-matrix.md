@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [recovery object-stream generation check](spec-backlog.md#2026-11-05-recovery-object-stream-container-generations)
+requires generation-zero container entries and headers before indexing
+compressed members. Recoverable uncompressed identities and existing ordinary
+stream compatibility are preserved. Reference differences and unchanged corpus
+JSON are recorded. Eager whole-file and free-list lifecycle checks remain separate.
+
 The [object-stream Extends check](spec-backlog.md#2026-11-05-object-stream-extends-collection-links)
 iteratively validates stream identity, type and acyclic collection links
 before member indexing, without parsing ancestor members or merging sets.

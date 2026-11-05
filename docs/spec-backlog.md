@@ -4,6 +4,32 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 recovery object-stream container generations
+
+ISO 32000-1 7.5.7 (printed p47) requires object-stream generation
+zero. Recovery now checks the current uncompressed xref entry and actual
+container header generation before installing compressed members, matching
+normal generation-zero container lookup. A malformed container cannot
+replace a recoverable uncompressed identity and leave it unloadable.
+
+Eight controls cover nonzero generations in normal/forced repair, valid
+generation-zero object streams and existing ordinary stream generation/byte
+compatibility. The initial selector had three failures. Full Release:
+18,965 passed, zero failed/skipped. Solution: zero errors/two retained
+machine-feed NU1507 warnings.
+
+Sixteen native PDFs preserve ten positive/compatibility outputs unchanged.
+Six previously failing lookups now recover the original uncompressed Target
+instead of indexing a member from a nonzero-generation container. MuPDF still
+returns Compressed for four malformed inputs; it fails to open both
+forced-repair generation-99999 controls and agrees on nine positive probes.
+The existing generation-99999 ordinary-stream compatibility is not a new
+normative range claim. Fresh pinned 435-PDF/870-result full corpus JSON is
+wholly unchanged against the Extends baseline.
+
+This is recovery indexing enforcement, not eager rejection of every unused
+object stream or general generation/free-list lifecycle validation.
+
 ## 2026-11-05 object-stream Extends collection links
 
 ISO 32000-1 7.5.7 Table 16 (printed p46) defines Extends as a

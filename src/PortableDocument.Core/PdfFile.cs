@@ -543,16 +543,18 @@ public sealed class PdfFile
         SetupEncryption(_password);
         foreach (var num in Xref.Keys.ToList())
         {
-            if (PeekStreamDict(Xref[num].OffsetOrStream, num) is not { } candidate) continue;
+            var entry = Xref[num];
+            if (entry is not { InUse: true, Compressed: false, GenOrIndex: 0 }
+                || PeekStreamDict(entry.OffsetOrStream, num, 0) is not { } candidate) continue;
             PdfObject o;
             try
             {
                 if (!IsObjectStream(candidate)) continue;
-                o = LoadAt(Xref[num].OffsetOrStream, num);
+                o = LoadAt(entry.OffsetOrStream, num, 0);
             }
             catch (PdfParseException) { continue; }
             if (o is not PdfStream st) continue;
-            if (_dec is not null && num != _encObj) st = (PdfStream)_dec.Decrypt(st, num, Xref[num].GenOrIndex);
+            if (_dec is not null && num != _encObj) st = (PdfStream)_dec.Decrypt(st, num, 0);
             try
             {
                 var map = ReadObjectStreamIndex(st);
