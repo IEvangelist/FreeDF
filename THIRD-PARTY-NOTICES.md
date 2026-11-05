@@ -318,6 +318,14 @@ normally; both direct-dictionary negative jobs threw reference exceptions.
 Those outcomes are unavailable verdicts, not agreement or reference predicate
 mapping. Root namespace registration and full namespace shape remain separate.
 
+The parsed-element namespace registration check follows the dictionary
+membership facts in Tables 354/355 at the same errata source. Dictionary
+identity comparison and bounded inspection are independently implemented.
+All six native reference jobs accepted the controls; four primary negatives
+now reject. Two corpus files gain diagnostics absent from the reference's
+other-rule rejections. These differences are explicit, not a reference
+predicate mapping or complete namespace/traversal conformance.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

@@ -1890,6 +1890,102 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData(1, "null")]
+    [InlineData(1, "[]")]
+    [InlineData(2, "null")]
+    [InlineData(2, "[]")]
+    [InlineData(2, "[9 0 R]")]
+    [InlineData(2, "[10 0 R]")]
+    [InlineData(2, "[9 0 R 10 0 R]")]
+    public void Ua2NamespaceRegistrationUsesDictionaryIdentity(int part, string registry)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(registry)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && !registry.Contains("9 0 R", StringComparison.Ordinal),
+            report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("11 0 R")]
+    [InlineData("[11 0 R]")]
+    public void Ua2IncompleteNamespaceRegistryDoesNotGuessMissingMembership(string registry)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>", "null", "11 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(registry)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2NamespaceRegistryInspectionIsBounded(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(new PdfRef(9, 0), count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Bad")]
+    [InlineData("[/Bad]")]
+    public void Ua2MalformedNamespaceRegistryIsExplicitlyIncomplete(string registry)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(registry)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2NamespaceRegistryReferenceDepthIsBounded(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "[9 0 R]" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+                "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>" }.Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] = new PdfRef(10, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2NamespaceRegistrationIsOptionalWhenNoElementReferencesANamespace()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"])), 2);
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

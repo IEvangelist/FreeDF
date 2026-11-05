@@ -22,6 +22,7 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
         c.Guard("PDF/UA-2 containment", () => PdfUA2NestingChecks.Run(c, tree));
+        c.Guard("PDF/UA-2 namespace registration", () => NamespaceRegistration(c, tree));
         c.Guard("PDF/UA-2 element rules", () => Elements(c, tree));
         c.Guard("PDF/UA-2 link targets", () => LinkTargets(c, tree));
         c.Guard("PDF/UA-2 destinations", () => Destinations(c));
@@ -392,6 +393,44 @@ internal static class PdfUA2Checks
         for (var element = parent; element is not null; element = element.Parent)
             if (StandardType(c, tree, element) == "Artifact") return true;
         return false;
+    }
+
+    static void NamespaceRegistration(ValidationContext c, StructureTree tree)
+    {
+        const string clause = "ISO 32000-2 14.7.2 Tables 354/355";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-NS-REGISTRY-INCOMPLETE", ValidationSeverity.Error,
+                "namespace registration inspection is malformed or exceeds its reference/work bound", clause);
+        }
+        var registered = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var value = ResolveBounded(c.F, tree.Root.Get("Namespaces"), Incomplete);
+        if (value is PdfArray array)
+        {
+            int work = 0;
+            foreach (var raw in array.Items)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                var item = ResolveBounded(c.F, raw, Incomplete);
+                if (incomplete) break;
+                if (item is PdfDictionary dictionary) registered.Add(dictionary);
+                else if (item is not (null or PdfNull)) { Incomplete(); break; }
+            }
+        }
+        else if (value is not (null or PdfNull)) Incomplete();
+        if (incomplete) return;
+        foreach (var element in tree.Elements())
+        {
+            var ns = ResolveBounded(c.F, element.Dict.Get("NS"), Incomplete);
+            if (incomplete) break;
+            if (ns is PdfDictionary dictionary && !registered.Contains(dictionary))
+                c.Add("PDFUA2-NS-UNREGISTERED", ValidationSeverity.Error,
+                    "structure element NS dictionary is not an element of the root Namespaces array",
+                    clause, element.PageIndex);
+        }
     }
 
     static void Elements(ValidationContext c, StructureTree tree)

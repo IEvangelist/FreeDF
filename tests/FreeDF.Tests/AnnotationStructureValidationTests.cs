@@ -16,7 +16,7 @@ public class AnnotationStructureValidationTests
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [9 0 R] /Tabs /S >>",
             ObjPdf.Stream(""),
-            "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R >>",
+            $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R {(part == 2 ? "/Namespaces [14 0 R]" : "")} >>",
             ObjPdf.Xmp($"<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='{part}'{(part == 2 ? " pdfuaid:rev='2024'" : "")}><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>"),
             "<< /Type /StructElem /S /Document /P 5 0 R /K 8 0 R >>",
             Element,
@@ -102,6 +102,7 @@ public class AnnotationStructureValidationTests
     public void Ua2LinkParentsResolveNamespaceRoleMappings(string target, bool invalid)
     {
         var doc = Load(2,
+            (5, "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /Namespaces [13 0 R 14 0 R] >>"),
             (8, Element.Replace("/S /Annot", "/S /Citation /NS 13 0 R")),
             (9, Annotation.Replace("/Subtype /Stamp", "/Subtype /Link")),
             (13, $"<< /Type /Namespace /NS (urn:test) /RoleMapNS << /Citation [/{target} 14 0 R] >> >>"));

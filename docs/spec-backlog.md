@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary namespace registration identity
+
+Published PDF 2.0 errata, 14.7.2 Tables 354/355, requires every namespace
+dictionary referenced by an element to occur in the root Namespaces array.
+UA-2 now compares dictionary identity, not namespace URI equality, for parsed
+elements. Missing membership reports PDFUA2-NS-UNREGISTERED. Root-array
+shape problems, reference cycles/depth beyond 32 and inspection beyond
+200,000 array items report PDFUA2-NS-REGISTRY-INCOMPLETE; incomplete registry
+inspection does not infer absent membership. A known missing membership
+reported before a later unresolved element reference is retained.
+
+Six native controls have two primary positives and four primary negatives.
+All six independent combined-profile jobs completed normally and accepted
+every file: **four explicit primary/reference disagreements**, not agreement.
+Initial missing/null controls both serialized as null; the corrected missing
+control removes the key and retains the initial evidence separately.
+Eleven initial authored cases had six failures; five additional cases cover
+root shape/depth and optional registration when namespaces are unused.
+Three focused failures after implementation exposed previously incomplete
+conforming fixtures; their root arrays now register their actual namespaces
+without relaxing assertions.
+Five additional full-suite failures exposed the same omission in the shared
+link-target fixture; its existing namespace is likewise registered for UA-2.
+
+Fresh 435-PDF/870-result comparison adds only the registration diagnostic to
+two already-invalid UA-1 fixtures validated as UA-2. Object inspection confirms
+namespace references and no root registry in both. Exact reference jobs reject
+both for other rules, not namespace registration; the additional-diagnostic
+difference is explicit. Every file verdict and all UA-1 outputs are unchanged.
+Full namespace dictionary shape, RoleMapNS target registration and complete
+structure traversal are not established by this parsed-element slice; existing
+nesting-incomplete diagnostics remain. No reference family mapping, external
+PDFs or standard text is bundled.
+Corrected Release validation: 445 focused and 15,033 full cases pass without
+skips; solution builds with zero errors and two retained machine-feed NU1507
+warnings. No hosted CI or full PDF/UA conformance is claimed.
+
 ## 2026-11-05 primary indirect element namespaces
 
 The official PDF 2.0 errata, 14.7.2 Table 355, requires an element's

@@ -12,7 +12,7 @@ public class PdfUaLinkTargetTests
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [9 0 R 12 0 R] /Tabs /S >>",
             ObjPdf.Stream(""),
-            "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R >>",
+            $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R {(part == 2 ? "/Namespaces [14 0 R]" : "")} >>",
             ObjPdf.Xmp($"<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='{part}' pdfuaid:rev='2024'><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>"),
             "<< /Type /StructElem /S /Document /NS 14 0 R /P 5 0 R /K [13 0 R 16 0 R] >>",
             $"<< /Type /StructElem /S /{role} /P 13 0 R /Pg 3 0 R /K {(separate ? "11 0 R" : "[11 0 R 15 0 R]")} >>",

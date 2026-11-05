@@ -132,7 +132,7 @@ public class PdfUa2StructureNamespaceTests
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
             ObjPdf.Stream(""),
-            "<< /Type /StructTreeRoot /K 7 0 R >>",
+            "<< /Type /StructTreeRoot /K 7 0 R /Namespaces [12 0 R 13 0 R] >>",
             ObjPdf.Xmp("<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='2' pdfuaid:rev='2024'><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>"),
             $"<< /Type /StructElem {document} /P 5 0 R {kids} >>",
             "<< /Type /StructElem /S /P /P 7 0 R /Pg 3 0 R >>",

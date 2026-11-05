@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary namespace registry check](spec-backlog.md#2026-11-05-primary-namespace-registration-identity)
+requires referenced dictionaries in the root Namespaces array by identity,
+with explicit bounded-inspection errors. Six native controls retain two
+positives and reject four primary negatives accepted by the reference.
+Two already-invalid corpus fixtures gain diagnostics not reported by the
+reference; every verdict and UA-1 result stays unchanged. Full namespace
+shape, RoleMapNS targets and complete traversal remain deferred.
+
 The [primary indirect namespace check](spec-backlog.md#2026-11-05-primary-indirect-element-namespaces)
 rejects direct element NS dictionaries under published PDF 2.0 errata.
 Four native positives have normal reference agreement; the two primary
