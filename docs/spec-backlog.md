@@ -4,6 +4,30 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 bounded classic allocation diagnostic
+
+The retained approximately 64-byte/op large-fallback BDN increase was
+investigated using isolated exact-source reconstructions of the
+generation-bound control (0fd028a9) and negative-field/Size final
+(10ca3f9f), without production changes or another BDN timing run.
+Both builds succeeded. Identical benchmark input lengths/SHA256 and
+fixture-source hashes were verified, with distinct engine identifiers.
+
+Current-thread allocated-byte counters around each fresh Load were
+sampled after 1,024 warmups and a 500 ms pause, in separate tiering-on
+and tiering-off processes. All 48 samples (two revisions, two modes,
+four cases, three 256-load samples) have matching per-operation
+minima/maxima and revision totals: fixed 64/4,096 rows allocate
+14,336/736,040 bytes; fallback 16,560/932,648 bytes.
+
+The revision delta was not reproduced in this diagnostic. Absolute
+counts differ from BDN, and the original approximately 64-byte
+observation remains unexplained, retained and not dismissed as unrelated.
+No optimization, universal allocation equality, speedup or native-memory
+claim is made. The benchmark README includes the exact inert harness/
+project snapshots, raw samples and reproduction instructions.
+This closes the bounded investigation, not the broader performance goal.
+
 ## 2026-11-05 startxref token boundaries
 
 ISO 32000-1 7.2.2 (printed p13) defines consecutive regular characters

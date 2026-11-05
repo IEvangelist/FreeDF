@@ -9,6 +9,58 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Classic allocation diagnostic: 2026-11-05
+
+A bounded diagnostic investigated the approximately 64-byte/op difference
+in the historical large-fallback BDN result below without repeating or
+discarding that benchmark. Exact production sources were reconstructed
+with `git archive` at 0fd028a97ce45feea74342d436090159fbb6037a
+(generation control) and 10ca3f9ff699c8165c80ab3bbf340e020dfd0a02
+(negative-field plus Size guards), including identical XrefClassicBench
+source, central package versions and project properties. Both isolated
+Release projects built successfully; no production files were edited.
+
+The same fresh-load workload/preflight ran in separate processes with
+DOTNET_TieredCompilation=1 and 0, after 1,024 warmup loads and a 500 ms
+pause per case. Three 256-load samples use current-thread allocated-byte
+counters immediately around each Load call; serialization, validation,
+fixture setup and output are outside those counters. All 48 samples
+(two revisions, two tiering modes, four cases, three samples) report
+identical allocation values across revisions/modes, including identical
+per-operation minima/maxima:
+
+| Rows / path | Both source revisions (bytes/load) |
+|---|---:|
+| 64 / fixed | 14,336 |
+| 4,096 / fixed | 736,040 |
+| 64 / fallback compatibility | 16,560 |
+| 4,096 / fallback compatibility | 932,648 |
+
+This diagnostic does **not reproduce** the source-revision delta. Its
+absolute numbers differ from BDN; it does not explain that discrepancy,
+prove a BDN fault, or dismiss the retained 64-byte/op observation. No
+allocation reduction, timing, native/retained-memory or universal
+zero-overhead claim follows. Fallback fixtures still deliberately use
+nonconforming compatibility syntax.
+
+[All 48 raw samples](results/2026-11-05-classic-allocation-diagnostic.csv)
+include commit IDs, engine MVIDs and source/fixture SHA256.
+[Exact diagnostic source](results/2026-11-05-classic-allocation-Program.cs.txt)
+and [project snapshot](results/2026-11-05-classic-allocation-Diagnostic.csproj.txt)
+are inert text artifacts, not benchmark-project compilation inputs.
+To reproduce, archive each revision's `src/PortableDocument.Core`,
+`Directory.Build.props`, `Directory.Packages.props` and
+`bench/FreeDF.Bench/XrefClassicBench.cs` into separate temporary roots.
+Copy the snapshots to Program.cs/Diagnostic.csproj in a third temporary
+directory, then build serially for each source root:
+
+```powershell
+dotnet build .\Diagnostic.csproj -c Release -m:1 -p:UseSharedCompilation=false -p:EngineRoot=C:\path\to\archived-root
+$env:DOTNET_TieredCompilation = "1" # Repeat in another process with "0".
+dotnet .\bin\Release\net10.0\Diagnostic.dll
+Remove-Item Env:DOTNET_TieredCompilation
+```
+
 ## Cumulative classic negative-field and Size guards: 2026-11-05
 
 The same `XrefClassicBench` inputs and fresh-load timed boundary compare
