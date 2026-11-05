@@ -56,6 +56,14 @@ format-4 cmap/hmtx inspection in `ValidationPdfA.cs`, content-state
 collection and scoped PDF/UA comparison are independently implemented.
 No reference-engine source or external font program is bundled.
 
+The rendering-use scope of PDF/UA font embedding was cross-checked against
+the same CC BY 4.0 UA-1 profile 7.21.4.1-1 and UA-2 profile 8.4.5.5.1-1.
+State collection and the unused/mode-3-only exemption in
+`ValidationContext.cs` and `ValidationPdfUA.cs` are independently implemented.
+Observed mixed visible/invisible use remains subject to embedding, unlike
+four explicitly documented reference controls. No profile XML or
+reference-engine source is bundled.
+
 The UA-1 complete Scope-presence check for tables without TD Headers was
 cross-checked against the same CC BY 4.0 PDF/UA-1 profile, 7.5 tests 1/2.
 `ValidationPdfUA.cs` independently implements this necessary presence

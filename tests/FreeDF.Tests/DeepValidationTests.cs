@@ -1,4 +1,5 @@
 using System.Text;
+using PortableDocument.Core;
 using PortableDocument.Document;
 
 namespace FreeDF.Tests;
@@ -602,6 +603,142 @@ public class DeepValidationTests
     {
         Assert.True(U(Ua(TaggedText, "8 0 R", extras: [Para, "<< /Type /Filespec /F (a.txt) /EF << /F 10 0 R >> >>", ObjPdf.Stream("x", "/Type /EmbeddedFile")])).Has("PDFUA-FILESPEC-UF"));
         Assert.False(U(Ua(TaggedText, "8 0 R", extras: [Para, "<< /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F 10 0 R >> >>", ObjPdf.Stream("x", "/Type /EmbeddedFile")])).Has("PDFUA-FILESPEC-UF"));
+    }
+
+    public static IEnumerable<object[]> FontEmbeddingUseCases()
+    {
+        (string Text, bool Rendered)[] cases =
+        [
+            ("", false), ("BT /UF 12 Tf ET", false),
+            ("BT /UF 12 Tf 3 Tr (x) Tj ET", false),
+            ("BT /UF 12 Tf 3 Tr q 0 Tr Q (x) Tj ET", false),
+            ("BT /UF 12 Tf () Tj ET", true),
+            ("BT /UF 12 Tf [100] TJ ET", true),
+            ("BT /UF 12 Tf (x) Tj ET", true),
+            ("BT /UF 12 Tf 1 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 2 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 4 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 5 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 6 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 7 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 3 Tr (x) Tj 0 Tr (y) Tj ET", true),
+            ("BT /UF 12 Tf q 3 Tr Q (x) Tj ET", true),
+            ("BT /UF 12 Tf (x) ' ET", true),
+            ("BT /UF 12 Tf 0 0 (x) \" ET", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var surface in new[] { "page", "form", "appearance", "uninvoked-form" })
+        foreach (var (text, rendered) in cases)
+            yield return [part, surface, text, rendered];
+    }
+
+    [Theory]
+    [MemberData(nameof(FontEmbeddingUseCases))]
+    public void UaFontEmbeddingRequiresRenderingUse(int part, string surface, string text, bool rendered)
+    {
+        const string fontResources = "/Font << /UF 9 0 R >>";
+        var resources = $"/Resources << {fontResources} /XObject << /FontForm 10 0 R >> >>";
+        var pageExtra = resources;
+        var content = surface == "uninvoked-form" ? "" : text;
+        if (surface == "form") content = "/FontForm Do";
+        if (surface == "appearance")
+        {
+            content = "";
+            pageExtra += " /Annots [11 0 R]";
+        }
+        var pdf = Ua($"/P << /MCID 0 >> BDC {content} EMC", "8 0 R", pageExtra,
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+                ObjPdf.Stream(text, $"/Type /XObject /Subtype /Form /BBox [0 0 100 100] /Resources << {fontResources} >>"),
+                "<< /Type /Annot /Subtype /Stamp /Rect [0 0 10 10] /AP << /N 10 0 R >> >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(rendered && surface != "uninvoked-form", report.Has("PDFUA-FONT-EMBEDDED"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-FONT-USAGE-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFontEmbeddingCannotExemptUninspectedUse(int part)
+    {
+        var pdf = Ua("/P << /MCID 0 >> BDC /Missing Do EMC", "8 0 R",
+            "/Resources << /Font << /UF 9 0 R >> >>",
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA-FONT-EMBEDDED"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFontScanLimitDoesNotEstablishUnusedExemption(int part)
+    {
+        var pdf = Ua("BT /UF 12 Tf (x) Tj ET", "8 0 R",
+            "/Resources << /Font << /UF 9 0 R >> >>",
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"]);
+        var context = new ValidationContext(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2, contentScanTokenLimit: 2);
+        PdfUAChecks.Run(context);
+        Assert.False(context.FontUsageComplete);
+        Assert.Single(context.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData("BT /UF 12 Tf 3 Tr (unterminated")]
+    [InlineData("BT /Missing 12 Tf (x) Tj ET")]
+    [InlineData("BT /UF 12 Tf /Bad Tr ET")]
+    [InlineData("BT /UF 12 Tf [true] TJ ET")]
+    [InlineData("/Missing Do")]
+    public void UaFontEmbeddingReportsUnknownRatherThanUnused(string content)
+    {
+        foreach (var part in new[] { 1, 2 })
+        {
+            var pdf = Ua(content, "8 0 R", "/Resources << /Font << /UF 9 0 R >> >>",
+                extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]);
+            var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+            Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+            Assert.False(report.Has("PDFUA-FONT-EMBEDDED"));
+            Assert.False(report.Has("VALIDATION-INTERNAL"));
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFontEmbeddingReportsMalformedFlateContent(int part)
+    {
+        var pdf = Ua("", "8 0 R", "/Resources << /Font << /UF 9 0 R >> >>",
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]);
+        var doc = PdfDocument.Load(pdf);
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(new PdfDictionary
+        {
+            Entries = { ["Filter"] = new PdfName("FlateDecode") },
+        }, System.Text.Encoding.ASCII.GetBytes("BT /UF 12 Tf 3 Tr (x) Tj ET"));
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.True(report.Has("PDFUA-FONT-USAGE-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA-CONTENT-SCAN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, "pattern")]
+    [InlineData(2, "pattern")]
+    [InlineData(1, "type3")]
+    [InlineData(2, "type3")]
+    public void UaFontEmbeddingDoesNotExemptUninspectedPatternOrCharProcUse(int part, string surface)
+    {
+        var resources = "/Resources << /Font << /UF 9 0 R /T3 10 0 R >> /Pattern << /Pat 11 0 R >> >>";
+        var content = surface == "pattern" ? "/Pattern cs /Pat scn 0 0 10 10 re f" : "BT /T3 12 Tf (x) Tj ET";
+        var pdf = Ua(content, "8 0 R", resources,
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+                "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << >> >>",
+                ObjPdf.Stream("BT /UF 12 Tf (x) Tj ET", "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 10 10] /XStep 10 /YStep 10")]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA-FONT-EMBEDDED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
     const string XfaConfigNamespace = "http://www.xfa.org/schema/xci/3.0/";

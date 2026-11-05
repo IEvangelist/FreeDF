@@ -4,6 +4,61 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 PDF/UA rendering-only font embedding
+
+`PDFUA-FONT-EMBEDDED` now requires observed text-showing use in a rendering
+mode other than 3, rather than merely finding a font resource. This applies
+to both UA profiles, including fonts selected through ExtGState, invoked
+Forms with inherited/restored state, and inspected annotation appearances.
+Selecting a font without showing text does not require embedding. Empty
+text-showing operators and adjustment-only TJ arrays remain conservatively
+in scope; no empty-glyph exemption is claimed. Mode 7 (glyph clipping)
+requires embedding, and any observed non-mode-3 use defeats the exemption.
+Other font checks and PDF/A policies are unchanged.
+
+The factual requirements were cross-checked against the pinned veraPDF
+v1.30.3 UA-1 7.21.4.1-1 and UA-2 8.4.5.5.1-1 profiles, whose descriptions
+limit embedding to fonts used for rendering and exempt mode 3.
+ISO 32000-1 9.3.6/Table 106 (printed pp246-247, public Adobe PDF physical
+pp254-255) independently establishes invisible mode 3 versus clipping
+mode 7. Full ISO UA font clauses have not been independently obtained;
+this is not complete font conformance.
+
+An unembedded font without observed rendering use is not silently exempted
+when the usage scan is incomplete. A single `PDFUA-FONT-USAGE-INCOMPLETE`
+Error reports that uncertainty. UA inspection now reuses the existing
+strict content-decoding checks, records token exhaustion, and marks
+uninspected pattern/Type3 glyph content as incomplete. Controlled decoding
+failures also produce `PDFUA-CONTENT-SCAN-INCOMPLETE`. These findings are
+not counted as mapped embedding-rule overlap. This remains bounded static
+inspection, not text rendering, pattern execution, or complete usage
+discovery inside Type3 glyph procedures.
+
+Verification:
+
+- The initial 76 authored controls produced 28 failures before the fix.
+  Final coverage adds 151 cases for both profiles, all rendering modes,
+  page/Form/appearance/uninvoked-Form surfaces, malformed content, missing
+  references, pattern/Type3 uncertainty and token limits. The existing
+  ExtGState tests now expect only the intentional UA mode-3 embedding
+  exemption; their CIDToGID expectations remain unchanged. An older
+  structure fixture now actually links the text stream it intended to test.
+- Forty-eight independent native-profile PDF controls give 44 exact-rule
+  and whole-file agreements: 16 clean positives and 28 negatives.
+  Sixteen previous resource-only/mode-3 false-positive verdicts are fixed.
+  Four explicit disagreements remain: the reference accepts a font first
+  shown in mode 3 and then shown visibly in mode 0, on both page and Form
+  surfaces in both profiles. FreeDF rejects that observed rendered,
+  unembedded use; the reference acceptance is not copied.
+- Fresh measurements of all 435 public PDFs/870 profile results preserve
+  every file verdict. Only the unused-font finding on the native dynamic
+  XFA negative disappears, under both profiles; its dynamic-XFA rejection
+  remains. No new incomplete/internal findings appear in that corpus.
+- Full Release suite: 13,314 passed, zero failed/skipped. The reporting
+  tool suite has 20 passing tests, including non-overlap for incomplete
+  embedding inspection. External PDFs, profile XML and runtime artifacts
+  remain session-only.
+
 ## 2026-11-04 UA-1 dynamic XFA configuration
 
 `PDFUA-XFA-DYNAMIC` now inspects the inert XFA configuration for UA-1

@@ -4,6 +4,15 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [2026-11-05 rendering-only PDF/UA font embedding correction](spec-backlog.md#2026-11-05-pdfua-rendering-only-font-embedding)
+exempts unused and solely mode-3 font use, preserves clipping/mixed-mode
+embedding requirements, and explicitly reports incomplete usage inspection.
+Forty-eight native-profile controls give 44 exact-rule/file agreements,
+including 16 corrected false positives; four mixed-mode reference
+disagreements are retained. Fresh 435-PDF/870-result file verdicts are
+unchanged; only an unused-font finding on the dynamic-XFA negative is
+removed. Other font predicates and PDF/A policies are not broadened.
+
 The [2026-11-03 full PDF/UA corpus remeasurement](spec-backlog.md#2026-11-03-full-pdfua-corpus-remeasurement)
 compares all 297 UA-1 and 138 UA-2 files with veraPDF 1.30.3: 14 UA-1 misses
 and 9 UA-2 misses, zero false positives/exclusions. Explicit standalone and

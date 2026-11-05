@@ -32,7 +32,8 @@ public class ExtGStateFontTests
         var prefix = profile is PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2 ? "PDFUA" : "PDFA";
         Assert.False(report.Has("VALIDATION-INTERNAL"));
         Assert.False(report.Has("PDFA-FONT-USAGE-INCOMPLETE"));
-        Assert.Equal(included && !embedded, report.Has(prefix + "-FONT-EMBEDDED"));
+        var requiresEmbedding = included && (prefix != "PDFUA" || mode != 3);
+        Assert.Equal(requiresEmbedding && !embedded, report.Has(prefix + "-FONT-EMBEDDED"));
         Assert.Equal(included && embedded && map != "/Identity", report.Has(prefix + "-FONT-CIDTOGID"));
     }
 

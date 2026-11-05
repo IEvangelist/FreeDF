@@ -118,6 +118,12 @@ class RuleOverlapTests(unittest.TestCase):
         self.assertIn("  7.15-1: 1 / 0 / 1",
                       self.overlap(1, "7.15-1", ["PDFUA-XFA-INCOMPLETE"]))
 
+    def test_incomplete_font_usage_is_not_embedding_rule_overlap(self):
+        for part, rule in [(1, "7.21.4.1-1"), (2, "8.4.5.5.1-1")]:
+            with self.subTest(part=part):
+                self.assertIn(f"  {rule}: 1 / 0 / 1",
+                              self.overlap(part, rule, ["PDFUA-FONT-USAGE-INCOMPLETE", "PDFUA-CONTENT-SCAN-INCOMPLETE"]))
+
 
 class ProfileSelectionTests(unittest.TestCase):
     def test_default_and_explicit_profiles_are_mutually_exclusive(self):

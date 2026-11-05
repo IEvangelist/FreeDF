@@ -266,7 +266,7 @@ internal sealed class ValidationContext
 
     byte[] PageContents(PdfPage page)
     {
-        if (Profile != PdfValidationProfile.PdfA1b) return page.GetContents();
+        if (Profile is not (PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)) return page.GetContents();
         var contents = F.Resolve(page.Dict.Get("Contents"));
         using var output = new MemoryStream();
         if (contents is null or PdfNull) return [];
@@ -281,7 +281,7 @@ internal sealed class ValidationContext
 
     byte[] ContentBytes(PdfStream stream)
     {
-        if (Profile != PdfValidationProfile.PdfA1b) return F.DecodeStream(stream);
+        if (Profile is not (PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)) return F.DecodeStream(stream);
         var filters = PdfFilters.GetFilters(stream.Dict, F.Resolve);
         var filter = F.Resolve(stream.Dict.Get("Filter") ?? stream.Dict.Get("F"));
         var parms = F.Resolve(stream.Dict.Get("DecodeParms") ?? stream.Dict.Get("DP"));
@@ -301,7 +301,7 @@ internal sealed class ValidationContext
         catch (Exception e) when (e is InvalidDataException or IOException or PdfParseException)
         {
             FontUsageComplete = false;
-            Add("PDFA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
+            Add(Profile == PdfValidationProfile.PdfA1b ? "PDFA-CONTENT-SCAN-INCOMPLETE" : "PDFUA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
                 $"Content decoding did not complete: {e.Message}");
             return [];
         }
@@ -494,7 +494,7 @@ internal sealed class ValidationContext
                         else { FontUsageComplete = false; font = null; }
                     }
                     break;
-                case "scn" or "SCN" when Profile == PdfValidationProfile.PdfA1b:
+                case "scn" or "SCN" when Profile is PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2:
                     if (operands.LastOrDefault() is PdfName patternName
                         && F.Resolve(resources.Get("Pattern")) is PdfDictionary patterns
                         && F.Resolve(patterns.Get(patternName.Value)) is PdfStream)
@@ -601,6 +601,8 @@ internal sealed class ValidationContext
                                 var use = FontFor(font, page);
                                 if (Profile is PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)
                                 {
+                                    if (renderMode != 3) use.RenderingPage ??= page;
+                                    if (renderMode != 3 && F.Resolve(font.Get("Subtype")).AsName() == "Type3") FontUsageComplete = false;
                                     if (text is PdfString shown)
                                     {
                                         use.NoteTwoByteCodes(shown, page);
@@ -630,8 +632,7 @@ internal sealed class ValidationContext
             }
             operands.Clear();
         }
-        if (budget.Tokens >= _contentScanTokenLimit && !budget.LimitReported
-            && Profile is PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfA2b or PdfValidationProfile.PdfA3b)
+        if (budget.Tokens >= _contentScanTokenLimit && !budget.LimitReported)
         {
             var contentRemains = false;
             try
@@ -643,8 +644,9 @@ internal sealed class ValidationContext
             {
                 budget.LimitReported = true;
                 FontUsageComplete = false;
-                Add("PDFA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
-                    $"Content scanning stopped after {_contentScanTokenLimit} tokens before all content was examined", page: page);
+                if (Profile is PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfA2b or PdfValidationProfile.PdfA3b)
+                    Add("PDFA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
+                        $"Content scanning stopped after {_contentScanTokenLimit} tokens before all content was examined", page: page);
             }
         }
     }

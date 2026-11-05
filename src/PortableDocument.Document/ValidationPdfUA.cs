@@ -95,9 +95,20 @@ internal static partial class PdfUAChecks
     static void Fonts(ValidationContext c)
     {
         c.EnsureWalked();
+        var usageReported = false;
         foreach (var u in c.Fonts)
             if (!FontChecks.IsEmbedded(c.F, u.Font))
-                c.Add("PDFUA-FONT-EMBEDDED", ValidationSeverity.Error, $"font {FontChecks.Name(c.F, u.Font)} is not embedded", Clause(c, "7.21.4.1", "8.8"), u.Page);
+            {
+                if (u.RenderingPage is { } page)
+                    c.Add("PDFUA-FONT-EMBEDDED", ValidationSeverity.Error, $"font {FontChecks.Name(c.F, u.Font)} used for rendering is not embedded", Clause(c, "7.21.4.1", "8.4.5.5.1"), page);
+                else if (!c.FontUsageComplete && !usageReported)
+                {
+                    usageReported = true;
+                    c.Add("PDFUA-FONT-USAGE-INCOMPLETE", ValidationSeverity.Error,
+                        "Font use could not be completely inspected; the unused or mode-3-only exemption for unembedded fonts cannot be established",
+                        Clause(c, "7.21.4.1", "8.4.5.5.1"));
+                }
+            }
     }
 
     static void Pages(ValidationContext c)

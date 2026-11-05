@@ -426,7 +426,7 @@ public class ValidationTests
         var pdf = ObjPdf.Build(
             "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>",
             ObjPdf.Stream("BT /F1 12 Tf (x) Tj ET"),
             "<< /Type /StructTreeRoot /K 6 0 R >>",
             "<< /S /Weird >>");
