@@ -18,6 +18,59 @@ public class FormAuthoringTests
     static string StreamText(PdfDocument d, PdfObject? o) => Encoding.Latin1.GetString(((PdfStream)d.File.Resolve(o)!).RawData);
     static PdfObject? R(PdfDocument d, PdfObject? o) => d.File.Resolve(o);
 
+    static PdfDocument NullNamedWidget(string name, string kids = "") => PdfDocument.Load(ObjPdf.Build(
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [5 0 R] >>",
+        "<< /FT /Tx /T (name) /TU (Field description) /V (before) /Kids [5 0 R] >>",
+        $"<< /Type /Annot /Subtype /Widget /Parent 4 0 R /Rect [0 0 10 10] {name} {kids} >>",
+        "null", "(child)"));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/T null")]
+    [InlineData("/T 6 0 R")]
+    [InlineData("/T 999 0 R")]
+    [InlineData("/T (child)")]
+    [InlineData("/T 7 0 R")]
+    [InlineData("/T ()")]
+    public void NullPartialNamesPreserveTerminalFieldOwnership(string name)
+    {
+        var doc = NullNamedWidget(name);
+        var namedChild = name is "/T (child)" or "/T 7 0 R" or "/T ()";
+        var expected = namedChild ? 5 : 4;
+        var simple = Assert.Single(doc.GetFormFields());
+        var detail = Assert.Single(doc.GetFormFieldDetails().Fields);
+        Assert.Same(doc.File.GetObject(expected), simple.Dict);
+        Assert.Same(simple.Dict, detail.Dictionary);
+        Assert.Equal(name == "/T ()" ? "name." : namedChild ? "name.child" : "name", simple.FullName);
+        var spec = Assert.Single(PdfEditor.Open(doc).GetFormFieldSpecs());
+        Assert.Equal(expected, spec.Handle.Field.Number);
+    }
+
+    [Theory]
+    [InlineData("", "")]
+    [InlineData("/T null", "")]
+    [InlineData("/T 6 0 R", "")]
+    [InlineData("/T 999 0 R", "")]
+    [InlineData("", "/Kids null")]
+    [InlineData("/T null", "/Kids null")]
+    [InlineData("", "/Kids 6 0 R")]
+    [InlineData("", "/Kids 999 0 R")]
+    public void UpdatingNullNamedWidgetWritesTheTerminalField(string name, string kids)
+    {
+        var editor = PdfEditor.Open(NullNamedWidget(name, kids));
+        Assert.Equal(4, Assert.Single(editor.GetFormFieldSpecs()).Handle.Field.Number);
+        Assert.True(editor.SetFieldValue("name", "after"));
+        var saved = Reload(editor);
+        var fields = Assert.IsType<PdfArray>(R(saved, AcroForm(saved).Get("Fields")));
+        var field = Assert.IsType<PdfDictionary>(R(saved, Assert.Single(fields.Items)));
+        var widget = Assert.Single(Widgets(saved));
+        Assert.Equal("after", Assert.IsType<PdfString>(R(saved, field.Get("V"))).Text);
+        Assert.Null(widget.Get("V"));
+        Assert.Equal("after", Assert.Single(saved.GetFormFields()).Value);
+    }
+
     static IEnumerable<PdfDictionary> Widgets(PdfDocument d) => d.Pages[0].GetAnnotations().Where(a => a.Subtype == "Widget").Select(a => a.Dict);
     static string Name(PdfDocument d, PdfDictionary w)
     {

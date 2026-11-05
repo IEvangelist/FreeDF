@@ -4,6 +4,41 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 Null widget names and terminal-field ownership
+
+The simple form reader, typed form-detail reader, editor value updater
+and editor form index now treat a widget child's null T as an omitted
+partial field name. Previously they could select the widget dictionary
+as a new terminal field instead of retaining the owning field, losing
+that field's tooltip or writing a value to the wrong dictionary.
+Direct/indirect null and nonexistent references follow the same primary
+ISO 32000-1 7.3.9 null-equivalence rule as the FT correction below.
+The editor index also treats null Kids as omission; existing non-null
+name/child-array policies are unchanged, including empty-string names.
+This does not redesign field-tree ownership or repair arbitrary malformed
+field hierarchies.
+
+The editor deliberately does not retain imported null objects in its
+object map. Its local form-entry predicate therefore accounts for absent
+indirect targets as well as direct null, without changing the general
+editor resolver. Reader traversal uses the file's existing resolver.
+
+The initial sixteen authored cases produced eleven failures, after the
+save assertions were corrected to follow references rather than assuming
+the writer preserved object numbers. Final nineteen cases cover both
+read APIs, form-index handles, saved field/widget values, real and
+empty-string partial names, indirect names, null Kids and UA-1 terminal
+tooltip ownership. Six independent native UA-1 terminal-tooltip controls
+now agree with the reference at rule 7.18.1-3 and whole-file level,
+correcting six false-positive verdicts. The same 36-control collection
+now has 24 whole-file agreements and twelve explicitly retained field/
+label disagreements; every corresponding UA-2 output is unchanged.
+
+Fresh measurement of all 435 public PDFs/870 profile results is identical
+to the null-FT baseline. Full Release suite: 13,553 passed, zero
+failed/skipped. Solution build: zero errors and two retained machine-feed
+NU1507 warnings. External PDFs and reference reports remain session-only.
+
 ## 2026-11-05 PDF/UA null field-type equivalence
 
 The shared widget tooltip prerequisite now resolves FT before deciding

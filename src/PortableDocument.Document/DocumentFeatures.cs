@@ -782,7 +782,7 @@ public static class DocumentFeatures
         ft = f.Resolve(d.Get("FT")).AsName() ?? ft;
         val = d.Get("V") ?? val;
         ff = d.Get("Ff") is { } fo ? (int)(f.Resolve(fo).AsNumber() ?? 0) : ff;
-        if (f.Resolve(d.Get("Kids")) is PdfArray kids && kids.Items.Any(k => f.Resolve(k) is PdfDictionary kd && kd.Get("T") is not null))
+        if (f.Resolve(d.Get("Kids")) is PdfArray kids && kids.Items.Any(k => f.Resolve(k) is PdfDictionary kd && f.Resolve(kd.Get("T")) is not (null or PdfNull)))
         {
             foreach (var k in kids.Items) Field(f, k, name, ft, val, ff, acc, seen, depth + 1);
             return;

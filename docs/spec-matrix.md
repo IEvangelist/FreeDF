@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [null widget-name ownership correction](spec-backlog.md#2026-11-05-null-widget-names-and-terminal-field-ownership)
+keeps terminal-field ownership consistent in readers, value updates and
+the editor index. Nineteen authored controls and six newly agreeing
+native UA-1 tooltip controls cover the fix; twelve broader field/label
+disagreements remain. Fresh 435-PDF/870-result corpus output is unchanged.
+
 The [null field-type equivalence correction](spec-backlog.md#2026-11-05-pdfua-null-field-type-equivalence)
 makes missing/null/dangling FT entries consistent without suppressing real
 parent field types. Seventy-two authored cases and 36 independent native

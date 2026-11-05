@@ -88,7 +88,7 @@ public sealed partial class PdfEditor
             var terminal = true;
             if (kids is not null)
                 foreach (var k in kids.Items)
-                    if (Res(k) is PdfDictionary kd && (kd.Get("T") is not null || kd.Get("Kids") is not null)) { terminal = false; break; }
+                    if (Res(k) is PdfDictionary kd && (FormEntryPresent(kd, "T") || FormEntryPresent(kd, "Kids"))) { terminal = false; break; }
             index.Add(new FormNode(this, r, parent, full, terminal));
             if (!terminal) foreach (var k in kids!.Items) Walk(k, r, full, depth + 1);
         }
@@ -97,6 +97,14 @@ public sealed partial class PdfEditor
     }
 
     List<FormNode> FormNodes() => Index().All;
+
+    bool FormEntryPresent(PdfDictionary dictionary, string key)
+    {
+        // Imported null objects are absent from _objs, just like nonexistent references.
+        var value = dictionary.Get(key);
+        return value is not null && (value is not PdfRef reference || _objs.ContainsKey(reference.Number))
+            && Res(value) is not PdfNull;
+    }
 
     List<PdfRef> WidgetRefs(FormNode n)
     {

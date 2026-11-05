@@ -336,7 +336,7 @@ public sealed partial class PdfEditor
             var full = partial is null ? prefix : prefix.Length == 0 ? partial : prefix + "." + partial;
             ft = (Res(d.Get("FT")) as PdfName)?.Value ?? ft;
             var kids = Res(d.Get("Kids")) as PdfArray;
-            var hasFieldKids = kids is not null && kids.Items.Any(k => Res(k) is PdfDictionary kd && kd.Get("T") is not null);
+            var hasFieldKids = kids is not null && kids.Items.Any(k => Res(k) is PdfDictionary kd && FormEntryPresent(kd, "T"));
             if (hasFieldKids) { foreach (var k in kids!.Items) Walk(k, full, ft, depth + 1); return; }
             if (full != name) return;
             done = true;

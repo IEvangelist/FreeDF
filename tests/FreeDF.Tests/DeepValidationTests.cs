@@ -527,6 +527,27 @@ public class DeepValidationTests
         Assert.False(r.Has("PDFUA-FORM-TU"));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("/T null")]
+    [InlineData("/T 11 0 R")]
+    [InlineData("/T 999 0 R")]
+    public void NullWidgetPartialNameKeepsUa1TerminalFieldTooltip(string name)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]",
+            "/AcroForm << /Fields [10 0 R] >>", extras:
+        [
+            "<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+            $"<< /Type /Annot /Subtype /Widget /Parent 10 0 R /Rect [0 0 10 10] /F 4 {name} >>",
+            "<< /FT /Tx /T (name) /TU (Field description) /Kids [9 0 R] >>",
+            "null",
+        ]);
+        var report = U(pdf);
+        Assert.False(report.Has("PDFUA-FORM-TU"));
+        Assert.False(report.Has("PDFUA-FORM-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> WidgetFieldTypeCases()
     {
         foreach (var part in new[] { 1, 2 })
