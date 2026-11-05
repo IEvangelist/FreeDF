@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [null visibility-expression fallback](spec-backlog.md#2026-11-05-null-visibility-expression-fallback)
+treats resolved null VE entries as absent and uses membership policy.
+Real expressions still take precedence; invalid non-null expressions retain
+their existing diagnosed disposition and traversal limits.
+
 The [membership-policy optimization](spec-backlog.md#2026-11-05-membership-policy-allocation-removal)
 preserves four-policy/null-member behavior and all-member diagnostics while
 removing temporary lists. Matched interpreter benchmarks retain exact

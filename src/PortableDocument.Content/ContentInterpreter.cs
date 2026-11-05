@@ -648,7 +648,7 @@ public sealed class ContentInterpreter
         var type = R(oc.Get("Type")).AsName();
         if (type == "OCMD")
         {
-            if (R(oc.Get("VE")) is { } expression)
+            if (R(oc.Get("VE")) is { } expression and not PdfNull)
             {
                 var budget = 0;
                 var expressionVisible = EvaluateVisibilityExpression(expression, cfg, 0, ref budget, out var valid);

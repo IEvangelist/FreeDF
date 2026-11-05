@@ -41,7 +41,24 @@ public class OptionalContentMembershipPolicyTests
     public void Every_member_is_evaluated_even_after_the_policy_result_is_known(string policy, bool visible) =>
         AssertRendering(policy, "/OCGs [5 0 R 6 0 R]", visible, diagnosePeer: true);
 
-    static void AssertRendering(string policy, string members, bool visible, bool diagnosePeer = false)
+    [Theory]
+    [InlineData("")]
+    [InlineData("/VE null")]
+    [InlineData("/VE 8 0 R")]
+    [InlineData("/VE 99 0 R")]
+    public void Null_visibility_expressions_are_absent_and_preserve_membership_policy(string expression)
+    {
+        foreach (var policy in new[] { "AnyOn", "AllOn", "AnyOff", "AllOff" })
+            AssertRendering($"/P /{policy}", "/OCGs [5 0 R 6 0 R]",
+                policy is "AnyOn" or "AnyOff", expression: expression);
+    }
+
+    [Fact]
+    public void Present_visibility_expression_still_takes_precedence_over_membership_policy() =>
+        AssertRendering("/P /AnyOn", "/OCGs [5 0 R]", false, expression: "/VE [/Not 5 0 R]");
+
+    static void AssertRendering(string policy, string members, bool visible, bool diagnosePeer = false,
+        string expression = "")
     {
         static PdfObject Parse(string text) => new PdfLexer(Encoding.ASCII.GetBytes(text)).ReadObject()!;
         var objects = new Dictionary<int, PdfObject>
@@ -56,7 +73,8 @@ public class OptionalContentMembershipPolicyTests
                 Encoding.ASCII.GetBytes("/OC /Layer BDC 1 0 0 rg 0 0 200 200 re f EMC")),
             [5] = Parse("<< /Type /OCG /Name (On) >>"),
             [6] = Parse("<< /Type /OCG /Name (Off) " + (diagnosePeer ? "/Usage << >> " : "") + ">>"),
-            [7] = Parse($"<< /Type /OCMD {members} {policy} >>")
+            [7] = Parse($"<< /Type /OCMD {members} {policy} {expression} >>"),
+            [8] = PdfNull.Instance
         };
         var document = PdfDocument.Load(PdfWriter.Write(objects, 1, null,
             options: new PdfWriteOptions { FileId = new byte[16] }));

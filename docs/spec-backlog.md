@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 null visibility-expression fallback
+
+ISO 32000-1 7.3.7 and 7.3.9 (printed pp18/21) make null dictionary
+values equivalent to absent entries, including nonexistent indirect
+references. Table 99 and 8.11.2.2 (printed pp223-224) define the OCMD
+membership-policy fallback and preference for a present visibility
+expression. The interpreter previously treated a resolved PdfNull VE
+as an invalid expression, hiding content instead of using OCGs/P.
+It now skips null expressions; non-null expressions retain their
+precedence, grammar, diagnostics and resource limits.
+
+Four expression-presence forms (omitted, direct null, indirect null and
+nonexistent reference) exercise all four membership policies, with and
+without caller-provided state. A separate Not expression checks that
+a real expression still overrides an otherwise visible membership policy.
+The unchanged-production baseline fails three cases and passes two.
+Final focused optional-content/layer/raster-golden checks pass 238;
+full Release passes 19,633, zero failed/skipped. The solution builds with
+zero warnings/errors. Fresh pinned 435-PDF/870-result complete corpus
+JSON is unchanged.
+
+This adds one type guard to the existing single VE resolution, without
+a collection or additional traversal. No dedicated timing was run and
+no throughput or allocation claim is made for this correction. The
+preceding membership benchmark is not a measurement of null-VE inputs.
+Broader optional-content intent, schema and lifecycle parity remain open.
+
 ## 2026-11-05 membership-policy allocation removal
 
 ISO 32000-1 Table 99 (printed p223) defines the four OCMD policies and
