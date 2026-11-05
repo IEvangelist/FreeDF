@@ -4739,6 +4739,108 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> SignatureSeedScalarCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var key in new[] { "V", "AddRevInfo" })
+        foreach (var value in new[] { "null", "0", "-1", "3", "1.5", "true", "false", "(value)", "/Name", "[]", "<< >>", "11 0 R", "99 0 R" })
+            yield return [part, type, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureSeedScalarCases))]
+    public void Ua2SignatureSeedScalarsHaveDeclaredTypes(int part, string type, string key, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /SV << /{key} {value} >> >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool absent = value is "null" or "11 0 R" or "99 0 R";
+        bool valid = key == "V" ? value is "0" or "-1" or "3" : value is "true" or "false";
+        Assert.Equal(part == 2 && type == "Sig" && !absent && !valid,
+            report.Has(key == "V" ? "PDFUA2-FORM-SEED-V-TYPE" : "PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Ua2SignatureSeedScalarKnownErrorSurvivesOtherUnknown(bool versionUnknown)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /V {(versionUnknown ? "11 0 R" : "(bad)")} /AddRevInfo {(versionUnknown ? "42" : "11 0 R")} >> >>",
+                "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!versionUnknown, report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.Equal(versionUnknown, report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("V", 32, false)]
+    [InlineData("V", 33, true)]
+    [InlineData("AddRevInfo", 32, false)]
+    [InlineData("AddRevInfo", 33, true)]
+    public void Ua2SignatureSeedScalarReferenceBoundaryIsExplicit(string key, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? key == "V" ? "3" : "true" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /SV << /{key} 10 0 R >> >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2SignatureSeedScalarDictionaryDepthIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? "<< /V 3 /AddRevInfo true >>" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Sig /T (signature) /SV 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/SV 42", true)]
+    [InlineData("/SV 11 0 R", true)]
+    [InlineData("/SV null", false)]
+    [InlineData("/SV 99 0 R", false)]
+    public void Ua2SignatureSeedScalarDictionaryUncertaintyIsExplicit(string entry, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) {entry} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureSeedScalarsDoNotInheritParentSeed()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /SV << /V (bad) /AddRevInfo 42 >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

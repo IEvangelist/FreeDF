@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary signature-seed scalar type checks](spec-backlog.md#2026-11-05-primary-signature-seed-scalar-types)
+check local terminal Sig SV/V integers and SV/AddRevInfo booleans with
+independent unresolved-reference diagnostics. Twelve native controls
+retain six shape positives; six primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Capability ranges/support, flags,
+revocation behavior and signing enforcement remain separate.
+
 The [primary signature-seed DigestMethod shape check](spec-backlog.md#2026-11-05-primary-signature-seed-digest-array-shape)
 checks local terminal Sig seed raw name arrays with independent
 reference/work incompleteness. Nine native controls retain five shape

@@ -42,6 +42,7 @@ internal static class PdfUA2Checks
         ChoiceFieldIndices(c, fields);
         SignatureLockFields(c, fields);
         SignatureSeedDigests(c, fields);
+        SignatureSeedScalars(c, fields);
         bool incomplete = false, limitIncomplete = false;
         if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
@@ -108,6 +109,35 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
                 "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
                 "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void SignatureSeedScalars(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 237";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE", ValidationSeverity.Error,
+                "signature-seed scalar inspection is truncated, unresolved, cyclic or unsupported", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var seed = ResolveBounded(c.F, field.Dictionary.Get("SV"), Incomplete);
+            if (seed is null or PdfNull) continue;
+            if (seed is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var version = ResolveBounded(c.F, dictionary.Get("V"), Incomplete);
+            if (version is not (null or PdfNull or PdfInteger))
+                c.Add("PDFUA2-FORM-SEED-V-TYPE", ValidationSeverity.Error,
+                    "signature-seed V must be an integer", clause);
+            var revocation = ResolveBounded(c.F, dictionary.Get("AddRevInfo"), Incomplete);
+            if (revocation is not (null or PdfNull or PdfBoolean))
+                c.Add("PDFUA2-FORM-SEED-ADDREVINFO-TYPE", ValidationSeverity.Error,
+                    "signature-seed AddRevInfo must be a boolean", clause);
         }
     }
 

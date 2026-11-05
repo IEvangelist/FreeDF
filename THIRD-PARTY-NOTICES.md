@@ -537,6 +537,14 @@ accepted by the pinned reference; disagreements are explicit.
 Full seed schema and credential/extension-specific algorithm enforcement
 remain separate. No standard text or external controls are bundled.
 
+The signature-seed V integer and AddRevInfo boolean checks follow official
+PDF Association 12.7.5.5/Table 237 declared type facts. They independently
+reuse bounded references and terminal field traversal, without deriving
+capability ranges, flags or signing enforcement from reference behavior.
+Twelve native controls retain six shape positives and reject six primary
+negatives accepted by the pinned reference; disagreements are explicit.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

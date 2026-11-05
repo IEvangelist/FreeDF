@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary signature-seed scalar types
+
+Official PDF Association PDF 2.0 errata 12.7.5.5/Table 237 declares
+SV/V an integer and SV/AddRevInfo a boolean. Recognized terminal Sig
+dictionaries now check those local raw types independently:
+PDFUA2-FORM-SEED-V-TYPE and PDFUA2-FORM-SEED-ADDREVINFO-TYPE.
+Omission/null/dangling entries remain absent. Signed integers including
+zero and negative values are retained by this type-only predicate;
+the descriptions of capabilities 1/2/3 are not treated as an exclusive range.
+
+SV and scalar references reuse the 32-hop/cycle guard. Field-reader
+truncation, unsupported SV shape and unresolved/bounded references produce
+PDFUA2-FORM-SEED-SCALAR-INCOMPLETE. An unknown scalar does not suppress
+the other scalar's known type error. Nonterminal parent SV is not inherited.
+Digest and lock findings remain independent. Full seed schema, flags,
+capability support, revocation behavior and signing enforcement remain separate.
+
+Initial 162 authored controls had nineteen failures; final 169 also cover
+SV dictionary uncertainty/bounds and parent exclusion. Focused Release:
+4,719 passed; full Release: 17,576 passed, zero failed/skipped. Solution
+zero errors/two retained machine-feed NU1507 warnings.
+Twelve isolated native controls retain six shape positives and reject six
+primary raw-type negatives. All pinned combined-reference jobs complete
+normally and accept: **six explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against digest baseline 7e75a245. No standard text or external controls
+are bundled; full signature/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary signature-seed digest array shape
 
 Official PDF Association PDF 2.0 errata 12.7.5.5/Table 237 declares
