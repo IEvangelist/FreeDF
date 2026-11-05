@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 TOCI reference presence
+
+Resolved UA-2 TOCI elements now require a non-null Ref on themselves or
+a descendant, matching the presence portion of pinned veraPDF v1.30.3
+8.2.5.8-1. Iterative descendant inspection bounds scheduled/visited work,
+detects cycles and reuses bounded reference resolution. Cyclic/exhausted
+inspection reports separate `PDFUA2-TOCI-REF-INCOMPLETE`, not a guessed
+missing Ref. Namespace mappings and UA-1 selection are retained.
+
+This is explicitly presence only, not target shape, identity or semantic
+destination validation. Eight native controls agree on rule/file outcomes:
+two missing/null negatives and six positives, correcting two missed file
+violations. Four of the reference-accepted positives have empty/malformed
+or dangling values; they are not evidence of valid target conformance.
+The valid direct/descendant controls are measured separately. All eight
+UA-1 outputs are unchanged; all reference jobs completed normally.
+
+Fresh 435-PDF/870-result output adds this predicate to six already-invalid
+UA-1 fixtures evaluated as UA-2, with no file-verdict changes. The six
+new findings independently agree with the pinned reference; all UA-1
+output is unchanged. Fifty-six profile/mapping/self/descendant/value cases,
+one cycle case and exact 32/33-reference boundaries were added.
+Full Release: 14,746 passed, zero failed/skipped. Solution: zero errors,
+two retained machine-feed NU1507 warnings. Reporting: 20 passing tests,
+with only this scoped presence finding mapped to 8.2.5.8-1.
+No external PDF/XML/engine source is bundled; full parity is not claimed.
+
 ## 2026-11-05 namespace-aware UA-2 caption ordering
 
 The existing global UA-2 caption-position check now resolves child roles

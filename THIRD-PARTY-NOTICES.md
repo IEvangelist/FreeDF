@@ -48,6 +48,13 @@ policies in `ValidationPdfUADeep.cs` are retained only for that profile.
 Grouping/visual caption semantics are not broadened; no engine source,
 profile XML or external caption PDF is bundled.
 
+The scoped TOCI Ref-presence check in `ValidationPdfUA2.cs` was
+cross-checked against the same CC BY 4.0 UA-2 profile, 8.2.5.8-1.
+Bounded iterative descendant/reference inspection is independently
+implemented; target shape, identity and semantic completeness are
+not derived from the reference's permissive presence results.
+No profile XML, engine source or external TOC PDF is bundled.
+
 The resolved Note restriction and scoped PDF-2.0 Note vocabulary boundary
 were cross-checked against the same CC BY 4.0 UA-2 profile (8.2.5.14-1
 and native 8.2.4-1 outcomes). `ValidationPdfUA2.cs` and the shared Note-ID

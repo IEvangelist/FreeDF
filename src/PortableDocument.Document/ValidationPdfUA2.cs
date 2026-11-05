@@ -414,12 +414,48 @@ internal static class PdfUA2Checks
                 case "FENote":
                     FenoteType(c, tree, e);
                     break;
+                case "TOCI":
+                    TociReference(c, e);
+                    break;
             }
             var kids = e.ChildElements.ToList();
             for (var i = 1; i < kids.Count - 1; i++)
                 if (StandardType(c, tree, kids[i]) == "Caption")
                 { c.Add("PDFUA2-CAPTION-POSITION", ValidationSeverity.Error, $"Caption must be the first or last child of /{e.Type}", "ISO 14289-2 8.2.5.27", e.PageIndex); break; }
         }
+    }
+
+    static void TociReference(ValidationContext c, StructElement element)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-TOCI-REF-INCOMPLETE", ValidationSeverity.Error,
+                "TOCI reference-presence inspection is cyclic or exceeds its reference/work bound",
+                "ISO 14289-2 8.2.5.8", element.PageIndex);
+        }
+        var pending = new Stack<StructElement>();
+        var seen = new HashSet<StructElement>(ReferenceEqualityComparer.Instance);
+        int work = 1;
+        pending.Push(element);
+        while (pending.TryPop(out var current))
+        {
+            if (seen.Count >= PdfTreeDiagnostics.MaxWork || !seen.Add(current))
+            { Incomplete(); return; }
+            var reference = ResolveBounded(c.F, current.Dict.Get("Ref"), Incomplete);
+            if (incomplete) return;
+            if (reference is not (null or PdfNull)) return;
+            foreach (var child in current.ChildElements)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+                pending.Push(child);
+            }
+        }
+        c.Add("PDFUA2-TOCI-REF", ValidationSeverity.Error,
+            "TOCI and its descendants have no non-null /Ref entry; target shape and identity are not evaluated",
+            "ISO 14289-2 8.2.5.8", element.PageIndex);
     }
 
     static void FenoteType(ValidationContext c, StructureTree tree, StructElement element)

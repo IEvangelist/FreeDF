@@ -1481,6 +1481,59 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> TociReferenceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var mapped in new[] { false, true })
+        foreach (var descendant in new[] { false, true })
+        foreach (var reference in new[] { "", "/Ref null", "/Ref []", "/Ref [10 0 R]", "/Ref 42", "/Ref [99 0 R]", "/Ref [null]" })
+            yield return [part, mapped, descendant, reference];
+    }
+
+    [Theory]
+    [MemberData(nameof(TociReferenceCases))]
+    public void Ua2TociRequiresReferencePresenceOnSelfOrDescendant(int part, bool mapped, bool descendant, string reference)
+    {
+        var role = mapped ? "Entry" : "TOCI";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{role} /P 7 0 R /NS {(mapped ? 12 : 11)} 0 R /K [9 0 R] {(descendant ? "" : reference)} >>",
+            $"<< /Type /StructElem /S /P /P 8 0 R /K [] {(descendant ? reference : "")} >>",
+            "<< /Type /StructElem /S /P /P 7 0 R /K [] >>",
+            "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>",
+            "<< /Type /Namespace /NS (urn:toci-test) /RoleMapNS << /Entry [/TOCI 11 0 R] >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && reference is "" or "/Ref null", report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TociCyclicReferenceIsIncomplete()
+    {
+        var pdf = Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /TOCI /P 7 0 R /K [] /Ref 9 0 R >>", "9 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-TOCI-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2TociReferenceResolutionBoundaryIsExplicit(int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, length).Select(n => n == 9 + length ? "[]" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /TOCI /P 7 0 R /K [] /Ref 10 0 R >>", "null" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-TOCI-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> CaptionNamespaceCases()
     {
         foreach (var part in new[] { 1, 2 })

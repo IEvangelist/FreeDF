@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [TOCI reference-presence check](spec-backlog.md#2026-11-05-toci-reference-presence)
+requires non-null Ref on resolved TOCI or descendants and reports bounded
+inspection separately. Eight native controls agree, correcting two missed
+file violations; malformed reference-accepted values are not claimed as
+valid targets. Six new corpus predicates agree with the reference; all
+870 file verdicts and UA-1 outputs are unchanged. Target identity/shape
+and semantic destination completeness remain deferred.
+
 The [UA-2 caption-order correction](spec-backlog.md#2026-11-05-namespace-aware-ua-2-caption-ordering)
 uses namespace-resolved Caption roles and one first-or-last policy for
 every parent. Twelve clean-file controls agree, correcting one missed
