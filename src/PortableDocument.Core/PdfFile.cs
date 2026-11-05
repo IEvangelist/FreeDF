@@ -337,22 +337,28 @@ public sealed class PdfFile
         for (var s = 0; s + 1 < index.Length; s += 2)
             for (long i = 0; i < index[s + 1]; i++, p += rowLen)
             {
-                long Field(int idx2, long def)
+                ulong Field(int idx2, ulong def)
                 {
                     if (w[idx2] == 0) return def;
                     var off = p + woff[idx2];
-                    long v = 0;
+                    ulong v = 0;
                     for (var k = 0; k < w[idx2]; k++) v = (v << 8) | data[off + k];
                     return v;
                 }
                 var type = Field(0, 1);
                 var num = (int)(index[s] + i);
                 if (Xref.ContainsKey(num) && !(overridable?.Contains(num) ?? false)) continue;
+                var value = Field(1, 0);
+                var generationOrIndex = Field(2, 0);
+                if (type <= 2 && (generationOrIndex > int.MaxValue
+                    || (type == 1 && value > long.MaxValue)
+                    || (type == 2 && value > int.MaxValue)))
+                    throw new PdfParseException("xref stream entry exceeds supported field range");
                 Xref[num] = type switch
                 {
-                    0 => new XrefEntry(false, false, 0, (int)Field(2, 0)),
-                    1 => new XrefEntry(true, false, Field(1, 0), (int)Field(2, 0)),
-                    2 => new XrefEntry(true, true, Field(1, 0), (int)Field(2, 0)),
+                    0 => new XrefEntry(false, false, 0, (int)generationOrIndex),
+                    1 => new XrefEntry(true, false, (long)value, (int)generationOrIndex),
+                    2 => new XrefEntry(true, true, (long)value, (int)generationOrIndex),
                     _ => new XrefEntry(false, false, 0, 0)
                 };
             }

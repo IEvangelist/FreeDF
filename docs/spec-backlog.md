@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 xref-stream entry storage identity
+
+ISO 32000-1 7.5.8.3 Table 18 (printed p51) assigns fields to byte
+offsets, generations, object-stream numbers and member indices. Binary
+decoding now preserves all eight bytes in ulong before checking values
+against their destination representation: known-type third fields fit int,
+type-1 offsets fit long and type-2 container numbers fit int. Unsupported
+values explicitly raise PdfParseException and use existing recovery, rather
+than wrapping generations/indices or later narrowing a container number.
+Unknown types still denote null as required by 7.5.8.3, even with high-bit
+values and otherwise oversized fields. Existing precedence is unchanged.
+
+Seventeen controls include eight initially failing unsupported-field cases,
+retained direct/compressed targets, generation compatibility and unknown
+types through ulong.MaxValue. int.MaxValue generation is checked through
+explicit PdfRef lookup, not a parsed reference token (the lexer retains
+its existing five-digit generation policy). Values beyond 65535 are
+compatibility boundaries, not normative generation limits; enforcing the
+PDF generation maximum everywhere is separate. Full Release: 18,521 passed,
+zero failed/skipped. Solution: zero errors/two retained machine-feed
+NU1507 warnings.
+
+Twelve native controls retain four positive/compatibility outputs unchanged
+and report repair on eight unsupported cases (one already repaired on
+target access). The free-generation case recovers a formerly lost target;
+other cases now distinguish recovery from silently wrapped identities.
+MuPDF agrees on three standard positives and repairs of offset/container
+overflow, returns null for the 99999-generation compatibility and free-entry
+cases, and accepts oversized generation/member-index values without repair.
+Those are explicit reference disagreements. Fresh pinned 435-PDF/870-result
+corpus JSON is wholly unchanged against the row-completeness baseline.
+
+This checks lossless storage, not full field semantics: free-list links,
+normative generation maxima, Size consistency across updates and parser-wide
+budgets remain separate.
+
 ## 2026-11-05 xref-stream declared row completeness
 
 ISO 32000-1 7.5.8.2 Table 17 (printed p50) relates each subsection's

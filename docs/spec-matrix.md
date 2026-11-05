@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref-stream entry identity correction](spec-backlog.md#2026-11-05-xref-stream-entry-storage-identity)
+decodes eight-byte fields losslessly before checking destination ranges.
+Known generations, offsets, containers and indices cannot wrap into other
+identities; unknown entry types retain null behavior. Native recovery and
+MuPDF disagreements are documented; corpus JSON is unchanged. Normative
+generation maxima, free lists and full field semantics remain separate.
+
 The [xref-stream row completeness check](spec-backlog.md#2026-11-05-xref-stream-declared-row-completeness)
 rejects short decoded data before installing a partial section. Declared
 rows are compared without attacker-sized allocation; split subsections and
