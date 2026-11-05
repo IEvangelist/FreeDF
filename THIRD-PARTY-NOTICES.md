@@ -411,6 +411,15 @@ by the reference; these disagreements are explicit. Appearances, patterns,
 other stream references and full key type/identity remain separate.
 No standard text or external controls are bundled.
 
+The annotation appearance structure-parent check follows the same
+Table 359 exclusivity fact. AP N/R/D direct/state inspection, shared
+bounded annotation traversal and stream-identity deduplication are
+independently implemented without decoding data. Twelve native controls
+retain six positives and reject six primary negatives accepted by the
+reference; these disagreements are explicit. Appearance resource graphs,
+patterns, soft masks and full key type/identity remain separate.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

@@ -2989,6 +2989,114 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> AppearanceStructureParentCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var entry in new[] { "N", "R", "D" })
+        foreach (var state in new[] { false, true })
+        foreach (var conflict in new[] { false, true })
+            yield return [part, entry, state, conflict];
+    }
+
+    [Theory]
+    [MemberData(nameof(AppearanceStructureParentCases))]
+    public void Ua2AppearanceStructureParentKeysIncludeAllEntriesAndStates(int part, string entry, bool state, bool conflict)
+    {
+        var value = state ? "<< /Unused 9 0 R >>" : "9 0 R";
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            $"<< /Subtype /PrinterMark /AP << /{entry} {value} >> >>",
+            ObjPdf.Stream("opaque", $"/Subtype /Form /StructParent 0 {(conflict ? "/StructParents 0" : "")}"),
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && conflict, report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("AP", 32, false)]
+    [InlineData("AP", 33, true)]
+    [InlineData("stream", 32, false)]
+    [InlineData("stream", 33, true)]
+    [InlineData("key", 32, false)]
+    [InlineData("key", 33, true)]
+    public void Ua2AppearanceStructureParentReferenceBoundsDoNotGuessConflict(string route, int count, bool incomplete)
+    {
+        var terminal = route == "AP" ? "<< /N 9 0 R >>" : route == "key" ? "0"
+            : ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0");
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? terminal : $"{n + 1} 0 R");
+        var ap = route == "AP" ? "10 0 R" : $"<< /N {(route == "stream" ? "10" : "9")} 0 R >>";
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            new[] { $"<< /Subtype /PrinterMark /AP {ap} >>",
+                ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0") }.Concat(chain).ToArray()));
+        if (route == "key") Assert.IsType<PdfStream>(doc.File.GetObject(9)).Dict.Entries["StructParent"] = new PdfRef(10, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("<< /N 0 >>")]
+    [InlineData("<< /N << /State 0 >> >>")]
+    [InlineData("10 0 R")]
+    [InlineData("<< /N 10 0 R >>")]
+    public void Ua2AppearanceStructureParentMalformedOrCyclicContainersAreIncomplete(string ap)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            [$"<< /Subtype /PrinterMark /AP {ap} >>", "null", "10 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199998, false)]
+    [InlineData(199999, true)]
+    public void Ua2AppearanceStructureParentSharedWorkBoundRetainsKnownConflict(int states, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            ["<< /Subtype /PrinterMark >>", ObjPdf.Stream("", "/StructParent 0 /StructParents 0")]));
+        var map = new PdfDictionary();
+        for (int i = 0; i < states; i++) map.Entries[$"State{i}"] = new PdfRef(9, 0);
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["AP"] =
+            new PdfDictionary { Entries = { ["N"] = map } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2AppearanceStructureParentRetainsConflictBeforeLaterStateCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            ["<< /Subtype /PrinterMark /AP << /N << /Known 9 0 R /Unknown 10 0 R >> >> >>",
+                ObjPdf.Stream("", "/StructParent 0 /StructParents 0"), "10 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2AppearanceStructureParentDeduplicatesSharedStreamsAcrossAnnotationsAndStates()
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R 10 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R /R << /Unused 9 0 R >> >> >>",
+            ObjPdf.Stream("", "/StructParent 0 /StructParents 0"),
+            "<< /Subtype /PrinterMark /AP << /D 9 0 R >> >>",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

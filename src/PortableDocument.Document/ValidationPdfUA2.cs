@@ -22,6 +22,7 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
         c.Guard("PDF/UA-2 page structure parent keys", () => PageStructureParents(c));
         c.Guard("PDF/UA-2 annotation structure parent keys", () => AnnotationStructureParents(c));
+        c.Guard("PDF/UA-2 appearance structure parent keys", () => AppearanceStructureParents(c));
         c.Guard("PDF/UA-2 XObject structure parent keys", () => XObjectStructureParents(c));
         c.Guard("PDF/UA-2 role map shape", () => RoleMapShape(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
@@ -384,24 +385,88 @@ internal static class PdfUA2Checks
                     "annotation structure parent inspection is unsupported or exceeds its reference/work bound",
                     StructureParentClause, page);
             }
-            var raw = ResolveBounded(c.F, c.Doc.Pages[page].Dict.Get("Annots"), Incomplete);
-            if (incomplete || raw is null or PdfNull) continue;
-            if (raw is not PdfArray array) { Incomplete(); continue; }
-            var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
             int work = 0;
-            foreach (var item in array.Items)
+            VisitPageAnnotations(c, page, annotation =>
             {
-                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
-                var value = ResolveBounded(c.F, item, Incomplete);
-                if (incomplete) break;
-                if (value is null or PdfNull) continue;
-                if (value is not PdfDictionary annotation) { Incomplete(); break; }
-                if (!seen.Add(annotation)) continue;
                 if (StructureParentConflict(c, annotation, Incomplete))
                     c.Add("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
                         "annotation must not contain both StructParent and StructParents", StructureParentClause, page);
-                if (incomplete) break;
+                return !incomplete;
+            }, Incomplete, ref work);
+        }
+    }
+
+    static void VisitPageAnnotations(ValidationContext c, int page, Func<PdfDictionary, bool> inspect,
+        Action incompleteInspection, ref int work)
+    {
+        bool incomplete = false;
+        void Incomplete() { incomplete = true; incompleteInspection(); }
+        var raw = ResolveBounded(c.F, c.Doc.Pages[page].Dict.Get("Annots"), Incomplete);
+        if (incomplete || raw is null or PdfNull) return;
+        if (raw is not PdfArray array) { Incomplete(); return; }
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        foreach (var item in array.Items)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+            var value = ResolveBounded(c.F, item, Incomplete);
+            if (incomplete) return;
+            if (value is null or PdfNull) continue;
+            if (value is not PdfDictionary annotation) { Incomplete(); return; }
+            if (seen.Add(annotation) && !inspect(annotation)) return;
+        }
+    }
+
+    static void AppearanceStructureParents(ValidationContext c)
+    {
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            bool incomplete = false;
+            int work = 0;
+            var seen = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+            void Incomplete()
+            {
+                if (incomplete) return;
+                incomplete = true;
+                c.Add("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "appearance structure parent inspection is unsupported or exceeds its reference/work bound",
+                    StructureParentClause, page);
             }
+            PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw, Incomplete);
+            bool InspectStream(PdfObject? raw)
+            {
+                var value = Resolve(raw);
+                if (incomplete) return false;
+                if (value is null or PdfNull) return true;
+                if (value is not PdfStream stream) { Incomplete(); return false; }
+                if (seen.Add(stream) && StructureParentConflict(c, stream.Dict, Incomplete))
+                    c.Add("PDFUA2-AP-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                        "appearance stream must not contain both StructParent and StructParents", StructureParentClause, page);
+                return !incomplete;
+            }
+            VisitPageAnnotations(c, page, annotation =>
+            {
+                var raw = Resolve(annotation.Get("AP"));
+                if (incomplete) return false;
+                if (raw is null or PdfNull) return true;
+                if (raw is not PdfDictionary appearances) { Incomplete(); return false; }
+                foreach (var key in new[] { "N", "R", "D" })
+                {
+                    var entry = Resolve(appearances.Get(key));
+                    if (incomplete) return false;
+                    if (entry is null or PdfNull) continue;
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+                    if (entry is PdfDictionary states)
+                    {
+                        foreach (var state in states.Entries.Values)
+                        {
+                            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+                            if (!InspectStream(state)) return false;
+                        }
+                    }
+                    else if (!InspectStream(entry)) return false;
+                }
+                return true;
+            }, Incomplete, ref work);
         }
     }
 

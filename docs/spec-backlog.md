@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary appearance structure-parent exclusivity
+
+The Table 359 at-most-one StructParent/StructParents fact now covers
+annotation AP streams in N/R/D entries and their named-state dictionaries,
+including unselected states and tagging-exempt annotations. The shared
+page/annotation key resolver reports PDFUA2-AP-STRUCT-PARENT-CONFLICT
+without decoding stream data. Stream identities are deduplicated per page,
+including streams shared across annotations and appearance states.
+
+The extracted bounded page-annotation visitor preserves the earlier
+annotation-key check. Appearance inspection shares a 200,000-entry budget
+across annotation array entries, non-null N/R/D entries and named states.
+References retain the 32-hop bound. Unsupported containers, cycles and
+exhausted bounds produce PDFUA2-AP-STRUCT-PARENT-INCOMPLETE explicitly;
+known earlier conflicts survive later incomplete inspection. Null/omission
+and indirect null/dangling key behavior and UA-1 remain unchanged.
+
+Twelve native normal/rollover/down direct/state controls retain six positives
+and reject six primary negatives. All combined-reference jobs complete
+normally and accept: **six explicit primary/reference disagreements**.
+Thirty-nine authored UA-1/route/state/shared-stream/malformed/reference/work
+cases had twenty-one initial failures and now pass. Focused Release: 489
+passed; full Release: 15,486 passed, zero failed/skipped. Fresh
+435-PDF/870-result corpus JSON and native UA-1 reports are wholly unchanged.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+
+This is appearance stream dictionaries, not their nested resource graphs.
+Tiling patterns, soft masks/other stream references, full appearance schema
+and parent-key type/identity remain separate. No standard text/external
+controls are bundled; hosted CI and full parity are not claimed.
+
 ## 2026-11-05 primary resource XObject structure-parent exclusivity
 
 The Table 359 at-most-one StructParent/StructParents fact now covers
