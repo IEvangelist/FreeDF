@@ -51,7 +51,7 @@ public class XrefStreamCryptFilterTests
         Assert.Same(target, file.Resolve(file.Catalog.Get("Probe")));
     }
 
-    internal static byte[] Build(string? filter, bool flate)
+    internal static byte[] Build(string? filter, bool flate, string? decodeParms = null, string? indirectObject = null)
     {
         using var data = new MemoryStream();
         void Write(string text) => data.Write(Encoding.ASCII.GetBytes(text));
@@ -60,9 +60,13 @@ public class XrefStreamCryptFilterTests
         Write("1 0 obj\n<< /Type /Catalog /Probe 2 0 R >>\nendobj\n");
         var target = data.Position;
         Write("2 0 obj\n<< /Type /Target >>\nendobj\n");
+        var indirectOffset = data.Position;
+        if (indirectObject is not null) Write($"4 0 obj\n{indirectObject}\nendobj\n");
         var xref = data.Position;
         using var rows = new MemoryStream();
-        foreach (var offset in new[] { root, target, xref })
+        var offsets = new List<long> { root, target, xref };
+        if (indirectObject is not null) offsets.Add(indirectOffset);
+        foreach (var offset in offsets)
         {
             rows.WriteByte(1);
             for (var shift = 24; shift >= 0; shift -= 8) rows.WriteByte((byte)(offset >> shift));
@@ -71,7 +75,9 @@ public class XrefStreamCryptFilterTests
         }
         var payload = flate ? PdfFilters.DeflateEncode(rows.ToArray()) : rows.ToArray();
         var entry = filter is null ? "" : $"/Filter {filter}";
-        Write($"3 0 obj\n<< /Type /XRef /Root 1 0 R /Size 4 /Index [1 3] /W [1 4 2] {entry} " +
+        var parameters = decodeParms is null ? "" : $"/DecodeParms {decodeParms}";
+        Write($"3 0 obj\n<< /Type /XRef /Root 1 0 R /Size {offsets.Count + 1} /Index [1 {offsets.Count}] " +
+            $"/W [1 4 2] {entry} {parameters} " +
             $"/Length {payload.Length} >>\nstream\n");
         data.Write(payload);
         Write($"\nendstream\nendobj\nstartxref\n{xref}\n%%EOF\n");

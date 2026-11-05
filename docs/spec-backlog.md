@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 direct encoded cross-reference filter metadata
+
+ISO 32000-1 7.5.8.2 (printed p49) requires Filter and DecodeParms to
+be direct objects when a cross-reference stream is encoded. The xref
+reader previously passed top-level references to the generic resolver
+before its index was available. Unresolved references could then be
+silently treated as absent and the index reported as clean.
+
+The xref reader now explicitly rejects a raw indirect Filter entry and
+an indirect DecodeParms entry when a nonempty direct filter selection
+is present, before resolving metadata. The existing repair path recovers
+the target. Direct null/default parameters and unencoded streams with
+unused parameter metadata retain their previous behavior. Ordinary stream
+metadata still resolves indirect filter/parameter values. This guard
+targets the standard top-level entries, not nested parameter values,
+filter-array element schemas or abbreviated compatibility keys.
+
+Fourteen initial added controls give eight failures/six passes on unchanged
+production; the combined directness/Crypt baseline gives eight failures/
+19 passes. Three further controls preserve unused indirect DecodeParms
+with absent/null/empty filters. The first baseline build encountered
+CS0009 on a corrupted generated Content reference assembly; rebuilding
+that project succeeded with zero warnings/errors and produced the actual
+baseline without production edits. This build artifact was not a source
+change or a test failure dismissed as unrelated.
+
+Final focused xref/encryption/Crypt/object-stream checks pass 1,033;
+full Release passes 19,833, zero failed/skipped; solution zero warnings/
+errors. Fresh pinned 435-PDF/870-result complete validation JSON is
+unchanged; all benchmark/provider/parser correctness preflights pass.
+
+Five independently encoded reference fixtures contain a direct encoded
+control, two indirect Filter forms and two indirect DecodeParms forms.
+PyMuPDF 2.0 / MuPDF 1.28.5 accepts all five without repair. FreeDF now
+reports recovery for the prohibited top-level forms. The indirect-name
+Filter fixture deliberately retains raw rows that the pre-index resolver
+previously accepted; it is not a valid encoded-filter control. Reference
+permissiveness is not counted as primary-rule conformance. No external
+PDFs are bundled.
+
+The change checks raw entry types without resolving referenced metadata.
+No new timing was run and no allocation/throughput result is claimed.
+Wider filter schema, nested metadata rules, framing, strict codec
+completion and full xref/parser parity remain open.
+
 ## 2026-11-05 prohibited cross-reference Crypt filter
 
 ISO 32000-1 7.5.8.2 (printed p50) explicitly forbids a Crypt filter in a
@@ -36,8 +81,9 @@ conformance agreement. No external PDFs are bundled.
 
 The check traverses the existing filter list without another list
 allocation. No new timing was run and no allocation/throughput result is
-claimed for it. Directness of encoded xref metadata, wider stream framing,
-strict codec completion and full xref/encryption parity remain separate
+claimed for it. The later section above addresses top-level encoded
+metadata directness; wider stream framing, strict codec completion
+and full xref/encryption parity remain separate
 work; this check does not validate all restrictions in 7.5.8.2.
 
 ## 2026-11-05 compressed-reference generation bounds

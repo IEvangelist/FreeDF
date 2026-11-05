@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [encoded xref metadata guard](spec-backlog.md#2026-11-05-direct-encoded-cross-reference-filter-metadata)
+requires direct standard top-level Filter/DecodeParms rather than silently
+ignoring unresolved references before index construction. Direct defaults,
+unused unencoded parameters and ordinary indirect metadata remain supported;
+nested metadata and wider filter schemas remain separate work.
+
 The [xref Crypt-filter guard](spec-backlog.md#2026-11-05-prohibited-cross-reference-crypt-filter)
 routes prohibited Crypt stages through explicit recovery rather than silently
 accepting their rows. Allowed xref filters and ordinary Crypt recovery remain
