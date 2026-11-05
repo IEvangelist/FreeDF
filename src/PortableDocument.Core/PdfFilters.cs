@@ -16,19 +16,31 @@ public static class PdfFilters
     };
 
     public static List<(string Name, PdfDictionary? Parms)> GetFilters(PdfDictionary d, Func<PdfObject?, PdfObject?> resolve)
+        => GetFilters(d, resolve, strictFilterNameResolver: null);
+
+    internal static List<(string Name, PdfDictionary? Parms)> GetFilters(PdfDictionary d,
+        Func<PdfObject?, PdfObject?> resolve, Func<PdfObject?, PdfObject?>? strictFilterNameResolver)
     {
-        var f = resolve(d.Get("Filter") ?? d.Get("F"));
+        var resolveName = strictFilterNameResolver ?? resolve;
+        var strictFilterNames = strictFilterNameResolver is not null;
+        var f = resolveName(d.Get("Filter") ?? d.Get("F"));
         var p = resolve(d.Get("DecodeParms") ?? d.Get("DP"));
         var list = new List<(string, PdfDictionary?)>();
         if (f is PdfName n) list.Add((Canon(n.Value), resolve(p is PdfArray pa0 && pa0.Count > 0 ? pa0[0] : p) as PdfDictionary));
         else if (f is PdfArray fa)
             for (var i = 0; i < fa.Count; i++)
             {
-                var nm = resolve(fa[i]).AsName();
-                if (nm is null) continue;
+                var nm = resolveName(fa[i]).AsName();
+                if (nm is null)
+                {
+                    if (strictFilterNames) throw new PdfParseException("stream Filter array entries must be names");
+                    continue;
+                }
                 var pp = p is PdfArray pa && i < pa.Count ? resolve(pa[i]) as PdfDictionary : null;
                 list.Add((Canon(nm), pp));
             }
+        else if (strictFilterNames && f is not null and not PdfNull)
+            throw new PdfParseException("stream Filter must be a name or an array of names");
         return list;
     }
 

@@ -119,6 +119,48 @@ hashes. No exclusive OS-wide load guarantee was established; distributions
 include visible noise and outlier removals. Do not infer cross-date speedups
 or attribute a regression to a specific parity correction from these means.
 
+### Matched Filter-name validation: 2026-11-05
+
+The [before report](results/2026-11-05-filter-names-before.md)
+([CSV](results/2026-11-05-filter-names-before.csv)) uses production revision
+`7d8a1c437f592995a7e0966710b0f67a5bdfa748`; the
+[after report](results/2026-11-05-filter-names-after.md)
+([CSV](results/2026-11-05-filter-names-after.csv)) includes the accompanying
+object-stream Filter-name correction. Both measure `FreshAllMembers` with
+three warmups, eight 500 ms measurement iterations and one launch, on the
+same machine/runtime as the parser/provider baseline. Provider and parser
+preflight passed. No provider timing was rerun for this scoped change.
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamBench.FreshAllMembers*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+Plaintext bytes are identical across the two source builds:
+
+| Members | Bytes | SHA-256 |
+|---|---:|---|
+| 1 | 431 | `490DC1DCAB4152A0A9E396A558B51816A7695D34A24E38713627DC3E1B5B3A46` |
+| 1,000 | 12,596 | `49105B35A7D7999B63F302385510034DB987F90BC151C9653CD6962873C2298A` |
+
+| Plaintext members | Before mean (us) | After mean (us) | Before allocated (KiB) | After allocated (KiB) |
+|---|---:|---:|---:|---:|
+| 1 | 9.640 | 10.16 | 17.94 | 18.00 |
+| 1,000 | 580.829 | 587.87 | 1908.39 | 1909.07 |
+
+Timing intervals overlap, particularly the noisy single-member follow-up;
+these measurements establish neither a speedup nor zero validation cost.
+Managed allocation rises by about 64 bytes per index for the scoped resolver
+delegate, less than 0.4% in both plaintext cases. The 1,000-member fixture
+spans multiple containers. Warm managed allocation is not total/native or
+retained memory.
+
+Encrypted controls pass and all four measurements remain in the reports.
+Their random cryptographic material differs across launches, so encrypted
+before/after means are not attributed to this correction on matched bytes.
+No shared-machine exclusivity or universal throughput guarantee is claimed.
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-filter-names)
+records malformed controls separately from these valid Flate workloads.
+
 ## Flate decoder workloads
 
 ```powershell

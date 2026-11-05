@@ -4,6 +4,47 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream Filter names
+
+ISO 32000-1 Table 5 (printed p20) requires Filter to be a name or an array
+of zero, one or several names. Sections 7.3.9-7.3.10 (printed pp21-22) make
+null dictionary entries equivalent to omission, undefined references null,
+and direct/indirect values equivalent unless otherwise specified.
+
+The shared object-stream index reader now requires that schema before
+publishing members. It rejects non-name values, including null/undefined
+array entries and arrays polluted with non-names after a valid decoder.
+Filter-name resolution preserves the existing 32-reference bound but does
+not mistake unresolved cyclic/depth-exhausted aliases for intentional null
+omission. Direct/indirect top-level null, undefined top-level references,
+empty arrays and indirect names/arrays remain supported. DecodeParms still
+uses the existing resolver; ordinary-stream filter recovery is unchanged.
+
+Thirty-one tests cover both normal and forced repair, absent member
+publication/repeated lookup, valid cached identities, ordinary-stream decoded
+bytes and the reference-depth boundary. The initial 28-test unchanged-production
+baseline was fifteen failures/thirteen passes; three later controls exercise
+valid short/32-reference chains and the unchanged depth limit. Final focused
+selector: 818 passed. Full Release: 19,288 passed, zero failed/skipped.
+Solution build: zero warnings/errors.
+
+Fifty independent native name-schema controls include thirty malformed and
+twenty valid files; six retained AES-128/AES-256/RC4 normal/repair positives
+add encrypted regression coverage. All thirty malformed files previously
+published Target; now repair leaves the member absent. All twenty-six valid
+outcomes remain identical. MuPDF exposes Target for all fifty-six before/after
+probes, including the malformed metadata; permissive reference acceptance
+does not override the name-schema requirement. Fresh pinned 435-PDF/870-result
+full corpus JSON remains wholly unchanged against the empty-encoding baseline.
+
+The [matched traversal benchmarks](../bench/FreeDF.Bench/README.md#matched-filter-name-validation-2026-11-05)
+retain four before/after cases with unchanged plaintext input hashes.
+Timing intervals overlap; this is not a speedup or zero-cost claim.
+Plaintext managed allocation increases by about 0.06 KiB for one member and
+0.68 KiB for 1,000 members. Full filter EOD/DecodeParms consistency, external-file
+handling, image-codec completion, global inventory and resource-budget parity
+remain separate.
+
 ## 2026-11-05 complete empty Flate encoding
 
 ISO 32000-1 7.4.4.1 (printed p25) defines Flate through RFCs 1950 and 1951.

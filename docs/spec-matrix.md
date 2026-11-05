@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream Filter-name check](spec-backlog.md#2026-11-05-object-stream-filter-names)
+requires a resolved name or array of names before publishing members, while
+preserving null omission, valid indirect forms and ordinary-stream recovery.
+Reference-depth controls, native/reference disagreement, matched valid-path
+benchmarks and unchanged corpus JSON are recorded. DecodeParms/EOD consistency,
+external-file/image-codec handling and global resource budgets remain separate.
+
 The [empty Flate encoding correction](spec-backlog.md#2026-11-05-complete-empty-flate-encoding)
 emits a complete zlib stream for empty public-encoder input, annotation
 attachments and sample blank-page/Form/embedded-file streams. Nonempty bytes
