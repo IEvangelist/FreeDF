@@ -162,20 +162,23 @@ public sealed class PdfFile
         var p = lx.Pos;
         if (p < Data.Length && Data[p] == 13) p++;
         if (p < Data.Length && Data[p] == 10) p++;
-        long len = -1;
-        if (d.Get("Length") is { } lo)
+        var length = d.Get("Length");
+        if (length is PdfRef) length = Resolve(length);
+        long len = length switch
         {
-            // Avoid resolving Length via a ref that points at this very object.
-            var rv = lo is PdfRef ? Resolve(lo) : lo;
-            if (rv.AsNumber() is { } dl) len = (long)dl;
-        }
-        if (len >= 0 && p + len <= Data.Length && EndStreamFollows(p + (int)len))
+            PdfInteger integer => integer.Value,
+            PdfReal real => (long)real.Value,
+            _ => -1
+        };
+        if (len >= 0 && len <= Data.Length - p && EndStreamFollows(p + (int)len))
             return new PdfStream(d, Data.AsSpan(p, (int)len).ToArray());
         var idx = IndexOf(Data, "endstream"u8, p);
         if (idx < 0) idx = Data.Length;
         var end = idx;
         if (end > p && Data[end - 1] == 10) end--;
         if (end > p && Data[end - 1] == 13) end--;
+        if (length is PdfInteger { Value: >= 0 } && len != end - p && IsObjectStream(d))
+            throw new PdfParseException("object stream recovered byte count disagrees with Length");
         return new PdfStream(d, Data.AsSpan(p, end - p).ToArray());
     }
 

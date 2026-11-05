@@ -28,9 +28,9 @@ public class ObjectStreamLengthSchemaTests
     }
 
     [Theory]
-    [InlineData("22")]
-    [InlineData("+22")]
-    [InlineData("00022")]
+    [InlineData("23")]
+    [InlineData("+23")]
+    [InlineData("00023")]
     public void Valid_integer_Length_preserves_member_identity(string length)
     {
         foreach (var repair in new[] { false, true })

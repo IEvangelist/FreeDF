@@ -4,6 +4,55 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 recovered object-stream byte counts
+
+ISO 32000-1 7.3.8.2/Table 5 (printed p20) requires stream Length and
+encoded byte extent to be consistent, allowing an additional uncounted EOL
+before endstream. When ordinary terminator recognition fails and the reader
+scans for endstream, an object stream's resolved non-negative integer Length
+may no longer silently be replaced by a different recovered byte count.
+The comparison happens on physical bytes before decryption: comparing Length
+with an AES-decrypted RawData length would reject valid encrypted files.
+Integer Length values remain lossless, with a subtraction-based bounds check
+that cannot overflow when Length is long.MaxValue.
+
+Eighteen new tests cover short/long/zero/long.MaxValue counts, indirect Length
+and Type, exact counts with counted/uncounted EOL, unchanged ordinary-stream
+recovery and AES-128/AES-256/RC4 object streams in normal and forced repair.
+The AES controls explicitly assert that declared and decrypted lengths differ.
+Corrected unchanged-production baseline: ten failed/eight passed. The previous
+schema-only fixture's body is 23 bytes, not 22; its three integer-spelling
+positives now use 23. Earlier Length-22 outputs demonstrated integer-type
+acceptance, not valid byte extent, and are deliberately superseded here.
+
+Normal mismatched-container lookup raises the explicit recovered-count error
+after repair, while forced repair discards that container without publishing
+members. Subsequent absent-member lookups remain stable nulls. Invalid Length
+types retain their separate required-schema check.
+
+Focused selector: 627 passed. The first full run had 19,137 passed and one
+certificate-fixture setup failure: a fresh requested notAfter crossed a DER
+second boundary after its issuer was created. Its exception matches the retained
+unchanged-test iteration-128 control, before PDF validation. No signature source
+changed; both failure records are retained. One full confirmation run passed
+19,138 with zero failed/skipped. Solution: zero errors/two retained machine-feed
+NU1507 warnings.
+
+Thirty-four native PDFs preserve fourteen valid outputs exactly, including six
+independently generated encrypted normal/repair files. Twenty formerly accepted
+mismatches now produce ten explicit normal-load errors and ten forced-repair
+null results. MuPDF exposes Target for eighteen of those malformed probes,
+returns null for the normal Length-1 probe, and cannot open the forced-repair
+long.MaxValue probe; it agrees on all fourteen positives. These are lookup
+measurements, not claims of complete reference conformance. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the required
+Length-type baseline.
+
+This closes silent byte-count replacement during object-stream endstream
+scanning. The existing normal terminator heuristic, arbitrary whitespace/comment
+padding, complete filter EOD consistency, external-stream schemas, general
+strict stream parsing and resource budgets remain separate.
+
 ## 2026-11-05 required object-stream Length type
 
 ISO 32000-1 7.3.8/Table 5 (printed p20) requires an integer Length byte

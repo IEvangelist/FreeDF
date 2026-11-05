@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [recovered object-stream byte-count check](spec-backlog.md#2026-11-05-recovered-object-stream-byte-counts)
+rejects silent replacement of declared integer Length with different scanned
+bytes, before decryption. AES controls distinguish physical and decrypted
+extents; schema-only Length-22 positives are corrected to the actual 23 bytes.
+Native differences, the controlled signature-fixture race and unchanged corpus
+JSON are recorded. Normal terminator padding, filter EOD and generic strict
+stream parsing remain separate.
+
 The [required object-stream Length-type check](spec-backlog.md#2026-11-05-required-object-stream-length-type)
 requires resolved non-negative integer metadata before member publication,
 without making ordinary stream recovery strict. Earlier compressed-Length
