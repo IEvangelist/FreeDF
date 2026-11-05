@@ -133,24 +133,30 @@ internal static class PdfUA2Checks
                 bytes += text.Bytes.Length;
                 var lexer = new PdfLexer(text.Bytes);
                 int matrices = 0;
+                bool scanned = true, textFont = false;
                 try
                 {
                     while (true)
                     {
                         lexer.SkipWhite();
                         if (lexer.Pos >= lexer.Length) break;
-                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                        if (++work > PdfTreeDiagnostics.MaxWork) { scanned = false; Incomplete(); break; }
                         var item = lexer.ReadObject(false);
                         if (item is not PdfKeyword keyword) continue;
                         if (keyword.Value is "BI" or "ID" or "EI" or "]" or ">>" or ">" or ")" or "{" or "}")
-                        { Incomplete(); break; }
+                        { scanned = false; Incomplete(); break; }
                         if (keyword.Value == "Tm" && matrices < 2) matrices++;
+                        if (keyword.Value == "Tf") textFont = true;
                     }
                 }
-                catch (PdfParseException) { Incomplete(); }
+                catch (PdfParseException) { scanned = false; Incomplete(); }
                 if (matrices > 1)
                     c.Add("PDFUA2-FORM-DA-TM-COUNT", ValidationSeverity.Error,
                         "a default appearance byte string must contain at most one Tm operator",
+                        "ISO 32000-2 12.7.4.3");
+                if (scanned && !textFont)
+                    c.Add("PDFUA2-FORM-DA-TF-MISSING", ValidationSeverity.Error,
+                        "a default appearance byte string must include a Tf operator",
                         "ISO 32000-2 12.7.4.3");
             }
             else if (appearance is not (null or PdfNull))

@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary DA text-font presence check](spec-backlog.md#2026-11-05-primary-default-appearance-text-font-presence)
+requires a top-level Tf in completely inspected known defaults, without
+claiming absence after an incomplete scan. Eighteen native controls
+retain six positives; twelve primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are wholly unchanged. Operand arity/types, required
+DA, font resources, complete grammar and layout remain separate.
+
 The [primary DA text-matrix cardinality check](spec-backlog.md#2026-11-05-primary-default-appearance-text-matrix-cardinality)
 limits known defaults to one top-level Tm, preserving operand/comment
 distinctions, shared byte/token bounds and independent incomplete findings.

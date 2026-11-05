@@ -485,6 +485,15 @@ these disagreements are explicit. The permissive lexer does not prove
 complete DA grammar; inline-image/budget/depth uncertainty remains
 explicit. No standard text or external controls are bundled.
 
+The default appearance text-font presence check follows the operator-
+presence part of the same official 12.7.4.3 minimum Tf requirement.
+Existing independent lexer/traversal work is reused; absence is not
+claimed after an incomplete scan. Eighteen native controls retain six
+positives and reject twelve primary negatives accepted by the pinned
+reference; disagreements are explicit. Font/size operands, font-resource
+matching, complete syntax and appearance generation remain separate.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

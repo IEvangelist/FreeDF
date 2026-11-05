@@ -4079,6 +4079,82 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> DefaultAppearanceFontPresenceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var content in new[]
+        {
+            "", "/F1 12 Tf", "/F1 0 Tf", "% Tf\n", "(Tf) Tj", "<5466> Tj",
+            "/Tf", "[(Tf)] TJ", "<< /Font (Tf) >>", "/T#66", "Tfoo", "Tf",
+        })
+            yield return [part, scope, content];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceFontPresenceCases))]
+    public void Ua2DefaultAppearanceRequiresTopLevelTextFontOperator(int part, string scope, string content)
+    {
+        var value = $"<{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}>";
+        var form = "/Fields [9 0 R]" + (scope == "document" ? $" /DA {value}" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? $"<< /FT /Tx /T (parent) /DA {value} /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) {(scope == "field" ? $"/DA {value}" : "")} >>",
+            "<< /T (child) /Parent 9 0 R >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && content is not ("/F1 12 Tf" or "/F1 0 Tf" or "Tf"),
+            report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("BI /W 1 ID Tf EI")]
+    [InlineData("] Tf")]
+    [InlineData("/F1 12 Tf BI /W 1 ID anything EI")]
+    public void Ua2DefaultAppearanceIncompleteScanDoesNotClaimMissingTextFont(string content)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA <{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2DefaultAppearanceFontAbsenceNeedsCompleteTokenScan(int tokens, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("0 ", tokens))));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("42", false)]
+    [InlineData("(BI ID Tf EI)", true)]
+    [InlineData("11 0 R", true)]
+    public void Ua2DefaultAppearanceKnownFontAbsenceSurvivesIndependentFieldError(string value, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] /DA () >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA {value} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-TF-MISSING");
+        Assert.Equal(value == "42", report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

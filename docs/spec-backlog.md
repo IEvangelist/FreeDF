@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary default appearance text-font presence
+
+Official PDF Association PDF 2.0 errata 12.7.4.3 explicitly requires
+at least a Tf operator and its font/size operands in a DA byte string.
+The bounded DA pass now implements the operator-presence part:
+PDFUA2-FORM-DA-TF-MISSING reports a known AcroForm or inherited recognized
+terminal Tx byte string with no top-level Tf. Names, comments,
+literal/hex strings and structured operands containing Tf do not count.
+Zero-size Tf is not rejected by this presence check.
+
+A missing-operator finding requires a completed scan of that string
+under the existing shared byte/token and lexer-depth limits. Unsupported
+inline images, closing delimiters, parser exceptions and exhausted work
+retain PDFUA2-FORM-DA-INCOMPLETE instead of an unsupported absence claim.
+Known absence in another already-inspected default survives independent
+field type/reference/scan errors. Omitted/null defaults still do not
+trigger required-presence checks. Existing matrix-count findings remain
+independent. A bare Tf passes this presence-only predicate: arity,
+font/size types, allowed operators, resource matching, required DA,
+complete grammar and layout remain separate requirements.
+
+Initial 75 authored controls had twenty-seven failures; the final
+eighty include exact complete/incomplete token boundaries and independent
+errors. Focused Release: 3,977 passed; full Release: 16,834 passed,
+zero failed/skipped. Solution zero errors/two retained machine-feed
+NU1507 warnings. Eighteen native local/inherited/document controls retain
+six font/autosize positives and reject twelve absent-Tf negatives.
+All pinned combined-reference jobs complete normally and accept:
+**twelve explicit primary/reference disagreements**. Native UA-1 and
+fresh 435-PDF/870-result corpus JSON are wholly unchanged against
+committed matrix-count baseline 331924f3. No standard text or external
+controls are bundled; full field or PDF/UA parity is not claimed.
+
 ## 2026-11-05 primary default appearance text-matrix cardinality
 
 Official PDF Association PDF 2.0 errata 12.7.4.3 explicitly limits a DA
