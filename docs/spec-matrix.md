@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 tagged annotation Artifact correction](spec-backlog.md#2026-11-05-ua-2-tagged-annotation-artifacts)
+honors resolved direct/mapped/ancestor Artifacts for PrinterMark and
+Invisible/NoView disposition without bypassing parent-tree/OBJR checks.
+Thirty native controls agree, correcting 12 false rejections. Popup
+exclusion, UA-1 and fresh 435-PDF/870-result corpus output are unchanged.
+Grouping-dependent structure semantics and full parity are not claimed.
+
 The [null annotation-tag correction](spec-backlog.md#2026-11-05-null-annotation-structure-parent-keys)
 makes resolved null StructParent equivalent to omission in both profiles,
 retaining visible-untagged checks and reporting unresolved chains separately.

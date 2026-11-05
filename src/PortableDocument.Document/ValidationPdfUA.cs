@@ -565,6 +565,12 @@ internal static partial class PdfUAChecks
                     c.Add("PDFUA-ANNOT-TAG-INCOMPLETE", ValidationSeverity.Error,
                         $"/{sub} annotation /StructParent resolution is cyclic or exceeds the reference bound",
                         "ISO 32000-2 14.7.5.4", i);
+                var parent = key is PdfInteger { Value: >= 0 and <= int.MaxValue } number
+                    && AnnotationParentTreeValue(f, tree, (int)number.Value) is PdfRef reference
+                    && f.Xref.TryGetValue(reference.Number, out var entry) && entry.InUse
+                    && reference.Generation == (entry.Compressed ? 0 : entry.GenOrIndex)
+                    && f.Resolve(reference) is PdfDictionary dict ? tree.ElementFor(dict) : null;
+                var inArtifact = c.Part == 2 && parent is not null && PdfUA2Checks.InsideArtifact(c, tree, parent);
                 var exempt = (((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) & 2) != 0 || OutsideCropBox(f, ad, c.Doc.Pages[i].CropBox);
                 if (sub is "Popup")
                 {
@@ -574,25 +580,19 @@ internal static partial class PdfUAChecks
                 }
                 if (c.Part == 2 && sub is "Sound" or "Movie")
                     c.Add("PDFUA2-ANNOT-DEPRECATED", ValidationSeverity.Error, $"/{sub} annotations cannot be used with PDF/UA-2 (veraPDF PDFUA-2 8.9.2.4.11)", "ISO 14289-2 8.9.2.4.11", i);
-                if (c.Part == 2 && !exempt && key is not null && ((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) is var flags2 && ((flags2 & 1) != 0 || (flags2 & 32) != 0 && (flags2 & 256) == 0))
+                if (c.Part == 2 && !exempt && key is not null && !inArtifact && ((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) is var flags2 && ((flags2 & 1) != 0 || (flags2 & 32) != 0 && (flags2 & 256) == 0))
                     c.Add("PDFUA2-ANNOT-ARTIFACT", ValidationSeverity.Error, $"/{sub} annotation has the Invisible or NoView flag but is in the structure tree; it must be an artifact (veraPDF PDFUA-2 8.9.2.2)", "ISO 14289-2 8.9.2.2", i);
                 if (sub is "TrapNet" or "PrinterMark")
                 {
-                    if (sub == "TrapNet" ? c.Part == 2 || !exempt : key is not null && (c.Part == 2 || !exempt))
+                    if (sub == "TrapNet" ? c.Part == 2 || !exempt : key is not null && !inArtifact && (c.Part == 2 || !exempt))
                         c.Add(sub == "TrapNet" ? "PDFUA-ANNOT-TRAPNET" : "PDFUA-ANNOT-PRINTERMARK", ValidationSeverity.Error, sub == "TrapNet" ? "TrapNet annotations are not permitted (veraPDF PDFUA-1 7.18.2-1, PDFUA-2 8.9.2.4.15-1)" : "PrinterMark annotation is in the structure tree but must be an artifact (veraPDF PDFUA-1 7.18.8-1, PDFUA-2 8.9.2.4.14-1)", Clause(c, "7.18", "8.9"), i);
-                    continue;
+                    if (sub == "TrapNet" || !inArtifact) continue;
                 }
-                StructElement? parent = null;
                 if (!tagIncomplete && key is null)
                 {
                     if (!exempt) c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
                 }
-                else if (!tagIncomplete && (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
-                    || AnnotationParentTreeValue(f, tree, (int)number.Value) is not PdfRef reference
-                    || !f.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse
-                    || reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex)
-                    || f.Resolve(reference) is not PdfDictionary dict
-                    || (parent = tree.ElementFor(dict)) is null))
+                else if (!tagIncomplete && parent is null)
                     c.Add("PDFUA-ANNOT-PARENTTREE", ValidationSeverity.Error, $"/{sub} annotation /StructParent must be a non-negative integer key mapping to a parsed structure element in /ParentTree", "ISO 32000-2 14.7.5.4", i);
                 else if (parent is not null)
                 {
@@ -601,6 +601,7 @@ internal static partial class PdfUAChecks
                     if (!objects.Contains(ad))
                         c.Add("PDFUA-ANNOT-OBJR", ValidationSeverity.Error, $"/{sub} annotation's parent structure element has no direct /OBJR child with an indirect /Obj identifying this annotation", "ISO 32000-2 14.7.5.3", i);
                 }
+                if (sub == "PrinterMark") continue;
                 if (c.Part == 2 && sub == "Widget" && parent is not null)
                     PdfUA2Checks.WidgetAdditionalActions(c, tree, ad, parent, i);
                 if (exempt) continue;

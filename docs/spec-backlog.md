@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 tagged annotation artifacts
+
+UA-2 PrinterMark and Invisible/NoView disposition checks now honor
+resolved Artifact parents and Artifact ancestry, including RoleMapNS
+mapping, rather than rejecting every non-null StructParent key.
+The existing strict parent-tree resolver is evaluated once and reused:
+the key must be an in-range non-negative integer, the parent-tree value
+must be an in-use indirect reference with the current xref generation,
+and its target must be a parsed structure element before Artifact
+disposition can apply. This does not infer Artifact membership from an
+annotation name or an unrelated dictionary.
+
+Accepted tagged PrinterMark Artifacts now also pass through the existing
+direct OBJR identity check instead of bypassing it. Missing OBJR still
+produces `PDFUA-ANNOT-OBJR`; Artifact status does not hide structural
+errors. UA-1 disposition, untagged exemptions, hidden/outside behavior,
+ToggleNoView, TrapNet prohibition and UA-2 Popup exclusion are unchanged.
+Popup is still forbidden even inside Artifact structure.
+
+The factual disposition conditions were independently cross-checked
+against pinned veraPDF v1.30.3 UA-2 8.9.2.2 tests 1/2 and 8.9.2.4.14-1;
+existing namespace/Artifact ancestry helpers are reused. Sixty authored
+profile/context/structure cases had 12 failures before correction.
+Six further cases cover malformed parent-tree identities (15 subcases)
+and missing OBJR. Thirty native controls give exact-rule/whole-file
+agreement: 22 clean positives, eight negatives and 12 corrected
+false-positive file verdicts. All 30 corresponding pre/post UA-1
+outputs are unchanged. The missing NoView reporting-family overlap
+is added; grouping-dependent structure semantics are not claimed.
+
+An initial reference batch threw runtime exceptions for direct namespace
+dictionaries in mapped controls. Those failed jobs are retained as failed
+evidence, not compliant controls. The completed native matrix uses
+registered indirect namespace objects and descriptive widget Contents;
+all 30 reference jobs completed normally with no parse/encryption/OOM/
+engine exceptions. Authored FreeDF direct-namespace coverage is separate.
+
+Fresh 435-PDF/870-result public-corpus output is identical to the immediate
+baseline. Final full Release suite: 14,224 passed, zero failed/skipped.
+An initial full run had one signature path-length test failure; its
+focused current-code run, the isolated exact ee16f845 pre-change control,
+and the final detailed full run passed. No signature sources were changed;
+the cause of that intermittent failure is not established by this slice.
+Solution build: zero errors and two retained machine-feed NU1507 warnings.
+Reporting tool: 20 passing tests. External controls/reports remain
+session-only; full PDF/UA parity is not claimed.
+
 ## 2026-11-05 null annotation structure-parent keys
 
 Resolved null StructParent entries now mean omission under primary

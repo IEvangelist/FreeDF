@@ -226,6 +226,78 @@ public class AnnotationStructureValidationTests
         Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
     }
 
+    public static IEnumerable<object[]> AnnotationArtifactCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var structure in new[] { "annot", "artifact", "mapped-artifact", "ancestor-artifact", "mapped-ancestor-artifact" })
+        foreach (var context in new[] { "printermark", "invisible", "noview", "toggle", "popup", "hidden" })
+            yield return [part, structure, context];
+    }
+
+    [Theory]
+    [MemberData(nameof(AnnotationArtifactCases))]
+    public void Ua2AnnotationDispositionHonorsResolvedArtifactParents(int part, string structure, string context)
+    {
+        var annotation = Annotation;
+        if (context is "printermark" or "popup")
+            annotation = annotation.Replace("/Subtype /Stamp", context == "printermark" ? "/Subtype /PrinterMark" : "/Subtype /Popup");
+        var flags = context switch { "invisible" => 1, "noview" => 32, "toggle" => 288, "hidden" => 2, _ => 0 };
+        annotation = annotation.Replace("/Rect", $"/F {flags} /Rect");
+        var doc = Load(part, (9, annotation));
+        if (structure != "annot")
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+            var mapped = structure.StartsWith("mapped-", StringComparison.Ordinal);
+            var ancestor = structure.Contains("ancestor", StringComparison.Ordinal);
+            var artifact = ancestor ? Assert.IsType<PdfDictionary>(doc.File.GetObject(part == 2 ? 15 : 7)) : element;
+            artifact.Entries["S"] = new PdfName(mapped ? "CustomArtifact" : "Artifact");
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+            if (mapped)
+                ns = new PdfDictionary
+                {
+                    Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("urn:annotation-artifact")),
+                        ["RoleMapNS"] = new PdfDictionary { Entries = { ["CustomArtifact"] = new PdfArray([new PdfName("Artifact"), ns]) } } },
+                };
+            artifact.Entries["NS"] = ns;
+        }
+        var report = Validate(doc, part);
+        var isArtifact = part == 2 && structure != "annot";
+        Assert.Equal(context == "printermark" && !isArtifact, report.Has("PDFUA-ANNOT-PRINTERMARK"));
+        Assert.Equal(part == 2 && context is "invisible" or "noview" && !isArtifact, report.Has("PDFUA2-ANNOT-ARTIFACT"));
+        Assert.Equal(part == 2 && context == "popup", report.Has("PDFUA2-ANNOT-POPUP"));
+    }
+
+    [Theory]
+    [InlineData("PrinterMark", 0, "PDFUA-ANNOT-PRINTERMARK")]
+    [InlineData("Stamp", 1, "PDFUA2-ANNOT-ARTIFACT")]
+    [InlineData("Stamp", 32, "PDFUA2-ANNOT-ARTIFACT")]
+    public void Ua2ArtifactDispositionRequiresValidIndirectParentTreeIdentity(string subtype, int flags, string rule)
+    {
+        foreach (var value in new[] { "null", "[8 0 R]", "<< /Type /StructElem /S /Artifact /NS 14 0 R >>", "8 1 R", "99 0 R" })
+        {
+            var doc = Load(2,
+                (8, Element.Replace("/S /Annot", "/S /Artifact /NS 14 0 R")),
+                (9, Annotation.Replace("/Subtype /Stamp", $"/Subtype /{subtype} /F {flags}")),
+                (10, $"<< /Nums [1 {value}] >>"));
+            Assert.True(Validate(doc, 2).Has(rule));
+        }
+    }
+
+    [Theory]
+    [InlineData("PrinterMark", 0)]
+    [InlineData("Stamp", 1)]
+    [InlineData("Stamp", 32)]
+    public void Ua2TaggedArtifactDispositionDoesNotHideMissingObjr(string subtype, int flags)
+    {
+        var doc = Load(2,
+            (8, Element.Replace("/S /Annot", "/S /Artifact /NS 14 0 R").Replace("/K 11 0 R", "")),
+            (9, Annotation.Replace("/Subtype /Stamp", $"/Subtype /{subtype} /F {flags}")));
+        var report = Validate(doc, 2);
+        Assert.True(report.Has("PDFUA-ANNOT-OBJR"));
+        Assert.False(report.Has("PDFUA-ANNOT-PRINTERMARK"));
+        Assert.False(report.Has("PDFUA2-ANNOT-ARTIFACT"));
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]

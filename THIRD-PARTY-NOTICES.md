@@ -28,6 +28,13 @@ Existing exemption/tagging policies are retained; reporting's PrinterMark
 family overlap does not establish full tagged-Artifact semantics.
 No reference source, profile XML or external annotation PDF is bundled.
 
+The tagged Artifact disposition exceptions for UA-2 annotations were
+cross-checked against the same CC BY 4.0 profile, 8.9.2.2 tests 1/2
+and 8.9.2.4.14-1. `ValidationPdfUA.cs` reuses the existing independently
+implemented namespace/Artifact ancestry and strict parent-tree/OBJR
+identity checks. No engine source or external control PDF is bundled;
+grouping-dependent structure semantics are not expanded.
+
 The PDF/A image-XObject interpolation prohibition in `ValidationPdfA.cs` was
 also cross-checked against the veraPDF Consortium's
 [v1.30.3 PDF/A profiles](https://github.com/veraPDF/veraPDF-validation-profiles/tree/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_A),
