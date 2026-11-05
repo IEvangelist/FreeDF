@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 classic xref subsection ranges
+
+ISO 32000-1 7.5.4 (printed p40) defines a subsection's first object
+number and count as a contiguous object-number range. Both classic-table
+entry paths previously narrowed the computed number unchecked: a start
+of 4294967300 wrapped to object 4, allowing a free entry to hide the real
+target without reporting repair. Negative starts/counts were also
+accepted. The shared subsection header now checks nonnegative start/count
+and the complete range against the current int object-number representation
+before allocation or entry iteration. Violations explicitly raise
+PdfParseException and enter the existing repair path. Iteration uses a
+long counter so a range ending at int.MaxValue cannot overflow the counter.
+This is an implementation boundary, not a normative PDF maximum.
+
+Nine regression cases exercise fixed and fallback entries, complete
+end-overflow entries (not merely truncated input), huge counts, supported
+int.MaxValue endpoints and retained zero-count behavior. Five cases were
+red before correction; the huge truncated count already triggered repair.
+Focused Release: 210 passed; full Release: 18,448 passed, zero failed/
+skipped. Solution zero errors/two retained machine-feed NU1507 warnings.
+
+Fourteen native PDFs reproduce two wrapped-target losses and eight other
+invalid-range cases, all now recovering the intended target with
+Repaired=true. Four sparse/empty compatibility controls remain unchanged.
+MuPDF recovers the target in all fourteen; it also repairs the two sparse
+controls (whose Size is smaller than the sparse subsection), unlike
+FreeDF. Those are recovery-policy controls, not clean conformance positives.
+Zero-count acceptance is preserved, not asserted as a new primary rule.
+Fresh 435-PDF/870-result corpus JSON is wholly unchanged against 12f5819f.
+This does not validate xref-stream Index/W/Size or all classic entry fields,
+subsection ordering/overlap, free-list integrity or parser-wide budgets.
+Standards/native PDFs remain session-local; hosted CI/full parity is not claimed.
+
 ## 2026-11-05 compressed member index and container identity
 
 ISO 32000-1 7.5.8.3/Table 18 (printed p51; p48 example) defines a type-2

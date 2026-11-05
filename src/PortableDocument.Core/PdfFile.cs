@@ -274,9 +274,12 @@ public sealed class PdfFile
                 var a = lx.ReadObject(false);
                 if (a is PdfKeyword { Value: "trailer" }) break;
                 if (a is not PdfInteger start || lx.ReadObject(false) is not PdfInteger count) { lx.Pos = save; throw new PdfParseException("bad xref subsection"); }
+                if (start.Value < 0 || start.Value > int.MaxValue || count.Value < 0 ||
+                    count.Value > (long)int.MaxValue - start.Value + 1)
+                    throw new PdfParseException("xref subsection range exceeds supported object numbers");
                 if (count.Value is > 0 and < 8_000_000)
                     Xref.EnsureCapacity(Xref.Count + (int)Math.Min(count.Value, (Data.Length - lx.Pos) / 6));
-                for (var i = 0; i < count.Value; i++)
+                for (long i = 0; i < count.Value; i++)
                 {
                     lx.SkipWhite();
                     if (TryFixedXrefEntry(lx.Pos, out var foff, out var fgen, out var fuse))

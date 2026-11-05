@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [classic xref subsection range check](spec-backlog.md#2026-11-05-classic-xref-subsection-ranges)
+prevents negative or overflowing start/count ranges from wrapping into
+unrelated object numbers in either entry path. Invalid native ranges now
+repair explicitly; supported sparse/empty behavior and corpus JSON remain
+unchanged. This is the current int implementation boundary, not a normative
+PDF maximum or complete xref-stream/schema/resource validation.
+
 The [compressed member identity correction](spec-backlog.md#2026-11-05-compressed-member-index-and-container-identity)
 matches member number/index before cached parsing, rejects duplicate header
 numbers and requires a generation-zero container. Seven native controls
