@@ -55,6 +55,47 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Optional-content application scope: 2026-11-05
+
+The Table 103 OCGs selection correction reuses both valid, explicitly
+selected `OptionalContentZoomBench` workloads. Exact 687-byte inputs and
+SHA-256 hashes match the preceding results; omitted/null selection is
+tested for correctness, not timed against an old incorrect result.
+
+| Source/run | Zoom 1 mean +/- error (ns) | Zoom 3 mean +/- error (ns) | Managed B/query |
+|---|---:|---:|---:|
+| [Preliminary fixed](results/2026-11-05-ocg-scope-preliminary.md) ([CSV](results/2026-11-05-ocg-scope-preliminary.csv)) | 107.7 +/- 7.00 | 105.4 +/- 8.17 | 0 |
+| [Fresh preceding-source control](results/2026-11-05-ocg-scope-control.md) ([CSV](results/2026-11-05-ocg-scope-control.csv)) | 122.6 +/- 10.02 | 117.8 +/- 6.59 | 0 |
+| [Final fixed](results/2026-11-05-ocg-scope-final.md) ([CSV](results/2026-11-05-ocg-scope-final.csv)) | 101.18 +/- 1.348 | 96.68 +/- 5.688 | 0 |
+
+The control compiles `OptionalContentState.cs` from
+`bf3e8bd7af4cb92b5b29159d466e3db1643e0910`, with the same benchmark source
+and other production sources. A session-local MSBuild compile substitution
+is inherited by BenchmarkDotNet's generated child builds through the
+`CustomAfterMicrosoftCommonTargets` environment variable. A preliminary
+attempt passing that property only to the outer build is **not** a valid
+control and is excluded from this table. Normal production was force-rebuilt
+after substitution and its assembly hash matched the full-suite-tested
+fixed assembly before final checks.
+
+The [diagnostic CSV](results/2026-11-05-ocg-scope-gc.csv) preserves raw GC
+totals, operation counts, exact input hashes and measured child engine
+module IDs (the preliminary run predates engine-ID logging). The final
+means are lower than this fresh control, but earlier samples show substantial
+run-to-run variation; there is no exclusive-load or universal speed claim.
+All runs retain three warmups/eight 500-ms iterations/one launch on the
+same machine/runtime. Managed query allocation remains zero; construction,
+many-group scaling, Language/User and whole-render performance are not
+measured. Provider correctness preflight passes; provider timing is not rerun.
+
+The exact zero-byte/4,096-query regression assertion is unchanged. Its
+warmup increases from 512 to 8,192 after small one-off allocations were
+observed in focused runs on both preceding and fixed sources; their cause
+is not established. Final focused/full runs and the separate benchmark
+allocation results satisfy the budget. The
+[scoped parity record](../../docs/spec-backlog.md#2026-11-05-optional-content-application-group-selection)
+describes the behavior controls and limits.
+
 ## Optional-content zoom: 2026-11-05
 
 `OptionalContentZoomBench.IsVisible` measures a repeated public visibility

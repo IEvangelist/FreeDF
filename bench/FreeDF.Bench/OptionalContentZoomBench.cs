@@ -35,7 +35,8 @@ public class OptionalContentZoomBench
             || IsVisible() != (Zoom == 1) || _state.Warnings.Count != 0)
             throw new InvalidOperationException("Optional-content zoom preflight failed.");
         Console.WriteLine($"PASS optional-content zoom: zoom={Zoom}, bytes={bytes.Length}, " +
-            $"SHA256={Convert.ToHexString(SHA256.HashData(bytes))}.");
+            $"SHA256={Convert.ToHexString(SHA256.HashData(bytes))}, " +
+            $"engine={typeof(OptionalContentState).Module.ModuleVersionId}.");
     }
 
     [Benchmark]

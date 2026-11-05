@@ -198,8 +198,14 @@ public sealed class OptionalContentState
                 || R(app.Get("Event")).AsName() != eventName
                 || R(app.Get("Category")) is not PdfArray categories)
                 continue;
-            if (R(app.Get("OCGs")) is PdfArray groups
-                && !ContainsGroup(file, groups, ocg))
+            var applicationGroups = R(app.Get("OCGs"));
+            if (applicationGroups is null or PdfNull) continue;
+            if (applicationGroups is not PdfArray groups)
+            {
+                warn?.Invoke("invalid optional-content application OCGs array");
+                continue;
+            }
+            if (!ContainsGroup(file, groups, ocg))
             {
                 foreach (var value in groups.Items)
                     if (ResolveGroup(file, value) is null)
@@ -209,8 +215,6 @@ public sealed class OptionalContentState
                     }
                 continue;
             }
-            if (R(app.Get("OCGs")) is PdfDictionary group && !ReferenceEquals(group, ocg))
-                continue;
             if (R(ocg.Get("Usage")) is not PdfDictionary usage) continue;
             foreach (var categoryValue in categories.Items)
             {

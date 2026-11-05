@@ -68,7 +68,7 @@ public class OptionalContentZoomBoundaryTests
     {
         var state = new OptionalContentState(Load("/min 1 /max 2"));
         var group = Assert.Single(state.Groups);
-        for (var i = 0; i < 512; i++) state.IsVisible(group, zoom: zoom);
+        for (var i = 0; i < 8192; i++) state.IsVisible(group, zoom: zoom);
         var before = GC.GetAllocatedBytesForCurrentThread();
         var visible = 0;
         for (var i = 0; i < 4096; i++)

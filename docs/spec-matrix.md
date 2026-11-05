@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [optional-content application selection correction](spec-backlog.md#2026-11-05-optional-content-application-group-selection)
+applies automatic usage rules only to groups selected by the application's
+OCGs array. Omitted/null/empty selection affects no groups; invalid non-array
+entries are diagnosed rather than treated as selecting all groups.
+
 The [optional-content zoom boundary correction](spec-backlog.md#2026-11-05-optional-content-upper-zoom-boundary)
 uses Table 102's half-open range, min <= zoom < max, in shared state/render
 visibility evaluation. Exact upper-bound content is now OFF; lower inclusion,

@@ -4,6 +4,50 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 optional-content application group selection
+
+ISO 32000-1 Table 103 (printed p233) defines a usage application's OCGs
+entry as an optional array, defaulting to empty: only explicitly selected
+groups are affected. Sections 7.3.7 and 7.3.9 (printed pp18/21) make null
+dictionary entries equivalent to absent entries. The shared evaluator
+instead applied View/Print/Export and Zoom recommendations to every group
+when OCGs was omitted or null, and accepted non-array values.
+
+Application selection now resolves OCGs once, skips absent/null/empty
+selection, and diagnoses non-array values without applying their rules.
+Explicit direct and indirect arrays retain their existing membership
+behavior, including warnings for invalid references in unselected arrays.
+Base configuration, manual overrides and caller-selected display events
+are unchanged. Language/User rules already required array selection; the
+shared gate now makes this consistent across supported usage categories.
+This does not infer a policy for CreatorInfo/PageElement or claim complete
+optional-content validation.
+
+Fourteen controls cover ten selection forms across View/Print/Export plus
+four Zoom selection cases. The unchanged-production state-query baseline
+fails seven and passes seven. Added rendered-pixel assertions exercise View
+selection with and without caller-provided optional-content state.
+The controls include omitted, direct/indirect null, empty direct/indirect
+arrays, direct/indirect selected arrays, peer-only selection, and invalid
+name/dictionary values.
+
+Final focused optional-content/layer/raster-golden checks pass 137 cases;
+full Release passes 19,532, zero failed/skipped. The solution builds with
+zero warnings/errors. Fresh pinned 435-PDF/870-result full corpus JSON is
+unchanged. This is integration evidence, not equivalent independent-reader
+interactive usage-selection coverage.
+
+The same two valid Zoom-query benchmark inputs remain byte-identical.
+Fresh preceding-source control means are 122.6/117.8 ns, final fixed means
+101.18/96.68 ns; both measure zero managed bytes/query. A preliminary fixed
+run and all exact hashes/raw allocation totals are retained in the
+[benchmark record](../bench/FreeDF.Bench/README.md#optional-content-application-scope-2026-11-05).
+Timing variation is recorded, not converted into a general speed guarantee.
+The existing exact zero-byte/4,096-query assertions retain their budget;
+warmup increases from 512 to 8,192 following small one-off allocation
+anomalies observed on both source variants. Their cause remains unproven;
+final focused/full and independent benchmark measurements pass.
+
 ## 2026-11-05 optional-content upper zoom boundary
 
 ISO 32000-1 Table 102 (printed p232) defines Zoom min as the minimum
