@@ -41,6 +41,14 @@ The existing C# check reuses the independently implemented namespace
 resolver; numbered-heading and hierarchy policies are not broadened.
 No profile XML, engine source or external heading PDF is bundled.
 
+The resolved Note restriction and scoped PDF-2.0 Note vocabulary boundary
+were cross-checked against the same CC BY 4.0 UA-2 profile (8.2.5.14-1
+and native 8.2.4-1 outcomes). `ValidationPdfUA2.cs` and the shared Note-ID
+selector in `ValidationPdfUADeep.cs` reuse the independently implemented
+namespace resolver. Cyclic-role classification disagreements are documented;
+reciprocal FENote references and NoteType semantics are not implemented
+by this slice. No reference-engine source or external PDF is bundled.
+
 The PDF/A image-XObject interpolation prohibition in `ValidationPdfA.cs` was
 also cross-checked against the veraPDF Consortium's
 [v1.30.3 PDF/A profiles](https://github.com/veraPDF/veraPDF-validation-profiles/tree/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_A),

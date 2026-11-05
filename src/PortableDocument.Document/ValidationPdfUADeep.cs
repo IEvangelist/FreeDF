@@ -748,7 +748,7 @@ internal static class PdfUADeepChecks
             }
         }
         var noteIds = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var n in tree.Elements().Where(e => e.StandardType == "Note"))
+        foreach (var n in tree.Elements().Where(e => (c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, e) : e.StandardType) == "Note"))
         {
             if (string.IsNullOrEmpty(n.Id)) c.Add("PDFUA-NOTE-ID", ValidationSeverity.Error, "Note has no /ID", Clause(c, "7.9", "8.2.5.30"), n.PageIndex);
             else if (noteIds.TryGetValue(n.Id, out var count) && count == 1)

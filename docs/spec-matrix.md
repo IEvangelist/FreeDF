@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 namespace-aware Note correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-note-restriction)
+resolves Note restriction/ID selectors and rejects Note in the PDF-2.0
+vocabulary. Eleven native file verdicts agree, correcting one false negative
+and two false positives; two cyclic-role rule classifications remain
+explicit disagreements. UA-1 and fresh 435-PDF/870-result corpus output
+are unchanged. FENote reference/attribute semantics remain incomplete.
+
 The [UA-2 namespace-aware H correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-h-prohibition)
 prohibits resolved H rather than foreign raw names and removes the
 contradictory H-within-Sect diagnostic alternative. Eleven native controls

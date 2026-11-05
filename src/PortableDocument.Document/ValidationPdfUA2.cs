@@ -191,7 +191,7 @@ internal static class PdfUA2Checks
         for (var depth = 0; depth < MaxRoleDepth; depth++)
         {
             if (((ns is null || ns == Pdf17Namespace) && StructureTree.IsPdf17StandardType(type) && !tree.RoleMap.ContainsKey(type))
-                || ns == Pdf2Namespace && StructureTree.IsStandardType(type))
+                || ns == Pdf2Namespace && type != "Note" && StructureTree.IsStandardType(type))
             {
                 standardType = type;
                 return RoleOutcome.Standard;
@@ -285,13 +285,12 @@ internal static class PdfUA2Checks
         var f = c.F;
         foreach (var e in tree.Elements())
         {
-            var inPdf17 = e.Namespace is null or Pdf17Namespace;
             var standardType = StandardType(c, tree, e);
             if (e.Type == "Math" && e.Parent?.StandardType != "Formula")
                 c.Add("PDFUA2-MATH-PARENT", ValidationSeverity.Error, "a Math element may only occur as a child of Formula", "ISO 14289-2 8.2.5.29", e.PageIndex);
             if (standardType == "H")
                 c.Add("PDFUA2-HEADING-H", ValidationSeverity.Error, "the H structure type must not be used; use numbered headings", "ISO 14289-2 8.2.5.12", e.PageIndex);
-            if (inPdf17 && e.Type == "Note" && !tree.RoleMap.ContainsKey("Note"))
+            if (standardType == "Note")
                 c.Add("PDFUA2-NOTE", ValidationSeverity.Error, "the Note structure type is only permitted when role mapped to a PDF 2.0 namespace element", "ISO 14289-2 8.2.5.14", e.PageIndex);
             if (standardType == "Form"
                 && e.Children.OfType<StructObjectRef>().Count(o => o.Object is PdfDictionary d && f.Resolve(d.Get("Subtype")).AsName() == "Widget") > 1)

@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 namespace-aware Note restriction
+
+`PDFUA2-NOTE` now selects resolved Note roles, instead of raw Note plus
+mere default RoleMap membership. Default-mapped custom Note and foreign
+RoleMapNS types resolving to PDF-1.7 Note no longer escape the restriction.
+Foreign raw Note mapped to P/FENote does not impersonate Note in the
+shared ID check: that selector also uses resolved roles for UA-2 while
+retaining its existing ID policy. UA-1 is unchanged.
+
+The shared resolver no longer accepts Note as a PDF-2.0 standard type
+merely because it is in the combined PDF vocabulary. Direct and mapped
+PDF-2.0 Note now produce existing role-missing/nesting-incomplete Errors,
+matching the native reference's vocabulary rejection. This is a scoped
+Note vocabulary correction, not a complete namespace-vocabulary audit.
+Reciprocal FENote references, NoteType attribute validation and full note
+semantics remain outside this slice.
+
+Twenty-two authored cases cover both profiles, default/PDF-1.7/PDF-2.0
+Note, default/namespace mappings, P/FENote mappings and cyclic/unmapped
+roles. Four initial restriction/vocabulary cases were red; eight
+additional ID-selector assertions exposed the coupled legacy-name issue.
+Eleven native controls give 11 whole-file agreements (two clean positives,
+nine negatives), correcting one false-negative and two false-positive
+file verdicts. Nine of 11 Note-rule outcomes agree; two cyclic mappings
+are rejected by both validators but differ in classification. The
+reference reports Note restriction findings on those cycles, while
+FreeDF retains explicit role/nesting-incomplete Errors and does not assert
+a known resolved Note type. These are not exact-rule agreements.
+
+All 11 corresponding UA-1 outputs and fresh 435-PDF/870-result public-corpus
+output are unchanged. Native reference jobs used registered indirect
+namespaces and completed normally. The FENote positive has NoteType None;
+its acceptance is not proof of complete FENote semantics. Existing
+8.2.5.14-1 reporting overlap is explicitly tested.
+
+Final full Release suite: 14,268 passed, zero failed/skipped. A preceding
+full run hit the recurring signature path-length test failure, also
+observed in the earlier Artifact slice; the detailed full rerun passed.
+The previous isolated pre-change signature control passed. No signature
+sources were changed, but the intermittent cause remains unestablished
+and tracked separately rather than dismissed as proven unrelated.
+Solution build: zero errors and two retained machine-feed NU1507 warnings.
+Reporting tool: 20 passing tests. External native controls/reports remain
+session-only; full PDF/UA parity is not claimed.
+
 ## 2026-11-05 UA-2 namespace-aware H prohibition
 
 `PDFUA2-HEADING-H` now uses the existing UA-2 namespace-aware standard

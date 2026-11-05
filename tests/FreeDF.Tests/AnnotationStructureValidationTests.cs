@@ -226,6 +226,49 @@ public class AnnotationStructureValidationTests
         Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
     }
 
+    public static IEnumerable<object[]> NoteNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default", "pdf17", "pdf2", "default-mapped", "namespace-mapped",
+            "mapped-paragraph", "mapped-fenote", "mapped-pdf2-note", "foreign", "cyclic", "default-cyclic" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(NoteNamespaceCases))]
+    public void Ua2NoteRestrictionUsesResolvedNamespaceRoles(int part, string kind)
+    {
+        var role = kind is "default-mapped" or "namespace-mapped" ? "CustomNote" : "Note";
+        var map = kind == "default-mapped" ? "/CustomNote /Note" : kind == "default-cyclic" ? "/Note /Note" : "";
+        var doc = Load(part,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /RoleMap << {map} >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /{role}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var note = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind is "pdf17" or "pdf2")
+            note.Entries["NS"] = kind == "pdf2" ? pdf2
+                : new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf/ssn")) } };
+        if (kind is "namespace-mapped" or "mapped-paragraph" or "mapped-fenote" or "mapped-pdf2-note" or "foreign" or "cyclic")
+        {
+            var roles = new PdfDictionary();
+            if (kind != "foreign")
+                roles.Entries[role] = kind == "cyclic" ? new PdfName(role)
+                    : new PdfArray([new PdfName(kind == "mapped-paragraph" ? "P" : kind == "mapped-fenote" ? "FENote" : "Note"),
+                        kind == "namespace-mapped" ? new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf/ssn")) } } : pdf2]);
+            note.Entries["NS"] = new PdfDictionary
+            {
+                Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("urn:note-namespace")), ["RoleMapNS"] = roles },
+            };
+        }
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && kind is "default" or "pdf17" or "default-mapped" or "namespace-mapped", report.Has("PDFUA2-NOTE"));
+        if (part == 2)
+            Assert.Equal(kind is "default" or "pdf17" or "default-mapped" or "namespace-mapped", report.Has("PDFUA-NOTE-ID"));
+        if (part == 2 && kind is "pdf2" or "mapped-pdf2-note" or "foreign" or "cyclic" or "default-cyclic")
+            Assert.True(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+    }
+
     public static IEnumerable<object[]> HeadingNamespaceCases()
     {
         foreach (var part in new[] { 1, 2 })
