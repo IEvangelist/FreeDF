@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 null attachment-relationship correction](spec-backlog.md#2026-11-05-ua-2-null-file-attachment-relationships)
+rejects omitted/null/dangling AFRelationship values consistently and
+reports unresolved reference boundaries separately. Twelve native
+controls give exact-rule/file agreement and six corrected false negatives.
+UA-1 and fresh 435-PDF/870-result corpus output are unchanged; relationship
+vocabulary/type validation is not broadened.
+
 The [file-description/name-tree correction](spec-backlog.md#2026-11-05-file-descriptions-and-null-embedded-file-entries)
 scopes UA-2 Desc to EmbeddedFiles name-tree membership, makes null EF
 equivalent to omission and reports bounded/cyclic inspection explicitly.

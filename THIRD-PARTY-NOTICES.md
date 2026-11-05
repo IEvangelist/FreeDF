@@ -71,6 +71,11 @@ condition with namespace-aware Artifact exclusion. The separate
 label-or-Contents predicate remains incomplete; no model implementation
 or profile XML is bundled.
 
+The UA-2 file-attachment AFRelationship requirement was cross-checked
+against the same CC BY 4.0 UA-2 profile, 8.9.2.4.10-1. Null handling
+follows primary ISO 32000-1 7.3.9; bounded references are reported
+separately from genuine omission. No profile XML or external PDFs are bundled.
+
 The UA-2 Desc requirement's EmbeddedFiles name-tree membership boundary
 was cross-checked against the same CC BY 4.0 UA-2 profile, 8.14.1-1.
 The implementation replaces the EF-presence proxy with bounded tree

@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 null file-attachment relationships
+
+The `PDFUA2-FILEATTACH-AFRELATIONSHIP` check now treats missing,
+direct-null, indirect-null and nonexistent-reference relationships as
+omission. Previously every raw entry, including null, satisfied the
+requirement. Direct/indirect non-null values keep the existing presence
+policy; this slice does not add relationship vocabulary/type validation.
+The scoped facts follow the pinned veraPDF v1.30.3 UA-2 profile,
+8.9.2.4.10-1, together with primary ISO 32000-1 7.3.9 null equivalence.
+Full primary UA-2 8.9 remains unavailable in the public ISO preview.
+
+File-specification and relationship references use the existing
+32-reference bounded resolver. Cycles or exhausted bounds produce one
+`PDFUA2-FILEATTACH-INCOMPLETE` Error, not a known-missing relationship
+finding. Genuine null file specifications retain the existing exemption;
+other attachment requirements and UA-1 behavior are unchanged.
+
+Thirty-two authored cases cover both profiles, direct/indirect file
+specifications, null boundaries and cyclic/depth-exhausted references;
+nine failed before correction. Twelve independent native UA-2 controls
+give exact-rule and whole-file agreement (four clean positives, eight
+negatives), correcting six false-negative verdicts. All twelve
+corresponding UA-1 outputs are unchanged. A fresh 435-PDF/870-result
+public-corpus run is identical to the immediate baseline.
+
+Full Release suite: 13,800 passed, zero failed/skipped. Solution build:
+zero errors and two retained machine-feed NU1507 warnings. Reporting tool:
+20 passing tests, including the existing 8.9.2.4.10-1 family mapping.
+External controls/reference artifacts remain session-only; no full
+PDF/UA or complete attachment conformance is claimed.
+
 ## 2026-11-05 File descriptions and null embedded-file entries
 
 The UA-2 `PDFUA2-FILESPEC-DESC` check now inspects file specifications in

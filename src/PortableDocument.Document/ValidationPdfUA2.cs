@@ -44,12 +44,24 @@ internal static class PdfUA2Checks
     {
         var f = c.F;
         FileDescriptions(c);
-        bool rel = false;
+        bool rel = false, incomplete = false;
         foreach (var o in c.AllObjects())
         {
-            if (o is not PdfDictionary d) continue;
-            if (!rel && f.Resolve(d.Get("Subtype")).AsName() == "FileAttachment" && f.Resolve(d.Get("FS")) is PdfDictionary fs && fs.Get("AFRelationship") is null)
+            if (rel || o is not PdfDictionary d || f.Resolve(d.Get("Subtype")).AsName() != "FileAttachment") continue;
+            if (ResolveBounded(f, d.Get("FS"), Incomplete) is not PdfDictionary fs) continue;
+            bool complete = true;
+            var relationship = ResolveBounded(f, fs.Get("AFRelationship"), () => { complete = false; Incomplete(); });
+            if (complete && relationship is null or PdfNull)
             { rel = true; c.Add("PDFUA2-FILEATTACH-AFRELATIONSHIP", ValidationSeverity.Error, "a file-attachment annotation's file specification has no /AFRelationship (veraPDF PDFUA-2 8.9.2.4.10-1)", "ISO 14289-2 8.9.2.4.10"); }
+        }
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FILEATTACH-INCOMPLETE", ValidationSeverity.Error,
+                "file-attachment relationship inspection encountered a cyclic or bounded reference",
+                "ISO 14289-2 8.9.2.4.10");
         }
     }
 

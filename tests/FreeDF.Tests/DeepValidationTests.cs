@@ -1160,6 +1160,66 @@ public class DeepValidationTests
         Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
     }
 
+    public static IEnumerable<object[]> AttachmentRelationshipCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var direct in new[] { false, true })
+        foreach (var relationship in new[] { "", "/AFRelationship null", "/AFRelationship 11 0 R",
+            "/AFRelationship 99 0 R", "/AFRelationship /Data", "/AFRelationship 12 0 R" })
+            yield return [part, direct, relationship];
+    }
+
+    [Theory]
+    [MemberData(nameof(AttachmentRelationshipCases))]
+    public void Ua2AttachmentRelationshipNullIsEquivalentToOmission(int part, bool direct, string relationship)
+    {
+        var spec = $"<< /Type /Filespec /F (file) /UF (file) {relationship} >>";
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            Para, $"<< /Type /Annot /Subtype /FileAttachment /FS {(direct ? spec : "10 0 R")} /Rect [0 0 10 10] /Contents (file) >>",
+            spec, "null", "/Data",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && relationship is not ("/AFRelationship /Data" or "/AFRelationship 12 0 R"),
+            report.Has("PDFUA2-FILEATTACH-AFRELATIONSHIP"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FILEATTACH-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void Ua2AttachmentRelationshipCyclicReferencesAreIncomplete(int part, bool fileSpecification)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            Para, $"<< /Type /Annot /Subtype /FileAttachment /FS {(fileSpecification ? "11 0 R" : "10 0 R")} /Rect [0 0 10 10] /Contents (file) >>",
+            "<< /Type /Filespec /F (file) /UF (file) /AFRelationship 11 0 R >>", "11 0 R",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2, report.Has("PDFUA2-FILEATTACH-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FILEATTACH-AFRELATIONSHIP"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, false)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, true)]
+    public void Ua2AttachmentRelationshipReferenceBoundaryIsExplicit(int part, int length, bool incomplete)
+    {
+        var nodes = Enumerable.Range(13, length).Select(n => n == 12 + length ? "/Data" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+            new[] { Para, "<< /Type /Annot /Subtype /FileAttachment /FS 10 0 R /Rect [0 0 10 10] /Contents (file) >>",
+                "<< /Type /Filespec /F (file) /UF (file) /AFRelationship 13 0 R >>", "null", "null" }.Concat(nodes).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILEATTACH-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FILEATTACH-AFRELATIONSHIP"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> FileDescriptionCases()
     {
         foreach (var part in new[] { 1, 2 })
