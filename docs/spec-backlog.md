@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary page structure-parent exclusivity
+
+Published PDF 2.0 errata, 14.7.5.4 Table 359, allows at most one of
+StructParent and StructParents in an object. UA-2 now checks parsed page
+dictionaries and reports PDFUA2-PAGE-STRUCT-PARENT-CONFLICT when both
+resolved values are non-null. Zero is a present value; omission, explicit
+null and indirect null/dangling references retain absent-key behavior.
+Cycles or more than 32 reference hops produce the separate
+PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE rather than guessed exclusivity.
+UA-1 and existing content/parent-tree interpretation are unchanged.
+
+Six native page controls retain three positives and reject three primary
+negatives. All six independent combined-reference jobs complete normally
+with matching verdicts. The reference rejects the negatives under
+ISO 14289-2 8.2.2-1 (untagged content), not an explicit parent-key
+exclusivity predicate; exact rule-level agreement is not claimed.
+Twenty-eight authored null/zero/indirect/UA-1/depth/cycle cases had ten
+initial failures and now pass. Focused Release: 709 passed; full Release:
+15,364 passed, zero failed/skipped. Fresh 435-PDF/870-result corpus JSON
+and native UA-1 reports are wholly unchanged. Solution zero errors/two
+retained machine-feed NU1507 warnings.
+
+This is page-dictionary exclusivity, not all-object coverage. Annotation
+and XObject dictionaries, complete key type/parent-tree identity and
+content-container semantics remain separate. No standard text or external
+controls are bundled; hosted CI and full parity are not claimed.
+
 ## 2026-11-05 primary default RoleMap declared shape
 
 Published PDF 2.0 errata, 14.7.3, requires a RoleMap dictionary with single

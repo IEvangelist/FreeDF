@@ -384,6 +384,15 @@ the reference; these disagreements are explicit. Global target semantics,
 RoleMapNS schema and parser-wide bounds are not established. No standard
 text or external controls are bundled.
 
+The page structure-parent exclusivity check follows the at-most-one-key
+fact in 14.7.5.4 Table 359 at the same official errata source. It is
+independently implemented with bounded reference resolution. Six native
+controls have matching combined-reference verdicts; negative reference
+reports cite untagged content rather than an explicit exclusivity check,
+so exact predicate agreement is not claimed. All-object coverage,
+parent-tree identity and key types remain separate. No standard text or
+external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary page parent-key exclusivity check](spec-backlog.md#2026-11-05-primary-page-structure-parent-exclusivity)
+rejects page dictionaries carrying both non-null StructParent and
+StructParents, preserving explicit reference incompleteness. Six native
+controls have matching reference verdicts; the reference's negative
+predicate is untagged content, not explicit exclusivity. Corpus and UA-1
+reports are wholly unchanged. Annotation/XObject coverage and complete
+key type/parent-tree semantics remain separate.
+
 The [primary default RoleMap shape check](spec-backlog.md#2026-11-05-primary-default-rolemap-declared-shape)
 inspects raw dictionary/name-valued mappings, including unused entries,
 with explicit reference/work incompleteness. Twenty native controls retain

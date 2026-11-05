@@ -2666,6 +2666,70 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> PageStructureParentConflictCases()
+    {
+        (string Single, string Multiple, bool Conflict)[] values =
+        [
+            ("", "0", false), ("null", "0", false), ("0", "", false), ("0", "null", false),
+            ("0", "0", true), ("1", "0", true), ("8 0 R", "0", true),
+            ("9 0 R", "0", false), ("0", "8 0 R", true), ("0", "9 0 R", false),
+            ("999999 0 R", "0", false),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var (single, multiple, conflict) in values)
+            yield return [part, single, multiple, conflict];
+    }
+
+    [Theory]
+    [MemberData(nameof(PageStructureParentConflictCases))]
+    public void Ua2PageStructureParentKeysAreMutuallyExclusive(int part, string single, string multiple, bool conflict)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras: ["0", "null"]));
+        var page = doc.Pages[0].Dict;
+        if (single.Length > 0)
+            page.Entries["StructParent"] = new PdfLexer(Encoding.ASCII.GetBytes(single)).ReadObject()!;
+        if (multiple.Length > 0)
+            page.Entries["StructParents"] = new PdfLexer(Encoding.ASCII.GetBytes(multiple)).ReadObject()!;
+        else page.Entries.Remove("StructParents");
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && conflict, report.Has("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("StructParent", 32, false)]
+    [InlineData("StructParent", 33, true)]
+    [InlineData("StructParents", 32, false)]
+    [InlineData("StructParents", 33, true)]
+    public void Ua2PageStructureParentReferenceDepthDoesNotGuessExclusivity(string key, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(8, count).Select(n => n == 7 + count ? "0" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", extras: chain.ToArray()));
+        doc.Pages[0].Dict.Entries["StructParent"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries["StructParents"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries[key] = new PdfRef(8, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("StructParent")]
+    [InlineData("StructParents")]
+    public void Ua2PageStructureParentCycleIsIncompleteRatherThanGuessedConflict(string key)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras: ["8 0 R"]));
+        doc.Pages[0].Dict.Entries["StructParent"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries["StructParents"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries[key] = new PdfRef(8, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

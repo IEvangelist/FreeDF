@@ -20,6 +20,7 @@ internal static class PdfUA2Checks
     {
         c.Guard("PDF/UA-2 version", () => Version(c));
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
+        c.Guard("PDF/UA-2 page structure parent keys", () => PageStructureParents(c));
         c.Guard("PDF/UA-2 role map shape", () => RoleMapShape(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
         c.Guard("PDF/UA-2 containment", () => PdfUA2NestingChecks.Run(c, tree));
@@ -341,6 +342,25 @@ internal static class PdfUA2Checks
     {
         roleResolved = Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type) == RoleOutcome.Standard;
         return type;
+    }
+
+    static void PageStructureParents(ValidationContext c)
+    {
+        const string clause = "ISO 32000-2 14.7.5.4 Table 359";
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            bool incomplete = false;
+            void Incomplete() => incomplete = true;
+            var dictionary = c.Doc.Pages[page].Dict;
+            var single = ResolveBounded(c.F, dictionary.Get("StructParent"), Incomplete);
+            var multiple = ResolveBounded(c.F, dictionary.Get("StructParents"), Incomplete);
+            if (incomplete)
+                c.Add("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "page structure parent key inspection exceeds its reference bound", clause, page);
+            else if (single is not (null or PdfNull) && multiple is not (null or PdfNull))
+                c.Add("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                    "page must not contain both StructParent and StructParents", clause, page);
+        }
     }
 
     static void RoleMapShape(ValidationContext c, StructureTree tree)
