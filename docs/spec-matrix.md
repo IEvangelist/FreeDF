@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed standalone-reference correction](spec-backlog.md#2026-11-05-compressed-standalone-reference-values)
+rejects a parsed member that is solely a PdfRef before caching, while
+retaining references nested inside arrays/dictionaries and lazy isolation
+of other members. Explicit rejection/reference differences and unchanged
+corpus JSON are recorded. Complete member boundaries, stream-valued members
+and remaining object-stream/resource rules are separate.
+
 The [object-stream member offset check](spec-backlog.md#2026-11-05-object-stream-member-offset-order)
 requires strictly increasing offsets in both normal and recovery indexing,
 without requiring object numbers to be sorted or eagerly parsing bodies.

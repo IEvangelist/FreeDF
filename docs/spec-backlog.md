@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed standalone reference values
+
+ISO 32000-1 7.5.7 (printed p46) explicitly prohibits an object-stream
+member consisting solely of an indirect reference, while permitting
+references inside arrays and dictionaries. Lazy member loading now raises
+PdfParseException before caching a standalone PdfRef instead of allowing
+Resolve to alias another indirect identity. Recovery still indexes headers
+without eagerly parsing bodies; an invalid requested body cannot become
+valid merely because recovery ran.
+
+Twelve controls include six initially red standalone-reference/isolation
+cases, repeated invalid lookup, six valid primitive/container types and
+nested references. A valid member remains usable when another unrequested
+member is a forbidden reference. Normal and forced-recovery paths are
+covered. Full Release: 18,627 passed, zero failed/skipped. Solution: zero
+errors/two retained machine-feed NU1507 warnings.
+
+Twenty native PDFs retain twelve valid outputs unchanged. Eight forbidden
+values now give the explicit diagnostic; four previously resolved to the
+catalog through an alias and four resolved null through missing/self
+references. MuPDF returns null for all forbidden values rather than
+exposing a reference/error, so rejection disposition differs. Valid lookup
+outputs agree; MuPDF additionally reports repair on the normal-index
+literal-null control. Fresh pinned 435-PDF/870-result corpus full JSON is
+wholly unchanged against the offset-order baseline.
+
+Stream-valued members, complete member-boundary/exhaustion validation,
+remaining object-stream schema and parser-wide budgets remain separate.
+This only rejects a parsed standalone reference, not nested references or
+reference-looking string contents.
+
 ## 2026-11-05 object-stream member offset order
 
 ISO 32000-1 7.5.7 (printed p46) explicitly requires increasing member

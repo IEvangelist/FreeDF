@@ -9,7 +9,7 @@ public class ObjectStreamOffsetOrderTests
     const string SecondBody = "<< /Type /Second >>";
     internal static int SecondOffset => FirstBody.Length + 1;
 
-    internal static byte[] Build(int firstOffset, int secondOffset, bool forceRepair, bool reverseNumbers = false)
+    internal static byte[] Build(int firstOffset, int secondOffset, bool forceRepair, bool reverseNumbers = false, string? secondBody = null)
     {
         using var data = new MemoryStream();
         void Write(string text) => data.Write(Encoding.ASCII.GetBytes(text));
@@ -18,7 +18,7 @@ public class ObjectStreamOffsetOrderTests
         Write("1 0 obj\n<< /Type /Catalog /Probe 2 0 R /Other 5 0 R >>\nendobj\n");
         var container = data.Position;
         var header = $"{(reverseNumbers ? 5 : 2)} {firstOffset} {(reverseNumbers ? 2 : 5)} {secondOffset} ";
-        var body = header + FirstBody + " " + SecondBody;
+        var body = header + FirstBody + " " + (secondBody ?? SecondBody);
         Write($"3 0 obj\n<< /Type /ObjStm /N 2 /First {header.Length} /Length {body.Length} >>\nstream\n{body}\nendstream\nendobj\n");
         var xref = data.Position;
         using var rows = new MemoryStream();
