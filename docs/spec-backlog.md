@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 single-operand visibility expressions
+
+ISO 32000-1 8.11.2.2 (printed p224) permits one or more operands for
+visibility-expression And/Or, while Not requires exactly one. The
+interpreter already rejected arrays shorter than operator-plus-one-operand,
+but a later check incorrectly required at least two operands for And/Or.
+Removing that redundant count check accepts valid single operands without
+changing operator validation or the existing evaluator.
+
+Twelve initial controls use conforming, unrepaired synthetic PDFs:
+And/Or with ON/OFF groups, plain/nested single-operand expressions,
+both Not states and invalid empty And/Or arrays. Each checks exact rendered
+pixels and diagnostics with and without caller-provided optional-content
+state. The unchanged-production baseline fails eight and passes four.
+Four additional controls verify the existing resource thresholds exactly:
+depth 64 allowed/65 blocked, and 10,000 total evaluated nodes allowed/
+10,001 blocked. These are implementation resource limits, not PDF grammar
+limits. Empty/over-budget expressions retain the existing warning/hidden
+disposition.
+
+Full Release passes 19,585, zero failed/skipped; the solution builds with
+zero warnings/errors. After adding the four resource-boundary controls,
+the final focused optional-content/layer/raster-golden selector passes
+194 cases. The full suite was not rerun for those four later test-only
+additions. Fresh pinned 435-PDF/870-result full corpus JSON is
+unchanged.
+
+Twenty independently encoded controls additionally check complete 200x200
+RGB buffers and warning dispositions through the native render tool:
+eight single-operand, two Not, two empty and eight two-operand cases.
+All native results match the primary boolean expectations/existing invalid
+input policy. PyMuPDF 2.0 / MuPDF 1.28.5 matches only nine buffers (9/18
+valid controls, 0/2 invalid controls): this reference route draws all twenty
+rectangles, including valid Not and two-operand cases expected OFF.
+That disagreement is retained, not labelled independent confirmation of
+single-operand VE support. No external PDFs are bundled.
+Two additional direct-OCG reference controls correctly render the same ON
+and OFF initialization, isolating the disagreement from basic group-state
+setup on this reference route.
+
+Previously valid expressions retain their traversal, caches and resource
+budgets; newly supported expressions use that same bounded recursion.
+The change adds no collection, setting or per-node allocation. Dedicated
+VE timing was not run and no VE throughput/zero-allocation claim is made;
+previous event/Zoom-query measurements are not a proxy for this path.
+Broader optional-content intent, validation and lifecycle parity remain open.
+
 ## 2026-11-05 conforming optional-content default controls
 
 A follow-up primary Table 101 check (printed p229) found that default

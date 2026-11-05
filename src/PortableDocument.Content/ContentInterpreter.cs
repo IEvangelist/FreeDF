@@ -706,7 +706,7 @@ public sealed class ContentInterpreter
             var child = EvaluateVisibilityExpression(array[1], cfg, depth + 1, ref budget, out valid);
             return valid && !child;
         }
-        if (op is not ("And" or "Or") || array.Count < 3)
+        if (op is not ("And" or "Or"))
         {
             valid = false;
             return false;

@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [single-operand visibility-expression correction](spec-backlog.md#2026-11-05-single-operand-visibility-expressions)
+accepts And/Or with one operand as required by 8.11.2.2. Empty expressions
+and over-budget traversal retain their existing diagnosed/hidden behavior.
+Native controls follow the primary rule; the differing MuPDF output is
+recorded rather than counted as equivalent reference confirmation.
+
 The [optional-content recommendation correction](spec-backlog.md#2026-11-05-optional-content-usage-recommendations)
 conjoins selected categories across applications, lets in-range Zoom enable
 an initially OFF group, and permits categories independent of event names.
