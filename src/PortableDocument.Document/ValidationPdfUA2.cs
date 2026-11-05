@@ -722,7 +722,7 @@ internal static class PdfUA2Checks
     static void AttributeOwners(ValidationContext c, StructureTree tree, StructElement element)
     {
         const string clause = "ISO 32000-2 14.7.6.1 Table 360";
-        bool incomplete = false, invalid = false;
+        bool incomplete = false, invalid = false, missingNamespace = false;
         int work = 0;
         void Incomplete()
         {
@@ -735,7 +735,15 @@ internal static class PdfUA2Checks
         {
             bool complete = true;
             var owner = ResolveBounded(c.F, dictionary.Get("O"), () => { complete = false; Incomplete(); });
-            if (complete) invalid |= owner is not PdfName;
+            if (complete)
+            {
+                invalid |= owner is not PdfName;
+                if (owner.AsName() == "NSO")
+                {
+                    var ns = ResolveBounded(c.F, dictionary.Get("NS"), () => { complete = false; Incomplete(); });
+                    if (complete) missingNamespace |= ns is null or PdfNull;
+                }
+            }
             return complete;
         }
         if (VisitAttributeObjects(c, element.Dict.Get("A"), Inspect, Incomplete, ref work, includeStreams: true))
@@ -743,6 +751,9 @@ internal static class PdfUA2Checks
         if (invalid)
             c.Add("PDFUA2-ATTR-OWNER", ValidationSeverity.Error,
                 "attached attribute object O owner must be a name", clause, element.PageIndex);
+        if (missingNamespace)
+            c.Add("PDFUA2-ATTR-NSO-NS", ValidationSeverity.Error,
+                "NSO-owned attribute object NS must be present and non-null", clause, element.PageIndex);
     }
 
     internal static PdfObject? OwnedAttribute(ValidationContext c, StructureTree tree, StructElement element,

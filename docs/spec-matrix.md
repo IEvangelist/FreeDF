@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary NSO namespace-presence check](spec-backlog.md#2026-11-05-primary-nso-attribute-namespace-presence)
+rejects absent/resolved-null NS for known NSO attribute owners, preserving
+explicit incomplete handling and standard-owner value lookup. Twenty-six
+native controls retain eight positives; eighteen primary negatives remain
+reference-accepted. Corpus and UA-1 results are wholly unchanged. Namespace
+type/schema, owner identity and registration remain separate requirements.
+
 The [primary mandatory attribute-owner check](spec-backlog.md#2026-11-05-primary-mandatory-attribute-owner-names)
 requires O names on known attached dictionary/stream attributes in local A
 and used C/ClassMap entries, with separate bounded-inspection errors.

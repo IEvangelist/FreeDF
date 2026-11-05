@@ -366,6 +366,15 @@ No standard text or external controls are bundled. NSO namespace,
 semantic owner validity, complete attribute schema, stream interpretation,
 revision and inheritance requirements remain separate.
 
+The NSO attribute namespace-presence check follows the conditional required
+NS-entry fact in 14.7.6.1 Table 360 at the same errata source. It reuses
+independently implemented bounded owner traversal and reference resolution.
+Twenty-six native controls retain eight positives and reject eighteen
+primary absence/null negatives accepted by the reference; these differences
+are explicit. Namespace type/schema, owner identity/registration, stream
+interpretation and complete attribute conformance are not derived from
+these controls. No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

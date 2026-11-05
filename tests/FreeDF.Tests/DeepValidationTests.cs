@@ -2412,6 +2412,164 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> NsoNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var route in new[] { "local", "local-array", "class", "class-array" })
+        foreach (var entry in new[] { "", "/NS null", "/NS 9 0 R", "/NS 999999 0 R", "/NS 12 0 R" })
+            yield return [part, route, entry, entry != "/NS 12 0 R"];
+    }
+
+    [Theory]
+    [MemberData(nameof(NsoNamespaceCases))]
+    public void Ua2NsoNamespaceCannotBeAbsentOrResolveToNull(int part, string route, string entry, bool invalid)
+    {
+        var attribute = $"<< /O 10 0 R {entry} >>";
+        var local = route == "local" ? $"/A {attribute}" : route == "local-array" ? $"/A [{attribute}]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>", "null", "/NSO", "11 0 R",
+            "<< /Type /Namespace /NS (https://example.com/attributes) >>",
+        ]));
+        var map = $"<< /Used {(route == "class-array" ? $"[{attribute}]" : attribute)} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local", false)]
+    [InlineData("local", true)]
+    [InlineData("local-array", false)]
+    [InlineData("local-array", true)]
+    [InlineData("class", false)]
+    [InlineData("class", true)]
+    [InlineData("class-array", false)]
+    [InlineData("class-array", true)]
+    public void Ua2NsoNamespaceOnAttributeStreamsDoesNotRequireDataInterpretation(string route, bool invalid)
+    {
+        var local = route == "local" ? "/A 9 0 R" : route == "local-array" ? "/A [9 0 R]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>",
+            ObjPdf.Stream("opaque attribute data", $"/O /NSO /NS {(invalid ? "null" : "10 0 R")}"),
+            "<< /Type /Namespace /NS (https://example.com/attributes) >>",
+        ]));
+        var map = $"<< /Used {(route == "class-array" ? "[9 0 R]" : "9 0 R")} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2NsoNamespaceReferenceDepthDoesNotBecomeGuessedAbsence(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count
+            ? "<< /Type /Namespace /NS (https://example.com/attributes) >>" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /A << /O /NSO /NS 9 0 R >> >>" }
+                .Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ua2NsoNamespaceKeepsKnownAbsenceBeforeLaterCycle(bool useClass)
+    {
+        const string attributes = "[<< /O /NSO >> << /O /NSO /NS 9 0 R >>]";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {(useClass ? "/C /Used" : $"/A {attributes}")} >>", "9 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes($"<< /Used {attributes} >>")).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array", 200000, false)]
+    [InlineData("local-array", 200001, true)]
+    [InlineData("class-array", 200000, false)]
+    [InlineData("class-array", 200001, true)]
+    public void Ua2NsoNamespaceWorkBoundRetainsOneKnownAbsence(string route, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: ["<< /Type /StructElem /S /P /P 7 0 R >>"]));
+        var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var missing = new PdfDictionary { Entries = { ["O"] = new PdfName("NSO") } };
+        var valid = new PdfDictionary { Entries = { ["O"] = new PdfName("Layout") } };
+        int length = route == "class-array" ? count - 1 : count;
+        var attributes = new PdfArray(new PdfObject[] { missing }
+            .Concat(Enumerable.Repeat<PdfObject>(valid, length - 1)).ToList());
+        if (route == "local-array") element.Entries["A"] = attributes;
+        else
+        {
+            element.Entries["C"] = new PdfName("Used");
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+                new PdfDictionary { Entries = { ["Used"] = attributes } };
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-ATTR-NSO-NS");
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Layout", false)]
+    [InlineData("(NSO)", true)]
+    public void Ua2NsoNamespaceConditionDoesNotInspectOtherOrInvalidOwners(string owner, bool invalidOwner)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R /A << /O {owner} /NS 9 0 R >> >>", "9 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(invalidOwner, report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2NsoNamespaceInspectsUsedClassDespiteLocalValuePrecedence()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /A << /O /Layout >> /C /Used >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Used"] = new PdfDictionary { Entries = { ["O"] = new PdfName("NSO") } } } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2NsoNamespaceDoesNotInspectUnusedClassDefinitions()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /C /Undefined >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Unused"] = new PdfDictionary { Entries = { ["O"] = new PdfName("NSO") } } } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

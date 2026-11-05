@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary NSO attribute namespace presence
+
+Published PDF 2.0 errata, 14.7.6.1 Table 360, requires an NS entry when
+the O owner is NSO. UA-2 now reports PDFUA2-ATTR-NSO-NS for absent or
+resolved-null NS values, including indirect null and dangling references.
+Direct/indirect O names are resolved before applying the condition.
+Other owners and malformed non-name owners do not trigger an inferred
+NSO requirement. The existing mandatory O-name check remains independent.
+
+The attached-attribute traversal covers local A, flat arrays, used ClassMap
+attributes and stream dictionaries without decoding data. Used classes
+remain inspected even when A wins; undefined/unused classes are unchanged.
+Cycles and reference/work exhaustion retain PDFUA2-ATTR-OWNER-INCOMPLETE
+without guessing absence. One known NSO-namespace error per element survives
+later incomplete inspection. Standard-owner value lookup is unchanged.
+
+Twenty-six native controls retain eight positives and reject eighteen
+primary negatives. All independent combined-reference jobs complete
+normally and accept: **eighteen explicit primary/reference disagreements**.
+The native UA-1 reports and fresh 435-PDF/870-result corpus JSON are wholly
+unchanged. Sixty authored UA-1/route/stream/conditional/depth/work controls
+had 28 initial failures and now pass; focused Release: 1,617 cases.
+Full Release: 15,288 passed, no failures/skips; solution zero errors/two
+retained machine-feed NU1507 warnings.
+
+This closes absence/null only. Namespace declared type, dictionary schema,
+owner identity/URI semantics and registration are not inferred from the
+element NS rules or these controls. Full namespace/attribute conformance,
+stream interpretation, revisions and inheritance remain deferred.
+No external controls/standard text are bundled; hosted CI/full parity
+are not claimed.
+
 ## 2026-11-05 primary mandatory attribute owner names
 
 Published PDF 2.0 errata, 14.7.6.1 Table 360, requires attribute objects
