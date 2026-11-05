@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [shared PDFDocEncoding text-string correction](spec-backlog.md#2026-11-05-shared-pdfdocencoding-text-string-decoding)
+replaces Latin-1 fallback for forty defined text-string codes across metadata,
+field values/names and ActualText, preserving raw bytes, glyph interpretation
+and existing Unicode BOM handling. Forty native PDFs produce 160 corrected
+metadata outputs matching MuPDF; UA corpus JSON is unchanged. Undefined-byte
+reader leniency, full text validation and Unicode language escapes remain separate.
+
 The [primary terminal field entry type checks](spec-backlog.md#2026-11-05-primary-terminal-field-entry-types)
 check local T raw strings and AA dictionaries on recognized terminal fields
 with explicit unresolved/bounded diagnostics. Fifteen native controls retain

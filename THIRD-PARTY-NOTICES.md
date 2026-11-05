@@ -570,6 +570,15 @@ raw-type positives and reject ten primary negatives accepted by the pinned
 reference; disagreements are explicit. No actions are executed and no
 standard text or external controls are bundled.
 
+The shared text-string PDFDocEncoding correction follows ISO 32000-1
+7.9.2.2/.3 and Annex D.3/Table D.2 character mapping facts, independently
+implemented in PdfString. The existing strict rich-field checker now reuses
+that map. Forty self-authored native PDFs produce 160 corrected metadata
+outputs exactly matching MuPDF (PyMuPDF 2.0); this is decoding agreement,
+not conformance certification. Raw bytes/font decoding, Unicode BOM paths
+and the general reader's pre-existing undefined-byte leniency are retained.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

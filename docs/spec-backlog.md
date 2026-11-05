@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 shared PDFDocEncoding text-string decoding
+
+ISO 32000-1 7.9.2.2/.3 and Annex D.3/Table D.2 specify PDFDocEncoding
+for non-Unicode text strings. The shared PdfString.Text/Decode helper
+previously used Latin-1, misreading all forty differing defined codes:
+eight accents, thirty-one symbols/ligatures and the euro sign.
+The shared helper now maps those codes to their specified Unicode values.
+Outline titles, annotation text, field names/values, optional-content names
+and ActualText consumers inherit the correction. Raw Bytes, font glyph
+decoding and the existing UTF-16BE/LE and UTF-8 BOM paths are unchanged.
+The rich-field validator reuses the shared map after retaining its strict
+Unicode/undefined-byte checks, removing its duplicate character map.
+
+The general reader's existing leniency for undefined PDFDocEncoding bytes
+is retained, not newly certified as valid input. Full text-string validation,
+Unicode language escape handling and complete PDF parity remain separate.
+No writer encoding, raw font interpretation or binary payload is changed.
+
+Eighty of 86 authored controls fail on unchanged production; all pass after
+the correction. Controls cover every changed code at the core and across
+outline/field/annotation/ActualText surfaces, unchanged raw bytes and glyph
+text, plus BOM/ASCII/Latin/undefined-byte compatibility.
+Focused Release: 5,317 passed; full Release: 18,112 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+Forty self-authored native PDFs produce 160 corrected outline-title,
+field-name, field-value and annotation-content outputs, all exactly matching
+MuPDF (PyMuPDF 2.0). All 160 differ on the baseline. This is text-output
+agreement, not a conformance claim. Fresh 435-PDF/870-result UA corpus JSON
+is wholly unchanged against terminal-entry baseline 8d5da8d0.
+No standard text or external controls are bundled; hosted CI is not claimed.
+
 ## 2026-11-05 primary terminal field entry types
 
 Official PDF Association PDF 2.0 errata 12.7.4.1/Table 226 declares
