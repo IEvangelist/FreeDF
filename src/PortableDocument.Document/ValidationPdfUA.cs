@@ -365,7 +365,7 @@ internal static partial class PdfUAChecks
                 widths.Add(Math.Max(col, carry.Where(kv => kv.Value > 0).Select(kv => kv.Key + 1).DefaultIfEmpty(0).Max()));
                 foreach (var key in carry.Keys.ToList()) if (--carry[key] <= 0) carry.Remove(key);
             }
-            if (!hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
+            if (c.Part == 1 && !hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
             if (c.Part == 2 && carry.Values.Any(remaining => remaining > 0))
                 c.Add("PDFUA2-TABLE-ROWSPAN-END", ValidationSeverity.Error,
                     "table cell RowSpan extends beyond the final table row",

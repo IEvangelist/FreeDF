@@ -442,6 +442,24 @@ public class ValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void Ua2TableWithoutHeaderCellsRetainsGeometryChecks(int part, bool irregular)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TD /A << /O /Table /ColSpan {(irregular ? 2 : 1)} >> >>",
+            "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>")), part);
+        Assert.Equal(part == 1, report.Has("PDFUA-TABLE-HEADERS"));
+        Assert.Equal(irregular, report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> TableSpanAttributeCases()
     {
         foreach (var part in new[] { 1, 2 })

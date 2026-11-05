@@ -4,6 +4,27 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 conditional UA-2 table header presence
+
+The unconditional Table-must-contain-TH error now remains UA-1-only.
+Pinned UA-2 8.2.5.26 tests 5/6 condition header-association requirements
+on the presence of header cells. Existing header association, row-width,
+terminal-span and namespace containment checks remain active; the absence
+of TH does not by itself prove semantic accessibility or correct tagging.
+
+Six native direct/mapped headerless and header-bearing controls completed
+normally against the combined profile: all file outcomes agree (three
+positives, three width-irregular negatives), correcting two false rejections.
+Four authored cases initially had two failures and retain UA-1 behavior.
+All six native UA-1 outputs are unchanged.
+
+Fresh 435-PDF/870-result comparison removes one redundant header-presence
+diagnostic from an already invalid UA-1 fixture run as UA-2; all verdicts
+and UA-1 outputs are unchanged. The prior independent section-corpus
+reference report for this exact fixture rejects THead-TH containment,
+not missing headers. No semantic table classification or full header
+fallback conformance is claimed. No external PDFs or XML are bundled.
+
 ## 2026-11-05 terminal table RowSpan overflow
 
 UA-2 table validation now reports PDFUA2-TABLE-ROWSPAN-END when a cell's

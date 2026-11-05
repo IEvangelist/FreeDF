@@ -48,6 +48,10 @@ The terminal RowSpan overflow check was cross-checked against test 2
 with six native controls. Two additional corpus diagnostics differ
 from the reference's test-3-only reports; exact predicate agreement
 and full table/group column-height coverage are not claimed.
+The UA-2 conditional header-presence correction follows the factual
+conditional descriptions in tests 5/6 and six independent native file
+controls. It retains UA-1 behavior and does not claim semantic table
+classification or complete header-association fallback.
 
 The null annotation StructParent boundary in `ValidationPdfUA.cs` follows
 ISO 32000-1 7.3.9 and was independently cross-checked against the same

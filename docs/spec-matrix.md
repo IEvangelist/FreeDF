@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [conditional table-header correction](spec-backlog.md#2026-11-05-conditional-ua-2-table-header-presence)
+retains unconditional TH presence for UA-1 only. Six native file outcomes
+agree, correcting two false rejections while keeping width negatives.
+One redundant corpus diagnostic is removed; all file verdicts and UA-1
+output are unchanged. Semantic classification and full header fallback
+remain deferred.
+
 The [terminal RowSpan check](spec-backlog.md#2026-11-05-terminal-table-rowspan-overflow)
 rejects spans remaining past the final table row. Six native outcomes
 agree, correcting three missed violations; two new corpus diagnostics
