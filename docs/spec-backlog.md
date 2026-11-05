@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary mandatory attribute owner names
+
+Published PDF 2.0 errata, 14.7.6.1 Table 360, requires attribute objects
+(dictionaries or streams) to have an O name. UA-2 now reports
+PDFUA2-ATTR-OWNER for a known missing/null/non-name owner, aggregated once
+per parsed element. Direct A, flat A arrays, and attributes attached by
+used C/ClassMap entries share bounded traversal with standard-owner value
+lookup. Stream dictionaries are inspected without decoding their data.
+Undefined classes remain empty; unused class definitions are not inspected.
+Referenced class owners are checked even when local values override C;
+standard-owner value lookup still avoids unused ClassMap lookup when A wins.
+
+Cycles, more than 32 reference hops, unsupported containers and shared
+work beyond 200,000 entries produce PDFUA2-ATTR-OWNER-INCOMPLETE rather
+than guessed missing owners. Known owner violations survive later incomplete
+inspection. Null/omission fallthrough and integer array revision markers
+retain existing behavior. Shared ListNumbering, FENote and table value lookup
+retains last-specified non-null precedence and unsupported-stream disposition.
+
+Sixteen native controls retain six positives and reject ten primary negatives
+across dictionary/array/class/stream and missing/null/non-name/indirect routes.
+All sixteen independent combined-reference jobs complete normally and accept:
+**ten explicit primary/reference disagreements**, not reference confirmation.
+All native UA-1 results and the fresh 435-PDF/870-result corpus JSON are
+unchanged. The initial 72 authored cases had 28 failures; 15 further
+depth/work/known-error/class-use cases cover the boundaries. All 87 new
+cases pass in the full Release suite of 15,228, with no failures or skips.
+The final focused selector passes 1,549 cases; eight stream-owner cases
+were covered in the earlier focused run and full suite. Solution build:
+zero errors/two retained machine-feed NU1507 warnings.
+
+This is owner-name shape, not complete attribute conformance. NSO namespace
+requirements, owner-name semantic validity/Annex E, UserProperties and full
+ClassMap schema, attribute stream interpretation, revisions and inheritance
+remain deferred. No external PDF/XML or standard text is bundled; hosted
+CI and full parity are not claimed.
+
 ## 2026-11-05 primary repeated attribute precedence
 
 Published PDF 2.0 errata, 14.7.6.1/14.7.6.2, gives later repeated attributes

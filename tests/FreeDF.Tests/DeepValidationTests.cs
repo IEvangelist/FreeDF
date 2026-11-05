@@ -2260,6 +2260,158 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> AttributeOwnerCases()
+    {
+        (string Entry, bool Invalid)[] values =
+        [
+            ("/O /Layout", false), ("", true), ("/O null", true), ("/O 0", true),
+            ("/O (Layout)", true), ("/O << >>", true), ("/O 9 0 R", false), ("/O 10 0 R", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var route in new[] { "local", "local-array", "class", "class-array" })
+        foreach (var (entry, invalid) in values)
+            yield return [part, route, entry, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(AttributeOwnerCases))]
+    public void Ua2AttachedAttributeObjectsRequireAnOwnerName(int part, string route, string entry, bool invalid)
+    {
+        var attribute = $"<< {entry} >>";
+        var local = route == "local" ? $"/A {attribute}" : route == "local-array" ? $"/A [{attribute}]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>", "/Layout", "null"]));
+        var map = $"<< /Used {(route == "class-array" ? $"[{attribute}]" : attribute)} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local", false)]
+    [InlineData("local", true)]
+    [InlineData("local-array", false)]
+    [InlineData("local-array", true)]
+    [InlineData("class", false)]
+    [InlineData("class", true)]
+    [InlineData("class-array", false)]
+    [InlineData("class-array", true)]
+    public void Ua2AttributeStreamOwnerNameUsesItsDictionaryWithoutInterpretingData(string route, bool invalid)
+    {
+        var local = route == "local" ? "/A 9 0 R" : route == "local-array" ? "/A [9 0 R]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>",
+                ObjPdf.Stream("opaque attribute data", invalid ? "" : "/O /Layout")]));
+        var map = $"<< /Used {(route == "class-array" ? "[9 0 R]" : "9 0 R")} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("A", 32, false)]
+    [InlineData("A", 33, true)]
+    [InlineData("O", 32, false)]
+    [InlineData("O", 33, true)]
+    [InlineData("class", 32, false)]
+    [InlineData("class", 33, true)]
+    public void Ua2AttributeOwnerReferenceDepthDoesNotBecomeGuessedMissingOwner(string route, int count, bool incomplete)
+    {
+        var entry = route == "A" ? "/A 9 0 R" : route == "O" ? "/A << /O 9 0 R >>" : "/C /Used";
+        var terminal = route == "O" ? "/Layout" : "<< /O /Layout >>";
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { $"<< /Type /StructElem /S /P /P 7 0 R {entry} >>" }.Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Used"] = new PdfRef(9, 0) } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array", 200000, false)]
+    [InlineData("local-array", 200001, true)]
+    [InlineData("class-array", 200000, false)]
+    [InlineData("class-array", 200001, true)]
+    [InlineData("class-list", 200000, false)]
+    [InlineData("class-list", 200001, true)]
+    public void Ua2AttributeOwnerSharedWorkBoundRetainsKnownMissingOwner(string route, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: ["<< /Type /StructElem /S /P /P 7 0 R >>"]));
+        var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var missing = new PdfDictionary();
+        var valid = new PdfDictionary { Entries = { ["O"] = new PdfName("Layout") } };
+        var map = new PdfDictionary { Entries = { ["Used"] = missing } };
+        if (route == "class-list")
+            element.Entries["C"] = new PdfArray(new PdfObject[] { new PdfName("Used") }
+                .Concat(Enumerable.Repeat<PdfObject>(new PdfInteger(0), count - 1)).ToList());
+        else
+        {
+            int length = route == "class-array" ? count - 1 : count;
+            var attributes = new PdfArray(new PdfObject[] { missing }
+                .Concat(Enumerable.Repeat<PdfObject>(valid, length - 1)).ToList());
+            if (route == "local-array") element.Entries["A"] = attributes;
+            else { element.Entries["C"] = new PdfName("Used"); map.Entries["Used"] = attributes; }
+        }
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] = map;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-ATTR-OWNER");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2OwnerChecksRetainKnownErrorBeforeLaterOwnerCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /A [<< >> << /O 9 0 R >>] >>", "9 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2LocalValueShortcutDoesNotSuppressReferencedClassOwnerInspection()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R /A << /O /List /ListNumbering /Decimal >> /C /Used >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>", "12 0 R",
+        ]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Used"] = new PdfRef(12, 0) } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2OwnerChecksDoNotInventAttributesForUndefinedClassesOrInspectUnusedClasses()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: ["<< /Type /StructElem /S /P /P 7 0 R /C /Undefined >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Unused"] = new PdfDictionary() } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

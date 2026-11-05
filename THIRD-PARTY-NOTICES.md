@@ -356,6 +356,16 @@ previous first-wins output. These disagreements in both verdict directions
 are explicit; reference confirmation is not claimed. Full owner/schema,
 stream, revision, inheritance and NSO semantics remain separate.
 
+The attached attribute-owner check follows the mandatory O-name fact in
+14.7.6.1 Table 360 at the same official errata source. Dictionary/stream
+owner inspection and shared bounded local/used-class traversal are
+independently implemented without decoding attribute stream data.
+Sixteen native controls retain six positives and reject ten primary
+negatives accepted by the reference; those disagreements are explicit.
+No standard text or external controls are bundled. NSO namespace,
+semantic owner validity, complete attribute schema, stream interpretation,
+revision and inheritance requirements remain separate.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

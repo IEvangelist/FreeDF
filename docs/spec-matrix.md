@@ -4,6 +4,16 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary mandatory attribute-owner check](spec-backlog.md#2026-11-05-primary-mandatory-attribute-owner-names)
+requires O names on known attached dictionary/stream attributes in local A
+and used C/ClassMap entries, with separate bounded-inspection errors.
+Referenced class owners are checked even when local values win; undefined
+classes remain empty and unused definitions are not inspected. Sixteen native
+controls retain six positives and reject ten negatives accepted by the
+reference: ten explicit disagreements. Fresh corpus and UA-1 results are
+wholly unchanged. NSO namespaces, semantic owner validity, full attribute
+schema, stream interpretation, revisions and inheritance remain deferred.
+
 The [primary repeated-attribute precedence correction](spec-backlog.md#2026-11-05-primary-repeated-attribute-precedence)
 uses the last specified owned value in local A arrays, ClassMap arrays and
 C class lists, retaining local A precedence and explicit shared bounds.

@@ -446,6 +446,7 @@ internal static class PdfUA2Checks
             StructureArrayShape(c, e.Dict, "K", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureArrayShape(c, e.Dict, "A", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureArrayShape(c, e.Dict, "C", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            AttributeOwners(c, tree, e);
             StructureReferenceShape(c, e);
             StructureRevision(c, e);
             var outcome = Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out var standardType, out var resolvedNamespace);
@@ -664,84 +665,111 @@ internal static class PdfUA2Checks
                 "ISO 14289-2 8.2.5.14", element.PageIndex);
     }
 
+    static bool VisitAttributeObjects(ValidationContext c, PdfObject? raw, Func<PdfDictionary, bool> inspect,
+        Action incompleteInspection, ref int work, bool includeStreams = false)
+    {
+        bool complete = true;
+        void Incomplete() { complete = false; incompleteInspection(); }
+        bool Visit(PdfObject? value, bool arrayItem)
+        {
+            if (value is PdfDictionary dictionary) return inspect(dictionary);
+            if (includeStreams && value is PdfStream stream) return inspect(stream.Dict);
+            if (value is null or PdfNull || arrayItem && value is PdfInteger) return true;
+            Incomplete();
+            return false;
+        }
+        var attributes = ResolveBounded(c.F, raw, Incomplete);
+        if (!complete) return false;
+        if (attributes is not PdfArray array) return Visit(attributes, false);
+        foreach (var rawItem in array.Items)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+            var item = ResolveBounded(c.F, rawItem, Incomplete);
+            if (!complete || !Visit(item, true)) return false;
+        }
+        return true;
+    }
+
+    static bool VisitClassAttributes(ValidationContext c, StructureTree tree, StructElement element,
+        Func<PdfDictionary, bool> inspect, Action incompleteInspection, ref int work, bool includeStreams = false)
+    {
+        bool complete = true;
+        void Incomplete() { complete = false; incompleteInspection(); }
+        var classes = ResolveBounded(c.F, element.Dict.Get("C"), Incomplete);
+        if (!complete) return false;
+        if (classes is null or PdfNull) return true;
+        var rawMap = ResolveBounded(c.F, tree.Root.Get("ClassMap"), Incomplete);
+        if (!complete) return false;
+        if (rawMap is null or PdfNull) return true;
+        if (rawMap is not PdfDictionary classMap) { Incomplete(); return false; }
+        IEnumerable<PdfObject>? names = classes is PdfName name ? [name] : classes is PdfArray array ? array.Items : null;
+        if (names is null) { Incomplete(); return false; }
+        foreach (var rawName in names)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+            var value = ResolveBounded(c.F, rawName, Incomplete);
+            if (!complete) return false;
+            if (value is PdfName className)
+            {
+                if (!VisitAttributeObjects(c, classMap.Get(className.Value), inspect, Incomplete, ref work, includeStreams))
+                    return false;
+            }
+            else if (value is not (null or PdfNull or PdfInteger)) { Incomplete(); return false; }
+        }
+        return true;
+    }
+
+    static void AttributeOwners(ValidationContext c, StructureTree tree, StructElement element)
+    {
+        const string clause = "ISO 32000-2 14.7.6.1 Table 360";
+        bool incomplete = false, invalid = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-ATTR-OWNER-INCOMPLETE", ValidationSeverity.Error,
+                "attribute owner inspection is unsupported or exceeds its reference/work bound", clause, element.PageIndex);
+        }
+        bool Inspect(PdfDictionary dictionary)
+        {
+            bool complete = true;
+            var owner = ResolveBounded(c.F, dictionary.Get("O"), () => { complete = false; Incomplete(); });
+            if (complete) invalid |= owner is not PdfName;
+            return complete;
+        }
+        if (VisitAttributeObjects(c, element.Dict.Get("A"), Inspect, Incomplete, ref work, includeStreams: true))
+            VisitClassAttributes(c, tree, element, Inspect, Incomplete, ref work, includeStreams: true);
+        if (invalid)
+            c.Add("PDFUA2-ATTR-OWNER", ValidationSeverity.Error,
+                "attached attribute object O owner must be a name", clause, element.PageIndex);
+    }
+
     internal static PdfObject? OwnedAttribute(ValidationContext c, StructureTree tree, StructElement element,
         string ownerName, string key, Action incompleteInspection)
     {
         bool incomplete = false;
         int work = 0;
+        PdfObject? result = null;
         void Incomplete()
         {
             if (incomplete) return;
             incomplete = true;
             incompleteInspection();
         }
-        PdfObject? Resolve(PdfObject? value) => ResolveBounded(c.F, value, Incomplete);
-        PdfObject? Find(PdfDictionary dictionary)
+        bool Inspect(PdfDictionary dictionary)
         {
-            var owner = Resolve(dictionary.Get("O"));
-            if (incomplete || owner.AsName() != ownerName) return null;
-            return Resolve(dictionary.Get(key));
+            var owner = ResolveBounded(c.F, dictionary.Get("O"), Incomplete);
+            if (incomplete) return false;
+            if (owner.AsName() != ownerName) return true;
+            var value = ResolveBounded(c.F, dictionary.Get(key), Incomplete);
+            if (incomplete) return false;
+            if (value is not (null or PdfNull)) result = value;
+            return true;
         }
-
-        PdfObject? FindAttributes(PdfObject? raw)
-        {
-            var attributes = Resolve(raw);
-            if (incomplete) return null;
-            if (attributes is PdfDictionary dictionary) return Find(dictionary);
-            if (attributes is PdfArray array)
-            {
-                PdfObject? last = null;
-                foreach (var item in array.Items)
-                {
-                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return null; }
-                    var value = Resolve(item);
-                    if (incomplete) return null;
-                    if (value is PdfDictionary attribute)
-                    {
-                        var found = Find(attribute);
-                        if (incomplete) return null;
-                        if (found is not (null or PdfNull)) last = found;
-                    }
-                    else if (value is not (null or PdfNull or PdfInteger)) { Incomplete(); return null; }
-                }
-                return last;
-            }
-            else if (attributes is not (null or PdfNull)) Incomplete();
-            return null;
-        }
-
-        var noteType = FindAttributes(element.Dict.Get("A"));
-        if (!incomplete && noteType is (null or PdfNull))
-        {
-            var classes = Resolve(element.Dict.Get("C"));
-            if (!incomplete && classes is not (null or PdfNull))
-            {
-                var rawMap = Resolve(tree.Root.Get("ClassMap"));
-                if (!incomplete && rawMap is PdfDictionary classMap)
-                {
-                    PdfObject? FromClass(PdfObject? raw)
-                    {
-                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return null; }
-                        var value = Resolve(raw);
-                        if (incomplete) return null;
-                        if (value is PdfName name) return FindAttributes(classMap.Get(name.Value));
-                        if (value is not (null or PdfNull or PdfInteger)) Incomplete();
-                        return null;
-                    }
-                    if (classes is PdfName) noteType = FromClass(classes);
-                    else if (classes is PdfArray array)
-                        foreach (var item in array.Items)
-                        {
-                            var found = FromClass(item);
-                            if (incomplete) { noteType = null; break; }
-                            if (found is not (null or PdfNull)) noteType = found;
-                        }
-                    else Incomplete();
-                }
-                else if (rawMap is not (null or PdfNull)) Incomplete();
-            }
-        }
-        return noteType;
+        if (!VisitAttributeObjects(c, element.Dict.Get("A"), Inspect, Incomplete, ref work)) return null;
+        if (result is null && !VisitClassAttributes(c, tree, element, Inspect, Incomplete, ref work)) return null;
+        return result;
     }
 
     static void LinkTargets(ValidationContext c, StructureTree tree)
