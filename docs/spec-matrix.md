@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [membership-policy optimization](spec-backlog.md#2026-11-05-membership-policy-allocation-removal)
+preserves four-policy/null-member behavior and all-member diagnostics while
+removing temporary lists. Matched interpreter benchmarks retain exact
+inputs, output counts and allocation evidence; this is not full-render timing.
+
 The [single-operand visibility-expression correction](spec-backlog.md#2026-11-05-single-operand-visibility-expressions)
 accepts And/Or with one operand as required by 8.11.2.2. Empty expressions
 and over-budget traversal retain their existing diagnosed/hidden behavior.

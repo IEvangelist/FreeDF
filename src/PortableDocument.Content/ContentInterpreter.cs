@@ -661,11 +661,26 @@ public sealed class ContentInterpreter
             }
             // Visibility policy AnyOn (default) / AllOn / AnyOff / AllOff over OCGs.
             var ocgs = R(oc.Get("OCGs"));
-            var list = ocgs is PdfArray oa ? oa.Items.Select(R).OfType<PdfDictionary>().ToList() : ocgs is PdfDictionary od ? [od] : [];
-            if (list.Count == 0) return false;
+            var anyOn = false;
+            var anyOff = false;
+            if (ocgs is PdfArray groups)
+            {
+                foreach (var member in groups.Items)
+                    if (R(member) is PdfDictionary group)
+                    {
+                        var off = OcgOff(group, cfg);
+                        anyOn |= !off;
+                        anyOff |= off;
+                    }
+            }
+            else if (ocgs is PdfDictionary group)
+            {
+                anyOff = OcgOff(group, cfg);
+                anyOn = !anyOff;
+            }
+            if (!anyOn && !anyOff) return false;
             var pol = R(oc.Get("P")).AsName() ?? "AnyOn";
-            var states = list.Select(g => !OcgOff(g, cfg)).ToList();
-            var visible = pol switch { "AllOn" => states.All(x => x), "AnyOff" => states.Any(x => !x), "AllOff" => states.All(x => !x), _ => states.Any(x => x) };
+            var visible = pol switch { "AllOn" => !anyOff, "AnyOff" => anyOff, "AllOff" => !anyOn, _ => anyOn };
             return !visible;
         }
         return OcgOff(oc, cfg);

@@ -55,6 +55,58 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Optional-content membership interpretation: 2026-11-05
+
+`OptionalContentMembershipBench.Interpret` measures a fresh interpreter and
+counting backend on an already-open one-page document. It interprets 128
+marked-content sections, each using one OCMD with 16 groups (eight ON/eight
+OFF), one rectangle and one of the four membership policies. PDF writing,
+loading and fixture validation are outside timing; interpreter/backend
+construction, content lexing, path processing, membership evaluation and
+fill counting are inside. This is not a raster-render or isolated policy
+microbenchmark.
+
+Preflight requires an unrepaired one-page document, no interpreter warnings,
+and exactly 128 fills for AnyOn/AnyOff or zero for AllOn/AllOff. All four
+cases are included in standalone provider/parser preflight. Control production
+is `74bb2a091167ccfabf6f24cc9ed729ffd40d08c8`, measured before production
+edits; final uses the same benchmark source and all four exact input
+lengths/SHA-256 hashes. The change replaces resolved-group/state lists
+and LINQ with two boolean accumulators, still resolving/evaluating every
+member rather than skipping later diagnostics once the result is known.
+
+| Policy | Control mean +/- error (us) | Final mean +/- error (us) | Managed B/interpretation, control -> final |
+|---|---:|---:|---:|
+| AllOff | 108.9 +/- 2.41 | 87.36 +/- 2.085 | 221,376 -> 143,552 |
+| AllOn | 110.7 +/- 1.41 | 91.95 +/- 10.452 | 221,376 -> 143,552 |
+| AnyOff | 112.6 +/- 2.84 | 89.87 +/- 4.471 | 221,376 -> 143,552 |
+| AnyOn | 118.6 +/- 6.04 | 99.48 +/- 9.754 | 221,376 -> 143,552 |
+
+Reports: [control](results/2026-11-05-ocg-membership-control.md)
+([CSV](results/2026-11-05-ocg-membership-control.csv)),
+[final](results/2026-11-05-ocg-membership-final.md)
+([CSV](results/2026-11-05-ocg-membership-final.csv)),
+[raw GC/input/engine diagnostic CSV](results/2026-11-05-ocg-membership-gc.csv).
+Exact managed bytes are derived from raw totals/operation counts, not rounded
+KB display. Savings are 77,824 B/interpretation (608 B per marked section)
+on this workload, about 35% less total managed allocation. Final means
+are about 16-20% lower; all reported control/final error intervals here
+are disjoint. The noisier final AllOn/AnyOn results are retained.
+
+Runs use the same machine/runtime, three warmups/eight 500-ms iterations/
+one launch without exclusive-load guarantees. Remaining interpreter/content/
+path allocations are included: this is **not zero-allocation rendering**,
+native-memory accounting, large-layer scaling or universal throughput.
+Provider correctness preflight passes; no provider timings or unrelated
+event/Zoom benchmarks are rerun.
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*OptionalContentMembershipBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+The [scoped record](../../docs/spec-backlog.md#2026-11-05-membership-policy-allocation-removal)
+lists the compatibility/diagnostic controls and remaining parity limits.
+
 ## Conforming optional-content event controls: 2026-11-05
 
 A primary Table 101 recheck (printed p229) caught a fixture issue:

@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 membership-policy allocation removal
+
+ISO 32000-1 Table 99 (printed p223) defines the four OCMD policies and
+requires null/deleted members to be ignored; absent/empty/all-null
+membership has no visibility effect. The evaluator's existing behavior
+is preserved while removing two materialized lists and LINQ iterators/
+delegates per membership evaluation. Two boolean accumulators track whether
+any resolved member is ON or OFF. Every member is still resolved/evaluated;
+this is not policy-result short-circuiting that could suppress diagnostics.
+Single dictionary membership and the default AnyOn policy are retained.
+Visibility-expression handling is unchanged.
+
+Thirty-five unchanged-production controls pass before implementation:
+all four policies/default policy across omitted, empty, null/missing,
+single-dictionary, single-array and mixed-state membership. Four additional
+controls require later-member diagnostics to survive even after the policy
+result is known. Each uses conforming, unrepaired PdfWriter input and
+checks rendered pixels with and without caller-provided optional-content
+state. Final focused optional-content/layer/raster-golden checks pass 233;
+full Release passes 19,628, zero failed/skipped. The solution builds with
+zero warnings/errors. Fresh pinned 435-PDF/870-result full corpus JSON
+is unchanged.
+
+Four new source-matched interpreter benchmarks cover all policies on 128
+marked sections referencing the same 16-group membership dictionary.
+All four exact input hashes and output fill counts match. Managed allocation
+falls from 221,376 to 143,552 B/interpretation, saving 77,824 B (608 B per
+section) on each workload; means fall from 108.9-118.6 us to 87.36-99.48 us.
+The benchmark includes interpreter/backend construction and content/path
+processing, not PDF loading or raster painting. Raw allocation counts,
+engine identities, reports and limits are in the
+[benchmark record](../bench/FreeDF.Bench/README.md#optional-content-membership-interpretation-2026-11-05).
+This is not zero-allocation rendering or a universal performance claim.
+Provider preflight passes; unrelated provider/event/Zoom timings are not rerun.
+Optional-content intent, malformed-schema and lifecycle parity remain open.
+
 ## 2026-11-05 single-operand visibility expressions
 
 ISO 32000-1 8.11.2.2 (printed p224) permits one or more operands for
