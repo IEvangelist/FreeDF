@@ -4,6 +4,29 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed dictionary entry grammar
+
+ISO 32000-1 7.3.7 (printed p18) requires name keys, object values and
+unique keys within a dictionary. Compressed-member lexing now rejects non-name
+keys, a closer in place of a value, and duplicate decoded keys instead of
+skipping, substituting null or overwriting. Default lexer recovery is unchanged.
+
+Twenty-six controls cover each failure, nested dictionaries, escaped duplicate
+names, null values, scoped/case-sensitive keys, nested references, empty names,
+repeated lookup, lazy isolation and default lexer compatibility. The initial
+selector had seventeen failures. Full Release: 18,809 passed, zero failed/skipped.
+Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Forty-eight native PDFs preserve eighteen valid outputs unchanged and reject
+thirty previously accepted malformed dictionaries with explicit diagnostics.
+MuPDF reports no probe exceptions; absent Type is not complete entry validation.
+Valid Target dictionaries agree. Fresh pinned 435-PDF/870-result full corpus
+JSON is wholly unchanged against the hexadecimal-string baseline.
+
+Numeric/name grammar, parser-wide strictness and byte-limited/resource
+enforcement remain separate. This does not change recovery for general
+uncompressed dictionaries or content-stream lexing.
+
 ## 2026-11-05 compressed hexadecimal string grammar
 
 ISO 32000-1 7.3.4.3 (printed p16) permits hexadecimal digits and

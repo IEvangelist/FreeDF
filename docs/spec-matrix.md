@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed dictionary entry check](spec-backlog.md#2026-11-05-compressed-dictionary-entry-grammar)
+requires name keys, values and unique decoded keys before caching. Valid nulls,
+key scopes, references and default lexer recovery remain supported. Native
+controls, reference limits and unchanged corpus JSON are recorded. Numeric/name
+grammar, parser-wide strictness and resource limits remain separate.
+
 The [compressed hexadecimal grammar check](spec-backlog.md#2026-11-05-compressed-hexadecimal-string-grammar)
 rejects nonhexadecimal/nonwhitespace bytes and missing closers in member-only
 lexing. Positive decoded bytes, whitespace and odd-nibble padding are pinned.

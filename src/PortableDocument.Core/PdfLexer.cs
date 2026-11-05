@@ -263,12 +263,25 @@ public sealed class PdfLexer
             if (k is null && _objectStreamMember)
                 throw new PdfParseException("unterminated dictionary in object stream member");
             if (k is null || k is PdfKeyword { Value: ">>" }) break;
-            if (k is not PdfName name) continue;
+            if (k is not PdfName name)
+            {
+                if (_objectStreamMember)
+                    throw new PdfParseException("dictionary key must be a name in object stream member");
+                continue;
+            }
+            if (_objectStreamMember && d.ContainsKey(name.Value))
+                throw new PdfParseException("duplicate dictionary key in object stream member");
             var v = ReadObject(resolveRefs);
             if (v is null && _objectStreamMember)
                 throw new PdfParseException("unterminated dictionary in object stream member");
             if (v is null) break;
-            if (v is PdfKeyword { Value: ">>" }) { d[name.Value] = PdfNull.Instance; break; }
+            if (v is PdfKeyword { Value: ">>" })
+            {
+                if (_objectStreamMember)
+                    throw new PdfParseException("missing dictionary value in object stream member");
+                d[name.Value] = PdfNull.Instance;
+                break;
+            }
             d[name.Value] = v;
         }
         _nesting--;
