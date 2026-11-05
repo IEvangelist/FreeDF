@@ -8,6 +8,9 @@ The [optional-content recommendation correction](spec-backlog.md#2026-11-05-opti
 conjoins selected categories across applications, lets in-range Zoom enable
 an initially OFF group, and permits categories independent of event names.
 Configured state is retained when no recommendation is available.
+The [corrected default-configuration controls](spec-backlog.md#2026-11-05-conforming-optional-content-default-controls)
+use BaseState ON plus an OFF array, as Table 101 requires; earlier event
+timings are retained but no longer labelled valid default-config controls.
 
 The [optional-content application selection correction](spec-backlog.md#2026-11-05-optional-content-application-group-selection)
 applies automatic usage rules only to groups selected by the application's

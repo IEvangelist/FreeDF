@@ -117,7 +117,7 @@ public class OptionalContentUsageRecommendationTests
             extraObjects: $"5 0 obj\n<< /Type /OCG /Name (Usage) /Usage << {usage} >> >>\nendobj\n",
             brokenXref: true,
             extraCatalog: "/OCProperties << /OCGs [5 0 R] /D << " +
-                $"/BaseState /{(initial ? "ON" : "OFF")} /AS [{applications}] >> >>")));
+                $"/BaseState /ON {(initial ? "" : "/OFF [5 0 R]")} /AS [{applications}] >> >>")));
 
     static void AssertPixel(OptionalContentState state, bool visible)
     {

@@ -55,12 +55,58 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Conforming optional-content event controls: 2026-11-05
+
+A primary Table 101 recheck (printed p229) caught a fixture issue:
+BaseState, if present in the default configuration, must be ON. The first
+event benchmarks and recommendation tests instead used BaseState OFF in
+that default dictionary. The Table 103 example on printed p234 also uses
+OFF there, but it does not override the normative Table 101 restriction.
+The earlier event reports are retained as nonconforming-configuration
+recovery measurements, **not valid default-configuration controls**.
+
+Corrected fixtures use default BaseState ON plus `OFF [5 0 R]`.
+Matching usage still enables the initially OFF group; a nonmatching event
+must leave it OFF. Both conditions are now required by benchmark preflight,
+in addition to page count, no repair and no warnings. The 38 corrected
+behavior controls reproduce the same 27 failures/11 passes on preceding
+source, then pass with the existing implementation. The full focused
+selector passes 178 cases after correction.
+
+| Query | Control mean +/- error (ns) | Final mean +/- error (ns) | Managed B/query, control -> final |
+|---|---:|---:|---:|
+| Export | 132.7 +/- 2.24 | 92.92 +/- 5.659 | 144 -> 0 |
+| Print | 140.2 +/- 1.45 | 93.70 +/- 0.760 | 144 -> 0 |
+| View | 126.3 +/- 3.14 | 91.25 +/- 0.769 | 120 -> 0 |
+
+Reports: [control](results/2026-11-05-ocg-event-conforming-control.md)
+([CSV](results/2026-11-05-ocg-event-conforming-control.csv)),
+[final](results/2026-11-05-ocg-event-conforming-final.md)
+([CSV](results/2026-11-05-ocg-event-conforming-final.csv)),
+[raw GC/input/engine diagnostic CSV](results/2026-11-05-ocg-event-conforming-gc.csv).
+The corrected inputs are View 703, Print 707 and Export 711 bytes, with
+exact hashes matched **within this pair**, not to the earlier event fixtures.
+`OptionalContentState.cs` control source is from
+`b69a47fa360e2f42b01018c80b60c5f6bd6e4928`; a session-local compile
+substitution is inherited by generated BenchmarkDotNet child builds. Normal
+production is force-rebuilt afterward and checked by the focused suite.
+
+Production source is unchanged by this fixture-only follow-up. The preceding
+19,573-test full run and 435-PDF/870-result unchanged full JSON remain the
+production integration evidence; neither is rerun here. Changed test/benchmark
+projects build and provider/parser preflight passes. Unaffected Zoom inputs
+and timings are not rerun or relabelled. Construction is outside timing;
+these same-machine, three-warmup/eight-iteration/500-ms/one-launch results
+remain one-group cached-query measurements, not universal rendering,
+large-layer, Language/User or native-memory guarantees.
+
 ## Optional-content usage recommendations: 2026-11-05
 
 `OptionalContentEventBench` adds View/Print/Export state-query cases.
 Each uses one parsed group, one explicit application, matching event/category,
-BaseState OFF and a valid ON recommendation. Both revisions correctly return
-ON. Construction/loading is outside timing, the public query returns the
+BaseState OFF and an ON recommendation. These historical event fixtures have
+the default-configuration issue described in the corrected record above.
+Both revisions return ON. Construction/loading is outside timing, the public query returns the
 result, and setup rejects repair, wrong page count, wrong visibility or warnings.
 All three cases are in standalone correctness preflight. Cross-event categories,
 Zoom enabling and conflicting recommendations are tested for correctness,

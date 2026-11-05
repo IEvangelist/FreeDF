@@ -23,7 +23,7 @@ public class OptionalContentEventBench
         var objects = new Dictionary<int, PdfObject>
         {
             [1] = Parse("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R] " +
-                $"/D << /BaseState /OFF /AS [<< /Event /{Event} /OCGs [5 0 R] /Category [/{Event}] >>] >> >> >>"),
+                $"/D << /BaseState /ON /OFF [5 0 R] /AS [<< /Event /{Event} /OCGs [5 0 R] /Category [/{Event}] >>] >> >> >>"),
             [2] = Parse("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
             [3] = Parse("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>"),
             [4] = new PdfStream(new PdfDictionary(), []),
@@ -33,7 +33,10 @@ public class OptionalContentEventBench
         var document = PdfDocument.Load(bytes);
         _state = new OptionalContentState(document);
         _group = _state.Groups.Single();
-        if (document.File.Repaired || document.Pages.Count != 1 || !IsVisible() || _state.Warnings.Count != 0)
+        var otherEvent = _displayEvent == ContentInterpreter.OptionalContentEvent.View
+            ? ContentInterpreter.OptionalContentEvent.Print : ContentInterpreter.OptionalContentEvent.View;
+        if (document.File.Repaired || document.Pages.Count != 1 || !IsVisible()
+            || _state.IsVisible(_group, otherEvent) || _state.Warnings.Count != 0)
             throw new InvalidOperationException("Optional-content event preflight failed.");
         Console.WriteLine($"PASS optional-content event: event={Event}, bytes={bytes.Length}, " +
             $"SHA256={Convert.ToHexString(SHA256.HashData(bytes))}, " +

@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 conforming optional-content default controls
+
+A follow-up primary Table 101 check (printed p229) found that default
+configuration BaseState, if present, must be ON. The preceding event
+benchmark and recommendation-test fixtures used OFF there. Although the
+Table 103 example on printed p234 does the same, the normative Table 101
+restriction takes precedence. Corrected fixtures use BaseState ON with
+the group in the OFF array. Earlier event timing reports remain available,
+but are explicitly marked nonconforming-configuration recovery controls.
+
+The corrected 38 behavior cases reproduce the same unchanged-source
+27 failures/11 passes; all pass with the existing implementation, and the
+focused selector passes 178 cases. Benchmark preflight now also requires
+the group to remain OFF when the application's event does not match.
+Three exact corrected input hashes match between preceding/final sources.
+View/Print/Export allocation remains 120/144/144 -> zero B/query; final
+means 91.25/93.70/92.92 ns versus 126.3/140.2/132.7 ns. Reports and limits:
+[conforming benchmark record](../bench/FreeDF.Bench/README.md#conforming-optional-content-event-controls-2026-11-05).
+
+This follow-up changes fixtures, preflight and documentation only.
+Production source is unchanged; the preceding full Release 19,573 and
+435-PDF/870-result full-JSON invariance remain the integration evidence,
+not new reruns after the fixture correction. Changed projects build and
+provider/parser preflight passes. Broader parity is still incomplete.
+
 ## 2026-11-05 optional-content usage recommendations
 
 ISO 32000-1 8.11.4.4 (printed p234) requires the conjunction of all
@@ -45,6 +70,8 @@ identical inputs on preceding and final production sources. View/Print/Export
 managed allocation falls from 120/144/144 B/query to zero, with final means
 84.41/85.76/88.66 ns versus 148.2/147.1/126.0 ns. Both Zoom cases retain zero
 managed allocation and have lower final means; Zoom 3 error intervals overlap.
+The event fixtures in this initial measurement use a nonconforming default
+BaseState OFF; their corrected conforming controls are recorded above.
 Reports, exact hashes, raw GC counts and scope limits are in the
 [benchmark record](../bench/FreeDF.Bench/README.md#optional-content-usage-recommendations-2026-11-05).
 These are repeated cached-state queries, not general rendering or many-layer
