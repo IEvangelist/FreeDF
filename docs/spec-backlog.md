@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream endobj grammar
+
+ISO 32000-1 7.3.8.1 (printed p19) permits only whitespace between endstream
+and endobj; 7.3.10 (printed p21) requires endobj around an indirect value.
+The object-stream closing boundary now requires the complete endobj keyword
+after whitespace. Comments count as whitespace under 7.2.3 (printed p13).
+Extra scalar/container values, wrong keyword prefixes, EOF and an unterminated
+comment containing endobj do not satisfy that boundary.
+
+Valid boundaries retain lazy Type resolution, avoiding recursive loading of a
+self-referential Type merely to classify an otherwise well-formed stream.
+Malformed boundaries still resolve Type, including valid indirect ObjStm names,
+before applying the scoped error. Ordinary-stream closing recovery is unchanged.
+The boundary check inspects bytes, not arbitrary following object values.
+
+Twenty-four new tests cover normal/forced repair, all six PDF whitespace bytes,
+complete comments, exact cached member identity, indirect Type, absent-member
+stability, malformed closings, EOF and ordinary-stream recovery. The initial
+22-case unchanged-production selector had ten failures/twelve passes; two later
+indirect-Type cases are also reproduced by the saved exact parent assembly in
+native controls. Focused selector: 690 passed. Full Release: 19,201 passed,
+zero failed/skipped. Solution: zero errors/two retained machine-feed NU1507
+warnings.
+
+Forty-four native controls preserve twenty-four valid outputs exactly, including
+six retained independently generated AES-128/AES-256/RC4 files. Twenty formerly
+accepted malformed closings now yield nine explicit normal-load errors and
+eleven repaired-null results, without publishing members. MuPDF still exposes
+Target for all twenty malformed probes and agrees on all twenty-four positives.
+Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged against
+the opening-EOL baseline.
+
+This closes object-stream endobj framing only. Generic indirect-object grammar,
+complete filter EOD consistency, external-stream schemas, complete member lexical
+source alignment, global forbidden-object inventory/lifecycle and resource
+budgets remain separate.
+
 ## 2026-11-05 object-stream opening EOL
 
 ISO 32000-1 7.3.8.1 (printed p19) explicitly requires the stream keyword

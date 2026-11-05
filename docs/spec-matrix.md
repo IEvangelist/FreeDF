@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream endobj-grammar check](spec-backlog.md#2026-11-05-object-stream-endobj-grammar)
+requires the complete closing keyword after whitespace/comments, rejecting
+intervening values, keyword prefixes and missing markers. Valid-boundary Type
+resolution stays lazy; ordinary-stream recovery remains permissive. Native
+differences and unchanged corpus JSON are recorded. Generic indirect-object
+grammar, filter EOD consistency and resource budgets remain separate.
+
 The [object-stream opening-EOL check](spec-backlog.md#2026-11-05-object-stream-opening-eol)
 requires LF or CRLF after stream, rejecting CR-only and disguised counted
 header-prefix alternatives before decryption. Valid empty/encrypted containers

@@ -174,8 +174,19 @@ public sealed class PdfFile
         };
         if (len >= 0 && len <= Data.Length - p && EndStreamFollows(p + (int)len))
         {
-            if (!ExactEndStreamFollows(p + (int)len) && IsObjectStream(d))
-                throw new PdfParseException("object stream endstream must follow Length with at most one EOL");
+            if (!ExactEndStreamFollows(p + (int)len, out var afterEndStream))
+            {
+                if (IsObjectStream(d))
+                    throw new PdfParseException("object stream endstream must follow Length with at most one EOL");
+            }
+            else
+            {
+                var closing = new PdfLexer(Data, afterEndStream);
+                closing.SkipWhite();
+                if ((!Data.AsSpan(closing.Pos).StartsWith("endobj"u8)
+                    || closing.Pos + 6 < Data.Length && PdfLexer.IsRegular(Data[closing.Pos + 6])) && IsObjectStream(d))
+                    throw new PdfParseException("object stream endstream must be followed by endobj");
+            }
             return new PdfStream(d, Data.AsSpan(p, (int)len).ToArray());
         }
         var idx = IndexOf(Data, "endstream"u8, p);
@@ -192,10 +203,11 @@ public sealed class PdfFile
         return new PdfStream(d, Data.AsSpan(p, end - p).ToArray());
     }
 
-    bool ExactEndStreamFollows(int pos)
+    bool ExactEndStreamFollows(int pos, out int afterEndStream)
     {
         if (pos < Data.Length && Data[pos] == 13) pos++;
         if (pos < Data.Length && Data[pos] == 10) pos++;
+        afterEndStream = pos + 9;
         return Data.AsSpan(pos).StartsWith("endstream"u8)
             && (pos + 9 == Data.Length || !PdfLexer.IsRegular(Data[pos + 9]));
     }
