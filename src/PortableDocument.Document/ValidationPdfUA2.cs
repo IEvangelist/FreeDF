@@ -43,6 +43,7 @@ internal static class PdfUA2Checks
         SignatureLockFields(c, fields);
         SignatureSeedDigests(c, fields);
         SignatureSeedScalars(c, fields);
+        CertificateSeedAsciiArrays(c, fields);
         bool incomplete = false, limitIncomplete = false;
         if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
@@ -109,6 +110,56 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
                 "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
                 "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void CertificateSeedAsciiArrays(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 238";
+        const int maxBytes = 1 << 20;
+        bool incomplete = false;
+        int work = 0, bytes = 0;
+        string[] keys = ["KeyUsage", "SignaturePolicyCommitmentType"];
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-SEED-CERT-INCOMPLETE", ValidationSeverity.Error,
+                "certificate seed inspection is truncated, unresolved, cyclic, unsupported or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var seed = ResolveBounded(c.F, field.Dictionary.Get("SV"), Incomplete);
+            if (seed is null or PdfNull) continue;
+            if (seed is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var certificate = ResolveBounded(c.F, dictionary.Get("Cert"), Incomplete);
+            if (certificate is null or PdfNull) continue;
+            if (certificate is not PdfDictionary cert) { Incomplete(); continue; }
+            foreach (var key in keys)
+            {
+                var value = ResolveBounded(c.F, cert.Get(key), Incomplete);
+                if (value is null or PdfNull) continue;
+                bool type = value is not PdfArray;
+                if (value is PdfArray array)
+                    foreach (var item in array.Items)
+                    {
+                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                        bool resolved = true;
+                        var entry = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                        if (!resolved) continue;
+                        if (entry is not PdfString text) { type = true; continue; }
+                        int length = Math.Min(text.Bytes.Length, maxBytes - bytes);
+                        for (int i = 0; i < length; i++)
+                            if (text.Bytes[i] > 127) type = true;
+                        bytes += length;
+                        if (length < text.Bytes.Length) Incomplete();
+                    }
+                if (type)
+                    c.Add("PDFUA2-FORM-SEED-CERT-ASCII-TYPE", ValidationSeverity.Error,
+                        $"certificate seed {key} must be an array of ASCII strings", clause);
+            }
         }
     }
 

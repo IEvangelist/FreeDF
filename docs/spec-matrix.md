@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary certificate-seed ASCII-array checks](spec-backlog.md#2026-11-05-primary-certificate-seed-ascii-arrays)
+check local terminal Sig SV/Cert KeyUsage and SignaturePolicyCommitmentType
+raw arrays and 7-bit string bytes, with shared item/byte limits and explicit
+incompleteness. Eighteen native controls retain eight raw-shape positives;
+ten primary negatives remain reference-accepted. Corpus and UA-1 JSON
+are unchanged. Payload semantics, flags and signing enforcement remain separate.
+
 The [primary signature-seed scalar type checks](spec-backlog.md#2026-11-05-primary-signature-seed-scalar-types)
 check local terminal Sig SV/V integers and SV/AddRevInfo booleans with
 independent unresolved-reference diagnostics. Twelve native controls

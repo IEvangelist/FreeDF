@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary certificate-seed ASCII arrays
+
+Official PDF Association PDF 2.0 errata 12.7.5.5/Table 238 declares
+KeyUsage and SignaturePolicyCommitmentType arrays of ASCII strings.
+The existing local SV/Cert path is corroborated by ISO 32000-1 Table 234
+(printed p448); Table 35 (printed p86) defines single-byte ASCII strings.
+Recognized terminal Sig dictionaries now inspect those raw arrays:
+PDFUA2-FORM-SEED-CERT-ASCII-TYPE reports a non-array, non-string item
+or inspected byte above 127, once per key/field. This does not decode
+text strings: UTF-16 BOMs are not ASCII. Empty strings/arrays and all
+7-bit byte values remain valid raw shapes. Optional null/dangling root
+entries remain absent; null/dangling array items are not strings.
+
+SV/Cert/array/item references reuse the 32-hop/cycle guard. Shared
+200,000-item and 1 MiB inspected-byte budgets cover both keys and all
+terminal fields. Truncation, unsupported dictionary shapes, unknown
+references and exhausted budgets report PDFUA2-FORM-SEED-CERT-INCOMPLETE.
+Known prefix/type errors survive later unknown or uninspected bytes.
+Nonterminal parent SV is not inherited; other seed errors remain independent.
+Complete certificate schema, policy syntax, KeyUsage payload semantics,
+flag-dependent applicability and signing enforcement remain separate.
+
+Initial 202 authored controls had 33 failures; final 204 include shared
+item work and independent seed errors. Focused Release: 4,923 passed;
+full Release: 17,780 passed, zero failed/skipped. Solution zero errors/two
+retained machine-feed NU1507 warnings. Eighteen isolated native controls
+retain eight raw-shape positives and reject ten primary negatives.
+All pinned combined-reference jobs complete normally and accept:
+**ten explicit primary/reference disagreements**. Native UA-1 and fresh
+435-PDF/870-result corpus JSON are wholly unchanged against scalar baseline
+0fa9ba6e. No standard text or external controls are bundled; full
+signature/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary signature-seed scalar types
 
 Official PDF Association PDF 2.0 errata 12.7.5.5/Table 237 declares

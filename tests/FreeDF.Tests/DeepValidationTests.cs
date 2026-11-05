@@ -4841,6 +4841,177 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> CertificateSeedAsciiCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var key in new[] { "KeyUsage", "SignaturePolicyCommitmentType" })
+        foreach (var value in new[] { "null", "[]", "[(1XXXXXXXX)]", "[() <007F>]", "[<80>]", "[<FEFF0031>]",
+            "(1XXXXXXXX)", "/Name", "42", "[null]", "[/Name]", "[99 0 R]", "[11 0 R]", "11 0 R", "99 0 R" })
+            yield return [part, type, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(CertificateSeedAsciiCases))]
+    public void Ua2CertificateSeedAsciiArraysHaveDeclaredTypes(int part, string type, string key, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /SV << /Cert << /{key} {value} >> >> >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = value is "null" or "[]" or "[(1XXXXXXXX)]" or "[() <007F>]" or "11 0 R" or "99 0 R";
+        Assert.Equal(part == 2 && type == "Sig" && !valid, report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/KeyUsage [12 0 R (1)]", false)]
+    [InlineData("/KeyUsage [12 0 R /Bad]", true)]
+    [InlineData("/KeyUsage 12 0 R /SignaturePolicyCommitmentType [<80>]", true)]
+    [InlineData("/KeyUsage [/Bad] /SignaturePolicyCommitmentType 12 0 R", true)]
+    public void Ua2CertificateSeedAsciiUnknownPreservesKnownErrors(string entries, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert << {entries} >> >> >>",
+                "null", "null", "12 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("SV", 32, false)]
+    [InlineData("SV", 33, true)]
+    [InlineData("Cert", 32, false)]
+    [InlineData("Cert", 33, true)]
+    [InlineData("KeyUsage", 32, false)]
+    [InlineData("KeyUsage", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    public void Ua2CertificateSeedAsciiReferenceBoundIsExplicit(string route, int count, bool incomplete)
+    {
+        var last = route switch
+        {
+            "SV" => "<< /Cert << /KeyUsage [(1)] >> >>",
+            "Cert" => "<< /KeyUsage [(1)] >>",
+            "KeyUsage" => "[(1)]",
+            _ => "(1)"
+        };
+        var seed = route switch
+        {
+            "SV" => "10 0 R",
+            "Cert" => "<< /Cert 10 0 R >>",
+            "KeyUsage" => "<< /Cert << /KeyUsage 10 0 R >> >>",
+            _ => "<< /Cert << /KeyUsage [10 0 R] >> >>"
+        };
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? last : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /SV {seed} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2CertificateSeedAsciiItemWorkBoundIsExplicit(int count, bool incomplete)
+    {
+        var items = "/Bad " + string.Concat(Enumerable.Repeat("() ", count - 1));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert << /KeyUsage [{items}] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1048576, false)]
+    [InlineData(1048577, true)]
+    public void Ua2CertificateSeedAsciiByteWorkBoundIsExplicit(int count, bool incomplete)
+    {
+        var bytes = "80" + new string('0', (count - 1) * 2);
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert << /KeyUsage [<{bytes}>] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiByteBudgetIsSharedAcrossFields()
+    {
+        var bytes = new string('0', 1048576);
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (one) /SV << /Cert << /KeyUsage [<{bytes}>] >> >> >>",
+                $"<< /FT /Sig /T (two) /SV << /Cert << /SignaturePolicyCommitmentType [<{bytes}> () (1)] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("42", true)]
+    [InlineData("11 0 R", true)]
+    [InlineData("null", false)]
+    [InlineData("99 0 R", false)]
+    public void Ua2CertificateSeedAsciiDictionaryUncertaintyIsExplicit(string certificate, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert {certificate} >> >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiDoesNotInheritParentSeed()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /SV << /Cert << /KeyUsage [<80>] >> >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiItemBudgetIsSharedAcrossKeysAndFields()
+    {
+        var items = string.Concat(Enumerable.Repeat("() ", 100000));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (one) /SV << /Cert << /KeyUsage [{items}] >> >> >>",
+                $"<< /FT /Sig /T (two) /SV << /Cert << /KeyUsage [{items}] /SignaturePolicyCommitmentType [()] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiUncertaintyDoesNotSuppressOtherSeedErrors()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (one) /SV << /Cert 11 0 R /V (bad) /DigestMethod [(bad)] >> >>",
+                "<< /FT /Sig /T (two) /SV << /Cert << /KeyUsage [<80>] >> /V 11 0 R /DigestMethod 11 0 R >> >>",
+                "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

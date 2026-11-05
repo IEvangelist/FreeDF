@@ -545,6 +545,16 @@ Twelve native controls retain six shape positives and reject six primary
 negatives accepted by the pinned reference; disagreements are explicit.
 No standard text or external controls are bundled.
 
+The certificate-seed KeyUsage and SignaturePolicyCommitmentType raw
+ASCII-array checks follow official PDF Association 12.7.5.5/Table 238
+declared type facts, corroborating the SV/Cert path and single-byte ASCII
+definition in ISO 32000-1 Tables 234/35 (printed pp448/86). Bounded traversal
+and byte/item budgets are independently implemented. Eighteen native controls
+retain eight raw-shape positives and reject ten primary negatives accepted
+by the pinned reference; disagreements are explicit. Full payload semantics,
+flags and signing enforcement remain separate. No standard text or external
+controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
