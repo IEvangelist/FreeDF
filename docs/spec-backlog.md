@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 namespace-aware H prohibition
+
+`PDFUA2-HEADING-H` now uses the existing UA-2 namespace-aware standard
+type resolver, not the legacy type name. A RoleMapNS custom type resolving
+to H is prohibited, while foreign raw H mapped to P/H1 does not impersonate
+an H heading. Unmapped/cyclic roles retain the existing role and nesting
+incomplete Errors without being asserted to be known H. UA-1, Note,
+Caption and heading-hierarchy policies are unchanged.
+
+The diagnostic's contradictory H-within-Sect alternative is removed.
+Pinned veraPDF v1.30.3 UA-2 8.2.5.12-1 prohibits H unconditionally;
+both default and mapped H inside Sect remain violations. Numbered
+headings remain unaffected. This applies the existing prohibition to
+resolved roles; it does not establish complete heading semantics.
+
+Twenty-two authored cases cover both profiles, default/PDF-2/default-map/
+namespace-map H, foreign names mapped to P/H1, unmapped/cyclic roles,
+H1 and the Sect boundary. Four of the original 18 selector cases failed
+before correction. Eleven native controls agree on every heading-rule
+and whole-file verdict (three clean positives, eight negatives), correcting
+two false-negative and two false-positive file verdicts. An additional
+irrelevant H finding is removed from the foreign-role negative without
+changing its invalid verdict. All 11 corresponding UA-1 outputs are
+unchanged. Native namespace objects are indirect and registered; every
+reference job completed normally.
+
+Fresh 435-PDF/870-result public-corpus output is identical to the immediate
+baseline. Full Release suite: 14,246 passed, zero failed/skipped.
+Solution build: zero errors and two retained machine-feed NU1507 warnings.
+Reporting tool: 20 passing tests, with the existing 8.2.5.12-1 family
+mapping explicitly tested. External native PDFs/reports remain
+session-only; full PDF/UA parity is not claimed.
+
 ## 2026-11-05 UA-2 tagged annotation artifacts
 
 UA-2 PrinterMark and Invisible/NoView disposition checks now honor

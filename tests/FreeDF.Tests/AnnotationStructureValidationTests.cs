@@ -226,6 +226,60 @@ public class AnnotationStructureValidationTests
         Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
     }
 
+    public static IEnumerable<object[]> HeadingNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default", "pdf2", "default-mapped", "namespace-mapped", "mapped-paragraph", "mapped-numbered", "foreign", "cyclic", "numbered" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(HeadingNamespaceCases))]
+    public void Ua2UnnumberedHeadingProhibitionUsesResolvedNamespaceRoles(int part, string kind)
+    {
+        var role = kind is "default-mapped" or "namespace-mapped" or "cyclic" ? "CustomHeading" : kind == "numbered" ? "H1" : "H";
+        var doc = Load(part,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /RoleMap << {(kind == "default-mapped" ? "/CustomHeading /H" : "")} >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /{role}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var heading = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind == "pdf2") heading.Entries["NS"] = pdf2;
+        if (kind is "namespace-mapped" or "mapped-paragraph" or "mapped-numbered" or "foreign" or "cyclic")
+        {
+            var map = new PdfDictionary();
+            if (kind != "foreign")
+                map.Entries[role] = kind == "cyclic" ? new PdfName(role)
+                    : new PdfArray([new PdfName(kind == "mapped-paragraph" ? "P" : kind == "mapped-numbered" ? "H1" : "H"), pdf2]);
+            heading.Entries["NS"] = new PdfDictionary
+            {
+                Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("urn:heading-namespace")), ["RoleMapNS"] = map },
+            };
+        }
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && kind is "default" or "pdf2" or "default-mapped" or "namespace-mapped", report.Has("PDFUA2-HEADING-H"));
+        if (part == 2 && kind is "foreign" or "cyclic") Assert.True(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void Ua2HWithinSectHasNoExceptionToTheProhibition(int part, bool mapped)
+    {
+        var role = mapped ? "CustomHeading" : "H";
+        var ns = mapped ? "/NS << /NS (urn:heading-sect) /RoleMapNS << /CustomHeading [/H << /NS (http://iso.org/pdf2/ssn) >>] >> >>" : "";
+        var doc = Load(part, (8, Element.Replace("/S /Annot", $"/S /{role} {ns}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var parent = Assert.IsType<PdfDictionary>(doc.File.GetObject(part == 2 ? 15 : 7));
+        parent.Entries["S"] = new PdfName("Sect");
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2, report.Has("PDFUA2-HEADING-H"));
+        if (part == 2)
+            Assert.DoesNotContain("H within Sect", Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-HEADING-H").Message);
+    }
+
     public static IEnumerable<object[]> AnnotationArtifactCases()
     {
         foreach (var part in new[] { 1, 2 })

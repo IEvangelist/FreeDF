@@ -35,6 +35,12 @@ implemented namespace/Artifact ancestry and strict parent-tree/OBJR
 identity checks. No engine source or external control PDF is bundled;
 grouping-dependent structure semantics are not expanded.
 
+The namespace-aware H prohibition in `ValidationPdfUA2.cs` was
+cross-checked against the same CC BY 4.0 UA-2 profile, 8.2.5.12-1.
+The existing C# check reuses the independently implemented namespace
+resolver; numbered-heading and hierarchy policies are not broadened.
+No profile XML, engine source or external heading PDF is bundled.
+
 The PDF/A image-XObject interpolation prohibition in `ValidationPdfA.cs` was
 also cross-checked against the veraPDF Consortium's
 [v1.30.3 PDF/A profiles](https://github.com/veraPDF/veraPDF-validation-profiles/tree/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_A),

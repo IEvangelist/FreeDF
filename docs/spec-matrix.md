@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 namespace-aware H correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-h-prohibition)
+prohibits resolved H rather than foreign raw names and removes the
+contradictory H-within-Sect diagnostic alternative. Eleven native controls
+agree on heading-rule/whole-file verdicts, correcting two false negatives
+and two false positives. UA-1 and fresh 435-PDF/870-result corpus output
+are unchanged; complete heading semantics are not claimed.
+
 The [UA-2 tagged annotation Artifact correction](spec-backlog.md#2026-11-05-ua-2-tagged-annotation-artifacts)
 honors resolved direct/mapped/ancestor Artifacts for PrinterMark and
 Invisible/NoView disposition without bypassing parent-tree/OBJR checks.

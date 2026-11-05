@@ -98,6 +98,7 @@ class RuleOverlapTests(unittest.TestCase):
         (2, "8.9.2.4.14-1", "PDFUA-ANNOT-PRINTERMARK"),
         (2, "8.9.2.2-1", "PDFUA2-ANNOT-ARTIFACT"),
         (2, "8.9.2.2-2", "PDFUA2-ANNOT-ARTIFACT"),
+        (2, "8.2.5.12-1", "PDFUA2-HEADING-H"),
         (2, "8.10.3.3-1", "PDFUA2-FORM-RV-V"),
         (2, "8.14.1-1", "PDFUA2-FILESPEC-DESC"),
         (2, "8.9.2.4.10-1", "PDFUA2-FILEATTACH-AFRELATIONSHIP"),
