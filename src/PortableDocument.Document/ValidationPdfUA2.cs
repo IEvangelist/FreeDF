@@ -21,6 +21,7 @@ internal static class PdfUA2Checks
         c.Guard("PDF/UA-2 version", () => Version(c));
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
         c.Guard("PDF/UA-2 page structure parent keys", () => PageStructureParents(c));
+        c.Guard("PDF/UA-2 annotation structure parent keys", () => AnnotationStructureParents(c));
         c.Guard("PDF/UA-2 role map shape", () => RoleMapShape(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
         c.Guard("PDF/UA-2 containment", () => PdfUA2NestingChecks.Run(c, tree));
@@ -346,20 +347,60 @@ internal static class PdfUA2Checks
 
     static void PageStructureParents(ValidationContext c)
     {
-        const string clause = "ISO 32000-2 14.7.5.4 Table 359";
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            var dictionary = c.Doc.Pages[page].Dict;
+            if (StructureParentConflict(c, dictionary, () =>
+                c.Add("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "page structure parent key inspection exceeds its reference bound", StructureParentClause, page)))
+                c.Add("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                    "page must not contain both StructParent and StructParents", StructureParentClause, page);
+        }
+    }
+
+    const string StructureParentClause = "ISO 32000-2 14.7.5.4 Table 359";
+
+    static bool StructureParentConflict(ValidationContext c, PdfDictionary dictionary, Action incompleteInspection)
+    {
+        bool incomplete = false;
+        void Incomplete() => incomplete = true;
+        var single = ResolveBounded(c.F, dictionary.Get("StructParent"), Incomplete);
+        var multiple = ResolveBounded(c.F, dictionary.Get("StructParents"), Incomplete);
+        if (incomplete) { incompleteInspection(); return false; }
+        return single is not (null or PdfNull) && multiple is not (null or PdfNull);
+    }
+
+    static void AnnotationStructureParents(ValidationContext c)
+    {
         for (int page = 0; page < c.Doc.Pages.Count; page++)
         {
             bool incomplete = false;
-            void Incomplete() => incomplete = true;
-            var dictionary = c.Doc.Pages[page].Dict;
-            var single = ResolveBounded(c.F, dictionary.Get("StructParent"), Incomplete);
-            var multiple = ResolveBounded(c.F, dictionary.Get("StructParents"), Incomplete);
-            if (incomplete)
-                c.Add("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
-                    "page structure parent key inspection exceeds its reference bound", clause, page);
-            else if (single is not (null or PdfNull) && multiple is not (null or PdfNull))
-                c.Add("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
-                    "page must not contain both StructParent and StructParents", clause, page);
+            void Incomplete()
+            {
+                if (incomplete) return;
+                incomplete = true;
+                c.Add("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "annotation structure parent inspection is unsupported or exceeds its reference/work bound",
+                    StructureParentClause, page);
+            }
+            var raw = ResolveBounded(c.F, c.Doc.Pages[page].Dict.Get("Annots"), Incomplete);
+            if (incomplete || raw is null or PdfNull) continue;
+            if (raw is not PdfArray array) { Incomplete(); continue; }
+            var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            int work = 0;
+            foreach (var item in array.Items)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                var value = ResolveBounded(c.F, item, Incomplete);
+                if (incomplete) break;
+                if (value is null or PdfNull) continue;
+                if (value is not PdfDictionary annotation) { Incomplete(); break; }
+                if (!seen.Add(annotation)) continue;
+                if (StructureParentConflict(c, annotation, Incomplete))
+                    c.Add("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                        "annotation must not contain both StructParent and StructParents", StructureParentClause, page);
+                if (incomplete) break;
+            }
         }
     }
 

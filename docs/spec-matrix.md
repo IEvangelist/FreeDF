@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary annotation parent-key exclusivity check](spec-backlog.md#2026-11-05-primary-annotation-structure-parent-exclusivity)
+adds page Annots dictionaries, including tagging-exempt annotations, using
+the shared page key resolver and explicit bounded raw-array inspection.
+Six native controls retain three positives; three primary negatives remain
+reference-accepted. Corpus and UA-1 reports are wholly unchanged.
+XObjects/appearances and complete key type/identity remain separate.
+
 The [primary page parent-key exclusivity check](spec-backlog.md#2026-11-05-primary-page-structure-parent-exclusivity)
 rejects page dictionaries carrying both non-null StructParent and
 StructParents, preserving explicit reference incompleteness. Six native

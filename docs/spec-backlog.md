@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary annotation structure-parent exclusivity
+
+The Table 359 at-most-one StructParent/StructParents fact now also covers
+known dictionaries in each page's Annots array, including PrinterMark and
+other annotations exempt from separate tagging checks. A shared bounded
+key resolver retains the previous page check unchanged.
+PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT reports conflicting non-null keys,
+deduplicated by dictionary identity per page. Null/omission and indirect
+null/dangling values remain absent; zero remains present.
+
+Raw Annots containers/entries and key values use the 32-hop reference
+bound. Unsupported containers, cycles and more than 200,000 array entries
+per page report PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE explicitly; known
+earlier conflicts survive later incomplete inspection. The work limit
+counts duplicate entries too. This is not the existing tagging loop's
+silent 10,000-entry projection, nor a claim of complete annotation schema.
+
+Six native tagged-widget controls retain three positives and reject three
+primary negatives. All six combined-reference jobs complete normally and
+accept: **three explicit primary/reference disagreements**. Thirty-seven
+authored UA-1/exempt-annotation/null/zero/reference/container/work cases
+had nineteen initial failures and now pass. Focused Release: 420 passed;
+full Release: 15,401 passed, zero failed/skipped. Fresh 435-PDF/870-result
+corpus JSON and native UA-1 results are wholly unchanged. Solution zero
+errors/two retained machine-feed NU1507 warnings.
+
+This closes page-annotation dictionaries only. XObjects, appearances,
+complete parent-key type/identity and other container surfaces remain
+separate. No standard text/external controls are bundled; hosted CI and
+full parity are not claimed.
+
 ## 2026-11-05 primary page structure-parent exclusivity
 
 Published PDF 2.0 errata, 14.7.5.4 Table 359, allows at most one of

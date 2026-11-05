@@ -393,6 +393,15 @@ so exact predicate agreement is not claimed. All-object coverage,
 parent-tree identity and key types remain separate. No standard text or
 external controls are bundled.
 
+The page-annotation structure-parent exclusivity extension follows the
+same Table 359 fact. Raw Annots traversal, dictionary-identity deduplication
+and bounded key resolution are independently implemented, including
+annotations exempt from other tagging checks. Six native controls retain
+three positives and reject three primary negatives accepted by the
+reference; those differences are explicit. XObjects/appearances and
+complete key type/identity remain separate. No standard text or external
+controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
