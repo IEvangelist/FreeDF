@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [section-cardinality correction](spec-backlog.md#2026-11-05-namespace-resolved-section-cardinality)
+uses existing resolved ISO 32005 limits instead of legacy raw-role counts.
+Six native outcomes agree, correcting two false rejections. Two redundant
+corpus diagnostics are removed with independent limit evidence; all file
+verdicts and UA-1 output remain unchanged. Grouping-dependent limits are deferred.
+
 The [conditional table-header correction](spec-backlog.md#2026-11-05-conditional-ua-2-table-header-presence)
 retains unconditional TH presence for UA-1 only. Six native file outcomes
 agree, correcting two false rejections while keeping width negatives.

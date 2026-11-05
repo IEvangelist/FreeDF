@@ -4,6 +4,30 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 namespace-resolved section cardinality
+
+Legacy Table section-count checks now remain UA-1-only; UA-2 already
+uses namespace-resolved ISO 32005 cardinality. Raw custom THead/TFoot
+names mapped to TR no longer count as duplicate sections. Genuine
+direct and namespace-mapped duplicate sections still fail
+PDFUA2-NESTING-CARDINALITY under Table-THead/Table-TFoot.
+
+Six native controls completed normally against the combined profile:
+all file/cardinality outcomes agree (two positives, four negatives),
+correcting two false rejections. Four authored cases initially had
+four failures. Fresh 435-PDF/870-result comparison removes two redundant
+legacy diagnostics from UA-1 negatives run as UA-2; independent reference
+jobs confirm both Table 5 limits. All file verdicts and UA-1 outputs
+are unchanged. Full grouping-dependent cardinality remains deferred.
+No reference-engine code, external PDFs or reports are bundled.
+
+Release validation: 347 focused cases passed; full rerun passed 14,892
+cases and solution build had no errors. The initial full run failed
+one unchanged lexer allocation assertion; its isolated rerun passed,
+an exact committed-base full control passed 14,888 cases, and the
+unchanged current full rerun passed. The initial failure's root cause
+is not established; no lexer code or assertion was changed.
+
 ## 2026-11-05 conditional UA-2 table header presence
 
 The unconditional Table-must-contain-TH error now remains UA-1-only.

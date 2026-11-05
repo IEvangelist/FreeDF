@@ -719,10 +719,10 @@ internal static class PdfUADeepChecks
                 c.Add("PDFUA-HEADING-MULTIPLE", ValidationSeverity.Error, $"/{e.Type} contains more than one H heading", Clause(c, "7.4.4", "8.2.5.22"), e.PageIndex);
             switch (e.StandardType)
             {
-                case "Table":
+                case "Table" when c.Part != 2:
                     if (kids.Count(k => k.StandardType == "THead") > 1) c.Add("PDFUA-TABLE-THEAD-MULTIPLE", ValidationSeverity.Error, "Table has more than one THead", sec, e.PageIndex);
                     if (kids.Count(k => k.StandardType == "TFoot") > 1) c.Add("PDFUA-TABLE-TFOOT-MULTIPLE", ValidationSeverity.Error, "Table has more than one TFoot", sec, e.PageIndex);
-                    if (c.Part != 2 && !kids.Any(k => k.StandardType == "TBody") && kids.Any(k => k.StandardType is "THead" or "TFoot"))
+                    if (!kids.Any(k => k.StandardType == "TBody") && kids.Any(k => k.StandardType is "THead" or "TFoot"))
                         c.Add("PDFUA-TABLE-TBODY", ValidationSeverity.Error, "Table has THead or TFoot but no TBody (veraPDF PDFUA-1 7.2-13/14)", sec, e.PageIndex);
                     CaptionRules(c, e, kids, "PDFUA-TABLE-CAPTION", sec, firstOrLast: true);
                     break;

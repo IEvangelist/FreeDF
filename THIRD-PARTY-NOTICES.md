@@ -22,6 +22,10 @@ section and TBody constraints for UA-1 only. Eighteen native controls
 and ten corpus fixtures were cross-checked against the combined profile;
 known illegal section pairs retain the independently implemented nesting
 checks. This does not establish grouping or full table-geometry semantics.
+The legacy table section-count correction reuses namespace-resolved
+Table-THead/Table-TFoot cardinality. Six native controls and two corpus
+negatives were independently cross-checked against the same combined
+profile; grouping-dependent limits remain deferred.
 
 The namespace-aware list numbering/direct-content checks in
 `ValidationPdfUA2.cs` were cross-checked against the Consortium's

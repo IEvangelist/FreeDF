@@ -4,6 +4,22 @@ namespace FreeDF.Tests;
 
 public class PdfUa2CardinalityTests
 {
+    [Theory]
+    [InlineData("THead", "TR", false)]
+    [InlineData("TFoot", "TR", false)]
+    [InlineData("THead", "THead", true)]
+    [InlineData("TFoot", "TFoot", true)]
+    public void TableSectionLimitsUseResolvedRolesWithoutLegacyCounts(string role, string target, bool limited)
+    {
+        var doc = Load("Table", target, 2,
+            childNamespace: $"<< /Type /Namespace /NS (urn:section-count) /RoleMapNS << /{role} [/{target} 6 0 R] >> >>",
+            childRole: role);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(limited, report.Findings.Any(f => f.RuleId == "PDFUA2-NESTING-CARDINALITY"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-TABLE-THEAD-MULTIPLE" or "PDFUA-TABLE-TFOOT-MULTIPLE");
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
     const string Pairs = "Art-Caption Art-H Artifact-Caption Artifact-H Aside-Caption Aside-H BlockQuote-Caption BlockQuote-H Caption-H Code-Caption Document-H DocumentFragment-H Figure-Caption Figure-H Form-Caption Formula-Caption Formula-H H-Sect Hn-Sect Index-Caption L-Caption LBody-Caption LBody-H Note-Caption Sect-H TD-H TH-H TOC-Caption Table-Caption Table-TFoot Table-THead Title-Caption StructTreeRoot-Document";
 
     public static IEnumerable<object[]> Limits() =>
