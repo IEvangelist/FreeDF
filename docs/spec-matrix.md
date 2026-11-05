@@ -58,13 +58,15 @@ Six native controls give four exact-rule/file agreements; two indirect-null
 reference disagreements follow primary null equivalence. UA-2 and fresh
 435-PDF/870-result corpus output are unchanged.
 
-The [UA-2 rich-field plain-value presence check](spec-backlog.md#2026-11-05-ua-2-rich-field-plain-value-presence)
-requires V when an enumerated terminal text field has own non-null RV.
-It does not evaluate XML/text equivalence. Forty-four native controls
-give 26 exact-rule/file agreements and 12 corrected false negatives;
-18 null/stream/inheritance reference disagreements remain explicit.
-UA-1 and fresh 435-PDF/870-result corpus output are unchanged. Full
-equality and malformed-field classification remain incomplete.
+The [UA-2 rich-field XML text-equality extension](spec-backlog.md#2026-11-05-ua-2-rich-field-xml-text-equality)
+compares RV body text nodes with decoded V while preserving presence and
+inheritance selection. Thirty-six native controls agree, correcting 18
+additional false negatives; UA-1 and fresh 435-PDF/870-result corpus output
+are unchanged. Eight stream-attribute and eight inheritance controls retain
+six explicit disagreements; earlier dated presence disagreements are not
+erased. XML inspection is bounded with separate incomplete findings.
+Rendered/CSS/schema/type semantics and complete field classification
+remain outside the implemented scope.
 
 The [UA-2 null attachment-relationship correction](spec-backlog.md#2026-11-05-ua-2-null-file-attachment-relationships)
 rejects omitted/null/dangling AFRelationship values consistently and

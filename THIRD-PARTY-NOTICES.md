@@ -121,12 +121,15 @@ ISO 32000-1 7.3.9; indirect-null/nonexistent-reference acceptance differs
 from two measured reference results. External-reference parsing/rendering
 is not broadened and no profile XML or external PDFs are bundled.
 
-The UA-2 text-field RV/V value-presence fact was cross-checked against
-the same CC BY 4.0 UA-2 profile, 8.10.3.3-1. Only the missing-V part
-is implemented; textual equivalence remains deferred. Primary ISO
+The UA-2 text-field RV/V presence and XML text-content equality were
+cross-checked against the same CC BY 4.0 UA-2 profile, 8.10.3.3-1.
+Bounded XML parsing and text comparison are independently implemented;
+rendered/CSS/schema/type semantics are not implemented. Primary ISO
 32000-1 7.3.9 and 12.7.3/Table 220 establish null equivalence and
-field-value inheritance. Eighteen measured reference disagreements
-remain recorded; no profile XML, runtime or external PDFs are bundled.
+field-value inheritance; 12.7.3.4 establishes XML rich text and allowed
+text-stream packaging. Dated presence disagreements and the additional
+stream-attribute/inheritance controls remain explicit; no profile XML,
+runtime, reference-engine source or external PDFs are bundled.
 
 The UA-2 file-attachment AFRelationship requirement was cross-checked
 against the same CC BY 4.0 UA-2 profile, 8.9.2.4.10-1. Null handling

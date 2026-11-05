@@ -1,4 +1,5 @@
 using System.Text;
+using System.Xml;
 using PortableDocument.Core;
 
 namespace PortableDocument.Document;
@@ -56,9 +57,26 @@ internal static class PdfUA2Checks
             if (!complete) continue;
             if (value is null or PdfNull)
                 c.Add("PDFUA2-FORM-RV-V", ValidationSeverity.Error,
-                    "a text field with /RV must also provide a plain /V value; rich/plain text equivalence is not evaluated",
+                    "a text field with /RV must also provide a plain /V value",
                     "ISO 14289-2 8.10.3.3");
             else if (value is not (PdfString or PdfStream)) Incomplete();
+            else
+            {
+                try
+                {
+                    var bytes = RichFieldBytes(c, value);
+                    if (bytes.Length > XfaReader.MaxBytes) { Unresolved(); continue; }
+                    var richText = RichFieldText(c, rich, Unresolved);
+                    if (complete && richText != PdfString.Decode(bytes))
+                        c.Add("PDFUA2-FORM-RV-V", ValidationSeverity.Error,
+                            "a text field's /RV XML text content differs from its plain /V value",
+                            "ISO 14289-2 8.10.3.3");
+                }
+                catch (Exception e) when (e is IOException or InvalidDataException or PdfParseException or XmlException or NotSupportedException)
+                {
+                    Unresolved();
+                }
+            }
         }
 
         void Incomplete()
@@ -66,9 +84,68 @@ internal static class PdfUA2Checks
             if (incomplete) return;
             incomplete = true;
             c.Add("PDFUA2-FORM-VALUE-INCOMPLETE", ValidationSeverity.Error,
-                "rich-field value-presence inspection is truncated, cyclic, malformed or bounded",
+                "rich-field value inspection is truncated, cyclic, malformed or bounded",
                 "ISO 14289-2 8.10.3.3");
         }
+    }
+
+    static byte[] RichFieldBytes(ValidationContext c, PdfObject value)
+    {
+        if (value is PdfString text) return text.Bytes;
+        var stream = (PdfStream)value;
+        PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw,
+            () => throw new InvalidDataException("rich-field stream filter resolution did not complete"));
+        var filter = Resolve(stream.Dict.Get("Filter") ?? stream.Dict.Get("F"));
+        var parameters = Resolve(stream.Dict.Get("DecodeParms") ?? stream.Dict.Get("DP"));
+        if (filter is not (null or PdfNull or PdfName or PdfArray)
+            || filter is PdfArray array && (array.Count > XfaReader.MaxElements
+                || array.Items.Any(item => Resolve(item) is not PdfName))
+            || parameters is not (null or PdfNull or PdfDictionary or PdfArray))
+            throw new InvalidDataException("malformed rich-field stream filters");
+        var filters = PdfFilters.GetFilters(stream.Dict, Resolve);
+        if (filter is PdfArray && parameters is PdfDictionary
+            || parameters is PdfArray parms && (parms.Count != filters.Count
+                || parms.Items.Any(item => Resolve(item) is not (null or PdfNull or PdfDictionary))))
+            throw new InvalidDataException("malformed rich-field stream filter parameters");
+        var (bytes, imageFilter, _) = PdfFilters.Decode(stream.RawData, filters, Resolve, strictContentFilters: true);
+        if (imageFilter is not null) throw new NotSupportedException("image filter on rich-field text stream");
+        return bytes;
+    }
+
+    static string? RichFieldText(ValidationContext c, PdfObject rich, Action incomplete)
+    {
+        var bytes = RichFieldBytes(c, rich);
+        if (bytes.Length > XfaReader.MaxBytes) { incomplete(); return null; }
+        using var reader = XmlReader.Create(new MemoryStream(bytes), new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersInDocument = XfaReader.MaxBytes,
+            IgnoreComments = true,
+            IgnoreProcessingInstructions = true,
+        });
+        var result = new StringBuilder();
+        bool body = false;
+        int elements = 0;
+        while (reader.Read())
+        {
+            if (reader.NodeType == XmlNodeType.Element)
+            {
+                if (++elements > XfaReader.MaxElements || reader.Depth >= XfaReader.MaxDepth)
+                { incomplete(); return null; }
+                if (!body)
+                {
+                    if (reader.LocalName != "body" || reader.NamespaceURI != "http://www.w3.org/1999/xhtml")
+                    { incomplete(); return null; }
+                    body = true;
+                }
+            }
+            else if (body && reader.Depth > 0 && reader.NodeType is (XmlNodeType.Text or XmlNodeType.CDATA
+                or XmlNodeType.Whitespace or XmlNodeType.SignificantWhitespace))
+                result.Append(reader.Value);
+        }
+        if (!body) { incomplete(); return null; }
+        return result.ToString();
     }
 
     internal static bool LanguagePrivateUse(ValidationContext c, string language, int? page = null)

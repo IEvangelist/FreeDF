@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 rich-field XML text equality
+
+The terminal-text-field RV/V presence check now also compares decoded
+plain V against RV's XHTML body text nodes in document order. XML
+entities and nested formatting are decoded, whitespace inside the body
+is preserved, and paragraph/br boundaries do not synthesize characters.
+This is XML text-content equality, not rendered/layout equivalence,
+CSS interpretation or complete rich-text schema/type conformance.
+Text-string/stream packaging is accepted; local/null/inherited V selection
+and UA-1 behavior are retained.
+
+Primary ISO 32000-1 12.7.3.4 (printed pp436/438) establishes fully formed
+XML rich text, paragraph interpretation and allowed text-stream packaging.
+The text-content comparison was independently measured against pinned
+veraPDF v1.30.3 UA-2 8.10.3.3-1, without copying engine source. Thirty-six
+native string/stream controls agree on exact and whole-file outcomes:
+18 reference-clean positives and 18 negatives, correcting 18 missed
+file violations. All 36 UA-1 outputs and fresh 435-PDF/870-result corpus
+output are unchanged.
+
+Eight additional identical-text controls isolate the earlier stream
+disagreement: the pinned reference rejects RV streams with XFA body
+attributes for both ASCII and UTF-16 plain V, but accepts the matching
+RV strings and attribute-free streams. FreeDF retains allowed stream
+packaging; these two differences are explicit, not normalized away.
+Eight retained inheritance controls still have four differences when a
+parent supplies V. All 52 reference jobs completed normally. The six
+differences in this comparison set do not replace the earlier dated
+18 null/presence/stream/inheritance differences or imply full coverage.
+
+XML parsing prohibits DTDs and external resolution, bounds bytes/characters,
+depth and element work, and preserves text order without a lossy XFA-tree
+conversion. Strict stream decoding reports malformed/unsupported/cyclic
+filters and unresolved/oversized/XML inspection as separate
+`PDFUA2-FORM-VALUE-INCOMPLETE` Error, not a guessed equality finding.
+Ninety-five added cases include both profiles, entities/Unicode/whitespace,
+stream attributes, DTDs, malformed filters, exact 64-depth/200,000-element
+and 32-MiB plain-byte boundaries. The initial four-case selector had two
+mismatch failures. Prior presence/bound fixtures now use equal well-formed
+XML so their original selection expectations remain tested.
+Full Release suite: 14,448 passed, zero failed/skipped. Solution build:
+zero errors, two retained machine-feed NU1507 warnings. Reporting tests:
+20 passed. Full PDF/UA parity is not claimed; external PDFs/XML/reports
+remain session-only.
+
 ## 2026-11-05 class-mapped FENote NoteType names
 
 The explicit FENote NoteType-name check now also resolves ClassMap/C.

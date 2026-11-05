@@ -1318,6 +1318,169 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData(false, "Hello", false)]
+    [InlineData(false, "Goodbye", true)]
+    [InlineData(true, "Hello", false)]
+    [InlineData(true, "Goodbye", true)]
+    public void Ua2RichFieldPlainValueMatchesSingleParagraphText(bool stream, string plain, bool mismatch)
+    {
+        const string xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>Hel<span>lo</span></p></body>";
+        var rich = stream ? "/RV 12 0 R" : $"/RV ({xml})";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /Tx /T (field) {rich} /V ({plain}) >>", "null", "null",
+            ObjPdf.Stream(xml),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FORM-VALUE-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    public static IEnumerable<object[]> RichFieldEqualityCases()
+    {
+        (string Content, string Plain, bool Mismatch)[] cases =
+        [
+            ("<p>Hello</p>", "Hello", false),
+            ("<p>Hello</p>", "Goodbye", true),
+            ("<p>Hel<span>lo</span></p>", "Hello", false),
+            ("<p>A&amp;B</p>", "A&B", false),
+            ("<p></p>", "", false),
+            ("<p> Hello </p>", " Hello ", false),
+            ("<p> Hello </p>", "Hello", true),
+            ("<p>A</p><p>B</p>", "AB", false),
+            ("<p>A</p><p>B</p>", "A\nB", true),
+            ("<p>A</p><p>B</p>", "A\rB", true),
+            ("<p>A</p><p>B</p>", "A\r\nB", true),
+            ("<p>A<br/>B</p>", "AB", false),
+            ("<p>A<br/>B</p>", "A\nB", true),
+            ("<p>A<br/>B</p>", "A\rB", true),
+            ("<p>A<br/>B</p>", "A\r\nB", true),
+            ("\n  <p>Hello</p>\n", "Hello", true),
+            ("<p>A&#x20;B</p>", "A B", false),
+            ("<p>caf&#xE9;</p>", "caf\u00e9", false),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var stream in new[] { false, true })
+        foreach (var test in cases)
+            yield return [part, stream, test.Content, test.Plain, test.Mismatch];
+    }
+
+    [Theory]
+    [MemberData(nameof(RichFieldEqualityCases))]
+    public void RichFieldEqualityPreservesXmlTextOrderAndWhitespace(int part, bool stream, string content, string plain, bool mismatch)
+    {
+        var xml = $"<body xmlns='http://www.w3.org/1999/xhtml'>{content}</body>";
+        var rich = stream ? "/RV 12 0 R" : $"/RV <{Convert.ToHexString(Encoding.UTF8.GetBytes(xml))}>";
+        var value = Convert.ToHexString(Encoding.BigEndianUnicode.GetBytes("\uFEFF" + plain));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /Tx /T (field) {rich} /V <{value}> >>", "null", "null", ObjPdf.Stream(xml),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FORM-VALUE-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("<body xmlns='http://www.w3.org/1999/xhtml'><p>text</body>")]
+    [InlineData("<body xmlns='urn:foreign'><p>text</p></body>")]
+    [InlineData("<!DOCTYPE body [<!ENTITY x 'text'>]><body xmlns='http://www.w3.org/1999/xhtml'>&x;</body>")]
+    [InlineData("<!DOCTYPE body SYSTEM 'file:///does-not-exist'><body xmlns='http://www.w3.org/1999/xhtml'>text</body>")]
+    public void RichFieldEqualityMalformedOrDtdXmlIsIncomplete(string xml)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV <{Convert.ToHexString(Encoding.UTF8.GetBytes(xml))}> /V (text) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-VALUE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(62, false)]
+    [InlineData(63, true)]
+    public void RichFieldEqualityXmlDepthBoundaryIsExplicit(int spans, bool incomplete)
+    {
+        var xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>" + string.Concat(Enumerable.Repeat("<span>", spans))
+            + "text" + string.Concat(Enumerable.Repeat("</span>", spans)) + "</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV <{Convert.ToHexString(Encoding.UTF8.GetBytes(xml))}> /V (text) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199998, false)]
+    [InlineData(199999, true)]
+    public void RichFieldEqualityXmlWorkBoundaryIsExplicit(int spans, bool incomplete)
+    {
+        var xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>"
+            + string.Concat(Enumerable.Repeat("<span/>", spans)) + "text</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, "<< /FT /Tx /T (field) /RV 12 0 R /V (text) >>", "null", "null", ObjPdf.Stream(xml)]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Filter /Unknown")]
+    [InlineData("/Filter /DCTDecode")]
+    [InlineData("/Filter /FlateDecode")]
+    [InlineData("/Filter << >>")]
+    [InlineData("/Filter /ASCIIHexDecode /DecodeParms 11 0 R")]
+    public void RichFieldEqualityUnsupportedMalformedOrCyclicFiltersAreIncomplete(string filter)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (field) /RV 12 0 R /V (text) >>", "null", "11 0 R",
+            ObjPdf.Stream("<body xmlns='http://www.w3.org/1999/xhtml'><p>text</p></body>", filter),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-VALUE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void RichFieldEqualityXfaBodyAttributesDoNotChangeStreamText(bool stream, bool unicode)
+    {
+        const string xml = "<body xmlns='http://www.w3.org/1999/xhtml' xmlns:xfa='http://www.xfa.org/schema/xfa-data/1.0/' xfa:contentType='text/html' xfa:APIVersion='Control:1.0' xfa:spec='2.4'><p>Hello</p></body>";
+        var rich = stream ? "/RV 12 0 R" : $"/RV ({xml})";
+        var value = unicode ? "<FEFF00480065006C006C006F>" : "(Hello)";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) {rich} /V {value} >>", "null", "null", ObjPdf.Stream(xml)]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(33554432, false)]
+    [InlineData(33554433, true)]
+    public void RichFieldEqualityPlainByteBoundaryIsExplicit(int bytes, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, "<< /FT /Tx /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>a</p></body>) /V (a) >>"]);
+        var doc = PdfDocument.Load(pdf);
+        var value = new byte[bytes];
+        Array.Fill(value, (byte)'a');
+        doc.GetFormFieldDetails().Fields.Single().Dictionary.Entries["V"] = new PdfString(value);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })
@@ -1331,10 +1494,11 @@ public class DeepValidationTests
     [MemberData(nameof(RichFieldValuePresenceCases))]
     public void Ua2RichTextFieldRequiresPlainValuePresence(int part, string type, string rich, string value)
     {
+        var xml = $"<body xmlns='http://www.w3.org/1999/xhtml'><p>{(value == "/V ()" ? "" : "plain")}</p></body>";
         var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
         [
-            Para, $"<< /FT /{type} /T (field) {rich} {value} >>", "null", "null",
-            ObjPdf.Stream("<body xmlns='http://www.w3.org/1999/xhtml'><p>rich</p></body>"),
+            Para, $"<< /FT /{type} /T (field) {rich.Replace("/RV (rich)", $"/RV ({xml})")} {value} >>", "null", "null",
+            ObjPdf.Stream(xml),
             ObjPdf.Stream("plain"),
         ]);
         var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
@@ -1354,7 +1518,7 @@ public class DeepValidationTests
         var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
         [
             Para, $"<< /FT /Tx /T (parent) {parentValue} /Kids [10 0 R] >>",
-            "<< /T (child) /Parent 9 0 R /RV (rich) /V null >>", "null", "null",
+            "<< /T (child) /Parent 9 0 R /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>inherited</p></body>) /V null >>", "null", "null",
         ]);
         var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
         Assert.Equal(missing, report.Has("PDFUA2-FORM-RV-V"));
@@ -1383,8 +1547,9 @@ public class DeepValidationTests
     [InlineData("V", 33, true)]
     public void Ua2RichFieldReferenceBoundaryIsExplicit(string key, int length, bool incomplete)
     {
-        var entries = key == "RV" ? "/RV 14 0 R /V (plain)" : "/RV (rich) /V 14 0 R";
-        var chain = Enumerable.Range(14, length).Select(n => n == 13 + length ? "(text)" : $"{n + 1} 0 R");
+        const string rich = "(<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>)";
+        var entries = key == "RV" ? "/RV 14 0 R /V (plain)" : $"/RV {rich} /V 14 0 R";
+        var chain = Enumerable.Range(14, length).Select(n => n == 13 + length ? key == "RV" ? rich : "(plain)" : $"{n + 1} 0 R");
         var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
             extras: new[] { Para, $"<< /FT /Tx /T (field) {entries} >>", "null", "null", "null", "null" }.Concat(chain).ToArray());
         var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
@@ -1401,7 +1566,7 @@ public class DeepValidationTests
         var chain = Enumerable.Range(14, depth).Select(n => n == 13 + depth
             ? "<< /V (plain) >>" : $"<< /Parent {n + 1} 0 R >>");
         var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
-            extras: new[] { Para, "<< /FT /Tx /T (field) /RV (rich) /Parent 14 0 R >>", "null", "null", "null", "null" }.Concat(chain).ToArray());
+            extras: new[] { Para, "<< /FT /Tx /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>) /Parent 14 0 R >>", "null", "null", "null", "null" }.Concat(chain).ToArray());
         var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
         Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
         Assert.False(report.Has("PDFUA2-FORM-RV-V"));
@@ -1427,7 +1592,7 @@ public class DeepValidationTests
     public void Ua2RichFieldReaderDepthTruncationIsExplicit(int depth, bool incomplete)
     {
         var chain = Enumerable.Range(14, depth + 1).Select(n => n == 14 + depth
-            ? "<< /T (field) /RV (rich) /V (plain) >>"
+            ? "<< /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>) /V (plain) >>"
             : $"<< /FT /Tx /T (group) /Kids [{n + 1} 0 R] >>");
         var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [14 0 R] >>",
             extras: new[] { Para, "null", "null", "null", "null", "null" }.Concat(chain).ToArray());
@@ -1444,7 +1609,7 @@ public class DeepValidationTests
     {
         var entries = string.Concat(Enumerable.Repeat("9 0 R ", fields));
         var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << /Fields [{entries}] >>",
-            extras: [Para, "<< /FT /Tx /T (field) /RV (rich) /V (plain) >>"]);
+            extras: [Para, "<< /FT /Tx /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>) /V (plain) >>"]);
         var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
         Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
         Assert.False(report.Has("PDFUA2-FORM-RV-V"));
