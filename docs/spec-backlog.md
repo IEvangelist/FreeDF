@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed member trailing comment boundaries
+
+ISO 32000-1 7.2.3 (printed p13) defines comments through line end;
+7.5.7 (printed p46) requires consecutive object values at the declared
+offsets. Trailing member trivia now stops at its boundary and rejects a
+comment that continues into the following member, rather than silently
+consuming that member's bytes. The bounded whitespace/comment scanner is
+shared with the existing header-padding check; public/default lexer scanning
+still uses the complete buffer.
+
+Fifteen controls cover crossing comments, complete LF/CR/CRLF comments,
+all six PDF whitespace bytes, percent signs in strings, caching, lazy access
+to the other member and existing final-member EOF comment support.
+Initial selector: six failed/nine passed. Full Release: 18,990 passed,
+zero failed/skipped. Solution: zero errors/two retained machine-feed
+NU1507 warnings.
+
+Thirty native PDFs preserve eighteen valid outputs unchanged. Twelve
+formerly accepted crossing-comment targets now produce the explicit member
+boundary diagnostic. MuPDF still exposes First in all twelve malformed
+controls and agrees on all eighteen positives. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the positive
+object-number baseline.
+
+This bounds trailing trivia, not the complete member lexer or global source
+alignment. Another member remains independently lazy even when the previous
+member is malformed; it is not evidence that the whole stream is conforming.
+Full byte-limited value parsing, allocation budgets and eager whole-file
+validation remain separate.
+
 ## 2026-11-05 positive compressed object numbers
 
 ISO 32000-1 7.3.10 (printed p21) requires positive indirect-object numbers;

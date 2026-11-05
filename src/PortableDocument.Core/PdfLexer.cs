@@ -38,15 +38,22 @@ public sealed class PdfLexer
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
     static bool IsRegular(int c) => !IsWhite(c) && !IsDelim(c);
 
-    public void SkipWhite()
+    public void SkipWhite() => SkipWhite(_d.Length);
+
+    internal bool SkipWhite(int end)
     {
-        while (Pos < _d.Length)
+        while (Pos < end)
         {
             var c = _d[Pos];
             if (IsWhite(c)) Pos++;
-            else if (c == '%') { while (Pos < _d.Length && _d[Pos] is not (10 or 13)) Pos++; }
+            else if (c == '%')
+            {
+                while (Pos < end && _d[Pos] is not (10 or 13)) Pos++;
+                if (Pos == end && end < _d.Length) return false;
+            }
             else break;
         }
+        return true;
     }
 
     /// <summary>Reads next object; returns null at EOF. Closers (']' '>>') are returned as keywords.</summary>

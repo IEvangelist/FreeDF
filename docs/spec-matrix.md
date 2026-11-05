@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed member trailing-comment check](spec-backlog.md#2026-11-05-compressed-member-trailing-comment-boundaries)
+bounds trailing trivia at the member end and rejects comments crossing into
+the next member. Complete comments, whitespace, lazy access and existing EOF
+comment support remain. Native disagreement and unchanged corpus JSON are
+recorded; full byte-limited parsing and global source alignment remain separate.
+
 The [positive compressed object-number check](spec-backlog.md#2026-11-05-positive-compressed-object-numbers)
 rejects reserved zero identities before publishing a complete member index,
 including later zero entries during recovery. Positive numbers and empty

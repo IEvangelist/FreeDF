@@ -212,7 +212,8 @@ public sealed class PdfFile
             throw new PdfParseException("object stream member contains a keyword value");
         if (parsed is PdfRef)
             throw new PdfParseException("object stream member cannot be an indirect reference");
-        lexer.SkipWhite();
+        if (!lexer.SkipWhite(map.First + member.End))
+            throw new PdfParseException("object stream member comment crosses its boundary");
         if (lexer.Pos < map.First + member.End)
         {
             if (parsed is PdfDictionary && lexer.ReadObject(false) is PdfKeyword { Value: "stream" }
@@ -271,17 +272,10 @@ public sealed class PdfFile
             }
             previousNumber = (int)on.Value;
         }
-        while (lx.Pos < first)
-        {
-            if (PdfLexer.IsWhite(data[lx.Pos])) lx.Pos++;
-            else if (data[lx.Pos] == '%')
-            {
-                while (lx.Pos < first && data[lx.Pos] is not (10 or 13)) lx.Pos++;
-                if (lx.Pos == first && n > 0)
-                    throw new PdfParseException("object stream header comment crosses First");
-            }
-            else throw new PdfParseException("extra data after object stream header pairs");
-        }
+        if (!lx.SkipWhite(first) && n > 0)
+            throw new PdfParseException("object stream header comment crosses First");
+        if (lx.Pos != first)
+            throw new PdfParseException("extra data after object stream header pairs");
         if (stream.Dict.Get("Length") is PdfRef { Generation: 0 } length
             && (map.Members.ContainsKey(length.Number)
                 || Xref.TryGetValue(length.Number, out var lengthEntry) && lengthEntry is { InUse: true, Compressed: true }))
