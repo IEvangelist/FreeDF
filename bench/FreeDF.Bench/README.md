@@ -55,6 +55,38 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Cumulative xref source/framing/schema guards: 2026-11-05
+
+Same `XrefFilterBench` inputs and timed `PdfFile.Load` boundary as below.
+The retained exact-extent final at `6bb7f047` is the control. Final adds
+four changes together: external F source detection, strict xref framing,
+integer Length schema and type 0/1 generation limits. Decoder code is
+unchanged. This is a cumulative comparison, not a measurement of one
+individual guard or a universal parser throughput guarantee.
+
+Microsecond means with 99.9% confidence half-widths:
+
+| Filter / rows | Exact-extent control | Cumulative final |
+|---|---:|---:|
+| Flate / 64 | 7.674 +/- 0.7852 | 6.313 +/- 0.1659 |
+| Flate / 4,096 | 157.083 +/- 11.5712 | 138.068 +/- 4.2051 |
+| LZW / 64 | 5.987 +/- 0.6212 | 5.223 +/- 0.7208 |
+| LZW / 4,096 | 250.124 +/- 14.9056 | 247.459 +/- 31.6958 |
+
+Flate means fall about 18%/12% with non-overlapping intervals; both LZW
+intervals overlap. Direct XRef framing short-circuits the object-stream
+Type resolver, but these results do not isolate that mechanism from other
+guards, JIT layout or environmental variation. They do not prove zero
+overhead for any one check. Rounded managed allocation sizes are unchanged;
+raw counters, not equality/zero-allocation assumptions, are preserved.
+
+`results/2026-11-05-xref-guards-final.{md,csv}` retains the final run.
+Use `2026-11-05-xref-extent-extent-final.{md,csv}` for its existing control.
+The new `2026-11-05-xref-guards-gc.csv` retains all eight raw allocation/
+operation counts and input/decoded hashes with engine MVIDs. Matched
+hashes agree and engine MVIDs differ. The reproduction command/job is the
+same as the strict filter-completion section below.
+
 ## Exact xref row extents and rejected LZW experiment: 2026-11-05
 
 The decoded-row guard requires exact `Index`/`Size` times `W` length

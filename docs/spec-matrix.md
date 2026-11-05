@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref generation guard](spec-backlog.md#2026-11-05-cross-reference-stream-generation-bounds)
+explicitly recovers type 0/1 generation fields above 65,535 without
+narrowing type-2 member indexes or unknown types. Wide-header scanning
+limits and permissive reference-reader disagreement remain documented;
+free-list lifecycle and full grammar/identity parity remain open.
+
 The [xref Length-schema guard](spec-backlog.md#2026-11-05-cross-reference-length-value-schema)
 requires a resolved nonnegative integer instead of real truncation or
 silent missing/invalid-Length recovery. Valid integer spellings remain

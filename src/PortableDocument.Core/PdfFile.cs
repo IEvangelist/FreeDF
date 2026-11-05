@@ -563,6 +563,8 @@ public sealed class PdfFile
                 if (Xref.ContainsKey(num) && !(overridable?.Contains(num) ?? false)) continue;
                 var value = Field(1, 0);
                 var generationOrIndex = Field(2, 0);
+                if (type <= 1 && generationOrIndex > 65535)
+                    throw new PdfParseException("xref stream generation exceeds 65535");
                 if (type <= 2 && (generationOrIndex > int.MaxValue
                     || (type == 1 && value > long.MaxValue)
                     || (type == 2 && value > int.MaxValue)))

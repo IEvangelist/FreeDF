@@ -73,20 +73,20 @@ public class XrefStreamEntryRangeTests
     public void Existing_lossless_generation_range_is_preserved(int generation)
     {
         var file = PdfFile.Load(Build(1, third: (ulong)generation, generation: generation));
-        Assert.False(file.Repaired);
+        Assert.Equal(generation > 65535, file.Repaired);
         Assert.Equal(generation, file.Xref[2].GenOrIndex);
         Assert.Equal("Target", Assert.IsType<PdfDictionary>(file.Resolve(file.Catalog.Get("Probe"))).Get("Type").AsName());
-        Assert.False(file.Repaired);
+        Assert.Equal(generation > 65535, file.Repaired);
     }
 
     [Fact]
-    public void Int_generation_boundary_is_lossless_for_explicit_reference_lookup()
+    public void Int_generation_boundary_requires_repair_and_is_not_resurrected_by_header_scanning()
     {
         var file = PdfFile.Load(Build(1, third: int.MaxValue, generation: int.MaxValue));
-        Assert.False(file.Repaired);
-        Assert.Equal(int.MaxValue, file.Xref[2].GenOrIndex);
-        Assert.Equal("Target", Assert.IsType<PdfDictionary>(file.GetObject(new PdfRef(2, int.MaxValue))).Get("Type").AsName());
-        Assert.False(file.Repaired);
+        Assert.True(file.Repaired);
+        Assert.False(file.Xref.ContainsKey(2));
+        Assert.IsType<PdfNull>(file.GetObject(new PdfRef(2, int.MaxValue)));
+        Assert.True(file.Repaired);
     }
 
     [Fact]

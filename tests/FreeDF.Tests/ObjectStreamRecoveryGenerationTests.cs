@@ -74,7 +74,7 @@ public class ObjectStreamRecoveryGenerationTests
             var stream = Assert.IsType<PdfStream>(file.GetObject(new PdfRef(3, generation)));
             Assert.Equal("Example", stream.Dict.Get("Type").AsName());
             Assert.Equal(Encoding.ASCII.GetBytes("2 0 << /Type /Compressed >>"), stream.RawData);
-            Assert.Equal(forceRepair, file.Repaired);
+            Assert.Equal(forceRepair || generation > 65535, file.Repaired);
             Assert.False(file.Xref[2].Compressed);
         }
     }

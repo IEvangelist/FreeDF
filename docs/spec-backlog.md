@@ -4,6 +4,56 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 cross-reference stream generation bounds
+
+ISO 32000-1 7.5.4 (printed p41) sets the maximum generation number
+to 65,535. Table 18 (printed p51) defines the third field of type 0/1
+xref stream entries as a generation number, whereas type 2 uses it as
+an object-stream member index. The reader previously enforced only the
+implementation's signed-int storage bound.
+
+Type 0/1 generations above 65,535 now trigger explicit section recovery.
+Type 2 member indexes and unknown future entry types are not narrowed
+to that generation bound. Representable 0/65,534/65,535 generation values
+remain lossless; this is not permission to reuse a free entry at 65,535.
+Free-list/reuse lifecycle validation remains separate.
+
+Fifteen new controls cover six invalid generations, six representable
+boundaries and three wide type-2 indexes without requesting nonexistent
+members. The actual unchanged-production run with the older range tests
+is eight failures/24 passes. Older clean-index expectations for 99,999
+and int.MaxValue are corrected to explicit repair. Existing recovery
+can preserve five-digit 99,999 headers but skips ten-digit int.MaxValue
+headers: the latter cannot resurrect a target by scanning. One older
+ordinary-stream fixture also uses xref generation 99,999; its stream
+bytes stay exact after now-explicit recovery.
+
+Final focused xref/object-stream/reference-generation checks pass 1,272;
+full Release passes 20,126, zero failed/skipped. Solution and benchmark
+builds have zero warnings/errors. Fresh pinned 435-PDF/870-result complete
+validation JSON from rebuilt final UaDump is unchanged; all final
+benchmark/provider/parser correctness preflights pass.
+
+Fifteen independently encoded reference parser fixtures cover type 0/1
+generation boundaries and three high values, plus type-2 construction
+probes. PyMuPDF 2.0 / MuPDF 1.28.5 accepts all ten type 0/1 streams without
+repair: type 0 targets are null and type 1 targets are published, even for
+out-of-range generations. The five type-2 probes repair because their
+container number is zero; no member is requested. They are malformed
+construction probes, not conforming type-2 controls or evidence for a
+generation bound on member indexes. Disagreements remain explicit.
+No external PDFs are bundled.
+
+New cumulative XrefFilterBench measurements compare the retained exact-
+extent control (6bb7f047) with all four later guards: external F,
+framing, Length schema and generation range. Inputs/timed boundaries
+are unchanged. Both Flate cases are faster with non-overlapping 99.9%
+intervals; both LZW intervals overlap. Rounded managed allocation sizes
+are unchanged and raw counters are retained. The README documents exact
+results; this does not attribute a speedup to the generation check alone.
+Generic grammar/identity, classic-xref recovery and full parity remain
+separate work.
+
 ## 2026-11-05 cross-reference Length value schema
 
 ISO 32000-1 Table 5 (printed p20) requires an integer Length; its
