@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 signed compressed reference generations
+
+ISO 32000-1 7.3.3 (printed p14) permits an optional integer sign;
+7.3.10 (printed p21) requires a non-negative generation number.
+Member-only reference lookahead now accepts an explicit plus sign and
+negative zero while retaining the existing one-to-five-digit magnitude
+policy. Negative nonzero, repeated signs, non-integers and missing R
+separators still fail. Public/default reference recognition is unchanged.
+
+Twenty controls cover signed generation values in dictionaries/arrays,
+comment separators, malformed values and default compatibility.
+Initial selector: six failed/fourteen passed. Full Release: 19,045 passed,
+zero failed/skipped. Solution: zero errors/two retained machine-feed
+NU1507 warnings.
+
+Thirty-two native PDFs include twelve formerly rejected valid signed
+references that now expose Target, four unchanged unsigned positives and
+sixteen still-rejected malformed controls. MuPDF agrees on all sixteen
+positives, exposes Target for ten malformed controls and returns null for
+six; an exposed outer Type does not prove nested reference correctness.
+Unit assertions pin the nested PdfRef identities. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the
+reference-separator baseline.
+
+This corrects signed spelling in compressed values, not the general lexer,
+long zero-padding support, complete generation ranges or indirect-reference
+lifecycle validation. Those remain separate.
+
 ## 2026-11-05 compressed reference keyword separators
 
 ISO 32000-1 7.3.10 (printed p21) requires whitespace between each

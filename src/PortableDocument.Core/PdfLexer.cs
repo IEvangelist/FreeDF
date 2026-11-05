@@ -117,12 +117,16 @@ public sealed class PdfLexer
     {
         var save = Pos;
         SkipWhite();
+        var negative = false;
+        if (_objectStreamMember && Pos < _end && _d[Pos] is (byte)'+' or (byte)'-')
+            negative = _d[Pos++] == '-';
         var s = Pos;
         while (Pos < _end && _d[Pos] is >= (byte)'0' and <= (byte)'9') Pos++;
         if (Pos > s && Pos - s < 6)
         {
             var gen = 0;
             for (var i = s; i < Pos; i++) gen = gen * 10 + _d[i] - '0';
+            if (negative && gen != 0) { Pos = save; return null; }
             var generationEnd = Pos;
             SkipWhite();
             if (Pos < _end && _d[Pos] == 'R' && (Pos + 1 >= _d.Length || !IsRegular(_d[Pos + 1])))

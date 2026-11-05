@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [signed compressed reference-generation check](spec-backlog.md#2026-11-05-signed-compressed-reference-generations)
+accepts explicitly signed non-negative integer generations in compressed
+values while retaining default lexer behavior and existing digit limits.
+Exact nested reference identities and unchanged corpus JSON are recorded;
+complete range, zero-padding and lifecycle policy remain separate.
+
 The [compressed reference keyword-separator check](spec-backlog.md#2026-11-05-compressed-reference-keyword-separators)
 requires whitespace or a complete comment between a generation and R,
 including nested references. Default lexer recovery remains unchanged.
