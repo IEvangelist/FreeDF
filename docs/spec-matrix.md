@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [classic Size-schema guard](spec-backlog.md#2026-11-05-required-classic-trailer-size-schema)
+requires a direct positive integer in every classic section, including
+older incremental sections. Invalid metadata explicitly recovers;
+Size cardinality and out-of-Size filtering remain open. Cumulative
+timings and the unresolved allocation difference are retained.
+
 The [negative classic field guard](spec-backlog.md#2026-11-05-negative-classic-cross-reference-fields)
 explicitly recovers negative offsets and next-free object numbers before
 publishing an unrepaired index. Nonnegative compatibility behavior and

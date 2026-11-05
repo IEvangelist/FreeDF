@@ -4,6 +4,48 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 required classic trailer Size schema
+
+ISO 32000-1 Table 15 (printed p43) requires Size to be an integer and
+explicitly forbids an indirect reference. Classic trailer parsing
+previously ignored its presence/type. Each classic section now requires
+a direct positive integer before its trailer can contribute to indexed
+loading; malformed sections explicitly recover. The positive bound is
+necessary for a file with a root object and object-zero entry. No extra
+signed-int maximum, Size cardinality/highest-object validation or
+out-of-Size object filtering is introduced in this slice.
+
+Thirty-eight new controls cover missing/null/noninteger/negative/zero
+values, indirect dictionary and correctly indexed indirect positive
+integer targets, signed/padded direct integers, and older incremental
+sections. The initial 36-case unchanged-production baseline has 28
+failures/eight passes; the two indexed indirect-integer controls were
+added afterwards. Final focused checks pass 1,371; full Release passes
+20,222 with zero failed/skipped. Solution/benchmark builds have zero
+warnings/errors. Final rebuilt UaDump yields identical complete JSON
+across the pinned 435-PDF/870-result corpus; all provider/parser benchmark
+correctness preflights pass. No older fixture changes were needed.
+
+Thirty-eight independently encoded MuPDF 1.28.5 comparisons all expose
+the target. It repairs all fallback-syntax fixtures and fixed-width
+missing/null/negative/zero/non-numeric/indirect cases. It accepts fixed
+real-valued 3.0/3.5 Size and an older incremental 3.0 Size unrepaired,
+unlike the explicit integer requirement. Direct fixed-width integer
+controls remain clean. Reference differences are retained, and no
+external PDFs are bundled.
+
+Cumulative classic benchmarks compare retained generation-bound control
+0fd028a9 with both later negative-field and Size guards on identical
+inputs. All final means are higher and all 99.9% intervals overlap:
+fixed 64/4,096 rows 2.702/199.027 to 3.443/199.631 microseconds;
+fallback 4.216/318.211 to 5.517/335.045. No speedup, proven regression,
+zero-overhead or single-guard attribution is claimed. The 4,096-row
+fallback managed allocation observation rises by about 64 bytes/op
+(932,667.57 to 932,731.55); it is retained as an unresolved measured
+difference, not dismissed. Other rounded managed sizes are unchanged.
+Raw counters/hashes and before/final reports remain in the benchmark
+project; this does not establish native or retained memory usage.
+
 ## 2026-11-05 negative classic cross-reference fields
 
 ISO 32000-1 7.5.4 (printed p41) defines the first field as either a

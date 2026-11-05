@@ -9,6 +9,37 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Cumulative classic negative-field and Size guards: 2026-11-05
+
+The same `XrefClassicBench` inputs and fresh-load timed boundary compare
+the retained generation-bound final (production 0fd028a9) with the later
+negative-offset/free-number guard plus direct-positive-integer Size
+schema guard. Decoder and fixture code are unchanged. Identical lengths/
+SHA256 and distinct engine MVIDs are verified. Settings and environment
+match the generation run below; final timing is isolated from this
+slice's test/corpus workloads.
+
+| Rows / path | Generation control +/- 99.9% half-width (us) | Cumulative final (us) |
+|---|---:|---:|
+| 64 / fixed | 2.702 +/- 0.0278 | 3.443 +/- 0.8154 |
+| 4,096 / fixed | 199.027 +/- 3.6679 | 199.631 +/- 3.4871 |
+| 64 / fallback compatibility | 4.216 +/- 0.0825 | 5.517 +/- 1.3823 |
+| 4,096 / fallback compatibility | 318.211 +/- 5.3483 | 335.045 +/- 13.1715 |
+
+All final means increase, all confidence intervals overlap. These results
+do not establish speedup, regression, zero overhead or individual-guard
+causality. Fallback compatibility input is not conforming table syntax.
+The 4,096-row fallback managed allocation observation increases about
+64 bytes/op (932,667.57 to 932,731.55, rounded 910.81 to 910.87 KB).
+This difference is unresolved and retained, not asserted unchanged or
+attributed without measurement. Other rounded managed sizes are unchanged;
+none establishes native/retained memory usage.
+
+[Retained control](results/2026-11-05-xref-classic-bound-final.md),
+[cumulative final](results/2026-11-05-xref-classic-size-final.md),
+matching CSV and [eight raw GC/input identity rows](results/2026-11-05-xref-classic-size-gc.csv)
+preserve the full observations.
+
 ## Classic xref generation bound: 2026-11-05
 
 `XrefClassicBench` times fresh `PdfFile.Load` for 64/4,096-row classic

@@ -500,7 +500,10 @@ public sealed class PdfFile
                     if (!Xref.ContainsKey(num)) { Xref[num] = new XrefEntry(k.Value == "n", false, off.Value, (int)gen.Value); if (k.Value != "n") _tableFree.Add(num); }
                 }
             }
-            return lx.ReadObject() as PdfDictionary ?? throw new PdfParseException("bad trailer");
+            var trailer = lx.ReadObject() as PdfDictionary ?? throw new PdfParseException("bad trailer");
+            if (trailer.Get("Size") is not PdfInteger { Value: > 0 })
+                throw new PdfParseException("classic trailer Size must be a direct positive integer");
+            return trailer;
         }
         var obj = LoadAt(pos, -1);
         if (obj is not PdfStream xs || xs.Dict.Get("Type").AsName() != "XRef") throw new PdfParseException("not an xref stream");
