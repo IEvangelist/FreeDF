@@ -4,6 +4,60 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 optional-content intent participation
+
+ISO 32000-1 8.11.2.3 (printed p225), Table 98 (p222) and Table 101
+(p229) distinguish a group's ON/OFF state from whether that group affects
+visibility in the selected configuration. Group/configuration Intent
+defaults to View; configuration All matches every intent, and an empty
+configuration array means no group contributes. The default configuration
+must use View, so Design/All/empty selection controls use named alternates.
+
+The shared interpreter now caches Ignored/On/Off contributions per group.
+Nonmatching groups are omitted from all four membership policies, including
+single-dictionary membership. Visibility expressions carry a separate
+no-contribution result through Not and omit it from And/Or; an expression
+with no contributing groups is visible. This is not substitution of ON
+for an ignored operand, which would incorrectly hide Not/AnyOff/AllOff
+content. Every expression operand is still traversed and existing invalid
+expression/resource-limit diagnostics remain. Intent is selected from the
+interactive state's configuration when present, not silently from default D.
+Public IsVisible, manual changes, radio groups and locks retain their
+existing ON/OFF-state semantics, now clarified in API documentation.
+
+Thirty-two initial controls gave 22 failures/10 passes on unchanged
+production after correcting a test-only assumption that PdfWriter preserves
+input object numbers. The final 38 cases include omitted/null/nonexistent
+intent entries, names/arrays/indirection, View/Design/All/empty selections,
+all policies, nested expressions, state overrides/radio locks and explicit
+malformed-intent diagnostics. Rendering controls cover marked content,
+Forms, image XObjects and annotation appearances through named options,
+explicit state and the direct interpreter. Invalid scalar intents warn and
+recover as View; invalid array elements warn and are ignored. These are
+reader recovery choices, not normative acceptance of invalid schemas.
+
+Final focused checks pass 276; full Release passes 19,671, zero failed/
+skipped; the solution builds with zero warnings/errors. Fresh pinned
+435-PDF/870-result complete validation JSON is unchanged (not a rendering
+corpus). Twelve independently encoded native controls additionally match
+complete 200x200 RGB buffers and warning dispositions. PyMuPDF 2.0 /
+MuPDF 1.28.5 agrees on seven, disagreeing on direct Design/OFF, three
+single-ignored-group policies and mixed Or with ignored-ON/participating-OFF.
+Its acceptance/output is retained as a disagreement, not spec authority.
+No external PDFs are bundled.
+
+Matched default-intent membership measurements retain identical benchmark
+source, four input hashes and fill counts. All variants allocate exactly
+143,552 managed B/interpretation. An intermediate nullable-cache variant
+had higher means and is retained; the final compact enum cache measures
+85.04/85.94/86.69/87.03 us against 84.29/85.56/86.76/83.96 us control
+(AllOff/AllOn/AnyOff/AnyOn). Every control/final error interval overlaps;
+this is not evidence of a speedup or proof of zero CPU overhead.
+The [benchmark record](../bench/FreeDF.Bench/README.md#optional-content-intent-compatibility-cost-2026-11-05)
+retains all three reports and exact raw GC counts. No dedicated excluded-
+intent or VE timing is claimed. Broader schema/usage/lifecycle and complete
+optional-content/PDF parity remain open.
+
 ## 2026-11-05 null visibility-expression fallback
 
 ISO 32000-1 7.3.7 and 7.3.9 (printed pp18/21) make null dictionary

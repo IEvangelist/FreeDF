@@ -111,6 +111,10 @@ public sealed class OptionalContentState
         return _locked.Contains(group);
     }
 
+    /// <summary>
+    /// Returns the group's ON/OFF state, including UI overrides and usage rules.
+    /// Configuration intent separately determines whether that state affects rendered content.
+    /// </summary>
     public bool IsVisible(PdfDictionary group,
         ContentInterpreter.OptionalContentEvent displayEvent = ContentInterpreter.OptionalContentEvent.View, double zoom = 1,
         OptionalContentContext? context = null)

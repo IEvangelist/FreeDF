@@ -55,6 +55,46 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Optional-content intent compatibility cost: 2026-11-05
+
+The intent-participation correction is measured against preceding production
+`4a8e9c569d671e44b30f61002df733abf168aa09`, captured before implementation.
+It uses the unchanged four `OptionalContentMembershipBench` cases described
+below: fresh interpreter/counting backend, already-open input, 128 sections,
+16 groups, default View intents. Benchmark source, exact input hashes and
+expected fill counts match. Intent matching occurs on the first group
+lookup and is cached alongside its rendering contribution; public layer
+state is unchanged. This measures compatibility-path cost, not excluded
+Design groups, visibility-expression performance, PDF open or raster output.
+
+| Policy | Control mean +/- error (us) | Intermediate nullable cache (us) | Final enum cache (us) |
+|---|---:|---:|---:|
+| AllOff | 84.29 +/- 3.721 | 88.24 +/- 0.642 | 85.04 +/- 2.506 |
+| AllOn | 85.56 +/- 1.481 | 103.84 +/- 19.645 | 85.94 +/- 2.968 |
+| AnyOff | 86.76 +/- 4.130 | 92.88 +/- 4.653 | 86.69 +/- 2.534 |
+| AnyOn | 83.96 +/- 0.569 | 92.28 +/- 5.026 | 87.03 +/- 3.760 |
+
+All twelve workloads allocate exactly **143,552 managed B/interpretation**,
+derived from raw GC totals/operation counts rather than rounded KB display.
+The intermediate run is retained rather than discarded for its higher
+means/variance. Final means range from about 0.1% lower to 3.7% higher than
+control, with overlapping control/final error intervals for every case.
+This establishes neither a speedup nor zero CPU overhead. The runs use
+three warmups/eight 500-ms iterations/one launch on the same runtime/machine
+without exclusive-load guarantees; BDN outlier handling remains in reports.
+
+Reports: [control](results/2026-11-05-ocg-intent-control.md)
+([CSV](results/2026-11-05-ocg-intent-control.csv)),
+[intermediate](results/2026-11-05-ocg-intent-intermediate.md)
+([CSV](results/2026-11-05-ocg-intent-intermediate.csv)),
+[final](results/2026-11-05-ocg-intent-final.md)
+([CSV](results/2026-11-05-ocg-intent-final.csv)),
+[raw GC/input/engine diagnostic CSV](results/2026-11-05-ocg-intent-gc.csv).
+The intermediate representation was not committed as a separate production
+revision; its measurements/child engine identity are retained, not an
+independently reproducible source revision or isolated causal experiment.
+No provider rankings or new event/Zoom measurements are inferred.
+
 ## Optional-content membership interpretation: 2026-11-05
 
 `OptionalContentMembershipBench.Interpret` measures a fresh interpreter and

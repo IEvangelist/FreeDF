@@ -43,7 +43,8 @@ public sealed class ContentInterpreter
     readonly Dictionary<PdfDictionary, PdfFont> _fonts = new(ReferenceEqualityComparer.Instance);
     readonly Stack<GState> _stack = new();
     readonly HashSet<PdfDictionary> _activeForms = new(ReferenceEqualityComparer.Instance);
-    readonly Dictionary<PdfDictionary, bool> _optionalContentOff = new(ReferenceEqualityComparer.Instance);
+    enum OptionalContentVisibility { Ignored, On, Off }
+    readonly Dictionary<PdfDictionary, OptionalContentVisibility> _optionalContentVisibility = new(ReferenceEqualityComparer.Instance);
     readonly Dictionary<PdfObject, TransferFunctions?> _transferCache = new(ReferenceEqualityComparer.Instance);
     GState _gs = new();
     PathData _path = new();
@@ -92,7 +93,7 @@ public sealed class ContentInterpreter
     /// <summary>Renders a page. When placed as an element of another page, /I controls isolation and a non-isolated page inherits its backdrop's colour space (11.4.7, 11.6.6).</summary>
     public void Render(PdfPage page, Matrix baseMatrix, bool asPageElement)
     {
-        _optionalContentOff.Clear();
+        _optionalContentVisibility.Clear();
         if (OptionalContentState is { } state)
         {
             if (!ReferenceEquals(state.File, _f))
@@ -643,7 +644,7 @@ public sealed class ContentInterpreter
 
     bool IsHidden(PdfDictionary oc)
     {
-        var cfg = OptionalContentConfiguration ?? DefaultOptionalContentConfiguration
+        var cfg = OptionalContentState?.Configuration ?? OptionalContentConfiguration ?? DefaultOptionalContentConfiguration
             ?? R(R(_f.Catalog.Get("OCProperties")) is PdfDictionary ocp ? ocp.Get("D") : null) as PdfDictionary;
         var type = R(oc.Get("Type")).AsName();
         if (type == "OCMD")
@@ -657,7 +658,7 @@ public sealed class ContentInterpreter
                     Warn("invalid optional-content visibility expression");
                     return true;
                 }
-                return !expressionVisible;
+                return expressionVisible == false;
             }
             // Visibility policy AnyOn (default) / AllOn / AnyOff / AllOff over OCGs.
             var ocgs = R(oc.Get("OCGs"));
@@ -668,25 +669,26 @@ public sealed class ContentInterpreter
                 foreach (var member in groups.Items)
                     if (R(member) is PdfDictionary group)
                     {
-                        var off = OcgOff(group, cfg);
-                        anyOn |= !off;
-                        anyOff |= off;
+                        var visibility = OcgVisibility(group, cfg);
+                        anyOn |= visibility == OptionalContentVisibility.On;
+                        anyOff |= visibility == OptionalContentVisibility.Off;
                     }
             }
             else if (ocgs is PdfDictionary group)
             {
-                anyOff = OcgOff(group, cfg);
-                anyOn = !anyOff;
+                var visibility = OcgVisibility(group, cfg);
+                anyOff = visibility == OptionalContentVisibility.Off;
+                anyOn = visibility == OptionalContentVisibility.On;
             }
             if (!anyOn && !anyOff) return false;
             var pol = R(oc.Get("P")).AsName() ?? "AnyOn";
             var visible = pol switch { "AllOn" => !anyOff, "AnyOff" => anyOff, "AllOff" => !anyOn, _ => anyOn };
             return !visible;
         }
-        return OcgOff(oc, cfg);
+        return OcgVisibility(oc, cfg) == OptionalContentVisibility.Off;
     }
 
-    bool EvaluateVisibilityExpression(PdfObject? value, PdfDictionary? cfg, int depth, ref int budget, out bool valid)
+    bool? EvaluateVisibilityExpression(PdfObject? value, PdfDictionary? cfg, int depth, ref int budget, out bool valid)
     {
         valid = true;
         if (depth > 64 || ++budget > 10_000)
@@ -703,7 +705,12 @@ public sealed class ContentInterpreter
                 valid = false;
                 return false;
             }
-            return !OcgOff(ocg, cfg);
+            return OcgVisibility(ocg, cfg) switch
+            {
+                OptionalContentVisibility.Ignored => null,
+                OptionalContentVisibility.On => true,
+                _ => false
+            };
         }
         if (expression is not PdfArray array || array.Count < 2 || R(array[0]).AsName() is not { } op)
         {
@@ -719,7 +726,7 @@ public sealed class ContentInterpreter
                 return false;
             }
             var child = EvaluateVisibilityExpression(array[1], cfg, depth + 1, ref budget, out valid);
-            return valid && !child;
+            return valid ? !child : false;
         }
         if (op is not ("And" or "Or"))
         {
@@ -728,25 +735,74 @@ public sealed class ContentInterpreter
         }
 
         var result = op == "And";
+        var participates = false;
         for (var i = 1; i < array.Count; i++)
         {
             var child = EvaluateVisibilityExpression(array[i], cfg, depth + 1, ref budget, out var childValid);
             if (!childValid) valid = false;
-            result = op == "And" ? result && child : result || child;
+            if (child is { } visible)
+            {
+                participates = true;
+                result = op == "And" ? result && visible : result || visible;
+            }
         }
-        return valid && result;
+        return !valid ? false : participates ? result : null;
     }
 
-    bool OcgOff(PdfDictionary ocg, PdfDictionary? cfg)
+    OptionalContentVisibility OcgVisibility(PdfDictionary ocg, PdfDictionary? cfg)
     {
-        if (_optionalContentOff.TryGetValue(ocg, out var off)) return off;
-        off = OptionalContentState is { } state
+        if (_optionalContentVisibility.TryGetValue(ocg, out var visibility)) return visibility;
+        // An ignored group has no visibility contribution, independently of its ON/OFF state.
+        if (!MatchesOptionalContentIntent(ocg, cfg))
+        {
+            _optionalContentVisibility[ocg] = OptionalContentVisibility.Ignored;
+            return OptionalContentVisibility.Ignored;
+        }
+        var off = OptionalContentState is { } state
             ? !state.IsVisibleCore(ocg, OptionalContentDisplayEvent, OptionalContentZoom, OptionalContentContext)
             : global::PortableDocument.Content.OptionalContentState.IsOff(
                 _f, ocg, cfg, DefaultOptionalContentConfiguration, OptionalContentDisplayEvent, OptionalContentZoom,
                 OptionalContentContext, Warn);
-        _optionalContentOff[ocg] = off;
-        return off;
+        visibility = off ? OptionalContentVisibility.Off : OptionalContentVisibility.On;
+        _optionalContentVisibility[ocg] = visibility;
+        return visibility;
+    }
+
+    bool MatchesOptionalContentIntent(PdfDictionary group, PdfDictionary? configuration)
+    {
+        PdfObject? ReadIntent(PdfDictionary? dictionary)
+        {
+            var value = R(dictionary?.Get("Intent"));
+            if (value is null or PdfNull or PdfName or PdfArray) return value;
+            Warn("invalid optional-content Intent: expected a name or array; using View");
+            return null;
+        }
+
+        bool Includes(PdfObject? value, string name)
+        {
+            if (value is null or PdfNull) return name == "View";
+            if (value is PdfName intent) return intent.Value == name;
+            foreach (var item in ((PdfArray)value).Items)
+                if (R(item) is PdfName candidate)
+                {
+                    if (candidate.Value == name) return true;
+                }
+                else Warn("invalid optional-content Intent array member: expected a name");
+            return false;
+        }
+
+        var selected = ReadIntent(configuration);
+        if (Includes(selected, "All")) return true;
+        var intent = ReadIntent(group);
+        if (intent is null or PdfNull) return Includes(selected, "View");
+        if (intent is PdfName name) return Includes(selected, name.Value);
+        foreach (var item in ((PdfArray)intent).Items)
+            if (R(item) is PdfName candidate)
+            {
+                if (Includes(selected, candidate.Value)) return true;
+            }
+            else Warn("invalid optional-content Intent array member: expected a name");
+        return false;
     }
 
     void NextLine() { _tlm = Matrix.Translate(0, -_gs.Leading).Then(_tlm); _tm = _tlm; }

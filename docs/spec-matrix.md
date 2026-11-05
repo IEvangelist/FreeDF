@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [intent-participation correction](spec-backlog.md#2026-11-05-optional-content-intent-participation)
+keeps layer ON/OFF state separate from configuration intent matching across
+marked content, Forms, images and annotations. Nonmatching groups have no
+contribution to membership policies or nested expressions; empty intent
+selection makes valid optional content visible. Broader lifecycle/schema
+parity remains open, and measured default-path overhead is reported explicitly.
+
 The [null visibility-expression fallback](spec-backlog.md#2026-11-05-null-visibility-expression-fallback)
 treats resolved null VE entries as absent and uses membership policy.
 Real expressions still take precedence; invalid non-null expressions retain
