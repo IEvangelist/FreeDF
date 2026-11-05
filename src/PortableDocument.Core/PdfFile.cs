@@ -423,7 +423,11 @@ public sealed class PdfFile
             || marker + 9 < Data.Length && PdfLexer.IsRegular(Data[marker + 9]))
             throw new PdfParseException("bad startxref token boundary");
         var lx = new PdfLexer(Data, marker + 9);
-        if (lx.ReadObject(false) is not PdfInteger so) throw new PdfParseException("bad startxref");
+        lx.SkipWhite();
+        var offsetStart = lx.Pos;
+        if (lx.ReadObject(false) is not PdfInteger so
+            || !PdfLexer.IsNumericToken(Data.AsSpan(offsetStart, lx.Pos - offsetStart)))
+            throw new PdfParseException("bad startxref");
         var visited = new HashSet<long>();
         var pos = so.Value;
         var first = true;

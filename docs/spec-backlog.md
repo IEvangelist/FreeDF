@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 startxref offset integer syntax
+
+ISO 32000-1 7.3.3 (printed p14) defines an integer as decimal digits
+optionally preceded by a single sign; 7.5.5 (printed p42) requires the
+footer byte offset. The footer previously used ordinary numeric recovery
+and accepted repeated plus signs as an unrepaired offset.
+
+The footer now combines its existing integer-type requirement with the
+existing strict numeric-token predicate, without allocating a token
+string or changing ordinary lexer recovery. Single plus signs and leading
+zeroes remain accepted. This does not broaden footer line/EOF validation,
+remove ordinary recovery, or change numeric representation limits.
+
+Thirty-one controls cover twenty malformed footer tokens, eight supported
+classic/stream spellings and three ordinary repeated-sign recovery cases.
+The actual unchanged-production baseline is six failures/25 passes:
+three repeated-plus variants per xref form were previously accepted;
+the other malformed footer forms already repaired. Final focused checks
+pass 1,558; full Release passes 20,309, zero failed/skipped. Solution and
+benchmark builds have zero warnings/errors; final rebuilt UaDump yields
+identical complete JSON across the pinned 435-PDF/870-result corpus.
+All provider/parser benchmark correctness preflights pass.
+
+Twenty-eight independently encoded MuPDF 1.28.5 comparisons all expose
+targets. Repeated/mixed signs and embedded signs repair; real offsets
+and numeric tokens with trailing letters are accepted unrepaired. Valid
+single-plus spellings repair while unsigned/zero-padded controls stay
+clean. These differences remain explicit, with no external PDFs bundled.
+No new timing/allocation claim is made for this guard; the separate
+historical allocation investigation below does not measure it.
+
 ## 2026-11-05 bounded classic allocation diagnostic
 
 The retained approximately 64-byte/op large-fallback BDN increase was

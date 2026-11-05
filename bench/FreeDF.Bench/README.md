@@ -93,7 +93,8 @@ matching CSV and [eight raw GC/input identity rows](results/2026-11-05-xref-clas
 preserve the full observations.
 
 Both classic timing series predate the later xref/startxref keyword-
-boundary checks; no new timing or allocation claim is made for them.
+boundary and footer integer-syntax checks; no new timing or allocation
+claim is made for those guards.
 
 ## Classic xref generation bound: 2026-11-05
 

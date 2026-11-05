@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [startxref integer-syntax guard](spec-backlog.md#2026-11-05-startxref-offset-integer-syntax)
+rejects repeated signs in footer offsets using the existing strict token
+predicate. Ordinary numeric recovery and valid single-sign/padded
+integer spellings remain unchanged; wider footer framing stays open.
+
 The [startxref token-boundary guard](spec-backlog.md#2026-11-05-startxref-token-boundaries)
 checks both sides of the selected last marker, explicitly recovering
 joined regular-character tokens without selecting an earlier revision.

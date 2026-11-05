@@ -153,7 +153,7 @@ public sealed class PdfLexer
             throw new PdfParseException("object stream member exceeds its boundary");
     }
 
-    static bool IsNumericToken(ReadOnlySpan<byte> token)
+    internal static bool IsNumericToken(ReadOnlySpan<byte> token)
     {
         var i = 0;
         if (i < token.Length && token[i] is (byte)'+' or (byte)'-') i++;
