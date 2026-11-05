@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream header padding
+
+ISO 32000-1 7.5.7 (printed p46) requires N integer pairs followed by
+N object values and identifies First as the first object's offset; 7.2.3
+(printed p13) treats comments as whitespace. The complete header reader
+now permits only whitespace and completed comments between the final pair
+and First. Extra values/keywords or a header comment crossing First cannot
+be ignored before member indexing.
+
+Sixteen controls cover hidden values/pairs/keywords/containers, unfinished
+comments, all PDF whitespace bytes, CR/LF/CRLF comments, normal/forced
+repair and preservation of an uncompressed identity. The initial selector
+had eleven failures. Full Release: 18,939 passed, zero failed/skipped.
+Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Twenty-eight native PDFs preserve ten valid target outputs unchanged and
+remove eighteen previously accepted targets, ending repaired/null. MuPDF
+still returns all eighteen malformed targets and agrees on all ten positives.
+Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged against
+the first-offset baseline.
+
+This scans the header gap without parsing member bodies or changing their
+lazy isolation. It is not complete source-token alignment, a byte-limited
+member lexer or parser-wide resource enforcement.
+
 ## 2026-11-05 first compressed member relative offset
 
 ISO 32000-1 7.5.7 (printed p46) defines header offsets relative to the

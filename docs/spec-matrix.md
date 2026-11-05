@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream header padding check](spec-backlog.md#2026-11-05-object-stream-header-padding)
+permits only whitespace and completed comments between header pairs and First,
+preventing ignored tokens or a comment crossing the first member boundary.
+Lazy isolation, valid padding and corpus JSON remain unchanged. Reference
+disagreements, remaining source alignment and resource limits are explicit.
+
 The [first compressed member offset check](spec-backlog.md#2026-11-05-first-compressed-member-relative-offset)
 requires the initial header offset to be zero relative to First before
 lazy/recovery indexing. Existing zero-offset leading trivia remains supported.
