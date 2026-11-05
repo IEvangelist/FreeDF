@@ -42,18 +42,27 @@ internal static class PdfUADeepChecks
             foreach (var o in c.AllObjects())
                 if (o is PdfStream rs && rs.Dict.Get("Ref") is not null && f.Resolve(rs.Dict.Get("Subtype")).AsName() == "Form")
                 { c.Add("PDFUA-XOBJECT-REF", ValidationSeverity.Error, "reference XObjects (Form XObject with /Ref) are not permitted", "ISO 14289-1 7.20"); break; }
-        var reported = false;
+        bool reported = false, fileIncomplete = false;
         foreach (var o in c.AllObjects())
         {
             if (reported) break;
-            if (o is PdfDictionary d && d.Get("EF") is not null && f.Resolve(d.Get("Type")).AsName() is "Filespec" or null
-                && (c.Part != 1 || f.Resolve(d.Get("EF")) is not (null or PdfNull))
+            if (o is PdfDictionary d && f.Resolve(d.Get("Type")).AsName() is "Filespec" or null
+                && PdfUA2Checks.ResolveBounded(f, d.Get("EF"), FileIncomplete) is not (null or PdfNull)
                 && !(f.Resolve(d.Get("F")) is PdfString { Bytes.Length: > 0 }
                     && f.Resolve(d.Get("UF")) is PdfString { Bytes.Length: > 0 } uf && (c.Part != 1 || uf.Text.Length > 0)))
             { reported = true; c.Add("PDFUA-FILESPEC-UF", ValidationSeverity.Error, "embedded-file specification must have both /F and /UF", Clause(c, "7.11", "8.9")); }
         }
         if (c.Doc.Pages.Count > 20 && f.Resolve(f.Catalog.Get("Outlines")) is not PdfDictionary)
             c.Add("PDFUA-BOOKMARKS", ValidationSeverity.Info, $"document has {c.Doc.Pages.Count} pages and no /Outlines (navigation aid recommended; advisory only, no veraPDF counterpart)");
+
+        void FileIncomplete()
+        {
+            if (fileIncomplete) return;
+            fileIncomplete = true;
+            c.Add("PDFUA-FILESPEC-INCOMPLETE", ValidationSeverity.Error,
+                "embedded-file specification inspection encountered a cyclic or bounded /EF reference",
+                Clause(c, "7.11", "8.9"));
+        }
     }
 
     static void DynamicXfa(ValidationContext c)

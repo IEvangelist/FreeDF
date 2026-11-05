@@ -4,6 +4,16 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [file-description/name-tree correction](spec-backlog.md#2026-11-05-file-descriptions-and-null-embedded-file-entries)
+scopes UA-2 Desc to EmbeddedFiles name-tree membership, makes null EF
+equivalent to omission and reports bounded/cyclic inspection explicitly.
+All 54 native UA-2 description-rule results agree; 104/108 native
+whole-file verdicts agree, with four retained filename/null disagreements.
+Two missed violations and 13 false positives are corrected. Fresh
+435-PDF/870-result verdicts are unchanged; seven irrelevant Desc findings
+are removed. This is not complete name-tree syntax or file-specification
+conformance.
+
 The [UA-2 namespace-aware Form widget limit](spec-backlog.md#2026-11-05-ua-2-namespace-aware-form-widget-cardinality)
 applies the existing direct-widget count to resolved Form roles rather
 than foreign names. Twenty-seven native controls give exact-rule/file

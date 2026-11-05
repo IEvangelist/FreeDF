@@ -90,6 +90,7 @@ class RuleOverlapTests(unittest.TestCase):
         (2, "8.10.1-1", "PDFUA-FORM-STRUCT"),
         (2, "8.10.1-2", "PDFUA2-FORM-WIDGETS"),
         (2, "8.10.1-3", "PDFUA2-XFA"),
+        (2, "8.14.1-1", "PDFUA2-FILESPEC-DESC"),
     ]
 
     def overlap(self, part, rule, errors):

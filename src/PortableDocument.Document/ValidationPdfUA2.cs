@@ -39,18 +39,73 @@ internal static class PdfUA2Checks
         return false;
     }
 
-    /// <summary>8.14.1-1 (Desc on embedded-file specifications) and 8.9.2.4.10-1 (AFRelationship on file-attachment targets). Specifications are found by scanning all objects, a superset of the EmbeddedFiles name tree.</summary>
+    /// <summary>8.14.1-1 (Desc on EmbeddedFiles name-tree specifications) and 8.9.2.4.10-1 (AFRelationship on file-attachment targets).</summary>
     static void Files(ValidationContext c)
     {
         var f = c.F;
-        bool desc = false, rel = false;
+        FileDescriptions(c);
+        bool rel = false;
         foreach (var o in c.AllObjects())
         {
             if (o is not PdfDictionary d) continue;
-            if (!desc && d.Get("EF") is not null && f.Resolve(d.Get("Type")).AsName() is "Filespec" or null && f.Resolve(d.Get("Desc")) is not PdfString)
-            { desc = true; c.Add("PDFUA2-FILESPEC-DESC", ValidationSeverity.Error, "an embedded-file specification has no /Desc (veraPDF PDFUA-2 8.14.1-1)", "ISO 14289-2 8.14.1"); }
             if (!rel && f.Resolve(d.Get("Subtype")).AsName() == "FileAttachment" && f.Resolve(d.Get("FS")) is PdfDictionary fs && fs.Get("AFRelationship") is null)
             { rel = true; c.Add("PDFUA2-FILEATTACH-AFRELATIONSHIP", ValidationSeverity.Error, "a file-attachment annotation's file specification has no /AFRelationship (veraPDF PDFUA-2 8.9.2.4.10-1)", "ISO 14289-2 8.9.2.4.10"); }
+        }
+    }
+
+    static void FileDescriptions(ValidationContext c)
+    {
+        var f = c.F;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        int work = 0;
+        bool incomplete = false, missing = false;
+        PdfObject? Resolve(PdfObject? value) => ResolveBounded(f, value, Incomplete);
+        var names = Resolve(f.Catalog.Get("Names"));
+        if (names is null or PdfNull) return;
+        if (names is not PdfDictionary dictionary) Incomplete();
+        else if (Resolve(dictionary.Get("EmbeddedFiles")) is { } tree && tree is not PdfNull) Visit(tree, 0);
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FILES-INCOMPLETE", ValidationSeverity.Error,
+                "EmbeddedFiles name-tree inspection is cyclic, malformed or bounded; file descriptions could not be fully checked",
+                "ISO 14289-2 8.14.1");
+        }
+
+        void Visit(PdfObject raw, int depth)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork || depth > PdfTreeDiagnostics.MaxDepth) { Incomplete(); return; }
+            if (Resolve(raw) is not PdfDictionary node || !seen.Add(node)) { Incomplete(); return; }
+            var names = Resolve(node.Get("Names"));
+            if (names is PdfArray pairs)
+            {
+                if (pairs.Count % 2 != 0) Incomplete();
+                for (var i = 0; i + 1 < pairs.Count; i += 2)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+                    if (Resolve(pairs[i]) is not PdfString || Resolve(pairs[i + 1]) is not PdfDictionary spec)
+                    { Incomplete(); continue; }
+                    var description = Resolve(spec.Get("Desc"));
+                    if (!missing && description is not PdfString)
+                    {
+                        missing = true;
+                        c.Add("PDFUA2-FILESPEC-DESC", ValidationSeverity.Error,
+                            "a file specification in the EmbeddedFiles name tree has no /Desc (veraPDF PDFUA-2 8.14.1-1)",
+                            "ISO 14289-2 8.14.1");
+                    }
+                }
+            }
+            else if (names is not (null or PdfNull)) Incomplete();
+            var kids = Resolve(node.Get("Kids"));
+            if (kids is PdfArray children)
+                foreach (var child in children.Items)
+                {
+                    Visit(child, depth + 1);
+                    if (work > PdfTreeDiagnostics.MaxWork) return;
+                }
+            else if (kids is not (null or PdfNull)) Incomplete();
         }
     }
 
@@ -219,7 +274,7 @@ internal static class PdfUA2Checks
                 PdfObject? destination;
                 if (annotation.Get("A") is { } rawAction)
                 {
-                    if (ResolveDestination(f, rawAction, Incomplete) is not PdfDictionary action || f.Resolve(action.Get("S")).AsName() != "GoTo") continue;
+                    if (ResolveBounded(f, rawAction, Incomplete) is not PdfDictionary action || f.Resolve(action.Get("S")).AsName() != "GoTo") continue;
                     destination = action.Get("SD") ?? action.Get("D");
                 }
                 else destination = annotation.Get("Dest");
@@ -238,7 +293,7 @@ internal static class PdfUA2Checks
             "a reference, destination or name-tree traversal boundary prevented comparison of Link annotation targets", "ISO 14289-2 8.2.5.20");
     }
 
-    static PdfObject? ResolveDestination(PdfFile file, PdfObject? value, Action incomplete)
+    internal static PdfObject? ResolveBounded(PdfFile file, PdfObject? value, Action incomplete)
     {
         var seen = new HashSet<int>();
         while (value is PdfRef reference)
@@ -254,7 +309,7 @@ internal static class PdfUA2Checks
         var seen = new HashSet<PdfObject>(ReferenceEqualityComparer.Instance);
         for (var depth = 0; destination is not null && depth < MaxRoleDepth; depth++)
         {
-            var value = ResolveDestination(c.F, destination, incomplete);
+            var value = ResolveBounded(c.F, destination, incomplete);
             if (value is null or PdfNull) return null;
             if (!seen.Add(value)) { incomplete(); return null; }
             switch (value)
@@ -270,7 +325,7 @@ internal static class PdfUA2Checks
                     destination = dictionary.Get("SD") ?? dictionary.Get("D");
                     break;
                 case PdfArray { Count: > 0 } array:
-                    return ResolveDestination(c.F, array[0], incomplete) as PdfDictionary;
+                    return ResolveBounded(c.F, array[0], incomplete) as PdfDictionary;
                 default:
                     return null;
             }
@@ -284,7 +339,7 @@ internal static class PdfUA2Checks
     {
         var f = c.F;
         bool incomplete = false;
-        PdfObject? Resolve(PdfObject? value) => ResolveDestination(f, value, Incomplete);
+        PdfObject? Resolve(PdfObject? value) => ResolveBounded(f, value, Incomplete);
         bool PageTarget(PdfObject? destination) =>
             DestinationTarget(c, destination, Incomplete) is { } target && Resolve(target.Get("Type")).AsName() == "Page";
 

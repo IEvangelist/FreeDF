@@ -71,6 +71,13 @@ condition with namespace-aware Artifact exclusion. The separate
 label-or-Contents predicate remains incomplete; no model implementation
 or profile XML is bundled.
 
+The UA-2 Desc requirement's EmbeddedFiles name-tree membership boundary
+was cross-checked against the same CC BY 4.0 UA-2 profile, 8.14.1-1.
+The implementation replaces the EF-presence proxy with bounded tree
+inspection. Null EF handling follows primary ISO 32000-1 7.3.9; four
+measured filename/null reference disagreements remain explicitly recorded.
+No profile XML, runtime or external PDF artifacts are bundled.
+
 The UA-2 at-most-one-widget-per-Form fact was cross-checked against the
 same CC BY 4.0 UA-2 profile, 8.10.1-2. Its existing direct OBJR counting
 now uses namespace-aware Form resolution; no new grouping or descendant

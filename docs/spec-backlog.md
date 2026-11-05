@@ -4,6 +4,57 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 File descriptions and null embedded-file entries
+
+The UA-2 `PDFUA2-FILESPEC-DESC` check now inspects file specifications in
+the catalog's EmbeddedFiles name tree, rather than assuming every object
+with EF is in that tree. It requires Desc there even when EF is omitted,
+and does not require Desc merely because an orphan or associated-file
+dictionary has EF. This boundary follows the pinned veraPDF v1.30.3
+UA-2 profile, 8.14.1-1; full primary 8.14 remains unavailable in the
+public ISO preview. Existing Desc string/type policy is unchanged.
+
+The traversal reads only dictionaries/references, not embedded payloads.
+It reuses the existing bounded reference resolver and name-tree audit
+depth/work constants: 32 indirect references, depth 64 and 200,000 total
+node/pair work. Cycles, malformed entries and exhausted bounds produce
+one `PDFUA2-FILES-INCOMPLETE` Error while known missing descriptions
+remain reported. This is description inspection, not complete name-tree
+syntax validation. Limits, ordering and other tree semantics are not
+silently claimed as covered.
+
+The shared embedded-file F/UF check also treats missing, direct-null,
+indirect-null and nonexistent EF entries consistently under primary
+ISO 32000-1 7.3.9. Cyclic/depth-exhausted EF references produce the
+separate `PDFUA-FILESPEC-INCOMPLETE` Error, not apparent null/omission.
+Other real embedded-file filename requirements are retained.
+
+There are 140 scoped authored cases: 24 updated null-EF expectations
+and 116 new description/scope/boundary cases. The initial 124-case run
+had 19 failures before correction; expanded controls exposed four
+further unresolved-reference failures until bounded resolution was reused.
+Exact depth, reference and work boundaries, cyclic siblings, malformed
+pairs, both profiles and direct/nested name trees are covered.
+
+Of 108 independent native-profile controls, all 54 UA-2 description-rule
+results agree with the reference. Whole-file agreement is 104/108:
+90 clean positives and 14 negatives. Two missed description violations
+and 13 false-positive verdicts are corrected. Four existing disagreements
+remain explicit: two UA-1 indirect-null/dangling EF cases accepted under
+primary null equivalence, and two UA-2 real orphan embedded-file cases
+still rejected by the retained shared F/UF check while the reference
+accepts them. The latter lose only an irrelevant Desc finding, not their
+file rejection. All 108 corresponding UA-1 outputs are unchanged.
+
+Fresh measurement of all 435 public PDFs/870 profile results preserves
+every verdict and every UA-1 output. Seven UA-2 results lose only the
+irrelevant Desc finding: five cross-profile UA-1 attachment fixtures and
+two native UA-2 negatives that retain their namespace/attachment errors.
+Full Release suite: 13,768 passed, zero failed/skipped. Solution build:
+zero errors and two retained machine-feed NU1507 warnings. Reporting tool:
+20 passing tests, including the 8.14.1-1 family mapping. External evidence
+remains session-only; full PDF/UA parity is not claimed.
+
 ## 2026-11-05 UA-2 namespace-aware Form widget cardinality
 
 The existing `PDFUA2-FORM-WIDGETS` rule now selects Form structure

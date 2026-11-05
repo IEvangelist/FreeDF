@@ -1144,12 +1144,12 @@ public class DeepValidationTests
         foreach (var ef in new[] { "", "/EF null", "/EF 11 0 R", "/EF 99 0 R",
             "/EF << /F 10 0 R >>", "/EF 12 0 R" })
             yield return [part, names, ef,
-                !names && (part == 1 ? ef is "/EF << /F 10 0 R >>" or "/EF 12 0 R" : ef.Length > 0)];
+                !names && ef is "/EF << /F 10 0 R >>" or "/EF 12 0 R"];
     }
 
     [Theory]
     [MemberData(nameof(FileSpecificationEmbeddedEntryCases))]
-    public void Ua1NullEmbeddedFileEntryIsEquivalentToOmission(int part, bool names, string ef, bool missing)
+    public void UaNullEmbeddedFileEntryIsEquivalentToOmission(int part, bool names, string ef, bool missing)
     {
         var pdf = Ua(TaggedText, "8 0 R", extras:
             [Para, $"<< /Type /Filespec {(names ? "/F (a.txt) /UF (a.txt)" : "")} {ef} >>",
@@ -1158,6 +1158,144 @@ public class DeepValidationTests
             part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
         Assert.Equal(missing, report.Has("PDFUA-FILESPEC-UF"));
         Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    public static IEnumerable<object[]> FileDescriptionCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var location in new[] { "orphan", "associated", "name-tree", "nested" })
+        foreach (var ef in new[] { "", "/EF null", "/EF 11 0 R", "/EF 99 0 R",
+            "/EF << /F 10 0 R >>", "/EF 12 0 R" })
+        foreach (var description in new[] { "", "/Desc (description)" })
+            yield return [part, location, ef, description];
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, true)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, true)]
+    public void UaFileSpecificationReferenceBoundaryDoesNotBecomeNull(int part, int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(11, length).Select(n => n == 10 + length ? "null" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", extras:
+            new[] { Para, "<< /Type /Filespec /EF 11 0 R >>", "null" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(incomplete, report.Has("PDFUA-FILESPEC-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-FILESPEC-UF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFileSpecificationCyclicEmbeddedFileEntryIsIncomplete(int part)
+    {
+        var pdf = Ua("", "8 0 R", extras: [Para, "<< /Type /Filespec /EF 10 0 R >>", "10 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FILESPEC-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA-FILESPEC-UF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [MemberData(nameof(FileDescriptionCases))]
+    public void Ua2FileDescriptionsFollowEmbeddedFilesNameTree(int part, string location, string ef, string description)
+    {
+        var catalog = location switch
+        {
+            "associated" => "/AF [9 0 R]",
+            "name-tree" => "/Names << /EmbeddedFiles << /Names [(file) 9 0 R] >> >>",
+            "nested" => "/Names << /EmbeddedFiles << /Kids [13 0 R] >> >>",
+            _ => "",
+        };
+        var pdf = Ua("", "8 0 R", catalogExtra: catalog, extras:
+        [
+            Para, $"<< /Type /Filespec /F (file) /UF (file) {ef} {description} >>",
+            ObjPdf.Stream("x", "/Type /EmbeddedFile"), "null", "<< /F 10 0 R >>",
+            "<< /Limits [(file) (file)] /Names [(file) 9 0 R] >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && location is "name-tree" or "nested" && description == "",
+            report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FILES-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("/Names << /EmbeddedFiles 13 0 R >>", "<< /Kids [13 0 R 14 0 R] >>")]
+    [InlineData("/Names << /EmbeddedFiles 13 0 R >>", "<< /Names [(file) 9 0 R (orphan)] >>")]
+    public void Ua2FileDescriptionInspectionReportsIncompleteAndRetainsKnownMissingDescription(string catalog, string tree)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: catalog, extras:
+        [
+            Para, "<< /Type /Filespec /F (file) /UF (file) >>",
+            "null", "null", "null", tree, "<< /Names [(file) 9 0 R] >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FILESPEC-DESC");
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FILES-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2FileDescriptionTreeDepthBoundaryIsExplicit(int depth, bool incomplete)
+    {
+        var nodes = Enumerable.Range(13, depth + 1).Select(n => n == 13 + depth
+            ? "<< /Names [(file) 9 0 R] >>" : $"<< /Kids [{n + 1} 0 R] >>");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/Names << /EmbeddedFiles 13 0 R >>",
+            extras: new[] { Para, "<< /Type /Filespec /F (file) /UF (file) >>", "null", "null", "null" }.Concat(nodes).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILES-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Names 13 0 R")]
+    [InlineData("/Names << /EmbeddedFiles 13 0 R >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Names 13 0 R >> >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Names [(file) 13 0 R] >> >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Names [13 0 R 9 0 R] >> >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Kids 13 0 R >> >>")]
+    public void Ua2FileDescriptionUnresolvedTreeReferencesAreIncomplete(string catalog)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: catalog, extras:
+            [Para, "<< /Type /Filespec /F (file) /UF (file) /Desc (description) >>", "null", "null", "null", "13 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FILES-INCOMPLETE");
+        Assert.False(report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2FileDescriptionReferenceDepthBoundaryIsExplicit(int length, bool incomplete)
+    {
+        var nodes = Enumerable.Range(13, length).Select(n => n == 12 + length
+            ? "<< /Names [(file) 9 0 R] >>" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/Names << /EmbeddedFiles 13 0 R >>",
+            extras: new[] { Para, "<< /Type /Filespec /F (file) /UF (file) >>", "null", "null", "null" }.Concat(nodes).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILES-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2FileDescriptionTreeWorkBoundaryIsExplicit(int pairs, bool incomplete)
+    {
+        var entries = string.Concat(Enumerable.Repeat("(file) 9 0 R ", pairs));
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/Names << /EmbeddedFiles << /Names [{entries}] >> >>",
+            extras: [Para, "<< /Type /Filespec /F (file) /UF (file) /Desc (description) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILES-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
     [Fact]
