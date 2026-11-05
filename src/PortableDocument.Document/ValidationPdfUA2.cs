@@ -289,8 +289,13 @@ internal static class PdfUA2Checks
     enum RoleOutcome { Standard, Circular, Unmapped }
 
     static RoleOutcome Resolve(PdfFile f, StructureTree tree, string type, PdfDictionary? nsDict, string? ns, out string? standardType)
+        => Resolve(f, tree, type, nsDict, ns, out standardType, out _);
+
+    static RoleOutcome Resolve(PdfFile f, StructureTree tree, string type, PdfDictionary? nsDict, string? ns,
+        out string? standardType, out string? resolvedNamespace)
     {
         standardType = null;
+        resolvedNamespace = null;
         var seen = new HashSet<(string, string?)>();
         for (var depth = 0; depth < MaxRoleDepth; depth++)
         {
@@ -298,9 +303,10 @@ internal static class PdfUA2Checks
                 || ns == Pdf2Namespace && type != "Note" && StructureTree.IsStandardType(type))
             {
                 standardType = type;
+                resolvedNamespace = ns ?? Pdf17Namespace;
                 return RoleOutcome.Standard;
             }
-            if (ns == MathMlNamespace) return RoleOutcome.Standard;
+            if (ns == MathMlNamespace) { resolvedNamespace = ns; return RoleOutcome.Standard; }
             if (!seen.Add((type, ns))) return RoleOutcome.Circular;
             if (nsDict is not null && ns is not null && ns != Pdf17Namespace && ns != Pdf2Namespace)
             {
@@ -389,9 +395,17 @@ internal static class PdfUA2Checks
         var f = c.F;
         foreach (var e in tree.Elements())
         {
-            var standardType = StandardType(c, tree, e);
-            if (e.Type == "Math" && e.Parent?.StandardType != "Formula")
-                c.Add("PDFUA2-MATH-PARENT", ValidationSeverity.Error, "a Math element may only occur as a child of Formula", "ISO 14289-2 8.2.5.29", e.PageIndex);
+            var outcome = Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out var standardType, out var resolvedNamespace);
+            if (outcome == RoleOutcome.Standard && resolvedNamespace == MathMlNamespace)
+            {
+                var parent = e.Parent;
+                if (parent is null
+                    || Resolve(f, tree, parent.Type, parent.NamespaceDict, parent.Namespace, out var parentType, out var parentNamespace) == RoleOutcome.Standard
+                    && parentType != "Formula" && parentNamespace != MathMlNamespace)
+                    c.Add("PDFUA2-MATH-PARENT", ValidationSeverity.Error,
+                        "a MathML structure element must have a Formula or MathML parent",
+                        "ISO 14289-2 8.2.5.29", e.PageIndex);
+            }
             if (standardType == "H")
                 c.Add("PDFUA2-HEADING-H", ValidationSeverity.Error, "the H structure type must not be used; use numbered headings", "ISO 14289-2 8.2.5.12", e.PageIndex);
             if (standardType == "Note")

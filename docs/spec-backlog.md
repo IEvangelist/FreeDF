@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 resolved MathML parent rule
+
+The MathML parent check now selects resolved namespace endpoints, not
+raw /Math names. Direct or mapped MathML elements require a resolved
+Formula or MathML parent. The existing role resolver exposes its successful
+endpoint namespace without changing PDF-type selection or treating a
+successful MathML endpoint as an unresolved PDF role. Unresolved parents
+retain existing role/nesting-incomplete errors rather than guessed types.
+
+Nine native controls agree with pinned veraPDF v1.30.3 8.2.5.29-1 on
+parent-rule outcomes; eight agree on whole-file outcomes (four clean
+positives and four negatives), correcting two missed file violations.
+A foreign raw Math mapped to P loses an inaccurate MathML finding but
+retains its P-within-P containment error; the standalone reference accepts
+that file. This is an explicit containment disagreement, not a corrected
+false-positive file verdict. All nine UA-1 outputs and fresh
+435-PDF/870-result corpus output are unchanged; all native jobs were normal.
+
+Ten authored cases cover lowercase/uppercase tags, non-root MathML
+elements, mapped endpoints, foreign lookalikes and valid nested MathML
+under Formula. The existing PDF-2.0 /Math fixture was corrected to expect
+its unresolved-role error, not an invented MathML parent finding.
+Full Release: 14,756 passed, zero failed/skipped. Solution: zero errors,
+two retained machine-feed NU1507 warnings. MathML vocabulary/schema,
+rendering and broader parent/grouping semantics are not claimed complete;
+external controls/reports remain session-only.
+
 ## 2026-11-05 TOCI reference presence
 
 Resolved UA-2 TOCI elements now require a non-null Ref on themselves or

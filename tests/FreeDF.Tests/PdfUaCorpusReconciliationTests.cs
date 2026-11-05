@@ -179,7 +179,9 @@ public class PdfUa2StructureNamespaceTests
     {
         Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /H /NS 12 0 R /P 7 0 R >>]").Has("PDFUA2-HEADING-H"));
         Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /Note /P 7 0 R >>]").Has("PDFUA2-NOTE"));
-        Assert.True(Validate(kids: "/K [<< /Type /StructElem /S /Math /NS 12 0 R /P 7 0 R >>]").Has("PDFUA2-MATH-PARENT"));
+        var pdfNamespaceMath = Validate(kids: "/K [<< /Type /StructElem /S /Math /NS 12 0 R /P 7 0 R >>]");
+        Assert.True(pdfNamespaceMath.Has("PDFUA2-ROLEMAP-MISSING"));
+        Assert.False(pdfNamespaceMath.Has("PDFUA2-MATH-PARENT"));
         const string list = "<< /Type /StructElem /S /L /NS 12 0 R /P 7 0 R /K [<< /Type /StructElem /S /LI /NS 12 0 R /K [10 0 R] >>] ";
         Assert.True(Validate(kids: "/K [" + list + ">>]").Has("PDFUA2-LIST-NUMBERING"));
         Assert.False(Validate(kids: "/K [" + list + "/A << /O /List /ListNumbering /Decimal >> >>]").Has("PDFUA2-LIST-NUMBERING"));

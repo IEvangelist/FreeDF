@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [resolved MathML parent correction](spec-backlog.md#2026-11-05-resolved-mathml-parent-rule)
+uses endpoint namespaces for both child selection and Formula/MathML
+parents. Nine native parent-rule outcomes agree, correcting two missed
+file violations; one separate containment disagreement remains explicit.
+UA-1 and fresh 435-PDF/870-result corpus output are unchanged.
+Full MathML vocabulary/schema/rendering conformance remains incomplete.
+
 The [TOCI reference-presence check](spec-backlog.md#2026-11-05-toci-reference-presence)
 requires non-null Ref on resolved TOCI or descendants and reports bounded
 inspection separately. Eight native controls agree, correcting two missed

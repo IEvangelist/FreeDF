@@ -55,6 +55,12 @@ implemented; target shape, identity and semantic completeness are
 not derived from the reference's permissive presence results.
 No profile XML, engine source or external TOC PDF is bundled.
 
+The resolved MathML parent check in `ValidationPdfUA2.cs` was
+cross-checked against the same CC BY 4.0 UA-2 profile, 8.2.5.29-1.
+Endpoint namespace resolution is independently implemented; full MathML
+schema/vocabulary/rendering semantics are not derived from these controls.
+No reference-engine source, profile XML or external MathML PDF is bundled.
+
 The resolved Note restriction and scoped PDF-2.0 Note vocabulary boundary
 were cross-checked against the same CC BY 4.0 UA-2 profile (8.2.5.14-1
 and native 8.2.4-1 outcomes). `ValidationPdfUA2.cs` and the shared Note-ID

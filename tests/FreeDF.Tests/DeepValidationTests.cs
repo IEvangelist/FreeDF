@@ -1481,6 +1481,50 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData("math", "P", false, true)]
+    [InlineData("Math", "P", false, true)]
+    [InlineData("mi", "P", false, true)]
+    [InlineData("math", "Formula", false, false)]
+    [InlineData("mi", "Formula", false, false)]
+    [InlineData("mi", "math", false, false)]
+    [InlineData("Custom", "Formula", true, false)]
+    [InlineData("Custom", "P", true, true)]
+    [InlineData("Math", "P", true, false)]
+    public void Ua2MathParentUsesResolvedNamespace(string role, string parent, bool mapped, bool invalid)
+    {
+        var mathNamespace = "<< /Type /Namespace /NS (http://www.w3.org/1998/Math/MathML) >>";
+        var mapping = role == "Math" ? "/Math [/P 12 0 R]" : "/Custom [/math 11 0 R]";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{parent} /NS {(parent == "math" ? 11 : 12)} 0 R /P 7 0 R /K [9 0 R] /Alt (formula) >>",
+            $"<< /Type /StructElem /S /{role} /NS {(mapped ? 13 : 11)} 0 R /P 8 0 R /K [] >>",
+            "null", mathNamespace,
+            "<< /Type /Namespace /NS (http://iso.org/pdf2/ssn) >>",
+            $"<< /Type /Namespace /NS (urn:math-test) /RoleMapNS << {mapping} >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        // The outer math under Document is invalid independently of its valid mi child.
+        var expected = invalid || parent == "math";
+        Assert.Equal(expected, report.Has("PDFUA2-MATH-PARENT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2MathMlDescendantUnderFormulaIsValid()
+    {
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /Formula /P 7 0 R /K [9 0 R] /Alt (formula) >>",
+            "<< /Type /StructElem /S /math /NS 11 0 R /P 8 0 R /K [10 0 R] >>",
+            "<< /Type /StructElem /S /mi /NS 11 0 R /P 9 0 R /K [] >>",
+            "<< /Type /Namespace /NS (http://www.w3.org/1998/Math/MathML) >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-MATH-PARENT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> TociReferenceCases()
     {
         foreach (var part in new[] { 1, 2 })
