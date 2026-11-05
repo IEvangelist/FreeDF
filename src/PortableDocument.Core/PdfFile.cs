@@ -500,7 +500,7 @@ public sealed class PdfFile
         if (rawFilter is PdfRef
             || rawFilter is PdfName or PdfArray { Count: > 0 } && xs.Dict.Get("DecodeParms") is PdfRef)
             throw new PdfParseException("cross-reference stream Filter and DecodeParms must be direct objects");
-        var filters = PdfFilters.GetFilters(xs.Dict, Resolve);
+        var filters = PdfFilters.GetFilters(xs.Dict, Resolve, Resolve);
         foreach (var filter in filters)
             if (filter.Name == "Crypt")
                 throw new PdfParseException("cross-reference stream must not use a Crypt filter");

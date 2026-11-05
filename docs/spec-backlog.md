@@ -4,6 +4,45 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 cross-reference filter metadata schemas
+
+ISO 32000-1 Table 5 (printed p20) defines Filter as a name or an array
+of names and DecodeParms as a dictionary or an array of dictionaries/
+null entries. The xref path previously used ordinary recovery-oriented
+filter parsing, silently skipping invalid names and parameter shapes.
+Usable row bytes could then produce an index without reported recovery.
+
+The xref reader now uses the existing strict GetFilters metadata
+overload with the same resolver. Invalid scalar/array entries explicitly
+raise PdfParseException and enter the existing repair path. This reuses
+the shared conditional nondefault-alignment guard as well; it does not
+add a second schema implementation. Earlier top-level directness, Crypt
+and remaining-codec checks stay intact. Ordinary stream parsing is
+unchanged, as are absent/null/empty filters and direct default parameter
+compatibility forms.
+
+Twenty-nine initial controls give 20 failures/nine passes on unchanged
+production. Three further controls exercise a complete Flate/ASCIIHex
+pipeline with aligned, short and long nondefault predictor arrays:
+aligned remains unrepaired and exact; short/long explicitly recover.
+Final focused xref/object-stream/filter/Crypt checks pass 1,307;
+full Release passes 19,882, zero failed/skipped; solution zero warnings/
+errors. Fresh pinned 435-PDF/870-result complete validation JSON is
+unchanged; all benchmark/provider/parser correctness preflights pass.
+
+Six independently encoded reference PDFs include raw/Flate controls,
+a scalar Filter, null filter-array member, scalar DecodeParms and an
+invalid parameter-array member. PyMuPDF 2.0 / MuPDF 1.28.5 accepts
+all six without repair. FreeDF explicitly recovers the four normative
+negatives. Permissive acceptance is retained as a disagreement, not
+conformance evidence. No external PDFs are bundled.
+
+No new timing was run; previous codec/event benchmarks do not measure
+strict xref metadata costs. The existing list/validator is reused, but
+no zero-overhead or allocation improvement is claimed. Strict codec
+completion, nested metadata/reference budgets, unknown parameter schemas,
+framing and full xref/parser parity remain open.
+
 ## 2026-11-05 unfinished cross-reference decode pipelines
 
 ISO 32000-1 7.5.8.2 Table 17 (printed p50) defines W in decoded-stream

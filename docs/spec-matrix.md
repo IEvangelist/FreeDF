@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref filter-schema guard](spec-backlog.md#2026-11-05-cross-reference-filter-metadata-schemas)
+reuses strict metadata parsing so malformed names/parameter shapes and
+misaligned known nondefault parameters explicitly recover rather than
+silently producing a clean index. Ordinary recovery/default compatibility
+remain intact; broader metadata and codec completion stay open.
+
 The [xref decode-completion guard](spec-backlog.md#2026-11-05-unfinished-cross-reference-decode-pipelines)
 prevents remaining image-codec bytes and skipped later stages from being
 used as a clean index. Unsupported decoding takes explicit recovery;
