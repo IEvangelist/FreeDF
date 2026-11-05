@@ -55,6 +55,49 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Strict cross-reference filter completion: 2026-11-05
+
+`XrefFilterBench` measures fresh `PdfFile.Load(byte[])` on minimal parser
+fixtures with 64 or 4,096 decoded xref rows. Flate and literal LZW encode
+the same rows; LZW uses clear codes every 200 literals to keep nine-bit
+codes. These are parser fixtures, not page/rendering conformance controls.
+Setup generates bytes and checks unrepaired loading, exact entry count,
+target identity and stable input/decoded hashes outside timing. The timed
+method and bytes are unchanged between control and final.
+
+Control production is `00aa7422ce8d1b7461ebe5e4c5a9eed41d78db66`,
+measured before enabling strict xref decoding. Final adds strict codec
+validation and local exception translation. Reproduce with:
+
+```powershell
+dotnet run -c Release --no-build --project bench\FreeDF.Bench -- --filter "*XrefFilterBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+Means and 99.9% confidence half-widths are microseconds:
+
+| Filter / rows | Control | Isolated final | Managed bytes/op (control / final) |
+|---|---:|---:|---:|
+| Flate / 64 | 6.915 +/- 0.2045 | 7.553 +/- 0.6503 | 11,896 / 11,896 |
+| Flate / 4,096 | 146.022 +/- 2.4932 | 152.822 +/- 9.0696 | 353,315.06 / 353,315.15 |
+| LZW / 64 | 4.979 +/- 0.1144 | 5.656 +/- 0.4553 | 12,888 / 12,888 |
+| LZW / 4,096 | 220.822 +/- 6.5083 | 242.087 +/- 14.9046 | 349,055.36 / 349,055.42 |
+
+Final means are 4.7-13.6% higher. Three confidence intervals overlap;
+the small LZW case shows a clear measured cost in this run. This is not
+a speedup or a universal regression estimate. The strict input checks
+are required; reducing their cost remains explicit performance work.
+Managed allocations have the same rounded KB sizes but are not zero
+and raw values are retained rather than asserted equal.
+
+`results/2026-11-05-xref-completion-{control,final}.{md,csv}` preserve
+the matched measurements. The first final run overlapped corpus/preflight
+validation; its separate `final-shared-load` reports are retained as
+confounded measurements, not mixed into the isolated comparison.
+The `-gc.csv` contains all 12 raw allocation counters, operation counts,
+input/decoded hashes and engine module IDs. All corresponding hashes
+match and control/final engine IDs differ. No other provider is timed
+here: this compares FreeDF validation policies, not conformance rankings.
+
 ## Temporary optional-content events: 2026-11-05
 
 ISO 32000-1 8.11.4.5 p236 requires viewer Print/Export recommendations

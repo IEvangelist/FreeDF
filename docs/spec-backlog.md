@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 self-limiting cross-reference filter completion
+
+ISO 32000-1 7.3.8.2 (printed p20) requires stream Length,
+self-limiting filter EOD and inferred decoded extent to agree. The xref
+reader previously used ordinary recovery decoding: missing terminators,
+invalid characters/checksums/padding and encoded suffixes could still
+supply enough rows for an index reported as unrepaired.
+
+The xref path now selects the existing strict content-filter decoders.
+InvalidDataException is translated locally to PdfParseException so the
+existing explicit repair path runs; the global load catch and ordinary
+stream decoding are unchanged. Metadata, Crypt and remaining-image-codec
+guards stay intact. This reuses ASCIIHex, ASCII85, RunLength, Flate and
+LZW validation rather than adding codecs or a second validation policy.
+
+Twenty-six controls give 16 failures/10 passes on unchanged production:
+16 malformed xref encodings, five complete codec controls and five
+ordinary partial-recovery controls. Final full Release passes 19,908,
+zero failed/skipped; solution and benchmark builds have zero warnings/
+errors. Existing nondefault predictor-chain controls remain green.
+Fresh pinned 435-PDF/870-result complete validation JSON is unchanged;
+all benchmark/provider/parser correctness preflights pass.
+
+Eleven independently encoded reference PDFs include raw and five codec
+controls plus five missing-terminator/trailer negatives. PyMuPDF 2.0 /
+MuPDF 1.28.5 accepts all without repair and publishes the target. Its
+permissive acceptance disagrees with FreeDF's explicit recovery; it is
+not normative conformance evidence. No external PDFs are bundled.
+
+New matched XrefFilterBench controls measure fresh PdfFile.Load on
+identical 64/4,096-row Flate/LZW inputs, with setup and identity checks
+outside timing. Strict validation has a cost: isolated final means are
+4.7-13.6% higher, with overlapping 99.9% intervals in three of four cases;
+the 64-row LZW intervals do not overlap. Raw managed allocations retain
+the same rounded sizes, not zero allocation. An initial final run shared
+the machine with validation work and is retained separately, not silently
+discarded. See the benchmark README and checked-in reports for exact
+means, uncertainty, hashes and GC counts. Improving measured strict
+decoding cost remains performance work; no speedup is claimed.
+
+This closes the scoped codec-completion omission, not full stream/xref
+parity. Decoded row cardinality, framing, nested metadata/directness,
+external-stream semantics, identity/lifecycle and resource budgets remain
+separate work.
+
 ## 2026-11-05 cross-reference filter metadata schemas
 
 ISO 32000-1 Table 5 (printed p20) defines Filter as a name or an array

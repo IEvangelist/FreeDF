@@ -46,6 +46,9 @@ if (args.Contains("--preflight"))
     foreach (var members in new[] { 1, 1000 })
         foreach (var encrypted in new[] { false, true })
             new ObjectStreamBench { MemberCount = members, Encrypted = encrypted }.Setup();
+    foreach (var rows in new[] { 64, 4096 })
+        foreach (var filter in new[] { "FlateDecode", "LZWDecode" })
+            new XrefFilterBench { Rows = rows, Filter = filter }.Setup();
     foreach (var filters in new[] { 1, 2 })
         foreach (var indirect in new[] { false, true })
             foreach (var codec in new[] { "FlateDecode", "LZWDecode" })

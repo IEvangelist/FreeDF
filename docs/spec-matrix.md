@@ -4,17 +4,25 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [self-limiting xref filter guard](spec-backlog.md#2026-11-05-self-limiting-cross-reference-filter-completion)
+reuses strict ASCIIHex/ASCII85/RunLength/Flate/LZW decoding and explicitly
+recovers malformed completion, checksums, padding and encoded suffixes.
+Ordinary partial recovery remains intact. Matched benchmarks retain
+measured validation costs; full extent/framing/xref parity is not claimed.
+
 The [xref filter-schema guard](spec-backlog.md#2026-11-05-cross-reference-filter-metadata-schemas)
 reuses strict metadata parsing so malformed names/parameter shapes and
 misaligned known nondefault parameters explicitly recover rather than
 silently producing a clean index. Ordinary recovery/default compatibility
-remain intact; broader metadata and codec completion stay open.
+remain intact; broader metadata stays open. The later scoped
+self-limiting-codec completion guard is described above.
 
 The [xref decode-completion guard](spec-backlog.md#2026-11-05-unfinished-cross-reference-decode-pipelines)
 prevents remaining image-codec bytes and skipped later stages from being
 used as a clean index. Unsupported decoding takes explicit recovery;
 ordinary image APIs remain unchanged. Actual Core image decoding,
-strict filter completion and wider xref parity remain open.
+wider extent/framing and xref parity remain open. The later strict
+self-limiting-codec guard is described above.
 
 The [encoded xref metadata guard](spec-backlog.md#2026-11-05-direct-encoded-cross-reference-filter-metadata)
 requires direct standard top-level Filter/DecodeParms rather than silently
