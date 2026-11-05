@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 classic xref generation storage
+
+The fallback classic-table parser now checks generation values before its
+long-to-int cast, complementing the binary-entry storage fix. Negative or
+larger-than-int generations explicitly raise PdfParseException and use
+existing recovery; they cannot wrap to generation zero or negative values.
+The fixed five-digit path already fits this representation and is unchanged.
+ISO 32000-1 7.5.4 (printed pp40-41) defines the generation field; this is a
+lossless storage boundary, not the normative 65535 generation maximum.
+
+Nine regression cases include five initially red invalid-value theories,
+each running in-use/free variants after correction, fixed/fallback controls
+and explicit-reference int.MaxValue compatibility. Values beyond 65535 and
+short fallback formatting are retained compatibility, not conformance
+positives. Full Release: 18,548 passed, zero failed/skipped. Solution: zero
+errors/two retained machine-feed NU1507 warnings.
+
+Sixteen native PDFs retain six positive/compatibility outputs unchanged;
+all ten invalid entries now report repair. Eight formerly lost targets
+recover; two formerly wrapped identities now explicitly recover. MuPDF
+agrees on all ten invalid repairs and both standard fixed-format controls.
+It additionally repairs the three short-format compatibility controls and
+returns null for generation 99999 in either format. Fresh pinned
+435-PDF/870-result corpus JSON is wholly unchanged against the chain-offset
+baseline. Complete classic entry syntax, normative generation maxima,
+free-list semantics and resource budgets remain separate.
+
 ## 2026-11-05 cross-reference chain offset types
 
 Prev and XRefStm now require present non-null values to be direct integers

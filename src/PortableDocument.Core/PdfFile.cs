@@ -303,6 +303,8 @@ public sealed class PdfFile
                     }
                     if (lx.ReadObject(false) is not PdfInteger off || lx.ReadObject(false) is not PdfInteger gen || lx.ReadObject(false) is not PdfKeyword k)
                         throw new PdfParseException("bad xref entry");
+                    if (gen.Value < 0 || gen.Value > int.MaxValue)
+                        throw new PdfParseException("xref generation exceeds supported range");
                     var num = (int)(start.Value + i);
                     if (!Xref.ContainsKey(num)) { Xref[num] = new XrefEntry(k.Value == "n", false, off.Value, (int)gen.Value); if (k.Value != "n") _tableFree.Add(num); }
                 }
