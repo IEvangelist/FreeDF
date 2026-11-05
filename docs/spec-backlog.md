@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 first compressed member relative offset
+
+ISO 32000-1 7.5.7 (printed p46) defines header offsets relative to the
+first object and First as the decoded offset of that same first object.
+The first relative offset must therefore be zero. The shared header reader
+now rejects nonzero initial offsets before publishing lazy or recovery
+indices, preventing skipped values from redirecting the first identity.
+
+Twelve controls cover skipped values/keywords/trivia, normal/forced repair,
+uncompressed identity preservation and existing leading-trivia support with
+a zero relative offset. The initial selector had eight failures. Full Release:
+18,923 passed, zero failed/skipped. Solution: zero errors/two retained
+machine-feed NU1507 warnings.
+
+Twenty native PDFs preserve eight valid target outputs unchanged and remove
+twelve previously accepted redirected targets, ending repaired/null. MuPDF
+still returns all twelve malformed targets and agrees on all eight positives.
+Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged against
+the encryption-dictionary baseline.
+
+This establishes relative-offset consistency, not a byte-limited reader or
+complete First/source-token boundary validation. Existing leading whitespace
+and comments at zero offset remain tolerated; header padding and resource
+budgets remain separate.
+
 ## 2026-11-05 compressed encryption dictionary references
 
 ISO 32000-1 7.5.7 (printed p45) prohibits storing the document's

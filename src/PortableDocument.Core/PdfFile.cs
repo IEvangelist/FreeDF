@@ -254,6 +254,8 @@ public sealed class PdfFile
                 lx.Pos > first || on.Value < 0 || on.Value > int.MaxValue ||
                 off.Value < 0 || off.Value >= data.Length - first)
                 throw new PdfParseException("bad object stream member offset");
+            if (i == 0 && off.Value != 0)
+                throw new PdfParseException("first object stream member offset must be zero");
             if (off.Value <= previousOffset)
                 throw new PdfParseException("object stream member offsets must increase");
             previousOffset = off.Value;

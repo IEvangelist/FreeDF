@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [first compressed member offset check](spec-backlog.md#2026-11-05-first-compressed-member-relative-offset)
+requires the initial header offset to be zero relative to First before
+lazy/recovery indexing. Existing zero-offset leading trivia remains supported.
+Native disagreement and unchanged corpus JSON are recorded. Complete source
+boundary checks, header padding and resource budgets remain separate.
+
 The [compressed encryption dictionary check](spec-backlog.md#2026-11-05-compressed-encryption-dictionary-references)
 rejects a direct trailer Encrypt reference to a compressed entry before
 authentication. Valid uncompressed dictionaries retain password behavior.
