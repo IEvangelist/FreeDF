@@ -5,6 +5,24 @@ namespace FreeDF.Tests;
 public class PdfUa2CardinalityTests
 {
     [Theory]
+    [InlineData(1, "Document", "Sect")]
+    [InlineData(1, "Sect", "Sect")]
+    [InlineData(2, "Document", "Sect")]
+    [InlineData(2, "Sect", "Sect")]
+    [InlineData(2, "Document", "H")]
+    [InlineData(2, "Sect", "H")]
+    public void HeadingLimitsUseResolvedRolesWithoutLegacyCounts(int part, string parent, string target)
+    {
+        var doc = Load(parent, target, 2,
+            childNamespace: $"<< /Type /Namespace /NS (urn:heading-count) /RoleMapNS << /H [/{target} 6 0 R] >> >>",
+            childRole: "H");
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && target == "H", report.Findings.Any(f => f.RuleId == "PDFUA2-NESTING-CARDINALITY"));
+        Assert.Equal(part == 1, report.Findings.Any(f => f.RuleId == "PDFUA-HEADING-MULTIPLE"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
     [InlineData("THead", "TR", false)]
     [InlineData("TFoot", "TR", false)]
     [InlineData("THead", "THead", true)]

@@ -715,7 +715,7 @@ internal static class PdfUADeepChecks
         foreach (var e in tree.Elements())
         {
             var kids = e.ChildElements.ToList();
-            if (kids.Count(k => k.StandardType == "H") > 1)
+            if (c.Part != 2 && kids.Count(k => k.StandardType == "H") > 1)
                 c.Add("PDFUA-HEADING-MULTIPLE", ValidationSeverity.Error, $"/{e.Type} contains more than one H heading", Clause(c, "7.4.4", "8.2.5.22"), e.PageIndex);
             switch (e.StandardType)
             {

@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 namespace-resolved heading cardinality
+
+Legacy raw H-child counts now remain UA-1-only. UA-2 retains resolved
+ISO 32005 Document-H/Sect-H cardinality and its existing H prohibition.
+Raw foreign H mapped to Sect no longer produces a duplicate-heading
+error; genuine direct and mapped H duplicates still fail the resolved
+cardinality check.
+
+Six corrected native controls completed normally: two positives and
+four negatives agree with independent combined-profile file outcomes
+and cardinality failures, correcting two false rejections. Negatives
+also fail the separate H prohibition, not cardinality alone. Initial
+exploratory controls used Art in the PDF-2.0 namespace and retained an
+H1: they were all independently invalid and are not positive evidence.
+The corrected set uses Document/Sect and changes that original H1 to P.
+Six authored cases initially had four failures; two preserve UA-1 counts.
+
+Fresh 435-PDF/870-result comparison removes one redundant UA-2 legacy
+diagnostic on an already-invalid UA-1 heading fixture. Its exact independent
+job confirms Sect-H cardinality and the H prohibition. Every file verdict
+and all UA-1 outputs remain unchanged. Heading semantics and grouping
+cardinality are not broadened; no reference source or external PDF is bundled.
+
+Release validation: 148 focused heading/cardinality cases passed; full
+suite passed 14,906 cases with no failures/skips. Solution build had
+no errors and two retained machine-feed NU1507 warnings.
+
 ## 2026-11-05 occupied-column table span intersections
 
 UA-2 table geometry now checks every column covered by a cell's owned

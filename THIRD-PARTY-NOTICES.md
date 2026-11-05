@@ -26,6 +26,11 @@ The legacy table section-count correction reuses namespace-resolved
 Table-THead/Table-TFoot cardinality. Six native controls and two corpus
 negatives were independently cross-checked against the same combined
 profile; grouping-dependent limits remain deferred.
+The legacy H-child count correction analogously reuses resolved
+Document-H/Sect-H cardinality. Six corrected native controls and one
+corpus negative were cross-checked against the combined profile; the
+separate UA-2 H prohibition remains active. Heading and grouping
+semantics are not broadened.
 
 The namespace-aware list numbering/direct-content checks in
 `ValidationPdfUA2.cs` were cross-checked against the Consortium's

@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [heading-cardinality correction](spec-backlog.md#2026-11-05-namespace-resolved-heading-cardinality)
+uses existing resolved limits instead of legacy raw H-child counts.
+Six independent native outcomes agree, correcting two false rejections;
+one redundant corpus diagnostic is removed with exact independent Sect-H
+evidence. Every file verdict and UA-1 output remain unchanged; full grouping
+and heading semantics are not claimed.
+
 The [occupied-column span correction](spec-backlog.md#2026-11-05-occupied-column-table-span-intersections)
 detects ColSpan intersections with active RowSpan carry, preserving the longer
 span after an overlap. Six independent native outcomes agree, correcting
