@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [cross-reference chain offset correction](spec-backlog.md#2026-11-05-cross-reference-chain-offset-types)
+requires present Prev/XRefStm offsets to be direct in-range integers.
+Malformed values explicitly repair instead of truncating or silently
+omitting index sections; null, valid updates and supplemental lookup remain
+unchanged. Official Table 15 correction provenance, native reference
+disagreements and unchanged corpus JSON are recorded. Complete cycle/hybrid
+schema and resource handling remain separate.
+
 The [xref-stream entry identity correction](spec-backlog.md#2026-11-05-xref-stream-entry-storage-identity)
 decodes eight-byte fields losslessly before checking destination ranges.
 Known generations, offsets, containers and indices cannot wrap into other

@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 cross-reference chain offset types
+
+Prev and XRefStm now require present non-null values to be direct integers
+within the input byte range. Fractional Prev values no longer truncate;
+negative or wrong-type Prev and wrong-type XRefStm no longer silently end
+or omit part of the index. Invalid values explicitly raise PdfParseException
+and use existing recovery. Null retains absent-entry semantics.
+
+Primary provenance: ISO 32000-1 Table 17 (printed p50), Table 19 (p51),
+and 7.5.8.2 direct-entry restrictions (p49), plus the
+[official PDF 2.0 Table 15 correction](https://pdf-issues.pdfa.org/32000-2-2020/clause07.html#H7.5.5)
+specifying direct integer Prev. The 2008 Table 15 printed p43 incorrectly
+says Prev shall be indirect; that conflicting wording was not silently
+used to justify the opposite policy.
+
+Eighteen controls include twelve invalid values (eleven initially red),
+three integer-offset positives and three null positives. Latest free-entry
+precedence and supplemental-stream lookup are pinned. The hybrid control
+was corrected against 7.5.8.4 (printed p52): its free entry belongs in the
+previous main section with generation 65535, not the current update.
+Full Release: 18,539 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Eighteen native PDFs retain all six positives unchanged and report repair
+for all twelve invalid offsets (one already repaired). Ten formerly lost
+targets recover. MuPDF agrees on all positives and four invalid repairs;
+it retains null targets without repair for the other eight invalid cases.
+These are explicit recovery-policy disagreements. Fresh pinned
+435-PDF/870-result corpus JSON is wholly unchanged against the binary-entry
+baseline. Cycle reporting, reused supplemental streams, complete hybrid
+schema and parser-wide budgets remain separate.
+
 ## 2026-11-05 xref-stream entry storage identity
 
 ISO 32000-1 7.5.8.3 Table 18 (printed p51) assigns fields to byte

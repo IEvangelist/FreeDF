@@ -220,6 +220,14 @@ public sealed class PdfFile
 
     void ReadXrefChain()
     {
+        long? ChainOffset(PdfObject? raw, string key)
+        {
+            if (raw is null or PdfNull) return null;
+            if (raw is not PdfInteger n || n.Value < 0 || n.Value >= Data.Length)
+                throw new PdfParseException($"bad /{key} xref offset");
+            return n.Value;
+        }
+
         var tail = Math.Max(0, Data.Length - 2048);
         var idx = Data.AsSpan(tail).LastIndexOf("startxref"u8);
         if (idx < 0) throw new PdfParseException("no startxref");
@@ -233,13 +241,13 @@ public sealed class PdfFile
             var trailer = ReadXrefSection(pos);
             if (first) { Trailer = trailer; first = false; }
             else foreach (var kv in trailer.Entries) Trailer.Entries.TryAdd(kv.Key, kv.Value);
-            if (trailer.Get("XRefStm") is PdfInteger hx && visited.Add(hx.Value))
+            if (ChainOffset(trailer.Get("XRefStm"), "XRefStm") is { } hx && visited.Add(hx))
             {
                 // Hybrid files (7.5.8.4): the table marks compressed objects free; the XRefStm of the same section supplies them.
                 var hidden = _tableFree; _tableFree = null;
-                ReadXrefSection(hx.Value, hidden);
+                ReadXrefSection(hx, hidden);
             }
-            pos = trailer.Get("Prev") is { } pv && pv.AsNumber() is { } pn ? (long)pn : -1;
+            pos = ChainOffset(trailer.Get("Prev"), "Prev") ?? -1;
         }
     }
 
