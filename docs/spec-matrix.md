@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary inherited MaxLen shape check](spec-backlog.md#2026-11-05-primary-inherited-text-field-maxlen-shape)
+requires terminal Tx MaxLen metadata to be a non-negative integer, reusing
+bounded inherited V lookup and separate incomplete findings. Twenty native
+controls retain six positives; fourteen primary negatives remain
+reference-accepted. Corpus and UA-1 JSON are wholly unchanged. Actual
+text-length enforcement, complete field schema/traversal and rich/layout
+semantics remain separate.
+
 The [primary text-field V type check](spec-backlog.md#2026-11-05-primary-text-field-v-declared-types)
 requires resolved non-null terminal Tx values to be strings/streams
 independently of RV, preserving bounded inheritance and existing rich-value

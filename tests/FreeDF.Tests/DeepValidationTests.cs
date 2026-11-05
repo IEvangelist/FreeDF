@@ -3673,6 +3673,109 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> TextFieldMaxLenCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Tx", "Ch", "Btn" })
+        foreach (var limit in new[] { "", "null", "0", "1", "-1", "1.5", "/Name", "(length)", "true",
+            "[]", "<< >>", "10 0 R", "11 0 R", "12 0 R", "13 0 R", "14 0 R", "99 0 R" })
+            yield return [part, type, limit];
+    }
+
+    [Theory]
+    [MemberData(nameof(TextFieldMaxLenCases))]
+    public void Ua2TextFieldMaxLenRequiresNonNegativeInteger(int part, string type, string limit)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /{type} /T (field) /V (plain) {(limit == "" ? "" : $"/MaxLen {limit}")} >>",
+            "null", "0", "-1", "(length)", ObjPdf.Stream("0"),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = limit is "-1" or "1.5" or "/Name" or "(length)" or "true" or "[]" or "<< >>" or "12 0 R" or "13 0 R" or "14 0 R";
+        Assert.Equal(part == 2 && type == "Tx" && invalid, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/MaxLen null", true)]
+    [InlineData("/MaxLen 12 0 R", true)]
+    [InlineData("/MaxLen 99 0 R", true)]
+    [InlineData("/MaxLen 0", false)]
+    [InlineData("/MaxLen 1", false)]
+    [InlineData("/MaxLen (bad override)", true)]
+    public void Ua2TextFieldMaxLenUsesInheritedValueUntilNonNullOverride(string local, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (parent) /MaxLen -1 /Kids [10 0 R] >>",
+            $"<< /T (child) /Parent 9 0 R /V (plain) {local} >>", "null", "null",
+        ])), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2TextFieldMaxLenReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "-1" : $"{n + 1} 0 R");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /V (plain) /MaxLen 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2TextFieldMaxLenInheritanceDepthIsExplicit(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, depth).Select(n => n == 9 + depth
+            ? "<< /MaxLen -1 >>" : $"<< /Parent {n + 1} 0 R >>");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /V (plain) /Parent 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TextFieldMaxLenKnownInvalidValueSurvivesUnresolvedTextValue()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /MaxLen -1 /V 10 0 R >>", "10 0 R"])), 2);
+        Assert.True(report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/MaxLen 10 0 R", "10 0 R")]
+    [InlineData("/Parent 10 0 R", "<< /Parent 9 0 R >>")]
+    [InlineData("/Parent 10 0 R", "0")]
+    public void Ua2TextFieldMaxLenUnknownLimitDoesNotSuppressKnownTextType(string entry, string target)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /V /Wrong {entry} >>", target])), 2);
+        Assert.True(report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

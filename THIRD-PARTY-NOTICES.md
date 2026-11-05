@@ -458,6 +458,15 @@ negatives whose diagnostics are retained; these differences are explicit.
 Full field schema/traversal and appearance semantics remain separate.
 No standard text or external controls are bundled.
 
+The inherited terminal text-field MaxLen check follows the official
+12.7.5.3/Table 232 non-negative integer requirement, added by ISO-approved
+PDF Association errata issue 191. Bounded inherited lookup is independently
+reused; metadata validation does not enforce text length or infer layout.
+Twenty native local/inherited controls retain six positives and reject
+fourteen primary negatives accepted by the reference; these disagreements
+are explicit. Full field-reader/schema and appearance semantics remain
+separate. No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

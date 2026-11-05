@@ -4,6 +4,42 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary inherited text-field MaxLen shape
+
+Official PDF Association PDF 2.0 errata 12.7.5.3/Table 232 explicitly adds
+the non-negative integer requirement to optional, inheritable MaxLen
+(ISO-approved issue 191). The existing terminal Tx value pass now checks
+that resolved inherited metadata with PDFUA2-FORM-MAXLEN-TYPE.
+Omission/null/indirect-null/dangling values retain inherited fallback;
+zero and positive integers are valid shapes. Known invalid nearer values
+are not silently replaced by valid ancestor values. Choice/button fields
+remain outside this text-field requirement.
+
+The inherited V resolver was extracted for reuse without changing its
+32-reference-hop/64-parent-dictionary bounds, cycle handling or non-null
+override policy. MaxLen has separate PDFUA2-FORM-MAXLEN-INCOMPLETE for
+unknown traversal or field-reader truncation. Known limit and text-type
+findings are independent: unknown MaxLen does not suppress known V errors,
+and unknown V does not suppress known MaxLen errors. Existing RV comparison,
+value-presence diagnostics, typed field reader and UA-1 remain unchanged.
+
+The initial 108 authored part/type/shape/inheritance/reference/depth controls
+had nineteen failures. Nine additional stream/unknown-limit independence
+cases pass. Focused Release: 3,694 passed; full Release: 16,551 passed,
+zero failed/skipped. Solution zero errors/two retained machine-feed NU1507
+warnings. Twenty native local/inherited controls retain six positives and
+reject fourteen primary negatives. All combined-reference jobs complete
+normally and accept: **fourteen explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against committed V-type baseline.
+
+This validates metadata type/range only: text length is not counted or
+enforced, including MaxLen zero, because complete character/layout semantics
+are outside this slice. Full field-reader/schema/ownership traversal,
+RV inheritance/schema and appearance/layout/CSS remain separate.
+No standard text or external controls are bundled; hosted CI/full parity
+are not claimed. Earlier dated exclusions retain their delivery-time scope.
+
 ## 2026-11-05 primary text-field V declared types
 
 Official PDF Association PDF 2.0 errata 12.7.5.3 requires a non-null text

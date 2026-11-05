@@ -38,25 +38,24 @@ internal static class PdfUA2Checks
     static void TextFieldValues(ValidationContext c)
     {
         var fields = c.Doc.GetFormFieldDetails();
-        bool incomplete = false;
-        if (fields.Truncated) Incomplete();
+        bool incomplete = false, limitIncomplete = false;
+        if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
         {
             if (field.FieldType?.Value != "Tx") continue;
+            bool limitComplete = true;
+            var limit = InheritedFieldValue(c, field.Dictionary, "MaxLen", () =>
+            {
+                limitComplete = false;
+                LimitIncomplete();
+            });
+            if (limitComplete && limit is not (null or PdfNull or PdfInteger { Value: >= 0 }))
+                c.Add("PDFUA2-FORM-MAXLEN-TYPE", ValidationSeverity.Error,
+                    "a text field MaxLen must be a non-negative integer",
+                    "ISO 32000-2 12.7.5.3 Table 232");
             bool complete = true;
             void Unresolved() { complete = false; Incomplete(); }
-            var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
-            PdfDictionary? dictionary = field.Dictionary;
-            PdfObject? value = null;
-            while (dictionary is not null)
-            {
-                if (seen.Count > FormFieldDetailFeatures.MaxDepth || !seen.Add(dictionary)) { Unresolved(); break; }
-                value = ResolveBounded(c.F, dictionary.Get("V"), Unresolved);
-                if (!complete || value is not (null or PdfNull)) break;
-                var parent = ResolveBounded(c.F, dictionary.Get("Parent"), Unresolved);
-                if (parent is not (null or PdfNull or PdfDictionary)) { Unresolved(); break; }
-                dictionary = parent as PdfDictionary;
-            }
+            var value = InheritedFieldValue(c, field.Dictionary, "V", Unresolved);
             if (!complete) continue;
             if (value is not (null or PdfNull or PdfString or PdfStream))
                 c.Add("PDFUA2-FORM-TEXT-V-TYPE", ValidationSeverity.Error,
@@ -97,6 +96,34 @@ internal static class PdfUA2Checks
                 "text-field value inspection is truncated, cyclic, malformed or bounded",
                 "ISO 14289-2 8.10.3.3");
         }
+
+        void LimitIncomplete()
+        {
+            if (limitIncomplete) return;
+            limitIncomplete = true;
+            c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
+                "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
+                "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static PdfObject? InheritedFieldValue(ValidationContext c, PdfDictionary dictionary, string key, Action incompleteInspection)
+    {
+        bool complete = true;
+        void Incomplete() { complete = false; incompleteInspection(); }
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        PdfDictionary? current = dictionary;
+        while (current is not null)
+        {
+            if (seen.Count > FormFieldDetailFeatures.MaxDepth || !seen.Add(current)) { Incomplete(); return null; }
+            var value = ResolveBounded(c.F, current.Get(key), Incomplete);
+            if (!complete || value is not (null or PdfNull)) return value;
+            var parent = ResolveBounded(c.F, current.Get("Parent"), Incomplete);
+            if (!complete) return null;
+            if (parent is not (null or PdfNull or PdfDictionary)) { Incomplete(); return null; }
+            current = parent as PdfDictionary;
+        }
+        return null;
     }
 
     static string RichFieldPlainText(byte[] bytes)
