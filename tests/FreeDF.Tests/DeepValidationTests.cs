@@ -2146,6 +2146,120 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> AttributePrecedenceCases()
+    {
+        foreach (var route in new[] { "local-array", "class-attribute-array", "class-list", "local-over-class" })
+        foreach (var last in new[] { "Decimal", "None" })
+            yield return [route, last];
+    }
+
+    [Theory]
+    [MemberData(nameof(AttributePrecedenceCases))]
+    public void Ua2ListAttributeArraysUseLastSpecifiedOwnedValue(string route, string last)
+    {
+        var first = last == "Decimal" ? "None" : "Decimal";
+        string Attribute(string value) => $"<< /O /List /ListNumbering /{value} >>";
+        var local = route is "local-array" or "local-over-class" ? $"/A [{Attribute(first)} {Attribute(last)}]" : "";
+        var classes = route == "class-list" ? "/C [/First /Last]" : route == "class-attribute-array" ? "/C /Repeated" :
+            route == "local-over-class" ? "/C /Other" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {local} {classes} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var map = $"<< /First {Attribute(first)} /Last {Attribute(last)} /Other {Attribute(first)} /Repeated [{Attribute(first)} {Attribute(last)}] >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(last == "None", report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("<< /O /Layout /ListNumbering /None >>")]
+    [InlineData("<< /O /List >>")]
+    [InlineData("<< /O /List /ListNumbering null >>")]
+    [InlineData("0")]
+    public void Ua2LaterUnspecifiedOrUnrelatedAttributeDoesNotEraseOwnedValue(string tail)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R /A [<< /O /List /ListNumbering /Decimal >> {tail}] >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array")]
+    [InlineData("class-attribute-array")]
+    [InlineData("class-list")]
+    public void Ua2LaterAttributeCannotBeSkippedAfterAKnownValue(string route)
+    {
+        const string valid = "<< /O /List /ListNumbering /Decimal >>";
+        var local = route == "local-array" ? $"/A [{valid} 12 0 R]" : "";
+        var classes = route == "class-list" ? "/C [/Good /Unknown]" : route == "class-attribute-array" ? "/C /Repeated" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {local} {classes} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>", "12 0 R",
+        ]));
+        var map = $"<< /Good {valid} /Unknown 12 0 R /Repeated [{valid} 12 0 R] >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array", 200000, false)]
+    [InlineData("local-array", 200001, true)]
+    [InlineData("class-attribute-array", 200000, false)]
+    [InlineData("class-attribute-array", 200001, true)]
+    [InlineData("class-list", 200000, false)]
+    [InlineData("class-list", 200001, true)]
+    public void Ua2RepeatedAttributeScanningRetainsSharedWorkBounds(string route, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var valid = new PdfDictionary { Entries = { ["O"] = new PdfName("List"), ["ListNumbering"] = new PdfName("Decimal") } };
+        var list = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var map = new PdfDictionary { Entries = { ["Good"] = valid } };
+        if (route == "class-list")
+            list.Entries["C"] = new PdfArray(new PdfObject[] { new PdfName("Good") }
+                .Concat(Enumerable.Repeat<PdfObject>(new PdfInteger(0), count - 1)).ToList());
+        else
+        {
+            int length = route == "class-attribute-array" ? count - 1 : count;
+            var attributes = new PdfArray(new PdfObject[] { valid }
+                .Concat(Enumerable.Repeat<PdfObject>(new PdfInteger(0), length - 1)).ToList());
+            if (route == "local-array") list.Entries["A"] = attributes;
+            else { list.Entries["C"] = new PdfName("Repeated"); map.Entries["Repeated"] = attributes; }
+        }
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] = map;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

@@ -4,6 +4,15 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary repeated-attribute precedence correction](spec-backlog.md#2026-11-05-primary-repeated-attribute-precedence)
+uses the last specified owned value in local A arrays, ClassMap arrays and
+C class lists, retaining local A precedence and explicit shared bounds.
+List, note and table consumers are covered. Twelve native controls correct
+eight reversed primary outcomes while the reference retains first-wins:
+eight explicit disagreements, not reference confirmation. The fresh corpus
+and UA-1 outputs are wholly unchanged. Full owner/schema, streams, revisions,
+inheritance and NSO namespace semantics remain deferred.
+
 The [primary attribute-class entry check](spec-backlog.md#2026-11-05-primary-attribute-class-entry-type)
 requires C name/array type, retaining optional null/omission and existing
 array/reference boundaries. Fifteen native controls retain eight positives;

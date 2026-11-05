@@ -452,6 +452,34 @@ public class ValidationTests
     }
 
     [Theory]
+    [InlineData("local-array", 1)]
+    [InlineData("local-array", 2)]
+    [InlineData("class-attribute-array", 1)]
+    [InlineData("class-attribute-array", 2)]
+    [InlineData("class-list", 1)]
+    [InlineData("class-list", 2)]
+    [InlineData("local-over-class", 1)]
+    [InlineData("local-over-class", 2)]
+    public void Ua2TableColSpanArraysUseLastSpecifiedOwnedValue(string route, int last)
+    {
+        int first = 3 - last;
+        string Attribute(int value) => $"<< /O /Table /ColSpan {value} >>";
+        var local = route is "local-array" or "local-over-class"
+            ? $"/A [<< /O /Table /Scope /Column >> {Attribute(first)} {Attribute(last)}]"
+            : "/A << /O /Table /Scope /Column >>";
+        var classes = route == "class-list" ? "/C [/First /Last]" : route == "class-attribute-array" ? "/C /Repeated" :
+            route == "local-over-class" ? "/C /Other" : "";
+        var map = $"/First {Attribute(first)} /Last {Attribute(last)} /Other {Attribute(first)} /Repeated [{Attribute(first)} {Attribute(last)}]";
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(UaWithClassMap("8 0 R", map,
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>", "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TH {local} {classes} >>", "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>")), 2);
+        Assert.Equal(last == 2, report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
     [InlineData(1, 1, false)]
     [InlineData(1, 2, false)]
     [InlineData(2, 1, false)]

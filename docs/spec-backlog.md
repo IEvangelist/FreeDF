@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary repeated attribute precedence
+
+Published PDF 2.0 errata, 14.7.6.1/14.7.6.2, gives later repeated attributes
+precedence in arrays and preserves local A precedence over C. The shared
+UA-2 OwnedAttribute lookup now retains the last specified non-null owned
+value across local A arrays, ClassMap attribute arrays and C class lists.
+This supersedes the historical first-non-null policy described below.
+All ListNumbering, FENote NoteType and table attribute consumers share the
+correction. Unrelated owners, omitted/null values and revision markers
+remain non-overrides. Local values still avoid unused ClassMap lookup.
+Later inspected entries cannot be skipped after an earlier known value:
+cycles/depth/shared 200,000-item bounds produce the existing consumer-specific
+incomplete errors rather than a guessed selection.
+
+Twelve native list controls correct eight reversed primary outcomes: four
+false rejections are removed and four missed rejections are corrected.
+Four unrelated/null/omitted/revision tails remain valid. All independent
+combined-reference jobs completed normally and matched the previous
+first-wins output: **eight explicit primary/reference disagreements**, in
+both verdict directions, not reference-confirmed corrections. The published
+primary precedence fact is the basis for the behavior change.
+
+The initial 28 authored list/note/table cases had 24 failures. Nine additional
+late-cycle/shared-work boundary cases preserve incomplete handling. Six
+pre-existing FENote expectations encoded first-wins and now assert last-wins;
+their inputs are unchanged. All 37 new cases and 1,470 focused cases pass.
+Fresh 435-PDF/870-result comparison is wholly unchanged, including all
+verdicts and UA-1 outputs. This is standard-owner dictionary lookup, not full
+attribute revision selection, inheritance, NSO namespace semantics, stream
+interpretation or global owner/schema validation.
+Full Release: 15,141 cases pass without skips; solution zero errors/two
+retained machine-feed NU1507 warnings. Hosted checks/full parity not claimed.
+
 ## 2026-11-05 primary attribute-class entry type
 
 Published PDF 2.0 errata, 14.7.2 Table 355 and 14.7.6.2, defines element C

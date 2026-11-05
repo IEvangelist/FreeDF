@@ -251,7 +251,7 @@ public class AnnotationStructureValidationTests
             (8, Element.Replace("/S /Annot", $"/S /FENote /NS << /NS (http://iso.org/pdf2/ssn) >> /C {cls} {local}")),
             (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>"));
         var report = Validate(doc, part);
-        Assert.Equal(part == 2 && kind is "invalid" or "array" or "local-invalid" or "local-null" or "class-invalid-valid",
+        Assert.Equal(part == 2 && kind is "invalid" or "array" or "local-invalid" or "local-null" or "class-valid-invalid",
             report.Has("PDFUA2-FENOTE-TYPE"));
         Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
     }
@@ -298,6 +298,31 @@ public class AnnotationStructureValidationTests
         Assert.False(report.Has("PDFUA2-FENOTE-TYPE"));
     }
 
+    [Theory]
+    [InlineData("local-array", "Footnote")]
+    [InlineData("local-array", "Other")]
+    [InlineData("class-attribute-array", "Footnote")]
+    [InlineData("class-attribute-array", "Other")]
+    [InlineData("class-list", "Footnote")]
+    [InlineData("class-list", "Other")]
+    [InlineData("local-over-class", "Footnote")]
+    [InlineData("local-over-class", "Other")]
+    public void Ua2FenoteAttributeArraysUseLastSpecifiedOwnedValue(string route, string last)
+    {
+        var first = last == "Footnote" ? "Other" : "Footnote";
+        string Attribute(string value) => $"<< /O /FENote /NoteType /{value} >>";
+        var local = route is "local-array" or "local-over-class" ? $"/A [{Attribute(first)} {Attribute(last)}]" : "";
+        var classes = route == "class-list" ? "/C [/First /Last]" : route == "class-attribute-array" ? "/C /Repeated" :
+            route == "local-over-class" ? "/C /Other" : "";
+        var map = $"/First {Attribute(first)} /Last {Attribute(last)} /Other {Attribute(first)} /Repeated [{Attribute(first)} {Attribute(last)}]";
+        var doc = Load(2,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /Namespaces [14 0 R] /ClassMap << {map} >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /FENote /NS 14 0 R {local} {classes}")));
+        var report = Validate(doc, 2);
+        Assert.Equal(last == "Other", report.Has("PDFUA2-FENOTE-TYPE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+    }
+
     public static IEnumerable<object[]> FenoteTypeCases()
     {
         foreach (var part in new[] { 1, 2 })
@@ -315,7 +340,7 @@ public class AnnotationStructureValidationTests
 
     [Theory]
     [MemberData(nameof(FenoteTypeCases))]
-    public void Ua2FenoteTypeChecksOnlyTheFirstExplicitOwnedName(int part, bool mapped, string attribute)
+    public void Ua2FenoteTypeChecksTheLastExplicitOwnedName(int part, bool mapped, string attribute)
     {
         var ns = mapped ? "/NS << /NS (urn:fenote-type) /RoleMapNS << /CustomNote [/FENote << /NS (http://iso.org/pdf2/ssn) >>] >> >>"
             : "/NS << /NS (http://iso.org/pdf2/ssn) >>";
@@ -324,7 +349,7 @@ public class AnnotationStructureValidationTests
             (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
         var invalid = attribute is "/A << /O /FENote /NoteType /Other >>"
             or "/A [<< /O /FENote /NoteType /Other >>]"
-            or "/A [<< /O /FENote /NoteType /Other >> << /O /FENote /NoteType /None >>]";
+            or "/A [<< /O /FENote /NoteType /None >> << /O /FENote /NoteType /Other >>]";
         var report = Validate(doc, part);
         Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-FENOTE-TYPE"));
         Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));

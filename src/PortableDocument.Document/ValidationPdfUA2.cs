@@ -690,6 +690,7 @@ internal static class PdfUA2Checks
             if (attributes is PdfDictionary dictionary) return Find(dictionary);
             if (attributes is PdfArray array)
             {
+                PdfObject? last = null;
                 foreach (var item in array.Items)
                 {
                     if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return null; }
@@ -698,10 +699,12 @@ internal static class PdfUA2Checks
                     if (value is PdfDictionary attribute)
                     {
                         var found = Find(attribute);
-                        if (incomplete || found is not (null or PdfNull)) return found;
+                        if (incomplete) return null;
+                        if (found is not (null or PdfNull)) last = found;
                     }
-                    else if (value is not (null or PdfNull or PdfInteger)) Incomplete();
+                    else if (value is not (null or PdfNull or PdfInteger)) { Incomplete(); return null; }
                 }
+                return last;
             }
             else if (attributes is not (null or PdfNull)) Incomplete();
             return null;
@@ -720,6 +723,7 @@ internal static class PdfUA2Checks
                     {
                         if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return null; }
                         var value = Resolve(raw);
+                        if (incomplete) return null;
                         if (value is PdfName name) return FindAttributes(classMap.Get(name.Value));
                         if (value is not (null or PdfNull or PdfInteger)) Incomplete();
                         return null;
@@ -728,8 +732,9 @@ internal static class PdfUA2Checks
                     else if (classes is PdfArray array)
                         foreach (var item in array.Items)
                         {
-                            noteType = FromClass(item);
-                            if (incomplete || noteType is not (null or PdfNull)) break;
+                            var found = FromClass(item);
+                            if (incomplete) { noteType = null; break; }
+                            if (found is not (null or PdfNull)) noteType = found;
                         }
                     else Incomplete();
                 }

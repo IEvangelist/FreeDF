@@ -348,6 +348,14 @@ accepted by the reference; those differences are explicit. Undefined
 classes remain empty. Complete array-item syntax, class revision ordering
 and ClassMap attribute objects are not established.
 
+The repeated attribute precedence correction follows the later-entry and
+local A-over-C facts in 14.7.6.1/14.7.6.2 at the same errata source. Lookup
+is independently implemented and bounded. Twelve native list controls
+change eight reversed primary outcomes while the reference retains the
+previous first-wins output. These disagreements in both verdict directions
+are explicit; reference confirmation is not claimed. Full owner/schema,
+stream, revision, inheritance and NSO semantics remain separate.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
