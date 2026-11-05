@@ -58,6 +58,12 @@ Six native controls give four exact-rule/file agreements; two indirect-null
 reference disagreements follow primary null equivalence. UA-2 and fresh
 435-PDF/870-result corpus output are unchanged.
 
+The [rich-field plain-text encoding correction](spec-backlog.md#2026-11-05-rich-field-plain-text-encoding)
+uses PDFDocEncoding and strict Unicode decoding within the UA-2 equality
+check, leaving the shared string decoder unchanged. Twelve native controls
+agree, correcting six false positives; UA-1 and fresh 435-PDF/870-result
+corpus output are unchanged. Invalid encodings report incomplete inspection.
+
 The [UA-2 rich-field XML text-equality extension](spec-backlog.md#2026-11-05-ua-2-rich-field-xml-text-equality)
 compares RV body text nodes with decoded V while preserving presence and
 inheritance selection. Thirty-six native controls agree, correcting 18

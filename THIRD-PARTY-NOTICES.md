@@ -131,6 +131,11 @@ text-stream packaging. Dated presence disagreements and the additional
 stream-attribute/inheritance controls remain explicit; no profile XML,
 runtime, reference-engine source or external PDFs are bundled.
 
+The scoped plain-value decoder also uses factual codepoint mappings
+from ISO 32000-1 7.9.2.2 and Annex D.3/Table D.2, independently implemented
+in `ValidationPdfUA2.cs` and cross-checked against the same CC BY 4.0
+8.10.3.3-1 profile. The shared string decoder is unchanged.
+
 The UA-2 file-attachment AFRelationship requirement was cross-checked
 against the same CC BY 4.0 UA-2 profile, 8.9.2.4.10-1. Null handling
 follows primary ISO 32000-1 7.3.9; bounded references are reported

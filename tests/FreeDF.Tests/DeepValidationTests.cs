@@ -1481,6 +1481,54 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> RichFieldPdfDocEncodingCases()
+    {
+        int[] accents = [0x02D8, 0x02C7, 0x02C6, 0x02D9, 0x02DD, 0x02DB, 0x02DA, 0x02DC];
+        int[] symbols = [0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x0192, 0x2044,
+            0x2039, 0x203A, 0x2212, 0x2030, 0x201E, 0x201C, 0x201D, 0x2018, 0x2019,
+            0x201A, 0x2122, 0xFB01, 0xFB02, 0x0141, 0x0152, 0x0160, 0x0178, 0x017D,
+            0x0131, 0x0142, 0x0153, 0x0161, 0x017E];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var mismatch in new[] { false, true })
+        {
+            for (int i = 0; i < accents.Length; i++) yield return [part, i + 0x18, accents[i], mismatch];
+            for (int i = 0; i < symbols.Length; i++) yield return [part, i + 0x80, symbols[i], mismatch];
+            yield return [part, 0xA0, 0x20AC, mismatch];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RichFieldPdfDocEncodingCases))]
+    public void RichFieldEqualityUsesPdfDocEncoding(int part, int value, int codepoint, bool mismatch)
+    {
+        var xml = $"<body xmlns='http://www.w3.org/1999/xhtml'><p>&#x{(mismatch ? 0x58 : codepoint):X};</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV ({xml}) /V <{value:X2}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("00")]
+    [InlineData("7F")]
+    [InlineData("9F")]
+    [InlineData("AD")]
+    [InlineData("FEFF00")]
+    [InlineData("FEFFD800")]
+    [InlineData("EFBBBF80")]
+    public void RichFieldEqualityInvalidPlainEncodingIsIncomplete(string hex)
+    {
+        var xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>&#xFFFD;</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV ({xml}) /V <{hex}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-VALUE-INCOMPLETE");
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

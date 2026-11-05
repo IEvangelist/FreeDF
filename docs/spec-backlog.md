@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 rich-field plain text encoding
+
+The UA-2 rich-field equality check now decodes plain V using PDFDocEncoding
+instead of the shared decoder's Latin-1 fallback. All 40 non-Latin-1
+character mappings follow ISO 32000-1 7.9.2.2 and Annex D.3/Table D.2:
+eight accent characters, 31 punctuation/ligature/letter characters and euro.
+The shared PdfString decoder and other consumers are unchanged.
+Existing Unicode BOM selection is retained, but malformed UTF-16/UTF-8
+and undefined PDFDocEncoding bytes produce separate incomplete inspection
+rather than replacement-character equality or a guessed mismatch.
+This does not establish complete PDF-2.0 string syntax conformance.
+
+Twelve native symbol controls agree with pinned veraPDF v1.30.3
+8.10.3.3-1 on exact rule and whole-file outcomes: six clean positives
+and six negatives. The exact pre-change runner rejects all six positives;
+the scoped decoder corrects those six false-positive file verdicts.
+All 12 UA-1 outputs and fresh 435-PDF/870-result corpus output are unchanged.
+Every native reference job completed normally. The first report-writing
+attempt failed on Windows default text encoding; the retained complete
+reports were regenerated explicitly as UTF-8, not counted as partial results.
+
+One hundred sixty authored mapping/profile/mismatch cases and seven
+undefined-byte/malformed-Unicode cases cover the new boundary. Full Release
+suite: 14,615 passed, zero failed/skipped. Solution build: zero errors,
+two retained machine-feed NU1507 warnings. The preceding XML/stream/
+inheritance disagreements and rendered/CSS/schema/type limits remain
+unchanged. External control PDFs and reports remain session-only;
+full PDF/UA parity is not claimed.
+
 ## 2026-11-05 UA-2 rich-field XML text equality
 
 The terminal-text-field RV/V presence check now also compares decoded

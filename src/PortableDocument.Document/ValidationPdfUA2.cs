@@ -67,16 +67,43 @@ internal static class PdfUA2Checks
                     var bytes = RichFieldBytes(c, value);
                     if (bytes.Length > XfaReader.MaxBytes) { Unresolved(); continue; }
                     var richText = RichFieldText(c, rich, Unresolved);
-                    if (complete && richText != PdfString.Decode(bytes))
+                    if (complete && richText != RichFieldPlainText(bytes))
                         c.Add("PDFUA2-FORM-RV-V", ValidationSeverity.Error,
                             "a text field's /RV XML text content differs from its plain /V value",
                             "ISO 14289-2 8.10.3.3");
                 }
-                catch (Exception e) when (e is IOException or InvalidDataException or PdfParseException or XmlException or NotSupportedException)
+                catch (Exception e) when (e is IOException or InvalidDataException or PdfParseException or XmlException or NotSupportedException or DecoderFallbackException)
                 {
                     Unresolved();
                 }
             }
+        }
+
+        static string RichFieldPlainText(byte[] bytes)
+        {
+            if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+                return new UnicodeEncoding(true, false, true).GetString(bytes, 2, bytes.Length - 2);
+            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+                return new UnicodeEncoding(false, false, true).GetString(bytes, 2, bytes.Length - 2);
+            if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                return new UTF8Encoding(false, true).GetString(bytes, 3, bytes.Length - 3);
+            const string accents = "\u02D8\u02C7\u02C6\u02D9\u02DD\u02DB\u02DA\u02DC";
+            const string symbols = "\u2022\u2020\u2021\u2026\u2014\u2013\u0192\u2044\u2039\u203A\u2212\u2030\u201E\u201C\u201D\u2018\u2019\u201A\u2122\uFB01\uFB02\u0141\u0152\u0160\u0178\u017D\u0131\u0142\u0153\u0161\u017E";
+            var result = new char[bytes.Length];
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                byte value = bytes[i];
+                if (value is < 0x18 and not (9 or 10 or 13) or 0x7F or 0x9F or 0xAD)
+                    throw new InvalidDataException("undefined PDFDocEncoding byte in rich-field plain value");
+                result[i] = value switch
+                {
+                    >= 0x18 and <= 0x1F => accents[value - 0x18],
+                    >= 0x80 and <= 0x9E => symbols[value - 0x80],
+                    0xA0 => '\u20AC',
+                    _ => (char)value,
+                };
+            }
+            return new string(result);
         }
 
         void Incomplete()
