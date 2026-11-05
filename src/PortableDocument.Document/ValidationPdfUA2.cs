@@ -156,11 +156,17 @@ internal static class PdfUA2Checks
             || f.Resolve(widget.Get("Contents")) is PdfString
             || !(f.Resolve(widget.Get("FT")) is PdfName || f.Resolve(widget.Get("T")) is PdfString
                 || f.Resolve(widget.Get("Parent")) is PdfDictionary)) return;
-        for (var element = parent; element is not null; element = element.Parent)
-            if (StandardType(c, tree, element) == "Artifact") return;
+        if (InsideArtifact(c, tree, parent)) return;
         c.Add("PDFUA2-WIDGET-AA-CONTENTS", ValidationSeverity.Error,
             "a tagged field widget with additional actions requires its own /Contents description",
             "ISO 14289-2 8.10.2.3", page);
+    }
+
+    internal static bool InsideArtifact(ValidationContext c, StructureTree tree, StructElement parent)
+    {
+        for (var element = parent; element is not null; element = element.Parent)
+            if (StandardType(c, tree, element) == "Artifact") return true;
+        return false;
     }
 
     static void Elements(ValidationContext c, StructureTree tree)

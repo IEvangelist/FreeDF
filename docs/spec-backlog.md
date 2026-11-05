@@ -4,6 +4,46 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 namespace-aware widget structure
+
+The widget Form-parent check now uses the UA-2 namespace-aware standard
+type resolver and excludes Artifact ancestors. A foreign role correctly
+mapped to PDF 2.0 Form is accepted, as are direct/mapped Artifact widgets;
+a type merely spelled Artifact in the PDF 1.7/default namespace is not
+silently treated as a PDF 2.0 Artifact. UA-1 keeps its existing policy.
+The additional-action check reuses the same Artifact ancestry predicate;
+its behaviour is unchanged. The reported UA-2 Form-parent clause is now
+8.10.1 rather than the old generic 8.9.
+
+The scoped facts are cross-checked against the pinned veraPDF v1.30.3
+UA-2 profile, 8.10.1-1: the enclosing Form requirement has an Artifact
+exception. Full primary 8.10 remains unavailable in the public ISO
+preview; this is not complete widget classification or label semantics.
+The legacy check still applies to nonfield widgets with an enclosing
+structure element, unlike the profile's isFieldWidget exemption. This
+slice does not broaden that unverified classification boundary.
+
+Eighteen authored cases cover both profiles, direct/mapped Form and
+Artifact, ancestor Artifacts, wrong namespaces and unresolved foreign
+roles; five failed before the correction. Nine independent native UA-2
+PDF controls give exact-rule and whole-file agreement: four clean
+positives and five negatives. Three previous false-positive verdicts
+are fixed. Two deliberately invalid document-root controls lose only
+the irrelevant Form-parent error and remain negative in both validators;
+they are not Artifact-positive documents. All nine corresponding UA-1
+outputs are unchanged.
+
+The earlier 32-widget collection gains two further Artifact-positive
+verdicts. Comparison to its older retained baseline also shows four
+cross-profile UA-1 tooltip findings removed by the preceding null-name
+ownership fix; those cumulative changes are explicitly retained, not
+attributed to this UA-2-only structure correction. Fresh measurements
+of all 435 public PDFs/870 profile results are identical to the immediate
+previous baseline. Full Release suite: 13,571 passed, zero failed/skipped.
+Solution build: zero errors and two retained machine-feed NU1507 warnings.
+Reporting tool: 20 passing tests, including the Form-parent family
+mapping. External reference/runtime/PDF artifacts remain session-only.
+
 ## 2026-11-05 Null widget names and terminal-field ownership
 
 The simple form reader, typed form-detail reader, editor value updater

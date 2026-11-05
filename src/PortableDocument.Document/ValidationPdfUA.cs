@@ -598,8 +598,10 @@ internal static partial class PdfUAChecks
                 }
                 else if (sub == "Widget")
                 {
-                    if (parent is not null && parent.StandardType != "Form")
-                        c.Add("PDFUA-FORM-STRUCT", ValidationSeverity.Error, $"Widget annotation is nested in /{parent.Type}, expected Form", Clause(c, "7.18.4", "8.9"), i);
+                    var parentType = parent is null ? null : c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, parent) : parent.StandardType;
+                    if (parent is not null && parentType != "Form"
+                        && !(c.Part == 2 && PdfUA2Checks.InsideArtifact(c, tree, parent)))
+                        c.Add("PDFUA-FORM-STRUCT", ValidationSeverity.Error, $"Widget annotation is nested in /{parent.Type}, expected Form", Clause(c, "7.18.4", "8.10.1"), i);
                     var hasTooltip = c.Part == 1 && widgetFields.TryGetValue(ad, out var field)
                         ? f.Resolve(field.Get("TU")) is PdfString { Bytes.Length: > 0 }
                         : HasText(f, ad, "TU");

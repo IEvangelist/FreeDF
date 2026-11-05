@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 namespace-aware widget structure correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-widget-structure)
+honours mapped Form roles and Artifact ancestry. Nine native controls give
+exact-rule/file agreement, including three corrected false positives;
+two invalid-root controls remain negative. UA-1 is unchanged. Nonfield
+classification and label semantics remain incomplete, and fresh
+435-PDF/870-result corpus output is unchanged.
+
 The [null widget-name ownership correction](spec-backlog.md#2026-11-05-null-widget-names-and-terminal-field-ownership)
 keeps terminal-field ownership consistent in readers, value updates and
 the editor index. Nineteen authored controls and six newly agreeing

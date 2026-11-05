@@ -71,6 +71,13 @@ condition with namespace-aware Artifact exclusion. The separate
 label-or-Contents predicate remains incomplete; no model implementation
 or profile XML is bundled.
 
+The UA-2 widget enclosing-Form requirement and Artifact exception were
+cross-checked against the same CC BY 4.0 UA-2 profile, 8.10.1-1.
+`ValidationPdfUA.cs` and `ValidationPdfUA2.cs` independently implement
+namespace-aware Form resolution and shared Artifact ancestry inspection.
+Nonfield-widget classification remains incomplete; no profile XML or
+reference-engine source is bundled.
+
 The UA-1 complete Scope-presence check for tables without TD Headers was
 cross-checked against the same CC BY 4.0 PDF/UA-1 profile, 7.5 tests 1/2.
 `ValidationPdfUA.cs` independently implements this necessary presence

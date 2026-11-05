@@ -548,6 +548,64 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> WidgetStructureCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "form", "artifact", "mapped-form", "mapped-artifact",
+            "ancestor-artifact", "mapped-ancestor-artifact", "paragraph", "pdf17-artifact", "foreign-unmapped" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(WidgetStructureCases))]
+    public void Ua2WidgetStructureResolvesFormAndArtifactNamespaces(int part, string kind)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            "<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /TU (name) /Contents (description) /StructParent 1 /Rect [0 0 10 10] >>",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray([new PdfInteger(1), new PdfRef(8, 0)]) },
+        };
+        var parent = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var document = Assert.IsType<PdfDictionary>(doc.File.GetObject(7));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind is "artifact" or "pdf17-artifact")
+        {
+            parent.Entries["S"] = new PdfName("Artifact");
+            if (kind == "artifact") parent.Entries["NS"] = pdf2;
+        }
+        if (kind is "mapped-form" or "mapped-artifact" or "mapped-ancestor-artifact" or "foreign-unmapped")
+        {
+            var element = kind == "mapped-ancestor-artifact" ? document : parent;
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:widget-structure")) } };
+            if (kind != "foreign-unmapped")
+                ns.Entries["RoleMapNS"] = new PdfDictionary
+                {
+                    Entries = { ["Custom"] = new PdfArray([new PdfName(kind == "mapped-form" ? "Form" : "Artifact"), pdf2]) },
+                };
+            element.Entries["S"] = new PdfName("Custom");
+            element.Entries["NS"] = ns;
+        }
+        if (kind is "ancestor-artifact" or "mapped-ancestor-artifact" or "paragraph")
+        {
+            parent.Entries["S"] = new PdfName("P");
+            if (kind == "ancestor-artifact")
+            {
+                document.Entries["S"] = new PdfName("Artifact");
+                document.Entries["NS"] = pdf2;
+            }
+        }
+        var expected = part == 1 ? kind != "form" : kind is "paragraph" or "pdf17-artifact" or "foreign-unmapped";
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(expected, report.Has("PDFUA-FORM-STRUCT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> WidgetFieldTypeCases()
     {
         foreach (var part in new[] { 1, 2 })
