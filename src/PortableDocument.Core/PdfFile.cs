@@ -172,7 +172,7 @@ public sealed class PdfFile
     {
         if (!_objStmCache.TryGetValue(stmNum, out var map))
         {
-            if (GetObject(stmNum) is not PdfStream s) throw new PdfParseException("bad object stream");
+            if (GetObject(new PdfRef(stmNum, 0)) is not PdfStream s) throw new PdfParseException("bad object stream");
             var data = DecodeStream(s);
             var n = (int)(Resolve(s.Dict.Get("N")).AsNumber() ?? 0);
             var first = (int)(Resolve(s.Dict.Get("First")).AsNumber() ?? 0);
@@ -186,14 +186,16 @@ public sealed class PdfFile
                     lx.Pos > first || on.Value < 0 || on.Value > int.MaxValue ||
                     off.Value < 0 || off.Value >= data.Length - first)
                     throw new PdfParseException("bad object stream member offset");
-                map.Offsets[(int)on.Value] = (int)off.Value;
+                if (!map.Members.TryAdd((int)on.Value, (i, (int)off.Value)))
+                    throw new PdfParseException("duplicate object stream member number");
             }
             _objStmCache[stmNum] = map;
         }
+        if (!map.Members.TryGetValue(objNum, out var member) || member.Index != index)
+            throw new PdfParseException("object stream member index mismatch");
         if (map.Parsed.TryGetValue(objNum, out var hit)) return hit;
-        if (!map.Offsets.TryGetValue(objNum, out var o)) return PdfNull.Instance;
         // Objects are parsed on demand; a malformed member only affects requests for that member.
-        var parsed = new PdfLexer(map.Data, map.First + o).ReadObject() ?? PdfNull.Instance;
+        var parsed = new PdfLexer(map.Data, map.First + member.Offset).ReadObject() ?? PdfNull.Instance;
         map.Parsed[objNum] = parsed;
         return parsed;
     }
@@ -202,7 +204,7 @@ public sealed class PdfFile
     {
         public readonly byte[] Data = data;
         public readonly int First = first;
-        public readonly Dictionary<int, int> Offsets = [];
+        public readonly Dictionary<int, (int Index, int Offset)> Members = [];
         public readonly Dictionary<int, PdfObject> Parsed = [];
     }
 

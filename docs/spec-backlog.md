@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed member index and container identity
+
+ISO 32000-1 7.5.8.3/Table 18 (printed p51; p48 example) defines a type-2
+xref entry's third field as its member index and its container reference
+as implicitly generation zero. The loader previously ignored the index,
+overwrote duplicate header numbers and looked up containers by number alone.
+Object-stream header entries now retain index and offset per number,
+reject duplicate numbers, and require the selected number/index pair
+before consulting the parsed-member cache. Containers use generation-aware
+zero-generation references. Violations produce explicit PdfParseException
+and use the existing bounded-to-one-repair recovery path.
+
+Six new controls were red before correction. The earlier generation test
+now uses an actual nonzero member index, instead of treating three different
+indices as aliases for one member (two artificial theory cases removed).
+On-demand parsing still allows a valid requested body when an unrelated
+member body is malformed. Focused parser/generation/annotation/encryption/
+signature Release: 419 passed; full Release: 18,439 passed, zero failed/
+skipped. Solution zero errors/two retained machine-feed NU1507 warnings.
+
+Seven native PDFs retain two valid controls; three incorrect/out-of-range
+indices recover the intended target with Repaired=true, while duplicate
+numbers and a nonzero-generation container produce explicit errors.
+MuPDF accepts all seven: three explicit repair-reporting policy differences
+and two rejection disagreements. The duplicate previously redirected
+FreeDF to the second body while MuPDF chose the first; FreeDF now rejects
+the ambiguous header rather than choosing either. Fresh 435-PDF/870-result
+corpus JSON is wholly unchanged against 1fef152d.
+This is reached member identity, not complete object-stream/xref schema,
+global parser resource limits or full PDF parity. External controls and
+standards remain unbundled; hosted CI is not claimed.
+
 ## 2026-11-05 object header generation consistency
 
 The ISO 32000-1 7.3.10/7.5.4 identity requirements also apply to the

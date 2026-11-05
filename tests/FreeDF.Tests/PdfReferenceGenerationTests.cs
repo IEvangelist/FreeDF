@@ -21,7 +21,7 @@ public class PdfReferenceGenerationTests
         Object(4, generation, "<< /Type /GenerationTarget >>");
         Object(5, 0, $"4 {generation} R");
         Object(6, 0, $"4 {(generation == 0 ? 1 : 0)} R");
-        Object(7, 0, ObjPdf.Stream("8 0 42", "/Type /ObjStm /N 1 /First 4"));
+        Object(7, 0, ObjPdf.Stream("9 0 8 3 41 42", "/Type /ObjStm /N 2 /First 8"));
         var xref = text.Length;
         text.Append("xref\n0 8\n0000000000 65535 f \n");
         foreach (var (offset, gen) in offsets) text.Append($"{offset:D10} {gen:D5} n \n");
@@ -61,17 +61,14 @@ public class PdfReferenceGenerationTests
         Assert.IsType<PdfNull>(file.Resolve(new PdfRef(6, 0)));
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(9)]
-    public void Compressed_references_use_generation_zero_not_the_member_index(int index)
+    [Fact]
+    public void Compressed_references_use_generation_zero_not_the_member_index()
     {
         var file = Load();
-        file.Xref[8] = new(true, true, 7, index);
+        file.Xref[8] = new(true, true, 7, 1);
         Assert.Equal(new PdfInteger(42), file.Resolve(new PdfRef(8, 0)));
         Assert.IsType<PdfNull>(file.Resolve(new PdfRef(8, 1)));
-        Assert.IsType<PdfNull>(file.Resolve(new PdfRef(8, index == 0 ? 9 : index)));
+        Assert.IsType<PdfNull>(file.Resolve(new PdfRef(8, 9)));
     }
 
     [Fact]

@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed member identity correction](spec-backlog.md#2026-11-05-compressed-member-index-and-container-identity)
+matches member number/index before cached parsing, rejects duplicate header
+numbers and requires a generation-zero container. Seven native controls
+retain two positives, explicitly repair three index errors and reject two
+ambiguous/invalid identities. MuPDF accepts those invalid controls; repair/
+rejection differences are recorded. Corpus JSON is unchanged. Complete
+object-stream/xref schema and parser-wide budgets remain separate.
+
 The [object header generation check](spec-backlog.md#2026-11-05-object-header-generation-consistency)
 compares reached uncompressed headers against xref generations, using
 explicit parse errors and existing repair. Four native mismatches no
