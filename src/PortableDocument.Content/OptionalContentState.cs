@@ -52,7 +52,7 @@ public sealed class OptionalContentState
         Groups = groups.AsReadOnly();
 
         // Only RBGroups inherits from /D. An explicit empty array suppresses inheritance.
-        var radioValue = Configuration?.Get("RBGroups");
+        var radioValue = R(Configuration?.Get("RBGroups"));
         if (radioValue is null or PdfNull) radioValue = DefaultConfiguration?.Get("RBGroups");
         var radioGroups = new List<IReadOnlyList<PdfDictionary>>();
         if (ReadArray(radioValue, "RBGroups") is { } radio)

@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [radio-group inheritance correction](spec-backlog.md#2026-11-05-resolved-null-radio-group-inheritance)
+resolves named RBGroups before applying omission defaults, preserving
+explicit empty-array overrides. It also records the distinction between
+writer-normalized null inputs and independently encoded raw-reference controls.
+
 The [intent-participation correction](spec-backlog.md#2026-11-05-optional-content-intent-participation)
 keeps layer ON/OFF state separate from configuration intent matching across
 marked content, Forms, images and annotations. Nonmatching groups have no

@@ -4,6 +4,44 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 resolved-null radio-group inheritance
+
+Table 101 (printed p230) makes a named configuration's omitted RBGroups
+inherit from default D; an explicit empty array suppresses inheritance.
+Together with 7.3.7/7.3.9 (pp18/21), indirect null and nonexistent references
+must also act as omitted. Initialization previously tested raw dictionary
+values before resolution, so those two forms incorrectly suppressed radio
+groups. It now resolves the selected value before testing for inheritance.
+Direct/indirect empty arrays still explicitly disable radio groups.
+
+Seven controls check omitted/direct null/indirect null/nonexistent reference,
+direct/indirect empty arrays and a valid indirect radio-group array. They
+verify initial ON/OFF state, radio metadata, atomic UI selection, both
+rendered regions and empty diagnostics. The first PdfWriter-based baseline
+failed only one case: that writer normalizes unmapped references to direct
+null. Replacing it with an independently encoded, unrepaired PDF fixture
+preserves the intended nonexistent reference and gives the genuine
+two-failure/five-pass production baseline. All seven now pass; focused
+optional-content/layer/raster-golden checks pass 283, full Release passes
+19,678 with zero failed/skipped, and the solution builds with zero warnings/
+errors.
+
+This provenance finding also qualifies the preceding null-VE and intent
+tests: their nonexistent-reference *source inputs* were normalized to direct
+null by PdfWriter, not raw dangling-reference fixtures. Three additional,
+independently encoded raw-reference PDFs now verify nonexistent group
+Intent and VE AnyOn/AnyOff fallback through native full 200x200 RGB buffers,
+with no warnings; PyMuPDF 2.0/MuPDF 1.28.5 agrees on all three.
+Earlier dated baseline totals remain unchanged, not relabelled as independent
+raw-reference evidence.
+
+This is constructor-only resolution ordering, not a change to timed layer
+queries or membership interpretation. Existing measurements were not rerun
+and no initialization/performance claim is made. The preceding 435-PDF/
+870-result validation-corpus comparison is retained as dated evidence, not
+repeated for this UI-state initialization change. Broader configuration
+schema and optional-content lifecycle parity remain open.
+
 ## 2026-11-05 optional-content intent participation
 
 ISO 32000-1 8.11.2.3 (printed p225), Table 98 (p222) and Table 101
