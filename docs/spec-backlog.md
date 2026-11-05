@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 byte-bounded compressed value parsing
+
+ISO 32000-1 7.5.7 (printed p46) supplies the consecutive member offsets;
+7.3.4, 7.3.6 and 7.3.7 require complete string/array/dictionary syntax.
+The internal member lexer now has an exclusive end for value consumption,
+including container recursion, string escapes and reference lookahead.
+It retains the original buffer without copying the member. One physical
+following byte is inspected for token separation so a declared boundary
+cannot turn part of a regular token or name into a valid prefix.
+Public/default lexer bounds remain the full buffer.
+
+Twenty-one new controls cover four borrowed closing delimiters, complete
+values beside an independently malformed member, split regular/name tokens,
+and exact lexer positions before a one-MiB unrelated tail. Default lexing of
+the complete tail remains supported. The first selector had eleven failures:
+seven incorrectly assumed cache identity survives repair; after correcting
+that test assumption on unchanged production, four diagnostic controls
+failed/thirteen passed. Four direct bounded-position controls were added
+with the internal constructor. Full Release: 19,011 passed, zero failed/skipped.
+Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Fourteen native PDFs preserve six positive outputs unchanged. Eight negatives
+were already rejected after overreading; they now stop at their member end
+with the specific unterminated string/container error. This is bounded
+consumption, not eight newly rejected files. MuPDF returns null for all eight
+negative Type probes and agrees on six positives; an absent probe is not a
+whole-file conformance result. Fresh pinned 435-PDF/870-result full corpus JSON
+is wholly unchanged against the trailing-comment baseline.
+
+The complete decoded object stream is still retained. This does not impose
+decode/allocation budgets, eagerly validate other members or establish every
+member's global source alignment. Those remain separate from per-member
+value consumption and token-end checks.
+
 ## 2026-11-05 compressed member trailing comment boundaries
 
 ISO 32000-1 7.2.3 (printed p13) defines comments through line end;

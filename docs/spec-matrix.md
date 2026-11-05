@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [byte-bounded compressed value parser](spec-backlog.md#2026-11-05-byte-bounded-compressed-value-parsing)
+stops consumption at each member's end, preserving full-buffer default
+lexing. A following-byte token-separation check prevents valid prefixes of
+cut tokens. Exact position controls and unchanged corpus JSON are recorded;
+decoded-buffer budgets, global source alignment and eager validation remain separate.
+
 The [compressed member trailing-comment check](spec-backlog.md#2026-11-05-compressed-member-trailing-comment-boundaries)
 bounds trailing trivia at the member end and rejects comments crossing into
 the next member. Complete comments, whitespace, lazy access and existing EOF

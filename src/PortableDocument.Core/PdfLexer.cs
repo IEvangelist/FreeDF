@@ -26,19 +26,23 @@ public sealed class PdfLexer
     };
 
     readonly byte[] _d;
+    readonly int _end;
     readonly bool _objectStreamMember;
     public int Pos;
-    public PdfLexer(byte[] data, int pos = 0) { _d = data; Pos = pos; }
-    internal PdfLexer(byte[] data, int pos, bool objectStreamMember) : this(data, pos)
-        => _objectStreamMember = objectStreamMember;
-    public int Length => _d.Length;
+    public PdfLexer(byte[] data, int pos = 0) { _d = data; _end = data.Length; Pos = pos; }
+    internal PdfLexer(byte[] data, int pos, bool objectStreamMember, int? end = null) : this(data, pos)
+    {
+        _objectStreamMember = objectStreamMember;
+        _end = end ?? data.Length;
+    }
+    public int Length => _end;
     public byte[] Data => _d;
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
     static bool IsRegular(int c) => !IsWhite(c) && !IsDelim(c);
 
-    public void SkipWhite() => SkipWhite(_d.Length);
+    public void SkipWhite() => SkipWhite(_end);
 
     internal bool SkipWhite(int end)
     {
@@ -69,17 +73,17 @@ public sealed class PdfLexer
     public PdfObject? ReadObject(bool resolveRefs = true)
     {
         SkipWhite();
-        if (Pos >= _d.Length) return null;
+        if (Pos >= _end) return null;
         var c = _d[Pos];
         switch (c)
         {
             case (byte)'/': return ReadName();
             case (byte)'(': return ReadLiteralString();
             case (byte)'<':
-                if (Pos + 1 < _d.Length && _d[Pos + 1] == '<') { Pos += 2; return ReadDictBody(resolveRefs); }
+                if (Pos + 1 < _end && _d[Pos + 1] == '<') { Pos += 2; return ReadDictBody(resolveRefs); }
                 return ReadHexString();
             case (byte)'>':
-                if (Pos + 1 < _d.Length && _d[Pos + 1] == '>') { Pos += 2; return new PdfKeyword(">>"); }
+                if (Pos + 1 < _end && _d[Pos + 1] == '>') { Pos += 2; return new PdfKeyword(">>"); }
                 Pos++; return new PdfKeyword(">");
             case (byte)'[': Pos++; return ReadArrayBody(resolveRefs);
             case (byte)']': Pos++; return new PdfKeyword("]");
@@ -88,7 +92,8 @@ public sealed class PdfLexer
             case (byte)')': Pos++; return new PdfKeyword(")");
         }
         var start = Pos;
-        while (Pos < _d.Length && IsRegular(_d[Pos])) Pos++;
+        while (Pos < _end && IsRegular(_d[Pos])) Pos++;
+        CheckTokenBoundary();
         var token = _d.AsSpan(start, Pos - start);
         if (TryNumber(token, out var num))
         {
@@ -113,13 +118,13 @@ public sealed class PdfLexer
         var save = Pos;
         SkipWhite();
         var s = Pos;
-        while (Pos < _d.Length && _d[Pos] is >= (byte)'0' and <= (byte)'9') Pos++;
+        while (Pos < _end && _d[Pos] is >= (byte)'0' and <= (byte)'9') Pos++;
         if (Pos > s && Pos - s < 6)
         {
             var gen = 0;
             for (var i = s; i < Pos; i++) gen = gen * 10 + _d[i] - '0';
             SkipWhite();
-            if (Pos < _d.Length && _d[Pos] == 'R' && (Pos + 1 >= _d.Length || !IsRegular(_d[Pos + 1])))
+            if (Pos < _end && _d[Pos] == 'R' && (Pos + 1 >= _d.Length || !IsRegular(_d[Pos + 1])))
             {
                 if (first.Value > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
                 Pos++;
@@ -128,6 +133,12 @@ public sealed class PdfLexer
         }
         Pos = save;
         return null;
+    }
+
+    void CheckTokenBoundary()
+    {
+        if (Pos == _end && _end < _d.Length && IsRegular(_d[Pos]))
+            throw new PdfParseException("object stream member exceeds its boundary");
     }
 
     static bool IsNumericToken(ReadOnlySpan<byte> token)
@@ -180,10 +191,10 @@ public sealed class PdfLexer
     {
         Pos++;
         var sb = new List<byte>();
-        while (Pos < _d.Length && IsRegular(_d[Pos]))
+        while (Pos < _end && IsRegular(_d[Pos]))
         {
             var c = _d[Pos++];
-            if (c == '#' && Pos + 1 < _d.Length && Hex(_d[Pos]) >= 0 && Hex(_d[Pos + 1]) >= 0)
+            if (c == '#' && Pos + 1 < _end && Hex(_d[Pos]) >= 0 && Hex(_d[Pos + 1]) >= 0)
             {
                 var decoded = (byte)(Hex(_d[Pos]) * 16 + Hex(_d[Pos + 1]));
                 if (_objectStreamMember && decoded == 0)
@@ -198,6 +209,7 @@ public sealed class PdfLexer
                 sb.Add(c);
             }
         }
+        CheckTokenBoundary();
         var arr = sb.ToArray();
         string s;
         try { s = new UTF8Encoding(false, true).GetString(arr); } catch { s = Encoding.Latin1.GetString(arr); }
@@ -217,7 +229,7 @@ public sealed class PdfLexer
         Pos++;
         var bytes = new List<byte>();
         var hi = -1;
-        while (Pos < _d.Length && _d[Pos] != '>')
+        while (Pos < _end && _d[Pos] != '>')
         {
             var h = Hex(_d[Pos++]);
             if (h < 0 && _objectStreamMember && !IsWhite(_d[Pos - 1]))
@@ -225,7 +237,7 @@ public sealed class PdfLexer
             if (h < 0) continue;
             if (hi < 0) hi = h; else { bytes.Add((byte)(hi * 16 + h)); hi = -1; }
         }
-        if (Pos >= _d.Length && _objectStreamMember)
+        if (Pos >= _end && _objectStreamMember)
             throw new PdfParseException("unterminated hexadecimal string in object stream member");
         if (hi >= 0) bytes.Add((byte)(hi * 16));
         Pos++;
@@ -237,10 +249,10 @@ public sealed class PdfLexer
         Pos++;
         var depth = 1;
         var b = new List<byte>();
-        while (Pos < _d.Length)
+        while (Pos < _end)
         {
             var c = _d[Pos++];
-            if (c == '\\' && Pos < _d.Length)
+            if (c == '\\' && Pos < _end)
             {
                 var e = _d[Pos++];
                 switch (e)
@@ -250,11 +262,11 @@ public sealed class PdfLexer
                     case (byte)'t': b.Add(9); break;
                     case (byte)'b': b.Add(8); break;
                     case (byte)'f': b.Add(12); break;
-                    case 13: if (Pos < _d.Length && _d[Pos] == 10) Pos++; break;
+                    case 13: if (Pos < _end && _d[Pos] == 10) Pos++; break;
                     case 10: break;
                     case >= (byte)'0' and <= (byte)'7':
                         var v = e - '0';
-                        for (var i = 0; i < 2 && Pos < _d.Length && _d[Pos] is >= (byte)'0' and <= (byte)'7'; i++) v = v * 8 + (_d[Pos++] - '0');
+                        for (var i = 0; i < 2 && Pos < _end && _d[Pos] is >= (byte)'0' and <= (byte)'7'; i++) v = v * 8 + (_d[Pos++] - '0');
                         b.Add((byte)v);
                         break;
                     default: b.Add(e); break;
@@ -262,7 +274,7 @@ public sealed class PdfLexer
             }
             else if (c == '(') { depth++; b.Add(c); }
             else if (c == ')') { if (--depth == 0) break; b.Add(c); }
-            else if (c == 13) { b.Add(10); if (Pos < _d.Length && _d[Pos] == 10) Pos++; }
+            else if (c == 13) { b.Add(10); if (Pos < _end && _d[Pos] == 10) Pos++; }
             else b.Add(c);
         }
         if (depth != 0 && _objectStreamMember)
