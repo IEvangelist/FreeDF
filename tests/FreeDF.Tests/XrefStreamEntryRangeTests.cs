@@ -5,7 +5,8 @@ namespace FreeDF.Tests;
 
 public class XrefStreamEntryRangeTests
 {
-    internal static byte[] Build(ulong type, ulong? second = null, ulong third = 0, bool compressed = false, int generation = 0)
+    internal static byte[] Build(ulong type, ulong? second = null, ulong third = 0, bool compressed = false, int generation = 0,
+        string count = "1", string first = "4", bool indirectBounds = false)
     {
         using var data = new MemoryStream();
         void Write(string text) => data.Write(Encoding.ASCII.GetBytes(text));
@@ -18,8 +19,12 @@ public class XrefStreamEntryRangeTests
         if (compressed)
         {
             const string body = "2 0 << /Type /Target >>";
-            Write($"3 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Length {body.Length} >>\nstream\n{body}\nendstream\nendobj\n");
+            Write($"3 0 obj\n<< /Type /ObjStm /N {(indirectBounds ? "5 0 R" : count)} /First {(indirectBounds ? "6 0 R" : first)} /Length {body.Length} >>\nstream\n{body}\nendstream\nendobj\n");
         }
+        var countOffset = data.Position;
+        if (indirectBounds) Write($"5 0 obj\n{count}\nendobj\n");
+        var firstOffset = data.Position;
+        if (indirectBounds) Write($"6 0 obj\n{first}\nendobj\n");
         var xref = data.Position;
         using var rows = new MemoryStream();
         void Row(ulong kind, ulong value, ulong index)
@@ -31,7 +36,12 @@ public class XrefStreamEntryRangeTests
         Row(type, second ?? (compressed ? 3UL : (ulong)target), third);
         Row(compressed ? 1UL : 0UL, compressed ? (ulong)container : 0, 0);
         Row(1, (ulong)xref, 0);
-        Write($"4 0 obj\n<< /Type /XRef /Root 1 0 R /Size 5 /Index [1 4] /W [8 8 8] /Length {rows.Length} >>\nstream\n");
+        if (indirectBounds)
+        {
+            Row(1, (ulong)countOffset, 0);
+            Row(1, (ulong)firstOffset, 0);
+        }
+        Write($"4 0 obj\n<< /Type /XRef /Root 1 0 R /Size {(indirectBounds ? 7 : 5)} /Index [1 {(indirectBounds ? 6 : 4)}] /W [8 8 8] /Length {rows.Length} >>\nstream\n");
         data.Write(rows.ToArray());
         Write($"\nendstream\nendobj\nstartxref\n{xref}\n%%EOF\n");
         return data.ToArray();

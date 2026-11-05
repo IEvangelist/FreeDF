@@ -168,16 +168,22 @@ public sealed class PdfFile
 
     static int IndexOf(byte[] d, ReadOnlySpan<byte> pat, int from) { var i = d.AsSpan(from).IndexOf(pat); return i < 0 ? -1 : i + from; }
 
+    (int Count, int First) ObjectStreamBounds(PdfStream stream, int length)
+    {
+        if (Resolve(stream.Dict.Get("N")) is not PdfInteger { Value: >= 0 and <= int.MaxValue } count
+            || Resolve(stream.Dict.Get("First")) is not PdfInteger { Value: >= 0 } first
+            || first.Value > length || count.Value > first.Value / 4)
+            throw new PdfParseException("bad object stream header");
+        return ((int)count.Value, (int)first.Value);
+    }
+
     PdfObject LoadCompressed(int stmNum, int index, int objNum)
     {
         if (!_objStmCache.TryGetValue(stmNum, out var map))
         {
             if (GetObject(new PdfRef(stmNum, 0)) is not PdfStream s) throw new PdfParseException("bad object stream");
             var data = DecodeStream(s);
-            var n = (int)(Resolve(s.Dict.Get("N")).AsNumber() ?? 0);
-            var first = (int)(Resolve(s.Dict.Get("First")).AsNumber() ?? 0);
-            if (n < 0 || first < 0 || first > data.Length || n > first / 4)
-                throw new PdfParseException("bad object stream header");
+            var (n, first) = ObjectStreamBounds(s, data.Length);
             var lx = new PdfLexer(data);
             map = new ObjStmIndex(data, first);
             for (var i = 0; i < n; i++)
@@ -448,7 +454,7 @@ public sealed class PdfFile
                 try
                 {
                     var data = DecodeStream(st);
-                    var n = (int)(st.Dict.Get("N").AsNumber() ?? 0);
+                    var (n, _) = ObjectStreamBounds(st, data.Length);
                     var lx = new PdfLexer(data);
                     for (var i = 0; i < n; i++)
                     {

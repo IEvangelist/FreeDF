@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream dictionary integer bounds
+
+ISO 32000-1 7.5.7 Table 16 (printed p46) requires integer N and First
+entries for object streams. Normal member loading and recovery now share
+resolved PdfInteger validation before narrowing. Missing/null, real,
+negative, unsupported or decoded-header-out-of-range metadata explicitly
+raises PdfParseException. Existing recovery skips malformed streams and
+does not reinstall their compressed members. Valid indirect integer
+metadata remains supported; no xref-stream-only directness rule is applied.
+
+Twenty-four controls cover types, missing entries, overflow, integer
+spellings, indirect values, normal lazy loading and forced recovery.
+The initial 18-case selector had twelve failures. Valid member lookup/cache
+behavior and existing malformed-unrelated-body isolation remain unchanged.
+Full Release: 18,591 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Twenty-six native controls preserve all four valid integer/forced-recovery
+outputs. All 22 malformed controls now resolve null with repair reported;
+eight formerly accepted targets disappear, ten formerly repeated header
+errors terminate through existing recovery, and four already-null outcomes
+remain null. MuPDF agrees on the valid cases, but accepts real-valued
+integral metadata and several invalid First/overflow cases; fractional
+non-integral values and invalid N types instead resolve null, without
+repair unless the fixture already has invalid startxref. These are explicit
+compatibility/recovery differences, not normative proof. Fresh pinned
+435-PDF/870-result corpus JSON is wholly unchanged against the classic
+duplicate baseline.
+
+Increasing member offsets, complete recovery-header identity validation,
+all object-stream dictionary constraints and parser-wide budgets remain
+separate. Existing zero-count/header bounds and on-demand body parsing
+are retained; this does not claim complete object-stream conformance.
+
 ## 2026-11-05 classic xref same-section uniqueness
 
 ISO 32000-1 7.5.4 (printed p40) prohibits an object number from appearing

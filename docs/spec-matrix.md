@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream dictionary bounds check](spec-backlog.md#2026-11-05-object-stream-dictionary-integer-bounds)
+requires resolved integer N/First metadata before narrowing in both lazy
+loading and recovery. Invalid metadata cannot reinstall compressed members;
+valid indirect integers and on-demand body isolation remain supported.
+Native reference differences and unchanged corpus JSON are recorded.
+Increasing offsets, full recovery-header validation and budgets remain
+separate.
+
 The [classic xref uniqueness check](spec-backlog.md#2026-11-05-classic-xref-same-section-uniqueness)
 explicitly repairs duplicate numbers within a single section. Disjoint
 subsections may still appear in any order; repeated numbers across update
