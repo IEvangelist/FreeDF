@@ -276,6 +276,7 @@ public sealed class PdfFile
         {
             lx.Pos += 4;
             _tableFree = [];
+            var sectionNumbers = new HashSet<int>();
             while (true)
             {
                 var save = lx.Pos;
@@ -289,15 +290,16 @@ public sealed class PdfFile
                     Xref.EnsureCapacity(Xref.Count + (int)Math.Min(count.Value, (Data.Length - lx.Pos) / 6));
                 for (long i = 0; i < count.Value; i++)
                 {
+                    var num = (int)(start.Value + i);
+                    if (!sectionNumbers.Add(num)) throw new PdfParseException("duplicate object number in xref section");
                     lx.SkipWhite();
                     if (TryFixedXrefEntry(lx.Pos, out var foff, out var fgen, out var fuse))
                     {
                         lx.Pos += 18;
-                        var fnum = (int)(start.Value + i);
-                        if (!Xref.ContainsKey(fnum))
+                        if (!Xref.ContainsKey(num))
                         {
-                            Xref[fnum] = new XrefEntry(fuse, false, foff, fgen);
-                            if (!fuse) _tableFree.Add(fnum);
+                            Xref[num] = new XrefEntry(fuse, false, foff, fgen);
+                            if (!fuse) _tableFree.Add(num);
                         }
                         continue;
                     }
@@ -306,7 +308,6 @@ public sealed class PdfFile
                         throw new PdfParseException("bad xref entry");
                     if (gen.Value < 0 || gen.Value > int.MaxValue)
                         throw new PdfParseException("xref generation exceeds supported range");
-                    var num = (int)(start.Value + i);
                     if (!Xref.ContainsKey(num)) { Xref[num] = new XrefEntry(k.Value == "n", false, off.Value, (int)gen.Value); if (k.Value != "n") _tableFree.Add(num); }
                 }
             }

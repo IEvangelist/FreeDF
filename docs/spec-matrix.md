@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [classic xref uniqueness check](spec-backlog.md#2026-11-05-classic-xref-same-section-uniqueness)
+explicitly repairs duplicate numbers within a single section. Disjoint
+subsections may still appear in any order; repeated numbers across update
+sections retain newest-revision precedence. Corpus JSON is unchanged and
+MuPDF recovery/format differences are recorded. Complete free-list and
+resource validation remain separate.
+
 The [classic xref status check](spec-backlog.md#2026-11-05-classic-xref-entry-status-tokens)
 requires exact n/f status keywords in the fallback parser instead of
 silently treating unknown keywords as free. Native status-isolated controls

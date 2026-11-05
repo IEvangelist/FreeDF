@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 classic xref same-section uniqueness
+
+ISO 32000-1 7.5.4 (printed p40) prohibits an object number from appearing
+in multiple subsections of one section, while explicitly allowing
+subsections in any order. The classic parser now tracks decoded numbers
+per section and explicitly raises PdfParseException on repeats, using
+existing recovery instead of silently choosing the first entry. The set
+resets at every section, preserving newest-revision precedence; it grows
+with decoded entries, not declared subsection sizes.
+
+Ten controls include six initially red same-section cases in fixed/fallback
+paths: free-first, in-use-first and overlapping ranges. Four positives
+retain disjoint out-of-order subsections and legitimate repeated numbers
+across revisions, including a newer free entry. Short fallback formatting
+remains compatibility behavior. Full Release: 18,567 passed, zero
+failed/skipped. Solution: zero errors/two retained machine-feed NU1507
+warnings.
+
+Ten native PDFs retain all four positives unchanged and report repair on
+six duplicates, recovering four formerly lost targets. MuPDF accepts the
+three fixed-format duplicate cases without repair, retaining null targets
+for two of them; it repairs the three short-format duplicates. Standard
+fixed-format positives agree, but it additionally repairs both short-format
+positives and recovers the freed target in one. These are explicit recovery/
+format-compatibility disagreements. Fresh pinned 435-PDF/870-result corpus
+JSON is wholly unchanged against the status-token baseline.
+
+Complete classic syntax/free-list semantics, normative generation maxima
+and parser-wide memory/resource budgets remain separate.
+
 ## 2026-11-05 classic xref entry status tokens
 
 ISO 32000-1 7.5.4 (printed p41) requires n for in-use entries and f
