@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [measured LZW dictionary change](spec-backlog.md#2026-11-05-measured-lzw-dictionary-allocation-removal)
+replaces per-entry byte arrays with pooled output-offset/length pairs,
+preserving strict completion and ordinary recovery. Matched decoded-output
+benchmarks report scoped timing/allocation improvements and retained-pool
+limits, not full filter or PDF-spec parity.
+
 The [radio-group inheritance correction](spec-backlog.md#2026-11-05-resolved-null-radio-group-inheritance)
 resolves named RBGroups before applying omission defaults, preserving
 explicit empty-array overrides. It also records the distinction between

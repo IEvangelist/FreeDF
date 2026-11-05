@@ -193,6 +193,61 @@ public class StrictLzwTests
         Assert.Throws<InvalidDataException>(() => Decode(encoded, true));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Long_next_entry_chains_and_resets_preserve_dictionary_bytes(int early)
+    {
+        var codes = new List<int> { 256, 65 };
+        codes.AddRange(Enumerable.Range(258, 1000));
+        codes.AddRange([256, 256, 66, 258, 257]);
+        var expected = Enumerable.Repeat((byte)65, 501501).Concat("BBB"u8.ToArray()).ToArray();
+        var encoded = Pack(codes, early);
+        Assert.Equal(expected, Decode(encoded, false, early));
+        Assert.Equal(expected, Decode(encoded, true, early));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Ordinary_full_table_retains_previously_defined_entries(int early)
+    {
+        var codes = new List<int> { 256 };
+        codes.AddRange(Enumerable.Repeat(32, 5000));
+        codes.AddRange([258, 4095, 257]);
+        var encoded = Pack(codes, early);
+        Assert.Equal(Enumerable.Repeat((byte)32, 5004), Decode(encoded, false, early));
+        Assert.Throws<InvalidDataException>(() => Decode(encoded, true, early));
+    }
+
+    [Fact]
+    public void Ordinary_invalid_next_codes_keep_the_existing_synthesized_entry_recovery()
+    {
+        var encoded = Pack([256, 65, 511, 511, 258, 257]);
+        Assert.Equal("AAAAAAAA"u8.ToArray(), Decode(encoded, false));
+        Assert.Throws<InvalidDataException>(() => Decode(encoded, true));
+    }
+
+    [Fact]
+    public void Ordinary_missing_clear_keeps_the_existing_next_entry_recovery() =>
+        Assert.Equal("AAA"u8.ToArray(), Decode(Pack([65, 258, 257]), false));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Concurrent_decodes_and_failures_do_not_share_dictionary_state(int early)
+    {
+        var shortStream = Pack([256, 65, 258, 257], early);
+        var longStream = Pack(new[] { 256, 66 }.Concat(Enumerable.Range(258, 1000)).Append(257), early);
+        var expected = Enumerable.Repeat((byte)66, 501501).ToArray();
+        Parallel.For(0, 64, iteration =>
+        {
+            Assert.Throws<InvalidDataException>(() => Decode(Pack([256, 65, 511], early), true, early));
+            Assert.Equal(expected, Decode(longStream, iteration % 2 == 0, early));
+            Assert.Equal("AAA"u8.ToArray(), Decode(shortStream, true, early));
+        });
+    }
+
     internal static (byte[] Encoded, byte[] Expected) Encode(string variant)
     {
         var expected = "2 0 << /Type /Target >>"u8.ToArray();

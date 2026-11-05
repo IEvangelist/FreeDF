@@ -55,6 +55,57 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## LZW output-indexed dictionary: 2026-11-05
+
+`LzwBench.Decode` measures ordinary and strict decoding of two deterministic
+65,536-byte outputs. Literal input uses seeded random byte codes with clear
+codes before table exhaustion, crossing all code widths. Repeated input uses
+growing next-entry special cases followed by literal completion. Setup
+constructs both code streams and requires exact decoded-byte equality;
+input length/SHA-256, decoded SHA-256 and measured engine module identity
+are logged outside timing. PDF parsing, metadata construction, encoding and
+verification are excluded; decoder output materialization and pooled-table
+rent/cleared-return are timed. All four cases join standalone preflight.
+
+Control production is `d18e21ecb2f2f1b3644812e33ee3822bb4966356`,
+measured before decoder edits. The benchmark source, exact encoded/decoded
+hashes and timed API boundary match final production. Instead of allocating
+literal and dictionary-entry byte arrays, the decoder stores 4096
+offset/length pairs into append-only decoded output. Previous entry plus
+the current entry's first byte is already contiguous there. The next-entry
+special case copies previous output and appends its first byte. Ordinary
+full-table recovery keeps previously addressable entries without allocating
+unaddressable ones; strict rejection remains unchanged.
+
+| Pattern | Strict | Control mean +/- error (us) | Final mean +/- error (us) | Managed B/decode, control -> final |
+|---|---|---:|---:|---:|
+| Literal | No | 761.83 +/- 12.091 | 246.27 +/- 9.726 | 2,515,048 -> 196,656 |
+| Literal | Yes | 776.33 +/- 26.474 | 288.06 +/- 16.771 | 2,506,856 -> 196,656 |
+| Repeated | No | 27.40 +/- 4.892 | 10.43 +/- 0.399 | 387,088 -> 196,656 |
+| Repeated | Yes | 26.69 +/- 5.637 | 10.28 +/- 0.297 | 378,896 -> 196,656 |
+
+Mean decode times are about 61-68% lower on these workloads,
+with disjoint reported control/final error intervals. Managed allocation
+falls about 92% for Literal and 48-49% for Repeated. Exact bytes derive
+from raw GC totals/operation counts, not rounded KB conversions.
+The eight-thousand-integer table is pooled (32 KiB requested per concurrent
+decode), returned cleared even on failure. Warm-process managed B/op does
+not measure cold pool growth, retained pool storage, peak memory or native
+allocations. Output growth/final materialization still allocate; this is
+not zero-allocation decoding.
+
+Reports: [control](results/2026-11-05-lzw-index-control.md)
+([CSV](results/2026-11-05-lzw-index-control.csv)),
+[final](results/2026-11-05-lzw-index-final.md)
+([CSV](results/2026-11-05-lzw-index-final.csv)),
+[raw GC/input/output/engine diagnostic CSV](results/2026-11-05-lzw-index-gc.csv).
+Three warmups/eight 500-ms iterations/one launch on the same runtime/machine
+do not establish universal throughput. Both timed inputs use EarlyChange 1;
+separate correctness tests cover 0/1, long chains, repeated resets, full
+tables, malformed recovery and concurrent failure/reuse, including the
+existing independent libtiff fixture. No new provider timing/ranking or
+complete LZW/PDF conformance claim follows from these measurements.
+
 ## Optional-content intent compatibility cost: 2026-11-05
 
 The intent-participation correction is measured against preceding production

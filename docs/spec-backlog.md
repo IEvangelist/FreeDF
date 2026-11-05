@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 measured LZW dictionary allocation removal
+
+The existing ordinary/strict LZW decoder allocated a byte array for every
+dictionary entry, including 256 literal arrays on every clear. It now stores
+4096 offset/length pairs into append-only decoded output. A dictionary entry
+is the previously emitted entry followed by the current entry's first byte,
+already contiguous in that buffer. The next-entry special case copies
+previous output and appends its first byte. This avoids walking prefix chains
+or materializing entry arrays. One pooled 8192-integer table is returned
+cleared in finally, including decoding failures.
+
+Existing code widths/EarlyChange, clear/EOD/padding/extent checks, strict
+full-table rejection and decoded-size limit are preserved. Ordinary missing-
+clear/invalid-next-code recovery and previously defined full-table entries
+remain supported; unaddressable entries beyond the 12-bit code space no
+longer allocate byte arrays. This is measured implementation work, not a
+new acceptance rule or claim that all LZW/PDF conformance work is complete.
+
+Six added compatibility cases pass before production edits: both EarlyChange
+values with long next-entry chains/resets and ordinary full-table reuse,
+plus permissive invalid-code/missing-clear recovery. The unchanged strict
+LZW suite passes 52 cases including the independent libtiff fixture.
+Two further controls run concurrent ordinary/strict decodes interleaved with
+failures to exercise pooled-state isolation. Final filter/object-stream/
+LZW checks pass 971; full Release passes 19,686, zero failed/skipped; the
+solution builds with zero warnings/errors. Fresh pinned 435-PDF/870-result
+complete validation JSON is unchanged. Standalone provider/parser/benchmark
+preflight passes, including all four new LZW cases.
+
+The new matched benchmarks decode identical 65,536-byte literal/reset and
+repeated/next-entry streams in ordinary/strict modes, excluding encoding,
+PDF parsing and correctness checks. Pre-edit control is d18e21ec; benchmark
+source, encoded/decoded hashes and operation boundaries match final.
+Means fall from 761.83/776.33 us to 246.27/288.06 us for literal workloads
+and 27.40/26.69 us to 10.43/10.28 us for repeated workloads (ordinary/strict).
+Managed allocation falls from 2,515,048/2,506,856 B to 196,656 B and from
+387,088/378,896 B to 196,656 B respectively. Reported timing intervals are
+disjoint, but these four warm-process cases are not universal throughput
+or whole-document results. The 32-KiB requested pooled table is retained
+working storage, not counted as a new allocation on every warm invocation;
+cold pool growth/peak/native memory are not measured. Output still allocates.
+The [benchmark record](../bench/FreeDF.Bench/README.md#lzw-output-indexed-dictionary-2026-11-05)
+retains exact raw GC counts, input/output hashes and reports. No unrelated
+provider/optional-content timing was rerun.
+
 ## 2026-11-05 resolved-null radio-group inheritance
 
 Table 101 (printed p230) makes a named configuration's omitted RBGroups

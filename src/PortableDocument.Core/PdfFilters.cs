@@ -315,57 +315,85 @@ public static class PdfFilters
 
     static byte[] Lzw(byte[] s, int early, bool strict = false)
     {
-        var o = new List<byte>();
-        var table = new List<byte[]>();
-        void Reset() { table.Clear(); for (var i = 0; i < 256; i++) table.Add([(byte)i]); table.Add([]); table.Add([]); }
-        // Strict streams initialize at the required first clear code.
-        if (!strict) Reset();
-        var bits = 9; var bitBuf = 0; var bitCnt = 0; var pos = 0;
-        var first = true;
-        byte[]? prev = null;
-        while (true)
+        using var output = new MemoryStream();
+        var dictionary = ArrayPool<int>.Shared.Rent(8192);
+        try
         {
-            while (bitCnt < bits && pos < s.Length) { bitBuf = (bitBuf << 8) | s[pos++]; bitCnt += 8; }
-            if (bitCnt < bits)
+            var count = 258;
+            var bits = 9; var bitBuf = 0; var bitCnt = 0; var pos = 0;
+            var first = true;
+            var previousOffset = 0;
+            var previousLength = 0;
+            while (true)
             {
-                if (strict) throw new InvalidDataException("LZW end marker was not found");
-                break;
+                while (bitCnt < bits && pos < s.Length) { bitBuf = (bitBuf << 8) | s[pos++]; bitCnt += 8; }
+                if (bitCnt < bits)
+                {
+                    if (strict) throw new InvalidDataException("LZW end marker was not found");
+                    break;
+                }
+                var code = (bitBuf >> (bitCnt - bits)) & ((1 << bits) - 1);
+                bitCnt -= bits;
+                bitBuf &= (1 << bitCnt) - 1;
+                if (strict && first && code != 256)
+                    throw new InvalidDataException("LZW stream must start with a clear-table code");
+                first = false;
+                if (code == 256) { count = 258; bits = 9; previousLength = 0; continue; }
+                if (code == 257)
+                {
+                    if (strict && bitBuf != 0) throw new InvalidDataException("LZW final byte padding must be zero");
+                    if (strict && pos != s.Length) throw new InvalidDataException("Unexpected bytes after LZW end marker");
+                    break;
+                }
+
+                var offset = 0;
+                var length = 1;
+                var nextEntry = code >= count;
+                if (nextEntry)
+                {
+                    if (previousLength == 0 || strict && code != count)
+                    {
+                        if (strict) throw new InvalidDataException("Invalid LZW dictionary code");
+                        break;
+                    }
+                    offset = previousOffset;
+                    length = previousLength + 1;
+                }
+                else if (code >= 258)
+                {
+                    offset = dictionary[code];
+                    length = dictionary[4096 + code];
+                }
+                if (strict && length > MaxInflated - output.Length)
+                    throw new PdfParseException("Decompressed stream exceeds the size limit");
+                var start = (int)output.Length;
+                var firstByte = code < 256 ? (byte)code : output.GetBuffer()[offset];
+                if (code < 256) output.WriteByte(firstByte);
+                else
+                {
+                    output.Write(output.GetBuffer().AsSpan(offset, nextEntry ? previousLength : length));
+                    if (nextEntry) output.WriteByte(firstByte);
+                }
+                if (previousLength != 0)
+                {
+                    if (strict && count >= 4096)
+                        throw new InvalidDataException("LZW table must be cleared when full");
+                    if (count < 4096)
+                    {
+                        // Previous output followed by this entry's first byte is already contiguous.
+                        dictionary[count] = previousOffset;
+                        dictionary[4096 + count] = previousLength + 1;
+                    }
+                    count++;
+                }
+                previousOffset = start;
+                previousLength = length;
+                var n = count + early;
+                bits = n >= 2048 ? 12 : n >= 1024 ? 11 : n >= 512 ? 10 : 9;
             }
-            var code = (bitBuf >> (bitCnt - bits)) & ((1 << bits) - 1);
-            bitCnt -= bits;
-            bitBuf &= (1 << bitCnt) - 1;
-            if (strict && first && code != 256)
-                throw new InvalidDataException("LZW stream must start with a clear-table code");
-            first = false;
-            if (code == 256) { Reset(); bits = 9; prev = null; continue; }
-            if (code == 257)
-            {
-                if (strict && bitBuf != 0) throw new InvalidDataException("LZW final byte padding must be zero");
-                if (strict && pos != s.Length) throw new InvalidDataException("Unexpected bytes after LZW end marker");
-                break;
-            }
-            byte[] entry;
-            if (code < table.Count) entry = table[code];
-            else if (prev is not null && (!strict || code == table.Count)) entry = [.. prev, prev[0]];
-            else
-            {
-                if (strict) throw new InvalidDataException("Invalid LZW dictionary code");
-                break;
-            }
-            if (strict && entry.Length > MaxInflated - o.Count)
-                throw new PdfParseException("Decompressed stream exceeds the size limit");
-            o.AddRange(entry);
-            if (prev is not null)
-            {
-                if (strict && table.Count >= 4096)
-                    throw new InvalidDataException("LZW table must be cleared when full");
-                table.Add([.. prev, entry[0]]);
-            }
-            prev = entry;
-            var n = table.Count + early;
-            bits = n >= 4096 ? 12 : n >= 2048 ? 12 : n >= 1024 ? 11 : n >= 512 ? 10 : 9;
+            return output.ToArray();
         }
-        return o.ToArray();
+        finally { ArrayPool<int>.Shared.Return(dictionary, clearArray: true); }
     }
 
     static byte[] StrictPredict(byte[] data, PdfDictionary? parameters, Func<PdfObject?, PdfObject?> resolve)
