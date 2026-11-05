@@ -4,6 +4,32 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed container closing delimiters
+
+ISO 32000-1 7.3.6 and 7.3.7 (printed p18) require arrays and
+dictionaries to be enclosed in their respective delimiters. Compressed member
+parsing now explicitly requires closing delimiters, including nested containers.
+The internal lexer mode is enabled only for compressed member bodies; existing
+general/content lexer recovery behavior remains unchanged.
+
+Twenty-one controls cover EOF after openers, entries and comments, nested
+containers, complete empty/nonempty containers, repeated lookup, lazy isolation
+and default-lexer compatibility. The initial selector had twelve failures.
+Full Release: 18,743 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Thirty-six native PDFs preserve sixteen valid outputs unchanged and reject
+twenty previously accepted unterminated containers with explicit diagnostics.
+MuPDF reports no probe exceptions; absent Type results do not prove full
+container acceptance. The valid Target dictionaries agree. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the
+nested-value baseline.
+
+This does not validate discarded dictionary keys, missing values before a
+closing delimiter or complete string syntax. Lexing still uses the decoded
+buffer with a post-parse member boundary check, not a byte-limited reader.
+Parser-wide resource budgets remain separate.
+
 ## 2026-11-05 compressed nested object values
 
 ISO 32000-1 7.3.1 (printed p13), 7.3.6 and 7.3.7 (printed p18)
