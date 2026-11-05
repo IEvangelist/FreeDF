@@ -4,6 +4,58 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream DecodeParms value types
+
+ISO 32000-1 Table 5 (printed p20) defines DecodeParms as a dictionary or an
+array of parameter dictionaries, with null entries for filters without
+nondefault parameters. Sections 7.3.9-7.3.10 (printed pp21-22) preserve
+null/undefined and indirect-value semantics.
+
+The shared object-stream index path now rejects other top-level types and
+array entries that do not resolve to dictionaries or null. Entries beyond the
+filters actually used are also checked, rather than letting malformed trailing
+values disappear. Each array reference is resolved once, without an extra
+validation pass or a copied parameter array. The existing bounded metadata
+resolver now applies to parameters as well as filter names, rejecting
+cyclic/depth-exhausted aliases instead of treating them as intentional null.
+Ordinary-stream recovery is unchanged.
+
+Thirty-six new tests cover normal/forced repair, absent member publication,
+supported null/indirect/dictionary/array forms, cached identity, unchanged
+ordinary decoded bytes, the 32-reference boundary and two-stage nondefault
+TIFF-predictor parameter placement. The initial 34-case unchanged-production
+baseline was sixteen failures/eighteen passes; two later pipeline controls
+were also verified against original production through independent native
+files. Final focused selector: 854 passed. Full Release: 19,324 passed, zero
+failed/skipped. Final solution build: zero warnings/errors.
+
+Sixty-six native controls include thirty malformed parameter schemas,
+twenty-six supported shape controls, four independently encoded nondefault
+pipeline positives and six retained encrypted positives. The thirty malformed
+files previously published Target; now repair leaves the member absent.
+All thirty-six supported outcomes remain identical. MuPDF exposes Target for
+all sixty-six probes, including malformed metadata; this is reference
+permissiveness, not schema conformance. The independent predictor fixtures
+compute Columns from decoded length; an initial generator-only column mismatch
+was corrected before retaining the successful native baseline.
+Fresh pinned 435-PDF/870-result full corpus JSON remains wholly unchanged
+against the Filter-name baseline.
+
+The [parameter benchmarks](../bench/FreeDF.Bench/README.md#object-stream-parameter-workloads)
+add four fresh-member workloads with nondefault predictors, one/two filters
+and direct/indirect parameters. A matched original-source control was measured
+after an apparent slowdown against older results; the original also became
+slower. All six deterministic input hashes match across source builds.
+Current before/after timing intervals overlap, including a 3.1% higher
+1,000-member plaintext mean; reported managed allocation is unchanged.
+Full reports retain the uncertainty rather than claiming zero validation cost.
+
+This is value-type/bounded-resolution enforcement, not exhaustive parameter
+conformance. Existing empty-array and single-filter array compatibility is
+preserved. Filter/parameter cardinality, dictionary-vs-array alignment,
+codec-specific parameter semantics/EOD, external-file/image-codec handling,
+global inventory and resource budgets remain separate.
+
 ## 2026-11-05 object-stream Filter names
 
 ISO 32000-1 Table 5 (printed p20) requires Filter to be a name or an array
@@ -17,8 +69,9 @@ array entries and arrays polluted with non-names after a valid decoder.
 Filter-name resolution preserves the existing 32-reference bound but does
 not mistake unresolved cyclic/depth-exhausted aliases for intentional null
 omission. Direct/indirect top-level null, undefined top-level references,
-empty arrays and indirect names/arrays remain supported. DecodeParms still
-uses the existing resolver; ordinary-stream filter recovery is unchanged.
+empty arrays and indirect names/arrays remain supported. DecodeParms was left
+unchanged in this slice; the follow-up above covers its value types.
+Ordinary-stream filter recovery is unchanged.
 
 Thirty-one tests cover both normal and forced repair, absent member
 publication/repeated lookup, valid cached identities, ordinary-stream decoded

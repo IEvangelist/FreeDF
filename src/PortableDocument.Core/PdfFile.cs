@@ -303,7 +303,7 @@ public sealed class PdfFile
         if (!IsObjectStream(stream.Dict))
             throw new PdfParseException("bad object stream type");
         ValidateObjectStreamCollection(stream.Dict);
-        var filters = PdfFilters.GetFilters(stream.Dict, Resolve, ResolveObjectStreamFilterName);
+        var filters = PdfFilters.GetFilters(stream.Dict, Resolve, ResolveObjectStreamFilterMetadata);
         var data = PdfFilters.Decode(stream.RawData, filters, Resolve).Data;
         var (n, first) = ObjectStreamBounds(stream, data.Length);
         var lx = new PdfLexer(data, 0, objectStreamMember: true);
@@ -350,11 +350,11 @@ public sealed class PdfFile
         return map;
     }
 
-    PdfObject? ResolveObjectStreamFilterName(PdfObject? value)
+    PdfObject? ResolveObjectStreamFilterMetadata(PdfObject? value)
     {
         var depth = 0;
         while (value is PdfRef reference && depth++ < 32) value = GetObject(reference);
-        if (value is PdfRef) throw new PdfParseException("unresolved object stream Filter reference chain");
+        if (value is PdfRef) throw new PdfParseException("unresolved object stream filter metadata reference chain");
         return value;
     }
 

@@ -16,32 +16,52 @@ public static class PdfFilters
     };
 
     public static List<(string Name, PdfDictionary? Parms)> GetFilters(PdfDictionary d, Func<PdfObject?, PdfObject?> resolve)
-        => GetFilters(d, resolve, strictFilterNameResolver: null);
+        => GetFilters(d, resolve, strictMetadataResolver: null);
 
     internal static List<(string Name, PdfDictionary? Parms)> GetFilters(PdfDictionary d,
-        Func<PdfObject?, PdfObject?> resolve, Func<PdfObject?, PdfObject?>? strictFilterNameResolver)
+        Func<PdfObject?, PdfObject?> resolve, Func<PdfObject?, PdfObject?>? strictMetadataResolver)
     {
-        var resolveName = strictFilterNameResolver ?? resolve;
-        var strictFilterNames = strictFilterNameResolver is not null;
-        var f = resolveName(d.Get("Filter") ?? d.Get("F"));
-        var p = resolve(d.Get("DecodeParms") ?? d.Get("DP"));
+        var resolveMetadata = strictMetadataResolver ?? resolve;
+        var strictMetadata = strictMetadataResolver is not null;
+        var f = resolveMetadata(d.Get("Filter") ?? d.Get("F"));
+        var p = resolveMetadata(d.Get("DecodeParms") ?? d.Get("DP"));
+        if (strictMetadata && p is not null and not PdfNull and not PdfDictionary and not PdfArray)
+            throw new PdfParseException("stream DecodeParms must be a dictionary or an array of dictionaries");
         var list = new List<(string, PdfDictionary?)>();
-        if (f is PdfName n) list.Add((Canon(n.Value), resolve(p is PdfArray pa0 && pa0.Count > 0 ? pa0[0] : p) as PdfDictionary));
+        if (f is PdfName n)
+        {
+            var parms = p is PdfArray pa0 ? pa0.Count > 0
+                ? ResolveDecodeParms(pa0[0], resolveMetadata, strictMetadata) : null
+                : ResolveDecodeParms(p, resolveMetadata, strictMetadata);
+            list.Add((Canon(n.Value), parms));
+        }
         else if (f is PdfArray fa)
             for (var i = 0; i < fa.Count; i++)
             {
-                var nm = resolveName(fa[i]).AsName();
+                var nm = resolveMetadata(fa[i]).AsName();
                 if (nm is null)
                 {
-                    if (strictFilterNames) throw new PdfParseException("stream Filter array entries must be names");
+                    if (strictMetadata) throw new PdfParseException("stream Filter array entries must be names");
                     continue;
                 }
-                var pp = p is PdfArray pa && i < pa.Count ? resolve(pa[i]) as PdfDictionary : null;
+                var pp = p is PdfArray pa && i < pa.Count
+                    ? ResolveDecodeParms(pa[i], resolveMetadata, strictMetadata) : null;
                 list.Add((Canon(nm), pp));
             }
-        else if (strictFilterNames && f is not null and not PdfNull)
+        else if (strictMetadata && f is not null and not PdfNull)
             throw new PdfParseException("stream Filter must be a name or an array of names");
+        if (strictMetadata && p is PdfArray parameters)
+            for (var i = list.Count; i < parameters.Count; i++)
+                ResolveDecodeParms(parameters[i], resolveMetadata, strictMetadata);
         return list;
+    }
+
+    static PdfDictionary? ResolveDecodeParms(PdfObject? value, Func<PdfObject?, PdfObject?> resolve, bool strictMetadata)
+    {
+        var resolved = resolve(value);
+        if (strictMetadata && resolved is not null and not PdfNull and not PdfDictionary)
+            throw new PdfParseException("stream DecodeParms array entries must be dictionaries or null");
+        return resolved as PdfDictionary;
     }
 
     /// <summary>Decodes until an image codec filter is reached; returns the remaining image filter name, if any.</summary>

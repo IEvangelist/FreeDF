@@ -161,6 +161,79 @@ No shared-machine exclusivity or universal throughput guarantee is claimed.
 The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-filter-names)
 records malformed controls separately from these valid Flate workloads.
 
+## Object-stream parameter workloads
+
+`ObjectStreamMetadataBench.FreshMember` measures fresh load and one compressed
+dictionary lookup with nondefault TIFF predictor 2. Four configurations cover
+one Flate filter with dictionary parameters and an ASCIIHex/Flate pipeline
+with aligned `[null, dictionary]` parameters, each direct or indirect.
+Fixture construction, encoding and preflight are outside timing. Two
+independent opens must return the exact member type, preserve cached identity,
+retain compressed xref status and avoid repair. All four configurations are
+also part of standalone `--preflight`.
+
+These are complete synthetic parser inputs, not page-rendering or full
+document-conformance fixtures. Fresh load, filter metadata resolution, pipeline
+decoding, predictor application and member materialization are timed together.
+They differ from `ObjectStreamBench`'s dictionaries and xref encoding; do not
+subtract separate means or compare unlike operations as validation overhead.
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*ObjectStreamMetadataBench*" "*ObjectStreamBench.FreshAllMembers*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
+### Matched parameter-schema control: 2026-11-05
+
+The [metadata control report](results/2026-11-05-filter-metadata-control.md)
+([CSV](results/2026-11-05-filter-metadata-control.csv)) uses exact production
+sources from `766fa9117b3e362cdd2d0a583626a69472709bab` and the new benchmark
+harness. The [candidate report](results/2026-11-05-filter-metadata-after.md)
+([CSV](results/2026-11-05-filter-metadata-after.csv)) uses the parameter-schema
+correction. Both use the settings above on Windows 11 / i7-14700K / .NET 10.0.14.
+All four metadata input hashes match across builds:
+
+| Filters | Indirect parameters | Bytes | SHA-256 |
+|---|---|---:|---|
+| 1 | No | 483 | `6E31C2072F1916702C2EC7F4F6113C8D88EBB4CDDF85C9FBEADAB187C06F599C` |
+| 1 | Yes | 484 | `83BC2FA0909AB319F936C8C9451E4E4BF9002D6E601370EEA15E03705065739A` |
+| 2 | No | 550 | `8971C7124F942E668C75CA4D7645080E4F801619CECAF1FBD0182E401B8BB5E8` |
+| 2 | Yes | 551 | `93160FE0E5D8AE7B8523E832467130B7AEA9AFEC2AD4F8863487420FBD8283F4` |
+
+| Filters / indirect | Original mean (us) | Candidate mean (us) | Original / candidate allocated (KiB) |
+|---|---:|---:|---:|
+| 1 / No | 8.387 | 7.655 | 19.24 / 19.24 |
+| 1 / Yes | 8.195 | 7.634 | 18.87 / 18.87 |
+| 2 / No | 8.929 | 8.618 | 21.04 / 21.04 |
+| 2 / Yes | 8.149 | 8.419 | 20.44 / 20.44 |
+
+The [full-traversal control](results/2026-11-05-decode-parms-control.md)
+([CSV](results/2026-11-05-decode-parms-control.csv)) and
+[candidate](results/2026-11-05-decode-parms-after.md)
+([CSV](results/2026-11-05-decode-parms-after.csv)) retain the common no-parameter
+workloads too. Both plaintext hashes match the table in the Filter-name
+follow-up above. Plaintext one-member means are 12.71 / 11.19 us and
+1,000-member means 654.46 / 674.65 us; reported allocations are identical
+at 18.00 / 1908.91 KiB respectively. The 1,000-member candidate mean is about
+3.1% higher; its reported timing interval overlaps the original control.
+All metadata-case intervals also overlap. This is not a speedup or a
+zero-overhead guarantee.
+
+The candidate was measured first. Its apparent slowdown against the earlier
+Filter-name run triggered rebuilding and measuring the original production
+source, rather than dismissing the result. That original source also became
+slower than the earlier run, so the earlier means cannot attribute this
+session's full timing shift to parameter validation. The repeated original
+control, including its noisy single-member case, is retained in full.
+Afterward the candidate production sources were restored byte-for-byte,
+rebuilt and passed focused tests and all benchmark preflight configurations.
+
+These remain one-launch shared-machine measurements, not controlled OS-wide
+exclusivity or universal throughput bounds. Managed allocation excludes
+native/retained memory. Encrypted traversal controls pass but their random
+bytes differ across launches; no matched-byte encrypted attribution is made.
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-decodeparms-value-types)
+records malformed controls and the remaining cardinality/codec limits.
+
 ## Flate decoder workloads
 
 ```powershell

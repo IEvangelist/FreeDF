@@ -46,6 +46,9 @@ if (args.Contains("--preflight"))
     foreach (var members in new[] { 1, 1000 })
         foreach (var encrypted in new[] { false, true })
             new ObjectStreamBench { MemberCount = members, Encrypted = encrypted }.Setup();
+    foreach (var filters in new[] { 1, 2 })
+        foreach (var indirect in new[] { false, true })
+            new ObjectStreamMetadataBench { FilterCount = filters, IndirectParameters = indirect }.Setup();
     foreach (var size in new[] { 256, 1048576 })
         foreach (var random in new[] { false, true })
             new FlateBench { DecodedBytes = size, RandomInput = random }.Setup();

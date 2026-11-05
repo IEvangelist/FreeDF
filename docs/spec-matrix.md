@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream DecodeParms-type check](spec-backlog.md#2026-11-05-object-stream-decodeparms-value-types)
+requires dictionaries or null for parameter entries, including unused trailing
+entries, and applies the bounded metadata resolver to parameter aliases.
+Nondefault pipeline controls, unchanged ordinary recovery, native/reference
+differences, parameter benchmarks and unchanged corpus JSON are recorded.
+Cardinality/alignment, codec-specific semantics/EOD and resource budgets
+remain separate.
+
 The [object-stream Filter-name check](spec-backlog.md#2026-11-05-object-stream-filter-names)
 requires a resolved name or array of names before publishing members, while
 preserving null omission, valid indirect forms and ordinary-stream recovery.
