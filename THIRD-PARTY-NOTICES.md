@@ -528,6 +528,15 @@ fourteen primary negatives accepted by the pinned reference; disagreements
 are explicit. Encoding/name identity, complete schema and signing/locking
 enforcement remain separate. No standard text or external controls bundled.
 
+The signature-seed DigestMethod raw name-array check follows official PDF
+Association 12.7.5.5/Table 237 unordered-array shape facts. It independently
+reuses bounded references and terminal field traversal, without deriving
+a digest allow-list or signing policy from reference behavior. Nine native
+controls retain five shape positives and reject four primary negatives
+accepted by the pinned reference; disagreements are explicit.
+Full seed schema and credential/extension-specific algorithm enforcement
+remain separate. No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary signature-seed DigestMethod shape check](spec-backlog.md#2026-11-05-primary-signature-seed-digest-array-shape)
+checks local terminal Sig seed raw name arrays with independent
+reference/work incompleteness. Nine native controls retain five shape
+positives; four primary negatives remain reference-accepted. Corpus and
+UA-1 JSON are unchanged. Digest vocabulary/extensions, flags,
+credential applicability and signing enforcement remain separate.
+
 The [primary signature-lock Fields shape check](spec-backlog.md#2026-11-05-primary-signature-lock-field-name-array-shape)
 checks local terminal Sig Lock Fields raw string-array types and required
 presence for known Include/Exclude actions with independent incompleteness.

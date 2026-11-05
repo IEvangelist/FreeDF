@@ -41,6 +41,7 @@ internal static class PdfUA2Checks
         DefaultAppearances(c, fields);
         ChoiceFieldIndices(c, fields);
         SignatureLockFields(c, fields);
+        SignatureSeedDigests(c, fields);
         bool incomplete = false, limitIncomplete = false;
         if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
@@ -107,6 +108,42 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
                 "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
                 "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void SignatureSeedDigests(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 237";
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE", ValidationSeverity.Error,
+                "signature-seed digest inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("SV"), Incomplete);
+            if (value is null or PdfNull) continue;
+            if (value is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var digests = ResolveBounded(c.F, dictionary.Get("DigestMethod"), Incomplete);
+            if (digests is null or PdfNull) continue;
+            bool type = digests is not PdfArray;
+            if (digests is PdfArray array)
+                foreach (var item in array.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var digest = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (resolved && digest is not PdfName) type = true;
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-SEED-DIGEST-TYPE", ValidationSeverity.Error,
+                    "signature-seed DigestMethod must be an array of names", clause);
         }
     }
 

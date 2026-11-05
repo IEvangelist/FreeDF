@@ -4608,6 +4608,137 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> SignatureSeedDigestShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var entry in new[]
+        {
+            "", "/DigestMethod null", "/DigestMethod []", "/DigestMethod [/SHA256]",
+            "/DigestMethod [/SHA512 /SHA256 /SHA256]", "/DigestMethod [/Custom]",
+            "/DigestMethod /SHA256", "/DigestMethod 0", "/DigestMethod [(SHA256)]",
+            "/DigestMethod [null]", "/DigestMethod [/SHA256 42]", "/DigestMethod [11 0 R]",
+            "/DigestMethod 12 0 R",
+        })
+            yield return [part, type, entry];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureSeedDigestShapeCases))]
+    public void Ua2SignatureSeedDigestMethodHasDeclaredNameArrayShape(int part, string type, string entry)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /SV << {entry} >> >>",
+                "null", "/SHA256", "[/SHA256]"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = entry is "/DigestMethod /SHA256" or "/DigestMethod 0" or "/DigestMethod [(SHA256)]"
+            or "/DigestMethod [null]" or "/DigestMethod [/SHA256 42]";
+        Assert.Equal(part == 2 && type == "Sig" && invalid, report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/SV 11 0 R", "11 0 R", false)]
+    [InlineData("/SV << /DigestMethod 11 0 R >>", "11 0 R", false)]
+    [InlineData("/SV << /DigestMethod [42 11 0 R] >>", "11 0 R", true)]
+    [InlineData("/SV 42", "null", false)]
+    public void Ua2SignatureSeedDigestUnknownTraversalPreservesKnownErrors(string entry, string target, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("SV", 32, false)]
+    [InlineData("SV", 33, true)]
+    [InlineData("DigestMethod", 32, false)]
+    [InlineData("DigestMethod", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    public void Ua2SignatureSeedDigestReferenceDepthIsExplicit(string route, int count, bool incomplete)
+    {
+        var terminal = route == "SV" ? "<< /DigestMethod [/SHA256] >>"
+            : route == "DigestMethod" ? "[/SHA256]" : "/SHA256";
+        var entry = route == "SV" ? "10 0 R" : route == "DigestMethod"
+            ? "<< /DigestMethod 10 0 R >>" : "<< /DigestMethod [10 0 R] >>";
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? terminal : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /SV {entry} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2SignatureSeedDigestWorkBoundRetainsKnownTypeError(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (signature) /SV << >> >>"]));
+        var seed = Assert.IsType<PdfDictionary>(Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("SV"));
+        var items = Enumerable.Repeat<PdfObject>(new PdfName("SHA256"), count).ToList();
+        items[0] = new PdfInteger(0);
+        seed.Entries["DigestMethod"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureSeedDigestWorkBudgetIsSharedAcrossFields()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>", extras:
+            [Para, "<< /FT /Sig /T (first) /SV << >> >>", "<< /FT /Sig /T (second) /SV << >> >>"]));
+        foreach (var id in new[] { 9, 10 })
+        {
+            var seed = Assert.IsType<PdfDictionary>(Assert.IsType<PdfDictionary>(doc.File.GetObject(id)).Get("SV"));
+            var items = Enumerable.Repeat<PdfObject>(new PdfName("SHA256"), id == 9 ? 100000 : 100001).ToList();
+            items[0] = new PdfInteger(0);
+            seed.Entries["DigestMethod"] = new PdfArray(items);
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureSeedDigestDoesNotInheritParentSeed()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /SV << /DigestMethod 42 >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Ua2SignatureSeedAndLockKnownErrorsAreIndependent(bool seedUnknown)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV {(seedUnknown ? "11 0 R" : "<< /DigestMethod 42 >>")} /Lock {(seedUnknown ? "<< /Action /Include /Fields 42 >>" : "11 0 R")} >>",
+                "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(seedUnknown, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(!seedUnknown, report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.Equal(seedUnknown, report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.Equal(!seedUnknown, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary signature-seed digest array shape
+
+Official PDF Association PDF 2.0 errata 12.7.5.5/Table 237 declares
+DigestMethod an unordered array of names. Recognized terminal Sig
+dictionaries now check local SV/DigestMethod raw shape independently of
+Lock. PDFUA2-FORM-SEED-DIGEST-TYPE reports a known non-array value or
+non-name item, aggregating once per terminal field. Omission/null/dangling
+root entries remain absent; null/dangling items are not names. Empty,
+unordered, repeated and custom-name arrays are retained by this type-only
+predicate. This is not an algorithm allow-list or signing-policy decision.
+
+SV/array/item references reuse the 32-hop/cycle guard; field-reader
+truncation, unsupported SV shape and shared 200,000-item exhaustion
+produce PDFUA2-FORM-SEED-DIGEST-INCOMPLETE. Known item errors survive
+later unknown items. Lock and seed uncertainty do not suppress each
+other's known findings. Nonterminal parent SV is not inherited.
+Full seed schema, flags, digest vocabulary/extensions/deprecation,
+credential-specific applicability and signing enforcement remain separate.
+
+Initial ninety authored controls had fourteen failures. Final ninety-four
+include shared work, parent exclusion and independent seed/lock errors.
+Focused Release: 4,550 passed; full Release: 17,407 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+Nine isolated native controls retain five shape positives and reject four
+primary raw-type negatives. All pinned combined-reference jobs complete
+normally and accept: **four explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against lock-field baseline 97a33e8b. No standard text or external
+controls are bundled; full signature/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary signature-lock field-name array shape
 
 Official PDF Association PDF 2.0 errata 12.7.5.5/Table 236 declares
