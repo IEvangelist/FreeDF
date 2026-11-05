@@ -423,6 +423,7 @@ internal static class PdfUA2Checks
             bool incomplete = false;
             int work = 0;
             var seen = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+            var seenResources = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
             void Incomplete()
             {
                 if (incomplete) return;
@@ -438,9 +439,23 @@ internal static class PdfUA2Checks
                 if (incomplete) return false;
                 if (value is null or PdfNull) return true;
                 if (value is not PdfStream stream) { Incomplete(); return false; }
-                if (seen.Add(stream) && StructureParentConflict(c, stream.Dict, Incomplete))
+                if (!seen.Add(stream)) return true;
+                if (StructureParentConflict(c, stream.Dict, Incomplete))
                     c.Add("PDFUA2-AP-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
                         "appearance stream must not contain both StructParent and StructParents", StructureParentClause, page);
+                if (incomplete) return false;
+                var resources = Resolve(stream.Dict.Get("Resources"));
+                if (incomplete) return false;
+                if (resources is PdfDictionary dictionary)
+                    VisitXObjectResources(c, dictionary, child =>
+                    {
+                        if (StructureParentConflict(c, child.Dict, Incomplete))
+                            c.Add("PDFUA2-AP-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                                "appearance resource XObject must not contain both StructParent and StructParents",
+                                StructureParentClause, page);
+                        return !incomplete;
+                    }, Incomplete, seenResources, seen, ref work);
+                else if (resources is not (null or PdfNull)) Incomplete();
                 return !incomplete;
             }
             VisitPageAnnotations(c, page, annotation =>
@@ -499,39 +514,51 @@ internal static class PdfUA2Checks
             }
             if (incomplete || root is null or PdfNull) continue;
             if (root is not PdfDictionary resources) { Incomplete(); continue; }
-            var pending = new Stack<PdfDictionary>();
             var seenResources = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
             var seenObjects = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
-            pending.Push(resources);
             int work = 0;
-            while (!incomplete && pending.TryPop(out var current))
+            VisitXObjectResources(c, resources, stream =>
             {
-                if (!seenResources.Add(current)) continue;
-                var rawMap = Resolve(current.Get("XObject"));
-                if (incomplete) break;
-                if (rawMap is null or PdfNull) continue;
-                if (rawMap is not PdfDictionary map) { Incomplete(); break; }
-                foreach (var raw in map.Entries.Values)
-                {
-                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
-                    var value = Resolve(raw);
-                    if (incomplete) break;
-                    if (value is null or PdfNull) continue;
-                    if (value is not PdfStream stream) { Incomplete(); break; }
-                    if (!seenObjects.Add(stream)) continue;
-                    var subtype = Resolve(stream.Dict.Get("Subtype")).AsName();
-                    if (incomplete) break;
-                    if (subtype is not ("Form" or "Image")) continue;
-                    if (StructureParentConflict(c, stream.Dict, Incomplete))
-                        c.Add("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
-                            "XObject must not contain both StructParent and StructParents", StructureParentClause, page);
-                    if (incomplete) break;
-                    if (subtype != "Form") continue;
-                    var nested = Resolve(stream.Dict.Get("Resources"));
-                    if (incomplete) break;
-                    if (nested is PdfDictionary dictionary) pending.Push(dictionary);
-                    else if (nested is not (null or PdfNull)) { Incomplete(); break; }
-                }
+                if (StructureParentConflict(c, stream.Dict, Incomplete))
+                    c.Add("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                        "XObject must not contain both StructParent and StructParents", StructureParentClause, page);
+                return !incomplete;
+            }, Incomplete, seenResources, seenObjects, ref work);
+        }
+    }
+
+    static void VisitXObjectResources(ValidationContext c, PdfDictionary resources, Func<PdfStream, bool> inspect,
+        Action incompleteInspection, HashSet<PdfDictionary> seenResources, HashSet<PdfStream> seenObjects, ref int work)
+    {
+        bool incomplete = false;
+        void Incomplete() { incomplete = true; incompleteInspection(); }
+        PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw, Incomplete);
+        var pending = new Stack<PdfDictionary>();
+        pending.Push(resources);
+        while (pending.TryPop(out var current))
+        {
+            if (!seenResources.Add(current)) continue;
+            var rawMap = Resolve(current.Get("XObject"));
+            if (incomplete) return;
+            if (rawMap is null or PdfNull) continue;
+            if (rawMap is not PdfDictionary map) { Incomplete(); return; }
+            foreach (var raw in map.Entries.Values)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+                var value = Resolve(raw);
+                if (incomplete) return;
+                if (value is null or PdfNull) continue;
+                if (value is not PdfStream stream) { Incomplete(); return; }
+                if (!seenObjects.Add(stream)) continue;
+                var subtype = Resolve(stream.Dict.Get("Subtype")).AsName();
+                if (incomplete) return;
+                if (subtype is not ("Form" or "Image")) continue;
+                if (!inspect(stream)) return;
+                if (subtype != "Form") continue;
+                var nested = Resolve(stream.Dict.Get("Resources"));
+                if (incomplete) return;
+                if (nested is PdfDictionary dictionary) pending.Push(dictionary);
+                else if (nested is not (null or PdfNull)) { Incomplete(); return; }
             }
         }
     }

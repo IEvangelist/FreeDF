@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary nested appearance resource parent-key exclusivity
+
+The Table 359 at-most-one StructParent/StructParents fact now also covers
+Form/Image XObjects in annotation appearance Resources, including unused
+entries, named-state appearances and nested Form resources. Appearance and
+page resource checks reuse an iterative resource walker; the page-resource
+scope and diagnostics remain unchanged. Nested appearance conflicts use
+PDFUA2-AP-STRUCT-PARENT-CONFLICT without decoding stream data.
+
+Appearance inspection shares its 200,000-entry budget across annotation
+entries, non-null N/R/D entries, named states and nested resource map
+entries, including duplicates. Stream/resource identities are deduplicated
+per page across all appearances; ordinary shared/cyclic resource graphs
+are visited once. References retain the 32-hop bound. Unsupported resource
+containers, cyclic references and exhausted bounds explicitly produce
+PDFUA2-AP-STRUCT-PARENT-INCOMPLETE; prior known conflicts survive.
+
+Eight native direct/state appearance controls retain four positives and
+reject four primary negatives. All eight pinned combined-reference jobs
+complete normally and accept: **four explicit primary/reference
+disagreements**, not normative confirmation by the reference.
+Twelve authored nested/shared-budget/reference-bound/graph/malformed cases
+had ten initial failures and now pass. Focused Release: 501 passed; full
+Release: 15,498 passed, zero failed/skipped. Fresh 435-PDF/870-result corpus
+JSON and native UA-1 reports are wholly unchanged. Solution zero errors/two
+retained machine-feed NU1507 warnings.
+
+Tiling patterns, soft masks/other referenced streams, full appearance
+schema and parent-key integer types/parent-tree identity remain separate.
+No standard text/external controls are bundled; hosted CI and full parity
+are not claimed. Earlier dated scope exclusions below describe those
+slices at delivery, not this extension.
+
 ## 2026-11-05 primary appearance structure-parent exclusivity
 
 The Table 359 at-most-one StructParent/StructParents fact now covers

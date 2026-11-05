@@ -3097,6 +3097,94 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData("Form", false)]
+    [InlineData("Form", true)]
+    [InlineData("Image", false)]
+    [InlineData("Image", true)]
+    public void Ua2AppearanceResourceParentKeysIncludeNestedFormsAndImages(string subtype, bool state)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            $"<< /Subtype /PrinterMark /AP << /N {(state ? "<< /Off 9 0 R >>" : "9 0 R")} >> >>",
+            ObjPdf.Stream("", "/Resources << /XObject << /Container 10 0 R >> >>"),
+            ObjPdf.Stream("", "/Subtype /Form /Resources << /XObject << /Nested 11 0 R >> >>"),
+            ObjPdf.Stream("", $"/Subtype /{subtype} /StructParent 0 /StructParents 0"),
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199998, false)]
+    [InlineData(199999, true)]
+    public void Ua2AppearanceResourceParentBudgetIncludesAnnotationAndAppearanceWork(int entries, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            ["<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>", ObjPdf.Stream(""),
+                ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var map = new PdfDictionary();
+        for (int i = 0; i < entries; i++) map.Entries[$"Unused{i}"] = new PdfRef(10, 0);
+        Assert.IsType<PdfStream>(doc.File.GetObject(9)).Dict.Entries["Resources"] =
+            new PdfDictionary { Entries = { ["XObject"] = map } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2AppearanceResourceParentReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "<< /XObject << /Self 9 0 R >> >>" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            new[] { "<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>",
+                ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0 /Resources 10 0 R") }
+                .Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2AppearanceResourceParentGraphCyclesPreserveDeduplication()
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R /D 10 0 R >> >>",
+            ObjPdf.Stream("", "/Resources 11 0 R"),
+            ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0 /Resources 11 0 R"),
+            "<< /XObject << /Child 10 0 R /Root 9 0 R >> >>",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("<< /XObject 0 >>")]
+    [InlineData("<< /XObject << /Unknown 10 0 R >> >>")]
+    public void Ua2AppearanceResourceParentMalformedOrCyclicResourcesRetainKnownError(string resources)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>",
+            ObjPdf.Stream("", $"/StructParent 0 /StructParents 0 /Resources {resources}"),
+            "10 0 R",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

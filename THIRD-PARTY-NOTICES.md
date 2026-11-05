@@ -420,6 +420,15 @@ reference; these disagreements are explicit. Appearance resource graphs,
 patterns, soft masks and full key type/identity remain separate.
 No standard text or external controls are bundled.
 
+The nested appearance resource extension follows the same Table 359
+exclusivity fact. Its shared iterative Form/Image resource traversal and
+combined appearance work bounds are independently implemented without
+decoding data. Eight native controls retain four positives and reject
+four primary negatives accepted by the reference; these disagreements
+are explicit. Patterns, soft masks, other stream references and complete
+key type/identity remain separate. No standard text or external controls
+are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

@@ -4,6 +4,15 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [nested appearance resource parent-key check](spec-backlog.md#2026-11-05-primary-nested-appearance-resource-parent-key-exclusivity)
+adds Form/Image resource graphs under direct/state annotation appearances
+using the shared iterative page-resource walker, explicit combined work
+bounds and per-page identity deduplication. Eight native controls retain
+four positives; four primary negatives remain reference-accepted. Corpus
+and UA-1 reports are wholly unchanged. Patterns, soft masks, other stream
+references and full key type/identity remain separate. Earlier summaries
+below retain their delivery-time scope.
+
 The [primary appearance parent-key check](spec-backlog.md#2026-11-05-primary-appearance-structure-parent-exclusivity)
 adds annotation AP N/R/D streams and named states, with shared raw-annotation
 traversal, explicit bounds and stream-identity deduplication. Twelve native
