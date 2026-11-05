@@ -4,6 +4,31 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed hexadecimal string grammar
+
+ISO 32000-1 7.3.4.3 (printed p16) permits hexadecimal digits and
+whitespace inside the enclosing angle brackets, with an odd final nibble
+padded with zero. Compressed-member lexing now rejects other bytes instead
+of silently discarding them, and explicitly diagnoses a missing closer.
+Default lexer recovery remains unchanged.
+
+Twenty-one controls cover invalid characters/comments/delimiters, nested
+strings, missing closers, exact decoded bytes, all six PDF whitespace bytes,
+odd nibble padding, lazy isolation and default lexer compatibility. The
+initial selector had eleven failures. Full Release: 18,783 passed, zero
+failed/skipped. Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Thirty-six native PDFs preserve twelve valid outputs unchanged. Twenty-four
+malformed inputs now produce explicit hexadecimal diagnostics: eighteen
+previously accepted arbitrary bytes, while six missing-closer cases already
+failed the member boundary check. MuPDF reports no probe exceptions; absent
+Type does not establish decoded-byte agreement. Positive decoded bytes are
+pinned in unit controls. Fresh pinned 435-PDF/870-result full corpus JSON is
+wholly unchanged against the literal-closer baseline.
+
+Discarded dictionary keys/missing values, numeric/name grammar and
+byte-limited/resource enforcement remain separate.
+
 ## 2026-11-05 compressed literal string termination
 
 ISO 32000-1 7.3.4.1 (printed p14) requires literal strings to be

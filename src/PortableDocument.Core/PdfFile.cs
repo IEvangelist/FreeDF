@@ -190,7 +190,7 @@ public sealed class PdfFile
             throw new PdfParseException("object stream member index mismatch");
         if (map.Parsed.TryGetValue(objNum, out var hit)) return hit;
         // Objects are parsed on demand; a malformed member only affects requests for that member.
-        var lexer = new PdfLexer(map.Data, map.First + member.Offset, requireClosingDelimiters: true);
+        var lexer = new PdfLexer(map.Data, map.First + member.Offset, objectStreamMember: true);
         var parsed = lexer.ReadObject();
         if (lexer.Pos > map.First + member.End)
             throw new PdfParseException("object stream member exceeds its boundary");

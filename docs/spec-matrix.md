@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed hexadecimal grammar check](spec-backlog.md#2026-11-05-compressed-hexadecimal-string-grammar)
+rejects nonhexadecimal/nonwhitespace bytes and missing closers in member-only
+lexing. Positive decoded bytes, whitespace and odd-nibble padding are pinned.
+Default lexer recovery and corpus JSON remain unchanged; reference limits,
+remaining dictionary/numeric/name grammar and resource limits are explicit.
+
 The [compressed literal string termination check](spec-backlog.md#2026-11-05-compressed-literal-string-termination)
 rejects unbalanced strings in the member-only lexer mode, preserving exact
 positive string bytes and default lexer recovery. Native/reference limits

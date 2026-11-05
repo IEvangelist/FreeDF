@@ -26,11 +26,11 @@ public sealed class PdfLexer
     };
 
     readonly byte[] _d;
-    readonly bool _requireClosingDelimiters;
+    readonly bool _objectStreamMember;
     public int Pos;
     public PdfLexer(byte[] data, int pos = 0) { _d = data; Pos = pos; }
-    internal PdfLexer(byte[] data, int pos, bool requireClosingDelimiters) : this(data, pos)
-        => _requireClosingDelimiters = requireClosingDelimiters;
+    internal PdfLexer(byte[] data, int pos, bool objectStreamMember) : this(data, pos)
+        => _objectStreamMember = objectStreamMember;
     public int Length => _d.Length;
     public byte[] Data => _d;
 
@@ -187,9 +187,13 @@ public sealed class PdfLexer
         while (Pos < _d.Length && _d[Pos] != '>')
         {
             var h = Hex(_d[Pos++]);
+            if (h < 0 && _objectStreamMember && !IsWhite(_d[Pos - 1]))
+                throw new PdfParseException("invalid hexadecimal string in object stream member");
             if (h < 0) continue;
             if (hi < 0) hi = h; else { bytes.Add((byte)(hi * 16 + h)); hi = -1; }
         }
+        if (Pos >= _d.Length && _objectStreamMember)
+            throw new PdfParseException("unterminated hexadecimal string in object stream member");
         if (hi >= 0) bytes.Add((byte)(hi * 16));
         Pos++;
         return new PdfString(bytes.ToArray(), true);
@@ -228,7 +232,7 @@ public sealed class PdfLexer
             else if (c == 13) { b.Add(10); if (Pos < _d.Length && _d[Pos] == 10) Pos++; }
             else b.Add(c);
         }
-        if (depth != 0 && _requireClosingDelimiters)
+        if (depth != 0 && _objectStreamMember)
             throw new PdfParseException("unterminated literal string in object stream member");
         return new PdfString(b.ToArray());
     }
@@ -240,7 +244,7 @@ public sealed class PdfLexer
         while (true)
         {
             var o = ReadObject(resolveRefs);
-            if (o is null && _requireClosingDelimiters)
+            if (o is null && _objectStreamMember)
                 throw new PdfParseException("unterminated array in object stream member");
             if (o is null || o is PdfKeyword { Value: "]" }) break;
             items.Add(o);
@@ -256,12 +260,12 @@ public sealed class PdfLexer
         while (true)
         {
             var k = ReadObject(resolveRefs);
-            if (k is null && _requireClosingDelimiters)
+            if (k is null && _objectStreamMember)
                 throw new PdfParseException("unterminated dictionary in object stream member");
             if (k is null || k is PdfKeyword { Value: ">>" }) break;
             if (k is not PdfName name) continue;
             var v = ReadObject(resolveRefs);
-            if (v is null && _requireClosingDelimiters)
+            if (v is null && _objectStreamMember)
                 throw new PdfParseException("unterminated dictionary in object stream member");
             if (v is null) break;
             if (v is PdfKeyword { Value: ">>" }) { d[name.Value] = PdfNull.Instance; break; }
