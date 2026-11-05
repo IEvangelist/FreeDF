@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [classic xref status check](spec-backlog.md#2026-11-05-classic-xref-entry-status-tokens)
+requires exact n/f status keywords in the fallback parser instead of
+silently treating unknown keywords as free. Native status-isolated controls
+agree with MuPDF and corpus JSON is unchanged. Whitespace compatibility,
+full free-list semantics and generation maxima remain separate.
+
 The [classic xref generation storage check](spec-backlog.md#2026-11-05-classic-xref-generation-storage)
 prevents fallback generation values from wrapping before indexing. Invalid
 values explicitly repair; fixed-format and lossless compatibility behavior

@@ -4,6 +4,29 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 classic xref entry status tokens
+
+ISO 32000-1 7.5.4 (printed p41) requires n for in-use entries and f
+for free entries. The fallback parser now requires those exact tokens
+instead of treating every other keyword as free. Invalid status tokens
+explicitly raise PdfParseException and use existing recovery.
+
+Nine controls include four initially red keyword cases, three existing
+wrong-object-type repairs and unchanged n/f positives. Final fixtures
+use fixed-format rows apart from the deliberately malformed status token;
+the free control links object 0 to deleted object 2 with next generation 1.
+This isolates the status requirement from short-entry formatting.
+Full Release: 18,557 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Nine native PDFs retain both valid outputs unchanged and report repair on
+all seven malformed statuses (three already repaired); four formerly lost
+targets recover. MuPDF agrees on all outputs and repair states. Fresh
+pinned 435-PDF/870-result corpus JSON is wholly unchanged against the
+classic-generation baseline. Accepted whitespace/short-format compatibility,
+normative generation maxima, full free-list semantics and resource budgets
+remain separate.
+
 ## 2026-11-05 classic xref generation storage
 
 The fallback classic-table parser now checks generation values before its

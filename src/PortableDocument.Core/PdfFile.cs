@@ -301,7 +301,8 @@ public sealed class PdfFile
                         }
                         continue;
                     }
-                    if (lx.ReadObject(false) is not PdfInteger off || lx.ReadObject(false) is not PdfInteger gen || lx.ReadObject(false) is not PdfKeyword k)
+                    if (lx.ReadObject(false) is not PdfInteger off || lx.ReadObject(false) is not PdfInteger gen
+                        || lx.ReadObject(false) is not PdfKeyword k || k.Value is not ("n" or "f"))
                         throw new PdfParseException("bad xref entry");
                     if (gen.Value < 0 || gen.Value > int.MaxValue)
                         throw new PdfParseException("xref generation exceeds supported range");
