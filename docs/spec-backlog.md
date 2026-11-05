@@ -4,6 +4,20 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 signature verification-fixture control
+
+The intermittent signature path-length test failure observed during the
+Artifact and Note slices is now reproduced by a session-only bounded
+runner invoking the unchanged original test. It stopped on iteration 128:
+certificate creation threw because the requested intermediate notAfter
+was one second later than its issuer's NotAfter. Separate UtcNow samples
+in the fixture cross the certificate timestamp's second boundary.
+The exception occurs in TestPki.Make before production certificate/PDF
+validation, not as a failing path-length verdict. Signature test and
+production signing sources are unchanged from the pre-Note baseline.
+Earlier dated run counts and uncertainty statements are preserved
+as historical evidence; the unrelated fixture-time correction is deferred.
+
 ## 2026-11-05 UA-2 namespace-aware Note restriction
 
 `PDFUA2-NOTE` now selects resolved Note roles, instead of raw Note plus
