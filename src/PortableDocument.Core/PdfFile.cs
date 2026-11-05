@@ -295,6 +295,7 @@ public sealed class PdfFile
         if (!_readingObjectStreamIndexes.Add(streamNumber))
             throw new PdfParseException("cyclic object stream metadata");
         try { return ReadObjectStreamIndexCore(stream, streamNumber); }
+        catch (InvalidDataException e) { throw new PdfParseException($"invalid object stream filter data: {e.Message}"); }
         finally { _readingObjectStreamIndexes.Remove(streamNumber); }
     }
 
@@ -307,7 +308,7 @@ public sealed class PdfFile
         if (externalFile is not null and not PdfNull)
             throw new PdfParseException("external object stream data is not supported");
         var filters = PdfFilters.GetFilters(stream.Dict, Resolve, ResolveObjectStreamFilterMetadata);
-        var (data, remainingFilter, _) = PdfFilters.Decode(stream.RawData, filters, Resolve);
+        var (data, remainingFilter, _) = PdfFilters.Decode(stream.RawData, filters, Resolve, strictContentFilters: true);
         if (remainingFilter is not null)
             throw new PdfParseException($"object stream filter {remainingFilter} was not decoded");
         var (n, first) = ObjectStreamBounds(stream, data.Length);

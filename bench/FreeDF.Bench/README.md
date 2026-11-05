@@ -296,6 +296,52 @@ The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-e
 distinguishes unsupported external-payload containment from actual external
 stream support.
 
+### Strict object-stream filter follow-up: 2026-11-05
+
+The [original traversal control](results/2026-11-05-filter-completion-control.md)
+([CSV](results/2026-11-05-filter-completion-control.csv)) uses exact permissive
+production `5ca4a2bac6a7604ea171a727ed6ec08c3494a75d`.
+The [initial strict candidate](results/2026-11-05-filter-completion-initial.md)
+([CSV](results/2026-11-05-filter-completion-initial.csv)) uses the existing strict
+decoder, including per-byte Adler reduction. The
+[final strict candidate](results/2026-11-05-filter-completion-final.md)
+([CSV](results/2026-11-05-filter-completion-final.csv)) reduces Adler sums per
+bounded 5,552-byte block without changing accepted checksum/header values.
+All use three warmups/eight 500 ms iterations/one launch on the same machine
+and runtime as the preceding follow-ups. Both plaintext fixture hashes match
+across original/initial/final.
+
+| Plaintext members | Original mean (us) | Initial strict mean (us) | Final strict mean (us) | Allocated each (KiB) |
+|---|---:|---:|---:|---:|
+| 1 | 10.94 | 20.69 | 10.50 | 18.00 |
+| 1,000 | 700.80 | 869.73 | 781.15 | 1908.91 |
+
+The initial candidate was measured first; its cost triggered exact original
+production measurement and inspection of the checksum loop. The bounded
+accumulator removes two modulo operations per decoded byte; it does not skip
+checksum validation or remove the strict decoding requirement. Seven worst-case
+buffer-boundary tests and existing random/corrupt decoder controls cover it.
+The full initial reports are retained, not replaced by the better final run.
+
+Final original/candidate timing intervals overlap, but the 1,000-member final
+mean remains about 11.5% higher than permissive production. This is a visible
+cost/uncertainty, not evidence that stricter validation is free. The lower
+single-member final mean is not a speedup guarantee. These shared-machine,
+one-launch results cannot isolate every JIT/scheduling contribution.
+Reported managed allocation is unchanged and excludes native/retained memory.
+Encrypted configurations pass but differ in random bytes across launches;
+no matched encrypted throughput attribution is made.
+
+The nondefault parameter workloads are retained for both the
+[initial strict decoder](results/2026-11-05-filter-completion-metadata-initial.md)
+([CSV](results/2026-11-05-filter-completion-metadata-initial.csv)) and
+[final strict decoder](results/2026-11-05-filter-completion-metadata-final.md)
+([CSV](results/2026-11-05-filter-completion-metadata-final.csv)).
+All deterministic hashes match the table above and all preflight configurations
+pass. These include strict predictor application in addition to filter decoding.
+No new provider ranking or full codec-parity claim is made; see the
+[scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-strict-filter-decoding).
+
 ## Flate decoder workloads
 
 ```powershell

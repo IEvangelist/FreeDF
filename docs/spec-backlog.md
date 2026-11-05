@@ -4,6 +4,58 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream strict filter decoding
+
+ISO 32000-1 7.4.2 (printed p24) requires ASCIIHex characters and its EOD marker;
+7.4.3 (p25) requires legal ASCII85 groups and the complete two-byte EOD marker.
+Section 7.4.5 (p29) defines complete RunLength runs and EOD. Flate is defined
+through RFCs 1950/1951 by 7.4.4.1 (p25). Object-stream offsets describe decoded
+data under 7.5.7/Table 16 (p46), not recovery output from corrupt filters.
+
+The shared index reader now uses the existing strict filter path rather than
+permissive partial decoding. This enables existing ASCIIHex/ASCII85/RunLength
+validation, zlib header/checksum checks and strict Flate predictor metadata/
+row checks before member publication. Decoder InvalidDataException is translated
+at the shared index boundary to PdfParseException with the original error
+message, so normal/repair inventory follows the same malformed-stream policy.
+Ordinary partial-stream recovery and the explicit remaining-codec guard remain.
+
+Eighteen tests reproduce ten unchanged-production failures/eight passes:
+missing end markers, illegal characters/markers, incomplete literal/repeat runs,
+truncated/corrupt zlib trailers, complete four-codec positives, cached identity
+and unchanged ordinary recovery, all normal/forced repair. Seven additional
+worst-case checksum tests exercise 5,551/5,552/5,553 and double-block boundaries
+plus 1 MiB of maximal bytes. Final focused selector: 924 passed.
+Full Release: 19,385 passed, zero failed/skipped. Solution: zero warnings/errors.
+
+Thirty-four independently encoded/retained native controls comprise twenty
+malformed and fourteen valid files, including six encrypted positives.
+All twenty malformed files previously published Target from recovered bytes;
+now repair leaves the member absent. All fourteen valid outcomes are identical.
+MuPDF still exposes Target for fourteen malformed probes and throws for six
+(illegal ASCIIHex, missing/illegal ASCII85), while exposing Target for all
+fourteen valid controls. Reference recovery is not strict-filter conformance.
+Fresh pinned 435-PDF/870-result full corpus JSON remains wholly unchanged
+against the external-payload baseline.
+
+Initial strict traversal measurements exposed a cost worth investigating.
+The [retained performance controls](../bench/FreeDF.Bench/README.md#strict-object-stream-filter-follow-up-2026-11-05)
+include exact permissive production, initial strict decoding and the final
+strict decoder. Adler-32 now reduces its two sums once per bounded block,
+not twice per byte; 5,552 maximal bytes keep the worst-case second sum within
+uint (4,294,690,200), while 5,553 would overflow. Header/checksum acceptance,
+output size limits and clearing of pooled scratch are unchanged.
+Reported valid-path allocations remain identical. The final 1,000-member
+plaintext mean remains about 11.5% above the original, with overlapping reported
+intervals; this is a retained performance cost/uncertainty, not a zero-cost
+claim or a universal optimization result.
+
+This reuses existing checks, not exhaustive filter conformance. LZW EOD and
+code-transition validation, full deflate bit-level completion/consumption,
+all codec-specific parameters, filter/parameter cardinality, actual external
+and image-codec object-stream support, global inventory and resource budgets
+remain separate.
+
 ## 2026-11-05 object-stream external payload containment
 
 ISO 32000-1 Table 5 (printed p20) defines F as the file containing stream

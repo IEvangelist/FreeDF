@@ -142,10 +142,17 @@ public static class PdfFilters
             InflateInto(z, output);
         var decoded = output.ToArray();
         uint a = 1, b = 0;
-        foreach (var value in decoded)
+        for (var offset = 0; offset < decoded.Length;)
         {
-            a = (a + value) % 65521;
-            b = (b + a) % 65521;
+            // 5,552 maximal bytes keep both Adler sums within uint before reduction.
+            var end = offset + Math.Min(5552, decoded.Length - offset);
+            for (; offset < end; offset++)
+            {
+                a += decoded[offset];
+                b += a;
+            }
+            a %= 65521;
+            b %= 65521;
         }
         if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(src.AsSpan(src.Length - 4)) != (b << 16 | a))
             throw new InvalidDataException("Incomplete or corrupt zlib content stream");

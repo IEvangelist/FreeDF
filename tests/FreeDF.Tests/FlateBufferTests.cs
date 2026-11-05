@@ -55,6 +55,22 @@ public class FlateBufferTests
         }
     }
 
+    [Theory]
+    [InlineData(5551)]
+    [InlineData(5552)]
+    [InlineData(5553)]
+    [InlineData(11103)]
+    [InlineData(11104)]
+    [InlineData(11105)]
+    [InlineData(1048576)]
+    public void Strict_checksum_preserves_worst_case_accumulator_boundaries(int size)
+    {
+        var source = new byte[size];
+        Array.Fill(source, byte.MaxValue);
+        var encoded = PdfFilters.DeflateEncode(source);
+        Assert.Equal(source, Decode(encoded, true));
+    }
+
     static byte[] Decode(byte[] encoded, bool strict) =>
         PdfFilters.Decode(encoded, [("FlateDecode", null)], x => x, strictContentFilters: strict).Data;
 }
