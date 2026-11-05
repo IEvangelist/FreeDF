@@ -4472,6 +4472,142 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> SignatureLockFieldShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var action in new[] { "Include", "Exclude", "All" })
+        foreach (var entry in new[]
+        {
+            "", "/Fields null", "/Fields []", "/Fields [(first) (parent.child)]",
+            "/Fields 0", "/Fields (first)", "/Fields [/first]", "/Fields [null]",
+            "/Fields [(first) 1]", "/Fields [11 0 R]", "/Fields 12 0 R",
+        })
+            yield return [part, type, action, entry];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureLockFieldShapeCases))]
+    public void Ua2SignatureLockFieldsHaveDeclaredArrayShape(int part, string type, string action, string entry)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /Lock << /Action /{action} {entry} >> >>",
+                "null", "(first)", "[(first)]"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool scope = part == 2 && type == "Sig";
+        bool invalid = entry is "/Fields 0" or "/Fields (first)" or "/Fields [/first]"
+            or "/Fields [null]" or "/Fields [(first) 1]";
+        Assert.Equal(scope && invalid, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(scope && action != "All" && entry is "" or "/Fields null",
+            report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Lock 11 0 R", "11 0 R", false)]
+    [InlineData("/Lock << /Action /Include /Fields 11 0 R >>", "11 0 R", false)]
+    [InlineData("/Lock << /Action /Include /Fields [(first) 11 0 R] >>", "11 0 R", false)]
+    [InlineData("/Lock << /Action /Include /Fields [42 11 0 R] >>", "11 0 R", true)]
+    [InlineData("/Lock << /Action 11 0 R /Fields 42 >>", "11 0 R", true)]
+    [InlineData("/Lock 42", "null", false)]
+    public void Ua2SignatureLockUnknownTraversalDoesNotInventMissingFields(string entry, string target, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2SignatureLockFieldsWorkBoundRetainsKnownTypeError(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (signature) /Lock << /Action /Include >> >>"]));
+        var field = Assert.IsType<PdfDictionary>(doc.File.GetObject(9));
+        var dictionary = Assert.IsType<PdfDictionary>(field.Get("Lock"));
+        var items = Enumerable.Repeat<PdfObject>(new PdfString(Encoding.ASCII.GetBytes("first")), count).ToList();
+        items[0] = new PdfInteger(0);
+        dictionary.Entries["Fields"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Lock", 32, false)]
+    [InlineData("Lock", 33, true)]
+    [InlineData("Action", 32, false)]
+    [InlineData("Action", 33, true)]
+    [InlineData("Fields", 32, false)]
+    [InlineData("Fields", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    public void Ua2SignatureLockReferencesHaveExplicitDepthBoundary(string route, int count, bool incomplete)
+    {
+        var terminal = route switch
+        {
+            "Lock" => "<< /Action /Include /Fields [] >>",
+            "Action" => "/Include",
+            "Fields" => "[]",
+            _ => "(first)",
+        };
+        var entry = route switch
+        {
+            "Lock" => "10 0 R",
+            "Action" => "<< /Action 10 0 R /Fields [] >>",
+            "Fields" => "<< /Action /Include /Fields 10 0 R >>",
+            _ => "<< /Action /Include /Fields [10 0 R] >>",
+        };
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? terminal : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /Lock {entry} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureLockWorkBudgetIsSharedAcrossFields()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>", extras:
+            [Para, "<< /FT /Sig /T (first) /Lock << /Action /Include >> >>",
+                "<< /FT /Sig /T (second) /Lock << /Action /Exclude >> >>"]));
+        foreach (var id in new[] { 9, 10 })
+        {
+            var field = Assert.IsType<PdfDictionary>(doc.File.GetObject(id));
+            var dictionary = Assert.IsType<PdfDictionary>(field.Get("Lock"));
+            var items = Enumerable.Repeat<PdfObject>(new PdfString([]), id == 9 ? 100000 : 100001).ToList();
+            items[0] = new PdfInteger(0);
+            dictionary.Entries["Fields"] = new PdfArray(items);
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureLockDoesNotInheritParentLock()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /Lock << /Action /Include >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

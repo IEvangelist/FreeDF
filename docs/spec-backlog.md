@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary signature-lock field-name array shape
+
+Official PDF Association PDF 2.0 errata 12.7.5.5/Table 236 declares
+signature-lock Fields an array of text strings, required for Action Include
+or Exclude. Recognized terminal Sig dictionaries now check local Lock:
+PDFUA2-FORM-LOCK-FIELDS-TYPE reports a known non-array Fields or non-string
+item; PDFUA2-FORM-LOCK-FIELDS-MISSING reports resolved absence under a
+resolved Include/Exclude action. Empty arrays remain valid shapes.
+Other field types and nonterminal parent Lock inheritance are excluded.
+This only checks raw PdfString item types: text encoding, fully qualified
+name syntax, identity/existence and lock enforcement are not established.
+All-action omission remains allowed by this presence predicate.
+
+Root Lock, Action, Fields and item references reuse the existing
+32-hop/cycle guard; a shared 200,000-item budget and field-reader truncation
+produce PDFUA2-FORM-LOCK-INCOMPLETE. Non-dictionary known Lock is unsupported
+and incomplete. Unknown Fields never becomes claimed absence; unknown
+Action does not suppress known Fields type errors. Known item type errors
+survive later unknown items. Null/dangling Fields is absence; null/dangling
+items are not strings. Full Action/P schema, signature validity, permissions,
+seed values and complete field traversal remain separate.
+
+Initial 206 authored controls had twenty-seven failures. Final 216 also
+cover exact 32/33-hop root/action/array/item bounds, shared work and parent
+exclusion. Focused Release: 4,456 passed; full Release: 17,313 passed,
+zero failed/skipped. Solution zero errors/two retained machine-feed
+NU1507 warnings. Twenty-one isolated native controls retain seven
+shape/presence positives and reject fourteen primary negatives.
+All pinned combined-reference jobs complete normally and accept:
+**fourteen explicit primary/reference disagreements**. Native UA-1 and
+fresh 435-PDF/870-result corpus JSON are wholly unchanged against
+choice-index baseline dcae53b6. No standard text or external controls
+are bundled; full signature/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary choice-field index array shape
 
 Official PDF Association PDF 2.0 errata 12.7.5.4/Table 234 declares a

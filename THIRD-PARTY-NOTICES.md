@@ -520,6 +520,14 @@ negatives accepted by the pinned reference; disagreements are explicit.
 Presence, Opt range, duplicate-selection semantics and V matching remain
 separate. No standard text or external controls are bundled.
 
+The signature-lock Fields raw string-array and conditional-presence check
+follows official PDF Association 12.7.5.5/Table 236 facts. It independently
+reuses bounded references and recognized terminal field traversal.
+Twenty-one native controls retain seven shape/presence positives and reject
+fourteen primary negatives accepted by the pinned reference; disagreements
+are explicit. Encoding/name identity, complete schema and signing/locking
+enforcement remain separate. No standard text or external controls bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

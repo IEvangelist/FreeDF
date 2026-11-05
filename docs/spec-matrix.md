@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary signature-lock Fields shape check](spec-backlog.md#2026-11-05-primary-signature-lock-field-name-array-shape)
+checks local terminal Sig Lock Fields raw string-array types and required
+presence for known Include/Exclude actions with independent incompleteness.
+Twenty-one native controls retain seven shape/presence positives; fourteen
+primary negatives remain reference-accepted. Corpus and UA-1 JSON are
+unchanged. Text encoding/name identity, full lock schema, permissions
+and signature enforcement remain separate.
+
 The [primary choice-field index shape check](spec-backlog.md#2026-11-05-primary-choice-field-index-array-shape)
 checks local terminal Ch I arrays for integer/nonnegative/nondecreasing
 shape with explicit reference/work incompleteness. Eleven native controls

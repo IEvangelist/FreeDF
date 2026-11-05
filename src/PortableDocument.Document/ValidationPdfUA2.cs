@@ -40,6 +40,7 @@ internal static class PdfUA2Checks
         var fields = c.Doc.GetFormFieldDetails();
         DefaultAppearances(c, fields);
         ChoiceFieldIndices(c, fields);
+        SignatureLockFields(c, fields);
         bool incomplete = false, limitIncomplete = false;
         if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
@@ -106,6 +107,51 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
                 "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
                 "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void SignatureLockFields(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 236";
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-LOCK-INCOMPLETE", ValidationSeverity.Error,
+                "signature-lock field-name inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("Lock"), Incomplete);
+            if (value is null or PdfNull) continue;
+            if (value is not PdfDictionary dictionary) { Incomplete(); continue; }
+            bool actionComplete = true, namesComplete = true;
+            var action = ResolveBounded(c.F, dictionary.Get("Action"), () => { actionComplete = false; Incomplete(); });
+            var names = ResolveBounded(c.F, dictionary.Get("Fields"), () => { namesComplete = false; Incomplete(); });
+            if (!namesComplete) continue;
+            if (names is null or PdfNull)
+            {
+                if (actionComplete && action is PdfName { Value: "Include" or "Exclude" })
+                    c.Add("PDFUA2-FORM-LOCK-FIELDS-MISSING", ValidationSeverity.Error,
+                        "signature-lock Include or Exclude requires a Fields array", clause);
+                continue;
+            }
+            bool type = names is not PdfArray;
+            if (names is PdfArray array)
+                foreach (var item in array.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var name = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (resolved && name is not PdfString) type = true;
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-LOCK-FIELDS-TYPE", ValidationSeverity.Error,
+                    "signature-lock Fields must be an array of text strings", clause);
         }
     }
 
