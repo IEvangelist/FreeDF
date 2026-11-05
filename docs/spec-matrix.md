@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [null annotation-tag correction](spec-backlog.md#2026-11-05-null-annotation-structure-parent-keys)
+makes resolved null StructParent equivalent to omission in both profiles,
+retaining visible-untagged checks and reporting unresolved chains separately.
+Fifty native controls give 41 whole-file agreements and 21 corrected false
+rejections; nine existing Popup/visible-widget reference disagreements remain
+explicit. Fresh 435-PDF/870-result corpus output is unchanged. Full artifact
+and annotation/field classification semantics are not claimed.
+
 The [UA-2 namespace-aware list correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-list-checks)
 resolves L/LI/Lbl roles for numbering and direct content, and aligns
 list-shape endpoints without treating unresolved roles as known violations.

@@ -142,7 +142,7 @@ public class AnnotationStructureValidationTests
     [InlineData(2)]
     public void StructParentMustBeAnInRangeNonNegativeIntegerWithAMapping(int part)
     {
-        foreach (var key in new[] { "/One", "(1)", "true", "[]", "<< >>", "null", "1.0", "1.5", "-1", "2147483648", "9223372036854775807", "2" })
+        foreach (var key in new[] { "/One", "(1)", "true", "[]", "<< >>", "1.0", "1.5", "-1", "2147483648", "9223372036854775807", "2" })
         {
             var doc = Load(part, (9, Annotation.Replace("/StructParent 1", $"/StructParent {key}")));
             var raw = Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent");
@@ -167,11 +167,63 @@ public class AnnotationStructureValidationTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    public void UnresolvedStructParentReportsInvalidMappingAndKeepsRawReference(int part)
+    public void NonexistentStructParentIsOmissionAndKeepsRawReference(int part)
     {
         var doc = Load(part, (9, Annotation.Replace("/StructParent 1", "/StructParent 99 0 R")));
-        OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+        OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-UNTAGGED");
         Assert.IsType<PdfRef>(Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent"));
+    }
+
+    public static IEnumerable<object[]> NullStructParentCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var context in new[] { "visible", "hidden", "outside", "popup", "printermark", "hidden-widget" })
+        foreach (var key in new[] { "", "null", "13 0 R", "99 0 R", "1", "cycle" })
+            yield return [part, context, key];
+    }
+
+    [Theory]
+    [MemberData(nameof(NullStructParentCases))]
+    public void NullStructParentMatchesOmissionWithoutLosingVisibleOrIncompleteErrors(int part, string context, string key)
+    {
+        var annotation = Annotation.Replace("/StructParent 1", key.Length == 0 ? "" : $"/StructParent {(key == "cycle" ? "13 0 R" : key)}");
+        if (context is "hidden" or "hidden-widget") annotation = annotation.Replace("/Rect", "/F 2 /Rect");
+        if (context == "outside") annotation = annotation.Replace("[0 0 10 10]", "[200 200 220 220]");
+        if (context is "popup" or "printermark" or "hidden-widget")
+            annotation = annotation.Replace("/Subtype /Stamp", "/Subtype /" + (context == "popup" ? "Popup" : context == "printermark" ? "PrinterMark" : "Widget"));
+        var doc = Load(part, (9, annotation), (13, key == "cycle" ? "13 0 R" : "null"));
+        var raw = Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent");
+        var report = Validate(doc, part);
+        Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
+        Assert.Equal(key == "cycle", report.Has("PDFUA-ANNOT-TAG-INCOMPLETE"));
+        Assert.Equal(context == "visible" && key is not ("1" or "cycle"), report.Has("PDFUA-ANNOT-UNTAGGED"));
+        Assert.Equal(context == "popup" && part == 2 && key == "1", report.Has("PDFUA2-ANNOT-POPUP"));
+        Assert.Equal(context == "printermark" && key == "1", report.Has("PDFUA-ANNOT-PRINTERMARK"));
+        Assert.Same(raw, Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent"));
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, true)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, true)]
+    public void StructParentReferenceBoundDoesNotBecomeOmission(int part, int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(8, length).Select(n => n == 7 + length ? "null" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(ObjPdf.Build(new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [7 0 R] /Tabs /S >>",
+            ObjPdf.Stream(""),
+            "<< /Type /StructTreeRoot /K 6 0 R >>",
+            "<< /Type /StructElem /S /Document /P 5 0 R >>",
+            Annotation.Replace("/StructParent 1", "/StructParent 8 0 R"),
+        }.Concat(chain).ToArray()));
+        var report = Validate(doc, part);
+        Assert.Equal(incomplete, report.Has("PDFUA-ANNOT-TAG-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA-ANNOT-UNTAGGED"));
+        Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
     }
 
     [Theory]

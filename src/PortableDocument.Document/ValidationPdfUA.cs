@@ -558,7 +558,13 @@ internal static partial class PdfUAChecks
             {
                 if (f.Resolve(a) is not PdfDictionary ad) continue;
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
-                var key = f.Resolve(ad.Get("StructParent"));
+                var tagIncomplete = false;
+                var key = PdfUA2Checks.ResolveBounded(f, ad.Get("StructParent"), () => tagIncomplete = true);
+                if (key is PdfNull) key = null;
+                if (tagIncomplete)
+                    c.Add("PDFUA-ANNOT-TAG-INCOMPLETE", ValidationSeverity.Error,
+                        $"/{sub} annotation /StructParent resolution is cyclic or exceeds the reference bound",
+                        "ISO 32000-2 14.7.5.4", i);
                 var exempt = (((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) & 2) != 0 || OutsideCropBox(f, ad, c.Doc.Pages[i].CropBox);
                 if (sub is "Popup")
                 {
@@ -577,18 +583,18 @@ internal static partial class PdfUAChecks
                     continue;
                 }
                 StructElement? parent = null;
-                if (key is null)
+                if (!tagIncomplete && key is null)
                 {
                     if (!exempt) c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
                 }
-                else if (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
+                else if (!tagIncomplete && (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
                     || AnnotationParentTreeValue(f, tree, (int)number.Value) is not PdfRef reference
                     || !f.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse
                     || reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex)
                     || f.Resolve(reference) is not PdfDictionary dict
-                    || (parent = tree.ElementFor(dict)) is null)
+                    || (parent = tree.ElementFor(dict)) is null))
                     c.Add("PDFUA-ANNOT-PARENTTREE", ValidationSeverity.Error, $"/{sub} annotation /StructParent must be a non-negative integer key mapping to a parsed structure element in /ParentTree", "ISO 32000-2 14.7.5.4", i);
-                else
+                else if (parent is not null)
                 {
                     if (!objectRefs.TryGetValue(parent, out var objects))
                         objectRefs[parent] = objects = AnnotationObjectReferences(f, parent);

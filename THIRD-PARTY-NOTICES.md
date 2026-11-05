@@ -21,6 +21,13 @@ resolver; no validation-engine source or external control PDF is bundled.
 Direct-child/attribute scope is retained; grouping-dependent list
 semantics are not derived from the reference's standalone verdicts.
 
+The null annotation StructParent boundary in `ValidationPdfUA.cs` follows
+ISO 32000-1 7.3.9 and was independently cross-checked against the same
+CC BY 4.0 profiles (UA-1 7.18.8-1; UA-2 8.9.2.4.9-1/8.9.2.4.14-1).
+Existing exemption/tagging policies are retained; reporting's PrinterMark
+family overlap does not establish full tagged-Artifact semantics.
+No reference source, profile XML or external annotation PDF is bundled.
+
 The PDF/A image-XObject interpolation prohibition in `ValidationPdfA.cs` was
 also cross-checked against the veraPDF Consortium's
 [v1.30.3 PDF/A profiles](https://github.com/veraPDF/veraPDF-validation-profiles/tree/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_A),

@@ -4,6 +4,52 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 null annotation structure-parent keys
+
+Resolved null StructParent entries now mean omission under primary
+ISO 32000-1 7.3.9, rather than a malformed present parent-tree key.
+Direct null, indirect null and nonexistent references share the existing
+missing-key behavior in both PDF/UA profiles. Visible annotations still
+report `PDFUA-ANNOT-UNTAGGED`; hidden/outside exemptions and the existing
+Popup/PrinterMark policies are retained. Real non-null malformed keys,
+parent-tree mapping checks and direct OBJR identity checks are unchanged.
+Raw dictionaries/references are preserved.
+
+The check reuses the bounded reference resolver. Cyclic/depth-exhausted
+StructParent resolution now produces `PDFUA-ANNOT-TAG-INCOMPLETE`
+(Error), not an apparent null omission or inaccurate known-key finding.
+Other independent annotation checks continue. Seventy-two authored cases
+cover both profiles and visible/hidden/outside/Popup/PrinterMark/hidden-widget
+contexts, null representations, valid keys and cycles. Four further cases
+pin the exact 32/33-reference boundary; two existing dangling-key tests
+now expect the omission diagnostic. The pre-fix annotation selector had
+51 failures out of 136 cases.
+
+Fifty native UA-1/UA-2 controls give 41 whole-file agreements with pinned
+veraPDF v1.30.3 (34 clean positives, seven negatives), correcting 21
+false-positive file verdicts. Null/dangling controls match their respective
+omission controls exactly; omitted and valid-key outputs are unchanged.
+All 15 applicable PrinterMark/UA-2 Popup rule results agree (UA-1 7.18.8-1,
+UA-2 8.9.2.4.14-1/8.9.2.4.9-1). Reporting adds the missing UA-2
+PrinterMark family overlap, not proof of its full artifact predicate.
+Tagged Artifact semantics and broader annotation/field classification
+are not expanded in this slice.
+
+Nine existing whole-file reference disagreements remain explicit:
+five UA-1 Popup controls are accepted by the existing FreeDF exemption
+but rejected by the reference's generic Annot rule; four UA-2 visible
+untagged widgets (omitted/null/indirect-null/dangling keys) remain rejected
+by FreeDF's retained tagging policy while the reference accepts them.
+Those file verdicts did not change and are not counted as clean positives.
+The null controls' diagnostic changes are distinct from corrected
+false-positive file verdicts.
+
+Fresh 435-PDF/870-result public-corpus output is identical to the immediate
+baseline. Full Release suite: 14,158 passed, zero failed/skipped.
+Solution build: zero errors and two retained machine-feed NU1507 warnings.
+Reporting tool: 20 passing tests. External native PDFs/reference reports
+remain session-only; full PDF/UA parity is not claimed.
+
 ## 2026-11-05 UA-2 namespace-aware list checks
 
 The existing `PDFUA2-LIST-NUMBERING` and `PDFUA2-LI-CONTENT` checks
