@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 xref-stream declared row completeness
+
+ISO 32000-1 7.5.8.2 Table 17 (printed p50) relates each subsection's
+Index count to W's total byte length per entry. Before allocating xref
+capacity or installing entries, the parser now compares the total declared
+rows with complete decoded rows. Short data explicitly raises
+PdfParseException and uses existing whole-section recovery instead of
+silently breaking out of individual subsection loops. The comparison uses
+division and a long count, not attacker-sized allocation or multiplication.
+
+Fourteen controls cover partial/missing final rows, missing target rows,
+empty data and split subsections; eight were red before correction.
+Complete/split controls and surplus decoded-byte compatibility remain
+unchanged. Surplus acceptance is retained behavior, not a complete stream
+conformance claim. Full Release: 18,504 passed, zero failed/skipped;
+solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Twelve native PDFs retain three positives and now report repair on all
+nine truncated inputs (two already repaired before this change). Three
+previously lost targets recover. MuPDF agrees on all target results and
+on repair except for two one-byte-short inputs, which it accepts without
+repair. Fresh pinned 435-PDF/870-result corpus JSON is wholly unchanged
+against the raw-width baseline.
+
+Entry field ranges/free lists, exact highest-used Size across updates and
+resource budgets remain separate.
+
 ## 2026-11-05 xref-stream raw field widths
 
 ISO 32000-1 7.5.8.2 Table 17 (printed p50) defines W as an array of

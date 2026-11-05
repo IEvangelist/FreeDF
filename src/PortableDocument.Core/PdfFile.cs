@@ -317,6 +317,7 @@ public sealed class PdfFile
             ? n.Value : throw new PdfParseException("non-integer xref stream /Index")).ToArray() : [0L, size.Value];
         if (index.Length % 2 != 0) throw new PdfParseException("unpaired xref stream /Index");
         long end = 0;
+        long requiredRows = 0;
         for (var s = 0; s < index.Length; s += 2)
         {
             var start = index[s];
@@ -324,9 +325,11 @@ public sealed class PdfFile
             if (start < end || start < 0 || start > int.MaxValue || count < 0 || count > size.Value - start)
                 throw new PdfParseException("bad xref stream /Index range");
             end = start + count;
+            requiredRows += count;
         }
         var rowLen = w.Sum();
         if (rowLen == 0) throw new PdfParseException("empty xref stream rows");
+        if (requiredRows > data.Length / rowLen) throw new PdfParseException("truncated xref stream rows");
         if (rowLen > 0 && data.Length / rowLen is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + data.Length / rowLen);
         var woff = new int[w.Length];
         for (var wi = 1; wi < w.Length; wi++) woff[wi] = woff[wi - 1] + w[wi - 1];
@@ -334,7 +337,6 @@ public sealed class PdfFile
         for (var s = 0; s + 1 < index.Length; s += 2)
             for (long i = 0; i < index[s + 1]; i++, p += rowLen)
             {
-                if (p + rowLen > data.Length) break;
                 long Field(int idx2, long def)
                 {
                     if (w[idx2] == 0) return def;

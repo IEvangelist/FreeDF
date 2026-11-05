@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref-stream row completeness check](spec-backlog.md#2026-11-05-xref-stream-declared-row-completeness)
+rejects short decoded data before installing a partial section. Declared
+rows are compared without attacker-sized allocation; split subsections and
+surplus-byte compatibility are retained. Corpus JSON is unchanged. Entry
+fields, free lists and resource budgets remain separate.
+
 The [xref-stream raw W correction](spec-backlog.md#2026-11-05-xref-stream-raw-field-widths)
 requires integer byte widths before narrowing. Zero-width defaults,
 eight-byte fields and existing extension strides are retained as scoped
