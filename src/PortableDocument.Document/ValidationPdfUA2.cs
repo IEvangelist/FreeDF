@@ -399,6 +399,7 @@ internal static class PdfUA2Checks
         var f = c.F;
         foreach (var e in tree.Elements())
         {
+            StructureReferenceShape(c, e);
             var outcome = Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out var standardType, out var resolvedNamespace);
             if (outcome == RoleOutcome.Standard && resolvedNamespace == MathMlNamespace)
             {
@@ -485,6 +486,39 @@ internal static class PdfUA2Checks
         c.Add("PDFUA2-TOCI-REF", ValidationSeverity.Error,
             "TOCI and its descendants have no non-null /Ref entry; target shape and identity are not evaluated",
             "ISO 14289-2 8.2.5.8", element.PageIndex);
+    }
+
+    static void StructureReferenceShape(ValidationContext c, StructElement element)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-STRUCT-REF-INCOMPLETE", ValidationSeverity.Error,
+                "structure Ref inspection exceeds its reference/work bound",
+                "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+        }
+        var value = ResolveBounded(c.F, element.Dict.Get("Ref"), Incomplete);
+        if (incomplete || value is null or PdfNull) return;
+        if (value is not PdfArray references)
+        {
+            c.Add("PDFUA2-STRUCT-REF-TYPE", ValidationSeverity.Error,
+                "structure Ref must be an array", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+            return;
+        }
+        int work = 0;
+        bool foundNull = false;
+        foreach (var raw in references.Items)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+            var item = ResolveBounded(c.F, raw, Incomplete);
+            if (incomplete) break;
+            foundNull |= item is null or PdfNull;
+        }
+        if (foundNull)
+            c.Add("PDFUA2-STRUCT-REF-NULL", ValidationSeverity.Error,
+                "structure Ref array contains a null element", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
     }
 
     static void FenoteType(ValidationContext c, StructureTree tree, StructElement element)

@@ -254,6 +254,16 @@ independently reuses the repository's inert XML parser; no source XML,
 schema or protocol PDF is bundled. Namespace/reference limits and source
 retrieval limitations are documented in the specification backlog.
 
+## PDF Association PDF 2.0 errata facts
+
+The bounded structure Ref shape check in `ValidationPdfUA2.cs` follows
+the factual array-type and no-null-element constraints in the official
+[ISO 32000-2:2020 errata, 14.7.2 Table 355](https://pdf-issues.pdfa.org/32000-2-2020/clause14.html#H14.7.2).
+The checks were independently implemented; no standard text is bundled.
+The pinned veraPDF UA-2 profile accepts the three malformed native cases
+that these primary-based checks reject. No reference-engine predicate
+mapping or full target-identity conformance is claimed.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

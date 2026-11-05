@@ -1672,6 +1672,55 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> StructureReferenceShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var role in new[] { "P", "TOCI" })
+        foreach (var reference in new[] { "", "/Ref null", "/Ref []", "/Ref 42", "/Ref << >>",
+            "/Ref [null]", "/Ref [99 0 R]", "/Ref [42]", "/Ref [(id)]" })
+            yield return [part, role, reference];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureReferenceShapeCases))]
+    public void Ua2StructureRefRequiresArrayWithoutNullElements(int part, string role, string reference)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /{role} /P 7 0 R /K [] {reference} >>"])), part);
+        Assert.Equal(part == 2 && reference is "/Ref 42" or "/Ref << >>", report.Has("PDFUA2-STRUCT-REF-TYPE"));
+        Assert.Equal(part == 2 && reference is "/Ref [null]" or "/Ref [99 0 R]", report.Has("PDFUA2-STRUCT-REF-NULL"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("9 0 R")]
+    [InlineData("[9 0 R]")]
+    public void Ua2StructureRefCycleIsIncompleteNotGuessedNull(string reference)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R /K [] /Ref {reference} >>", "9 0 R"])), 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2StructureRefArrayWorkIsBounded(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["Ref"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(new PdfInteger(42), count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-NULL"));
+    }
+
     public static IEnumerable<object[]> TociReferenceCases()
     {
         foreach (var part in new[] { 1, 2 })

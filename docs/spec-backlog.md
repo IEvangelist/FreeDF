@@ -4,6 +4,33 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 PDF 2.0 structure Ref array shape
+
+The official [PDF Association ISO 32000-2:2020 errata, 14.7.2 Table 355](https://pdf-issues.pdfa.org/32000-2-2020/clause14.html#H14.7.2)
+identifies Ref as an array and prohibits null array elements. UA-2 now
+checks these shape constraints on every structure element independently
+of TOCI Ref presence. Optional null entries retain omission semantics;
+resolved missing array references count as null. Cycles, reference depth
+and the 200,000-item array work bound produce separate
+PDFUA2-STRUCT-REF-INCOMPLETE errors rather than guessed null values.
+Non-array and null-element errors have ISO 32000-2 Table 355 provenance,
+not a claimed veraPDF UA-2 predicate mapping.
+
+Eight retained native TOCI controls were rerun against the exact previous
+FreeDF runner. Three formerly accepted malformed cases now fail the
+primary shape constraint: integer Ref, dangling array entry and explicit
+null array entry. The pinned reference accepts all three; these are
+explicit primary/profile differences, not claimed reference agreements.
+The other five file outcomes agree; TOCI presence outcomes and all eight
+UA-1 outputs are unchanged. Fresh 435-PDF/870-result output is unchanged.
+Forty authored shape/profile/cycle/work cases cover the boundary.
+
+This does not validate non-null array item types, structure-target
+identity or semantic destinations. Empty arrays and non-null integers/
+strings inside arrays pass this narrow shape check, not full target
+validation. Complete TOCI reference semantics remain deferred.
+No external PDF, report, standard text or engine code is bundled.
+
 ## 2026-11-05 UA-2 table section containment
 
 Legacy THead/TBody/TFoot parent/child checks and the UA-1-specific

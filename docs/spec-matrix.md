@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [structure Ref shape check](spec-backlog.md#2026-11-05-pdf-20-structure-ref-array-shape)
+uses official ISO 32000-2 Table 355 errata to require arrays without null
+elements in UA-2. Three native malformed cases now fail despite reference
+acceptance; these primary/profile differences are explicit. Presence,
+UA-1 and fresh corpus output are unchanged. Non-null item validity and
+target identity remain deferred.
+
 The [table section correction](spec-backlog.md#2026-11-05-ua-2-table-section-containment)
 retains legacy section constraints for UA-1 only and uses existing
 namespace-aware containment for UA-2. Eighteen native outcomes agree,
