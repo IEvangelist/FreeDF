@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream recovery header identity
+
+ISO 32000-1 7.5.7 (printed p46) requires N integer object-number/offset
+pairs, with First locating the first body. Recovery now reuses the lazy
+loader's complete header validation before installing any compressed
+identities. This removes its unchecked object-number narrowing and
+partial-index mutation. Unsupported/negative numbers, invalid offsets,
+non-integer/truncated pairs, duplicate numbers and header pairs extending
+past First explicitly raise the existing parse diagnostic; recovery skips
+that stream without overwriting existing uncompressed identities.
+
+Sixteen controls include thirteen initially red cases, valid cached lookup
+with an unrelated malformed body and an empty stream. No body is eagerly
+parsed. Full Release: 18,607 passed, zero failed/skipped. Solution: zero
+errors/two retained machine-feed NU1507 warnings.
+
+Seventeen native PDFs retain three valid outputs unchanged. Fourteen
+malformed headers preserve the original target and report repair; eleven
+previously raised a second header exception after corrupting the index,
+while three previously retained the target but could install unrelated
+invalid/partial entries. MuPDF agrees on all valid outputs and two malformed
+target preservations; four malformed headers instead redirect to the
+compressed target and eight lose the target. All native fixtures trigger
+repair by construction. These recovery disagreements are recorded, not
+treated as a normative recovery policy. Fresh pinned 435-PDF/870-result
+corpus JSON is wholly unchanged against the dictionary-bounds baseline.
+
+Increasing offsets, object-number-zero semantics, all remaining object
+stream restrictions and parser-wide budgets remain separate. The shared
+index is bounded by the existing decoded-header/count guard, not a new
+global resource policy.
+
 ## 2026-11-05 object-stream dictionary integer bounds
 
 ISO 32000-1 7.5.7 Table 16 (printed p46) requires integer N and First

@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream recovery header correction](spec-backlog.md#2026-11-05-object-stream-recovery-header-identity)
+shares existing lazy-loader number/offset/duplicate validation and installs
+members only after the complete header passes. Malformed recovery headers
+cannot wrap identities or leave a partial index; body parsing remains lazy.
+Native recovery differences and unchanged corpus JSON are recorded.
+Increasing offsets and remaining object-stream/resource rules are separate.
+
 The [object-stream dictionary bounds check](spec-backlog.md#2026-11-05-object-stream-dictionary-integer-bounds)
 requires resolved integer N/First metadata before narrowing in both lazy
 loading and recovery. Invalid metadata cannot reinstall compressed members;

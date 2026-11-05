@@ -182,19 +182,7 @@ public sealed class PdfFile
         if (!_objStmCache.TryGetValue(stmNum, out var map))
         {
             if (GetObject(new PdfRef(stmNum, 0)) is not PdfStream s) throw new PdfParseException("bad object stream");
-            var data = DecodeStream(s);
-            var (n, first) = ObjectStreamBounds(s, data.Length);
-            var lx = new PdfLexer(data);
-            map = new ObjStmIndex(data, first);
-            for (var i = 0; i < n; i++)
-            {
-                if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off ||
-                    lx.Pos > first || on.Value < 0 || on.Value > int.MaxValue ||
-                    off.Value < 0 || off.Value >= data.Length - first)
-                    throw new PdfParseException("bad object stream member offset");
-                if (!map.Members.TryAdd((int)on.Value, (i, (int)off.Value)))
-                    throw new PdfParseException("duplicate object stream member number");
-            }
+            map = ReadObjectStreamIndex(s);
             _objStmCache[stmNum] = map;
         }
         if (!map.Members.TryGetValue(objNum, out var member) || member.Index != index)
@@ -204,6 +192,24 @@ public sealed class PdfFile
         var parsed = new PdfLexer(map.Data, map.First + member.Offset).ReadObject() ?? PdfNull.Instance;
         map.Parsed[objNum] = parsed;
         return parsed;
+    }
+
+    ObjStmIndex ReadObjectStreamIndex(PdfStream stream)
+    {
+        var data = DecodeStream(stream);
+        var (n, first) = ObjectStreamBounds(stream, data.Length);
+        var lx = new PdfLexer(data);
+        var map = new ObjStmIndex(data, first);
+        for (var i = 0; i < n; i++)
+        {
+            if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off ||
+                lx.Pos > first || on.Value < 0 || on.Value > int.MaxValue ||
+                off.Value < 0 || off.Value >= data.Length - first)
+                throw new PdfParseException("bad object stream member offset");
+            if (!map.Members.TryAdd((int)on.Value, (i, (int)off.Value)))
+                throw new PdfParseException("duplicate object stream member number");
+        }
+        return map;
     }
 
     sealed class ObjStmIndex(byte[] data, int first)
@@ -453,14 +459,9 @@ public sealed class PdfFile
             {
                 try
                 {
-                    var data = DecodeStream(st);
-                    var (n, _) = ObjectStreamBounds(st, data.Length);
-                    var lx = new PdfLexer(data);
-                    for (var i = 0; i < n; i++)
-                    {
-                        if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger) break;
-                        Xref[(int)on.Value] = new XrefEntry(true, true, num, i);
-                    }
+                    var map = ReadObjectStreamIndex(st);
+                    foreach (var member in map.Members)
+                        Xref[member.Key] = new XrefEntry(true, true, num, member.Value.Index);
                 }
                 catch (Exception e) when (e is PdfParseException or NotSupportedException or InvalidOperationException or ArgumentException or OverflowException) { }
             }
