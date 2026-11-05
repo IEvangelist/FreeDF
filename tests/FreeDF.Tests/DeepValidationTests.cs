@@ -1160,6 +1160,59 @@ public class DeepValidationTests
         Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
     }
 
+    public static IEnumerable<object[]> ReferenceXObjectCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var subtype in new[] { "Form", "Image" })
+        foreach (var reference in new[] { "", "/Ref null", "/Ref 10 0 R", "/Ref 99 0 R",
+            "/Ref << /F (other.pdf) /Page 0 >>", "/Ref 11 0 R" })
+            yield return [part, subtype, reference];
+    }
+
+    [Theory]
+    [MemberData(nameof(ReferenceXObjectCases))]
+    public void Ua1ReferenceXObjectNullIsEquivalentToOmission(int part, string subtype, string reference)
+    {
+        var pdf = Ua("", "8 0 R", "/Resources << /XObject << /Form 9 0 R >> >>", extras:
+        [
+            Para, ObjPdf.Stream("", $"/Type /XObject /Subtype /{subtype} /BBox [0 0 10 10] {reference}"),
+            "null", "<< /F (other.pdf) /Page 0 >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 1 && subtype == "Form" && reference is "/Ref << /F (other.pdf) /Page 0 >>" or "/Ref 11 0 R",
+            report.Has("PDFUA-XOBJECT-REF"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-XOBJECT-REF-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Ua1CyclicReferenceXObjectIsIncompleteNotNull(int part)
+    {
+        var pdf = Ua("", "8 0 R", "/Resources << /XObject << /Form 9 0 R >> >>",
+            extras: [Para, ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Ref 10 0 R"), "10 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 1, report.Has("PDFUA-XOBJECT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XOBJECT-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, true)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, false)]
+    public void Ua1ReferenceXObjectReferenceDepthBoundaryIsExplicit(int part, int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, length).Select(n => n == 9 + length ? "null" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", "/Resources << /XObject << /Form 9 0 R >> >>",
+            extras: new[] { Para, ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Ref 10 0 R") }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(incomplete, report.Has("PDFUA-XOBJECT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XOBJECT-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

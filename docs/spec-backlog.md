@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-1 null reference-XObject entries
+
+The UA-1 reference-XObject prohibition now requires resolved non-null
+Ref presence on a Form stream. Missing, direct-null, indirect-null and
+nonexistent-reference entries are equivalent under primary ISO 32000-1
+7.3.9; the old raw-presence check rejected all explicit null forms.
+Genuine non-null reference dictionaries retain `PDFUA-XOBJECT-REF`
+Error behavior, cross-checked against pinned veraPDF v1.30.3 UA-1
+7.20-1. This changes only the prohibition's null boundary, not external
+reference parsing, rendering or reference-dictionary syntax validation.
+UA-2 and non-Form streams are unchanged.
+
+Cyclic/depth-exhausted Ref chains produce the separate
+`PDFUA-XOBJECT-REF-INCOMPLETE` Error through the existing bounded
+reference resolver, not a false known-reference finding or apparent
+omission. Thirty authored cases cover both profiles, Form/non-Form
+streams, the null representations and exact 32/33-reference boundaries;
+six failed before correction.
+
+Six independent native UA-1 controls give four exact-rule/file agreements
+(two clean positives, two negatives). Three prior rejections become
+acceptances: direct null now agrees with the reference, while indirect
+null and nonexistent-reference acceptances deliberately retain two
+reference disagreements under primary null equivalence. They are not
+counted as reference-agreeing positives. All six corresponding UA-2
+outputs are unchanged. Fresh 435-PDF/870-result public-corpus output
+is identical to the immediate baseline.
+
+Full Release suite: 14,016 passed, zero failed/skipped. Solution build:
+zero errors and two retained machine-feed NU1507 warnings. Reporting tool:
+20 passing tests, including the existing 7.20-1 family mapping.
+External controls/reference artifacts remain session-only; full PDF/UA
+parity is not claimed.
+
 ## 2026-11-05 UA-2 rich-field plain-value presence
 
 Text fields enumerated by the existing terminal-field reader now report

@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-1 null reference-XObject correction](spec-backlog.md#2026-11-05-ua-1-null-reference-xobject-entries)
+distinguishes resolved non-null Ref presence from null/omission, retaining
+genuine reference prohibitions and reporting incomplete chains separately.
+Six native controls give four exact-rule/file agreements; two indirect-null
+reference disagreements follow primary null equivalence. UA-2 and fresh
+435-PDF/870-result corpus output are unchanged.
+
 The [UA-2 rich-field plain-value presence check](spec-backlog.md#2026-11-05-ua-2-rich-field-plain-value-presence)
 requires V when an enumerated terminal text field has own non-null RV.
 It does not evaluate XML/text equivalence. Forty-four native controls

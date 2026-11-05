@@ -39,9 +39,22 @@ internal static class PdfUADeepChecks
             }
         }
         if (c.Part == 1)
+        {
+            bool incomplete = false;
             foreach (var o in c.AllObjects())
-                if (o is PdfStream rs && rs.Dict.Get("Ref") is not null && f.Resolve(rs.Dict.Get("Subtype")).AsName() == "Form")
+                if (o is PdfStream rs && f.Resolve(rs.Dict.Get("Subtype")).AsName() == "Form"
+                    && PdfUA2Checks.ResolveBounded(f, rs.Dict.Get("Ref"), Incomplete) is not (null or PdfNull))
                 { c.Add("PDFUA-XOBJECT-REF", ValidationSeverity.Error, "reference XObjects (Form XObject with /Ref) are not permitted", "ISO 14289-1 7.20"); break; }
+
+            void Incomplete()
+            {
+                if (incomplete) return;
+                incomplete = true;
+                c.Add("PDFUA-XOBJECT-REF-INCOMPLETE", ValidationSeverity.Error,
+                    "reference XObject inspection encountered a cyclic or bounded /Ref reference",
+                    "ISO 14289-1 7.20");
+            }
+        }
         bool reported = false, fileIncomplete = false;
         foreach (var o in c.AllObjects())
         {

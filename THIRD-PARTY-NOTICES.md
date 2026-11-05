@@ -71,6 +71,12 @@ condition with namespace-aware Artifact exclusion. The separate
 label-or-Contents predicate remains incomplete; no model implementation
 or profile XML is bundled.
 
+The UA-1 reference-XObject prohibition was cross-checked against the
+same CC BY 4.0 UA-1 profile, 7.20-1. Ref null equivalence follows primary
+ISO 32000-1 7.3.9; indirect-null/nonexistent-reference acceptance differs
+from two measured reference results. External-reference parsing/rendering
+is not broadened and no profile XML or external PDFs are bundled.
+
 The UA-2 text-field RV/V value-presence fact was cross-checked against
 the same CC BY 4.0 UA-2 profile, 8.10.3.3-1. Only the missing-V part
 is implemented; textual equivalence remains deferred. Primary ISO
