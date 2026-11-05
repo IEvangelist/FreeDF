@@ -504,7 +504,9 @@ public sealed class PdfFile
         foreach (var filter in filters)
             if (filter.Name == "Crypt")
                 throw new PdfParseException("cross-reference stream must not use a Crypt filter");
-        var data = PdfFilters.Decode(xs.RawData, filters, Resolve).Data;
+        var (data, imageFilter, _) = PdfFilters.Decode(xs.RawData, filters, Resolve);
+        if (imageFilter is not null)
+            throw new PdfParseException($"cross-reference stream filter {imageFilter} was not decoded");
         if (xs.Dict.Get("W") is not PdfArray { Items.Count: >= 3 } widths)
             throw new PdfParseException("bad xref stream /W");
         var w = widths.Items.Select(x => x is PdfInteger { Value: >= 0 and <= 8 } n

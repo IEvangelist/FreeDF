@@ -4,6 +4,48 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 unfinished cross-reference decode pipelines
+
+ISO 32000-1 7.5.8.2 Table 17 (printed p50) defines W in decoded-stream
+bytes; 7.5.8.3 defines the fields in those decoded rows. The generic
+decoder returns an explicit remaining-image-codec flag when Core cannot
+decode a stage. The xref reader previously ignored that flag and could
+interpret the still-encoded bytes as rows, even skipping subsequent
+filters in the declared pipeline.
+
+The xref reader now requires that no codec remains before reading rows.
+An unfinished DCT/JPX/CCITT/JBIG2 stage raises PdfParseException and uses
+existing explicit recovery. This mirrors object-stream completion checks.
+It is not a claim that those codecs are forbidden in every xref stream:
+Core has not decoded them, so they cannot supply a clean index here.
+Ordinary image stream callers still receive exact remaining bytes,
+canonical codec name and parameters through the existing API.
+
+Seventeen controls give eight failures/nine passes on unchanged
+production. Final tests cover six codec spellings with raw and ASCIIHex
+prefixes, two pipelines with later stages, three completed controls and
+six ordinary codec-preservation cases. The negative payloads deliberately
+contain row-shaped bytes, not valid image encodings; they expose erroneous
+publication of undecoded bytes, not decoder support for valid images.
+Focused xref/object-stream/filter/Crypt checks pass 1,275; full Release
+passes 19,850, zero failed/skipped; solution zero warnings/errors.
+Fresh pinned 435-PDF/870-result complete validation JSON is unchanged;
+all benchmark/provider/parser correctness preflights pass.
+
+Seven independently encoded reference PDFs include raw/ASCIIHex controls
+and five unfinished-codec negatives. PyMuPDF 2.0 / MuPDF 1.28.5 retains
+both controls without repair and recovers DCT, JBIG2, ASCIIHex-DCT and
+DCT-with-later-stage cases. It accepts the raw JPX-labelled rows without
+repair. All retain/recover the target. That JPX acceptance disagreement
+is explicit; the six matching repair dispositions do not establish full
+codec or xref conformance. No external PDFs are bundled.
+
+The check reads the decoder's existing completion flag, without a second
+decode or extra materialization. No new timing was run and no allocation/
+throughput claim follows. Strict ordinary-filter completion, broader
+metadata/framing and actual image-codec decoding in this Core path remain
+separate work. Full xref/parser parity is not claimed.
+
 ## 2026-11-05 direct encoded cross-reference filter metadata
 
 ISO 32000-1 7.5.8.2 (printed p49) requires Filter and DecodeParms to

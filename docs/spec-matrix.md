@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref decode-completion guard](spec-backlog.md#2026-11-05-unfinished-cross-reference-decode-pipelines)
+prevents remaining image-codec bytes and skipped later stages from being
+used as a clean index. Unsupported decoding takes explicit recovery;
+ordinary image APIs remain unchanged. Actual Core image decoding,
+strict filter completion and wider xref parity remain open.
+
 The [encoded xref metadata guard](spec-backlog.md#2026-11-05-direct-encoded-cross-reference-filter-metadata)
 requires direct standard top-level Filter/DecodeParms rather than silently
 ignoring unresolved references before index construction. Direct defaults,

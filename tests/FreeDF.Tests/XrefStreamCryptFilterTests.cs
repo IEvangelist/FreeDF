@@ -51,7 +51,8 @@ public class XrefStreamCryptFilterTests
         Assert.Same(target, file.Resolve(file.Catalog.Get("Probe")));
     }
 
-    internal static byte[] Build(string? filter, bool flate, string? decodeParms = null, string? indirectObject = null)
+    internal static byte[] Build(string? filter, bool flate, string? decodeParms = null, string? indirectObject = null,
+        Func<byte[], byte[]>? encode = null)
     {
         using var data = new MemoryStream();
         void Write(string text) => data.Write(Encoding.ASCII.GetBytes(text));
@@ -74,6 +75,7 @@ public class XrefStreamCryptFilterTests
             rows.WriteByte(0);
         }
         var payload = flate ? PdfFilters.DeflateEncode(rows.ToArray()) : rows.ToArray();
+        if (encode is not null) payload = encode(payload);
         var entry = filter is null ? "" : $"/Filter {filter}";
         var parameters = decodeParms is null ? "" : $"/DecodeParms {decodeParms}";
         Write($"3 0 obj\n<< /Type /XRef /Root 1 0 R /Size {offsets.Count + 1} /Index [1 {offsets.Count}] " +
