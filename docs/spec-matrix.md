@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary DA text-matrix cardinality check](spec-backlog.md#2026-11-05-primary-default-appearance-text-matrix-cardinality)
+limits known defaults to one top-level Tm, preserving operand/comment
+distinctions, shared byte/token bounds and independent incomplete findings.
+Eighteen native controls retain fifteen positives; three primary negatives
+remain reference-accepted. Corpus and UA-1 JSON are wholly unchanged.
+Complete operator syntax, required Tf/presence, font matching and layout
+remain separate; the permissive lexer is not a strict grammar validator.
+
 The [primary DA byte-string type check](spec-backlog.md#2026-11-05-primary-default-appearance-byte-string-types)
 checks document-wide defaults and inherited terminal Tx defaults with
 explicit independent incomplete handling. Twenty-four native controls

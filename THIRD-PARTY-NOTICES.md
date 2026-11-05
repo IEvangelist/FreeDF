@@ -476,6 +476,15 @@ negatives accepted by the reference; these disagreements are explicit.
 Required presence, operator grammar, resource matching and layout remain
 separate. No standard text or external controls are bundled.
 
+The default appearance text-matrix count check follows the official
+PDF Association 12.7.4.3 at-most-one-Tm requirement. It independently
+reuses the existing bounded content lexer and inherited default lookup.
+Eighteen native local/inherited/document controls retain fifteen positives
+and reject three primary negatives accepted by the pinned reference;
+these disagreements are explicit. The permissive lexer does not prove
+complete DA grammar; inline-image/budget/depth uncertainty remains
+explicit. No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

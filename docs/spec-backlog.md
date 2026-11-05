@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary default appearance text-matrix cardinality
+
+Official PDF Association PDF 2.0 errata 12.7.4.3 explicitly limits a DA
+byte string to at most one Tm operator. Known AcroForm defaults and
+inherited recognized terminal Tx defaults now receive
+PDFUA2-FORM-DA-TM-COUNT for two or more top-level Tm keywords.
+The existing content lexer distinguishes operators from comments,
+names, literal/hex strings and structured operands; no appearance is
+executed or rendered. Existing DA type and inherited-reference checks
+remain independent.
+
+Inspection shares a 1 MiB input-byte budget and 200,000 top-level
+object-token budget across distinct string identities in a validation
+pass. Aliases are inspected once; the existing lexer bounds nested
+arrays/dictionaries at 200. Budget exhaustion, parser depth failures,
+unexpected top-level closing delimiters and inline-image operators
+produce PDFUA2-FORM-DA-INCOMPLETE. Inline-image payloads are not scanned
+heuristically for Tm. A matrix-count finding already established before
+later incompleteness is retained. Oversized strings are not parsed.
+These are implementation safety bounds, not normative PDF size limits.
+The lexer is permissive about malformed numbers and unterminated operands:
+this does not establish complete DA syntax, operand arity, allowed
+operators, required Tf/presence, font matching or layout. Field-specific
+choice/button defaults remain outside this terminal Tx pass.
+
+The initial 53 authored cases had eight failures. The final 89 cases
+also cover exact byte/token/nesting boundaries, shared work, aliases,
+indirect/cyclic values, independent type findings and excluded fields.
+Focused Release: 3,897 passed; full Release: 16,754 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+Eighteen native local/inherited/document controls retain fifteen
+positives and reject three two-Tm negatives. All pinned combined-reference
+jobs complete normally and accept: **three explicit primary/reference
+disagreements**. Native UA-1 and fresh 435-PDF/870-result corpus JSON are
+wholly unchanged against committed DA-type baseline 47aad3fd.
+No standard text or external controls are bundled; full parity is not claimed.
+
 ## 2026-11-05 primary default appearance byte-string types
 
 Official PDF Association PDF 2.0 errata declares DA a byte string in

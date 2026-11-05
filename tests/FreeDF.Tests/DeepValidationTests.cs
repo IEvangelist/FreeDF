@@ -3911,6 +3911,174 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> DefaultAppearanceMatrixCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var content in new[]
+        {
+            "/F1 12 Tf", "/F1 12 Tf 1 0 0 1 0 0 Tm",
+            "/F1 12 Tf 1 0 0 1 0 0 Tm 1 0 0 1 1 1 Tm",
+            "/F1 12 Tf % Tm Tm\n1 0 0 1 0 0 Tm",
+            "/F1 12 Tf (Tm Tm) Tj", "/F1 12 Tf <546D20546D> Tj",
+            "/Tm 12 Tf", "/F1 12 Tf [(Tm) (Tm)] TJ",
+            "/F1 12 Tf (\\(Tm\\) Tm) Tj", "/T#6D 12 Tf",
+            "/F1 12 Tf << /Name (Tm Tm) >>", "TmX TmX",
+        })
+            yield return [part, scope, content];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceMatrixCases))]
+    public void Ua2DefaultAppearanceHasAtMostOneTextMatrixOperator(int part, string scope, string content)
+    {
+        var value = $"<{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}>";
+        string form = "/Fields [9 0 R]" + (scope == "document" ? $" /DA {value}" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? $"<< /FT /Tx /T (parent) /DA {value} /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) /V (plain) {(scope == "field" ? $"/DA {value}" : "")} >>",
+            "<< /T (child) /Parent 9 0 R /V (plain) >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && content.EndsWith("1 1 Tm"), report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2DefaultAppearanceMatrixTokenBudgetRetainsKnownError(int tokens, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /V (plain) >>"]));
+        var content = "Tm Tm " + string.Concat(Enumerable.Repeat("0 ", tokens - 2));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(Encoding.ASCII.GetBytes(content));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Tm Tm BI /W 1 ID Tm Tm EI")]
+    [InlineData("Tm Tm ]")]
+    public void Ua2DefaultAppearanceMatrixKnownErrorSurvivesUnsupportedTail(string content)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA <{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200, false)]
+    [InlineData(201, true)]
+    public void Ua2DefaultAppearanceMatrixNestingBoundary(int depth, bool incomplete)
+    {
+        var content = "Tm Tm " + new string('[', depth) + "(Tm Tm)" + new string(']', depth);
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA <{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1048576, false)]
+    [InlineData(1048577, true)]
+    public void Ua2DefaultAppearanceMatrixByteBoundary(int bytes, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) >>"]));
+        var content = Encoding.ASCII.GetBytes("Tm Tm " + new string(' ', bytes - 6));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(content);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ua2DefaultAppearanceMatrixByteBudgetIsSharedButAliasesAreNotReparsed(bool alias)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (first) >>", "<< /FT /Tx /T (second) >>"]));
+        var first = new PdfString(Encoding.ASCII.GetBytes("Tm Tm " + new string(' ', 1048576 - 6)));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = first;
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Entries["DA"] = alias
+            ? first : new PdfString(Encoding.ASCII.GetBytes("Tm Tm"));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-TM-COUNT");
+        Assert.Equal(!alias, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceMatrixInlineImageDataIsNotScanned()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (BI /W 1 /H 1 ID Tm Tm EI) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Ch")]
+    [InlineData("Btn")]
+    public void Ua2DefaultAppearanceMatrixFieldScopeRemainsTerminalText(string type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (field) /DA (Tm Tm) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceMatrixTokenBudgetIsSharedAndPreservesEarlierFindings()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (first) >>", "<< /FT /Tx /T (second) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes("Tm Tm " + string.Concat(Enumerable.Repeat("0 ", 99998))));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes("Tm Tm " + string.Concat(Enumerable.Repeat("0 ", 99999))));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/DA 11 0 R", "(Tm Tm)", true, false)]
+    [InlineData("/DA 11 0 R", "11 0 R", false, true)]
+    [InlineData("/DA 42", "null", false, false)]
+    public void Ua2DefaultAppearanceMatrixIndependentOfDocumentTypeAndReferenceErrors(
+        string entry, string target, bool count, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] /DA 42 >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(count, report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

@@ -38,7 +38,7 @@ internal static class PdfUA2Checks
     static void TextFieldValues(ValidationContext c)
     {
         var fields = c.Doc.GetFormFieldDetails();
-        DefaultAppearanceTypes(c, fields);
+        DefaultAppearances(c, fields);
         bool incomplete = false, limitIncomplete = false;
         if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
@@ -108,20 +108,52 @@ internal static class PdfUA2Checks
         }
     }
 
-    static void DefaultAppearanceTypes(ValidationContext c, PdfFormFieldDetailSet fields)
+    const int MaxDefaultAppearanceBytes = 1024 * 1024;
+
+    static void DefaultAppearances(ValidationContext c, PdfFormFieldDetailSet fields)
     {
         const string clause = "ISO 32000-2 12.7.3 Table 224, 12.7.4.3 Table 228";
         bool incomplete = false;
+        int work = 0;
+        int bytes = 0;
+        var seen = new HashSet<PdfString>(ReferenceEqualityComparer.Instance);
         void Incomplete()
         {
             if (incomplete) return;
             incomplete = true;
             c.Add("PDFUA2-FORM-DA-INCOMPLETE", ValidationSeverity.Error,
-                "default appearance type inspection is truncated, cyclic, unsupported or bounded", clause);
+                "default appearance inspection is truncated, cyclic, unsupported or bounded", clause);
         }
         void Inspect(PdfObject? appearance)
         {
-            if (appearance is not (null or PdfNull or PdfString))
+            if (appearance is PdfString text)
+            {
+                if (!seen.Add(text)) return;
+                if (text.Bytes.Length > MaxDefaultAppearanceBytes - bytes) { Incomplete(); return; }
+                bytes += text.Bytes.Length;
+                var lexer = new PdfLexer(text.Bytes);
+                int matrices = 0;
+                try
+                {
+                    while (true)
+                    {
+                        lexer.SkipWhite();
+                        if (lexer.Pos >= lexer.Length) break;
+                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                        var item = lexer.ReadObject(false);
+                        if (item is not PdfKeyword keyword) continue;
+                        if (keyword.Value is "BI" or "ID" or "EI" or "]" or ">>" or ">" or ")" or "{" or "}")
+                        { Incomplete(); break; }
+                        if (keyword.Value == "Tm" && matrices < 2) matrices++;
+                    }
+                }
+                catch (PdfParseException) { Incomplete(); }
+                if (matrices > 1)
+                    c.Add("PDFUA2-FORM-DA-TM-COUNT", ValidationSeverity.Error,
+                        "a default appearance byte string must contain at most one Tm operator",
+                        "ISO 32000-2 12.7.4.3");
+            }
+            else if (appearance is not (null or PdfNull))
                 c.Add("PDFUA2-FORM-DA-TYPE", ValidationSeverity.Error,
                     "a default appearance DA value must be a byte string", clause);
         }
