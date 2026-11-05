@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream header integer check](spec-backlog.md#2026-11-05-object-stream-header-integer-spellings)
+uses scoped numeric spelling checks before lazy/recovery header indexing.
+Positive integer spellings and atomic recovery remain supported; native
+reference disagreements and unchanged corpus JSON are recorded. Outer
+dictionary source spelling, complete offset semantics and budgets remain separate.
+
 The [compressed name escape check](spec-backlog.md#2026-11-05-compressed-name-escape-grammar)
 rejects malformed hexadecimal escapes and decoded null bytes, including
 nested values and keys. Valid decoded names and default lexer recovery remain

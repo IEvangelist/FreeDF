@@ -234,7 +234,7 @@ public sealed class PdfFile
             throw new PdfParseException("bad object stream type");
         var data = DecodeStream(stream);
         var (n, first) = ObjectStreamBounds(stream, data.Length);
-        var lx = new PdfLexer(data);
+        var lx = new PdfLexer(data, 0, objectStreamMember: true);
         var map = new ObjStmIndex(data, first);
         long previousOffset = -1;
         var previousNumber = -1;

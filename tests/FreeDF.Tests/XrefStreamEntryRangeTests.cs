@@ -6,7 +6,8 @@ namespace FreeDF.Tests;
 public class XrefStreamEntryRangeTests
 {
     internal static byte[] Build(ulong type, ulong? second = null, ulong third = 0, bool compressed = false, int generation = 0,
-        string count = "1", string first = "4", bool indirectBounds = false, string value = "<< /Type /Target >>")
+        string count = "1", string first = "4", bool indirectBounds = false, string value = "<< /Type /Target >>",
+        string header = "2 0 ")
     {
         using var data = new MemoryStream();
         void Write(string text) => data.Write(Encoding.ASCII.GetBytes(text));
@@ -18,7 +19,7 @@ public class XrefStreamEntryRangeTests
         var container = data.Position;
         if (compressed)
         {
-            var body = "2 0 " + value;
+            var body = header + value;
             Write($"3 0 obj\n<< /Type /ObjStm /N {(indirectBounds ? "5 0 R" : count)} /First {(indirectBounds ? "6 0 R" : first)} /Length {body.Length} >>\nstream\n{body}\nendstream\nendobj\n");
         }
         var countOffset = data.Position;

@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream header integer spellings
+
+ISO 32000-1 7.5.7 (printed p46) requires integer header pairs;
+7.3.3 (printed p14) defines their single optional sign and digits.
+The shared complete header reader now uses the same scoped lexical checks
+as member bodies, preventing permissive repeated-sign normalization before
+both lazy indexing and recovery. Positive signs, leading zeroes, signed
+zero and comments remain supported.
+
+Eighteen controls cover malformed number/offset spellings, existing
+real/negative failures, valid forms, normal/forced repair, preservation of
+uncompressed identities and atomic rejection of invalid later pairs.
+The initial selector had six failures; refining four later-pair controls
+to positive-normalizing repeated signs exposed four more failures.
+Full Release: 18,878 passed, zero failed/skipped. Solution: zero errors/two
+retained machine-feed NU1507 warnings.
+
+Twenty-eight native PDFs preserve eight valid target outputs unchanged.
+All twenty malformed controls end repaired with no target: ten previously
+exposed target dictionaries disappear; six were already null; four later-pair
+controls have no Type even when their numeric member had been indexed, so
+the unit controls independently assert absence of partial indexing. MuPDF
+agrees on all eight positives and sixteen malformed null results, but still
+exposes four malformed targets. Fresh pinned 435-PDF/870-result full corpus
+JSON is wholly unchanged against the name-escape baseline.
+
+This does not validate original numeric spellings already normalized while
+reading the outer stream dictionary, change metadata dependencies or prove
+complete First/offset semantics. Byte-limited parsing and resource budgets
+remain separate.
+
 ## 2026-11-05 compressed name escape grammar
 
 ISO 32000-1 7.3.5 (printed pp16-17) excludes null from names and
