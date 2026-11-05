@@ -254,7 +254,7 @@ public sealed class PdfFile
         for (var i = 0; i < n; i++)
         {
             if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off ||
-                lx.Pos > first || on.Value < 0 || on.Value > int.MaxValue ||
+                lx.Pos > first || on.Value <= 0 || on.Value > int.MaxValue ||
                 off.Value < 0 || off.Value >= data.Length - first)
                 throw new PdfParseException("bad object stream member offset");
             if (i == 0 && off.Value != 0)

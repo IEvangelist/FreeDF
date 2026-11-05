@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 positive compressed object numbers
+
+ISO 32000-1 7.3.10 (printed p21) requires positive indirect-object numbers;
+7.5.7 (printed p46) identifies compressed objects through the header pairs.
+The complete shared object-stream index now rejects number zero before
+publishing any member. A later zero entry cannot install a partial index or
+replace a recoverable uncompressed identity. This supersedes earlier scoped
+retention of zero while its primary identity requirement was unverified.
+
+Ten new controls cover first/later zero, normal/forced recovery, positive
+numbers through the supported integer range, and empty streams. The initial
+six negative controls all failed before the correction. Full Release:
+18,975 passed, zero failed/skipped. Solution: zero errors/two retained
+machine-feed NU1507 warnings.
+
+Eight native PDFs preserve four positive/empty-stream outputs unchanged.
+Two formerly exposed zero-member dictionaries become null; two streams with
+a later zero member now preserve original Target instead of Compressed.
+MuPDF also returns null for the zero-reference probes, but still exposes the
+earlier Compressed target in both later-zero controls. It agrees on the four
+positive outputs. Fresh pinned 435-PDF/870-result full corpus JSON is wholly
+unchanged against the recovery-generation baseline.
+
+This validates compressed header identities, not every ordinary indirect
+definition/reference, incremental free-list lifecycle or global file schema.
+Arbitrary positive-number order and existing optional empty streams remain
+supported; no broader PDF-spec parity is claimed.
+
 ## 2026-11-05 recovery object-stream container generations
 
 ISO 32000-1 7.5.7 (printed p47) requires object-stream generation
