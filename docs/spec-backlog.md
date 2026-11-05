@@ -4,6 +4,37 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed member trailing tokens
+
+ISO 32000-1 7.5.7 (printed p46) requires N consecutive object values,
+with header offsets identifying their starts, and excludes obj/endobj
+wrappers. Lazy loading now requires only whitespace/comments between the
+parsed value and its recorded end. Extra values, keywords and closing
+tokens explicitly raise PdfParseException before caching; the existing
+specific stream-value diagnostic remains intact.
+
+Nineteen controls include thirteen initially red trailing-data/isolation
+cases, four whitespace/comment positives and two next-member controls.
+Repeated invalid requests cannot become cache hits. Three older boundary
+isolation fixtures now use complete second values rather than trailing
+closing tokens; their malformed first values still consume the next member
+and are rejected. Full Release: 18,684 passed, zero failed/skipped. Solution:
+zero errors/two retained machine-feed NU1507 warnings.
+
+Twenty-six native PDFs preserve eight valid outputs unchanged. Eighteen
+extra-token values now give the explicit diagnostic instead of silently
+returning the first value. MuPDF still exposes the first dictionary's Type
+in four malformed dictionary cases and lacks a Type without an exception
+for other malformed probes. Positive outputs agree; it additionally
+reports repair on the normal commented-null positive and null-plus-true
+negative. Fresh pinned 435-PDF/870-result corpus full JSON is wholly
+unchanged against the keyword-value baseline.
+
+This uses existing whitespace/comment tokenization; it is not a byte-limited
+lexer or complete closing-delimiter validator. Recursive container grammar,
+remaining object-stream dictionary/forbidden-object rules and parser-wide
+budgets remain separate. Other members remain on demand.
+
 ## 2026-11-05 compressed keyword and missing values
 
 ISO 32000-1 7.3.1 (printed p13) defines PDF object types; 7.5.7

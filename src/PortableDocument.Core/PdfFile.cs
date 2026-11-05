@@ -197,12 +197,13 @@ public sealed class PdfFile
             throw new PdfParseException("object stream member must contain an object value");
         if (parsed is PdfRef)
             throw new PdfParseException("object stream member cannot be an indirect reference");
-        if (parsed is PdfDictionary)
+        lexer.SkipWhite();
+        if (lexer.Pos < map.First + member.End)
         {
-            lexer.SkipWhite();
-            if (lexer.Pos < map.First + member.End && lexer.ReadObject(false) is PdfKeyword { Value: "stream" }
+            if (parsed is PdfDictionary && lexer.ReadObject(false) is PdfKeyword { Value: "stream" }
                 && lexer.Pos <= map.First + member.End)
                 throw new PdfParseException("stream objects cannot be stored in an object stream");
+            throw new PdfParseException("extra data after object stream member value");
         }
         map.Parsed[objNum] = parsed;
         return parsed;

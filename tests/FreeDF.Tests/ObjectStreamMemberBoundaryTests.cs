@@ -5,9 +5,9 @@ namespace FreeDF.Tests;
 public class ObjectStreamMemberBoundaryTests
 {
     [Theory]
-    [InlineData("[42", "<< /Type /Second >>]", typeof(PdfDictionary))]
-    [InlineData("<< /Key", "<< /Type /Second >> >>", typeof(PdfDictionary))]
-    [InlineData("(abc", "(def))", typeof(PdfString))]
+    [InlineData("[42", "<< /Type /Second >>", typeof(PdfDictionary))]
+    [InlineData("<< /Key", "<< /Type /Second >>", typeof(PdfDictionary))]
+    [InlineData("(abc", "(def)", typeof(PdfString))]
     [InlineData("<41", "<42>", typeof(PdfString))]
     [InlineData("", "<< /Type /Second >>", typeof(PdfDictionary))]
     public void Requested_member_cannot_consume_the_following_member(string first, string second, Type otherType)
