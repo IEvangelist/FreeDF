@@ -96,7 +96,8 @@ public class ObjectStreamFilterNameTests
     }
 
     internal static byte[] Build(string? filter, string indirect, bool hex, bool repair, bool ordinary = false,
-        int filterAliases = 0, string? decodeParms = null, string? encodedOverride = null)
+        int filterAliases = 0, string? decodeParms = null, string? encodedOverride = null,
+        string? externalFile = null)
     {
         using var data = new MemoryStream();
         void Write(string text) => data.Write(Encoding.ASCII.GetBytes(text));
@@ -108,7 +109,8 @@ public class ObjectStreamFilterNameTests
         var encoded = encodedOverride ?? (hex ? Convert.ToHexString(Encoding.ASCII.GetBytes(decoded)) + ">" : decoded);
         var entry = filter is null ? "" : "/Filter " + filter;
         var parms = decodeParms is null ? "" : "/DecodeParms " + decodeParms;
-        Write($"3 0 obj\n<< /Type /{(ordinary ? "OtherX" : "ObjStm")} /N 1 /First 4 {entry} {parms} /Length {encoded.Length} >>\nstream\n{encoded}\nendstream\nendobj\n");
+        var external = externalFile is null ? "" : "/F " + externalFile;
+        Write($"3 0 obj\n<< /Type /{(ordinary ? "OtherX" : "ObjStm")} /N 1 /First 4 {entry} {parms} {external} /Length {encoded.Length} >>\nstream\n{encoded}\nendstream\nendobj\n");
         var indirectOffset = data.Position;
         Write($"5 0 obj\n{(filterAliases > 0 ? "6 0 R" : indirect)}\nendobj\n");
         var aliasOffsets = new List<long>();

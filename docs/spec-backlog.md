@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream external payload containment
+
+ISO 32000-1 Table 5 (printed p20) defines F as the file containing stream
+data: when present, inline bytes shall be ignored; FFilter/FDecodeParms
+describe the external payload's filters. Sections 7.3.9-7.3.10 (printed pp21-22)
+preserve null/undefined omission and equivalent indirect values.
+Object-stream indexing previously ignored F when Filter was present and
+could publish members from inline bytes that were not the declared payload.
+The general filter helper also retains legacy F shorthand recovery.
+
+The shared index reader now refuses non-null external payload declarations
+before decoding inline data. It resolves F through the existing bounded
+metadata resolver, preserving absent/direct-null/undefined/indirect-null values
+and rejecting cyclic/depth-exhausted aliases. It does not open external files
+or implement external-file streams. Invalid non-null F types cannot be
+mistaken for Filter shorthand in an object stream. Ordinary-stream metadata
+recovery remains unchanged, including its legacy shorthand behavior; this
+slice does not claim that ordinary external streams are conformant.
+
+Nineteen tests cover valid and malformed file specifications, direct/indirect
+forms, filter present/absent, normal/forced repair, repeated absent-member
+lookup, cached positive identities, ordinary decoded bytes and the
+32-reference boundary for indirect null omission. The initial sixteen-test
+unchanged-production baseline was nine failures/seven passes; three later
+controls cover bounded null aliases. Final focused selector: 890 passed.
+Full Release: 19,360 passed, zero failed/skipped. Solution: zero warnings/errors.
+
+Thirty-two independent/retained native controls use explicit Filter entries
+to isolate inline substitution. All eighteen non-null/cyclic declarations
+previously published inline Target; now repair leaves the member absent.
+All fourteen supported outcomes remain identical, including six encrypted
+files. MuPDF throws for eight negative probes, exposes null for eight repair
+counterparts and still exposes Target for the two name-valued F probes.
+For positives, it exposes Target for ten, but throws for the undefined/indirect
+null normal controls and returns null for their repair counterparts. These
+reference differences are retained rather than overriding null/indirect
+semantics. No external files are bundled. Fresh pinned 435-PDF/870-result
+full corpus JSON remains wholly unchanged against the completion-guard baseline.
+
+The [four valid metadata benchmarks](../bench/FreeDF.Bench/README.md#external-payload-containment-follow-up-2026-11-05)
+have identical input hashes and reported managed allocation to the immediately
+preceding source build; timing intervals overlap. No speedup or zero-cost
+claim is made. Actual external-file support, ordinary-stream external semantics,
+filter EOD/cardinality, global inventory and resource budgets remain separate.
+
 ## 2026-11-05 object-stream decoder completion
 
 ISO 32000-1 7.4.1 (printed p22) requires the indicated decoding filters to

@@ -303,6 +303,9 @@ public sealed class PdfFile
         if (!IsObjectStream(stream.Dict))
             throw new PdfParseException("bad object stream type");
         ValidateObjectStreamCollection(stream.Dict);
+        var externalFile = ResolveObjectStreamFilterMetadata(stream.Dict.Get("F"));
+        if (externalFile is not null and not PdfNull)
+            throw new PdfParseException("external object stream data is not supported");
         var filters = PdfFilters.GetFilters(stream.Dict, Resolve, ResolveObjectStreamFilterMetadata);
         var (data, remainingFilter, _) = PdfFilters.Decode(stream.RawData, filters, Resolve);
         if (remainingFilter is not null)

@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream external-payload guard](spec-backlog.md#2026-11-05-object-stream-external-payload-containment)
+prevents inline member bytes from substituting for non-null F declarations.
+Null/undefined/indirect omission remains supported; no external file is opened.
+Ordinary recovery is unchanged, not claimed conformant for external streams.
+Reference differences, valid-path benchmarks and unchanged corpus JSON are
+recorded. Actual external-file support remains incomplete.
+
 The [object-stream decoder-completion guard](spec-backlog.md#2026-11-05-object-stream-decoder-completion)
 prevents parsing encoded bytes as members when the decoder returns a remaining
 image codec. Ordinary image bytes/codec/parameters remain available to their

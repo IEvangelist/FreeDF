@@ -268,6 +268,34 @@ The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-d
 explains that codec completion is not an implemented image-decoding pipeline
 for object streams.
 
+### External-payload containment follow-up: 2026-11-05
+
+The [four metadata cases](results/2026-11-05-external-stream-metadata.md)
+([CSV](results/2026-11-05-external-stream-metadata.csv)) measure the accompanying
+object-stream F check against the immediately preceding
+[completion-guard source](results/2026-11-05-decoder-completion-metadata.md),
+revision `6e6e82cee31035e1980ee8163c3f5165d1cc5798`.
+All four inputs have the same hashes as the parameter-workload table above.
+They have no external F payload; this measures the additional absent-entry
+path, not external I/O or external-decoder throughput. No external files are
+opened. Settings remain three warmups/eight 500 ms iterations/one launch on
+the same machine/runtime. All benchmark preflight configurations pass.
+
+| Filters / indirect | Previous mean (us) | New mean (us) | Previous / new allocated (KiB) |
+|---|---:|---:|---:|
+| 1 / No | 7.548 | 8.079 | 19.24 / 19.24 |
+| 1 / Yes | 7.510 | 8.392 | 18.87 / 18.87 |
+| 2 / No | 8.279 | 8.993 | 21.04 / 21.04 |
+| 2 / Yes | 9.211 | 8.536 | 20.44 / 20.44 |
+
+All reported timing intervals overlap; allocations are unchanged.
+The higher means in three cases and wide intervals are retained, not converted
+into a speedup or zero-cost claim. These are one-launch shared-machine results,
+not total/native/retained memory measurements or universal performance bounds.
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-external-payload-containment)
+distinguishes unsupported external-payload containment from actual external
+stream support.
+
 ## Flate decoder workloads
 
 ```powershell
