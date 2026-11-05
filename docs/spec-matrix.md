@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [classic xref token-boundary guard](spec-backlog.md#2026-11-05-classic-xref-keyword-token-boundary)
+rejects joined regular-character suffixes instead of recognizing a
+four-byte prefix. Existing whitespace/comment compatibility is preserved;
+full line framing, startxref discovery and wider grammar remain open.
+
 The [classic Size-schema guard](spec-backlog.md#2026-11-05-required-classic-trailer-size-schema)
 requires a direct positive integer in every classic section, including
 older incremental sections. Invalid metadata explicitly recovers;

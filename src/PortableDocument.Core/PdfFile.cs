@@ -459,7 +459,8 @@ public sealed class PdfFile
         if (pos < 0 || pos >= Data.Length) throw new PdfParseException("xref offset out of range");
         var lx = new PdfLexer(Data, (int)pos);
         lx.SkipWhite();
-        if (lx.Pos + 4 <= Data.Length && Data.AsSpan(lx.Pos, 4).SequenceEqual("xref"u8))
+        if (lx.Pos + 4 <= Data.Length && Data.AsSpan(lx.Pos, 4).SequenceEqual("xref"u8)
+            && (lx.Pos + 4 == Data.Length || !PdfLexer.IsRegular(Data[lx.Pos + 4])))
         {
             lx.Pos += 4;
             _tableFree = [];

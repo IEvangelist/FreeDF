@@ -4,6 +4,38 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 classic xref keyword token boundary
+
+ISO 32000-1 7.2.2 (printed p13) defines consecutive regular characters
+as one token; 7.5.4 (printed p40) requires the keyword xref. The classic
+section reader previously recognized only the four-byte prefix and
+accepted joined xref0/xref+0/xref-0/xref0000 as an unrepaired section.
+It now requires a lexical token boundary using the existing lexer
+character classification. Malformed tokens explicitly recover.
+
+Twenty-six new controls cover twelve malformed fixed/fallback variants
+and fourteen whitespace/comment boundaries. The expanded unchanged-
+production baseline is eight failures/18 passes; the two alphabetic
+suffix forms already repaired. All six whitespace bytes and comment
+separation preserve existing indexed behavior. This is a token-boundary
+check, not full line-framing enforcement or valid-file certification of
+the compatibility controls. startxref discovery and ordinary lexer
+behavior are unchanged.
+
+Final focused checks pass 1,397; full Release passes 20,248, zero
+failed/skipped. Solution/benchmark builds have zero warnings/errors.
+Final rebuilt UaDump yields unchanged complete JSON for the pinned
+435-PDF/870-result corpus; all benchmark correctness preflights pass.
+
+Twenty-six independently encoded MuPDF 1.28.5 comparisons all expose
+targets. All fallback-syntax fixtures repair. Fixed-width joined xref0
+and xref0000 are accepted unrepaired; joined signed/alphabetic suffixes
+repair. Fixed-width whitespace controls stay clean, while the comment
+boundary repairs in the reference reader. Reference acceptance is not
+normative authority; no external PDFs are bundled. No new timing claim
+for this guard is made, and prior classic timing/allocation observations
+predate it.
+
 ## 2026-11-05 required classic trailer Size schema
 
 ISO 32000-1 Table 15 (printed p43) requires Size to be an integer and

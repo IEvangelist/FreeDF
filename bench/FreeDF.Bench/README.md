@@ -40,6 +40,9 @@ none establishes native/retained memory usage.
 matching CSV and [eight raw GC/input identity rows](results/2026-11-05-xref-classic-size-gc.csv)
 preserve the full observations.
 
+Both classic timing series predate the later xref keyword-boundary
+check; no new timing or allocation claim is made for that guard.
+
 ## Classic xref generation bound: 2026-11-05
 
 `XrefClassicBench` times fresh `PdfFile.Load` for 64/4,096-row classic
