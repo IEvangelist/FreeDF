@@ -1160,6 +1160,45 @@ public class DeepValidationTests
         Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
     }
 
+    [Theory]
+    [InlineData("default", true)]
+    [InlineData("mapped-parent", true)]
+    [InlineData("mapped-children", true)]
+    [InlineData("mapped-both", true)]
+    [InlineData("parent-div", false)]
+    [InlineData("child-p", false)]
+    public void Ua2TocContainmentUsesNamespaceNestingNotLegacyRoles(string kind, bool valid)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /TOC /P 7 0 R /K 9 0 R >>",
+            "<< /Type /StructElem /S /TOCI /P 8 0 R /Ref [10 0 R] /K 10 0 R >>",
+            "<< /Type /StructElem /S /P /P 9 0 R >>",
+        ]));
+        var pdf17 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf/ssn")) } };
+        void Map(int number, string role, string target)
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(number));
+            element.Entries["S"] = new PdfName(role);
+            element.Entries["NS"] = new PdfDictionary
+            {
+                Entries =
+                {
+                    ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:toc-test")),
+                    ["RoleMapNS"] = new PdfDictionary { Entries = { [role] = new PdfArray([new PdfName(target), pdf17]) } },
+                },
+            };
+        }
+        if (kind is "mapped-parent" or "mapped-both" or "parent-div") Map(8, "Contents", kind == "parent-div" ? "Div" : "TOC");
+        if (kind is "mapped-children" or "mapped-both" or "child-p") Map(9, "Entry", kind == "child-p" ? "P" : "TOCI");
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA-TOC-CHILD"));
+        Assert.False(report.Has("PDFUA-TOCI-PARENT"));
+        Assert.Equal(!valid, report.Has("PDFUA2-NESTING"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> ListAttributeCases()
     {
         foreach (var part in new[] { 1, 2 })

@@ -12,6 +12,12 @@ implemented in C#; the profile XML and validation-engine source are not bundled.
 Unconditional exclusions, direct-content bans, and unconditional occurrence
 limits are implemented here; grouping-dependent requirements remain deferred.
 
+The UA-2 TOC/TOCI containment correction in `ValidationPdfUADeep.cs`
+disables legacy raw-role checks in favor of these namespace-resolved
+ISO 32005 facts. Six native controls and two corpus negatives were
+independently cross-checked against the pinned combined profile.
+Standalone UA-2 profile verdicts alone do not cover these exclusions.
+
 The namespace-aware list numbering/direct-content checks in
 `ValidationPdfUA2.cs` were cross-checked against the Consortium's
 [v1.30.3 PDF/UA-2 profile](https://github.com/veraPDF/veraPDF-validation-profiles/blob/c4f57effb0d3618827c87bd71882930d752be6e3/PDF_UA/PDFUA-2.xml),

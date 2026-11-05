@@ -4,6 +4,29 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 TOC containment without legacy roles
+
+Legacy TOC-child and TOCI-parent checks now run only for UA-1.
+UA-2 containment already uses namespace-resolved ISO 32005 Table 5
+rules through ISO 14289-2 6.2/8.2.4 incorporation; the raw-role
+checks falsely rejected mapped TOC parents and mapped TOCI children.
+The independent TOCI Ref-presence check remains unchanged.
+
+Six native controls completed normally in both standalone and combined
+profiles. Combined file/containment outcomes all agree (four clean
+positives, two negatives), correcting two false rejections. Standalone
+also accepts the two negatives because their exclusions belong to
+ISO 32005, not the standalone UA-2 profile. Known illegal pairs remain
+rejected by FreeDF's nesting check, not silently accepted.
+
+Fresh 435-PDF/870-result comparison changes only two redundant UA-2
+diagnostics on UA-1 negative fixtures run as UA-2. Independent combined
+reference jobs confirm Document-TOCI and TOC-P exclusions; both files
+remain rejected. All file verdicts and UA-1 outputs are unchanged.
+Six authored cases initially had four failing legacy-diagnostic assertions.
+Full TOCI target identity/shape and grouping-dependent semantics remain
+deferred; no external PDFs, reports or engine code are bundled.
+
 ## 2026-11-05 owned list numbering attributes
 
 UA-2 ListNumbering lookup now selects /O /List dictionaries from local A

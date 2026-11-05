@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 TOC containment correction](spec-backlog.md#2026-11-05-ua-2-toc-containment-without-legacy-roles)
+uses existing namespace-resolved ISO 32005 nesting instead of redundant
+legacy raw-role checks. Six combined native outcomes agree, correcting
+two false rejections. Two redundant corpus diagnostics are removed with
+independent exclusion evidence; file verdicts and UA-1 output are unchanged.
+TOCI target identity/shape and grouping-dependent semantics remain deferred.
+
 The [owned list-numbering correction](spec-backlog.md#2026-11-05-owned-list-numbering-attributes)
 resolves local and class attributes with owner-aware bounded lookup.
 Nine native controls agree, correcting two missed violations and two false
