@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 namespace-aware Form widget limit](spec-backlog.md#2026-11-05-ua-2-namespace-aware-form-widget-cardinality)
+applies the existing direct-widget count to resolved Form roles rather
+than foreign names. Twenty-seven native controls give exact-rule/file
+agreement, correcting two false negatives and one false positive; other
+invalid controls retain their independent errors. UA-1 and fresh
+435-PDF/870-result corpus output are unchanged. Grouping and descendant
+count semantics are not broadened.
+
 The [UA-2 unconditional XFA exclusion](spec-backlog.md#2026-11-05-ua-2-unconditional-xfa-exclusion)
 replaces the dynamic-rendering proxy with resolved non-null XFA presence,
 independent of NeedsRendering. Fifty-four native controls give 48 exact-rule

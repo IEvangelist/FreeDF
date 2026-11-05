@@ -88,6 +88,7 @@ class RuleOverlapTests(unittest.TestCase):
         (2, "8.4.5.8-1", "PDFUA-FONT-TOUNICODE"),
         (2, "8.10.2.3-2", "PDFUA2-WIDGET-AA-CONTENTS"),
         (2, "8.10.1-1", "PDFUA-FORM-STRUCT"),
+        (2, "8.10.1-2", "PDFUA2-FORM-WIDGETS"),
         (2, "8.10.1-3", "PDFUA2-XFA"),
     ]
 

@@ -71,6 +71,11 @@ condition with namespace-aware Artifact exclusion. The separate
 label-or-Contents predicate remains incomplete; no model implementation
 or profile XML is bundled.
 
+The UA-2 at-most-one-widget-per-Form fact was cross-checked against the
+same CC BY 4.0 UA-2 profile, 8.10.1-2. Its existing direct OBJR counting
+now uses namespace-aware Form resolution; no new grouping or descendant
+count semantics are derived. No profile XML or external PDFs are bundled.
+
 The UA-2 unconditional XFA-presence exclusion was cross-checked against
 the same CC BY 4.0 UA-2 profile, 8.10.1-3. The implementation uses resolved
 non-null entry presence rather than the old dynamic-rendering proxy.

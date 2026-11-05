@@ -606,6 +606,77 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> FormWidgetCountCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default-form", "pdf2-form", "mapped-form", "mapped-chain-form",
+            "mapped-artifact", "mapped-paragraph", "foreign-unmapped", "artifact" })
+        foreach (var count in new[] { 0, 1, 2 })
+            yield return [part, kind, count, "Widget"];
+        foreach (var kind in new[] { "default-form", "mapped-form", "mapped-chain-form" })
+            yield return [2, kind, 2, "Link"];
+    }
+
+    [Theory]
+    [MemberData(nameof(FormWidgetCountCases))]
+    public void Ua2FormWidgetCountUsesResolvedNamespaceType(int part, string kind, int count, string subtype)
+    {
+        var references = string.Join(" ", Enumerable.Range(9, count).Select(id => $"{id} 0 R"));
+        var objects = string.Join(" ", Enumerable.Range(9, count).Select(id =>
+            $"<< /Type /OBJR /Obj {id} 0 R /Pg 3 0 R >>"));
+        var pdf = Ua("", "8 0 R", $"/Annots [{references}]",
+            catalogExtra: $"/AcroForm << /Fields [{references}] >>", extras:
+            [
+                $"<< /Type /StructElem /S /Form /P 7 0 R /K [{objects}] >>",
+                $"<< /Type /Annot /Subtype /{subtype} /FT /Tx /T (first) /TU (First) /Contents (First) /StructParent 1 /Rect [0 0 10 10] >>",
+                $"<< /Type /Annot /Subtype /{subtype} /FT /Tx /T (second) /TU (Second) /Contents (Second) /StructParent 2 /Rect [20 0 30 10] >>",
+            ]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray(Enumerable.Range(1, count)
+                .SelectMany(id => new PdfObject[] { new PdfInteger(id), new PdfRef(8, 0) }).ToList()) },
+        };
+        var form = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind is "pdf2-form" or "artifact")
+        {
+            form.Entries["NS"] = pdf2;
+            if (kind == "artifact") form.Entries["S"] = new PdfName("Artifact");
+        }
+        if (kind.StartsWith("mapped-", StringComparison.Ordinal) || kind == "foreign-unmapped")
+        {
+            var role = kind is "mapped-form" or "mapped-chain-form" ? "Custom" : "Form";
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:form-count")) } };
+            if (kind != "foreign-unmapped")
+            {
+                var target = kind == "mapped-artifact" ? "Artifact" : kind == "mapped-paragraph" ? "P" : "Form";
+                var targetNamespace = pdf2;
+                if (kind == "mapped-chain-form")
+                    targetNamespace = new PdfDictionary
+                    {
+                        Entries =
+                        {
+                            ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:form-count-intermediate")),
+                            ["RoleMapNS"] = new PdfDictionary { Entries = { ["Form"] = new PdfArray([new PdfName("Form"), pdf2]) } },
+                        },
+                    };
+                ns.Entries["RoleMapNS"] = new PdfDictionary
+                {
+                    Entries = { [role] = new PdfArray([new PdfName(target), targetNamespace]) },
+                };
+            }
+            form.Entries["S"] = new PdfName(role);
+            form.Entries["NS"] = ns;
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var expected = part == 2 && subtype == "Widget" && count > 1
+            && kind is "default-form" or "pdf2-form" or "mapped-form" or "mapped-chain-form";
+        Assert.Equal(expected, report.Has("PDFUA2-FORM-WIDGETS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> WidgetFieldTypeCases()
     {
         foreach (var part in new[] { 1, 2 })

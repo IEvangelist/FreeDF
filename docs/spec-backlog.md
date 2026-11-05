@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 UA-2 namespace-aware Form widget cardinality
+
+The existing `PDFUA2-FORM-WIDGETS` rule now selects Form structure
+elements through the UA-2 namespace-aware standard-type resolver.
+Previously a foreign role mapped to Form escaped the limit, while a
+foreign type merely named Form could receive an irrelevant error even
+when mapped to Artifact or P. The direct OBJR widget-counting predicate
+and Error severity are unchanged. This does not infer transparent-group,
+descendant, or semantic counting rules.
+
+The at-most-one requirement was cross-checked against the pinned
+veraPDF v1.30.3 UA-2 profile, 8.10.1-2. The public primary ISO preview
+still does not include full 8.10. Fifty-one authored cases cover zero,
+one and two widgets; default/PDF 2.0 Forms; direct/chained foreign
+mappings; Artifact/P mappings; unmapped foreign types; both profiles;
+and non-widget object references. Five cases failed before the fix.
+
+Twenty-seven independent native UA-2 controls give exact-rule and
+whole-file agreement (15 clean positives, 12 negatives). Two mapped
+Form false-negative verdicts and one mapped-Artifact false positive are
+corrected. Two other invalid controls lose only the irrelevant Form
+cardinality finding: the P-mapped type still fails the enclosing-Form
+requirement, and the unmapped type retains role/incomplete errors.
+Three non-widget controls intentionally remain invalid for Link nesting;
+their missing widget-count error is not presented as whole-file acceptance.
+All 27 corresponding UA-1 outputs are unchanged.
+
+A fresh 435-PDF/870-result public-corpus run is identical to the
+immediate previous baseline. Full Release suite: 13,652 passed, zero
+failed/skipped. Solution build: zero errors and two retained machine-feed
+NU1507 warnings. Reporting tool: 20 passing tests, including the existing
+8.10.1-2 family mapping. External controls/reference artifacts remain
+session-only; this is not full PDF/UA parity.
+
 ## 2026-11-05 UA-2 unconditional XFA exclusion
 
 PDF/UA-2 now reports `PDFUA2-XFA` (Error, ISO 14289-2 8.10.1)

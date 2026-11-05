@@ -181,6 +181,9 @@ internal static class PdfUA2Checks
                 c.Add("PDFUA2-HEADING-H", ValidationSeverity.Error, "the unnumbered H structure type must not be used (use Hn or H within Sect)", "ISO 14289-2 8.2.5.12", e.PageIndex);
             if (inPdf17 && e.Type == "Note" && !tree.RoleMap.ContainsKey("Note"))
                 c.Add("PDFUA2-NOTE", ValidationSeverity.Error, "the Note structure type is only permitted when role mapped to a PDF 2.0 namespace element", "ISO 14289-2 8.2.5.14", e.PageIndex);
+            if (StandardType(c, tree, e) == "Form"
+                && e.Children.OfType<StructObjectRef>().Count(o => o.Object is PdfDictionary d && f.Resolve(d.Get("Subtype")).AsName() == "Widget") > 1)
+                c.Add("PDFUA2-FORM-WIDGETS", ValidationSeverity.Error, "a Form structure element must contain at most one widget annotation", "ISO 14289-2 8.10.1", e.PageIndex);
             switch (e.StandardType)
             {
                 case "L":
@@ -191,10 +194,6 @@ internal static class PdfUA2Checks
                 case "LI":
                     if (e.MarkedContent.Any())
                         c.Add("PDFUA2-LI-CONTENT", ValidationSeverity.Error, "content directly inside LI must be enclosed in Lbl or LBody", "ISO 14289-2 8.2.5.25", e.PageIndex);
-                    break;
-                case "Form":
-                    if (e.Children.OfType<StructObjectRef>().Count(o => o.Object is PdfDictionary d && f.Resolve(d.Get("Subtype")).AsName() == "Widget") > 1)
-                        c.Add("PDFUA2-FORM-WIDGETS", ValidationSeverity.Error, "a Form structure element must contain at most one widget annotation", "ISO 14289-2 8.10.1", e.PageIndex);
                     break;
             }
             if (e.StandardType is not ("Table" or "L" or "TOC"))
