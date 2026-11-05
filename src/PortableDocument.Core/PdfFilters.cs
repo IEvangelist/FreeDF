@@ -60,9 +60,16 @@ public static class PdfFilters
                 prediction |= filter.Item1 is "FlateDecode" or "LZWDecode";
                 lzw |= filter.Item1 == "LZWDecode";
             }
+            bool NondefaultInteger(PdfDictionary parameters, string key) =>
+                resolveMetadata(parameters.Get(key)) switch
+                {
+                    null or PdfNull => false,
+                    PdfInteger integer => integer.Value != 1,
+                    _ => throw new PdfParseException($"stream DecodeParms {key} must be an integer")
+                };
             bool Nondefault(PdfDictionary parameters, bool usesPrediction, bool usesLzw) =>
-                usesPrediction && resolveMetadata(parameters.Get("Predictor")) is PdfInteger { Value: not 1 }
-                || usesLzw && resolveMetadata(parameters.Get("EarlyChange")) is PdfInteger { Value: not 1 };
+                usesPrediction && NondefaultInteger(parameters, "Predictor")
+                || usesLzw && NondefaultInteger(parameters, "EarlyChange");
             var nondefault = p is PdfDictionary dictionary && Nondefault(dictionary, prediction, lzw);
             if (p is PdfArray candidates)
                 for (var i = 0; i < Math.Min(candidates.Count, list.Count); i++)

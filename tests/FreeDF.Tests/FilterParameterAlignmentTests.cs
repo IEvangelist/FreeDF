@@ -5,6 +5,85 @@ namespace FreeDF.Tests;
 
 public class FilterParameterAlignmentTests
 {
+    public static IEnumerable<object[]> NonIntegerAlignmentParameters()
+    {
+        foreach (var (filter, key) in new[] { ("FlateDecode", "Predictor"), ("LZWDecode", "EarlyChange") })
+            foreach (var value in new[] { "1.0", "2.0", "(1)", "/Invalid", "true", "[]", "<< >>" })
+                foreach (var shape in new[] { "dictionary", "short", "long" })
+                    yield return [filter, key, value, shape];
+    }
+
+    [Theory]
+    [MemberData(nameof(NonIntegerAlignmentParameters))]
+    public void Noninteger_values_cannot_bypass_nondefault_alignment(
+        string filter, string key, string value, string shape)
+    {
+        var parameters = $"<< /{key} {value} >>";
+        var entry = shape switch
+        {
+            "dictionary" => parameters,
+            "short" => $"[{parameters}]",
+            _ => $"[{parameters} null null]"
+        };
+        var dictionary = Parse($"<< /Filter [/{filter} /ASCIIHexDecode] /DecodeParms {entry} >>");
+        Assert.Equal(2, PdfFilters.GetFilters(dictionary, item => item).Count);
+        Assert.Throws<PdfParseException>(() => PdfFilters.GetFilters(dictionary, item => item, item => item));
+    }
+
+    [Theory]
+    [InlineData("/Invalid")]
+    [InlineData("2.0")]
+    public void Discarded_malformed_parameter_dictionaries_cannot_publish_members(string predictor)
+    {
+        var decoded = "2 0 << /Type /Target >>"u8.ToArray();
+        var encoded = PdfFilters.DeflateEncode(Encoding.ASCII.GetBytes(Convert.ToHexString(decoded) + ">"));
+        var parameters = $"<< /Predictor {predictor} >>";
+        foreach (var repair in new[] { false, true })
+        {
+            var ordinary = PdfFile.Load(ObjectStreamFilterNameTests.Build("[/FlateDecode /ASCIIHexDecode]",
+                "null", false, repair, ordinary: true, decodeParms: parameters, encodedBytesOverride: encoded));
+            Assert.Equal(decoded, ordinary.DecodeStream(Assert.IsType<PdfStream>(ordinary.GetObject(3))));
+            var file = PdfFile.Load(ObjectStreamFilterNameTests.Build("[/FlateDecode /ASCIIHexDecode]",
+                "null", false, repair, decodeParms: parameters, encodedBytesOverride: encoded));
+            Assert.IsType<PdfNull>(file.Resolve(file.Catalog.Get("Probe")));
+            Assert.True(file.Repaired);
+            Assert.False(file.Xref.ContainsKey(2));
+        }
+    }
+
+    [Theory]
+    [InlineData("FlateDecode", "Predictor", "null")]
+    [InlineData("FlateDecode", "Predictor", "5 0 R")]
+    [InlineData("LZWDecode", "EarlyChange", "null")]
+    [InlineData("LZWDecode", "EarlyChange", "5 0 R")]
+    public void Resolved_null_parameters_retain_default_alignment_compatibility(string filter, string key, string value)
+    {
+        var dictionary = Parse($"<< /Filter [/{filter} /ASCIIHexDecode] /DecodeParms [<< /{key} {value} >>] >>");
+        PdfObject? Resolve(PdfObject? item) => item is PdfRef ? PdfNull.Instance : item;
+        Assert.Equal(2, PdfFilters.GetFilters(dictionary, Resolve, Resolve).Count);
+    }
+
+    [Theory]
+    [InlineData("ASCIIHexDecode", "Predictor", "1.0")]
+    [InlineData("ASCIIHexDecode", "Predictor", "/Invalid")]
+    [InlineData("FlateDecode", "EarlyChange", "1.0")]
+    [InlineData("FlateDecode", "EarlyChange", "/Invalid")]
+    public void Noninteger_detection_remains_filter_specific(string filter, string key, string value)
+    {
+        var dictionary = Parse($"<< /Filter [/{filter} /FlateDecode] /DecodeParms [<< /{key} {value} >>] >>");
+        Assert.Equal(2, PdfFilters.GetFilters(dictionary, item => item, item => item).Count);
+    }
+
+    [Theory]
+    [InlineData("FlateDecode", "Predictor")]
+    [InlineData("LZWDecode", "EarlyChange")]
+    public void Noninteger_values_use_the_strict_metadata_resolver(string filter, string key)
+    {
+        var dictionary = Parse($"<< /Filter [/{filter} /ASCIIHexDecode] /DecodeParms [<< /{key} 5 0 R >>] >>");
+        PdfObject? Resolve(PdfObject? item) => item is PdfRef ? new PdfName("Invalid") : item;
+        Assert.Throws<PdfParseException>(() => PdfFilters.GetFilters(dictionary, item => item, Resolve));
+    }
+
     [Theory]
     [InlineData("dictionary")]
     [InlineData("short")]

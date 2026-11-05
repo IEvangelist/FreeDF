@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [typed alignment guard](spec-backlog.md#2026-11-05-integer-types-in-conditional-filter-alignment)
+rejects noninteger recognized Predictor/LZW EarlyChange values in strict
+misaligned multi-filter metadata, including discarded dictionary bypasses.
+Resolved-null defaults, filter-specific handling, aligned lazy resolution
+and ordinary recovery remain intact; broader parameter-schema parity stays open.
+
 The [temporary event-state correction](spec-backlog.md#2026-11-05-temporary-optional-content-event-overlays)
 applies viewer Print/Export recommendations over manual/current View state
 without persisting temporary changes. Missing recommendations retain that

@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 integer types in conditional filter alignment
+
+ISO 32000-1 Table 8 (printed pp27-28) specifies integer Predictor and
+integer LZW EarlyChange. The preceding conditional-alignment guard only
+recognized PdfInteger values other than 1. Consequently a malformed
+non-integer value, including an integer-looking real such as 1.0, could
+escape that guard. A discarded top-level multi-filter parameter dictionary
+could then publish an object-stream member without using or validating
+the malformed parameter.
+
+Within the existing strict multi-filter, non-array/wrong-length guard,
+present recognized Predictor/EarlyChange values now must resolve to
+integers or null. Integer 1 and resolved null retain default compatibility;
+other integers still trigger the existing nondefault alignment rejection.
+Detection remains filter-specific: Predictor belongs to Flate/LZW,
+EarlyChange only to LZW. A non-array dictionary remains ambiguous, so
+the pipeline's known filter union determines which fields are applicable.
+The existing strict metadata resolver/reference budgets are reused.
+
+Fifty-two initial added controls produce 44 failures/eight passes on
+unchanged production: 42 wrong-type/filter/shape combinations plus two
+independently encoded raw object-stream negatives, with null/default and
+wrong-stage positives. The pre-edit class total is 44 failures/32 passes
+including 24 existing controls. The raw negatives previously published
+members in normal/recovery loading; they now block publication while
+ordinary decoding retains exact expected bytes. Two further controls
+verify malformed indirect values use the strict resolver. Focused
+filter/object-stream/LZW/predictor checks pass 958; full Release passes
+19,790, zero failed/skipped; solution builds with zero warnings/errors.
+Fresh pinned 435-PDF/870-result complete validation
+JSON is unchanged; standalone benchmark/provider/parser preflight passes.
+
+Three independently encoded reference fixtures use an aligned integer
+control and discarded dictionaries with real/name Predictor values.
+PyMuPDF 2.0 / MuPDF 1.28.5 publishes the target for all three without repair,
+including both normative negatives. This permissive disagreement is
+retained, not counted as primary-rule conformance. No external PDFs are
+bundled.
+
+Aligned arrays retain lazy value resolution and strict codec validation;
+ordinary and single-filter behavior is unchanged. No new timing was run,
+and no zero-overhead or throughput claim follows from the earlier codec
+or event-query measurements. Unknown parameters, surplus unassociated
+dictionaries, unused predictor dimensions and wider conditional
+requiredness remain separate work. This does not complete DecodeParms
+schema or parser parity.
+
 ## 2026-11-05 temporary optional-content event overlays
 
 ISO 32000-1 8.11.4.5 (printed p236) distinguishes persistent manual View
