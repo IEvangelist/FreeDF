@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary attribute-class entry check](spec-backlog.md#2026-11-05-primary-attribute-class-entry-type)
+requires C name/array type, retaining optional null/omission and existing
+array/reference boundaries. Fifteen native controls retain eight positives;
+seven newly rejected primary negatives remain accepted by the reference.
+The fresh corpus is wholly unchanged. Complete array syntax, revision
+ordering and ClassMap attribute objects remain outside this slice.
+
 The [primary element child-array size check](spec-backlog.md#2026-11-05-primary-nonempty-element-child-arrays)
 rejects direct/indirect empty element K arrays without changing root arrays,
 optional null/omission or UA-1. Five native controls retain three positives;

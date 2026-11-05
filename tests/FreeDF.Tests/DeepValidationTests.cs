@@ -2106,6 +2106,46 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> ClassEntryTypeCases()
+    {
+        (string Entry, bool Invalid)[] values =
+        [
+            ("", false), ("/C null", false), ("/C /Unknown", false), ("/C []", false),
+            ("/C [/Unknown 0]", false), ("/C 9 0 R", false),
+            ("/C 0", true), ("/C 1.0", true), ("/C (bad)", true), ("/C true", true),
+            ("/C << /O /Layout >>", true), ("/C 10 0 R", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var (entry, invalid) in values)
+            yield return [part, entry, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(ClassEntryTypeCases))]
+    public void Ua2ClassEntryRequiresNameOrArray(int part, string entry, bool invalid)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {entry} >>", "/Unknown", "0"]));
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-STRUCT-C-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ClassEntryTypeReferenceDepthIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "0" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /C 9 0 R >>" }.Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-STRUCT-C-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

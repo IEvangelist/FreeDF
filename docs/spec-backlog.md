@@ -4,6 +4,30 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary attribute-class entry type
+
+Published PDF 2.0 errata, 14.7.2 Table 355 and 14.7.6.2, defines element C
+as a name or array. UA-2 now reports PDFUA2-STRUCT-C-TYPE for a resolved
+non-null value of another type. This uses existing bounded resolution and
+retains PDFUA2-STRUCT-C-INCOMPLETE for unresolved/depth-bound values. Optional
+null/omission, name references, empty arrays, revision-bearing arrays and
+existing null-array diagnostics are unchanged. The published note that an
+undefined class is empty is respected; no ClassMap existence restriction
+was added.
+
+Fifteen native controls retain eight positives and reject seven primary
+negatives (integer, real, string, boolean, dictionary, indirect integer and
+stream). All fifteen independent combined-reference jobs normally accept:
+**seven explicit primary/reference disagreements**. Twenty-six authored
+UA-1/type/null/depth cases had seven initial failures; all pass after the
+scoped check, along with 447 focused cases. Fresh 435-PDF/870-result comparison
+is wholly unchanged, including all file verdicts and UA-1 outputs. Complete
+array-item syntax, class revision ordering and ClassMap-defined attribute
+objects remain deferred; this is a declared-entry-type slice, not full
+attribute-class conformance.
+Full Release: 15,104 cases pass without skips; solution zero errors/two
+retained machine-feed NU1507 warnings. No hosted CI/full-conformance claim.
+
 ## 2026-11-05 primary nonempty element child arrays
 
 Published PDF 2.0 errata, 14.7.2 Table 355, specifies one or more children

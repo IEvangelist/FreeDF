@@ -571,7 +571,11 @@ internal static class PdfUA2Checks
                 $"structure {key} null-item inspection exceeds its reference/work bound", clause, page);
         }
         var value = ResolveBounded(c.F, dictionary.Get(key), Incomplete);
-        if (incomplete || value is not PdfArray array) return;
+        if (incomplete) return;
+        if (key == "C" && value is not (null or PdfNull or PdfName or PdfArray))
+            c.Add("PDFUA2-STRUCT-C-TYPE", ValidationSeverity.Error,
+                "structure C must be a name or array", clause, page);
+        if (value is not PdfArray array) return;
         if (key == "K" && array.Count == 0)
             c.Add("PDFUA2-STRUCT-K-EMPTY", ValidationSeverity.Error,
                 "structure element K array must contain one or more children", clause, page);

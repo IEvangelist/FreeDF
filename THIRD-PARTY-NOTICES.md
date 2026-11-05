@@ -341,6 +341,13 @@ absent from the reference's other-rule rejections. Those differences are
 explicit. Optional null/omission, root array policy and full element-child
 type/schema are not expanded.
 
+The element C declared-type check follows Table 355 and 14.7.6.2 at the same
+errata source, using independently written bounded resolution. Fifteen
+native controls retain eight positives and reject seven primary negatives
+accepted by the reference; those differences are explicit. Undefined
+classes remain empty. Complete array-item syntax, class revision ordering
+and ClassMap attribute objects are not established.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
