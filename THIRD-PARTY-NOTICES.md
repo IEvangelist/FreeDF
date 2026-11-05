@@ -40,6 +40,10 @@ The namespace-aware table/row/cell/header-ID endpoints in
 profile, 8.2.5.26-4, with twelve native width controls. Existing C# table
 algorithms reuse the independent namespace resolver. Exploratory tests 5/6
 header-fallback differences are explicit, not claimed as completed coverage.
+Owned local/ClassMap span lookup was additionally cross-checked against
+test 4 with eight native owner/precedence controls. The independently
+implemented bounded attribute helper is reused; full geometry and
+attribute inheritance/revision are not claimed.
 
 The null annotation StructParent boundary in `ValidationPdfUA.cs` follows
 ISO 32000-1 7.3.9 and was independently cross-checked against the same

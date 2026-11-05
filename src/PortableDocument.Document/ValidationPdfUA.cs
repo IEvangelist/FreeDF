@@ -357,8 +357,8 @@ internal static partial class PdfUAChecks
                     { c.Add("PDFUA-ROW-CHILD", ValidationSeverity.Error, $"TR contains /{cell.Type}, expected TH or TD", Clause(c, "7.5", "8.2.5.26"), t.PageIndex); continue; }
                     hasTh |= type == "TH";
                     while (carry.TryGetValue(col, out var rem) && rem > 0) col++;
-                    var cs = Math.Clamp((int)(cell.Attribute(f, "ColSpan").AsNumber() ?? 1), 1, 1000);
-                    var rs = Math.Clamp((int)(cell.Attribute(f, "RowSpan").AsNumber() ?? 1), 1, 1000);
+                    var cs = Math.Clamp((int)((c.Part == 2 ? TableAttribute(c, tree, cell, "ColSpan") : cell.Attribute(f, "ColSpan")).AsNumber() ?? 1), 1, 1000);
+                    var rs = Math.Clamp((int)((c.Part == 2 ? TableAttribute(c, tree, cell, "RowSpan") : cell.Attribute(f, "RowSpan")).AsNumber() ?? 1), 1, 1000);
                     for (var k = 0; k < cs; k++) if (rs > 1) carry[col + k] = rs;
                     col += cs;
                 }
@@ -382,6 +382,11 @@ internal static partial class PdfUAChecks
 
     static PdfObject? TableAttribute(ValidationContext c, StructureTree tree, StructElement element, string key)
     {
+        if (c.Part == 2)
+            return PdfUA2Checks.OwnedAttribute(c, tree, element, "Table", key, () =>
+                c.Add("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE", ValidationSeverity.Error,
+                    $"Table /{key} attribute inspection is malformed or exceeds its reference/work bound",
+                    "ISO 14289-2 8.2.5.26", element.PageIndex));
         var f = c.F;
 
         PdfObject? Find(PdfObject? raw)

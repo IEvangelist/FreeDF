@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [owned table-span correction](spec-backlog.md#2026-11-05-owned-table-span-and-class-attributes)
+uses bounded /Table local/ClassMap lookup for UA-2 spans and header attributes.
+Eight native width controls agree, correcting two false rejections and two
+missed violations. UA-1 and fresh corpus output are unchanged. Full attribute
+inheritance/revision, geometry and header fallback remain deferred.
+
 The [structure Ref shape check](spec-backlog.md#2026-11-05-pdf-20-structure-ref-array-shape)
 uses official ISO 32000-2 Table 355 errata to require arrays without null
 elements in UA-2. Three native malformed cases now fail despite reference

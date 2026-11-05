@@ -540,7 +540,7 @@ internal static class PdfUA2Checks
                 "ISO 14289-2 8.2.5.14", element.PageIndex);
     }
 
-    static PdfObject? OwnedAttribute(ValidationContext c, StructureTree tree, StructElement element,
+    internal static PdfObject? OwnedAttribute(ValidationContext c, StructureTree tree, StructElement element,
         string ownerName, string key, Action incompleteInspection)
     {
         bool incomplete = false;

@@ -4,6 +4,27 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 owned table span and class attributes
+
+UA-2 table spans now use /O /Table local/ClassMap attributes, not generic
+local attribute lookup. Scope and Headers also reuse the same bounded
+owner-aware helper. Local non-null values win, null/omission falls through
+to classes in order, and unrelated owners do not affect table geometry.
+Malformed/cyclic attribute references or shared 200,000-item exhaustion
+produce PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE errors. Existing span clamping,
+placement and header policies are retained; incomplete inspection is
+not evidence of regularity even when default spans permit continuation.
+UA-1 attribute selection is unchanged.
+
+Eight native ColSpan controls completed normally against the combined
+profile, all file/width outcomes agreeing (four positives, four negatives).
+Two false rejections from wrong/omitted owners and two missed irregularities
+from class values/null fallback are corrected. All eight UA-1 outputs and
+fresh 435-PDF/870-result output are unchanged. Twenty-two authored cases
+cover owner/precedence, cycles, shared work bounds and local short-circuit.
+Full attribute inheritance/revision, geometry and algorithmic header
+fallback remain incomplete. No external PDFs or reference XML are bundled.
+
 ## 2026-11-05 PDF 2.0 structure Ref array shape
 
 The official [PDF Association ISO 32000-2:2020 errata, 14.7.2 Table 355](https://pdf-issues.pdfa.org/32000-2-2020/clause14.html#H14.7.2)
