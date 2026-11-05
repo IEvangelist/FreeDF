@@ -38,6 +38,7 @@ internal static class PdfUA2Checks
     static void TextFieldValues(ValidationContext c)
     {
         var fields = c.Doc.GetFormFieldDetails();
+        FieldEntryTypes(c, fields);
         DefaultAppearances(c, fields);
         ChoiceFieldIndices(c, fields);
         SignatureLockFields(c, fields);
@@ -110,6 +111,31 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
                 "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
                 "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void FieldEntryTypes(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.4.1 Table 226";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-ENTRY-INCOMPLETE", ValidationSeverity.Error,
+                "terminal field entry inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            var name = ResolveBounded(c.F, field.Dictionary.Get("T"), Incomplete);
+            if (name is not (null or PdfNull or PdfString))
+                c.Add("PDFUA2-FORM-T-TYPE", ValidationSeverity.Error,
+                    "field T must be a text string", clause);
+            var actions = ResolveBounded(c.F, field.Dictionary.Get("AA"), Incomplete);
+            if (actions is not (null or PdfNull or PdfDictionary))
+                c.Add("PDFUA2-FORM-AA-TYPE", ValidationSeverity.Error,
+                    "field AA must be a dictionary", clause);
         }
     }
 

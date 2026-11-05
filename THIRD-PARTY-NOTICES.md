@@ -562,6 +562,14 @@ Nine native controls retain five raw-type positives and reject four primary
 negatives accepted by the pinned reference; disagreements are explicit.
 No standard text or external controls are bundled.
 
+The local terminal field T raw string and AA dictionary checks follow
+official PDF Association 12.7.4.1/Table 226 declared type facts. They reuse
+bounded references without deriving name presence, encoding or complete
+action schema from reference behavior. Fifteen native controls retain five
+raw-type positives and reject ten primary negatives accepted by the pinned
+reference; disagreements are explicit. No actions are executed and no
+standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

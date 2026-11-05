@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary terminal field entry types
+
+Official PDF Association PDF 2.0 errata 12.7.4.1/Table 226 declares
+optional T a text string and optional AA a dictionary. Recognized terminal
+field dictionaries now check those local raw types for all field subtypes:
+PDFUA2-FORM-T-TYPE and PDFUA2-FORM-AA-TYPE. Omission/null/dangling
+entries remain absent; no name or additional-actions presence is required
+by this predicate. Empty strings/dictionaries remain valid raw types.
+This only checks PdfString shape, not its text encoding or name syntax.
+
+Entry references reuse the 32-hop/cycle guard. Field-reader truncation and
+unknown/bounded entry references produce PDFUA2-FORM-ENTRY-INCOMPLETE.
+One unknown entry does not suppress the other's known type error.
+Only local entries on recognized terminal fields are checked; nonterminal
+parents are not projected onto children. Full field traversal, partial-name
+syntax/encoding and complete additional-actions schema remain separate.
+No action is executed.
+
+Initial 167 authored controls had 48 failures. Focused Release:
+5,169 passed; full Release: 18,026 passed, zero failed/skipped. Solution
+zero errors/two retained machine-feed NU1507 warnings.
+Fifteen isolated native controls retain five raw-type positives and reject
+ten primary negatives. All pinned combined-reference jobs complete
+normally and accept: **ten explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against lock-permission baseline 93960b3d. No standard text or external
+controls are bundled; full form/PDF parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary signature-lock permission type
 
 Official PDF Association PDF 2.0 errata 12.7.5.5/Table 236 declares

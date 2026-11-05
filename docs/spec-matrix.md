@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary terminal field entry type checks](spec-backlog.md#2026-11-05-primary-terminal-field-entry-types)
+check local T raw strings and AA dictionaries on recognized terminal fields
+with explicit unresolved/bounded diagnostics. Fifteen native controls retain
+five raw-type positives; ten primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Nonterminal traversal, name syntax/
+encoding and complete action schema remain separate; actions stay inert.
+
 The [primary signature-lock permission type check](spec-backlog.md#2026-11-05-primary-signature-lock-permission-type)
 checks local terminal Sig Lock/P raw number type independently of Fields.
 Nine native controls retain five raw-type positives; four primary negatives

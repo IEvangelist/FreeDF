@@ -5077,6 +5077,74 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> TerminalFieldEntryTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch", "Btn" })
+        foreach (var key in new[] { "T", "AA" })
+        foreach (var value in new[] { "null", "()", "(name)", "<< >>", "42", "true", "/Name", "[]", "11 0 R", "99 0 R" })
+            yield return [part, type, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(TerminalFieldEntryTypeCases))]
+    public void Ua2TerminalFieldEntriesHaveDeclaredTypes(int part, string type, string key, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /{key} {value} >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = value is "null" or "11 0 R" or "99 0 R"
+            || (key == "T" ? value is "()" or "(name)" : value == "<< >>");
+        Assert.Equal(part == 2 && !valid, report.Has(key == "T" ? "PDFUA2-FORM-T-TYPE" : "PDFUA2-FORM-AA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("T", 32, false)]
+    [InlineData("T", 33, true)]
+    [InlineData("AA", 32, false)]
+    [InlineData("AA", 33, true)]
+    public void Ua2TerminalFieldEntryReferenceBoundIsExplicit(string key, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? key == "T" ? "(name)" : "<< >>" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Btn /{key} 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-T-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-AA-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/T 11 0 R /AA 42", false, true)]
+    [InlineData("/T 42 /AA 11 0 R", true, false)]
+    public void Ua2TerminalFieldEntryUnknownPreservesOtherKnownTypeError(string entries, bool nameType, bool actionType)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Btn {entries} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(nameType, report.Has("PDFUA2-FORM-T-TYPE"));
+        Assert.Equal(actionType, report.Has("PDFUA2-FORM-AA-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TerminalFieldEntryTypesDoNotProjectParentEntries()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Btn /T 42 /AA 42 /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-T-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-AA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })
