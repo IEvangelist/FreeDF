@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [padded compressed reference-generation check](spec-backlog.md#2026-11-05-padded-compressed-reference-generations)
+applies the existing supported magnitude limit after leading zeros rather
+than rejecting source width. Exact reference values, long padding and
+unchanged corpus JSON are recorded. Default parsing, complete generation
+range/lifecycle policy and resource budgets remain separate.
+
 The [signed compressed reference-generation check](spec-backlog.md#2026-11-05-signed-compressed-reference-generations)
 accepts explicitly signed non-negative integer generations in compressed
 values while retaining default lexer behavior and existing digit limits.

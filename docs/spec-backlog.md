@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 padded compressed reference generations
+
+ISO 32000-1 7.3.3 (printed p14) defines integer spelling as one or more
+decimal digits with an optional sign; 7.3.10 (printed p21) requires
+non-negative reference generations. Member-only reference lookahead now
+ignores leading zeros when applying its existing five-significant-digit
+supported magnitude limit, instead of rejecting a valid value solely for
+source width. Accumulation uses only those significant digits.
+Public/default reference recognition remains unchanged.
+
+Fourteen controls cover signed/unsigned padding, exact nested reference
+identities, 4,096 leading zeros, invalid/missing separators, unsupported
+magnitudes and default compatibility. Initial selector: seven failed/seven
+passed. Full Release: 19,059 passed, zero failed/skipped. Solution: zero
+errors/two retained machine-feed NU1507 warnings.
+
+Twenty-six native PDFs include twelve formerly rejected valid padded
+references now exposing Target, four unchanged unpadded positives and ten
+still-rejected malformed/unsupported controls. MuPDF agrees on sixteen
+positives, exposes outer Target for six negative controls and returns null
+for four; this is not proof of correct nested reference identity or complete
+generation-range conformance. Fresh pinned 435-PDF/870-result full corpus
+JSON is wholly unchanged against the signed-generation baseline.
+
+This supersedes the earlier compressed-reference source-width limitation,
+not the retained supported magnitude policy, default parser or generation
+lifecycle validation. Token-length/decode resource budgets remain separate.
+
 ## 2026-11-05 signed compressed reference generations
 
 ISO 32000-1 7.3.3 (printed p14) permits an optional integer sign;
