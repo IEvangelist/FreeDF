@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary indirect element namespaces
+
+The official PDF 2.0 errata, 14.7.2 Table 355, requires an element's
+NS namespace dictionary to be an indirect reference. UA-2 now reports
+PDFUA2-NS-INDIRECT for a direct dictionary. Existing role resolution still
+runs so known role findings are not erased; default-namespace omission
+and null behavior, UA-1 behavior and reference-resolution boundaries
+are unchanged.
+
+Six native controls retain four positives (omission, null, registered
+standard and registered mapped namespace). These four reference jobs
+completed normally and accepted the files. Two direct-dictionary primary
+negatives now reject in FreeDF, which previously accepted both; the reference
+throws `COSObject argument can not be direct` for both. The initial reference
+batch assertion detected two veraExceptions, which are retained as **unavailable
+negative verdicts**, not counted as compliance agreement or normal failures.
+Ten authored cases initially had two failures.
+
+Fresh 435-PDF/870-result corpus JSON output, including UA-1, is unchanged.
+This slice does not establish root Namespaces registration, namespace
+dictionary type/shape, or indirect references within RoleMapNS; those
+requirements remain separate. No standard text, external PDFs or reference
+predicate mapping is bundled.
+
+Release validation: 394 focused namespace/nesting/FENote/list cases passed;
+full suite passed 15,017 cases with no failures/skips. Solution build had
+no errors and two retained machine-feed NU1507 warnings.
+
 ## 2026-11-05 primary structure revision shape
 
 The official PDF 2.0 errata, 14.7.2 Table 355, specifies optional deprecated

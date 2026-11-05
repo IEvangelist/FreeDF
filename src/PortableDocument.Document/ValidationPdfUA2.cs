@@ -400,6 +400,10 @@ internal static class PdfUA2Checks
         StructureArrayNulls(c, tree.Root, "K", "ISO 32000-2 14.7.2 Table 354", null);
         foreach (var e in tree.Elements())
         {
+            if (e.Dict.Get("NS") is PdfDictionary)
+                c.Add("PDFUA2-NS-INDIRECT", ValidationSeverity.Error,
+                    "structure element NS namespace dictionary must be an indirect reference",
+                    "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureArrayNulls(c, e.Dict, "K", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureArrayNulls(c, e.Dict, "A", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
             StructureArrayNulls(c, e.Dict, "C", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);

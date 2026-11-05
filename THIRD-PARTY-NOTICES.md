@@ -311,6 +311,13 @@ reference resolution. All eight corrected native combined-profile jobs
 accepted the controls; four primary negatives now reject. No reference
 predicate mapping or full revision/inheritance conformance is claimed.
 
+The direct element NS dictionary check follows Table 355's indirect-reference
+fact at the same official errata source. It is independently implemented
+without changing role resolution. Four native positive reference jobs completed
+normally; both direct-dictionary negative jobs threw reference exceptions.
+Those outcomes are unavailable verdicts, not agreement or reference predicate
+mapping. Root namespace registration and full namespace shape remain separate.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

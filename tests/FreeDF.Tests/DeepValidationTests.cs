@@ -1866,6 +1866,30 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> NamespaceIndirectCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var value in new[] { "null", "99 0 R", "9 0 R",
+            "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>",
+            "<< /Type /Namespace /NS (urn:indirect) /RoleMapNS << /P [/P 9 0 R] >> >>" })
+            yield return [part, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(NamespaceIndirectCases))]
+    public void Ua2ElementNamespaceDictionaryMustBeIndirect(int part, string value)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["NS"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(value)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && value.StartsWith("<<", StringComparison.Ordinal),
+            report.Has("PDFUA2-NS-INDIRECT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

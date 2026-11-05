@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary indirect namespace check](spec-backlog.md#2026-11-05-primary-indirect-element-namespaces)
+rejects direct element NS dictionaries under published PDF 2.0 errata.
+Four native positives have normal reference agreement; the two primary
+negatives trigger reference exceptions and have no usable reference verdict.
+Corpus/UA-1 JSON results are unchanged. Root namespace registration and
+complete namespace dictionary/reference shape remain deferred.
+
 The [primary R revision check](spec-backlog.md#2026-11-05-primary-structure-revision-shape)
 requires non-negative integer values with a separate incomplete-resolution
 error. Eight native controls retain four positives and reject four primary
