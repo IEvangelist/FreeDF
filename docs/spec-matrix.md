@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [indirect reference range guard](spec-backlog.md#2026-11-05-indirect-reference-object-number-overflow)
+rejects recognized references above the current int object-number limit
+instead of wrapping to another object. Two native catalog aliases are
+eliminated; MuPDF uses null rather than FreeDF's explicit rejection.
+Ordinary large numbers remain supported and corpus JSON is unchanged.
+This is not a normative PDF maximum or parser-wide range coverage.
+
 The [local choice option shape check](spec-backlog.md#2026-11-05-primary-local-choice-option-shape)
 checks terminal Ch local Opt raw string/exact two-string-pair shape with
 bounded references and shared work. Eleven native controls retain four

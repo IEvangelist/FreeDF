@@ -6,6 +6,53 @@ namespace FreeDF.Tests;
 public class LexerKeywordTests
 {
     [Theory]
+    [InlineData("2147483648 0 R")]
+    [InlineData("4294967296 0 R")]
+    [InlineData("4294967297 0 R")]
+    [InlineData("8589934593% object\n0% generation\nR")]
+    [InlineData("9223372036854775807 65535 R")]
+    public void Unsupported_reference_object_numbers_are_rejected_without_wrapping(string input)
+    {
+        var exception = Assert.Throws<PdfParseException>(() => new PdfLexer(Encoding.ASCII.GetBytes(input)).ReadObject());
+        Assert.Contains("object number", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("1 0 R", 1)]
+    [InlineData("2147483647 65535 R", int.MaxValue)]
+    public void Supported_reference_object_number_boundaries_are_preserved(string input, int number) =>
+        Assert.Equal(number, Assert.IsType<PdfRef>(new PdfLexer(Encoding.ASCII.GetBytes(input)).ReadObject()).Number);
+
+    [Theory]
+    [InlineData("2147483648")]
+    [InlineData("4294967297")]
+    [InlineData("9223372036854775807")]
+    public void Large_numeric_operands_and_disabled_reference_parsing_remain_supported(string number)
+    {
+        long expected = long.Parse(number, System.Globalization.CultureInfo.InvariantCulture);
+        var lexer = new PdfLexer(Encoding.ASCII.GetBytes(number + " 0 RG"));
+        Assert.Equal(new PdfInteger(expected), lexer.ReadObject());
+        Assert.Equal(new PdfInteger(0), lexer.ReadObject());
+        Assert.Equal(new PdfKeyword("RG"), lexer.ReadObject());
+        lexer = new PdfLexer(Encoding.ASCII.GetBytes(number + " 0 R"));
+        Assert.Equal(new PdfInteger(expected), lexer.ReadObject(false));
+        Assert.Equal(new PdfInteger(0), lexer.ReadObject(false));
+        Assert.Equal(new PdfKeyword("R"), lexer.ReadObject(false));
+    }
+
+    [Theory]
+    [InlineData("4294967297")]
+    [InlineData("8589934593")]
+    public void Oversized_reference_in_a_native_pdf_cannot_alias_its_catalog(string number)
+    {
+        var data = ObjPdf.Build(
+            $"<< /Type /Catalog /Pages 2 0 R /Probe {number} 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>");
+        Assert.Throws<PdfParseException>(() => PdfFile.Load(data).Catalog);
+    }
+
+    [Theory]
     [InlineData("42 00000 R", 0)]
     [InlineData("42 65535 R", 65535)]
     [InlineData("42% comment\n99999% comment\nR", 99999)]

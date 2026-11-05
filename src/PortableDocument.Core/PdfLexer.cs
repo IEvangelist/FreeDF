@@ -109,6 +109,7 @@ public sealed class PdfLexer
             SkipWhite();
             if (Pos < _d.Length && _d[Pos] == 'R' && (Pos + 1 >= _d.Length || !IsRegular(_d[Pos + 1])))
             {
+                if (first.Value > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
                 Pos++;
                 return new PdfRef((int)first.Value, gen);
             }

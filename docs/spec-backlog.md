@@ -4,6 +4,35 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 indirect reference object-number overflow
+
+ISO 32000-1 7.3.10 (printed p21) identifies an indirect object by its
+object/generation numbers; 7.3.9 treats a nonexistent target as null, not
+as another numbered object. The lexer previously narrowed a long object
+number to int unchecked: 4294967297 and 8589934593 both resolved to
+object 1 in native catalog Probe controls.
+
+After recognizing a complete reference token, the lexer now throws
+PdfParseException for an object number above int.MaxValue, the current
+PdfRef representation limit. This is an explicit unsupported-range
+failure, **not a normative PDF maximum** or support for larger object
+numbers. Standalone large integers, failed reference lookahead,
+ReadObject(false), supported reference boundaries and existing
+generation-number compatibility remain unchanged. Other object-number
+read paths and integers above long.MaxValue are outside this slice.
+
+Twelve added controls had seven failures before the fix. Focused
+lexer/object-stream/fuzz Release: 113 passed; full Release: 18,404 passed,
+zero failed/skipped. Solution zero errors/two retained machine-feed
+NU1507 warnings. Six native PDFs preserve two supported-number controls
+and explicitly reject four unsupported references, including both
+catalog aliases after parser recovery. MuPDF treats the four oversized
+targets as null: both avoid aliasing, but FreeDF's explicit rejection is
+a documented recovery-policy difference, not identical reference output.
+Fresh 435-PDF/870-result corpus JSON is wholly unchanged against
+e14e9157. External PDFs and standard text are not bundled; parser-wide
+identity/range coverage, full parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary local choice option shape
 
 ISO 32000-1 12.7.4.4/Table 231 (printed p445) declares the choice Opt
