@@ -200,12 +200,16 @@ public sealed class PdfFile
         var (n, first) = ObjectStreamBounds(stream, data.Length);
         var lx = new PdfLexer(data);
         var map = new ObjStmIndex(data, first);
+        long previousOffset = -1;
         for (var i = 0; i < n; i++)
         {
             if (lx.ReadObject(false) is not PdfInteger on || lx.ReadObject(false) is not PdfInteger off ||
                 lx.Pos > first || on.Value < 0 || on.Value > int.MaxValue ||
                 off.Value < 0 || off.Value >= data.Length - first)
                 throw new PdfParseException("bad object stream member offset");
+            if (off.Value <= previousOffset)
+                throw new PdfParseException("object stream member offsets must increase");
+            previousOffset = off.Value;
             if (!map.Members.TryAdd((int)on.Value, (i, (int)off.Value)))
                 throw new PdfParseException("duplicate object stream member number");
         }

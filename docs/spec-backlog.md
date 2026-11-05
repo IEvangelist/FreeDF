@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream member offset order
+
+ISO 32000-1 7.5.7 (printed p46) explicitly requires increasing member
+offsets while permitting arbitrary object-number order. The shared header
+reader now rejects equal/decreasing offsets before indexing any members.
+This prevents aliases/reordered bodies in normal lazy lookup and recovery
+without requiring sorted object numbers or eagerly parsing bodies.
+
+Eight controls include four initially red equal/decreasing cases exercised
+through normal and forced-recovery paths, plus four valid increasing-offset
+controls with both object-number orders. Existing unrelated malformed-body
+isolation remains covered. Full Release: 18,615 passed, zero failed/skipped.
+Solution: zero errors/two retained machine-feed NU1507 warnings.
+
+Twelve native PDFs preserve four valid outputs unchanged. Eight malformed
+cases now resolve null with repair reported; six previously returned aliased/
+reordered dictionaries, while two already lacked a dictionary type but
+still installed invalid header members. MuPDF agrees on all valid outputs
+and seven malformed null outcomes, but recovers a reordered dictionary in
+one forced-repair case and does not report repair for the four malformed
+normal-index fixtures. These explicit recovery differences do not determine
+the normative rule. Fresh pinned 435-PDF/870-result corpus JSON is wholly
+unchanged against the recovery-header baseline.
+
+First-offset semantics, object-number-zero handling, complete body/value
+restrictions, remaining object-stream schema and parser-wide budgets remain
+separate. Existing zero-count and lazy-body behavior remain unchanged.
+
 ## 2026-11-05 object-stream recovery header identity
 
 ISO 32000-1 7.5.7 (printed p46) requires N integer object-number/offset

@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream member offset check](spec-backlog.md#2026-11-05-object-stream-member-offset-order)
+requires strictly increasing offsets in both normal and recovery indexing,
+without requiring object numbers to be sorted or eagerly parsing bodies.
+Native recovery differences and unchanged corpus JSON are recorded.
+First-offset semantics, body/value rules and budgets remain separate.
+
 The [object-stream recovery header correction](spec-backlog.md#2026-11-05-object-stream-recovery-header-identity)
 shares existing lazy-loader number/offset/duplicate validation and installs
 members only after the complete header passes. Malformed recovery headers
