@@ -239,16 +239,22 @@ public sealed class PdfDecryptor
     }
 
     /// <summary>Encrypts a string value of object <paramref name="num"/> (generation 0) with this document's key and string method, for appending to an encrypted file.</summary>
-    public byte[] SealString(byte[] data, int num) => Seal(data, num, 0, _str);
+    public byte[] SealString(byte[] data, int num) => SealString(data, num, 0);
+
+    /// <summary>Encrypts a string with this document's key using its object number and generation.</summary>
+    public byte[] SealString(byte[] data, int num, int generation) => Seal(data, num, generation, _str);
 
     /// <summary>Encrypts a stream's data with the stream method; streams that decryption leaves alone (XRef, clear Metadata, /Crypt filter) are returned unchanged.</summary>
-    public byte[] SealStream(PdfStream st, int num)
+    public byte[] SealStream(PdfStream st, int num) => SealStream(st, num, 0);
+
+    /// <summary>Encrypts stream data using its object number and generation, with the same clear-stream exceptions as decryption.</summary>
+    public byte[] SealStream(PdfStream st, int num, int generation)
     {
         var type = st.Dict.Get("Type").AsName();
         if (type == "XRef" || (type == "Metadata" && !EncryptMetadata)) return st.RawData;
         var f = st.Dict.Get("Filter");
         var first = f is PdfArray { Items.Count: > 0 } fa ? fa.Items[0].AsName() : f.AsName();
-        return first == "Crypt" ? st.RawData : Seal(st.RawData, num, 0, type == "EmbeddedFile" ? _eff : _stm);
+        return first == "Crypt" ? st.RawData : Seal(st.RawData, num, generation, type == "EmbeddedFile" ? _eff : _stm);
     }
 
     byte[] Seal(byte[] data, int num, int gen, Method m)

@@ -1534,7 +1534,7 @@ internal static class PdfUA2Checks
         while (value is PdfRef reference)
         {
             if (seen.Count >= MaxRoleDepth || !seen.Add(reference.Number)) { incomplete(); return null; }
-            value = file.GetObject(reference.Number);
+            value = file.GetObject(reference);
         }
         return value;
     }

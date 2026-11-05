@@ -671,7 +671,7 @@ public class AnnotationStructureValidationTests
 
         var wrongReference = new PdfRef(8, compressed ? genOrIndex : generation == 0 ? 1 : 0);
         nums.Items[1] = wrongReference;
-        Assert.Same(element, doc.File.Resolve(wrongReference));
+        Assert.IsType<PdfNull>(doc.File.Resolve(wrongReference));
         OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
         Assert.Same(wrongReference, nums[1]);
 

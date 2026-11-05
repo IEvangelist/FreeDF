@@ -63,8 +63,19 @@ public sealed class PdfFile
     public PdfObject? Resolve(PdfObject? o)
     {
         var depth = 0;
-        while (o is PdfRef r && depth++ < 32) o = GetObject(r.Number);
+        while (o is PdfRef r && depth++ < 32) o = GetObject(r);
         return o is PdfRef ? PdfNull.Instance : o;
+    }
+
+    /// <summary>Reads one indirect reference, returning null-object for a missing, free or different-generation target without following further references.</summary>
+    public PdfObject GetObject(PdfRef reference)
+    {
+        bool IsCurrent() => Xref.TryGetValue(reference.Number, out var entry) && entry.InUse
+            && reference.Generation == (entry.Compressed ? 0 : entry.GenOrIndex);
+        if (!IsCurrent()) return PdfNull.Instance;
+        var value = GetObject(reference.Number);
+        // Loading may repair the xref and discover a different generation.
+        return IsCurrent() ? value : PdfNull.Instance;
     }
 
     public PdfObject GetObject(int num)

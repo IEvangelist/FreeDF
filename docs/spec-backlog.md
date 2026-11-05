@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 indirect reference generations and incremental preservation
+
+ISO 32000-1 7.3.10 (printed p21) identifies an object by both number and
+generation; 7.5.4/7.5.6 (pp41/44) distinguish reused entries from updates
+of the same object. 7.5.7 (p45) requires compressed objects to have
+generation zero. The shared resolver previously discarded generation,
+including on cache hits. PdfFile.GetObject(PdfRef) now reads one hop only
+when the current xref entry is in use with the matching generation,
+rechecking after loading/repair; missing, free and stale targets yield
+PdfNull. Resolve retains its existing 32-hop bound. The by-number
+GetObject(int) API deliberately remains a by-number lookup.
+
+Bounded name-tree/media/form/namespace/DPart consumers now use that same
+one-hop operation without losing their own budgets or incompleteness.
+Unresolved namespace generations remain nesting-incomplete rather than
+default namespaces. DPart invalid-reference diagnostics and optional-content
+invalid-application warnings are preserved. Signature appearance indexing
+does not invent generation-zero references for already indexed fields.
+
+Strict reads exposed a coupled incremental writer defect: references were
+reset to generation zero. The editor now supplies source xref metadata to
+an additive WriteIncremental overload, preserving emitted object headers,
+table/stream xref generations, Root/Info and existing references. String/
+stream encryption uses the emitted generation (7.6.2, printed p58).
+Existing public overload signatures remain; the legacy low-level writer
+overload still defaults emitted object/trailer generations to zero, so
+callers editing nonzero-generation sources must use the xref-aware overload.
+Full rewrites of valid graphs still renumber objects/references to zero.
+
+Initial twelve identity controls all failed; thirty total added controls
+cover caches, repaired files, chained/compressed/free targets, bounded
+validation, namespace diagnostics, incremental metadata, both xref formats,
+four encryption methods, valid full rewrites and certified field appearances.
+Focused validation: 7,323 passed before the writer integration; final
+writer/encryption/signature selector: 69 passed. Final full Release:
+18,434 passed, zero failed/skipped. Solution zero errors/two retained
+machine-feed NU1507 warnings.
+
+Eight native PDFs preserve four matching-generation targets and treat four
+stale targets as null. MuPDF accepts all eight: the four primary-identity/
+reference disagreements are explicit, not independent confirmation.
+Fresh 435-PDF/870-result corpus JSON is wholly unchanged against 363b17a7;
+the prior native overflow controls also retain their recorded outcomes.
+Header/xref integrity as a whole, malformed-graph normalization on full
+rewrites, complete DocMDP classification and full PDF parity remain open.
+External PDFs/standards stay unbundled; hosted CI is not claimed.
+
 ## 2026-11-05 indirect reference object-number overflow
 
 ISO 32000-1 7.3.10 (printed p21) identifies an indirect object by its

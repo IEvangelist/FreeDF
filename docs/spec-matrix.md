@@ -4,6 +4,15 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [generation-aware reference correction](spec-backlog.md#2026-11-05-indirect-reference-generations-and-incremental-preservation)
+honors current xref generations before/after caching and repair, with a
+shared bounded-consumer one-hop API. Editor incremental writes preserve
+headers, xrefs, references and encryption generations instead of silently
+resetting them. Four stale native targets become null; MuPDF accepts them,
+an explicit reference disagreement. Corpus JSON is unchanged. The legacy
+low-level writer requires its xref-aware overload for nonzero generations;
+full header/xref integrity and malformed-graph rewrite normalization remain open.
+
 The [indirect reference range guard](spec-backlog.md#2026-11-05-indirect-reference-object-number-overflow)
 rejects recognized references above the current int object-number limit
 instead of wrapping to another object. Two native catalog aliases are

@@ -63,7 +63,7 @@ public sealed partial class PdfEditor
             if (dssEntries[key] is not PdfArray a) return null;
             var h = SHA256.HashData(blob);
             foreach (var item in a.Items)
-                if (item is PdfRef r && (objs.TryGetValue(r.Number, out var o) ? o : f.GetObject(r.Number)) is PdfStream s && SHA256.HashData(SafeDecode(f, s, objs.ContainsKey(r.Number))).AsSpan().SequenceEqual(h)) return r;
+                if (item is PdfRef r && (objs.TryGetValue(r.Number, out var o) ? o : f.GetObject(r)) is PdfStream s && SHA256.HashData(SafeDecode(f, s, objs.ContainsKey(r.Number))).AsSpan().SequenceEqual(h)) return r;
             return null;
         }
 

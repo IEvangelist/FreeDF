@@ -185,7 +185,11 @@ public sealed class OptionalContentState
                 continue;
             if (R(app.Get("OCGs")) is PdfArray groups
                 && !groups.Items.Any(value => ReferenceEquals(R(value), ocg)))
+            {
+                if (groups.Items.Any(value => ResolveGroup(file, value) is null))
+                    warn?.Invoke("invalid optional-content application OCGs reference");
                 continue;
+            }
             if (R(app.Get("OCGs")) is PdfDictionary group && !ReferenceEquals(group, ocg))
                 continue;
             if (R(ocg.Get("Usage")) is not PdfDictionary usage) continue;

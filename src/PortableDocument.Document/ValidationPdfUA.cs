@@ -189,7 +189,7 @@ internal static partial class PdfUAChecks
             while (value is PdfRef reference)
             {
                 if (references.Count >= 32 || !references.Add(reference.Number)) { Incomplete(); return null; }
-                value = f.GetObject(reference.Number);
+                value = f.GetObject(reference);
             }
             return value;
         }

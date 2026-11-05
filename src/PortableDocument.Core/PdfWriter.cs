@@ -35,6 +35,7 @@ public static class PdfWriter
         public readonly bool Compress = compress;
         public PdfDecryptor? Dec;
         public int Num;
+        public int Generation;
     }
 
     public static byte[] Write(IReadOnlyDictionary<int, PdfObject> objects, int root, int? info, string version = "1.7", ISet<int>? excluded = null, byte[]? id = null, PdfWriteOptions? options = null)
@@ -170,9 +171,16 @@ public static class PdfWriter
     /// <summary>
     /// Appends an incremental update (7.5.6) to <paramref name="original"/>: only <paramref name="changed"/> objects are written, under their
     /// existing numbers, followed by a new cross-reference section chained with /Prev. The original bytes are preserved verbatim.
+    /// Emitted object and trailer generations default to zero; use the originalXref overload for nonzero-generation source objects.
     /// </summary>
     public static byte[] WriteIncremental(byte[] original, long prevStartXref, IReadOnlyDictionary<int, PdfObject> changed, int size, int root, int? info, PdfObject? id, bool xrefStream, PdfDecryptor? decryptor = null, PdfObject? encrypt = null)
+        => WriteIncremental(original, prevStartXref, changed, size, root, info, id, xrefStream, decryptor, encrypt, null);
+
+    /// <summary>Appends an update using <paramref name="originalXref"/> to preserve existing object, trailer and encryption generations. Without it, emitted object generations default to zero.</summary>
+    public static byte[] WriteIncremental(byte[] original, long prevStartXref, IReadOnlyDictionary<int, PdfObject> changed, int size, int root, int? info, PdfObject? id, bool xrefStream, PdfDecryptor? decryptor, PdfObject? encrypt, IReadOnlyDictionary<int, XrefEntry>? originalXref)
     {
+        int Generation(int number) => originalXref is not null && originalXref.TryGetValue(number, out var entry)
+            && !entry.Compressed ? entry.GenOrIndex : 0;
         var ms = new MemoryStream();
         ms.Write(original);
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
@@ -183,13 +191,14 @@ public static class PdfWriter
         {
             offs[num] = ms.Position;
             ctx.Num = num;
-            W($"{num} 0 obj\n");
+            ctx.Generation = Generation(num);
+            W($"{num} {ctx.Generation} obj\n");
             WriteObject(ms, obj, ctx);
             W("\nendobj\n");
         }
         ctx = new Ctx(null, null, false);
-        var tail = new StringBuilder($" /Root {root} 0 R");
-        if (info is { } inf) tail.Append($" /Info {inf} 0 R");
+        var tail = new StringBuilder($" /Root {root} {Generation(root)} R");
+        if (info is { } inf) tail.Append($" /Info {inf} {Generation(inf)} R");
         if (encrypt is not null)
         {
             var tmp = new MemoryStream();
@@ -216,7 +225,7 @@ public static class PdfWriter
                 var j = i;
                 while (j + 1 < keys.Count && keys[j + 1] == keys[j] + 1) j++;
                 index.Append(keys[i]).Append(' ').Append(j - i + 1).Append(' ');
-                for (var k = i; k <= j; k++) { var r = new byte[7]; r[0] = 1; WriteBE(r, 1, offs[keys[k]], 4); rows.AddRange(r); }
+                for (var k = i; k <= j; k++) { var r = new byte[7]; r[0] = 1; WriteBE(r, 1, offs[keys[k]], 4); WriteBE(r, 5, keys[k] == xn ? 0 : Generation(keys[k]), 2); rows.AddRange(r); }
                 i = j + 1;
             }
             var data = Deflate([.. rows]);
@@ -233,7 +242,7 @@ public static class PdfWriter
                 var j = i;
                 while (j + 1 < keys.Count && keys[j + 1] == keys[j] + 1) j++;
                 W($"{keys[i]} {j - i + 1}\n");
-                for (var k = i; k <= j; k++) W($"{offs[keys[k]]:D10} 00000 n \n");
+                for (var k = i; k <= j; k++) W($"{offs[keys[k]]:D10} {Generation(keys[k]):D5} n \n");
                 i = j + 1;
             }
             W($"trailer\n<< /Size {Math.Max(size, maxNum + 1)}{tail} /Prev {prevStartXref} >>\nstartxref\n{xrefPos}\n%%EOF\n");
@@ -250,9 +259,9 @@ public static class PdfWriter
             case PdfBoolean b: W(b.Value ? "true" : "false"); break;
             case PdfInteger i: W(i.Value.ToString(CultureInfo.InvariantCulture)); break;
             case PdfReal r: W(Real(r.Value)); break;
-            case PdfString s: W("<" + Convert.ToHexString(ctx.Dec is not null ? ctx.Dec.SealString(s.Bytes, ctx.Num) : ctx.Enc is null || ctx.Enc.EmbeddedFilesOnly ? s.Bytes : ctx.Enc.Encrypt(s.Bytes, ctx.Num)) + ">"); break;
+            case PdfString s: W("<" + Convert.ToHexString(ctx.Dec is not null ? ctx.Dec.SealString(s.Bytes, ctx.Num, ctx.Generation) : ctx.Enc is null || ctx.Enc.EmbeddedFilesOnly ? s.Bytes : ctx.Enc.Encrypt(s.Bytes, ctx.Num)) + ">"); break;
             case PdfName n: W(Name(n.Value)); break;
-            case PdfRef r: W(ctx.Map is null ? $"{r.Number} 0 R" : ctx.Map.TryGetValue(r.Number, out var nn) ? $"{nn} 0 R" : "null"); break;
+            case PdfRef r: W(ctx.Map is null ? $"{r.Number} {r.Generation} R" : ctx.Map.TryGetValue(r.Number, out var nn) ? $"{nn} 0 R" : "null"); break;
             case PdfArray a:
                 W("[");
                 for (var k = 0; k < a.Items.Count; k++) { if (k > 0) W(" "); WriteObject(ms, a.Items[k], ctx); }
@@ -264,7 +273,7 @@ public static class PdfWriter
                     var addFlate = ctx.Compress && !st.Dict.Entries.ContainsKey("Filter") && data.Length >= 32;
                     if (addFlate) data = Deflate(data);
                     if (ctx.Enc is not null && !(type == "Metadata" && !ctx.Enc.EncryptMetadata) && (!ctx.Enc.EmbeddedFilesOnly || type == "EmbeddedFile")) data = ctx.Enc.Encrypt(data, ctx.Num);
-                    if (ctx.Dec is not null) data = ctx.Dec.SealStream(st, ctx.Num);
+                    if (ctx.Dec is not null) data = ctx.Dec.SealStream(st, ctx.Num, ctx.Generation);
                     W("<<");
                     foreach (var (k, v) in st.Dict.Entries)
                     {

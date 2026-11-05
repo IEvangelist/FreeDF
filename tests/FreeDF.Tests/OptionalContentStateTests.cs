@@ -598,6 +598,7 @@ public class OptionalContentStateTests
 
     [Theory]
     [InlineData("5 1 R", true)]
+    [InlineData("99 0 R", true)]
     [InlineData("5 0 R 6 1 R", true)]
     [InlineData("5 0 R 99 0 R", true)]
     [InlineData("5 0 R << /Type /OCG /Usage << /Language << /Lang (en-US) >> >> >>", true)]

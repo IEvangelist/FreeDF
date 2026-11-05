@@ -54,7 +54,7 @@ public class DocMdpTests
         var prev = long.Parse(text[(text.LastIndexOf("startxref", StringComparison.Ordinal) + 9)..].Trim().Split('\n', '\r')[0]);
         var size = Math.Max(changed.Keys.Max() + 1, (int)f.Resolve(f.Trailer.Get("Size")).AsNumber()!);
         var xrefStream = !text.AsSpan((int)prev, 4).SequenceEqual("xref");
-        return PdfWriter.WriteIncremental(pdf, prev, changed, size, ((PdfRef)f.Trailer.Get("Root")!).Number, (f.Trailer.Get("Info") as PdfRef)?.Number, f.Resolve(f.Trailer.Get("ID")), xrefStream);
+        return PdfWriter.WriteIncremental(pdf, prev, changed, size, ((PdfRef)f.Trailer.Get("Root")!).Number, (f.Trailer.Get("Info") as PdfRef)?.Number, f.Resolve(f.Trailer.Get("ID")), xrefStream, null, null, f.Xref);
     }
 
     internal static int Num(PdfFile f, Func<PdfDictionary, bool> pred) => f.Xref.Keys.Order().First(n => f.GetObject(n) is PdfDictionary d && pred(d));
@@ -152,6 +152,32 @@ public class DocMdpTests
             Assert.True(c.SignatureValid, c.Error);
             Assert.Equal(status, c.DocMdpStatus);
         }
+    }
+
+    [Fact]
+    public void Nonzero_generation_field_appearance_remains_permitted_by_p2()
+    {
+        var source = ObjPdf.Build(
+            "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 7 R] >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+            "<< /FT /Tx /T (name) /V (value) /AP << /N 5 0 R >> >>",
+            ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 100 20] /Resources << >>"));
+        var offset = PdfFile.Load(source).Xref[4].OffsetOrStream;
+        source = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(source)
+            .Replace("4 0 obj", "4 7 obj", StringComparison.Ordinal)
+            .Replace($"{offset:D10} 00000 n", $"{offset:D10} 00007 n", StringComparison.Ordinal));
+        using var cert = Cert("Certifier");
+        var signed = Certified(PdfDocMdpPermission.FormFillAndSign, cert, source);
+        var changed = Update(signed, (f, objects) =>
+        {
+            var appearance = Assert.IsType<PdfStream>(f.GetObject(5));
+            objects[5] = new PdfStream(appearance.Dict, Encoding.ASCII.GetBytes("0 0 m 10 10 l S"));
+        });
+        var signature = Cert1(changed);
+        Assert.True(signature.SignatureValid, signature.Error);
+        Assert.True(signature.DocMdpStatus == PdfDocMdpStatus.ChangesPermitted, string.Join(" | ", signature.DocMdpFindings));
+        Assert.Empty(signature.DocMdpFindings);
     }
 
     [Fact]

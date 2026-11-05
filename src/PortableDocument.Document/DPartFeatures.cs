@@ -93,7 +93,7 @@ public static class DPartFeatures
         var raw = doc.File.Catalog.Get("DPartRoot");
         if (raw is null) return null;
         var dictionary = (raw is PdfRef ? doc.File.Resolve(raw) : raw) as PdfDictionary;
-        var boundary = raw is not PdfRef ? PdfDPartBoundary.InvalidReference
+        var boundary = raw is not PdfRef || HasWrongGeneration(doc.File, raw) ? PdfDPartBoundary.InvalidReference
             : dictionary is null ? PdfDPartBoundary.InvalidDictionary
             : !HasType(doc.File, dictionary, "DPartRoot") ? PdfDPartBoundary.InvalidType
             : PdfDPartBoundary.None;
@@ -110,6 +110,10 @@ public static class DPartFeatures
     static bool HasType(PdfFile file, PdfDictionary dictionary, string type) =>
         dictionary.Get("Type") is not { } raw || file.Resolve(raw).AsName() == type;
 
+    static bool HasWrongGeneration(PdfFile file, PdfObject? raw) =>
+        raw is PdfRef reference && file.Xref.TryGetValue(reference.Number, out var entry)
+            && reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex);
+
     sealed class Reader(PdfFile file)
     {
         readonly HashSet<PdfDictionary> _active = new(ReferenceEqualityComparer.Instance);
@@ -122,7 +126,7 @@ public static class DPartFeatures
             _nodeVisits++;
             var dictionary = (raw is PdfRef ? file.Resolve(raw) : raw) as PdfDictionary;
             PdfDPartNode Stop(PdfDPartBoundary boundary) => new(raw, dictionary, boundary, [], PdfDPartBoundary.None);
-            if (raw is not PdfRef) return Stop(PdfDPartBoundary.InvalidReference);
+            if (raw is not PdfRef || HasWrongGeneration(file, raw)) return Stop(PdfDPartBoundary.InvalidReference);
             if (dictionary is null) return Stop(PdfDPartBoundary.InvalidDictionary);
             if (!HasType(file, dictionary, "DPart")) return Stop(PdfDPartBoundary.InvalidType);
             if (_active.Contains(dictionary)) return Stop(PdfDPartBoundary.Cycle);

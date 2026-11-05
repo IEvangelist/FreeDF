@@ -704,7 +704,7 @@ public static class DocumentFeatures
             {
                 if (!Spend()) return null;
                 if (references.Count >= 32 || !references.Add(reference.Number)) { incomplete(); return null; }
-                value = f.GetObject(reference.Number);
+                value = f.GetObject(reference);
             }
             return value;
         }

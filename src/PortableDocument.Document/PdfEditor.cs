@@ -816,6 +816,6 @@ public sealed partial class PdfEditor
         var tailText = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length))[(sx + 9)..].Trim();
         var prev = long.Parse(new string(tailText.TakeWhile(char.IsDigit).ToArray()));
         var isStream = !(prev < data.Length && System.Text.Encoding.Latin1.GetString(data, (int)prev, Math.Min(4, data.Length - (int)prev)) == "xref");
-        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream, f.Decryptor, f.Trailer.Get("Encrypt"));
+        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream, f.Decryptor, f.Trailer.Get("Encrypt"), f.Xref);
     }
 }
