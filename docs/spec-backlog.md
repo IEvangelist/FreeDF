@@ -4,6 +4,51 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream decoder completion
+
+ISO 32000-1 7.4.1 (printed p22) requires the indicated decoding filters to
+recover the original data, in pipeline order. Section 7.5.7/Table 16 (printed
+p46) defines First and member offsets in the decoded object stream.
+The general decoder intentionally returns a remaining image codec alongside
+the not-yet-decoded data for the rendering layer. Object-stream indexing
+previously discarded that status and could parse those encoded bytes as
+member syntax.
+
+The shared index reader now refuses member publication when the decoder
+reports a remaining codec. This is an unsupported-decoding guard, not a
+blanket normative prohibition of every image codec in object streams, nor
+implementation of those codecs for object streams. Ordinary image streams
+still expose the remaining canonical codec, exact bytes and parameter
+dictionary to their existing consumer.
+
+Seventeen tests cover all six canonical/alias spellings returned by the
+shared decoder, with/without an ASCIIHex prefix, both normal/forced repair,
+filters after the unhandled codec, fully decoded/no-filter positives and
+ordinary image bytes/parameter identity. Unchanged-production baseline:
+eight failures/nine passes. Final focused selector: 871 passed. Full Release:
+19,341 passed, zero failed/skipped. Solution: zero warnings/errors.
+
+Forty independent/retained native files comprise twenty-eight encoded-payload
+negatives and twelve valid controls, including six encrypted files.
+All twenty-eight negatives previously published Target from undecoded bytes;
+now repair leaves the member absent. All twelve valid outcomes are identical.
+MuPDF throws for twelve negative probes, exposes null for twelve forced-repair
+counterparts and still exposes Target for four JPX-labelled probes. All twelve
+valid controls expose Target. These outcomes distinguish incomplete decoding
+from permissive codec recovery; they do not prove general codec conformance.
+Fresh pinned 435-PDF/870-result full corpus JSON remains wholly unchanged
+against the parameter-type baseline.
+
+The [matched completion benchmarks](../bench/FreeDF.Bench/README.md#matched-decoder-completion-control-2026-11-05)
+retain four traversal original/candidate cases and four candidate nondefault
+metadata cases. An apparent 1,000-member timing shift triggered an immediate
+exact-original-source control; it was also slower than earlier measurements.
+Current matched plaintext timing intervals overlap and reported managed
+allocation is identical. No speedup, zero-cost or total-memory claim is made.
+Filter EOD/cardinality/parameter semantics, actual object-stream image-codec
+support, external-file handling, global inventory and resource budgets remain
+separate.
+
 ## 2026-11-05 object-stream DecodeParms value types
 
 ISO 32000-1 Table 5 (printed p20) defines DecodeParms as a dictionary or an

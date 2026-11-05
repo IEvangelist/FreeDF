@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream decoder-completion guard](spec-backlog.md#2026-11-05-object-stream-decoder-completion)
+prevents parsing encoded bytes as members when the decoder returns a remaining
+image codec. Ordinary image bytes/codec/parameters remain available to their
+consumer. This is unsupported-decoding containment, not complete codec support
+or a blanket normative image-codec ban. Native/reference differences,
+matched benchmarks and unchanged corpus JSON are recorded.
+
 The [object-stream DecodeParms-type check](spec-backlog.md#2026-11-05-object-stream-decodeparms-value-types)
 requires dictionaries or null for parameter entries, including unused trailing
 entries, and applies the bounded metadata resolver to parameter aliases.

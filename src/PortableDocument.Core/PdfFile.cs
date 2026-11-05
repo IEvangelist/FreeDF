@@ -304,7 +304,9 @@ public sealed class PdfFile
             throw new PdfParseException("bad object stream type");
         ValidateObjectStreamCollection(stream.Dict);
         var filters = PdfFilters.GetFilters(stream.Dict, Resolve, ResolveObjectStreamFilterMetadata);
-        var data = PdfFilters.Decode(stream.RawData, filters, Resolve).Data;
+        var (data, remainingFilter, _) = PdfFilters.Decode(stream.RawData, filters, Resolve);
+        if (remainingFilter is not null)
+            throw new PdfParseException($"object stream filter {remainingFilter} was not decoded");
         var (n, first) = ObjectStreamBounds(stream, data.Length);
         var lx = new PdfLexer(data, 0, objectStreamMember: true);
         var map = new ObjStmIndex(data, first);

@@ -234,6 +234,40 @@ bytes differ across launches; no matched-byte encrypted attribution is made.
 The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-decodeparms-value-types)
 records malformed controls and the remaining cardinality/codec limits.
 
+### Matched decoder-completion control: 2026-11-05
+
+The [original traversal report](results/2026-11-05-decoder-completion-control.md)
+([CSV](results/2026-11-05-decoder-completion-control.csv)) uses exact production
+`ea53866f478a65d7f8af9fd296538930df2f931a`. The
+[candidate traversal report](results/2026-11-05-decoder-completion-after.md)
+([CSV](results/2026-11-05-decoder-completion-after.csv)) adds the remaining-codec
+check before object-stream index construction.
+The [four candidate metadata cases](results/2026-11-05-decoder-completion-metadata.md)
+([CSV](results/2026-11-05-decoder-completion-metadata.csv)) retain the nondefault
+parameter pipeline workloads too. All use the same three warmups/eight 500 ms
+iterations/one launch and machine/runtime as the parameter-schema follow-up.
+
+Both plaintext input hashes match the Filter-name table above. Original /
+candidate plaintext means are 11.06 / 10.42 us for one member and
+808.64 / 769.10 us for 1,000 members; their timing intervals overlap.
+Reported managed allocations remain 18.00 / 1908.91 KiB respectively, unchanged
+across original/candidate. No speedup or zero-cost claim is supported.
+
+The candidate was measured first. Its 1,000-member mean was notably above
+the earlier parameter-schema run, so exact original production was rebuilt
+and remeasured immediately. That control also slowed and has wide intervals;
+the older result is not sufficient to attribute the shared-machine timing
+shift to the added check. Both full reports are retained without suppressing
+the noisy distribution. The candidate check was then restored, rebuilt and
+passed focused tests plus all benchmark preflight configurations.
+
+Encrypted controls pass but their random bytes differ across builds, so no
+matched-byte timing attribution is made. These are warm managed allocation
+reports, not native/retained memory measurements or OS-wide-exclusive runs.
+The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-object-stream-decoder-completion)
+explains that codec completion is not an implemented image-decoding pipeline
+for object streams.
+
 ## Flate decoder workloads
 
 ```powershell
