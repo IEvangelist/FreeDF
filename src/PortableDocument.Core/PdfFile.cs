@@ -536,6 +536,7 @@ public sealed class PdfFile
         var rowLen = w.Sum();
         if (rowLen == 0) throw new PdfParseException("empty xref stream rows");
         if (requiredRows > data.Length / rowLen) throw new PdfParseException("truncated xref stream rows");
+        if (requiredRows * rowLen != data.Length) throw new PdfParseException("excess decoded xref stream data");
         if (rowLen > 0 && data.Length / rowLen is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + data.Length / rowLen);
         var woff = new int[w.Length];
         for (var wi = 1; wi < w.Length; wi++) woff[wi] = woff[wi - 1] + w[wi - 1];

@@ -4,6 +4,59 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 exact decoded cross-reference row extents
+
+ISO 32000-1 7.3.8.2 (printed p20) makes excess stream data an
+error. Table 17 (printed p50) defines Index subsection entry counts
+(default [0 Size]) and W's sum as each decoded entry's byte length.
+The reader already rejected insufficient rows, but silently ignored
+surplus complete rows, partial rows and whitespace within decoded data.
+
+One additional check requires decoded length to equal the declared row
+count times row width, before capacity allocation or entry publication.
+The preceding truncation check bounds the multiplication by the actual
+byte-array length. Existing missing-row recovery, future field widths,
+and physical LF/CRLF outside Length are unchanged. Extra decoded LF/CRLF
+are data, not the physical endstream separator exception.
+
+The final 114 new controls cover unfiltered plus five complete codecs,
+contiguous/split subsections, omitted Index, complete/partial surplus
+rows and decoded whitespace. The actual expanded unchanged-production
+baseline is 98 failures/30 passes including 14 older row controls.
+Two older expectations explicitly accepting surplus bytes are corrected
+to require recovery; historical results are not rewritten.
+
+Full Release passes 20,004, zero failed/skipped; solution build has zero
+warnings/errors. Eighteen additional omitted-Index controls were then
+added and verified in a final focused xref/object-stream/strict/filter
+run of 1,896 passing tests, not misreported as a second full-suite run.
+Fresh pinned 435-PDF/870-result complete validation JSON is unchanged;
+all provider/parser benchmark correctness preflights pass.
+
+Thirty-six independently encoded reference parser fixtures cover six
+stream forms, exact/partial/whole-row extents and default/split Index.
+PyMuPDF 2.0 / MuPDF 1.28.5 publishes the target without repair in every
+case, including all 24 negatives. That permissive disagreement is
+retained, not used as normative authority. No external PDFs are bundled.
+
+Matched XrefFilterBench uses the retained strict-codec control at
+502e4804, not the older permissive baseline. All four final mean times
+are higher, with overlapping 99.9% confidence intervals and unchanged
+rounded managed allocation sizes. No speedup, proven regression or
+zero-overhead claim is made; exact results and raw counters are retained.
+
+A separate bounded LZW hot-loop experiment hoisted the first clear-code
+check and reused output length. It passed 1,096 focused checks, but all
+eight matched benchmark intervals overlap controls and repeated strict
+decoding has a higher mean. The candidate was rejected; PdfFilters is
+unchanged. Its four direct controls and eight candidate cases remain
+in the benchmark reports, including unfavorable results.
+
+Full parser parity still requires framing, nested metadata/directness,
+external-stream semantics, identity/lifecycle and resource-budget work.
+Strict decoder performance remains an explicit target, not a reason to
+relax validation or retain an unproven optimization.
+
 ## 2026-11-05 self-limiting cross-reference filter completion
 
 ISO 32000-1 7.3.8.2 (printed p20) requires stream Length,

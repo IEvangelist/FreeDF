@@ -67,7 +67,7 @@ public class XrefStreamFilterCompletionTests
         _ => "LZWDecode"
     };
 
-    static byte[] Encode(byte[] decoded, string variant)
+    internal static byte[] Encode(byte[] decoded, string variant)
     {
         if (variant.StartsWith("a85", StringComparison.Ordinal))
         {

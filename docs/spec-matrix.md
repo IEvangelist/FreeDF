@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [decoded xref row-extent guard](spec-backlog.md#2026-11-05-exact-decoded-cross-reference-row-extents)
+requires exactly the rows declared by Index/Size and W before publishing
+an index. Surplus decoded bytes now trigger explicit recovery; physical
+EOL outside Length remains supported. Matched performance uncertainty
+and a rejected LZW optimization are retained; wider framing, metadata
+and parser parity remain open.
+
 The [self-limiting xref filter guard](spec-backlog.md#2026-11-05-self-limiting-cross-reference-filter-completion)
 reuses strict ASCIIHex/ASCII85/RunLength/Flate/LZW decoding and explicitly
 recovers malformed completion, checksums, padding and encoded suffixes.

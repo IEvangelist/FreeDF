@@ -41,12 +41,12 @@ public class XrefStreamRowTests
     [InlineData(true, false)]
     [InlineData(false, true)]
     [InlineData(true, true)]
-    public void Complete_rows_preserve_subsections_and_surplus_byte_compatibility(bool split, bool extra)
+    public void Complete_rows_preserve_subsections_but_surplus_bytes_require_repair(bool split, bool extra)
     {
         var file = PdfFile.Load(Build(0, split, extra));
-        Assert.False(file.Repaired);
+        Assert.Equal(extra, file.Repaired);
         Assert.Equal("Target", Assert.IsType<PdfDictionary>(file.Resolve(file.Catalog.Get("Probe"))).Get("Type").AsName());
         Assert.IsType<PdfStream>(file.GetObject(new PdfRef(3, 0)));
-        Assert.False(file.Repaired);
+        Assert.Equal(extra, file.Repaired);
     }
 }

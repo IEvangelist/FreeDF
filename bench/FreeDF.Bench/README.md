@@ -55,6 +55,55 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Exact xref row extents and rejected LZW experiment: 2026-11-05
+
+The decoded-row guard requires exact `Index`/`Size` times `W` length
+before publishing entries. It adds one check after the existing
+truncation check. Reuse the **strict** control from `502e4804` below;
+comparing against the earlier permissive decoder would conflate changes.
+The four `XrefFilterBench` inputs, decoded hashes, setup checks and timed
+boundaries are identical. Same command/job as the following section.
+
+Microsecond means with 99.9% confidence half-widths:
+
+| Filter / rows | Strict control | Exact-extent final |
+|---|---:|---:|
+| Flate / 64 | 7.553 +/- 0.6503 | 7.674 +/- 0.7852 |
+| Flate / 4,096 | 152.822 +/- 9.0696 | 157.083 +/- 11.5712 |
+| LZW / 64 | 5.656 +/- 0.4553 | 5.987 +/- 0.6212 |
+| LZW / 4,096 | 242.087 +/- 14.9046 | 250.124 +/- 14.9056 |
+
+All final means are higher and all intervals overlap. Managed allocation
+sizes remain the same rounded KB values; raw counters are retained.
+These runs establish neither a speedup nor zero overhead/proven
+regression. Reports are
+`results/2026-11-05-xref-extent-{strict-control,extent-final}.{md,csv}`.
+
+Before that guard, a separate LZW candidate on `502e4804` checked the
+initial nine-bit clear code once, initialized the remaining seven bits
+outside the decode loop, and reused output length for the size check
+and dictionary offset. It removed no EOD/padding/dictionary/size checks.
+The candidate passed 1,096 focused tests but **was rejected and reverted**:
+all eight matched timing intervals overlap controls, and repeated strict
+decoding has a higher mean. Flate controls are unchanged source paths,
+yet their means rose, underscoring environmental/code-layout uncertainty.
+
+| Direct LZW case | Control | Rejected candidate |
+|---|---:|---:|
+| Literal / ordinary | 290.94 +/- 17.484 | 268.728 +/- 17.9742 |
+| Literal / strict | 304.85 +/- 8.674 | 292.290 +/- 25.1611 |
+| Repeated / ordinary | 12.34 +/- 2.435 | 11.649 +/- 0.5973 |
+| Repeated / strict | 11.96 +/- 0.404 | 12.127 +/- 1.1240 |
+
+`results/2026-11-05-lzw-validation-rejected-{lzw-control,lzw-rejected}.{md,csv}`
+retain the four direct controls and all eight candidate direct/xref
+results. The xref candidate compares with the retained strict xref
+control, not an additional remeasurement. The
+`2026-11-05-xref-extent-and-rejected-lzw-gc.csv` retains all 20 raw
+allocation/operation counts and input/decoded hashes with engine MVIDs.
+Matched hashes agree and engine MVIDs differ. No rejected decoder code
+is shipped; no optimization claim is made.
+
 ## Strict cross-reference filter completion: 2026-11-05
 
 `XrefFilterBench` measures fresh `PdfFile.Load(byte[])` on minimal parser
