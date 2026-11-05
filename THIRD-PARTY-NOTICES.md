@@ -504,6 +504,14 @@ Three already-negative corpus fixtures gain a missing-default-/Helv
 finding without verdict changes. Full font schema, strict grammar and
 layout remain separate; no standard text or external controls are bundled.
 
+The default appearance Tf operand-count check follows the same official
+12.7.4.3 two-operand requirement, independently reusing the existing capped
+operand counter. Twenty-one native controls retain nine positives; twelve
+already-negative resource-incomplete controls gain a precise count error
+and remain accepted by the pinned reference. Full operand-type/numeric/
+operator grammar remains separate. No standard text or external controls
+are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

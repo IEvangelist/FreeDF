@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary DA Tf operand-count check](spec-backlog.md#2026-11-05-primary-default-appearance-tf-operand-count)
+adds a known wrong-count finding independently of resource-matching
+uncertainty. Twenty-one native controls retain nine positives; twelve
+existing negatives gain the diagnostic and remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Complete operand types and grammar
+remain separate.
+
 The [primary DA font-resource check](spec-backlog.md#2026-11-05-primary-default-appearance-font-resource-matching)
 matches recognizable Tf font names against bounded AcroForm DR/Font
 lookup, with independent incomplete results for ambiguous operands/resources.

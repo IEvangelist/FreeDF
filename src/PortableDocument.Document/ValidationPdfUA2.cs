@@ -168,7 +168,7 @@ internal static class PdfUA2Checks
                 int matrices = 0;
                 int operandCount = 0;
                 PdfObject? firstOperand = null, secondOperand = null;
-                bool scanned = true, textFont = false, missingFont = false;
+                bool scanned = true, textFont = false, missingFont = false, invalidFontOperands = false;
                 try
                 {
                     while (true)
@@ -190,6 +190,7 @@ internal static class PdfUA2Checks
                         if (keyword.Value == "Tf")
                         {
                             textFont = true;
+                            if (operandCount != 2) invalidFontOperands = true;
                             if (operandCount == 2 && firstOperand is PdfName name
                                 && secondOperand?.AsNumber() is { } size && double.IsFinite(size))
                                 missingFont |= MissingFont(name);
@@ -211,6 +212,10 @@ internal static class PdfUA2Checks
                 if (missingFont)
                     c.Add("PDFUA2-FORM-DA-FONT-RESOURCE", ValidationSeverity.Error,
                         "a default appearance Tf font name must match an AcroForm DR Font resource",
+                        "ISO 32000-2 12.7.4.3");
+                if (invalidFontOperands)
+                    c.Add("PDFUA2-FORM-DA-TF-OPERANDS", ValidationSeverity.Error,
+                        "a default appearance Tf operator must have two operands",
                         "ISO 32000-2 12.7.4.3");
             }
             else if (appearance is not (null or PdfNull))

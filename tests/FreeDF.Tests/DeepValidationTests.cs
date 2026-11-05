@@ -4302,6 +4302,69 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> DefaultAppearanceFontOperandCountCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var content in new[]
+        {
+            "Tf", "/F1 Tf", "12 Tf", "/F1 12 Tf", "/F1 0 Tf",
+            "0 /F1 12 Tf", "/F1 12 0 0 Tf", "(F1) (12) Tf",
+            "/F1 % ignored operand\n12 Tf", "0 g /F1 12 Tf",
+            "/F1 12 Tf Tf", "Tf BI ID anything EI", "/F1 12 Tf BI ID anything EI",
+        })
+            yield return [part, scope, content];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceFontOperandCountCases))]
+    public void Ua2DefaultAppearanceTextFontRequiresTwoOperands(int part, string scope, string content)
+    {
+        var value = $"<{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}>";
+        var form = "/Fields [9 0 R] /DR << /Font << /F1 11 0 R >> >>"
+            + (scope == "document" ? $" /DA {value}" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? $"<< /FT /Tx /T (parent) /DA {value} /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) {(scope == "field" ? $"/DA {value}" : "")} >>",
+            "<< /T (child) /Parent 9 0 R >>", "<< /Type /Font >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = content is "Tf" or "/F1 Tf" or "12 Tf" or "0 /F1 12 Tf"
+            or "/F1 12 0 0 Tf" or "/F1 12 Tf Tf" or "Tf BI ID anything EI";
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-FORM-DA-TF-OPERANDS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, true)]
+    [InlineData(200001, false)]
+    public void Ua2DefaultAppearanceTextFontOperandErrorRequiresReachingOperator(int tokens, bool reached)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("0 ", tokens - 1)) + "Tf"));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(reached, report.Has("PDFUA2-FORM-DA-TF-OPERANDS"));
+        Assert.Equal(!reached, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceFontOperandErrorsAggregateAndSurviveUnknownResources()
+    {
+        var pdf = Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] /DR 11 0 R >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (Tf /F1 Tf /F1 12 Tf) >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-TF-OPERANDS");
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

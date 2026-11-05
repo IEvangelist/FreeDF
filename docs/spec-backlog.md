@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary default appearance Tf operand count
+
+Official PDF Association PDF 2.0 errata 12.7.4.3 explicitly requires Tf
+with its two operands, font and size. The existing bounded DA scan now
+adds PDFUA2-FORM-DA-TF-OPERANDS when a reached Tf has zero, one or more
+than two top-level operands. Its existing count capped at three is reused;
+comments are ignored and structured operands count as single objects.
+Findings aggregate per inspected string identity and survive later unknown
+resources or unsupported tails. Operators beyond the token budget do not
+produce speculative arity findings.
+
+The separate resource-matching incomplete finding remains: a known wrong
+operand count does not establish a resource match. Exactly two operands
+with invalid types are still only incomplete for resource matching; this
+slice does not claim complete operand-type, numeric or operator grammar.
+Existing permissive-lexer limitations and shared byte/token/nesting bounds
+remain. Bare Tf still satisfies the presence predicate but now receives
+the independent count error.
+
+Eighty-one authored controls had twenty-three red assertions on unchanged
+production. The first build attempt encountered unreadable generated Core
+reference metadata (CS0009); a non-shared-compiler control ran the unchanged
+production successfully and established those failures before implementation.
+Focused Release: 4,133 passed; full Release: 16,990 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+Twenty-one isolated native controls retain nine positives; twelve existing
+font-incomplete negatives gain the count error, not new verdict corrections.
+All pinned combined-reference jobs complete normally and accept:
+**twelve retained primary/reference disagreements**. Native UA-1 and fresh
+435-PDF/870-result corpus JSON are wholly unchanged against resource-match
+baseline c897537a. No standard text or external controls are bundled;
+full parity and hosted CI are not claimed.
+
 ## 2026-11-05 primary default appearance font-resource matching
 
 Official PDF Association PDF 2.0 errata 12.7.4.3 requires a Tf font name
