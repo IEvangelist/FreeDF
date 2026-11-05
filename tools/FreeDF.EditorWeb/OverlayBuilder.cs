@@ -12,7 +12,11 @@ public sealed record Item(
     string Id, string Type, double X, double Y, double W, double H,
     string? Text, string? Font, double Size, bool Bold, bool Italic, string? Color,
     string? Fill, string? Stroke, double StrokeWidth, double Opacity, string? Asset, double X2, double Y2, long? Orig = null,
-    string? Align = null, bool Underline = false, bool Strike = false, double Spacing = 0, double LineHeight = 0, string? OStyle = null);
+    string? Align = null, bool Underline = false, bool Strike = false, double Spacing = 0, double LineHeight = 0, string? OStyle = null,
+    ImageCrop? Crop = null, int Rotation = 0, bool FlipX = false, bool FlipY = false);
+
+/// <summary>The retained source rectangle, normalized to the original image with a top-left origin. Cropping is not redaction.</summary>
+public sealed record ImageCrop(double X, double Y, double W, double H);
 
 public sealed record Asset(byte[] Data, string Mime);
 
@@ -20,6 +24,17 @@ public sealed record Asset(byte[] Data, string Mime);
 sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, FontCatalog catalog)
 {
     readonly Dictionary<string, PdfRef> _fonts = [], _images = [], _gstates = [];
+
+    internal static void ValidateImage(Item item)
+    {
+        if (item.Type != "image") return;
+        if (!double.IsFinite(item.X) || !double.IsFinite(item.Y) || !double.IsFinite(item.W) || !double.IsFinite(item.H) ||
+            item.W <= 0 || item.H <= 0 || item.Rotation is not (0 or 90 or 180 or 270))
+            throw new ArgumentException("Image bounds must be finite and positive, and rotation must be a quarter turn.");
+        if (item.Crop is { } c && (!double.IsFinite(c.X) || !double.IsFinite(c.Y) || !double.IsFinite(c.W) || !double.IsFinite(c.H) ||
+            c.X < 0 || c.Y < 0 || c.W <= 0 || c.H <= 0 || c.X + c.W > 1 || c.Y + c.H > 1))
+            throw new ArgumentException("The image crop must be a non-empty rectangle inside the original image.");
+    }
 
     sealed class Embedded(FontFace face, byte[] data, TrueTypeFont font, string key)
     {
@@ -351,10 +366,22 @@ sealed class OverlayBuilder(PdfEditor editor, Dictionary<string, Asset> assets, 
                     break;
                 case "image" when it.Asset is { } aid && assets.TryGetValue(aid, out var asset):
                 {
+                    ValidateImage(it);
                     if (!_images.TryGetValue(aid, out var img)) { var made = MakeImage(asset); if (made is null) break; _images[aid] = img = made; }
                     var key = "EdX" + _images.Keys.ToList().IndexOf(aid);
                     xobjs[key] = img;
-                    sb.Append($"{N(it.W)} 0 0 {N(it.H)} {N(Px(it.X))} {N(Py(it.Y + it.H))} cm\n/{key} Do\n");
+                    var crop = it.Crop ?? new ImageCrop(0, 0, 1, 1);
+                    (double X, double Y) Map(double u, double v)
+                    {
+                        var x = (u - crop.X) / crop.W; var y = (1 - v - crop.Y) / crop.H;
+                        if (it.FlipX) x = 1 - x;
+                        if (it.FlipY) y = 1 - y;
+                        (x, y) = it.Rotation switch { 90 => (1 - y, x), 180 => (1 - x, 1 - y), 270 => (y, 1 - x), _ => (x, y) };
+                        return (Px(it.X + x * it.W), Py(it.Y + y * it.H));
+                    }
+                    var origin = Map(0, 0); var right = Map(1, 0); var top = Map(0, 1);
+                    sb.Append($"{N(Px(it.X))} {N(Py(it.Y + it.H))} {N(it.W)} {N(it.H)} re W n\n");
+                    sb.Append($"{N(right.X - origin.X)} {N(right.Y - origin.Y)} {N(top.X - origin.X)} {N(top.Y - origin.Y)} {N(origin.X)} {N(origin.Y)} cm\n/{key} Do\n");
                     break;
                 }
             }

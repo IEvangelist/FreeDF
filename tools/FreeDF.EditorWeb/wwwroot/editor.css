@@ -142,6 +142,7 @@ footer #recovery { height: 22px; min-height: 0; flex: none; }
 #page img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; }
 #layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #layer.draw { cursor: crosshair; }
+#layer.page-grid::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, #64748b50 1px, transparent 1px), linear-gradient(to bottom, #64748b50 1px, transparent 1px); background-size: var(--grid-spacing) var(--grid-spacing); }
 #empty { margin: auto; text-align: center; color: var(--mut); display: grid; gap: 6px; justify-items: center; }
 #empty svg.i { width: 36px; height: 36px; stroke-width: 1.25; color: var(--line-2); }
 #empty strong { color: var(--fg-2); font-size: 14px; font-weight: 600; }
@@ -153,6 +154,23 @@ footer #recovery { height: 22px; min-height: 0; flex: none; }
 .it.txt { white-space: pre; line-height: 1.2; padding: 0; color: #000; }
 .it.txt[contenteditable] { cursor: text; outline: 1.5px solid var(--accent-2); background: #4c8dff14; }
 .it img { width: 100%; height: 100%; display: block; pointer-events: none; }
+.image-viewport { position: absolute; inset: 0; overflow: hidden; }
+.image-stage { position: absolute; transform-origin: 0 0; }
+.image-flip { position: absolute; inset: 0; }
+.it .image-flip img { position: absolute; max-width: none; }
+.it.cropping { z-index: 20; cursor: default; outline: 1px solid #111; }
+.cropping > .image-viewport { z-index: 1; }
+.cropping > .image-viewport::after { content: ""; position: absolute; inset: 0; pointer-events: none; border: 1px solid #fff; background: linear-gradient(to right, transparent calc(100% / 3), #ffffff80 calc(100% / 3), #ffffff80 calc(100% / 3 + 1px), transparent calc(100% / 3 + 1px), transparent calc(200% / 3), #ffffff80 calc(200% / 3), #ffffff80 calc(200% / 3 + 1px), transparent calc(200% / 3 + 1px)), linear-gradient(to bottom, transparent calc(100% / 3), #ffffff80 calc(100% / 3), #ffffff80 calc(100% / 3 + 1px), transparent calc(100% / 3 + 1px), transparent calc(200% / 3), #ffffff80 calc(200% / 3), #ffffff80 calc(200% / 3 + 1px), transparent calc(200% / 3 + 1px)); }
+.crop-original { position: absolute; z-index: 0; opacity: .3; pointer-events: none; }
+.crop-handle { position: absolute; z-index: 2; transform: translate(-50%, -50%); width: 32px; height: 32px; padding: 0; border: 0; border-radius: 0; background: transparent; touch-action: none; }
+.crop-handle::after { content: ""; position: absolute; inset: 9px; border: 1px solid #fff; background: #111; }
+.crop-handle[data-crop-handle=n]::after, .crop-handle[data-crop-handle=s]::after { inset: 13px 6px; }
+.crop-handle[data-crop-handle=e]::after, .crop-handle[data-crop-handle=w]::after { inset: 6px 13px; }
+.crop-handle:hover:not(:disabled), .crop-handle:active:not(:disabled) { background: transparent; }
+.crop-toolbar { position: fixed; z-index: 900; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100vw - 16px); padding: 6px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--raised); touch-action: manipulation; }
+.crop-toolbar button { white-space: nowrap; padding-inline: 8px; }
+@media (pointer: coarse) { .crop-handle { width: 44px; height: 44px; } .crop-handle::after { inset: 15px; } .crop-handle[data-crop-handle=n]::after, .crop-handle[data-crop-handle=s]::after { inset: 19px 12px; } .crop-handle[data-crop-handle=e]::after, .crop-handle[data-crop-handle=w]::after { inset: 12px 19px; } .crop-toolbar button { min-height: 44px; } }
+@media (max-width: 760px) { .crop-toolbar { left: 8px !important; right: 8px; top: auto !important; bottom: calc(var(--crop-bottom, 12px) + env(safe-area-inset-bottom)); margin-inline: auto; width: fit-content; justify-content: center; } }
 .obj { position: absolute; cursor: move; outline: 1px solid transparent; }
 .it.redact { background-image: repeating-linear-gradient(45deg, #0000 0 5px, #ff4d5e55 5px 7px) !important; outline: 1.5px dashed var(--danger); }
 .obj:hover { outline-color: #4c8dff80; }

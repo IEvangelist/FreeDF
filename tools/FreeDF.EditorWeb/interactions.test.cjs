@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const html = readFileSync(join(__dirname, 'wwwroot', 'index.html'), 'utf8');
 const source = html.slice(html.indexOf('function drag(ev,'), html.indexOf('// Applies Shift'));
 function harness(pendingSave = 0) {
-  const listeners = new Map(), frames = new Map(), moves = [], calls = [];
+  const listeners = new Map(), frames = new Map(), moves = [], calls = [], modifiers = [];
   let nextFrame = 0;
   const context = vm.createContext({
     toLayer: (x, y) => [x, y], pushUndo: () => calls.push('undo'),
@@ -20,8 +20,11 @@ function harness(pendingSave = 0) {
   vm.runInContext(`let saveT = ${pendingSave}, dragging = false; ${source}; globalThis.start = drag;`, context);
   const event = (type, x, y, extra = {}) => ({ type, clientX: x, clientY: y, pointerId: 7, preventDefault() {}, stopPropagation() {}, ...extra });
   return {
-    moves, calls, frames, listeners, event,
-    start: () => context.start(event('pointerdown', 10, 20), () => {}, (point, start, e) => moves.push({ point: [...point], shift: e.shiftKey })),
+    moves, calls, frames, listeners, event, modifiers,
+    start: () => context.start(event('pointerdown', 10, 20), () => {}, (point, start, e) => {
+      moves.push({ point: [...point], shift: e.shiftKey });
+      modifiers.push([e.shiftKey, e.altKey, e.ctrlKey, e.metaKey].map(Boolean));
+    }),
     emit: (type, x, y, extra) => listeners.get(type)(event(type, x, y, extra)),
     frame: () => { const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn()); },
   };
@@ -67,6 +70,20 @@ test('a pending save is resumed even when the new gesture is only a selection', 
   assert.equal(h.moves.length, 0);
   assert.equal(h.calls.filter(c => c === 'undo').length, 0);
   assert.equal(h.calls.filter(c => c === 'save').length, 1);
+});
+
+test('Ctrl and Command can toggle snapping mid-drag without losing Shift or Alt', () => {
+  for (const [key, flag] of [['Control', 'ctrlKey'], ['Meta', 'metaKey']]) {
+    const h = harness(); h.start();
+    h.emit('pointermove', 60, 70, { shiftKey: true, altKey: true }); h.frame();
+    h.emit('keydown', 0, 0, { key, [flag]: true, shiftKey: true, altKey: true }); h.frame();
+    assert.deepEqual(h.modifiers.at(-1), [true, true, key === 'Control', key === 'Meta']);
+    assert.deepEqual(h.moves.at(-1).point, [60, 70]);
+    h.emit('keyup', 0, 0, { key, [flag]: false, shiftKey: true, altKey: true }); h.frame();
+    assert.deepEqual(h.modifiers.at(-1), [true, true, false, false]);
+    h.emit('pointerup', 60, 70);
+    assert.equal(h.calls.filter(c => c === 'undo').length, 1);
+  }
 });
 
 test('cancellation commits the last received position and removes all scheduled work', () => {
