@@ -195,7 +195,7 @@ public sealed class PdfFile
                 && ownLength.Number == objNum)
                 throw new PdfParseException("object stream Length value cannot be compressed");
             if (GetObject(new PdfRef(stmNum, 0)) is not PdfStream s) throw new PdfParseException("bad object stream");
-            map = ReadObjectStreamIndex(s);
+            map = ReadObjectStreamIndex(s, stmNum);
             _objStmCache[stmNum] = map;
         }
         if (!map.Members.TryGetValue(objNum, out var member) || member.Index != index)
@@ -245,7 +245,7 @@ public sealed class PdfFile
         finally { _resolvingObjectStreamTypes.Remove(dictionary); }
     }
 
-    ObjStmIndex ReadObjectStreamIndex(PdfStream stream)
+    ObjStmIndex ReadObjectStreamIndex(PdfStream stream, int streamNumber)
     {
         if (!IsObjectStream(stream.Dict))
             throw new PdfParseException("bad object stream type");
@@ -262,6 +262,8 @@ public sealed class PdfFile
                 lx.Pos > first || on.Value <= 0 || on.Value > int.MaxValue ||
                 off.Value < 0 || off.Value >= data.Length - first)
                 throw new PdfParseException("bad object stream member offset");
+            if (on.Value == streamNumber)
+                throw new PdfParseException("object stream cannot contain its own stream object");
             if (i == 0 && off.Value != 0)
                 throw new PdfParseException("first object stream member offset must be zero");
             if (off.Value <= previousOffset)
@@ -555,7 +557,7 @@ public sealed class PdfFile
             if (_dec is not null && num != _encObj) st = (PdfStream)_dec.Decrypt(st, num, 0);
             try
             {
-                var map = ReadObjectStreamIndex(st);
+                var map = ReadObjectStreamIndex(st, num);
                 foreach (var member in map.Members)
                     Xref[member.Key] = new XrefEntry(true, true, num, member.Value.Index);
             }

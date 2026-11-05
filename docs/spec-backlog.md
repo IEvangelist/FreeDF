@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream container self identities
+
+ISO 32000-1 7.5.7 (printed p45) prohibits stream objects as compressed
+members; 7.3.10 (printed p21) requires unique object-number/generation
+identity. The shared complete index now rejects its container's own object
+number, before publishing any members. Recovery can no longer replace the
+container entry with a compressed entry pointing back to itself.
+
+Eight controls cover first/later self entries, normal/forced recovery,
+atomic preservation of an existing uncompressed Target and valid distinct
+member numbers. Initial build hit a corrupt generated Content reference
+assembly; rebuilding that project serially on unchanged production restored
+compilation. The actual baseline then had four failed/four passed controls.
+Recovery negatives assert index state before any unsafe dereference; the
+old self-referential entry was not traversed. Full Release: 19,079 passed,
+zero failed/skipped. Solution: zero errors/two retained machine-feed
+NU1507 warnings.
+
+Six native PDFs preserve four valid normal/recovery outputs unchanged.
+Two normal self-member lookups now recover original Target instead of
+Compressed; MuPDF still exposes Compressed for both and agrees on four
+positives. Native baseline lookups deliberately omit forced-repair negatives,
+which are covered by the safe index-state unit controls instead.
+Fresh pinned 435-PDF/870-result full corpus JSON is wholly unchanged against
+the token-start baseline.
+
+This enforces the container's own identity, not all cross-stream cycles,
+duplicate definitions, metadata-reference reentrancy, incremental lifecycle
+rules or eager global stream inventory. Those remain separate.
+
 ## 2026-11-05 compressed member regular-token starts
 
 ISO 32000-1 7.2.2 (printed p13) defines consecutive regular bytes as

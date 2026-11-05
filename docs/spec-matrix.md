@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream container self-identity check](spec-backlog.md#2026-11-05-object-stream-container-self-identities)
+rejects the container's own number before member publication, preserving
+uncompressed recovery identities. Safe index-state controls, native
+disagreement and unchanged corpus JSON are recorded. Cross-stream cycles,
+metadata reentrancy, global inventory and lifecycle rules remain separate.
+
 The [compressed member regular-token-start check](spec-backlog.md#2026-11-05-compressed-member-regular-token-starts)
 rejects requested offsets splitting consecutive regular bytes, without
 eagerly parsing adjacent members. Valid delimiter adjacency remains supported.
