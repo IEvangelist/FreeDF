@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [compressed literal string termination check](spec-backlog.md#2026-11-05-compressed-literal-string-termination)
+rejects unbalanced strings in the member-only lexer mode, preserving exact
+positive string bytes and default lexer recovery. Native/reference limits
+and unchanged corpus JSON are recorded. Hexadecimal and dictionary/numeric/name
+grammar, byte-limited parsing and resource budgets remain separate.
+
 The [compressed container closer check](spec-backlog.md#2026-11-05-compressed-container-closing-delimiters)
 requires array/dictionary closing delimiters in an internal member-only lexer
 mode. Default lexer behavior and lazy member isolation remain unchanged.

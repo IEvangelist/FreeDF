@@ -26,11 +26,11 @@ public sealed class PdfLexer
     };
 
     readonly byte[] _d;
-    readonly bool _requireContainerClosers;
+    readonly bool _requireClosingDelimiters;
     public int Pos;
     public PdfLexer(byte[] data, int pos = 0) { _d = data; Pos = pos; }
-    internal PdfLexer(byte[] data, int pos, bool requireContainerClosers) : this(data, pos)
-        => _requireContainerClosers = requireContainerClosers;
+    internal PdfLexer(byte[] data, int pos, bool requireClosingDelimiters) : this(data, pos)
+        => _requireClosingDelimiters = requireClosingDelimiters;
     public int Length => _d.Length;
     public byte[] Data => _d;
 
@@ -228,6 +228,8 @@ public sealed class PdfLexer
             else if (c == 13) { b.Add(10); if (Pos < _d.Length && _d[Pos] == 10) Pos++; }
             else b.Add(c);
         }
+        if (depth != 0 && _requireClosingDelimiters)
+            throw new PdfParseException("unterminated literal string in object stream member");
         return new PdfString(b.ToArray());
     }
 
@@ -238,7 +240,7 @@ public sealed class PdfLexer
         while (true)
         {
             var o = ReadObject(resolveRefs);
-            if (o is null && _requireContainerClosers)
+            if (o is null && _requireClosingDelimiters)
                 throw new PdfParseException("unterminated array in object stream member");
             if (o is null || o is PdfKeyword { Value: "]" }) break;
             items.Add(o);
@@ -254,12 +256,12 @@ public sealed class PdfLexer
         while (true)
         {
             var k = ReadObject(resolveRefs);
-            if (k is null && _requireContainerClosers)
+            if (k is null && _requireClosingDelimiters)
                 throw new PdfParseException("unterminated dictionary in object stream member");
             if (k is null || k is PdfKeyword { Value: ">>" }) break;
             if (k is not PdfName name) continue;
             var v = ReadObject(resolveRefs);
-            if (v is null && _requireContainerClosers)
+            if (v is null && _requireClosingDelimiters)
                 throw new PdfParseException("unterminated dictionary in object stream member");
             if (v is null) break;
             if (v is PdfKeyword { Value: ">>" }) { d[name.Value] = PdfNull.Instance; break; }

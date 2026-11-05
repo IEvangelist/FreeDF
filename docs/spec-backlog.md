@@ -4,6 +4,30 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 compressed literal string termination
+
+ISO 32000-1 7.3.4.1 (printed p14) requires literal strings to be
+enclosed in parentheses. The internal compressed-member lexer mode now rejects
+EOF while parentheses remain unbalanced, including an escaped last closer or
+trailing backslash/line continuation. Default lexer recovery is unchanged.
+
+Nineteen controls cover malformed direct/nested strings, exact decoded bytes
+for balanced parentheses and escaped/octal/continued strings, repeated lookup,
+lazy member isolation and default lexer compatibility. The initial selector
+had ten failures. Full Release: 18,762 passed, zero failed/skipped. Solution:
+zero errors/two retained machine-feed NU1507 warnings.
+
+Thirty-two native PDFs preserve sixteen valid outputs unchanged. Sixteen
+malformed inputs now explicitly report unterminated literal strings: twelve
+previously returned partial strings; four nested cases already failed on
+missing container closers. MuPDF reports no probe exceptions; absent Type is
+not proof that complete string contents agree. Exact decoded positive bytes
+are covered by the unit controls. Fresh pinned 435-PDF/870-result full corpus
+JSON is wholly unchanged against the container-closer baseline.
+
+Hexadecimal grammar, discarded dictionary keys/missing values, numeric/name
+grammar and byte-limited/resource enforcement remain separate.
+
 ## 2026-11-05 compressed container closing delimiters
 
 ISO 32000-1 7.3.6 and 7.3.7 (printed p18) require arrays and
