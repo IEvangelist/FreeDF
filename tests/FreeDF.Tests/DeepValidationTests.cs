@@ -1986,6 +1986,75 @@ public class DeepValidationTests
         Assert.False(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
     }
 
+    public static IEnumerable<object[]> RootKidsShapeCases()
+    {
+        (string Kids, bool Invalid)[] values =
+        [
+            ("7 0 R", false), ("[7 0 R]", false), ("[]", false), ("null", false),
+            ("/Bad", true), ("1", true), ("1.0", true), ("(bad)", true), ("true", true),
+            ("[7 0 R 0]", true), ("[7 0 R [7 0 R]]", true), ("[7 0 R null]", false),
+            ("[7 0 R 9 0 R]", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var (kids, invalid) in values)
+            yield return [part, kids, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(RootKidsShapeCases))]
+    public void Ua2RootKidsRequireDictionaryOrFlatDictionaryArray(int part, string kids, bool invalid)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: [Para, "/Bad"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(kids)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.Equal(part == 2 && kids == "[7 0 R null]", report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2RootKidsTypeReferenceDepthIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "[7 0 R /Bad]" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: new[] { Para }.Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] = new PdfRef(9, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2RootKidsKnownTypeAndNullErrorsSurviveLaterIncompleteItem()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: [Para, "9 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] =
+            new PdfArray([new PdfRef(7, 0), new PdfName("Bad"), new PdfNull(), new PdfRef(9, 0)]);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.True(report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.True(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2RootKidsTypeArrayWorkBoundRetainsKnownInvalidType(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: [Para]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(new PdfName("Bad"), count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

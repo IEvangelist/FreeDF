@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary root child-type check](spec-backlog.md#2026-11-05-primary-structure-root-child-types)
+requires root K dictionary/flat dictionary-array shape, retaining existing
+null and bounded-inspection diagnostics. Nine corrected native controls
+retain two positives and an existing integer rejection; six newly rejected
+primary negatives are still accepted by the reference. The fresh corpus is
+wholly unchanged. Complete dictionary identity/schema and element K rules
+remain outside this slice.
+
 The [primary namespace registry check](spec-backlog.md#2026-11-05-primary-namespace-registration-identity)
 requires referenced dictionaries in the root Namespaces array by identity,
 with explicit bounded-inspection errors. Six native controls retain two

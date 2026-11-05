@@ -436,7 +436,7 @@ internal static class PdfUA2Checks
     static void Elements(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
-        StructureArrayNulls(c, tree.Root, "K", "ISO 32000-2 14.7.2 Table 354", null);
+        StructureRootKids(c, tree.Root);
         foreach (var e in tree.Elements())
         {
             if (e.Dict.Get("NS") is PdfDictionary)
@@ -576,7 +576,31 @@ internal static class PdfUA2Checks
                 $"structure {key} array contains a null item", clause, page);
     }
 
-    static bool ArrayContainsNull(ValidationContext c, PdfArray array, Action incompleteInspection)
+    static void StructureRootKids(ValidationContext c, PdfDictionary root)
+    {
+        const string clause = "ISO 32000-2 14.7.2 Table 354";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-STRUCT-K-INCOMPLETE", ValidationSeverity.Error,
+                "structure root K inspection exceeds its reference/work bound", clause);
+        }
+        var value = ResolveBounded(c.F, root.Get("K"), Incomplete);
+        if (incomplete || value is null or PdfNull) return;
+        bool invalidType = value is not (PdfDictionary or PdfArray);
+        if (value is PdfArray array && ArrayContainsNull(c, array, Incomplete,
+            item => invalidType |= item is not (null or PdfNull or PdfDictionary)))
+            c.Add("PDFUA2-STRUCT-K-NULL", ValidationSeverity.Error,
+                "structure K array contains a null item", clause);
+        if (invalidType)
+            c.Add("PDFUA2-STRUCT-ROOT-K-TYPE", ValidationSeverity.Error,
+                "structure root K must be a dictionary or a flat array of dictionaries", clause);
+    }
+
+    static bool ArrayContainsNull(ValidationContext c, PdfArray array, Action incompleteInspection,
+        Action<PdfObject?>? inspectItem = null)
     {
         bool incomplete = false;
         void Incomplete()
@@ -592,6 +616,7 @@ internal static class PdfUA2Checks
             var item = ResolveBounded(c.F, raw, Incomplete);
             if (incomplete) break;
             foundNull |= item is null or PdfNull;
+            inspectItem?.Invoke(item);
         }
         return foundNull;
     }

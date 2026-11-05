@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary structure-root child types
+
+Published PDF 2.0 errata, 14.7.2 Table 354, defines root K as a dictionary
+representing a structure element or an array of such dictionaries. UA-2 now
+rejects non-dictionary scalar values and non-null non-dictionary array entries
+with PDFUA2-STRUCT-ROOT-K-TYPE. Nested arrays are not dictionaries. This reuses
+the existing bounded null-item scanner; root null diagnostics are retained,
+and PDFUA2-STRUCT-K-INCOMPLETE still reports cycles, reference depth beyond 32
+and array work beyond 200,000. Known type/null errors remain when a later item
+cannot be inspected. Optional null/omission, root empty arrays and complete
+structure-element dictionary identity/schema are not newly enforced.
+
+Nine corrected native controls retain two positives and reject seven primary
+negatives. The integer case was already invalid for root-content containment.
+Six other files were previously accepted and now reject; all six are still
+accepted by normal independent combined-reference jobs. The two positives
+and existing integer negative agree. These are **six explicit
+primary/reference disagreements**, not six reference-confirmed corrections.
+Initial controls accidentally referenced source object 7 (an integer), not
+Document 11; they and their reports are preserved and excluded from the
+conforming control count. Corrected controls derive and verify the source
+Document reference. Token spacing in PyMuPDF output is checked separately
+from object type.
+
+The initial 29 authored cases had ten failures; two further work-bound cases
+retain an already-known invalid type. All 31 new cases and 479 focused cases
+pass. Fresh 435-PDF/870-result comparison is wholly unchanged, including all
+file verdicts and UA-1 outputs. Full element K type/nonempty-array rules,
+ClassMap array syntax and root dictionary identity remain separate; no
+reference predicate mapping or complete structure-conformance claim is made.
+Full Release: 15,064 cases pass without skips. Initial solution compilation
+reported CS0009 on the generated Samples Debug reference assembly; metadata
+inspection confirmed that artifact lacked managed metadata. A targeted
+non-incremental Samples rebuild and unchanged solution rerun succeeded with
+zero errors/two retained machine-feed NU1507 warnings. No source outside this
+slice was changed; the artifact failure's cause is not established.
+
 ## 2026-11-05 primary namespace registration identity
 
 Published PDF 2.0 errata, 14.7.2 Tables 354/355, requires every namespace

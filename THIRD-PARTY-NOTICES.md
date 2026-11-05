@@ -326,6 +326,13 @@ now reject. Two corpus files gain diagnostics absent from the reference's
 other-rule rejections. These differences are explicit, not a reference
 predicate mapping or complete namespace/traversal conformance.
 
+The structure-root K shape check follows Table 354's dictionary or array of
+dictionaries fact at the same errata source. It reuses independently written
+bounded inspection. Nine corrected native controls have two retained
+positives and seven primary negatives; six newly rejected files remain
+accepted by the reference. Those differences are explicit. Full structure
+dictionary identity/schema and element K shape are not established.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and
