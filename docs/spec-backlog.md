@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 LZW end-of-data extent
+
+ISO 32000-1 7.3.8.2 (printed p20) requires stream Length, decoded size and
+self-limiting EOD constraints to be consistent; excess data is an error.
+Section 7.4.4.2 (p27) defines zero padding in the final byte after LZW EOD.
+Checking only those pad bits still allowed complete extra encoded bytes.
+
+The strict LZW decoder now requires the byte containing EOD to be the last
+source byte. It rejects zero/garbage bytes, CRLF and concatenated streams after
+that byte; ordinary permissive recovery remains unchanged. This check is at
+the LZW pipeline stage: the CRLF negative is itself encoded inside an outer
+ASCIIHex payload, not the permitted physical EOL outside logical stream data
+before endstream. No change is made to that physical framing exception.
+
+Twenty-four tests reproduce eight unchanged-production failures/sixteen passes:
+four excess-byte forms with both EarlyChange modes, and valid streams covering
+all eight final-byte alignments with each mode. They also cover unchanged
+ordinary decoded bytes and normal/forced-repair member absence.
+Final focused selector: 970 passed. Full Release: 19,431 passed, zero failed/
+skipped. Solution: zero warnings/errors.
+
+Fifty-four independently encoded/retained controls comprise sixteen excess-byte
+negatives and thirty-eight valid files. Every negative previously published
+Target and now leaves the member absent after repair. All valid outcomes are
+identical, including all eight byte alignments in both EarlyChange modes under
+normal/forced repair, and six retained encrypted positives. MuPDF exposes Target
+for all fifty-four: recovery is not strict extent conformance. Fresh pinned
+435-PDF/870-result full corpus JSON remains wholly unchanged.
+
+The [eight-case valid-path follow-up](../bench/FreeDF.Bench/README.md#lzw-extent-follow-up-2026-11-05)
+uses the preceding strict candidate as its exact-source control. All input
+hashes and reported allocations are identical. Three LZW means fall and one
+rises; all four reported timing intervals overlap. This retains the previous
+8 KiB managed-allocation reduction, not a new speedup or zero-cost assertion.
+Other filter EOD/consumed-input rules, exhaustive LZW parameter/lifecycle
+validation and complete filter parity remain separate.
+
 ## 2026-11-05 strict LZW code streams
 
 ISO 32000-1 7.4.4.2 (printed pp26-27) defines initial clear-table code 256,

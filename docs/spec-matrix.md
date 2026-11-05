@@ -11,6 +11,10 @@ dictionary references before object-stream publication. Both EarlyChange modes,
 supported; ordinary recovery is unchanged. Strict paths reject invalid parameter
 types and dictionary growth beyond entry 4095. This is bounded code-stream
 validation, not complete LZW/filter or full-spec parity.
+The [LZW extent follow-up](spec-backlog.md#2026-11-05-lzw-end-of-data-extent)
+also rejects complete encoded bytes after EOD's final padded byte, preserving
+all eight valid byte alignments and ordinary recovery. This checks logical
+pipeline input, not the optional physical EOL preceding endstream.
 
 The [object-stream strict-filter path](spec-backlog.md#2026-11-05-object-stream-strict-filter-decoding)
 uses existing ASCIIHex/ASCII85/RunLength and zlib/predictor checks before

@@ -224,6 +224,29 @@ Provider correctness preflight passes; provider timings were not rerun here.
 The [scoped parity record](../../docs/spec-backlog.md#2026-11-05-strict-lzw-code-streams)
 keeps malformed-stream acceptance separate from these valid-path measurements.
 
+### LZW extent follow-up: 2026-11-05
+
+The [extent candidate](results/2026-11-05-lzw-extent.md)
+([CSV](results/2026-11-05-lzw-extent.csv)) adds a final-byte consumed-input
+comparison to strict LZW. Its matched control is the strict candidate above,
+production revision `0fb56ab8905b9ffa26e702a583f6418d2a15e3b0`;
+the benchmark harness, all eight fixture hashes and measurement settings
+are unchanged. Provider/parser/parameter preflight passes.
+
+| LZW filters / indirect | Previous mean (us) | Extent mean (us) | Both allocated (KiB) |
+|---|---:|---:|---:|
+| 1 / No | 9.050 | 7.269 | 36.12 |
+| 1 / Yes | 8.706 | 8.134 | 35.74 |
+| 2 / No | 9.823 | 8.964 | 37.90 |
+| 2 / Yes | 8.582 | 8.900 | 37.30 |
+
+All eight reported managed allocations remain identical, retaining the
+preceding LZW 8 KiB reduction. Three LZW means fall and one rises; all four
+reported timing intervals overlap. Unchanged Flate means also move in both
+directions. No speedup, zero-cost or exclusive-load guarantee is inferred.
+The [scoped extent record](../../docs/spec-backlog.md#2026-11-05-lzw-end-of-data-extent)
+separates invalid excess-byte controls from these valid operations.
+
 ### Matched parameter-schema control: 2026-11-05
 
 The [metadata control report](results/2026-11-05-filter-metadata-control.md)

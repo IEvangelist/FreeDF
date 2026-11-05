@@ -326,6 +326,7 @@ public static class PdfFilters
             if (code == 257)
             {
                 if (strict && bitBuf != 0) throw new InvalidDataException("LZW final byte padding must be zero");
+                if (strict && pos != s.Length) throw new InvalidDataException("Unexpected bytes after LZW end marker");
                 break;
             }
             byte[] entry;

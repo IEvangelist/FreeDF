@@ -50,6 +50,60 @@ public class StrictLzwTests
     public void Strict_lzw_supports_complete_empty_streams(int early)
         => Assert.Equal(Array.Empty<byte>(), Decode(Pack([256, 257]), true, early));
 
+    [Theory]
+    [InlineData(0, "zero")]
+    [InlineData(1, "zero")]
+    [InlineData(0, "garbage")]
+    [InlineData(1, "garbage")]
+    [InlineData(0, "newline")]
+    [InlineData(1, "newline")]
+    [InlineData(0, "second-stream")]
+    [InlineData(1, "second-stream")]
+    public void Strict_lzw_rejects_encoded_bytes_after_the_final_byte(int early, string tail)
+    {
+        var (complete, expected) = Encode("complete");
+        byte[] extra = tail switch
+        {
+            "zero" => [0], "garbage" => [255], "newline" => [13, 10], _ => Pack([256, 257])
+        };
+        byte[] encoded = [.. complete, .. extra];
+        Assert.Equal(expected, Decode(encoded, false, early));
+        Assert.Throws<InvalidDataException>(() => Decode(encoded, true, early));
+        foreach (var repair in new[] { false, true })
+        {
+            var file = PdfFile.Load(ObjectStreamFilterNameTests.Build("[/ASCIIHexDecode /LZWDecode]",
+                "null", false, repair, decodeParms: $"[null << /EarlyChange {early} >>]",
+                encodedOverride: Convert.ToHexString(encoded) + ">"));
+            Assert.IsType<PdfNull>(file.Resolve(file.Catalog.Get("Probe")));
+            Assert.True(file.Repaired);
+            Assert.False(file.Xref.ContainsKey(2));
+        }
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    [InlineData(0, 1)]
+    [InlineData(1, 1)]
+    [InlineData(0, 2)]
+    [InlineData(1, 2)]
+    [InlineData(0, 3)]
+    [InlineData(1, 3)]
+    [InlineData(0, 4)]
+    [InlineData(1, 4)]
+    [InlineData(0, 5)]
+    [InlineData(1, 5)]
+    [InlineData(0, 6)]
+    [InlineData(1, 6)]
+    [InlineData(0, 7)]
+    [InlineData(1, 7)]
+    public void Strict_lzw_preserves_all_final_byte_alignments(int early, int literalCount)
+    {
+        var expected = new byte[literalCount];
+        var encoded = Pack(new[] { 256 }.Concat(expected.Select(x => (int)x)).Append(257));
+        Assert.Equal(expected, Decode(encoded, true, early));
+    }
+
     [Fact]
     public void Strict_lzw_matches_independent_libtiff_fixture()
     {
