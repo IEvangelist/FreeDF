@@ -60,6 +60,7 @@ switch ($Chunk) {
         Run 'stable selection, dragging and sidebar focus' { Smoke @('--interactions', $Site) }
         Remove-Item Env:EDITOR_PERF_REPORT_ONLY
         Run 'New document preview and choice controls' { Smoke @('--choices', $Site) }
+        Run 'image cropping, transforms and grid snapping' { Smoke @('--image-tools', $Site) }
         Run 'Merge PDFs flow' { Smoke @('--merge', $Site) }
         Run 'one-click sample collection' { Smoke @('--samples', $Site) }
         Run 'annotation authoring' { Smoke @('--annotations', $Site) }

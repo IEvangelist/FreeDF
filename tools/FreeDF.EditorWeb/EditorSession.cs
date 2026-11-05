@@ -597,6 +597,7 @@ public sealed partial class EditorSession(FontCatalog catalog, IFontFallback? fo
             var page = data.Pages[i];
             var list = page.Items.Select(it => it is null ? throw new InvalidDataException("A recovery item is invalid.") :
                 it with { Orig = RemapOriginal(it.Orig, form => forward[form]) }).ToList();
+            foreach (var item in list) OverlayBuilder.ValidateImage(item);
             if (list.Select(it => it.Asset).OfType<string>().Where(id => id.Length > 0).Concat(page.History).Any(id => !restored.assets.ContainsKey(id)))
                 throw new InvalidDataException("A recovery image reference has no retained bytes.");
             restored.items[page.Id] = list;
@@ -791,17 +792,21 @@ public sealed partial class EditorSession(FontCatalog catalog, IFontFallback? fo
                         var oldBaseItems = items.GetValueOrDefault(id)?.Where(AffectsBase).ToArray() ?? [];
                         using var payload = JsonDocument.Parse(body ?? []);
                         List<Item> updatedItems;
+                        ItemUpdate? update = null;
                         if (payload.RootElement.ValueKind == JsonValueKind.Array)
                         {
                             updatedItems = Read<List<Item>>() ?? [];
-                            items[id] = updatedItems;
-                            historyAssets.Remove(id);
                         }
                         else
                         {
-                            var update = Read<ItemUpdate>() ?? throw new ArgumentException("Missing item update.");
+                            update = Read<ItemUpdate>() ?? throw new ArgumentException("Missing item update.");
                             updatedItems = update.Items;
-                            items[id] = updatedItems;
+                        }
+                        foreach (var item in updatedItems) OverlayBuilder.ValidateImage(item);
+                        items[id] = updatedItems;
+                        if (update is null) historyAssets.Remove(id);
+                        else
+                        {
                             historyAssets[id] = update.HistoryAssets.ToHashSet();
                             if (update.ClipboardAssets is { } clipboard) clipboardAssets = clipboard.ToHashSet();
                         }

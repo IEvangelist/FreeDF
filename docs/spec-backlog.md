@@ -75,6 +75,93 @@ No production validation behavior or public profile is changed by this
 remeasurement. The older dated totals below remain historical; these new
 14/9/9 misses are not a claim of full rule coverage or PDF/UA certification.
 
+## 2026-11-04 PDF/UA embedded CIDFont mapping entries
+
+The embedded CIDFontType2 check now resolves `/CIDToGIDMap` and accepts only
+a stream or the name `/Identity`. Merely having a key no longer accepts
+`/NoIdentity`, an empty name, null, numbers, strings, arrays or dictionaries.
+Indirect entries follow the same rule, including unresolved/cyclic references.
+The existing nonembedded-font and CIDFontType0 exemptions remain unchanged.
+The finding is still `PDFUA-FONT-CIDTOGID`; its UA-2 clause is corrected to
+8.4.5.3.2 (UA-1 remains 7.21.3.2). This verifies the dictionary entry's
+representation, not stream decoding/length, CID/glyph coverage, font-program
+validity or actual glyph use. PDF/A behavior is unchanged by this slice.
+
+All eight pinned public CIDFont controls agree on the exact veraPDF 1.30.3
+rule: six negatives and two positives, zero exclusions. Four formerly missed
+negatives (`t01-fail-a/c` in each profile) now fail the intended finding.
+The retained reference reports from the full remeasurement above were compared
+against fresh FreeDF results for all 435 SHA-verified PDFs; exactly these four
+whole-file verdicts change and no public positive changes.
+
+| Reference profile | Compared | Both pass | Both fail | Misses | False positives | Excluded |
+|---|---|---|---|---|---|---|
+| UA-1 | 297 | 141 | 144 | 12 | 0 | 0 |
+| UA-2 standalone, explicit XML | 138 | 54 | 77 | 7 | 0 | 0 |
+| UA-2 + ISO 32005, explicit XML | 138 | 54 | 77 | 7 | 0 | 0 |
+
+`PdfUaCidToGidTests` adds 112 rule-specific cases for both profiles,
+embedded/nonembedded Type0/Type2 descendants and direct/indirect/null/invalid
+map values. Twenty-one fail before the fix (including the old UA-2 clause).
+Synthetic font streams exercise the validator and are not conformant real
+fonts. The baseline 14/9/9 totals above remain dated evidence; remaining font,
+widget, table, grouping/sequence and semantic gaps stay open under #11.
+
+## 2026-11-04 PDF/UA named encoding CMap references
+
+`PDFUA-FONT-CMAP-REFERENCE` rejects a non-predefined name in `/UseCMap`
+of an embedded Type0 encoding CMap dictionary. Indirect names are resolved;
+Identity-H/V and the existing PDF standard CMap vocabulary remain accepted.
+Clauses are ISO 14289-1 7.21.3.3 and ISO 14289-2 8.4.5.4 (profile test 3).
+This is not a general CMap evaluator: program-level `usecmap`, stream-valued
+parents, ToUnicode references, inheritance and malformed-reference completeness
+remain open. No external CMap is loaded or executed.
+
+All four pinned public `t03` CMap controls agree on the exact veraPDF rule
+(two negatives/two positives, zero excluded). Both former missed negatives
+reference `/Adobe-Korea1-2`; the positives reference `/H`. Forty-eight
+authored cases cover eight accepted names and four rejected names, both UA
+profiles and direct/indirect representation; sixteen fail before the fix.
+Their synthetic CMap/font data establishes only the selected check.
+
+Fresh results for all 435 verified corpus files against the retained explicit
+reference profiles change exactly these two verdicts relative to the CIDFont
+checkpoint: UA-1 has 145 both-fail, 141 both-pass and 11 misses; both UA-2
+profiles have 78 both-fail, 54 both-pass and 6 misses. No false positives or
+exclusions arise, and no positive changes. Family-rule overlap mappings in
+`ua_crosscheck.py` name the new finding, not exhaustive predicate coverage.
+Earlier measurements remain dated; remaining scope stays open under #11.
+
+## 2026-11-04 PDF/UA-1 terminal field descriptions
+
+For widgets indexed through the AcroForm field tree, the UA-1 description
+check now reads `/TU` from the actual terminal field, not a widget-only
+dictionary or a nonterminal ancestor. A field without a nonempty tooltip
+still passes when each visible widget has `/Alt` on its own enclosing
+structure element. Hidden/outside-CropBox exemptions and merged field/widget
+dictionaries are preserved. UA-2 is unchanged. The existing bounded field-detail
+walker supplies ownership; truncation or multiple terminal owners reports
+`PDFUA-FORM-INCOMPLETE` as an Error rather than a complete check.
+
+All ten public UA-1 `7.18.1-t03` controls match the exact veraPDF rule
+(four negatives/six positives, zero excluded). The previously missed
+`t03-fail-d` has tooltips only on its two widget dictionaries, not on their
+shared terminal field. Sixty-four authored cases cover tooltip placement,
+null/empty/indirect text, per-widget Alt, hidden widgets, ambiguous owners
+and the depth-64/65 boundary; ten of the initial 61 fail before the fix.
+ISO 32000-1 Table 220 (printed page 433, PDF page 441) defines `/TU` on the
+field without the inheritable designation. This checks presence/ownership,
+not the description's human usefulness.
+
+All 435 verified corpus files were compared again with the retained reports.
+Exactly one UA-1 whole-file verdict changes relative to the CMap checkpoint:
+146 both-fail, 141 both-pass, 10 misses; both UA-2 profiles remain at
+78 both-fail, 54 both-pass, 6 misses with identical error/warning rows.
+There are no false positives/exclusions or changed public positives.
+Unindexed/malformed field graphs retain the existing fallback and are not
+claimed as complete ownership validation. No PDF is bundled; remaining
+font/table/grouping/semantic work stays open under #11.
+
 ## PDF/A image/Form dictionary policies
 
 Image XObjects now reject non-null `/Alternates` and `/OPI`, and Form XObjects

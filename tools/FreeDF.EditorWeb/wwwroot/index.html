@@ -63,6 +63,8 @@
   <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 017.5-2"/></symbol>
   <symbol id="i-sidel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
   <symbol id="i-sider" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <!-- Tabler Icons grid-3x3, MIT, (c) Paweł Kuna. See THIRD-PARTY-NOTICES.md -->
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 8h18M3 16h18M8 3v18M16 3v18"/></symbol>
   <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 010 16z" fill="currentColor"/></symbol>
   <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
@@ -112,8 +114,9 @@
         <label class="btn icon" title="Insert image" tabindex="0" role="button" aria-label="Insert image"><svg class="i"><use href="#i-image"/></svg><input id="img" type="file" accept="image/png,image/jpeg" hidden></label>
       </div>
       <span class="grow"></span>
-      <button id="lock" class="icon toggle" title="Lock positions and sizes (Ctrl+Shift+L)" aria-pressed="false"><svg class="i"><use href="#i-unlock"/></svg></button>
-      <button id="prev" title="Show the real rendered output"><svg class="i"><use href="#i-eye"/></svg>Preview</button>
+      <button id="layout" class="icon reveal-label" title="Grid &amp; snap" aria-label="Grid and snapping" aria-haspopup="dialog"><svg class="i" aria-hidden="true"><use href="#i-grid"/></svg></button>
+      <button id="lock" class="icon toggle reveal-label" title="Lock positions and sizes (Ctrl+Shift+L)" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-unlock"/></svg></button>
+      <button id="prev" class="icon toggle reveal-label" title="Preview rendered output" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-eye"/></svg></button>
       <span class="sp"></span>
       <div class="group" id="nav">
         <button id="pp" class="icon" title="Previous page (PageUp)"><svg class="i"><use href="#i-up"/></svg></button>
@@ -222,6 +225,44 @@ const normFont = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 let S = 1, pageHint = null, geom = null, spans = [], origKey = '', fields = [], widgets = [], widgetStamp = 0, widgetEl = null, widgetKey = '', objs = [], curObj = null, curSpan = null, formUi = null;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ic = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+let grid = { visible: false, snap: false, spacing: 12 };
+try {
+  const saved = JSON.parse(localStorage.getItem('editor.grid') || 'null');
+  if (saved && Number.isFinite(saved.spacing) && saved.spacing >= 2 && saved.spacing <= 144)
+    grid = { visible: saved.visible === true, snap: saved.snap === true, spacing: saved.spacing };
+} catch (error) { console.warn('Could not restore grid preferences.', error); }
+function snapPoint(x, y, event) {
+  if (!grid.snap || event?.ctrlKey || event?.metaKey) return [x, y];
+  return [Math.round(x / grid.spacing) * grid.spacing, Math.round(y / grid.spacing) * grid.spacing];
+}
+function moveDelta(x, y, dx, dy, event) {
+  const horizontal = Math.abs(dx) >= Math.abs(dy);
+  let [nx, ny] = snapPoint(x + dx, y + dy, event);
+  if (event?.shiftKey) { if (horizontal) ny = y; else nx = x; }
+  return [nx - x, ny - y];
+}
+function paintGrid() {
+  const layer = $('layer');
+  if (!layer) return;
+  layer.classList.toggle('page-grid', grid.visible);
+  layer.style.setProperty('--grid-spacing', grid.spacing * S + 'px');
+  $('layout').classList.toggle('on', grid.visible || grid.snap);
+}
+function gridDialog() {
+  modal('Grid and snapping', `<label class="chk"><span>Show page grid</span><input type="checkbox" data-grid="visible"${grid.visible ? ' checked' : ''}></label>
+    <label class="chk"><span>Snap to grid</span><input type="checkbox" data-grid="snap"${grid.snap ? ' checked' : ''}></label>
+    <label>Grid spacing (points)<input type="number" min="2" max="144" step="1" data-spacing value="${grid.spacing}"></label>
+    <p class="dnote">The grid is an editing aid only and never appears in preview, saved PDFs or printing. Hold Ctrl (Command on Mac) while dragging to bypass snapping. Shift locks the axis or proportions; Alt resizes from the center.</p>
+    <p data-error role="alert"></p>`, 'Apply', o => {
+    const spacing = +o.querySelector('[data-spacing]').value;
+    if (!Number.isFinite(spacing) || spacing < 2 || spacing > 144) { o.querySelector('[data-error]').textContent = 'Choose a spacing from 2 to 144 points.'; return false; }
+    grid = { visible: o.querySelector('[data-grid=visible]').checked, snap: o.querySelector('[data-grid=snap]').checked, spacing };
+    try { localStorage.setItem('editor.grid', JSON.stringify(grid)); }
+    catch (error) { reportError(new Error(`Grid preferences could not be saved: ${error.message}`)); }
+    paintGrid();
+  });
+}
+$('layout').onclick = gridDialog;
 const okey = () => items.filter(i => i.orig != null).map(i => i.orig).sort((a, b) => a - b).join(',');
 // Maps a PDF font name such as "ABCDEF+Calibri-BoldItalic" to the best installed family, falling back to the standard three.
 const fontFamily = n => {
@@ -354,16 +395,19 @@ function moveSelection(dx, dy) {
 
 function multiPointerDown(ev, target) {
   if (ev.button !== 0) return false;
-  if (ev.shiftKey) { ev.preventDefault(); ev.stopPropagation(); toggleSelection(target); return true; }
+  if (ev.shiftKey && (locked || (target !== (cur || curObj || curSpan) && !multi.has(target)))) {
+    ev.preventDefault(); ev.stopPropagation(); toggleSelection(target); return true;
+  }
   if (!multi.has(target)) { multi.clear(); paintSelectionBox($('layer')); return false; }
   ev.stopPropagation();
   if (!canMoveSelection()) return true;
+  const origin = selectionBox();
   let dx = 0, dy = 0;
   drag(ev, () => {}, (point, start, event) => {
     let x = (point[0] - start[0]) / S, y = (point[1] - start[1]) / S;
-    if (event?.shiftKey) { if (Math.abs(x) > Math.abs(y)) y = 0; else x = 0; }
+    [x, y] = moveDelta(origin.x, origin.y, x, y, event);
     translateSelection(x - dx, y - dy); dx = x; dy = y; paint();
-  }, saveSelection);
+  }, saveSelection, false, () => { if (ev.shiftKey) toggleSelection(target); });
   return true;
 }
 
@@ -522,6 +566,7 @@ function scheduleNeighborPrefetch() {
 }
 async function select(retainedUndo = null) {
   multi.clear();
+  finishCrop(false);
   const epoch = ++selectionEpoch, page = sel;
   const v = $('view');
   v.inert = true;
@@ -568,6 +613,7 @@ function applyPageLayout(r, dw, dh, Lw, Lh, fitP) {
   layer.style.transform = tf; layer.style.display = preview ? 'none' : 'block';
   layer.onpointerdown = layerDown;
   geom = { r, dw, dh, Lw, Lh, page: sel };
+  paintGrid();
   const zoomText = Math.round(S * 72 / 96 * 100) + '%', zoomButton = $('zv');
   zoomButton.textContent = zoomText; zoomButton.setAttribute('aria-label', `Zoom ${zoomText}`);
   fitP0 = fitP; navUpdate();
@@ -704,10 +750,167 @@ function setObjectAffordance(el, o) {
 }
 
 let dragging = false;
+let cropEdit = null;
+function imagePoint(it, x, y) {
+  const crop = it.crop ?? { x: 0, y: 0, w: 1, h: 1 };
+  x = (x - crop.x) / crop.w; y = (y - crop.y) / crop.h;
+  if (it.flipX) x = 1 - x;
+  if (it.flipY) y = 1 - y;
+  [x, y] = ({ 90: [1 - y, x], 180: [1 - x, 1 - y], 270: [y, 1 - x] })[it.rotation] ?? [x, y];
+  return [it.x + x * it.w, it.y + y * it.h];
+}
+function applyImageCrop(it, crop) {
+  const a = imagePoint(it, crop.x, crop.y), b = imagePoint(it, crop.x + crop.w, crop.y + crop.h);
+  Object.assign(it, { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]), crop });
+}
+function imageSourcePoint(it, x, y) {
+  x = (x - it.x) / it.w; y = (y - it.y) / it.h;
+  [x, y] = ({ 90: [y, 1 - x], 180: [1 - x, 1 - y], 270: [1 - y, x] })[it.rotation] ?? [x, y];
+  if (it.flipX) x = 1 - x;
+  if (it.flipY) y = 1 - y;
+  const crop = it.crop ?? { x: 0, y: 0, w: 1, h: 1 };
+  return [crop.x + x * crop.w, crop.y + y * crop.h].map(v => Math.max(0, Math.min(1, v)));
+}
+function imageCropBox(it, box, edge, dx, dy, event) {
+  const full = { ...it }; applyImageCrop(full, { x: 0, y: 0, w: 1, h: 1 });
+  let [x0, y0, x1, y1] = box;
+  const minW = Math.min(4, full.w), minH = Math.min(4, full.h);
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  if (edge.includes('w')) x0 = clamp(snapPoint(x0 + dx, y0, event)[0], full.x, x1 - minW);
+  if (edge.includes('e')) x1 = clamp(snapPoint(x1 + dx, y1, event)[0], x0 + minW, full.x + full.w);
+  if (edge.includes('n')) y0 = clamp(snapPoint(x0, y0 + dy, event)[1], full.y, y1 - minH);
+  if (edge.includes('s')) y1 = clamp(snapPoint(x1, y1 + dy, event)[1], y0 + minH, full.y + full.h);
+  const a = imageSourcePoint(it, x0, y0), b = imageSourcePoint(it, x1, y1);
+  return { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) };
+}
+function transformImage(it, action) {
+  if (locked) { status('Positions and sizes are locked.'); return; }
+  commit(() => {
+    if (action === 'left' || action === 'right') {
+      const { w, h } = it;
+      it.x += (w - h) / 2; it.y += (h - w) / 2;
+      it.w = h; it.h = w; it.rotation = ((it.rotation || 0) + (action === 'right' ? 90 : 270)) % 360;
+    } else {
+      const axis = (action === 'horizontal') !== !!((it.rotation || 0) % 180) ? 'flipX' : 'flipY';
+      it[axis] = !it[axis];
+    }
+  });
+}
+function paintImageGeometry(el, it) {
+  const crop = it.crop ?? { x: 0, y: 0, w: 1, h: 1 }, r = it.rotation || 0;
+  const w = (r % 180 ? it.h : it.w) * S, h = (r % 180 ? it.w : it.h) * S;
+  const stage = el.querySelector('.image-stage'), image = el.querySelector('img');
+  Object.assign(stage.style, { width: w + 'px', height: h + 'px', transform:
+    ({ 90: `translate(${h}px,0) rotate(90deg)`, 180: `translate(${w}px,${h}px) rotate(180deg)`, 270: `translate(0,${w}px) rotate(270deg)` })[r] ?? '' });
+  el.querySelector('.image-flip').style.transform = `scale(${it.flipX ? -1 : 1},${it.flipY ? -1 : 1})`;
+  Object.assign(image.style, { width: 100 / crop.w + '%', height: 100 / crop.h + '%', left: -100 * crop.x / crop.w + '%', top: -100 * crop.y / crop.h + '%' });
+}
+async function cropImage(it) {
+  if (locked) { status('Positions and sizes are locked.'); return; }
+  if (cropEdit) finishCrop(false);
+  if (preview) { await $('prev').onclick(); await build(); }
+  if (!items.includes(it)) throw new Error('The selected image is no longer available.');
+  multi.clear();
+  cur = it; curObj = null; curSpan = null; setTool('select');
+  const full = { ...it }; applyImageCrop(full, { x: 0, y: 0, w: 1, h: 1 });
+  cropEdit = { it, draft: { ...it }, full };
+  const bar = document.createElement('div'); bar.className = 'crop-toolbar';
+  bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Crop image');
+  bar.innerHTML = '<button type="button" class="primary" data-crop-action="apply">Apply crop</button><button type="button" data-crop-action="cancel">Cancel</button><button type="button" data-crop-action="restore">Restore full image</button>';
+  bar.querySelector('[data-crop-action=apply]').onclick = () => finishCrop(true);
+  bar.querySelector('[data-crop-action=cancel]').onclick = () => finishCrop(false);
+  bar.querySelector('[data-crop-action=restore]').onclick = () => {
+    cropEdit.draft = { ...cropEdit.full }; paintCropGeometry($('layer').querySelector('.cropping'));
+  };
+  document.body.appendChild(bar);
+  if (innerWidth <= 760) { setPanel('l', false); setPanel('r', false); }
+  paint(); props();
+  $('layer').querySelector('[data-crop-handle=nw]')?.focus({ preventScroll: true });
+  status('Drag the image edges or corners to crop. Enter applies; Escape cancels.');
+}
+function finishCrop(apply) {
+  if (!cropEdit) return;
+  const { it, draft } = cropEdit;
+  cropEdit = null; document.querySelector('.crop-toolbar')?.remove();
+  if (apply && items.includes(it) && ['x', 'y', 'w', 'h'].some(key => Math.abs(it[key] - draft[key]) > 1e-8)) {
+    commit(() => Object.assign(it, draft));
+    status('Crop applied. The original image can still be restored.');
+  } else { paint(); props(); status(apply ? 'Crop unchanged.' : 'Crop cancelled.'); }
+}
+function positionCropToolbar() {
+  const bar = document.querySelector('.crop-toolbar'), image = $('layer')?.querySelector('.cropping');
+  if (!bar || !image) return;
+  const r = image.getBoundingClientRect(), view = $('view').getBoundingClientRect();
+  bar.style.setProperty('--crop-bottom', Math.max(12, innerHeight - view.bottom + 12) + 'px');
+  bar.style.left = Math.max(8, Math.min(r.left, innerWidth - bar.offsetWidth - 8)) + 'px';
+  bar.style.top = Math.max(view.top + 8, Math.min(r.top - bar.offsetHeight - 10, innerHeight - bar.offsetHeight - 8)) + 'px';
+}
+function paintCropGeometry(el) {
+  const { draft, full } = cropEdit;
+  Object.assign(el.style, { left: draft.x * S + 'px', top: draft.y * S + 'px', width: draft.w * S + 'px', height: draft.h * S + 'px' });
+  paintImageGeometry(el, draft);
+  const ghost = el.querySelector('.crop-original');
+  Object.assign(ghost.style, { left: (full.x - draft.x) * S + 'px', top: (full.y - draft.y) * S + 'px', width: full.w * S + 'px', height: full.h * S + 'px' });
+  paintImageGeometry(ghost, full);
+  const l = (draft.x - full.x) / full.w * 100, t = (draft.y - full.y) / full.h * 100;
+  const r = l + draft.w / full.w * 100, b = t + draft.h / full.h * 100;
+  ghost.style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${l}% ${t}%, ${r}% ${t}%, ${r}% ${b}%, ${l}% ${b}%, ${l}% ${t}%, 0 0)`;
+  positionCropToolbar();
+}
+function changeCrop(box, edge, dx, dy, event) {
+  const edit = cropEdit;
+  const crop = imageCropBox(edit.it, box, edge, dx, dy, event);
+  edit.draft = { ...edit.it }; applyImageCrop(edit.draft, crop);
+  paintCropGeometry($('layer').querySelector('.cropping'));
+}
+function cropHandles(el) {
+  for (const [edge, x, y, cursor, name] of [
+    ['nw', 0, 0, 'nwse-resize', 'top left'], ['n', 50, 0, 'ns-resize', 'top'], ['ne', 100, 0, 'nesw-resize', 'top right'],
+    ['w', 0, 50, 'ew-resize', 'left'], ['e', 100, 50, 'ew-resize', 'right'],
+    ['sw', 0, 100, 'nesw-resize', 'bottom left'], ['s', 50, 100, 'ns-resize', 'bottom'], ['se', 100, 100, 'nwse-resize', 'bottom right']]) {
+    const h = document.createElement('button'); h.type = 'button'; h.className = 'crop-handle'; h.dataset.cropHandle = edge;
+    h.setAttribute('aria-label', 'Crop ' + name); h.style.left = x + '%'; h.style.top = y + '%'; h.style.cursor = cursor;
+    const box = () => { const d = cropEdit.draft; return [d.x, d.y, d.x + d.w, d.y + d.h]; };
+    h.onkeydown = event => {
+      const step = event.shiftKey ? 10 : 1, delta = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
+      if (!delta) return;
+      event.preventDefault(); event.stopPropagation(); changeCrop(box(), edge, ...delta, { ctrlKey: true });
+    };
+    h.onpointerdown = event => {
+      if (event.button !== 0) return;
+      event.preventDefault(); event.stopPropagation(); h.focus({ preventScroll: true });
+      const edit = cropEdit, before = { ...edit.draft }, bounds = box(), start = toLayer(event.clientX, event.clientY).map(v => v / S);
+      h.setPointerCapture(event.pointerId);
+      h.onpointermove = move => {
+        if (move.pointerId !== event.pointerId || cropEdit !== edit) return;
+        const point = toLayer(move.clientX, move.clientY);
+        changeCrop(bounds, edge, point[0] / S - start[0], point[1] / S - start[1], move);
+      };
+      h.onpointerup = h.onpointercancel = h.onlostpointercapture = end => {
+        if (end.pointerId !== event.pointerId) return;
+        if (cropEdit === edit) {
+          if (end.type === 'pointerup') h.onpointermove(end);
+          else { edit.draft = before; paintCropGeometry(el); }
+        }
+        h.onpointermove = h.onpointerup = h.onpointercancel = h.onlostpointercapture = null;
+        if (h.hasPointerCapture(event.pointerId)) h.releasePointerCapture(event.pointerId);
+      };
+    };
+    el.appendChild(h);
+  }
+}
+document.addEventListener('pointerdown', event => {
+  if (cropEdit && event.target.closest?.('#layer') && !event.target.closest('.cropping')) {
+    event.preventDefault(); event.stopImmediatePropagation(); finishCrop(true);
+  }
+}, true);
+addEventListener('scroll', positionCropToolbar, true);
+addEventListener('resize', positionCropToolbar);
 function paintItem(e, it, activeEditor = null) {
+  const cropping = cropEdit?.it === it, display = cropping ? cropEdit.draft : it;
   e._it = it;
-  e.className = 'it' + (it === cur || multi.has(it) ? ' on' : '') + (it.type === 'text' ? ' txt' : '') + (it.type === 'redact' ? ' redact' : '');
-  e.style.left = it.x * S + 'px'; e.style.top = it.y * S + 'px'; e.style.opacity = it.opacity;
+  e.className = 'it' + (it === cur || multi.has(it) ? ' on' : '') + (it.type === 'text' ? ' txt' : '') + (it.type === 'redact' ? ' redact' : '') + (cropping ? ' cropping' : '');
+  e.style.left = display.x * S + 'px'; e.style.top = display.y * S + 'px'; e.style.opacity = it.opacity;
   if (it.type === 'text') {
     if (e !== activeEditor) e.textContent = it.text;
     e.style.fontSize = it.size * S + 'px'; e.style.color = it.color || '#000';
@@ -718,9 +921,14 @@ function paintItem(e, it, activeEditor = null) {
     if (it.w > 0) e.style.minWidth = it.w * S + 'px';
     if (it.orig != null) { e.style.color = 'transparent'; e.style.textDecoration = 'none'; }
   } else {
-    e.style.width = it.w * S + 'px'; e.style.height = it.h * S + 'px';
+    e.style.width = display.w * S + 'px'; e.style.height = display.h * S + 'px';
     if (it.type === 'image') {
-      e.innerHTML = '<img alt="Inserted image">';
+      e.innerHTML = '<div class="image-viewport"><div class="image-stage"><div class="image-flip"><img alt="Inserted image"></div></div></div>';
+      paintImageGeometry(e, display);
+      if (cropping) {
+        const ghost = document.createElement('div'); ghost.className = 'crop-original'; ghost.setAttribute('aria-hidden', 'true');
+        ghost.innerHTML = e.innerHTML; e.appendChild(ghost); paintCropGeometry(e);
+      }
     } else {
       e.style.background = it.fill || 'transparent';
       e.style.border = it.stroke && it.strokeWidth > 0 ? `${it.strokeWidth * S}px solid ${it.stroke}` : 'none';
@@ -728,9 +936,16 @@ function paintItem(e, it, activeEditor = null) {
     }
   }
   if (e === activeEditor) return;
-  e.onpointerdown = ev => { if (tool === 'select' && !e.isContentEditable) startMove(ev, it); };
+  e.onpointerdown = ev => {
+    if (cropping) { ev.preventDefault(); ev.stopPropagation(); return; }
+    if (tool === 'select' && !e.isContentEditable) startMove(ev, it);
+  };
+  e.onkeydown = cropping ? ev => {
+    if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finishCrop(ev.key === 'Enter'); }
+  } : null;
   if (it.type === 'text') e.ondblclick = () => editText(e, it);
-  if (it === cur && !editing) boxHandles(e, it);
+  if (it.type === 'image') e.ondblclick = () => { if (!cropEdit) cropImage(it).catch(reportError); };
+  if (it === cur && !editing) { if (cropping) cropHandles(e); else boxHandles(e, it); }
 }
 
 function paintDragGeometry(layer) {
@@ -756,6 +971,7 @@ function paintDragGeometry(layer) {
       } else {
         el.style.width = it.w * S + 'px'; el.style.height = it.h * S + 'px';
       }
+      if (it.type === 'image') paintImageGeometry(el, it);
     }
   }
   if (multi.size) paintSelectionBox(layer);
@@ -764,15 +980,19 @@ function paintDragGeometry(layer) {
 
 function paint() {
   const layer = $('layer'); if (!layer) return;
+  if (cropEdit && (cur !== cropEdit.it || !items.includes(cropEdit.it) || locked || tool !== 'select')) {
+    cropEdit = null; document.querySelector('.crop-toolbar')?.remove();
+  }
   if (dragging && paintDragGeometry(layer)) return;
   const activeEditor = editing && document.activeElement?.parentNode === layer &&
     document.activeElement.isContentEditable && items.includes(document.activeElement._it) ? document.activeElement : null;
+  const retained = activeEditor || (cropEdit ? layer.querySelector('.cropping') : null);
   const keepWidgets = widgetEl?.parentNode === layer && widgetKey === `${widgetStamp}|${S}|${tool}` &&
     tool === 'select' && widgets.length && !formUi?.editing();
   let content = document.createDocumentFragment();
-  const beforeEditor = content, afterEditor = activeEditor ? document.createDocumentFragment() : null, imageLoads = [];
-  if (keepWidgets || activeEditor) {
-    for (const child of [...layer.childNodes]) if (child !== activeEditor && (!keepWidgets || child !== widgetEl)) child.remove();
+  const beforeEditor = content, afterEditor = retained ? document.createDocumentFragment() : null, imageLoads = [];
+  if (keepWidgets || retained) {
+    for (const child of [...layer.childNodes]) if (child !== retained && (!keepWidgets || child !== widgetEl)) child.remove();
   } else layer.replaceChildren();
   paintFind(content);
   if (tool === 'select') {
@@ -813,9 +1033,9 @@ function paint() {
             paintItem(b, it);
           }
           let dx = (point[0] - start[0]) / S, dy = (point[1] - start[1]) / S;
-          if (event?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+          [dx, dy] = moveDelta(s.x, s.y - .95 * s.size, dx, dy, event);
           it.x = s.x + dx; it.y = s.y - .95 * s.size + dy; paint();
-        });
+        }, null, false, () => { if (ev.shiftKey) toggleSelection(s); });
       };
       b.ondblclick = () => { if (multi.size) selectSpan(s, b); focusTextProperties('[data-original-text]'); };
       content.appendChild(b);
@@ -835,14 +1055,15 @@ function paint() {
       if (it === cur) lineHandles(content, it);
       continue;
     }
-    const e = activeEditor?._it === it ? activeEditor : document.createElement('div');
-    paintItem(e, it, activeEditor);
-    if (e === activeEditor) { content = afterEditor; continue; }
+    const e = retained?._it === it ? retained : document.createElement('div');
+    if (e === retained && cropEdit?.it === it) paintCropGeometry(e); else paintItem(e, it, activeEditor);
+    if (e === retained) { content = afterEditor; continue; }
     content.appendChild(e);
-    if (it.type === 'image') imageLoads.push([e.querySelector('img'), `/api/asset/${it.asset}`]);
+    if (it.type === 'image') for (const image of e.querySelectorAll('img')) imageLoads.push([image, `/api/asset/${it.asset}`]);
   }
-  layer.insertBefore(beforeEditor, activeEditor || (keepWidgets ? widgetEl : null));
+  layer.insertBefore(beforeEditor, retained || (keepWidgets ? widgetEl : null));
   if (afterEditor) layer.insertBefore(afterEditor, keepWidgets ? widgetEl : null);
+  if (cropEdit) positionCropToolbar();
   for (const [image, url] of imageLoads) setImage(image, url).catch(reportError);
   formUi?.paint(layer);
   if (!formUi?.editing()) paintWidgets(layer);
@@ -953,7 +1174,7 @@ function lineHandles(layer, it) {
     const d = document.createElement('div'); d.className = 'hd'; d.style.left = it[a] * S - 5 + 'px'; d.style.top = it[b] * S - 5 + 'px'; d.style.cursor = 'crosshair';
     d._point = [a, b];
     d.onpointerdown = ev => drag(ev, () => { }, (p, s, e) => {
-      let x = p[0] / S, y = p[1] / S;
+      let [x, y] = snapPoint(p[0] / S, p[1] / S, e);
       if (e?.shiftKey) { const ox = it[a === 'x' ? 'x2' : 'x'], oy = it[a === 'x' ? 'y2' : 'y'], dx = x - ox, dy = y - oy, an = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, l = Math.hypot(dx, dy); x = ox + l * Math.cos(an); y = oy + l * Math.sin(an); }
       it[a] = x; it[b] = y; paint();
     });
@@ -961,7 +1182,7 @@ function lineHandles(layer, it) {
   }
 }
 
-function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
+function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false, onClick) {
   ev.preventDefault(); ev.stopPropagation();
   clearTimeout(saveT);
   const start = toLayer(ev.clientX, ev.clientY);
@@ -982,7 +1203,7 @@ function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
   const mv = e => { if (e.pointerId === ev.pointerId) { last = e; schedule(); } };
   // Pressing or releasing a modifier mid-drag re-applies the last pointer position.
   const key = e => {
-    if (e.key === 'Shift' || e.key === 'Alt') { last = { clientX: last.clientX, clientY: last.clientY, shiftKey: e.shiftKey, altKey: e.altKey }; schedule(); }
+    if (['Shift', 'Alt', 'Control', 'Meta'].includes(e.key)) { last = { clientX: last.clientX, clientY: last.clientY, shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }; schedule(); }
   };
   const up = e => {
     if (e.pointerId !== ev.pointerId) return;
@@ -993,6 +1214,7 @@ function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
     move();
     dragging = false;
     if (changed) onEnd?.();
+    else if (e.type !== 'pointercancel') onClick?.();
     if (changed || saveT) queueSave();
     props(true);
   };
@@ -1001,14 +1223,18 @@ function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
 }
 
 // Applies Shift (keep proportions / square) and Alt (resize about the centre) to a box being dragged by corner k.
-function constrainBox(b0, k, dx, dy, e, lockRatio) {
+function constrainBox(b0, k, dx, dy, e, lockRatio, minimum = 2) {
   const [x0, y0, x1, y1] = b0, w0 = x1 - x0, h0 = y1 - y0, sx = k.includes('w') ? -1 : 1, sy = k.includes('n') ? -1 : 1;
-  let dw = sx * dx, dh = sy * dy;
+  const cornerX = sx < 0 ? x0 : x1, cornerY = sy < 0 ? y0 : y1;
+  const point = snapPoint(cornerX + dx, cornerY + dy, e);
+  dx = point[0] - cornerX; dy = point[1] - cornerY;
+  const dw = sx * dx, dh = sy * dy, f = e?.altKey ? 2 : 1;
+  let nw, nh;
   if (e?.shiftKey || lockRatio) {
     const s = Math.abs(dw / w0) > Math.abs(dh / h0) ? dw / w0 : dh / h0;
-    dw = s * w0; dh = s * h0;
-  }
-  const f = e?.altKey ? 2 : 1, nw = Math.max(2, w0 + dw * f), nh = Math.max(2, h0 + dh * f);
+    const scale = Math.max(minimum / w0, minimum / h0, 1 + s * f);
+    nw = w0 * scale; nh = h0 * scale;
+  } else { nw = Math.max(minimum, w0 + dw * f); nh = Math.max(minimum, h0 + dh * f); }
   if (e?.altKey) { const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; return [cx - nw / 2, cy - nh / 2, cx + nw / 2, cy + nh / 2]; }
   return [sx > 0 ? x0 : x1 - nw, sy > 0 ? y0 : y1 - nh, sx > 0 ? x0 + nw : x1, sy > 0 ? y0 + nh : y1];
 }
@@ -1022,11 +1248,11 @@ function startMove(ev, it) {
   drag(ev, () => { o = { ...it }; markSelection(ev.currentTarget, it); props(true); selectionHint(); },
     (p, s, e) => {
       let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
-      if (e?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+      [dx, dy] = moveDelta(o.x, o.y, dx, dy, e);
       it.x = o.x + dx; it.y = o.y + dy;
       if (it.type === 'line') { it.x2 = o.x2 + dx; it.y2 = o.y2 + dy; }
       paint();
-    });
+    }, null, false, () => { if (ev.shiftKey) toggleSelection(it); });
 }
 
 function startResize(ev, it, k, el) {
@@ -1036,8 +1262,8 @@ function startResize(ev, it, k, el) {
     (p, s, e) => {
       const dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
       if (it.type === 'text') { it.size = Math.max(4, Math.round(o.size * (h0 + (k[0] === 'n' ? -dy : dy)) / h0 * 10) / 10); paint(); return; }
-      const [x0, y0, x1, y1] = constrainBox([o.x, o.y, o.x + o.w, o.y + o.h], k, dx, dy, e, it.type === 'image');
-      it.x = x0; it.y = y0; it.w = Math.max(4, x1 - x0); it.h = Math.max(4, y1 - y0);
+      const [x0, y0, x1, y1] = constrainBox([o.x, o.y, o.x + o.w, o.y + o.h], k, dx, dy, e, it.type === 'image', 4);
+      it.x = x0; it.y = y0; it.w = x1 - x0; it.h = y1 - y0;
       paint();
     });
 }
@@ -1049,26 +1275,27 @@ function layerDown(ev) {
   const kind = tool;
   const base = { id: crypto.randomUUID(), type: kind, x: 0, y: 0, w: 0, h: 0, text: '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000',
     fill: '', stroke: '#000000', strokeWidth: 1, opacity: 1, asset: null, x2: 0, y2: 0 };
-  let it;
+  let it, origin;
   if (kind === 'text') {
-    const p = toLayer(ev.clientX, ev.clientY); ev.preventDefault();
-    pushUndo(); it = { ...base, x: p[0] / S, y: p[1] / S, text: 'Text' }; items.push(it); cur = it; setTool('select'); paint(); props();
+    const p = toLayer(ev.clientX, ev.clientY), [x, y] = snapPoint(p[0] / S, p[1] / S, ev); ev.preventDefault();
+    pushUndo(); it = { ...base, x, y, text: 'Text' }; items.push(it); cur = it; setTool('select'); paint(); props();
     editText([...document.querySelectorAll('.it')].pop(), it); queueSave(); return;
   }
   if (kind === 'rect' || kind === 'ellipse') { base.fill = '#7c5cff'; base.stroke = '#000000'; base.strokeWidth = 0; }
   if (kind === 'redact') { base.fill = '#000000'; base.strokeWidth = 0; }
-  drag(ev, s => { it = { ...base, x: s[0] / S, y: s[1] / S, x2: s[0] / S, y2: s[1] / S }; items.push(it); cur = it; },
+  drag(ev, s => { origin = snapPoint(s[0] / S, s[1] / S, ev); it = { ...base, x: origin[0], y: origin[1], x2: origin[0], y2: origin[1] }; items.push(it); cur = it; },
     (p, s, e) => {
+      const end = snapPoint(p[0] / S, p[1] / S, e);
       if (kind === 'line') {
-        let x = p[0] / S, y = p[1] / S;
+        let [x, y] = end;
         if (e?.shiftKey) { const dx = x - it.x, dy = y - it.y, a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, l = Math.hypot(dx, dy); x = it.x + l * Math.cos(a); y = it.y + l * Math.sin(a); }
         it.x2 = x; it.y2 = y;
       } else {
-        let dx = p[0] - s[0], dy = p[1] - s[1];
+        let dx = end[0] - origin[0], dy = end[1] - origin[1];
         if (e?.shiftKey) { const m = Math.max(Math.abs(dx), Math.abs(dy)); dx = Math.sign(dx || 1) * m; dy = Math.sign(dy || 1) * m; }
-        let ax = s[0], ay = s[1], bx = s[0] + dx, by = s[1] + dy;
-        if (e?.altKey) { ax = s[0] - dx; ay = s[1] - dy; }
-        it.x = Math.min(ax, bx) / S; it.y = Math.min(ay, by) / S; it.w = Math.abs(bx - ax) / S; it.h = Math.abs(by - ay) / S;
+        let ax = origin[0], ay = origin[1], bx = ax + dx, by = ay + dy;
+        if (e?.altKey) { ax -= dx; ay -= dy; }
+        it.x = Math.min(ax, bx); it.y = Math.min(ay, by); it.w = Math.abs(bx - ax); it.h = Math.abs(by - ay);
       }
       paint();
     },
@@ -1104,6 +1331,7 @@ function editText(el, it) {
 function setTool(t) {
   const clearSelection = t !== 'select' && multi.size > 0;
   if (clearSelection) multi.clear();
+  finishCrop(false);
   formUi?.cancelArmed();
   tool = t;
   document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
@@ -1121,6 +1349,7 @@ function stepHistory(kind) {
   return historyStep;
 }
 async function restoreHistory(kind) {
+  if (cropEdit) { finishCrop(false); return; }
   await fieldSave;
   const from = kind === 'undo' ? undo : redo, to = kind === 'undo' ? redo : undo;
   if (!from.length) return pageHistoryStep(kind);
@@ -1189,10 +1418,10 @@ function startObjMove(ev, o) {
   drag(ev, () => { selectObj(o); b0 = oBox(o); },
     (p, s, e) => {
       let dx = (p[0] - s[0]) / S, dy = (p[1] - s[1]) / S;
-      if (e?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+      [dx, dy] = moveDelta(b0[0], b0[1], dx, dy, e);
       setEdit(o, [b0[0] + dx, b0[1] + dy, b0[2] + dx, b0[3] + dy]); paint();
     },
-    () => saveObj(o));
+    () => saveObj(o), false, () => { if (ev.shiftKey) toggleSelection(o); });
 }
 function startObjResize(ev, o, k) {
   if (locked) return;
@@ -1299,6 +1528,10 @@ function props(geometryOnly = false) {
     fontView = null;
   }
   if (multi.size > 1) return selectionProps(p, geometryOnly);
+  if (cropEdit) {
+    p.innerHTML = '<section class="head"><h2>Crop image</h2></section><section><p class="hint">Drag the image edges or corners on the page. Dimmed areas will be hidden.</p><p class="hint">Enter applies; Escape cancels. Focus a crop handle and use arrow keys for precise adjustments (Shift for 10 points).</p><p class="hint">Cropping hides pixels, but does not remove them. Use redaction for sensitive content.</p></section>';
+    return;
+  }
   const target = cur || curObj || curSpan;
   if (geometryOnly && target && target === propsTarget && locked === propsLocked) {
     const b = curObj && oBox(curObj);
@@ -1342,11 +1575,17 @@ function props(geometryOnly = false) {
     <div class="row">${n('spacing', 'Letter spacing', 0.1)}${n('lineHeight', 'Line height ×', 0.05)}</div>${colour('color', 'Color')}</section>`;
   if (it.type === 'rect' || it.type === 'ellipse') h += `<section><h3>Appearance</h3>${colour('fill', 'Fill', true)}${colour('stroke', 'Stroke', true)}${n('strokeWidth', 'Stroke width', 0.5)}</section>`;
   if (it.type === 'line') h += `<section><h3>Appearance</h3>${colour('stroke', 'Color')}${n('strokeWidth', 'Width', 0.5)}</section>`;
+  if (it.type === 'image') h += `<section><h3>Image editing</h3><button data-image="crop"${locked ? ' disabled' : ''}>Crop image</button>
+    <div class="row"><button data-image="left" title="Rotate image left 90 degrees"${locked ? ' disabled' : ''}>${ic('rotl')}Left</button><button data-image="right" title="Rotate image right 90 degrees"${locked ? ' disabled' : ''}>${ic('rotr')}Right</button></div>
+    <div class="row"><button data-image="horizontal" aria-pressed="${!!((it.rotation || 0) % 180 ? it.flipY : it.flipX)}"${locked ? ' disabled' : ''}>Flip horizontal</button><button data-image="vertical" aria-pressed="${!!((it.rotation || 0) % 180 ? it.flipX : it.flipY)}"${locked ? ' disabled' : ''}>Flip vertical</button></div>
+    <p class="hint">Rotation: ${it.rotation || 0} degrees. Crop changes can be restored from the original image.</p></section>`;
   h += '<section><h3>Position</h3>' + (it.type !== 'line' ? `<div class="row">${n('x', 'X')}${n('y', 'Y')}</div>` + (it.type !== 'text' ? `<div class="row">${n('w', 'Width')}${n('h', 'Height')}</div>` : `<div class="row">${n('w', 'Box width (0 = auto)')}</div>`)
     : `<div class="row">${n('x', 'X1')}${n('y', 'Y1')}</div><div class="row">${n('x2', 'X2')}${n('y2', 'Y2')}</div>`) + '</section>';
   h += `${it.type === 'redact' ? '' : `<section><h3>Opacity</h3><div class="range"><input type="range" min="0.05" max="1" step="0.05" data-k="opacity" value="${it.opacity}"><output>${Math.round(it.opacity * 100)}%</output></div></section>`}
     <section class="acts2"><button data-act="dup" title="Duplicate">${ic('copy')}Duplicate</button><button data-act="front" title="Bring to front">${ic('front')}To front</button><button class="danger" data-act="del" title="Delete (Del)">${ic('trash')}Delete</button></section>`;
   p.innerHTML = h;
+  p.querySelectorAll('[data-image]').forEach(button => button.onclick = () =>
+    button.dataset.image === 'crop' ? cropImage(it).catch(reportError) : transformImage(it, button.dataset.image));
   if ($('fpb')) $('fpb').onclick = () => openFontPicker(it);
   p.querySelectorAll('[data-k]').forEach(el => {
     let pushed = false;
@@ -1486,10 +1725,10 @@ const applyLock = () => {
   b.querySelector('use').setAttribute('href', locked ? '#i-lock' : '#i-unlock');
   document.body.classList.toggle('locked', locked); localStorage.setItem('lock-geom', locked ? '1' : '0');
 };
-const toggleLock = () => { locked = !locked; applyLock(); status(locked ? 'Positions and sizes locked: edit text, images and colors freely.' : 'Positions and sizes unlocked.'); paint(); props(); };
+const toggleLock = () => { finishCrop(false); locked = !locked; applyLock(); status(locked ? 'Positions and sizes locked: edit text, images and colors freely.' : 'Positions and sizes unlocked.'); paint(); props(); };
 $('lock').onclick = toggleLock; applyLock();
 addEventListener('keydown', e => { if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleLock(); } });
-$('prev').onclick = async () => { await flush(); preview = !preview; $('prev').classList.toggle('on', preview); state.version++; build(); };
+$('prev').onclick = async () => { finishCrop(true); await flush(); preview = !preview; $('prev').classList.toggle('on', preview); $('prev').setAttribute('aria-pressed', preview); state.version++; build(); };
 $('img').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f || !state.pageCount) return;
   const fd = new FormData(); fd.append('f', f);
@@ -2069,6 +2308,12 @@ function itemEditEntries(it, here = null) {
     const n = items.indexOf(it), last = n === items.length - 1, first = n === 0;
     return [
       it.type === 'text' && { label: 'Edit text', key: 'Dbl-click', run: () => { const e = [...layer.children].find(c => c._it === it); e && editText(e, it); } },
+      it.type === 'image' && { label: 'Edit image', sub: [
+        { label: 'Crop image', disabled: locked, run: () => cropImage(it).catch(reportError) },
+        { label: 'Rotate left', disabled: locked, run: () => transformImage(it, 'left') },
+        { label: 'Rotate right', disabled: locked, run: () => transformImage(it, 'right') },
+        { label: 'Flip horizontal', disabled: locked, run: () => transformImage(it, 'horizontal') },
+        { label: 'Flip vertical', disabled: locked, run: () => transformImage(it, 'vertical') }] },
       { label: 'Cut', key: mod + 'X', run: () => { copyItem(it); commit(() => { items = items.filter(x => x !== it); cur = null; }); } },
       { label: 'Copy', key: mod + 'C', run: () => copyItem(it) },
       { label: 'Paste', key: mod + 'V', disabled: !clip, run: () => paste(here) },
@@ -2215,6 +2460,7 @@ document.addEventListener('contextmenu', ev => {
   closeMenu();
   if (!inLayer || editing) return;
   ev.preventDefault();
+  if (cropEdit) return;
   const entries = menuFor(ev); if (!entries) return;
   const m = buildMenu(entries); document.body.appendChild(m);
   const w = m.offsetWidth, h = m.offsetHeight;
@@ -2235,6 +2481,11 @@ addEventListener('keydown', e => {
 }, true);
 
 addEventListener('keydown', e => {
+  if (cropEdit) {
+    if (e.key === 'Escape' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) { e.preventDefault(); finishCrop(false); }
+    else if (e.key === 'Enter' && !e.target.closest?.('.crop-toolbar')) { e.preventDefault(); finishCrop(true); }
+    return;
+  }
   if (editing || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
   if (multi.size > 1) {
     if (e.key === 'Escape') { e.preventDefault(); deselect(); return; }
@@ -2283,7 +2534,7 @@ addEventListener('keydown', e => {
 });
 import(new URL('form-fields.js', document.baseURI)).then(m => {
   formUi = m.createFormFields({
-    request, post, flush, status, esc, ic, modal, buildMenu, openMenuAt, toLayer, locked: () => locked, tool: () => tool, scale: () => S,
+    request, post, flush, status, esc, ic, modal, buildMenu, openMenuAt, toLayer, snapPoint, moveDelta, constrainBox, locked: () => locked, tool: () => tool, scale: () => S,
     pageIndex: () => sel, pageCount: () => state.pageCount, documentEpoch: () => documentEpoch, pageGeometry: () => state.pages[sel], layer: () => $('layer'),
     repaint: () => paint(), props: () => props(), otherSelection: () => !!(multi.size || cur || curObj || curSpan), clearOtherSelection: () => { multi.clear(); cur = null; curObj = null; curSpan = null; },
     download: u => flush().then(() => dlUrl(u)),
@@ -2408,6 +2659,7 @@ async function startEditor() {
         });
         sel = controls.sel; zoom = controls.zoom; fitMode = controls.fitMode; preview = controls.preview; clip = remap(controls.clip);
         $('prev').classList.toggle('on', preview);
+        $('prev').setAttribute('aria-pressed', preview);
         await ready(restoreStack(controls.undo));
         redo = restoreStack(controls.redo ?? []);
         await fa?.restore(retained.name);

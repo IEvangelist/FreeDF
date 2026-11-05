@@ -13,6 +13,7 @@ function harness(values = {}) {
   let queued = 0, sequence = 0;
   const h = vm.createContext({
     multi: new Set(), items: [], objs: [], spans: [], cur: null, curObj: null, curSpan: null,
+    grid: { snap: false, spacing: 12 },
     formUi: { clear() {} }, locked: false, dragging: false, saveT: 0, S: 2, geom: { Lw: 1200, Lh: 1600 },
     $: () => layer, paint() {}, props() {}, paintItem() {}, fontFamily: () => 'Helvetica',
     crypto: { randomUUID: () => 'promoted' }, status: message => messages.push(message),
@@ -26,6 +27,7 @@ function harness(values = {}) {
     ...values,
   });
   vm.runInContext([
+    source('function snapPoint(', 'function paintGrid('),
     source('function spanItem(', '// Only actual edits'),
     source('const bboxOf =', 'function commit('),
     source('const oBox =', 'let objectSave ='),
@@ -44,12 +46,14 @@ function harness(values = {}) {
 
 test('adding and removing selection never changes PDF data, saves or undo history', () => {
   const item = { type: 'rect', x: 10, y: 20, w: 40, h: 30 }, span = { index: 4, text: 'Original', x: 50, y: 60, width: 40, size: 12 };
-  const { h, snapshots, saved, queued, down } = harness({ items: [item], spans: [span], cur: item });
+  const { h, snapshots, saved, queued, down, emit } = harness({ items: [item], spans: [span], cur: item });
   const before = JSON.stringify([item, span]);
   down(span, { shiftKey: true });
+  emit('pointerup', 20, 40, { shiftKey: true });
   assert.equal(h.multi.size, 2);
   assert.equal(h.cur, null);
   down(span, { shiftKey: true });
+  emit('pointerup', 20, 40, { shiftKey: true });
   assert.equal(h.multi.size, 0);
   assert.equal(h.cur, item);
   assert.equal(h.items.length, 1);
@@ -123,6 +127,27 @@ test('group drag batches movement, saves only after release and records one undo
   assert.equal(snapshots.length, 1);
   assert.equal(saved.length, 1);
   assert.ok(queued() > 0);
+});
+
+test('Shift-click removes a member only on release and Shift-drag preserves the group and fixed axis', () => {
+  const a = { type: 'rect', x: 10, y: 20, w: 40, h: 30 }, b = { type: 'rect', x: 80, y: 90, w: 10, h: 10 };
+  const { h, snapshots, down, emit } = harness({ items: [a, b], multi: new Set([a, b]) });
+  down(a, { shiftKey: true });
+  assert.equal(h.multi.size, 2);
+  emit('pointerup', 20, 40, { shiftKey: true });
+  assert.equal(h.multi.size, 0);
+  assert.equal(h.cur, b);
+  assert.equal(snapshots.length, 0);
+  h.toggleSelection(a);
+  h.grid.snap = true;
+  down(a, { shiftKey: true });
+  emit('pointerup', 50, 44, { shiftKey: true });
+  assert.equal(h.multi.size, 2);
+  assert.equal(a.x, 24);
+  assert.equal(a.y, 20);
+  assert.equal(b.x - a.x, 70);
+  assert.equal(b.y - a.y, 70);
+  assert.equal(snapshots.length, 1);
 });
 
 test('clicking a selected group member is selection-only and locked groups do not move', () => {

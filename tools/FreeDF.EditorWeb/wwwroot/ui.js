@@ -449,12 +449,22 @@
 
   // Tooltips: replaces the native title delay with a consistent one; titles are restored the moment it hides.
   let tip = null, tipFor = null, tipTimer = 0;
-  const hideTip = () => { clearTimeout(tipTimer); tip?.remove(); tip = null; if (tipFor?.dataset.tip) { tipFor.title = tipFor.dataset.tip; delete tipFor.dataset.tip; } tipFor = null; };
+  const hideTip = () => {
+    clearTimeout(tipTimer);
+    if (tipFor && tip) {
+      const ids = (tipFor.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== tip.id);
+      if (ids.length) tipFor.setAttribute('aria-describedby', ids.join(' ')); else tipFor.removeAttribute('aria-describedby');
+    }
+    tip?.remove(); tip = null;
+    if (tipFor?.dataset.tip) { tipFor.title = tipFor.dataset.tip; delete tipFor.dataset.tip; }
+    tipFor = null;
+  };
   function showTip(target) {
     const text = target.title; if (!text || target.closest('.cm, .pal, .mdl')) return;
     hideTip(); tipFor = target; target.dataset.tip = text; target.removeAttribute('title');
     if (!target.getAttribute('aria-label') && !target.textContent.trim()) target.setAttribute('aria-label', text);
-    tip = el('div', { className: 'tip', role: 'tooltip', textContent: text }); document.body.append(tip);
+    tip = el('div', { id: nextId('tip'), className: 'tip' + (target.classList.contains('reveal-label') ? ' reveal' : ''), role: 'tooltip', textContent: text }); document.body.append(tip);
+    target.setAttribute('aria-describedby', [target.getAttribute('aria-describedby'), tip.id].filter(Boolean).join(' '));
     const r = target.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
     tip.style.left = Math.max(4, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 4)) + 'px';
     tip.style.top = (r.bottom + 6 + h > innerHeight ? r.top - h - 6 : r.bottom + 6) + 'px';
@@ -462,11 +472,15 @@
   document.addEventListener('pointerover', e => {
     if (e.pointerType === 'touch') return;
     const t = e.target.closest?.('button[title], a[title], label[title]'); if (!t || t === tipFor) return;
-    hideTip(); tipTimer = setTimeout(() => t.isConnected && t.matches(':hover') && showTip(t), 450);
+    hideTip(); tipTimer = setTimeout(() => t.isConnected && t.matches(':hover') && showTip(t), t.classList.contains('reveal-label') ? 180 : 450);
   });
   document.addEventListener('pointerout', e => { if (e.target.closest?.('[title], [data-tip]') && !e.relatedTarget?.closest?.('[data-tip]')) hideTip(); });
   document.addEventListener('focusin', e => { const t = e.target; if (t.matches?.('button[title]:focus-visible, a[title]:focus-visible')) showTip(t); else hideTip(); });
-  for (const ev of ['pointerdown', 'keydown', 'scroll', 'blur']) addEventListener(ev, hideTip, true);
+  for (const ev of ['pointerdown', 'keydown', 'scroll', 'blur']) addEventListener(ev, e => {
+    const dismissLabel = ev === 'keydown' && e.key === 'Escape' && tipFor?.classList.contains('reveal-label');
+    hideTip();
+    if (dismissLabel) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
 
   // Names, roles and landmarks that the editor's markup does not state itself.
   function labelControls(root) {
@@ -536,7 +550,7 @@
     requestAnimationFrame(() => { const on = q('#layer > .on'); if (on) { prep(on); on.focus(); } });
   }
   document.addEventListener('keydown', e => {
-    const p = e.target.closest?.('#layer > .it, #layer > .obj, #layer > .span'); if (!p || e.ctrlKey || e.metaKey) return;
+    const p = e.target.closest?.('#layer > .it, #layer > .obj, #layer > .span'); if (!p || e.target !== p || e.ctrlKey || e.metaKey) return;
     if (e.key === 'Enter' || e.key === ' ') { if (p.isContentEditable || p.onkeydown) return; e.preventDefault(); e.stopPropagation(); activate(p, e.shiftKey); return; }
     if (+q('#layer')?.dataset.multi > 1 && e.key.startsWith('Arrow')) return;
     const all = parts(), i = all.indexOf(p), d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
@@ -569,7 +583,7 @@
   let pressTimer = 0, pressAt = null;
   const cancelPress = () => { clearTimeout(pressTimer); pressAt = null; };
   document.addEventListener('pointerdown', e => {
-    if (e.pointerType !== 'touch' || !e.target.closest?.('#layer')) return;
+    if (e.pointerType !== 'touch' || !e.target.closest?.('#layer') || e.target.closest('.crop-handle')) return;
     const x = e.clientX, y = e.clientY; pressAt = [x, y]; clearTimeout(pressTimer);
     pressTimer = setTimeout(() => { const t = pressAt && document.elementFromPoint(x, y); if (t?.closest('#layer')) t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y })); }, 650);
   }, true);

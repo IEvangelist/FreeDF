@@ -20,7 +20,7 @@ function historyHarness() {
   const flush = html.slice(html.indexOf('async function flush()'), html.indexOf('let propsTarget ='));
   vm.runInContext(`
     let items = [], objs = [], undo = [], redo = [], cur = null, curObj = null, curSpan = null;
-    const multi = new Set();
+    const multi = new Set(); let cropEdit = null;
     let fieldSave = Promise.resolve(), objectSave = Promise.resolve(), itemSave = Promise.resolve();
     const objectSaveErrors = new Map(), state = {pageCount:1}, clip = null;
     let saveT = 0, sel = 0, origKey = '', widgetStamp = 0;

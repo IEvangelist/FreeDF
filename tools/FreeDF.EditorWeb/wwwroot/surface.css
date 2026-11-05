@@ -35,28 +35,26 @@ footer { background: var(--grain) 0 0 / 140px, linear-gradient(0deg, var(--lo), 
 }
 #page { box-shadow: 0 0 0 1px light-dark(#00000026, #0006), 0 6px 16px light-dark(#0000002e, #00000099); }
 
-/* Buttons: tactile hover, press and primary gradient */
+/* Buttons: flat surfaces; selection uses the same fill and border everywhere. */
 button, label.btn { will-change: auto; }
-button:hover:not(:disabled), label.btn:hover { box-shadow: var(--e1); }
-button:active:not(:disabled), label.btn:active { box-shadow: inset 0 1px 3px light-dark(#0000002e, #00000099); transition-duration: 60ms; }
-button.primary, .dfoot button.primary { background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 88%, white), var(--primary)); box-shadow: inset 0 1px 0 #ffffff40, 0 1px 2px #1d4ed880, 0 6px 14px -6px #2563eb99; }
-button.primary:hover:not(:disabled) { background: linear-gradient(180deg, color-mix(in srgb, var(--primary-hover) 90%, white), var(--primary-hover)); box-shadow: inset 0 1px 0 #ffffff50, 0 2px 4px #1d4ed880, 0 10px 20px -8px #2563ebb3; }
-button.icon svg.i, button svg.i { transition: transform var(--dur-2) var(--ease-out); }
-button.icon:hover:not(:disabled) svg.i { transform: scale(1.12); }
-.seg { box-shadow: inset 0 1px 2px light-dark(#00000014, #00000080); }
-.seg button.on, .form-mode button.on { background: linear-gradient(180deg, var(--hi), var(--panel)); box-shadow: var(--e1), inset 0 0 0 1px var(--accent-line), 0 0 0 3px var(--glow); animation: tool-pop var(--dur-3) var(--ease-expo); }
+button:hover:not(:disabled), label.btn:hover,
+button:active:not(:disabled), label.btn:active { box-shadow: none; }
+button.primary, .dfoot button.primary { background: var(--primary); box-shadow: none; }
+button.primary:hover:not(:disabled) { background: var(--primary-hover); box-shadow: none; }
+.seg { box-shadow: none; }
+button.on, button.toggle.on, button[aria-pressed="true"], .seg button.on, .form-mode button.on {
+  background: var(--accent-bg); color: var(--accent-2); border-color: var(--accent-line); box-shadow: none; }
 @keyframes tool-pop { from { opacity: .6; } to { opacity: 1; } }
-button.toggle.on, button[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 0 3px var(--glow); }
 .btn-outline, .dfoot button:not(.primary), #props section.acts2 button { background: linear-gradient(180deg, var(--hi), var(--lo)); }
 a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transform var(--dur-2) var(--ease-expo); }
 
 /* Inputs */
 #props input, #props select, #props textarea, .dbody input:not([type=checkbox]):not([type=radio]), .dbody select, #pn, #fq { box-shadow: inset 0 1px 2px light-dark(#0000000d, #00000066); transition: border-color var(--dur-1), box-shadow var(--dur-2) var(--ease-out); }
 
-/* Thumbnails: cards that lift and glow */
+/* Thumbnails: selected pages keep a crisp border, not an outer halo. */
 .thumb { transition: background-color var(--dur-2), border-color var(--dur-2), box-shadow var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out); }
 .thumb:hover { box-shadow: var(--e2); }
-.thumb.sel { box-shadow: 0 0 0 3px var(--glow), var(--e1); }
+.thumb.sel { box-shadow: none; }
 .thumb.sel .num { animation: tool-pop var(--dur-3) var(--ease-expo); }
 .thumb .paper { box-shadow: var(--e1), 0 0 0 1px light-dark(#0000001f, #0004); transition: box-shadow var(--dur-3); }
 .thumb:hover .paper { box-shadow: var(--e2), 0 0 0 1px light-dark(#0000001f, #0004); }
@@ -193,7 +191,15 @@ main::before { backdrop-filter: none; }
 
 /* Perf: Save presents a modal while the page re-renders; animating that scrim, dialog and the confirmation toast cost ~27 ms of input-to-frame
    under the strict gate (bisected: removing them restores 14 ms). Overlays on the Save path appear instantly; menus keep a short fade. */
-.mdl, .dlg, .toast, .pal-scrim, .pal, .tip { animation: none !important; }
+.mdl, .dlg, .toast, .pal-scrim, .pal { animation: none !important; }
+.tip { animation: none; }
+.tip.reveal { border: 1px solid var(--line-2); background: var(--raised); color: var(--fg); box-shadow: none; animation: label-reveal var(--dur-2) var(--ease-out) both; }
+@keyframes label-reveal { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+@media (forced-colors: active) {
+  button.on, button.toggle.on, button[aria-pressed="true"], .seg button.on, .form-mode button.on { background: Highlight; color: HighlightText; border-color: Highlight; }
+  button.primary, .dfoot button.primary { background: ButtonText; color: ButtonFace; }
+  .tip.reveal { background: Canvas; color: CanvasText; border-color: CanvasText; }
+}
 .cm:not(.sub) { animation-duration: var(--dur-1); }
 
 /* PinkInk-inspired primary choices; accent shades always derive from the selected primary. */

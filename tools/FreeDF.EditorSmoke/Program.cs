@@ -71,6 +71,7 @@ if (args.Length == 4 && args[0] == "--page-image")
 
 var textSelectionOnly = args.Length == 2 && args[0] == "--text-selection";
 var interactionsOnly = args.Length == 2 && args[0] == "--interactions";
+var imageToolsOnly = args.Length == 2 && args[0] == "--image-tools";
 var interactionProfileOnly = args.Length == 2 && args[0] == "--interaction-profile";
 var choicesOnly = args.Length == 2 && args[0] == "--choices";
 var recoveryOnly = args.Length == 2 && args[0] == "--recovery";
@@ -91,7 +92,7 @@ var a11yOnly = args.Length == 3 && args[0] == "--a11y";
 var responsiveOnly = args.Length == 3 && args[0] == "--responsive";
 var browserOnly = viewportOnly || a11yOnly || responsiveOnly;
 var cryptoPerfOnly = args.Length == 2 && args[0] == "--crypto-perf";
-if (args.Length != 1 && !browserOnly && !textSelectionOnly && !interactionsOnly && !interactionProfileOnly && !choicesOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--interactions|--interaction-profile|--choices|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
+if (args.Length != 1 && !browserOnly && !textSelectionOnly && !interactionsOnly && !imageToolsOnly && !interactionProfileOnly && !choicesOnly && !recoveryOnly && !mergeOnly && !jsonSafetyOnly && !saveOverlapOnly && !formsOnly && !annotationsOnly && !pageHistoryOnly && !samplesOnly && !protectionOnly && !cryptoPerfOnly && !objectBreadthOnly && !fileAccessOnly && !storageMigrationOnly && !outlineOnly) throw new ArgumentException("Usage: FreeDF.EditorSmoke [--text-selection|--interactions|--image-tools|--interaction-profile|--choices|--recovery|--merge|--json-safety|--save-overlap|--forms|--annotations|--page-history|--samples|--protection|--crypto-perf|--object-breadth|--file-access|--storage-migration|--outline] <published-wwwroot-or-url> | --viewport|--a11y|--responsive <published-wwwroot-or-url> <sample.pdf>");
 var source = browserOnly ? args[1] : args[^1];
 var publicSite = Uri.TryCreate(source, UriKind.Absolute, out var publicUri) && publicUri.Scheme is "http" or "https";
 if (publicSite && publicUri!.AbsolutePath != "/FreeDF/")
@@ -119,7 +120,7 @@ try
     var address = publicSite ? publicUri!.GetLeftPart(UriPartial.Authority) : app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var pw = await Playwright.CreateAsync();
     await using var browser = await pw.Chromium.LaunchAsync(    new() { Headless = true, Args = ["--disable-features=OverlayScrollbar"], IgnoreDefaultArgs = viewportOnly || responsiveOnly ? ["--hide-scrollbars"] : null });
-    await using var context = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, AcceptDownloads = true, ViewportSize = new() { Width = 1440, Height = 1000 } });
+    await using var context = await browser.NewContextAsync(new() { ServiceWorkers = ServiceWorkerPolicy.Block, AcceptDownloads = true, HasTouch = imageToolsOnly, IsMobile = imageToolsOnly, ViewportSize = new() { Width = 1440, Height = 1000 } });
     var page = await context.NewPageAsync();
     if (int.TryParse(Environment.GetEnvironmentVariable("EDITOR_SMOKE_CPU_THROTTLE"), out var throttle) && throttle > 1)
         await (await context.NewCDPSessionAsync(page)).SendAsync("Emulation.setCPUThrottlingRate", new Dictionary<string, object> { ["rate"] = throttle });
@@ -260,6 +261,12 @@ try
         await EditorOutline.Run(page, shots, root);
         Check(network.IsEmpty && errors.IsEmpty, "No outbound PDF traffic or browser errors: " + string.Join("\n", errors) + "\nNetwork: " + string.Join("\n", network));
         Console.WriteLine("PASS: Contents tab highlights/expands/reveals the active page's outline entry (keyboard, Go to page, thumbnails, outline click), 10k outline windowed, empty state, no document scroll or focus theft. Screenshots: " + shots);
+        return;
+    }
+    if (imageToolsOnly)
+    {
+        await EditorImageTools.Run(page);
+        Check(network.IsEmpty && errors.IsEmpty, "No outbound traffic or browser errors during image editing: " + string.Join("\n", errors));
         return;
     }
     if (interactionsOnly)
