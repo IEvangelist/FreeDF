@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 xref-stream raw field widths
+
+ISO 32000-1 7.5.8.2 Table 17 (printed p50) defines W as an array of
+integer byte widths, including zero-width defaults. Raw widths now require
+PdfInteger values in the existing supported 0..8 range before conversion.
+Fractional widths no longer truncate into apparently valid row layouts.
+Invalid array shapes and elements explicitly raise PdfParseException and
+use existing recovery rather than depending on cast/null exceptions.
+
+Nineteen controls cover all three fractional core fields, fractional
+extension fields (including negative fractions), oversized/negative widths,
+indirect values, invalid array shapes and all-zero rows. Six were red
+before correction. Positives preserve type/generation zero-width defaults,
+eight-byte offsets and the existing extra-field stride policy. The latter
+is a compatibility control, not a claim that extra fields conform to every
+PDF version. Full Release: 18,490 passed, zero failed/skipped. Final solution
+build: zero errors/two retained machine-feed NU1507 warnings.
+
+Ten native controls retain all four compatibility positives unchanged;
+five fractional cases now report repair, while an oversized case already
+repaired. All retain/recover the target. MuPDF agrees on three standard
+positives and fractional offset repair, but returns null for the extra-field
+compatibility layout and fractional third field, errors on fractional first
+field, and accepts fractional extension/oversized cases without repair.
+These are explicit reference disagreements. Fresh pinned 435-PDF/870-result
+corpus JSON is wholly unchanged against the Index/Size baseline.
+
+Complete row counts, field value ranges/free lists, exact highest-used Size
+across updates and resource budgets remain separate.
+
 ## 2026-11-05 xref-stream Index and Size ranges
 
 ISO 32000-1 7.5.8.2 Table 17 (printed p50) requires integer Size and

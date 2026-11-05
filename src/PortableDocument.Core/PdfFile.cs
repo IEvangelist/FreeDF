@@ -304,7 +304,10 @@ public sealed class PdfFile
         var obj = LoadAt(pos, -1);
         if (obj is not PdfStream xs || xs.Dict.Get("Type").AsName() != "XRef") throw new PdfParseException("not an xref stream");
         var data = DecodeStream(xs);
-        var w = ((PdfArray)xs.Dict.Get("W")!).Items.Select(x => (int)x.AsNumber()!.Value).ToArray();
+        if (xs.Dict.Get("W") is not PdfArray { Items.Count: >= 3 } widths)
+            throw new PdfParseException("bad xref stream /W");
+        var w = widths.Items.Select(x => x is PdfInteger { Value: >= 0 and <= 8 } n
+            ? (int)n.Value : throw new PdfParseException("bad xref stream /W field width")).ToArray();
         if (xs.Dict.Get("Size") is not PdfInteger { Value: > 0 and <= (long)int.MaxValue + 1 } size)
             throw new PdfParseException("bad xref stream /Size");
         var rawIndex = xs.Dict.Get("Index");
@@ -322,7 +325,6 @@ public sealed class PdfFile
                 throw new PdfParseException("bad xref stream /Index range");
             end = start + count;
         }
-        if (w.Length < 3 || w.Any(x => x is < 0 or > 8)) throw new PdfParseException("bad xref stream /W");
         var rowLen = w.Sum();
         if (rowLen == 0) throw new PdfParseException("empty xref stream rows");
         if (rowLen > 0 && data.Length / rowLen is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + data.Length / rowLen);
