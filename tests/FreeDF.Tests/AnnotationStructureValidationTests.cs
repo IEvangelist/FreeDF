@@ -226,6 +226,77 @@ public class AnnotationStructureValidationTests
         Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
     }
 
+    public static IEnumerable<object[]> FenoteClassCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "invalid", "valid", "array", "wrong-owner", "local-valid", "local-invalid",
+            "local-null", "missing-class", "class-invalid-valid", "class-valid-invalid" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(FenoteClassCases))]
+    public void Ua2FenoteClassAttributesRespectLocalAndClassPrecedence(int part, string kind)
+    {
+        var cls = kind == "missing-class" ? "/Missing" : kind is "class-invalid-valid" or "class-valid-invalid"
+            ? "[/First /Second]" : kind == "array" ? "[/First]" : "/First";
+        var value = kind is "valid" or "local-invalid" or "class-valid-invalid" ? "/None" : "/Other";
+        var owner = kind == "wrong-owner" ? "/Layout" : "/FENote";
+        var second = kind == "class-valid-invalid" ? "/Other" : "/None";
+        var local = kind is "local-valid" or "local-invalid" or "local-null"
+            ? $"/A << /O /FENote /NoteType {(kind == "local-valid" ? "/None" : kind == "local-invalid" ? "/Other" : "null")} >>" : "";
+        var doc = Load(part,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /ClassMap << /First << /O {owner} /NoteType {value} >> /Second << /O /FENote /NoteType {second} >> >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /FENote /NS << /NS (http://iso.org/pdf2/ssn) >> /C {cls} {local}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>"));
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && kind is "invalid" or "array" or "local-invalid" or "local-null" or "class-invalid-valid",
+            report.Has("PDFUA2-FENOTE-TYPE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+    }
+
+    [Theory]
+    [InlineData("ClassMap")]
+    [InlineData("C")]
+    [InlineData("First")]
+    public void Ua2FenoteClassReferenceCyclesAreIncomplete(string key)
+    {
+        var classMap = key == "ClassMap" ? "13 0 R" : $"<< /First {(key == "First" ? "13 0 R" : "<< /O /FENote /NoteType /Other >>")} >>";
+        var doc = Load(2,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /ClassMap {classMap} >>"),
+            (8, Element.Replace("/S /Annot", $"/S /FENote /NS 14 0 R /C {(key == "C" ? "13 0 R" : "/First")}")),
+            (13, "13 0 R"));
+        var report = Validate(doc, 2);
+        Assert.True(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2FenoteClassAndAttributeWorkShareOneBound(int count, bool incomplete)
+    {
+        var doc = Load(2, (8, Element.Replace("/S /Annot", "/S /FENote /NS 14 0 R /C /First")));
+        var attributes = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfDictionary(), count - 1)
+            .Append(new PdfDictionary { Entries = { ["O"] = new PdfName("FENote"), ["NoteType"] = new PdfName("Other") } }).ToList());
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfDictionary { Entries = { ["First"] = attributes } };
+        var report = Validate(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Fact]
+    public void Ua2FenoteLocalValueDoesNotInspectUnusedCyclicClassMap()
+    {
+        var doc = Load(2,
+            (5, "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /ClassMap 13 0 R >>"),
+            (8, Element.Replace("/S /Annot", "/S /FENote /NS 14 0 R /C /First /A << /O /FENote /NoteType /None >>")),
+            (13, "13 0 R"));
+        var report = Validate(doc, 2);
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
     public static IEnumerable<object[]> FenoteTypeCases()
     {
         foreach (var part in new[] { 1, 2 })

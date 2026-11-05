@@ -308,7 +308,7 @@ internal static class PdfUA2Checks
                         c.Add("PDFUA2-LI-CONTENT", ValidationSeverity.Error, "content directly inside LI must be enclosed in Lbl or LBody", "ISO 14289-2 8.2.5.25", e.PageIndex);
                     break;
                 case "FENote":
-                    FenoteType(c, e);
+                    FenoteType(c, tree, e);
                     break;
             }
             if (e.StandardType is not ("Table" or "L" or "TOC"))
@@ -321,16 +321,17 @@ internal static class PdfUA2Checks
         }
     }
 
-    static void FenoteType(ValidationContext c, StructElement element)
+    static void FenoteType(ValidationContext c, StructureTree tree, StructElement element)
     {
         bool incomplete = false;
+        int work = 0;
         PdfObject? Resolve(PdfObject? value) => ResolveBounded(c.F, value, Incomplete);
         void Incomplete()
         {
             if (incomplete) return;
             incomplete = true;
             c.Add("PDFUA2-FENOTE-INCOMPLETE", ValidationSeverity.Error,
-                "local FENote attribute inspection is malformed or exceeds its reference/work bound",
+                "FENote attribute inspection is malformed or exceeds its reference/work bound",
                 "ISO 14289-2 8.2.5.14", element.PageIndex);
         }
 
@@ -341,29 +342,62 @@ internal static class PdfUA2Checks
             return Resolve(dictionary.Get("NoteType"));
         }
 
-        var attributes = Resolve(element.Dict.Get("A"));
-        PdfObject? noteType = null;
-        if (attributes is PdfDictionary dictionary) noteType = Find(dictionary);
-        else if (attributes is PdfArray array)
+        PdfObject? FindAttributes(PdfObject? raw)
         {
-            int work = 0;
-            foreach (var item in array.Items)
+            var attributes = Resolve(raw);
+            if (incomplete) return null;
+            if (attributes is PdfDictionary dictionary) return Find(dictionary);
+            if (attributes is PdfArray array)
             {
-                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
-                var value = Resolve(item);
-                if (incomplete) break;
-                if (value is PdfDictionary attribute)
+                foreach (var item in array.Items)
                 {
-                    noteType = Find(attribute);
-                    if (incomplete || noteType is not (null or PdfNull)) break;
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return null; }
+                    var value = Resolve(item);
+                    if (incomplete) return null;
+                    if (value is PdfDictionary attribute)
+                    {
+                        var found = Find(attribute);
+                        if (incomplete || found is not (null or PdfNull)) return found;
+                    }
+                    else if (value is not (null or PdfNull or PdfInteger)) Incomplete();
                 }
-                else if (value is not (null or PdfNull or PdfInteger)) Incomplete();
+            }
+            else if (attributes is not (null or PdfNull)) Incomplete();
+            return null;
+        }
+
+        var noteType = FindAttributes(element.Dict.Get("A"));
+        if (!incomplete && noteType is (null or PdfNull))
+        {
+            var classes = Resolve(element.Dict.Get("C"));
+            if (!incomplete && classes is not (null or PdfNull))
+            {
+                var rawMap = Resolve(tree.Root.Get("ClassMap"));
+                if (!incomplete && rawMap is PdfDictionary classMap)
+                {
+                    PdfObject? FromClass(PdfObject? raw)
+                    {
+                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return null; }
+                        var value = Resolve(raw);
+                        if (value is PdfName name) return FindAttributes(classMap.Get(name.Value));
+                        if (value is not (null or PdfNull or PdfInteger)) Incomplete();
+                        return null;
+                    }
+                    if (classes is PdfName) noteType = FromClass(classes);
+                    else if (classes is PdfArray array)
+                        foreach (var item in array.Items)
+                        {
+                            noteType = FromClass(item);
+                            if (incomplete || noteType is not (null or PdfNull)) break;
+                        }
+                    else Incomplete();
+                }
+                else if (rawMap is not (null or PdfNull)) Incomplete();
             }
         }
-        else if (attributes is not (null or PdfNull)) Incomplete();
         if (!incomplete && noteType is PdfName name && name.Value is not ("Footnote" or "Endnote" or "None"))
             c.Add("PDFUA2-FENOTE-TYPE", ValidationSeverity.Error,
-                $"local FENote NoteType name /{name.Value} is not Footnote, Endnote or None",
+                $"FENote NoteType name /{name.Value} is not Footnote, Endnote or None",
                 "ISO 14289-2 8.2.5.14", element.PageIndex);
     }
 

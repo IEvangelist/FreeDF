@@ -4,6 +4,34 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 class-mapped FENote NoteType names
+
+The explicit FENote NoteType-name check now also resolves ClassMap/C.
+Local non-null FENote-owned attributes take precedence; null/omission
+falls through to class attributes. C names/arrays are inspected in order,
+with the first non-null owned value winning. Missing classes and unrelated
+owners remain omission. Local values do not inspect unused class maps.
+The namespace-resolved FENote selector and UA-1 behavior are unchanged.
+
+A, C and class attribute arrays share one 200,000-item work budget;
+cyclic/exhausted references and malformed inspected containers produce
+`PDFUA2-FENOTE-INCOMPLETE`, not a guessed known-name verdict. Integer
+revision markers are skipped without implementing full revision selection.
+Inheritance, non-name syntax and reciprocal references remain deferred.
+The preceding local-only delivery is retained below as historical scope.
+
+Twenty native direct/mapped controls agree on exact rule and whole-file
+outcomes: ten clean positives and ten negatives, correcting eight missed
+file violations. All 20 UA-1 outputs and fresh 435-PDF/870-result corpus
+output are unchanged. Every reference job completed normally using pinned
+veraPDF v1.30.3 8.2.5.14-4. The initial 23-case selector had seven failures;
+25 added cases cover class precedence, reference cycles and exact shared
+work boundaries. Full Release suite passed 14,352 tests, zero failed/skipped;
+an additional unused-cyclic-map/local-override regression was then added
+and checked separately. Solution build: zero errors, two retained NU1507
+machine-feed warnings. Reporting tests: 20 passed. External controls and
+reference reports remain session-only; complete PDF/UA parity is not claimed.
+
 ## 2026-11-05 local FENote NoteType names
 
 Resolved UA-2 FENote elements now report `PDFUA2-FENOTE-TYPE` for a
