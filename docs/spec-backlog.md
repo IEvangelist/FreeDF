@@ -4,6 +4,40 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 startxref token boundaries
+
+ISO 32000-1 7.2.2 (printed p13) defines consecutive regular characters
+as one token; 7.5.5 (printed p42) requires the keyword startxref.
+The footer scan previously accepted this substring embedded in a longer
+token or joined directly to the offset. It now checks both lexical
+boundaries around the selected last marker, using existing lexer
+character classification. A malformed last marker causes explicit
+recovery rather than silently selecting an earlier revision.
+
+Thirty new classic/stream controls cover five joined prefixes, three
+joined suffix forms and seven existing whitespace/comment separators
+for each xref form. The actual unchanged-production baseline is fourteen
+failures/16 passes: the negative joined offset already caused recovery.
+Existing non-line-conforming whitespace/comment compatibility is
+preserved, not certified as conforming footer framing. The 2,048-byte
+search window, comment/string awareness, line framing and EOF-marker
+requirements remain separate; this is not complete footer validation.
+
+Final focused checks pass 1,427; full Release passes 20,278 with zero
+failed/skipped. Solution/benchmark builds have zero warnings/errors.
+Final rebuilt UaDump yields unchanged complete JSON across the pinned
+435-PDF/870-result corpus; all benchmark correctness preflights pass.
+
+Thirty independently encoded MuPDF 1.28.5 comparisons all expose targets.
+It accepts every joined prefix and directly joined unsigned offset
+unrepaired in both xref forms. Signed joined offsets and comment
+separators repair; tested whitespace separators remain clean.
+The comment-control difference is retained alongside the permissive
+malformed-token acceptance; native behavior is not normative authority.
+No external PDFs are bundled. No new timing claim is made for this
+constant-time boundary guard; prior classic performance/allocation
+observations predate it and remain unchanged historical evidence.
+
 ## 2026-11-05 classic xref keyword token boundary
 
 ISO 32000-1 7.2.2 (printed p13) defines consecutive regular characters

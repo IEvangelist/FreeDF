@@ -40,8 +40,8 @@ none establishes native/retained memory usage.
 matching CSV and [eight raw GC/input identity rows](results/2026-11-05-xref-classic-size-gc.csv)
 preserve the full observations.
 
-Both classic timing series predate the later xref keyword-boundary
-check; no new timing or allocation claim is made for that guard.
+Both classic timing series predate the later xref/startxref keyword-
+boundary checks; no new timing or allocation claim is made for them.
 
 ## Classic xref generation bound: 2026-11-05
 

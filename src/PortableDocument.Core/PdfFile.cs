@@ -418,7 +418,11 @@ public sealed class PdfFile
         var tail = Math.Max(0, Data.Length - 2048);
         var idx = Data.AsSpan(tail).LastIndexOf("startxref"u8);
         if (idx < 0) throw new PdfParseException("no startxref");
-        var lx = new PdfLexer(Data, tail + idx + 9);
+        var marker = tail + idx;
+        if (marker > 0 && PdfLexer.IsRegular(Data[marker - 1])
+            || marker + 9 < Data.Length && PdfLexer.IsRegular(Data[marker + 9]))
+            throw new PdfParseException("bad startxref token boundary");
+        var lx = new PdfLexer(Data, marker + 9);
         if (lx.ReadObject(false) is not PdfInteger so) throw new PdfParseException("bad startxref");
         var visited = new HashSet<long>();
         var pos = so.Value;

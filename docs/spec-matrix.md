@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [startxref token-boundary guard](spec-backlog.md#2026-11-05-startxref-token-boundaries)
+checks both sides of the selected last marker, explicitly recovering
+joined regular-character tokens without selecting an earlier revision.
+Existing separator compatibility remains; complete footer framing,
+marker discovery and EOF validation remain open.
+
 The [classic xref token-boundary guard](spec-backlog.md#2026-11-05-classic-xref-keyword-token-boundary)
 rejects joined regular-character suffixes instead of recognizing a
 four-byte prefix. Existing whitespace/comment compatibility is preserved;
