@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [UA-2 caption-order correction](spec-backlog.md#2026-11-05-namespace-aware-ua-2-caption-ordering)
+uses namespace-resolved Caption roles and one first-or-last policy for
+every parent. Twelve clean-file controls agree, correcting one missed
+violation and two false rejections; three additional TOC controls retain
+missing-target reference differences. Six corpus diagnostic changes agree
+with the reference; all 870 file verdicts and UA-1 outputs are unchanged.
+
 The [FENote ClassMap/C extension](spec-backlog.md#2026-11-05-class-mapped-fenote-notetype-names)
 extends the earlier local NoteType-name check, preserving local precedence
 and bounding class/attribute inspection together. Twenty native controls

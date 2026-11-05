@@ -759,6 +759,7 @@ internal static class PdfUADeepChecks
 
     static void CaptionRules(ValidationContext c, StructElement e, List<StructElement> kids, string id, string clause, bool firstOrLast)
     {
+        if (c.Part == 2) return;
         var caps = kids.Select((k, i) => (k, i)).Where(t => t.k.StandardType == "Caption").Select(t => t.i).ToList();
         if (caps.Count > 1 && firstOrLast) c.Add(id, ValidationSeverity.Error, $"{e.StandardType} has more than one Caption", clause, e.PageIndex);
         else if (caps.Any(i => firstOrLast ? i != 0 && i != kids.Count - 1 : i != 0))

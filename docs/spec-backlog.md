@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 namespace-aware UA-2 caption ordering
+
+The existing global UA-2 caption-position check now resolves child roles
+and applies to every parent, including Table/L/TOC. The legacy caption
+checks are retained only for UA-1; they must not impose UA-1 list/TOC
+first-only or table single-caption policy on UA-2. Incorporated nesting
+cardinality remains independent. Foreign raw Caption mapped to P no
+longer gains a caption finding; mapped Caption in the middle is rejected.
+Unknown mappings retain existing role/incomplete findings, not guessed
+caption identities. No grouping/visual caption inference is added.
+
+Pinned veraPDF v1.30.3 8.2.5.27-1 specifies first-or-last placement for
+all structure-element parents. Nine direct/mapped/foreign-to-P Figure
+controls and three list controls agree on exact and whole-file outcomes:
+nine clean positives and three negatives. One missed mapped-caption
+verdict and two false rejections (foreign-to-P and trailing list Caption)
+are corrected. Three additional PDF-1.7 namespace TOC controls agree on
+caption-rule outcomes but are not clean controls: the reference rejects
+missing TOCI targets under 8.2.5.8-1, which remains separate parity work.
+The first TOC namespace attempt used PDF-2.0 TOC, rejected by the reference;
+its XML is retained but excluded from the final control set.
+
+Fresh 435-PDF/870-result comparison has six UA-2 diagnostic changes on
+UA-1 fixtures evaluated as UA-2, with all file verdicts unchanged.
+All six changes independently agree with reference caption outcomes:
+five obsolete profile-specific findings removed and one middle-caption
+finding moved to the correct UA-2 rule. All UA-1 outputs are unchanged.
+All 21 final native/corpus reference jobs completed normally.
+Seventy-two authored profile/parent/mapping/position cases had 15 failures
+before correction. Full Release: 14,687 passed, zero failed/skipped;
+solution: zero errors, two retained NU1507 machine-feed warnings.
+External PDFs/XML remain session-only; full PDF/UA parity is not claimed.
+
 ## 2026-11-05 rich-field plain text encoding
 
 The UA-2 rich-field equality check now decodes plain V using PDFDocEncoding

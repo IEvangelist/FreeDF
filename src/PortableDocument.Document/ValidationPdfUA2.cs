@@ -415,13 +415,10 @@ internal static class PdfUA2Checks
                     FenoteType(c, tree, e);
                     break;
             }
-            if (e.StandardType is not ("Table" or "L" or "TOC"))
-            {
-                var kids = e.ChildElements.ToList();
-                for (var i = 0; i < kids.Count; i++)
-                    if (kids[i].StandardType == "Caption" && i != 0 && i != kids.Count - 1)
-                    { c.Add("PDFUA2-CAPTION-POSITION", ValidationSeverity.Error, $"Caption must be the first or last child of /{e.Type}", "ISO 14289-2 8.2.5.27", e.PageIndex); break; }
-            }
+            var kids = e.ChildElements.ToList();
+            for (var i = 1; i < kids.Count - 1; i++)
+                if (StandardType(c, tree, kids[i]) == "Caption")
+                { c.Add("PDFUA2-CAPTION-POSITION", ValidationSeverity.Error, $"Caption must be the first or last child of /{e.Type}", "ISO 14289-2 8.2.5.27", e.PageIndex); break; }
         }
     }
 

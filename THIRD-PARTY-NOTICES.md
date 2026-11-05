@@ -41,6 +41,13 @@ The existing C# check reuses the independently implemented namespace
 resolver; numbered-heading and hierarchy policies are not broadened.
 No profile XML, engine source or external heading PDF is bundled.
 
+The global namespace-aware caption ordering in `ValidationPdfUA2.cs`
+was cross-checked against the same CC BY 4.0 UA-2 profile, 8.2.5.27-1.
+The independently implemented role resolver is reused; UA-1 caption
+policies in `ValidationPdfUADeep.cs` are retained only for that profile.
+Grouping/visual caption semantics are not broadened; no engine source,
+profile XML or external caption PDF is bundled.
+
 The resolved Note restriction and scoped PDF-2.0 Note vocabulary boundary
 were cross-checked against the same CC BY 4.0 UA-2 profile (8.2.5.14-1
 and native 8.2.4-1 outcomes). `ValidationPdfUA2.cs` and the shared Note-ID

@@ -1481,6 +1481,37 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> CaptionNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var parent in new[] { "Figure", "Table", "L", "TOC" })
+        foreach (var mapping in new[] { "direct", "mapped", "foreign-to-p" })
+        foreach (var position in new[] { 0, 1, 2 })
+            yield return [part, parent, mapping, position];
+    }
+
+    [Theory]
+    [MemberData(nameof(CaptionNamespaceCases))]
+    public void Ua2CaptionOrderUsesResolvedRolesForEveryParent(int part, string parent, string mapping, int position)
+    {
+        var role = mapping == "mapped" ? "Custom" : "Caption";
+        var ns = mapping == "direct" ? 12 : 13;
+        var children = Enumerable.Range(0, 3).Select(i =>
+            $"<< /Type /StructElem /S /{(i == position ? role : "P")} /NS {(i == position ? ns : 12)} 0 R /P 8 0 R /K [] >>").ToArray();
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{parent} /NS 12 0 R /P 7 0 R /K [9 0 R 10 0 R 11 0 R] /Alt (illustration) >>",
+            .. children,
+            "<< /Type /Namespace /NS (http://iso.org/pdf2/ssn) >>",
+            $"<< /Type /Namespace /NS (urn:caption-test) /RoleMapNS << /{role} [/{(mapping == "mapped" ? "Caption" : "P")} 12 0 R] >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && mapping != "foreign-to-p" && position == 1, report.Has("PDFUA2-CAPTION-POSITION"));
+        if (part == 2)
+            Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-LIST-CAPTION" or "PDFUA-TABLE-CAPTION" or "PDFUA-TOC-CAPTION");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldPdfDocEncodingCases()
     {
         int[] accents = [0x02D8, 0x02C7, 0x02C6, 0x02D9, 0x02DD, 0x02DB, 0x02DA, 0x02DC];
