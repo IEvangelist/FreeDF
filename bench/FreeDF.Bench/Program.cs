@@ -55,7 +55,8 @@ if (args.Contains("--preflight"))
                 }.Setup();
     foreach (var size in new[] { 256, 1048576 })
         foreach (var random in new[] { false, true })
-            new FlateBench { DecodedBytes = size, RandomInput = random }.Setup();
+            foreach (var strict in new[] { false, true })
+                new FlateBench { DecodedBytes = size, RandomInput = random, Strict = strict }.Setup();
     foreach (var size in new[] { 0, 256, 1048576 })
         new FlateEncodeBench { DecodedBytes = size }.Setup();
     return;

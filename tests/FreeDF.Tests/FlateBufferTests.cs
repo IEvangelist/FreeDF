@@ -63,7 +63,7 @@ public class FlateBufferTests
     [InlineData(11104)]
     [InlineData(11105)]
     [InlineData(1048576)]
-    public void Strict_checksum_preserves_worst_case_accumulator_boundaries(int size)
+    public void Strict_checksum_preserves_worst_case_maximal_byte_payloads(int size)
     {
         var source = new byte[size];
         Array.Fill(source, byte.MaxValue);

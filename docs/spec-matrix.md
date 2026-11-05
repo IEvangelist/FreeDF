@@ -4,12 +4,19 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [exact Flate extent follow-up](spec-backlog.md#2026-11-05-exact-flate-input-extent)
+reserves only the last source byte from bulk reads and requires completed
+inflation at exactly the input length. Native checksum validation now replaces
+the redundant managed Adler scan; corrupt-trailer, read-boundary and recovery
+controls remain. An initial four-byte boundary and the final one-byte boundary
+are measured separately. Ordinary recovery is unchanged; complete filter/spec
+parity is not claimed.
+
 The [completed Flate guard](spec-backlog.md#2026-11-05-completed-flate-inflation)
 rejects matching-checksum inputs whose inflater still needs bytes at EOF.
 Complete multiblock streams and ordinary partial recovery remain supported,
-without a second bit scan or process-global compression setting. Buffered
-extra bytes after a valid zlib stream still need a separate consumption check;
-complete Flate/filter parity is not claimed.
+without a second bit scan or process-global compression setting. Its buffered
+consumption gap is addressed by the follow-up above.
 
 The [strict LZW extension](spec-backlog.md#2026-11-05-strict-lzw-code-streams)
 requires initial clear, completed EOD, zero final-byte padding and valid
@@ -25,11 +32,12 @@ pipeline input, not the optional physical EOL preceding endstream.
 
 The [object-stream strict-filter path](spec-backlog.md#2026-11-05-object-stream-strict-filter-decoding)
 uses existing ASCIIHex/ASCII85/RunLength and zlib/predictor checks before
-publishing members; ordinary partial recovery is unchanged. Bounded Adler
-accumulation avoids per-byte modulo without relaxing checksum validation.
+publishing members; ordinary partial recovery is unchanged. Its initial
+bounded managed Adler accumulation is superseded by native checksum validation
+in the exact-extent follow-up above.
 Native/reference differences, retained initial/final performance costs and
-unchanged corpus JSON are recorded. Full deflate lifecycle, parameter
-cardinality and resource-budget parity remain incomplete.
+unchanged corpus JSON are recorded. Full codec/parameter, cardinality and
+resource-budget parity remain incomplete.
 
 The [object-stream external-payload guard](spec-backlog.md#2026-11-05-object-stream-external-payload-containment)
 prevents inline member bytes from substituting for non-null F declarations.

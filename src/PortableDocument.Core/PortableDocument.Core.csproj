@@ -13,6 +13,7 @@
     <InternalsVisibleTo Include="PortableDocument.Content" />
     <InternalsVisibleTo Include="PortableDocument.Document" />
     <InternalsVisibleTo Include="FreeDF.Tests" />
+    <InternalsVisibleTo Include="FreeDF.Bench" />
     <EmbeddedResource Include="Resources\glyphlist.txt" LogicalName="PortableDocument.Core.Resources.glyphlist.txt" />
     <EmbeddedResource Include="Resources\zapfdingbats.txt" LogicalName="PortableDocument.Core.Resources.zapfdingbats.txt" />
     <PackageReference Include="GregsEx" />

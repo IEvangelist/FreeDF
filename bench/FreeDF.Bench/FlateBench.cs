@@ -12,7 +12,11 @@ public class FlateBench
     [Params(false, true)]
     public bool RandomInput { get; set; }
 
+    [Params(false, true)]
+    public bool Strict { get; set; }
+
     byte[] _encoded = [];
+    static readonly List<(string Name, PdfDictionary? Parms)> Filters = [("FlateDecode", null)];
 
     [GlobalSetup]
     public void Setup()
@@ -24,12 +28,14 @@ public class FlateBench
         _encoded = PdfFilters.DeflateEncode(decoded);
         if (!decoded.AsSpan().SequenceEqual(Decode()))
             throw new InvalidOperationException("Flate benchmark preflight produced unequal decoded bytes.");
-        Console.WriteLine($"PASS Flate: decoded={DecodedBytes}, random={RandomInput}, " +
+        Console.WriteLine($"PASS Flate: decoded={DecodedBytes}, random={RandomInput}, strict={Strict}, " +
             $"encoded={_encoded.Length}, SHA256={Convert.ToHexString(SHA256.HashData(_encoded))}.");
     }
 
     [Benchmark]
-    public byte[] Decode() => PdfFilters.Flate(_encoded);
+    public byte[] Decode() => Strict
+        ? PdfFilters.Decode(_encoded, Filters, x => x, strictContentFilters: true).Data
+        : PdfFilters.Flate(_encoded);
 }
 
 [MemoryDiagnoser]

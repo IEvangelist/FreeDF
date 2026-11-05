@@ -139,32 +139,23 @@ public static class PdfFilters
             || (src[0] * 256 + src[1]) % 31 != 0 || (src[1] & 32) != 0)
             throw new InvalidDataException("Invalid zlib header in content stream");
         using var output = new MemoryStream(Math.Min(src.Length, 65536));
-        using (var z = new ZLibStream(new StrictFlateInput(src), CompressionMode.Decompress))
+        using var input = new StrictFlateInput(src);
+        using (var z = new ZLibStream(input, CompressionMode.Decompress, leaveOpen: true))
             InflateInto(z, output);
-        var decoded = output.ToArray();
-        uint a = 1, b = 0;
-        for (var offset = 0; offset < decoded.Length;)
-        {
-            // 5,552 maximal bytes keep both Adler sums within uint before reduction.
-            var end = offset + Math.Min(5552, decoded.Length - offset);
-            for (; offset < end; offset++)
-            {
-                a += decoded[offset];
-                b += a;
-            }
-            a %= 65521;
-            b %= 65521;
-        }
-        if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(src.AsSpan(src.Length - 4)) != (b << 16 | a))
-            throw new InvalidDataException("Incomplete or corrupt zlib content stream");
-        return decoded;
+        if (input.Position != src.Length)
+            throw new InvalidDataException("Unexpected bytes after zlib content stream");
+        return output.ToArray();
     }
 
     sealed class StrictFlateInput(byte[] data) : MemoryStream(data, writable: false)
     {
         // The inflater requests input only while unfinished; ordinary EOF would hide truncation.
-        public override int Read(byte[] buffer, int offset, int count) => RequireData(base.Read(buffer, offset, count), count);
-        public override int Read(Span<byte> buffer) => RequireData(base.Read(buffer), buffer.Length);
+        public override int Read(byte[] buffer, int offset, int count) =>
+            RequireData(base.Read(buffer, offset, ReadCount(count)), count);
+        public override int Read(Span<byte> buffer) => RequireData(base.Read(buffer[..ReadCount(buffer.Length)]), buffer.Length);
+
+        // Keep the last byte separate so inflater read-ahead cannot hide excess data.
+        int ReadCount(int requested) => (int)Math.Min(requested, Math.Max(1L, Length - Position - 1));
 
         static int RequireData(int read, int requested) => read == 0 && requested != 0
             ? throw new InvalidDataException("Incomplete zlib content stream") : read;

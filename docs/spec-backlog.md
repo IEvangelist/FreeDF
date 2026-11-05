@@ -4,6 +4,66 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 exact Flate input extent
+
+ISO 32000-1 7.3.8.2 (printed p20) requires stream extent and EOD constraints
+to agree. A complete zlib stream with extra bytes could previously pass both
+the finished-inflater guard and the manual checksum comparison if the extra
+bytes ended in another copy of the expected Adler-32.
+
+Strict Flate now reserves the last source byte from bulk input reads. If
+inflation finishes within a bulk read, the underlying position remains short
+of the input length and excess data is rejected. Otherwise the final source
+byte is exposed separately; normal completion must then leave position equal
+to length. The existing unexpected-EOF guard still requires actual completion.
+This prevents inflater read-ahead from concealing trailing data without
+throttling the entire payload one byte at a time or scanning compressed bits
+twice. An initial four-reserved-byte implementation was also measured and is
+retained, not silently discarded.
+
+Completed native zlib inflation validates its actual RFC 1950 checksum trailer.
+With completion and exact input extent now enforced, the additional managed
+Adler scan over all decoded output is redundant and has been removed. Explicit
+header validation, output limits, pooled scratch clearing and ordinary Flate
+partial recovery remain unchanged. No global setting or reflection is used.
+
+Twenty-one tests cover excess zero/garbage/CRLF bytes, repeated checksum,
+concatenated streams and a long tail, including one/two/three-byte tails;
+exact input sizes 11, 8,191/8,192/8,193, 16,383/16,384/16,385 and 65,546
+cover empty/final stored blocks and read-buffer boundaries; each actual
+checksum byte is independently corrupted. Existing maximal-byte checksum,
+random/concurrent, truncation and multiblock controls remain. The initial
+eighteen-test unchanged-production baseline was six failures/twelve passes;
+three later controls add short tails already rejected by the old checksum.
+
+The existing Flate benchmark now includes strict and ordinary modes for
+256-byte/1-MiB patterned/random inputs. Both modes are in preflight. The
+benchmark assembly receives friend access to the existing internal strict
+decoder, not a new public API or runtime dependency.
+
+Final focused selector: 1,002 passed. Full Release: 19,463 passed, zero failed/
+skipped. Solution: zero warnings/errors. Thirty-two independently encoded/
+retained native controls comprise twelve excess-byte negatives and twenty
+valid files, including seven exact encoded-size boundaries under normal/
+forced repair and six encrypted positives. Every negative previously published
+Target and now leaves the member absent after repair; valid outcomes remain
+identical. Python zlib independently reports completed streams with unused
+data for the negatives, and completed/exact consumption for valid controls.
+MuPDF exposes Target for all thirty-two. Fresh pinned 435-PDF/870-result full
+corpus JSON remains wholly unchanged.
+
+The [retained original/initial/final measurements](../bench/FreeDF.Bench/README.md#matched-flate-extent-and-native-checksum-2026-11-05)
+include eight strict/ordinary Flate cases, four traversal configurations and
+eight metadata cases. The final strict 1-MiB means fall about 43%/56%, while
+unchanged ordinary controls also fall about 25%/26%; not all timing change
+can be attributed to this implementation. The slower four-byte-boundary
+small-input measurements remain visible. Exact hashes match for every Flate,
+metadata and plaintext traversal input. Small Flate and plaintext traversal
+allocations remain identical; large Flate reported allocations vary by less
+than 0.03% across all three runs. No exclusive-load, universal-throughput or
+zero-cost guarantee is claimed. Full codec/parameter conformance, generic
+grammar/inventory and resource budgets remain separate.
+
 ## 2026-11-05 completed Flate inflation
 
 ISO 32000-1 7.4.4.1 (printed p25) incorporates RFCs 1950/1951 for Flate.

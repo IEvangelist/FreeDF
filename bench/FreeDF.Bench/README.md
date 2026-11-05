@@ -440,10 +440,23 @@ dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --
 ```
 
 `FlateBench` uses 256-byte and 1 MiB decoded payloads, each patterned or seeded
-pseudorandom. Generation, zlib compression and exact decoded-byte preflight are
+pseudorandom, in both ordinary and strict modes. Generation, zlib compression
+and exact decoded-byte preflight are
 outside timing; decoding and materializing the result are timed. Printed
 encoded-byte SHA-256 values allow matched-build comparisons on the same
-runtime. `--preflight` validates all four cases.
+runtime. `--preflight` validates all eight cases. Ordinary mode calls `Flate`
+directly; strict mode uses the existing internal filter dispatcher with one
+Flate filter/default parameters, a reused filter list and an identity resolver.
+The benchmark assembly has friend access, not an added public API or runtime
+dependency. Compare each mode against the same source-build mode, rather than
+subtracting unlike call-boundary means to estimate validation overhead.
+
+Strict input reserves only the final source byte from bulk reads, preventing
+read-ahead from hiding excess data. The inflater must actually complete at
+exactly the end of the source; its native checksum validation replaces the
+redundant managed Adler scan. This adds at most one final single-byte input
+read, not per-byte throttling of the whole compressed input. Output scratch
+reads and pooling below are unchanged.
 
 The inflater borrows an 81,920-byte scratch range from `ArrayPool<byte>.Shared`,
 retaining the previous read request size and output-limit checks. A `finally`
@@ -461,7 +474,59 @@ The output stream starts with capacity equal to the encoded length capped at
 unfavorable repeated growth on large incompressible inputs while bounding the
 up-front allocation. It does not preallocate the inferred decoded size.
 
+### Matched Flate extent and native checksum: 2026-11-05
+
+The [control](results/2026-11-05-flate-extent-control.md)
+([CSV](results/2026-11-05-flate-extent-control.csv)) uses the decoder
+byte-identical to `9cc66b1fa142f4a4d5add3605d680df6ce7238db`, with the new
+strict-mode harness and benchmark friend visibility. The
+[initial candidate](results/2026-11-05-flate-extent-initial.md)
+([CSV](results/2026-11-05-flate-extent-initial.csv)) reserves four trailer
+bytes individually; the [final candidate](results/2026-11-05-flate-extent-final.md)
+([CSV](results/2026-11-05-flate-extent-final.csv)) reserves only the last byte.
+Both candidates use native checksum validation rather than a second managed
+output scan. All use three warmups/eight 500 ms iterations/one launch on the
+same Windows 11 / i7-14700K / .NET 10.0.14 machine.
+
+| Strict decoded bytes / input | Control mean (us) | Four-byte mean (us) | One-byte mean (us) |
+|---|---:|---:|---:|
+| 256 / patterned | 2.234 | 2.446 | 2.090 |
+| 256 / random | 2.494 | 2.531 | 2.030 |
+| 1 MiB / patterned | 1411.499 | 1046.686 | 797.934 |
+| 1 MiB / random | 775.246 | 658.671 | 340.777 |
+
+The final strict large-input means fall about 43%/56%, but unchanged ordinary
+large-input means also fall from 1055.154/455.629 to 796.553/336.079 us,
+about 25%/26%. Machine/run state therefore accounts for some of the shift;
+these are not universal or wholly isolated speedup measurements. Do not
+subtract separate means to estimate validation overhead. Small Flate reported
+allocations are identical (992/952 B); large Flate allocations vary by less
+than 0.03% across the three reports, not a claimed total-memory reduction.
+
+| Plaintext traversal | Control mean (us) | Four-byte mean (us) | One-byte mean (us) | Both endpoint allocated (B) |
+|---|---:|---:|---:|---:|
+| 1 member | 12.121 | 20.897 | 9.840 | 18432 |
+| 1,000 members | 721.705 | 737.110 | 612.174 | 1954728 |
+
+The initially slower small-path result is retained. The final single-member
+interval overlaps the control; the 1,000-member mean is about 15% lower,
+subject to the same shared-machine caveat. All eight Flate preflight hashes
+(four unique inputs) and both plaintext hashes match exactly. Encrypted
+controls are retained but cryptographic randomness prevents matched-byte
+timing attribution across launches.
+
+The eight candidate metadata cases are also retained, with all hashes matching
+the preceding completed-inflater control report above. Final Flate means are
+6.755-7.835 us, versus 7.459-10.043 us in that control; unchanged LZW controls
+also vary. No provider timing was rerun; all provider/parser/metadata/Flate
+preflight configurations pass. These are valid-path performance controls,
+not spec-conformance rankings or zero-cost assertions. The
+[scoped extent record](../../docs/spec-backlog.md#2026-11-05-exact-flate-input-extent)
+records malformed-input behavior separately.
+
 ### Matched decoder follow-up: 2026-11-05
+
+This earlier four-case decoder report measures ordinary mode only.
 
 The [original control](results/2026-11-05-flate-before.md)
 ([CSV](results/2026-11-05-flate-before.csv)) retains the original inflater/output
