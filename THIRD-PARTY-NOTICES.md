@@ -467,6 +467,15 @@ fourteen primary negatives accepted by the reference; these disagreements
 are explicit. Full field-reader/schema and appearance semantics remain
 separate. No standard text or external controls are bundled.
 
+The default appearance DA type check follows the official PDF Association
+Table 224/Table 228 byte-string requirements. Independently reused bounded
+lookup checks non-null AcroForm defaults and inherited terminal Tx values
+without decoding/executing them. Twenty-four native local/inherited/
+document controls retain six positives and reject eighteen primary
+negatives accepted by the reference; these disagreements are explicit.
+Required presence, operator grammar, resource matching and layout remain
+separate. No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

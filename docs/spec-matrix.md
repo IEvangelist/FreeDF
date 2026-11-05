@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary DA byte-string type check](spec-backlog.md#2026-11-05-primary-default-appearance-byte-string-types)
+checks document-wide defaults and inherited terminal Tx defaults with
+explicit independent incomplete handling. Twenty-four native controls
+retain six positives; eighteen primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are wholly unchanged. Required presence, choice/button
+DA rules, operator grammar, font resources and layout remain separate.
+
 The [primary inherited MaxLen shape check](spec-backlog.md#2026-11-05-primary-inherited-text-field-maxlen-shape)
 requires terminal Tx MaxLen metadata to be a non-negative integer, reusing
 bounded inherited V lookup and separate incomplete findings. Twenty native

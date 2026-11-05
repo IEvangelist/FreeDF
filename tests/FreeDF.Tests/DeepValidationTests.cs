@@ -3776,6 +3776,141 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> DefaultAppearanceTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Tx", "Ch", "Btn" })
+        foreach (var appearance in new[] { "", "null", "()", "(/F1 12 Tf)", "0", "1.5", "/Name", "true",
+            "[]", "<< >>", "10 0 R", "11 0 R", "12 0 R", "13 0 R", "99 0 R" })
+            yield return [part, type, appearance];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceTypeCases))]
+    public void Ua2DefaultAppearanceFieldValueMustBeByteString(int part, string type, string appearance)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /{type} /T (field) /V (plain) {(appearance == "" ? "" : $"/DA {appearance}")} >>",
+            "null", "(/F1 12 Tf)", "/Wrong", ObjPdf.Stream("/F1 12 Tf"),
+        ])), part);
+        bool invalid = appearance is "0" or "1.5" or "/Name" or "true" or "[]" or "<< >>" or "12 0 R" or "13 0 R";
+        Assert.Equal(part == 2 && type == "Tx" && invalid, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/DA null")]
+    [InlineData("/DA (valid override)")]
+    public void Ua2DefaultAppearanceDocumentValueTypeIsCheckedEvenWithFieldOverride(string local)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /DA /Wrong /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {local} >>"])), 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-FORM-DA-TYPE");
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/DA null", true)]
+    [InlineData("/DA 12 0 R", true)]
+    [InlineData("/DA 99 0 R", true)]
+    [InlineData("/DA ()", false)]
+    public void Ua2DefaultAppearanceTypesUseInheritedNonNullFieldValue(string local, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /DA (/Doc 12 Tf) /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (parent) /DA /Wrong /Kids [10 0 R] >>",
+            $"<< /T (child) /Parent 9 0 R {local} >>", "null", "null",
+        ])), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2DefaultAppearanceTypeReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "/Wrong" : $"{n + 1} 0 R");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /DA 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2DefaultAppearanceTypeInheritanceDepthIsExplicit(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, depth).Select(n => n == 9 + depth
+            ? "<< /DA /Wrong >>" : $"<< /Parent {n + 1} 0 R >>");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /V (plain) /Parent 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("null", false)]
+    [InlineData("()", false)]
+    [InlineData("0", true)]
+    [InlineData("[]", true)]
+    [InlineData("8 0 R", false)]
+    [InlineData("9 0 R", true)]
+    [InlineData("10 0 R", true)]
+    public void Ua2DefaultAppearanceDocumentTypeIsCheckedWithoutTextFields(string value, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "",
+            catalogExtra: $"/AcroForm << /Fields [] {(value == "" ? "" : $"/DA {value}")} >>",
+            extras: ["(valid)", "/Wrong", ObjPdf.Stream("/F1 12 Tf")])), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2DefaultAppearanceDocumentReferenceBoundRetainsKnownFieldError(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "/Wrong" : $"{n + 1} 0 R");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /DA 10 0 R /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /V (plain) /DA /Wrong >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(incomplete ? 1 : 2, report.Findings.Count(finding => finding.RuleId == "PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/DA 10 0 R /V /Wrong", "10 0 R", true)]
+    [InlineData("/DA /Wrong /V 10 0 R", "10 0 R", false)]
+    public void Ua2DefaultAppearanceTypeAndValueUnknownsAreIndependent(string entries, string target, bool appearanceIncomplete)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {entries} >>", target])), 2);
+        Assert.Equal(appearanceIncomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.Equal(!appearanceIncomplete, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(!appearanceIncomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.Equal(appearanceIncomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> RichFieldValuePresenceCases()
     {
         foreach (var part in new[] { 1, 2 })

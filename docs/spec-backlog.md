@@ -4,6 +4,36 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary default appearance byte-string types
+
+Official PDF Association PDF 2.0 errata declares DA a byte string in
+AcroForm Table 224 and variable-text field Table 228 (12.7.3/12.7.4.3).
+Known non-null document defaults and inherited terminal Tx defaults now
+receive PDFUA2-FORM-DA-TYPE when they are not strings, including streams.
+Document defaults are checked even when a field overrides them or no
+text fields exist. Per-field inherited checks are limited to recognized
+terminal Tx fields; choice/button field-specific DA rules remain separate.
+
+Bounded inherited lookup is reused. Unknown AcroForm/default references,
+field parents or reader truncation produce PDFUA2-FORM-DA-INCOMPLETE.
+Known default and V findings survive incompleteness of the other input.
+Null/omission/indirect null/dangling field defaults retain inherited
+fallback; known non-null invalid values are not silently replaced.
+Required DA presence, operator grammar, font-resource matching and
+layout are not evaluated; byte strings are not decoded or executed.
+Existing value/RV/MaxLen findings and UA-1 remain unchanged.
+
+The initial 102 authored cases had nineteen failures. Twelve additional
+document-without-fields/reference-bound/independent-incomplete cases pass.
+Focused Release: 3,808 passed; full Release: 16,665 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings. Twenty-four
+native local/inherited/document controls retain six positives and reject
+eighteen primary negatives. All combined-reference jobs complete normally
+and accept: **eighteen explicit primary/reference disagreements**.
+Native UA-1 and fresh 435-PDF/870-result corpus JSON are wholly unchanged
+against committed MaxLen baseline. No standard text or external controls
+are bundled; full field schema/traversal and full parity are not claimed.
+
 ## 2026-11-05 primary inherited text-field MaxLen shape
 
 Official PDF Association PDF 2.0 errata 12.7.5.3/Table 232 explicitly adds

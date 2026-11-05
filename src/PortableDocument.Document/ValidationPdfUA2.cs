@@ -38,6 +38,7 @@ internal static class PdfUA2Checks
     static void TextFieldValues(ValidationContext c)
     {
         var fields = c.Doc.GetFormFieldDetails();
+        DefaultAppearanceTypes(c, fields);
         bool incomplete = false, limitIncomplete = false;
         if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
         foreach (var field in fields.Fields)
@@ -104,6 +105,41 @@ internal static class PdfUA2Checks
             c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
                 "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
                 "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void DefaultAppearanceTypes(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.3 Table 224, 12.7.4.3 Table 228";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-DA-INCOMPLETE", ValidationSeverity.Error,
+                "default appearance type inspection is truncated, cyclic, unsupported or bounded", clause);
+        }
+        void Inspect(PdfObject? appearance)
+        {
+            if (appearance is not (null or PdfNull or PdfString))
+                c.Add("PDFUA2-FORM-DA-TYPE", ValidationSeverity.Error,
+                    "a default appearance DA value must be a byte string", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        var form = ResolveBounded(c.F, c.F.Catalog.Get("AcroForm"), Incomplete);
+        if (form is PdfDictionary dictionary)
+            Inspect(ResolveBounded(c.F, dictionary.Get("DA"), Incomplete));
+        else if (form is not (null or PdfNull)) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Tx") continue;
+            bool complete = true;
+            var appearance = InheritedFieldValue(c, field.Dictionary, "DA", () =>
+            {
+                complete = false;
+                Incomplete();
+            });
+            if (complete) Inspect(appearance);
         }
     }
 
