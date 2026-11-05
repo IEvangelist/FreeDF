@@ -4,6 +4,11 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [optional-content recommendation correction](spec-backlog.md#2026-11-05-optional-content-usage-recommendations)
+conjoins selected categories across applications, lets in-range Zoom enable
+an initially OFF group, and permits categories independent of event names.
+Configured state is retained when no recommendation is available.
+
 The [optional-content application selection correction](spec-backlog.md#2026-11-05-optional-content-application-group-selection)
 applies automatic usage rules only to groups selected by the application's
 OCGs array. Omitted/null/empty selection affects no groups; invalid non-array

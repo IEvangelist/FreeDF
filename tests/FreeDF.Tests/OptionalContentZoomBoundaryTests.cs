@@ -5,6 +5,7 @@ using DocumentRenderer = PortableDocument.Render.PortableDocument;
 
 namespace FreeDF.Tests;
 
+[Collection("Optional-content allocation")]
 public class OptionalContentZoomBoundaryTests
 {
     [Theory]
@@ -85,4 +86,9 @@ public class OptionalContentZoomBoundaryTests
         brokenXref: true,
         extraCatalog: "/OCProperties << /OCGs [5 0 R] /D << /BaseState /ON " +
             "/AS [<< /Event /View /OCGs [5 0 R] /Category [/Zoom] >>] >> >>"));
+}
+
+[CollectionDefinition("Optional-content allocation", DisableParallelization = true)]
+public class OptionalContentAllocationCollection
+{
 }

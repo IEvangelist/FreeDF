@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 optional-content usage recommendations
+
+ISO 32000-1 8.11.4.4 (printed p234) requires the conjunction of all
+applicable usage recommendations, across categories and usage applications.
+Zoom recommends ON within its half-open range, not merely OFF outside it.
+Table 102 (printed p232) defaults its minimum to zero and maximum to
+infinity. Section 8.11.4.5 Note 3 (printed p236) permits Print/Export
+applications to select categories other than their event names.
+
+The shared evaluator previously tied event-state categories to the event
+name, applied Zoom only for View, and could not enable a BaseState OFF
+group from an in-range Zoom recommendation. It now evaluates explicitly
+selected categories independently of the event name and conjoins all
+available recommendations. With no available recommendation, the configured
+state is preserved; missing usage data and missing PrintState stay neutral.
+Caller-supplied Language/User context and diagnostics, manual visibility
+overrides, event matching and application selection remain in place.
+No new viewer/final-form-output policy or print/export state lifecycle is
+introduced.
+
+Thirty-eight behavior controls cover all three events crossed with all
+three event-state categories and both recommendations, Zoom ON/OFF/default
+bounds for each event, category/application order, missing PrintState/Usage,
+manual overrides and View rendered pixels with/without explicit state.
+The unchanged-production baseline fails 27 and passes 11. Three additional
+regressions require zero managed bytes over 4,096 warmed View/Print/Export
+queries. Exact allocation tests now share a non-parallel test collection;
+longer warmup alone had not prevented a small one-off focused-run anomaly.
+The zero-byte budget remains unchanged.
+
+Final focused optional-content/layer/raster-golden checks pass 178 cases;
+full Release passes 19,573, zero failed/skipped. The solution builds with
+zero warnings/errors. Fresh pinned 435-PDF/870-result full corpus JSON is
+unchanged; it does not independently establish interactive recommendation
+semantics in reference readers.
+
+Three new event-query benchmarks plus the two existing Zoom cases use
+identical inputs on preceding and final production sources. View/Print/Export
+managed allocation falls from 120/144/144 B/query to zero, with final means
+84.41/85.76/88.66 ns versus 148.2/147.1/126.0 ns. Both Zoom cases retain zero
+managed allocation and have lower final means; Zoom 3 error intervals overlap.
+Reports, exact hashes, raw GC counts and scope limits are in the
+[benchmark record](../bench/FreeDF.Bench/README.md#optional-content-usage-recommendations-2026-11-05).
+These are repeated cached-state queries, not general rendering or many-layer
+throughput guarantees. Broader optional-content type validation and
+viewer/printing lifecycle semantics remain incomplete.
+
 ## 2026-11-05 optional-content application group selection
 
 ISO 32000-1 Table 103 (printed p233) defines a usage application's OCGs

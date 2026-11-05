@@ -55,6 +55,62 @@ The already-open case opens a batch of 32 fresh documents in `IterationSetup` an
 
 Rendering remains in the separate legacy `RenderBench`. PdfPig has no comparable raster-rendering implementation in this harness, so these results make no rendering-parity claim.
 
+## Optional-content usage recommendations: 2026-11-05
+
+`OptionalContentEventBench` adds View/Print/Export state-query cases.
+Each uses one parsed group, one explicit application, matching event/category,
+BaseState OFF and a valid ON recommendation. Both revisions correctly return
+ON. Construction/loading is outside timing, the public query returns the
+result, and setup rejects repair, wrong page count, wrong visibility or warnings.
+All three cases are in standalone correctness preflight. Cross-event categories,
+Zoom enabling and conflicting recommendations are tested for correctness,
+not compared as equivalent old timings.
+
+The control uses production sources from
+`b69a47fa360e2f42b01018c80b60c5f6bd6e4928`, measured before production edits
+with the same benchmark source. Existing Zoom 1/3 cases are also rerun.
+All five byte lengths/SHA-256 hashes match exactly; the
+[diagnostic CSV](results/2026-11-05-ocg-usage-gc.csv) preserves raw GC
+totals/operation counts and measured child engine module IDs.
+
+| Query | Control mean +/- error (ns) | Final mean +/- error (ns) | Managed B/query, control -> final |
+|---|---:|---:|---:|
+| Export | 126.0 +/- 7.21 | 88.66 +/- 1.474 | 144 -> 0 |
+| Print | 147.1 +/- 13.32 | 85.76 +/- 3.015 | 144 -> 0 |
+| View | 148.2 +/- 14.87 | 84.41 +/- 3.572 | 120 -> 0 |
+| Zoom 1 | 98.43 +/- 2.961 | 90.71 +/- 1.843 | 0 -> 0 |
+| Zoom 3 | 97.16 +/- 2.566 | 92.43 +/- 4.025 | 0 -> 0 |
+
+Reports: [control event](results/2026-11-05-ocg-usage-control-event.md)
+([CSV](results/2026-11-05-ocg-usage-control-event.csv)),
+[final event](results/2026-11-05-ocg-usage-final-event.md)
+([CSV](results/2026-11-05-ocg-usage-final-event.csv)),
+[control Zoom](results/2026-11-05-ocg-usage-control-zoom.md)
+([CSV](results/2026-11-05-ocg-usage-control-zoom.csv)),
+[final Zoom](results/2026-11-05-ocg-usage-final-zoom.md)
+([CSV](results/2026-11-05-ocg-usage-final-zoom.csv)).
+
+State-key names now use literals instead of repeatedly concatenated strings;
+event queries resolve the state value once. All five final means are lower,
+but these one-group cached-query runs are not whole-render, large-layer,
+Language/User or native-memory measurements. Zoom 3 reported intervals overlap.
+Runs retain three warmups/eight 500-ms iterations/one launch on the same
+machine/runtime; no exclusive machine load is established. Provider correctness
+preflight passes, with no provider timing rerun or equivalent independent-reader
+interactive usage claim.
+
+Three new exact zero-byte/4,096-query event regressions complement the two
+Zoom cases. These allocation-sensitive test classes now share a non-parallel
+collection: increased warmup alone had not prevented a one-off 328-byte
+focused-run anomaly. No allocation allowance or retry is added; final focused
+and full runs satisfy the strict budget. The
+[parity record](../../docs/spec-backlog.md#2026-11-05-optional-content-usage-recommendations)
+states the primary basis, controls and remaining limits.
+
+```powershell
+dotnet run -c Release --no-build --no-restore --project bench\FreeDF.Bench -- --filter "*OptionalContentEventBench*" "*OptionalContentZoomBench*" --warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1
+```
+
 ## Optional-content application scope: 2026-11-05
 
 The Table 103 OCGs selection correction reuses both valid, explicitly

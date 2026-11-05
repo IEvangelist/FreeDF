@@ -188,10 +188,7 @@ public sealed class OptionalContentState
             ContentInterpreter.OptionalContentEvent.Export => "Export",
             _ => displayEvent.ToString()
         };
-        var zoomOutOfRange = false;
-        bool? contextRecommendation = null;
-        var eventAllowsContext = true;
-        var hasEventRecommendation = false;
+        bool? recommendations = null;
         foreach (var application in applications.Items)
         {
             if (R(application) is not PdfDictionary app
@@ -219,44 +216,38 @@ public sealed class OptionalContentState
             foreach (var categoryValue in categories.Items)
             {
                 var category = R(categoryValue).AsName();
-                if (category == eventName && R(usage.Get(category)) is PdfDictionary eventUsage)
+                bool? recommendation = null;
+                if (category is "View" or "Print" or "Export"
+                    && R(usage.Get(category)) is PdfDictionary eventUsage)
                 {
-                    if (R(eventUsage.Get(eventName + "State")).AsName() is "ON" or "OFF")
+                    var stateKey = category switch
                     {
-                        hasEventRecommendation = true;
-                        eventAllowsContext &= R(eventUsage.Get(eventName + "State")).AsName() == "ON";
-                    }
-                    off = R(eventUsage.Get(eventName + "State")).AsName() switch
+                        "View" => "ViewState",
+                        "Print" => "PrintState",
+                        _ => "ExportState"
+                    };
+                    recommendation = R(eventUsage.Get(stateKey)).AsName() switch
                     {
-                        "ON" => false,
-                        "OFF" => true,
-                        _ => off,
+                        "ON" => true,
+                        "OFF" => false,
+                        _ => null,
                     };
                 }
-                else if (category == "Zoom" && displayEvent == ContentInterpreter.OptionalContentEvent.View
-                    && R(usage.Get("Zoom")) is PdfDictionary zoomUsage)
+                else if (category == "Zoom" && R(usage.Get("Zoom")) is PdfDictionary zoomUsage)
                 {
-                    var min = R(zoomUsage.Get("min")).AsNumber();
-                    var max = R(zoomUsage.Get("max")).AsNumber();
-                    if (min is { } minZoom && zoom < minZoom
-                        || max is { } maxZoom && zoom >= maxZoom)
-                        zoomOutOfRange = true;
+                    var min = R(zoomUsage.Get("min")).AsNumber() ?? 0;
+                    var max = R(zoomUsage.Get("max")).AsNumber() ?? double.PositiveInfinity;
+                    recommendation = zoom >= min && zoom < max;
                 }
                 else if (category is "Language" or "User")
-                {
-                    if (UsageRecommendation(file, ocg, usage, app, category, context, warn) is { } recommendation)
-                        contextRecommendation = (contextRecommendation ?? true) && recommendation;
-                }
+                    recommendation = UsageRecommendation(file, ocg, usage, app, category, context, warn);
                 else if (category is not ("View" or "Print" or "Export" or "Zoom"))
                     warn?.Invoke($"unsupported optional-content usage category {category ?? "(non-name)"}");
+                if (recommendation is { } on)
+                    recommendations = (recommendations ?? true) && on;
             }
         }
-        // Context recommendations can enable an initially OFF layer, but cannot undo
-        // another usage category's OFF recommendation. Legacy rules remain unchanged without context.
-        if (contextRecommendation is { } on)
-            off = !on || hasEventRecommendation && !eventAllowsContext;
-        if (zoomOutOfRange) off = true;
-        return off;
+        return recommendations is { } visible ? !visible : off;
     }
 
     static bool? UsageRecommendation(PdfFile file, PdfDictionary ocg, PdfDictionary usage, PdfDictionary application,
