@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary class-array item type check](spec-backlog.md#2026-11-05-primary-attribute-class-array-item-types)
+rejects non-name/non-number C items independently of ClassMap/local-A
+lookup, preserving existing explicit null/reference/work findings.
+Eighteen native controls retain eight positives; ten primary negatives
+remain reference-accepted. Corpus and UA-1 JSON are wholly unchanged.
+Numeric revision integrality/ranges/order, ClassMap schema and complete
+element K types remain separate.
+
 The [primary parent-key integer type check](spec-backlog.md#2026-11-05-primary-structure-parent-integer-key-types)
 checks both resolved keys across existing page, annotation, appearance and
 known resource-XObject surfaces, preserving explicit incomplete/conflict

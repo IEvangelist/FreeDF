@@ -440,6 +440,15 @@ remain reference-accepted; reference
 negative predicates are recorded separately from type agreement. No
 standard text or external controls are bundled.
 
+The class-array item check follows the official 14.7.6.2 requirement
+for class names possibly accompanied by revision numbers. Independently
+implemented bounded raw C inspection rejects only non-name/non-number
+items; numeric revision integrality, ranges and ordering are not inferred.
+Eighteen native controls retain eight name/numeric positives and reject
+ten primary negatives accepted by the reference; these disagreements are
+explicit. ClassMap schema and complete element K types remain separate.
+No standard text or external controls are bundled.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

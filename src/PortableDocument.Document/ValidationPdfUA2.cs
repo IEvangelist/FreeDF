@@ -836,9 +836,15 @@ internal static class PdfUA2Checks
         if (key == "K" && array.Count == 0)
             c.Add("PDFUA2-STRUCT-K-EMPTY", ValidationSeverity.Error,
                 "structure element K array must contain one or more children", clause, page);
-        if (ArrayContainsNull(c, array, Incomplete))
+        bool invalidClassItem = false;
+        if (ArrayContainsNull(c, array, Incomplete,
+            item => invalidClassItem |= key == "C" && item is not (null or PdfNull or PdfName or PdfInteger or PdfReal)))
             c.Add($"PDFUA2-STRUCT-{key}-NULL", ValidationSeverity.Error,
                 $"structure {key} array contains a null item", clause, page);
+        if (invalidClassItem)
+            c.Add("PDFUA2-STRUCT-C-ITEM-TYPE", ValidationSeverity.Error,
+                "structure C array items must be class names or numeric revision markers",
+                "ISO 32000-2 14.7.6.2", page);
     }
 
     static void StructureRootKids(ValidationContext c, PdfDictionary root)

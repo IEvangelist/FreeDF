@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary attribute-class array item types
+
+Official PDF Association 14.7.6.2 requires C class names or arrays of class
+names possibly accompanied by revision numbers. The existing raw C-array
+scan now rejects non-name, non-number items with one
+PDFUA2-STRUCT-C-ITEM-TYPE finding per element. Strings, booleans,
+dictionaries and nested arrays are not class names/revision numbers,
+including resolved indirect items. This check runs regardless of ClassMap
+presence or local A values; it does not depend on class-value lookup.
+
+The existing 32-hop/200,000-item null scan is reused. Prior known item errors
+survive later incomplete references/work; existing null and incomplete
+diagnostics remain separate. Undefined classes remain empty. Existing
+attribute lookup/owner checks and UA-1 behavior are unchanged.
+
+The available primary passage does not establish integer-only revision
+types, ranges or placement. An initial integer-only revision rejection
+was discarded before commit. Integer and real numeric candidates remain
+outside this type rejection; their revision validity and existing
+unsupported-interpretation diagnostics are not inferred or altered.
+Complete ClassMap schema and element K types remain separate.
+
+The scoped 172 authored part/local-A/ClassMap/direct/indirect/null/reference/
+work cases had forty baseline failures and now pass. Focused Release:
+3,251 passed; final full Release: 16,108 passed, zero failed/skipped.
+Solution zero errors/two retained machine-feed NU1507 warnings.
+Eighteen native controls retain eight name/numeric positives and reject
+ten primary negatives. All combined-reference jobs complete normally and
+accept: **ten explicit primary/reference disagreements**. Native UA-1
+and fresh 435-PDF/870-result corpus JSON are wholly unchanged against the
+committed parent-key type baseline. No standard text/external controls
+are bundled; full PDF/UA/spec parity is not claimed.
+
 ## 2026-11-05 primary structure-parent integer key types
 
 The official PDF Association 14.7.5.4 paragraph requires integer values

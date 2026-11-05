@@ -3313,6 +3313,62 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    public static IEnumerable<object[]> StructureClassArrayItemCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var local in new[] { false, true })
+        foreach (var map in new[] { "", "/ClassMap null", "/ClassMap << /Known << /O /Layout >> >>" })
+        foreach (var item in new[] { "/Known", "0", "-1", "1.5", "(class)", "true", "<< >>", "[]",
+            "[/Known]", "20 0 R", "21 0 R", "22 0 R", "null", "99 0 R" })
+            yield return [part, local, map, item];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureClassArrayItemCases))]
+    public void Ua2StructureClassArrayItemsRequireNamesOrNumericRevisions(int part, bool local, string map, string item)
+    {
+        var extras = new[] { $"<< /Type /StructElem /S /P /P 7 0 R /K [] /C [/Known {item}] " +
+            (local ? "/A << /O /Layout >>" : "") + " >>" }
+            .Concat(Enumerable.Repeat("null", 11)).Concat(new[] { "/Known", "(indirect)", "null" }).ToArray();
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua(map, "8 0 R", extras: extras)), part);
+        bool invalid = item is "(class)" or "true" or "<< >>" or "[]" or "[/Known]" or "21 0 R";
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-STRUCT-C-ITEM-TYPE"));
+        Assert.Equal(part == 2 && item is "22 0 R" or "null" or "99 0 R", report.Has("PDFUA2-STRUCT-C-NULL"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2StructureClassArrayItemReferenceBoundsRetainPriorTypeErrors(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "(class)" : $"{n + 1} 0 R").ToArray();
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K [] /C [(known bad) 9 0 R] >>" }.Concat(chain).ToArray())), 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-C-ITEM-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2StructureClassArrayItemWorkBoundsRetainPriorTypeErrors(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"]));
+        var items = Enumerable.Repeat<PdfObject>(new PdfName("Unknown"), count).ToList();
+        items[0] = new PdfString("bad"u8.ToArray());
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["C"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-C-ITEM-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })
