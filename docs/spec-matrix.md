@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref header-range guard](spec-backlog.md#2026-11-05-cross-reference-stream-object-header-ranges)
+explicitly recovers invalid or unsupported object identifiers at the
+startxref entry point. Sparse supported identifiers and matching
+nonzero-generation references stay lossless; ordinary reference lookup
+is unchanged. Hybrid/incremental self-entry ownership and full object
+lifecycle/grammar validation remain open.
+
 The [xref generation guard](spec-backlog.md#2026-11-05-cross-reference-stream-generation-bounds)
 explicitly recovers type 0/1 generation fields above 65,535 without
 narrowing type-2 member indexes or unknown types. Wide-header scanning

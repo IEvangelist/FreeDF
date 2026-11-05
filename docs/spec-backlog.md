@@ -4,6 +4,45 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 cross-reference stream object header ranges
+
+ISO 32000-1 7.3.10 (printed p21) requires positive indirect-object numbers
+and nonnegative generations; 7.5.4 (printed p41) caps generations at
+65,535. Loading a section through startxref previously skipped these
+header ranges because it had no expected object number to compare.
+
+That entry point now explicitly recovers zero/negative object numbers,
+negative/oversized generations and object numbers above the reader's
+signed-int representation. The latter is an implementation limit, not
+a normative PDF object-number maximum. Normal reference lookup keeps its
+existing exact expected-number/generation checks and recovery behavior.
+No requirement for a self-entry in the same section is introduced:
+hybrid/incremental self-entry ownership remains a separate investigation.
+
+Twenty-six new raw/Flate controls produce an actual unchanged-production
+baseline of 16 failures/10 passes. The ten positive construction controls
+include sparse int.MaxValue identifiers, integer signs/padding, nonzero
+generations and matching self-entries; they retain clean loading and
+cached exact-reference lookup. These representable-generation controls
+do not establish new-file generation or free-entry reuse lifecycle
+conformance. Final focused xref/object-stream checks pass 1,231; full
+Release passes 20,152 with zero failed/skipped. Solution/benchmark builds
+have zero warnings/errors. Final rebuilt UaDump yields identical complete
+JSON for the pinned 435-PDF/870-result corpus; all benchmark correctness
+preflights pass.
+
+Twenty independently encoded native-reference fixtures cover bounded
+header numbers in both raw/Flate forms. MuPDF 1.28.5 repairs zero/negative
+numbers and negative generations, rejects the three oversized generation
+values, and accepts unsigned-zero/padded-zero and 65,535 controls cleanly.
+The signed/nonzero positive control (+3/+7) repairs while FreeDF stays
+clean; no claim isolates the cause to signs or generation. All opened
+reference fixtures still expose the target. Six high object-number
+variants are omitted from native comparison because no equivalent native
+allocation-budget guarantee was established; FreeDF tests cover them.
+No external fixtures are bundled. No new timing claim is made for this
+header guard; the earlier cumulative measurements below predate it.
+
 ## 2026-11-05 cross-reference stream generation bounds
 
 ISO 32000-1 7.5.4 (printed p41) sets the maximum generation number

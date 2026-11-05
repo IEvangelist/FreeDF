@@ -133,6 +133,8 @@ public sealed class PdfFile
         var kw = lx.ReadObject(false) as PdfKeyword;
         if (n is null || g is null || kw?.Value != "obj" || (expectNum >= 0 && n.Value != expectNum)
             || (expectGeneration is { } generation && g.Value != generation)) throw new PdfParseException($"object header mismatch at {offset}");
+        if (expectNum < 0 && (n.Value is <= 0 or > int.MaxValue || g.Value is < 0 or > 65535))
+            throw new PdfParseException($"invalid or unsupported cross-reference stream object header at {offset}");
         var obj = lx.ReadObject() ?? throw new PdfParseException("eof in object");
         if (obj is PdfDictionary d)
         {
