@@ -2055,6 +2055,57 @@ public class DeepValidationTests
         Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
+    [Theory]
+    [InlineData(1, false, false)]
+    [InlineData(1, false, true)]
+    [InlineData(1, true, false)]
+    [InlineData(1, true, true)]
+    [InlineData(2, false, false)]
+    [InlineData(2, false, true)]
+    [InlineData(2, true, false)]
+    [InlineData(2, true, true)]
+    public void Ua2OnlyElementKidArraysMustBeNonempty(int part, bool root, bool indirect)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R >>", "[]"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(root ? 5 : 8)).Entries["K"] =
+            indirect ? new PdfRef(9, 0) : new PdfArray([]);
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && !root, report.Has("PDFUA2-STRUCT-K-EMPTY"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/K null")]
+    [InlineData("/K 10 0 R")]
+    [InlineData("/K [9 0 R]")]
+    public void Ua2ElementKidArraySizePreservesOptionalAndNonemptyEntries(string kids)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {kids} >>",
+                "<< /Type /StructElem /S /Span /P 8 0 R >>", "null"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-STRUCT-K-EMPTY"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ElementKidArraySizeResolutionIsBounded(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "[]" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K 9 0 R >>" }.Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-STRUCT-K-EMPTY"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     public static IEnumerable<object[]> StructureReferenceShapeCases()
     {
         foreach (var part in new[] { 1, 2 })

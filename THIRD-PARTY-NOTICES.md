@@ -333,6 +333,14 @@ positives and seven primary negatives; six newly rejected files remain
 accepted by the reference. Those differences are explicit. Full structure
 dictionary identity/schema and element K shape are not established.
 
+The element K nonempty-array check follows Table 355's minimum child count
+at the same errata source, using independently written bounded inspection.
+Five native controls retain three positives and reject two primary negatives
+accepted by the reference. Two corpus files gain empty-child diagnostics
+absent from the reference's other-rule rejections. Those differences are
+explicit. Optional null/omission, root array policy and full element-child
+type/schema are not expanded.
+
 ## OpenJPEG 2.5.4 (test-only reference fixtures)
 
 `tests/fixtures/jpxopj` and `tests/fixtures/jpxmatrix` contain codestreams and

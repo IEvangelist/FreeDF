@@ -4,6 +4,15 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary element child-array size check](spec-backlog.md#2026-11-05-primary-nonempty-element-child-arrays)
+rejects direct/indirect empty element K arrays without changing root arrays,
+optional null/omission or UA-1. Five native controls retain three positives;
+two newly rejected primary negatives remain accepted by the reference.
+Two already-invalid corpus fixtures gain diagnostics not reported by the
+reference; every verdict and UA-1 output is unchanged. Full element-child
+types/identity and ClassMap syntax remain deferred. Separate declared NS
+type controls verify existing rejection, not a new implementation.
+
 The [primary root child-type check](spec-backlog.md#2026-11-05-primary-structure-root-child-types)
 requires root K dictionary/flat dictionary-array shape, retaining existing
 null and bounded-inspection diagnostics. Nine corrected native controls

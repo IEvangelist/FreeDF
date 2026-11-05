@@ -4,6 +4,41 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary nonempty element child arrays
+
+Published PDF 2.0 errata, 14.7.2 Table 355, specifies one or more children
+when an element K value is an array. UA-2 now reports PDFUA2-STRUCT-K-EMPTY
+for a resolved empty element array, including an indirect array. The shared
+bounded shape helper retains its existing null-item checks. Root K empty
+arrays and optional null/omission are not changed; unresolved references
+still produce PDFUA2-STRUCT-K-INCOMPLETE without guessing an empty array.
+
+Five native controls retain three positives (omission, null and one child)
+and reject two primary negatives (direct/indirect empty arrays). All five
+independent combined-reference jobs normally accept: **two explicit
+primary/reference disagreements**. Fourteen authored root/UA-1/null/size/depth
+cases had three initial failures; all pass after the scoped check. No existing
+conforming fixtures or assertions needed changing. Release: 508 focused and
+15,078 full cases pass without skips; solution zero errors/two retained
+machine-feed NU1507 warnings.
+
+Fresh 435-PDF/870-result comparison adds only the empty-K diagnostic to two
+already-invalid UA-2 fixtures. Reachable Document objects 14 (8.6-t01-fail-a)
+and 10 (8.8-t01-fail-a) have literal empty K arrays. Exact reference jobs reject
+for text/annotation/destination rules, not empty child arrays. These additional
+diagnostic differences are explicit. All 870 verdicts and all UA-1 outputs
+are unchanged. Full permitted element-child types, dictionary identity and
+ClassMap syntax remain outside this parsed-element size slice.
+
+An accompanying declared namespace-type investigation found no missed
+FreeDF verdict: eight malformed native NS values (integer, real, name,
+string, boolean, array, indirect name and stream) already reject through
+PDFUA2-NESTING-INCOMPLETE. Three positives (omission, null and registered
+PDF 2.0 namespace) remain valid. All eleven reference jobs normally accept,
+so eight existing primary/reference differences are retained. No duplicate
+production check was added. Complete namespace dictionary schema remains
+unestablished.
+
 ## 2026-11-05 primary structure-root child types
 
 Published PDF 2.0 errata, 14.7.2 Table 354, defines root K as a dictionary
