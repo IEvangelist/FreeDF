@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [object-stream compressed Length check](spec-backlog.md#2026-11-05-object-stream-compressed-length-references)
+rejects direct Length references to compressed objects before publishing an
+affected member index, including own-container members. Valid uncompressed
+indirect lengths and ordinary streams with compressed lengths remain supported.
+Native disagreement, recovery ordering and unchanged corpus JSON are recorded.
+Global forbidden-object inventory, reference chains and budgets remain separate.
+
 The [object-stream header integer check](spec-backlog.md#2026-11-05-object-stream-header-integer-spellings)
 uses scoped numeric spelling checks before lazy/recovery header indexing.
 Positive integer spellings and atomic recovery remain supported; native

@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 object-stream compressed Length references
+
+ISO 32000-1 7.5.7 (printed p45) prohibits storing the object
+representing an object stream's Length value in an object stream. The shared
+header reader now rejects direct Length references to indexed compressed
+objects or its own declared members before publishing the index. A scoped
+pre-load check prevents loading the Length member through its own container
+recursively. Ordinary stream lengths may still be compressed.
+
+Twenty controls cover separate containers in both physical/recovery orders,
+direct/indirect ObjStm types, normal/forced repair, valid uncompressed indirect
+lengths, ordinary stream bytes and own-container Length members. The initial
+sixteen-case selector had eight failures; four own-container controls were
+added after the guard, without executing potentially recursive old-code
+fixtures. Full Release: 18,898 passed, zero failed/skipped. Solution: zero
+errors/two retained machine-feed NU1507 warnings.
+
+Sixteen native PDFs preserve eight valid outputs unchanged and prevent eight
+previous target exposures: four now give explicit Length errors and four end
+repaired/null, depending on recovery order. Ordinary stream bytes are pinned
+in unit controls; the native helper's Type field only describes dictionaries.
+MuPDF still exposes all eight forbidden targets. Fresh pinned
+435-PDF/870-result full corpus JSON is wholly unchanged against the
+header-integer baseline.
+
+This enforces the direct-reference relationships while loading affected
+members; it does not scan all stream dictionaries eagerly, reject a Length
+object loaded independently before its use is known, or validate arbitrary
+indirect-reference chains. Recovery may provisionally index a member before
+a different later container identifies its compressed Length; subsequent
+access rejects it. A global forbidden-object inventory, encryption dictionary
+exclusion and byte-limited/resource enforcement remain separate.
+
 ## 2026-11-05 object-stream header integer spellings
 
 ISO 32000-1 7.5.7 (printed p46) requires integer header pairs;

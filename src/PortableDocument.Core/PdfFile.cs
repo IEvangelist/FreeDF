@@ -182,6 +182,10 @@ public sealed class PdfFile
     {
         if (!_objStmCache.TryGetValue(stmNum, out var map))
         {
+            if (Xref.TryGetValue(stmNum, out var container) && container is { InUse: true, Compressed: false, GenOrIndex: 0 }
+                && PeekStreamDict(container.OffsetOrStream, stmNum)?.Get("Length") is PdfRef { Generation: 0 } ownLength
+                && ownLength.Number == objNum)
+                throw new PdfParseException("object stream Length value cannot be compressed");
             if (GetObject(new PdfRef(stmNum, 0)) is not PdfStream s) throw new PdfParseException("bad object stream");
             map = ReadObjectStreamIndex(s);
             _objStmCache[stmNum] = map;
@@ -256,6 +260,10 @@ public sealed class PdfFile
             }
             previousNumber = (int)on.Value;
         }
+        if (stream.Dict.Get("Length") is PdfRef { Generation: 0 } length
+            && (map.Members.ContainsKey(length.Number)
+                || Xref.TryGetValue(length.Number, out var lengthEntry) && lengthEntry is { InUse: true, Compressed: true }))
+            throw new PdfParseException("object stream Length value cannot be compressed");
         return map;
     }
 
