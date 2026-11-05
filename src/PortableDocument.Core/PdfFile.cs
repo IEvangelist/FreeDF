@@ -305,9 +305,24 @@ public sealed class PdfFile
         if (obj is not PdfStream xs || xs.Dict.Get("Type").AsName() != "XRef") throw new PdfParseException("not an xref stream");
         var data = DecodeStream(xs);
         var w = ((PdfArray)xs.Dict.Get("W")!).Items.Select(x => (int)x.AsNumber()!.Value).ToArray();
-        var size = (int)xs.Dict.Get("Size").AsNumber()!.Value;
-        var index = xs.Dict.Get("Index") is PdfArray ia ? ia.Items.Select(x => (int)x.AsNumber()!.Value).ToArray() : [0, size];
-        if (w.Length < 3 || w.Any(x => x is < 0 or > 8) || index.Any(x => x < 0)) throw new PdfParseException("bad xref stream /W or /Index");
+        if (xs.Dict.Get("Size") is not PdfInteger { Value: > 0 and <= (long)int.MaxValue + 1 } size)
+            throw new PdfParseException("bad xref stream /Size");
+        var rawIndex = xs.Dict.Get("Index");
+        if (rawIndex is not (null or PdfNull or PdfArray))
+            throw new PdfParseException("bad xref stream /Index");
+        var index = rawIndex is PdfArray ia ? ia.Items.Select(x => x is PdfInteger n
+            ? n.Value : throw new PdfParseException("non-integer xref stream /Index")).ToArray() : [0L, size.Value];
+        if (index.Length % 2 != 0) throw new PdfParseException("unpaired xref stream /Index");
+        long end = 0;
+        for (var s = 0; s < index.Length; s += 2)
+        {
+            var start = index[s];
+            var count = index[s + 1];
+            if (start < end || start < 0 || start > int.MaxValue || count < 0 || count > size.Value - start)
+                throw new PdfParseException("bad xref stream /Index range");
+            end = start + count;
+        }
+        if (w.Length < 3 || w.Any(x => x is < 0 or > 8)) throw new PdfParseException("bad xref stream /W");
         var rowLen = w.Sum();
         if (rowLen == 0) throw new PdfParseException("empty xref stream rows");
         if (rowLen > 0 && data.Length / rowLen is > 0 and < 8_000_000) Xref.EnsureCapacity(Xref.Count + data.Length / rowLen);
@@ -315,7 +330,7 @@ public sealed class PdfFile
         for (var wi = 1; wi < w.Length; wi++) woff[wi] = woff[wi - 1] + w[wi - 1];
         var p = 0;
         for (var s = 0; s + 1 < index.Length; s += 2)
-            for (var i = 0; i < index[s + 1]; i++, p += rowLen)
+            for (long i = 0; i < index[s + 1]; i++, p += rowLen)
             {
                 if (p + rowLen > data.Length) break;
                 long Field(int idx2, long def)
@@ -327,7 +342,7 @@ public sealed class PdfFile
                     return v;
                 }
                 var type = Field(0, 1);
-                var num = index[s] + i;
+                var num = (int)(index[s] + i);
                 if (Xref.ContainsKey(num) && !(overridable?.Contains(num) ?? false)) continue;
                 Xref[num] = type switch
                 {

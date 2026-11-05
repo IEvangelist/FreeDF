@@ -4,6 +4,14 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref-stream Index/Size correction](spec-backlog.md#2026-11-05-xref-stream-index-and-size-ranges)
+checks integer types, paired ascending non-overlapping ranges and Size
+bounds before narrowing object numbers. Invalid native cases repair
+explicitly; missing/null Index and valid controls are unchanged. Pinned
+corpus JSON is unchanged; MuPDF recovery disagreements are recorded.
+Complete W/entry schema, exact Size across updates and resource budgets
+remain separate.
+
 The [classic xref subsection range check](spec-backlog.md#2026-11-05-classic-xref-subsection-ranges)
 prevents negative or overflowing start/count ranges from wrapping into
 unrelated object numbers in either entry path. Invalid native ranges now

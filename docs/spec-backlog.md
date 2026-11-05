@@ -4,6 +4,39 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 xref-stream Index and Size ranges
+
+ISO 32000-1 7.5.8.2 Table 17 (printed p50) requires integer Size and
+integer Index pairs, ascending non-overlapping subsections, and default
+Index [0 Size]. The parser now checks those raw types, pairing, ordering,
+overlap and each range against Size before narrowing object numbers.
+Size is bounded to 1 through int.MaxValue + 1 and starts to int.MaxValue
+by the current representation, not a normative PDF maximum. Invalid values
+raise PdfParseException and enter existing repair. Null Index retains the
+dictionary's absent-entry semantics (7.3.9); zero-count compatibility is
+preserved without claiming conformance of every empty subsection.
+
+Twenty-three controls cover malformed types (including indirect entries),
+fractional values, negative/oversized ranges, overlap, ordering, Size
+boundaries, missing/null Index and supported boundaries. Twelve malformed
+cases in the initial selector were red before correction (an initial null
+negative was corrected to a positive because null means absent). Full
+Release: 18,471 passed, zero failed/skipped. Solution: zero errors and two
+retained machine-feed NU1507 warnings.
+
+Eleven native PDFs retain two no-repair positives and now explicitly
+repair nine invalid cases, recovering the intended target. Seven previously
+lost targets are recovered. MuPDF agrees on both positives and on repair
+of negative Size; it retains null targets for six malformed cases, accepts
+the unsorted case without repair and errors on the wrong Index type.
+These are documented recovery-policy disagreements, not normative proof
+from reference acceptance. Fresh pinned 435-PDF/870-result corpus JSON is
+wholly unchanged against the classic-range baseline.
+
+This does not validate all W raw types/widths, row completeness, entry fields,
+free lists, exact highest-used Size across updates, or parser-wide budgets.
+Hybrid/newest-section precedence remains unchanged.
+
 ## 2026-11-05 classic xref subsection ranges
 
 ISO 32000-1 7.5.4 (printed p40) defines a subsection's first object
