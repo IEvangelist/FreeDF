@@ -318,6 +318,9 @@ internal static partial class PdfUAChecks
             c.Add("PDFUA2-HEADING-HN", ValidationSeverity.Info, "numbered Hn headings are deprecated in PDF 2.0; prefer H nested in Sect elements", "ISO 32000-2 14.8.4.3");
     }
 
+    static string? TableType(ValidationContext c, StructureTree tree, StructElement element) =>
+        c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, element) : element.StandardType;
+
     static void Tables(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
@@ -326,17 +329,18 @@ internal static partial class PdfUAChecks
             .GroupBy(e => e.Id!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         var headerTargets = tree.Elements()
-            .Where(e => e.StandardType == "TH" && !string.IsNullOrEmpty(e.Id))
+            .Where(e => TableType(c, tree, e) == "TH" && !string.IsNullOrEmpty(e.Id))
             .GroupBy(e => e.Id!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
-        foreach (var t in tree.Elements().Where(e => e.StandardType == "Table"))
+        foreach (var t in tree.Elements().Where(e => TableType(c, tree, e) == "Table"))
         {
             var rows = new List<StructElement>();
             foreach (var ch in t.ChildElements)
             {
-                if (ch.StandardType == "TR") rows.Add(ch);
-                else if (ch.StandardType is "THead" or "TBody" or "TFoot") rows.AddRange(ch.ChildElements.Where(r => r.StandardType == "TR"));
-                else if (ch.StandardType != "Caption")
+                var type = TableType(c, tree, ch);
+                if (type == "TR") rows.Add(ch);
+                else if (type is "THead" or "TBody" or "TFoot") rows.AddRange(ch.ChildElements.Where(r => TableType(c, tree, r) == "TR"));
+                else if (type != "Caption" && (c.Part != 2 || type is not null))
                     c.Add("PDFUA-TABLE-CHILD", ValidationSeverity.Error, $"Table contains unexpected /{ch.Type}", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
             }
             if (rows.Count == 0) { c.Add("PDFUA-TABLE-ROWS", ValidationSeverity.Error, "Table has no TR rows", Clause(c, "7.5", "8.2.5.26"), t.PageIndex); continue; }
@@ -348,9 +352,10 @@ internal static partial class PdfUAChecks
                 var col = 0;
                 foreach (var cell in r.ChildElements)
                 {
-                    if (cell.StandardType is not ("TH" or "TD"))
+                    var type = TableType(c, tree, cell);
+                    if (type is not ("TH" or "TD"))
                     { c.Add("PDFUA-ROW-CHILD", ValidationSeverity.Error, $"TR contains /{cell.Type}, expected TH or TD", Clause(c, "7.5", "8.2.5.26"), t.PageIndex); continue; }
-                    hasTh |= cell.StandardType == "TH";
+                    hasTh |= type == "TH";
                     while (carry.TryGetValue(col, out var rem) && rem > 0) col++;
                     var cs = Math.Clamp((int)(cell.Attribute(f, "ColSpan").AsNumber() ?? 1), 1, 1000);
                     var rs = Math.Clamp((int)(cell.Attribute(f, "RowSpan").AsNumber() ?? 1), 1, 1000);
@@ -365,11 +370,13 @@ internal static partial class PdfUAChecks
                 c.Add("PDFUA-TABLE-IRREGULAR", ValidationSeverity.Error, "table rows have differing column counts (veraPDF PDFUA-1 7.2-42/43, PDFUA-2 8.2.5.26-3/4)", Clause(c, "7.2", "8.2.5.26"), t.PageIndex);
             TableHeaderAssociations(c, tree, rows, idCounts, headerTargets);
         }
-        foreach (var cell in tree.Elements().Where(e => e.StandardType is "TH" or "TD" or "TR"))
+        foreach (var cell in tree.Elements().Where(e => TableType(c, tree, e) is "TH" or "TD" or "TR"))
         {
-            var expected = cell.StandardType == "TR" ? new[] { "Table", "THead", "TBody", "TFoot" } : ["TR"];
-            if (cell.Parent is null || !expected.Contains(cell.Parent.StandardType))
-                c.Add("PDFUA-TABLE-PARENT", ValidationSeverity.Error, $"{cell.StandardType} is not inside {string.Join("/", expected)}", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+            var type = TableType(c, tree, cell);
+            var expected = type == "TR" ? new[] { "Table", "THead", "TBody", "TFoot" } : ["TR"];
+            var parentType = cell.Parent is null ? null : TableType(c, tree, cell.Parent);
+            if ((cell.Parent is null || parentType is not null || c.Part != 2) && !expected.Contains(parentType))
+                c.Add("PDFUA-TABLE-PARENT", ValidationSeverity.Error, $"{type} is not inside {string.Join("/", expected)}", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
         }
     }
 
@@ -406,28 +413,29 @@ internal static partial class PdfUAChecks
     {
         var f = c.F;
         var cells = rows.SelectMany(row => row.ChildElements)
-            .Where(cell => cell.StandardType is "TH" or "TD")
+            .Where(cell => TableType(c, tree, cell) is "TH" or "TD")
             .ToArray();
         var headerAttributes = new Dictionary<StructElement, PdfObject?>();
 
         foreach (var cell in cells)
         {
+            var type = TableType(c, tree, cell);
             var scope = TableAttribute(c, tree, cell, "Scope");
             if (scope is not null)
             {
-                if (cell.StandardType != "TH" || f.Resolve(scope).AsName() is not ("Row" or "Column" or "Both"))
-                    c.Add("PDFUA-TABLE-SCOPE", ValidationSeverity.Error, $"/Scope on {cell.StandardType} must be a name with value /Row, /Column, or /Both", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+                if (type != "TH" || f.Resolve(scope).AsName() is not ("Row" or "Column" or "Both"))
+                    c.Add("PDFUA-TABLE-SCOPE", ValidationSeverity.Error, $"/Scope on {type} must be a name with value /Row, /Column, or /Both", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
             }
-            else if (c.Part == 1 && cell.StandardType == "TH")
+            else if (c.Part == 1 && type == "TH")
                 c.Add("PDFUA-TABLE-SCOPE-RECOMMENDED", ValidationSeverity.Info, "TH should have a /Scope attribute; whether the table's header relationships can be determined without it requires semantic review", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
 
             var cellHeaders = TableAttribute(c, tree, cell, "Headers");
             headerAttributes[cell] = cellHeaders;
-            if (cell.Id is { Length: > 0 } id && cell.StandardType == "TH" && idCounts.GetValueOrDefault(id) > 1)
+            if (cell.Id is { Length: > 0 } id && type == "TH" && idCounts.GetValueOrDefault(id) > 1)
                 c.Add("PDFUA-TABLE-HEADER-ID-DUPLICATE", ValidationSeverity.Error, $"TH /ID '{id}' is not unique in the structure tree", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
             if (cellHeaders is null) continue;
             // veraPDF (PDFUA-1 7.5-1/2) only evaluates /Headers on TD cells; dangling or empty references on TH cells are reported as warnings.
-            var headerSeverity = cell.StandardType == "TD" ? ValidationSeverity.Error : ValidationSeverity.Warning;
+            var headerSeverity = type == "TD" ? ValidationSeverity.Error : ValidationSeverity.Warning;
 
             if (f.Resolve(cellHeaders) is not PdfArray idArray)
             {
@@ -451,7 +459,7 @@ internal static partial class PdfUAChecks
         if (c.Part == 1)
             TableScopeConnections(c, tree, rows, headerAttributes);
         if (c.Part == 2 && headerAttributes.Values.Any(value => value is not null))
-            foreach (var cell in cells.Where(cell => cell.StandardType == "TD" && headerAttributes[cell] is null))
+            foreach (var cell in cells.Where(cell => TableType(c, tree, cell) == "TD" && headerAttributes[cell] is null))
                 c.Add("PDFUA-TABLE-HEADERS-CONSISTENCY", ValidationSeverity.Error, "TD has no /Headers attribute although /Headers is used in this table", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
     }
 

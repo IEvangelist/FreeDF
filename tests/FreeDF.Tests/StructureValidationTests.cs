@@ -404,6 +404,51 @@ public class ValidationTests
         Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-HEADERS-FORMAT");
     }
 
+    public static IEnumerable<object[]> TableNamespaceCases()
+    {
+        foreach (var kind in new[] { "default", "table", "rows", "headers", "data", "all" })
+        foreach (var broken in new[] { false, true })
+            yield return [kind, broken];
+    }
+
+    [Theory]
+    [MemberData(nameof(TableNamespaceCases))]
+    public void Ua2TableRowsAndHeaderAssociationsUseNamespaceRoles(string kind, bool broken)
+    {
+        var doc = PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TH /ID (h1) /A << /O /Table /Scope /Column /ColSpan {(broken ? 2 : 1)} >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(h1)] >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(h1)] >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(h1)] >> >>"));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        for (int number = 8; number <= 14; number++)
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(number));
+            var role = Assert.IsType<PdfName>(element.Get("S")).Value;
+            if (kind != "all" && (kind, role) is not (("table", "Table") or ("rows", "TR") or ("headers", "TH") or ("data", "TD")))
+                continue;
+            var custom = "Custom" + role;
+            element.Entries["S"] = new PdfName(custom);
+            element.Entries["NS"] = new PdfDictionary
+            {
+                Entries =
+                {
+                    ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:table-test")),
+                    ["RoleMapNS"] = new PdfDictionary { Entries = { [custom] = new PdfArray([new PdfName(role), pdf2]) } },
+                },
+            };
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(broken, report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.DoesNotContain(report.Findings, finding => finding.RuleId is "PDFUA-TABLE-PARENT" or "PDFUA-TABLE-ROWS"
+            or "PDFUA-TABLE-CHILD" or "PDFUA-TABLE-HEADERS" or "PDFUA-ROW-CHILD" or "PDFUA-TABLE-SCOPE"
+            or "PDFUA-TABLE-HEADERS-REFERENCE" or "PDFUA-TABLE-HEADERS-CONSISTENCY");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     [Fact]
     public void Ua2TableRequiresHeadersOnEveryDataCellWhenHeadersAreUsed()
     {

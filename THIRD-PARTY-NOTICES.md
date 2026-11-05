@@ -30,6 +30,12 @@ independent bounded FENote attribute helper. Inheritance/revision and
 direct-child/attribute scope are retained; grouping-dependent list
 semantics are not derived from the reference's standalone verdicts.
 
+The namespace-aware table/row/cell/header-ID endpoints in
+`ValidationPdfUA.cs` were independently cross-checked against the same
+profile, 8.2.5.26-4, with twelve native width controls. Existing C# table
+algorithms reuse the independent namespace resolver. Exploratory tests 5/6
+header-fallback differences are explicit, not claimed as completed coverage.
+
 The null annotation StructParent boundary in `ValidationPdfUA.cs` follows
 ISO 32000-1 7.3.9 and was independently cross-checked against the same
 CC BY 4.0 profiles (UA-1 7.18.8-1; UA-2 8.9.2.4.9-1/8.9.2.4.14-1).

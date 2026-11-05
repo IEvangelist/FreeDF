@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [table namespace correction](spec-backlog.md#2026-11-05-namespace-aware-table-row-and-header-endpoints)
+resolves table, row, cell and header-ID endpoints. Twelve native width
+controls agree, correcting four false rejections and one missed violation;
+UA-1 and fresh corpus output are unchanged. Explicit exploratory header
+fallback differences, section/grouping and complete geometry remain deferred.
+
 The [UA-2 TOC containment correction](spec-backlog.md#2026-11-05-ua-2-toc-containment-without-legacy-roles)
 uses existing namespace-resolved ISO 32005 nesting instead of redundant
 legacy raw-role checks. Six combined native outcomes agree, correcting

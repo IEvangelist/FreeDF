@@ -4,6 +4,30 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **15 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 namespace-aware table row and header endpoints
+
+UA-2 table selection, row/cell selection, header-ID targets, cell-parent
+checks and header-attribute evaluation now reuse the namespace resolver.
+UA-1 selection and existing span, attribute and header policies are
+unchanged. Unknown parent types retain role/nesting inspection errors
+rather than being treated as known incompatible PDF types.
+
+Twelve native regularity controls completed normally against the pinned
+combined profile: all file/width outcomes agree (six clean positives,
+six negatives, reference 8.2.5.26-4). Four false rejections of mapped
+tables/rows/cells and one missed irregular fully mapped table are corrected.
+All twelve UA-1 outputs and fresh 435-PDF/870-result output are unchanged.
+Twelve authored cases additionally cover mapped header-ID targets.
+
+Two exploratory twelve-control sets are retained separately, not used
+as negative regularity evidence. Undefined Headers on all TDs, and empty
+Headers on one TD, are accepted by the reference when valid Scope permits
+algorithmic determination. FreeDF's existing header-reference/consistency
+policy still rejects their six broken cases in each set. Pinned tests 5/6
+explicitly allow algorithmic determination; complete header fallback,
+legacy section/grouping endpoints and row-span/intersection geometry
+remain incomplete. No external PDFs, reports or engine code are bundled.
+
 ## 2026-11-05 UA-2 TOC containment without legacy roles
 
 Legacy TOC-child and TOCI-parent checks now run only for UA-1.
