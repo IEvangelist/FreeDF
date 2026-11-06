@@ -5460,11 +5460,30 @@ Twelve authored cases additionally cover mapped header-ID targets.
 Two exploratory twelve-control sets are retained separately, not used
 as negative regularity evidence. Undefined Headers on all TDs, and empty
 Headers on one TD, are accepted by the reference when valid Scope permits
-algorithmic determination. FreeDF's existing header-reference/consistency
-policy still rejects their six broken cases in each set. Pinned tests 5/6
-explicitly allow algorithmic determination; complete header fallback,
-legacy section/grouping endpoints and row-span/intersection geometry
-remain incomplete. No external PDFs, reports or engine code are bundled.
+algorithmic determination. At the time, FreeDF's header-reference and
+cross-cell consistency checks rejected six cases in each set; the
+cross-cell consistency restriction is removed in the following slice.
+Pinned tests 5/6 explicitly allow algorithmic determination; full
+association checking, legacy section/grouping endpoints and row-span/
+intersection geometry remain incomplete. No external PDFs, reports or
+engine code are bundled.
+
+## 2026-11-05 UA-2 implicit table-header determination
+
+The official [PDF 2.0 errata, 14.8.4.8.3](https://pdf-issues.pdfa.org/32000-2-2020/clause14.html#H14.8.4.8.3)
+states that when a cell does not explicitly identify its headers, the
+implicit table-header algorithm may be used. UA-2 no longer rejects a TD
+without `/Headers` solely because another cell in the same table has it.
+This keeps omitted and empty `/Headers` cases available for implicit
+determination; explicit header IDs are still checked against unique TH
+targets. UA-1 behavior is unchanged.
+
+Focused regression controls reproduce the mixed explicit/implicit case
+for both omitted and empty `/Headers`. The validator does not yet execute
+the complete header-association algorithm or claim inferred association
+correctness; row/column search, `WritingMode`, spans and scope-direction
+rules remain open. No benchmark was added because the change removes a
+UA-2-only diagnostic path and adds no parsing or traversal work.
 
 ## 2026-11-05 UA-2 TOC containment without legacy roles
 

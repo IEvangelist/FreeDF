@@ -1922,6 +1922,10 @@ targeted color-rule evidence only, not full PDF/A conformance.
 | Robustness | Fuzz/truncation tests | Done | Deterministic mutation of all fixtures (400-seed run green): only PdfException (or NotSupported for unsupported filters), timeouts enforced. Caps added: lexer nesting 200, inflate 1 GiB, raster 100M px, JBIG2/CCITT budgets |
 | Perf | Hot paths | Partial | Rasterizer/JPEG already tuned earlier; added static system-font cache and bounded immutable lexer operator-token reuse. On identical base `60107c7`, already-open vector rendering was 9.4–16.1% faster across two run orders with about 15.5% fewer managed allocations; fresh-vector and text CPU gains were not reliable. Six-document decoded-byte/token hashes matched. Existing results: text.pdf 96dpi render 107→98 ms, vector.pdf 246→243 ms; load scales linearly (1000 pages ≈12 ms) |
 
+PDF/UA-2 table-header validation permits implicit determination for cells
+without explicit `/Headers`, including mixed tables; explicit header IDs
+remain checked. The complete association algorithm is still incomplete.
+
 PDF/UA-2 containment now checks all 1534 unconditional parent-child exclusions
 and 14 direct-content bans derived from the pinned veraPDF 1.30.3 combined
 profile's 1636 ISO/TS 32005 Table 5 rules. The earlier "1722-check Table 5"

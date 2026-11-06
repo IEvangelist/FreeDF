@@ -34,6 +34,23 @@ public class PdfUaTableScopePresenceTests
         Assert.False(PdfValidator.Validate(doc, PdfValidationProfile.PdfUA1).Has("PDFUA-TABLE-HEADER-CONNECTION"));
     }
 
+    [Theory]
+    [InlineData("<< /S /TD >>")]
+    [InlineData("<< /S /TD /A << /O /Table /Headers [] >> >>")]
+    public void PdfUa2AllowsAlgorithmicHeadersForCellsWithoutExplicitHeaderIds(string cellWithoutHeaderIds)
+    {
+        var doc = Document(
+            Header("Column", "/ID (h)"),
+            "<< /S /TD /A << /O /Table /Headers [(h)] >> >>",
+            cellWithoutHeaderIds,
+            "<< /S /TD /A << /O /Table /Headers [(h)] >> >>");
+
+        var report = PdfValidator.Validate(doc, PdfValidationProfile.PdfUA2);
+
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+        Assert.False(report.Has("PDFUA-TABLE-HEADERS-CONSISTENCY"));
+    }
+
     [Fact]
     public void PresenceRequirementDoesNotDependOnSpannedPlacement()
     {
