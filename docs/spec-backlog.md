@@ -4,6 +4,53 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 hybrid supplemental stream targets
+
+ISO 32000-1 Table 19 (printed p51) defines XRefStm as the offset
+of a cross-reference stream, not another classic table. The common
+section reader previously accepted a classic table there; a self-table
+pointer was silently skipped by the shared visited set.
+
+Supplemental targets now require the stream path. A separate, lazily
+allocated supplemental-offset set prevents primary-table visits from
+bypassing that check, while still decoding a shared supplemental stream
+only once. Primary Prev traversal still supports classic tables and
+streams, including an offset also used as a supplement. Primary-chain
+cycle reporting, complete hybrid ownership, free-list semantics and
+same-section precedence remain separate work.
+
+Fourteen fixed/fallback controls have an actual unchanged-production
+baseline of four failures/ten passes; ordinary-object targets already
+repaired. Final focused checks pass 1,487; full Release passes 20,357,
+zero failed/skipped. Solution/benchmark builds have zero warnings/errors;
+final rebuilt UaDump yields unchanged complete JSON across the pinned
+435-PDF/870-result corpus. All provider/parser correctness preflights pass.
+The first baseline build encountered damaged Content reference metadata;
+a targeted unchanged-source rebuild resolved it before obtaining the
+actual failing baseline. No dependency or source workaround was needed.
+
+Fourteen independently encoded MuPDF 1.28.5 comparisons retain mixed
+behavior. Fixed classic-table and self-table targets load unrepaired but
+expose null targets; FreeDF now repairs and recovers the physical target.
+Ordinary-object targets repair in both. The six stream/shared-stream/
+stream-as-Prev controls expose targets; fixed entries stay unrepaired,
+while all fallback-entry fixtures repair in MuPDF. The fixed same-section
+free-entry compatibility control still exposes null in MuPDF versus a
+target in FreeDF; its fallback form repairs and exposes the target.
+That pre-existing precedence disagreement is preserved, not certified.
+Fallback entries are compatibility inputs, not conforming line framing.
+No external PDFs are bundled.
+
+A new XrefHybridBench measures fresh PdfFile.Load with 64/4,096 rows
+and one/sixteen updates sharing a supplemental stream. Correctness,
+input SHA256 and engine identifiers are checked outside timing.
+Matched archived-source control/final measurements and managed allocation
+limits are recorded in the benchmark README and retained reports.
+Three timing means decrease; the large sixteen-update mean increases
+about 4.5%, with all 99.9% intervals overlapping. Observed +64/~128
+managed-byte differences in two cases are retained; there is no timing
+gain, regression, allocation-neutrality or native-memory guarantee.
+
 ## 2026-11-05 xref stream header integer syntax
 
 ISO 32000-1 7.3.3 (printed p14) defines integer syntax with at most

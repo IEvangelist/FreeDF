@@ -9,6 +9,54 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Hybrid supplemental-stream validation: 2026-11-05
+
+XrefHybridBench measures fresh PdfFile.Load with 64/4,096 rows and
+one/sixteen incremental updates reusing a supplemental xref stream.
+Setup checks unrepaired loading, row count and resolved target identity
+outside timing, and emits input SHA256 plus engine MVID. Shared streams
+are decoded once, not once per update. This synthetic open workload is
+not a provider-conformance ranking or a complete hybrid grammar test.
+
+The matched control archives production 44e5a160 with its original
+central package/project properties; the final includes only the
+supplemental target-kind/separate visited-set change. Both runs compile
+the identical checked-in XrefHybridBench source through minimal isolated
+BDN executables with matching project flags. Input lengths/hashes match;
+engine MVIDs differ. Tests/corpus/preflights finished before timing;
+control/final processes ran sequentially, not concurrently.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Rows / updates | Control +/- error (us) | Final +/- error (us) | Managed bytes/load control -> final |
+|---|---:|---:|---:|
+| 64 / 1 | 4.779 +/- 0.1227 | 4.690 +/- 0.0496 | 23,272 -> 23,272 |
+| 64 / 16 | 12.596 +/- 0.2779 | 12.521 +/- 0.6365 | 53,552 -> 53,616 |
+| 4,096 / 1 | 263.891 +/- 3.5572 | 261.820 +/- 7.3428 | 882,534.19 -> 882,662.12 |
+| 4,096 / 16 | 273.971 +/- 4.9803 | 286.196 +/- 12.1715 | 912,878.11 -> 912,878.11 |
+
+Three means decrease; the large sixteen-update mean increases about
+4.5%. All confidence intervals overlap: neither a proven timing
+improvement nor a regression/zero-overhead conclusion follows. Preserve
+the observed +64/~128 managed-byte differences rather than claiming
+allocation neutrality or explaining them solely by the new lazy set.
+These are managed counters, not native or retained-memory measurements.
+This hybrid workload does not resolve the historical classic allocation
+discrepancy.
+
+[Control report](results/2026-11-05-xref-hybrid-control.md),
+[final report](results/2026-11-05-xref-hybrid-final.md), matching CSV
+and [eight raw GC/hash/MVID rows](results/2026-11-05-xref-hybrid-gc.csv)
+retain favorable and unfavorable observations. To reproduce the isolated
+comparison, archive the control Core plus Directory.Build.props and
+Directory.Packages.props; use identical net10.0 BDN 0.15.8 executables
+linking XrefHybridBench.cs and referencing either archived or final Core,
+with Optimize/TieredPGO enabled and ServerGarbageCollector disabled.
+Run `--filter '*XrefHybridBench*' --warmupCount 3 --iterationCount 8
+--iterationTime 500 --launchCount 1` separately for each source revision.
+
 ## Cumulative xref-stream header/footer guards: 2026-11-05
 
 Matched XrefFilterBench inputs compare the retained generation-bound

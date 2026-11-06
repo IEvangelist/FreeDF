@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [hybrid target guard](spec-backlog.md#2026-11-05-hybrid-supplemental-stream-targets)
+requires XRefStm to identify a cross-reference stream, even when its
+offset already identifies a visited classic table. Shared supplemental
+streams remain deduplicated; wider cycle/ownership/free-list rules and
+the recorded native same-section precedence disagreement remain open.
+
 The [xref header integer-syntax guard](spec-backlog.md#2026-11-05-xref-stream-header-integer-syntax)
 checks original object/generation tokens during unindexed section
 loading, not just recovered values. Ordinary indexed recovery remains

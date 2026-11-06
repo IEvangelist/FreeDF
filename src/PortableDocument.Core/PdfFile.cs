@@ -437,6 +437,7 @@ public sealed class PdfFile
             || !PdfLexer.IsNumericToken(Data.AsSpan(offsetStart, lx.Pos - offsetStart)))
             throw new PdfParseException("bad startxref");
         var visited = new HashSet<long>();
+        HashSet<long>? supplementalStreams = null;
         var pos = so.Value;
         var first = true;
         while (pos >= 0 && visited.Add(pos))
@@ -444,11 +445,12 @@ public sealed class PdfFile
             var trailer = ReadXrefSection(pos);
             if (first) { Trailer = trailer; first = false; }
             else foreach (var kv in trailer.Entries) Trailer.Entries.TryAdd(kv.Key, kv.Value);
-            if (ChainOffset(trailer.Get("XRefStm"), "XRefStm") is { } hx && visited.Add(hx))
+            if (ChainOffset(trailer.Get("XRefStm"), "XRefStm") is { } hx
+                && (supplementalStreams ??= []).Add(hx))
             {
                 // Hybrid files (7.5.8.4): the table marks compressed objects free; the XRefStm of the same section supplies them.
                 var hidden = _tableFree; _tableFree = null;
-                ReadXrefSection(hx, hidden);
+                ReadXrefSection(hx, hidden, streamOnly: true);
             }
             pos = ChainOffset(trailer.Get("Prev"), "Prev") ?? -1;
         }
@@ -470,7 +472,7 @@ public sealed class PdfFile
 
     HashSet<int>? _tableFree;
 
-    PdfDictionary ReadXrefSection(long pos, HashSet<int>? overridable = null)
+    PdfDictionary ReadXrefSection(long pos, HashSet<int>? overridable = null, bool streamOnly = false)
     {
         if (pos < 0 || pos >= Data.Length) throw new PdfParseException("xref offset out of range");
         var lx = new PdfLexer(Data, (int)pos);
@@ -478,6 +480,7 @@ public sealed class PdfFile
         if (lx.Pos + 4 <= Data.Length && Data.AsSpan(lx.Pos, 4).SequenceEqual("xref"u8)
             && (lx.Pos + 4 == Data.Length || !PdfLexer.IsRegular(Data[lx.Pos + 4])))
         {
+            if (streamOnly) throw new PdfParseException("XRefStm target must be a cross-reference stream");
             lx.Pos += 4;
             _tableFree = [];
             var sectionNumbers = new HashSet<int>();
