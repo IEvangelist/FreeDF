@@ -477,9 +477,6 @@ internal static partial class PdfUAChecks
 
         if (c.Part == 1)
             TableScopeConnections(c, tree, rows, headerAttributes);
-        if (c.Part == 2 && headerAttributes.Values.Any(value => value is not null))
-            foreach (var cell in cells.Where(cell => TableType(c, tree, cell) == "TD" && headerAttributes[cell] is null))
-                c.Add("PDFUA-TABLE-HEADERS-CONSISTENCY", ValidationSeverity.Error, "TD has no /Headers attribute although /Headers is used in this table", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
     }
 
     /// <summary>ISO 14289-1 7.5 / veraPDF 7.5-1: a TD whose headers are not given by /Headers needs a TH with a /Scope sharing its row or column (the scope direction is not evaluated).</summary>

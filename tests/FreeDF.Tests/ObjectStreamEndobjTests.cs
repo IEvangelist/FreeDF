@@ -54,14 +54,14 @@ public class ObjectStreamEndobjTests
     [InlineData("\n")]
     [InlineData("\n42\nendobj\n")]
     [InlineData("\nendobjX\n")]
-    public void Ordinary_stream_closing_recovery_remains_permissive(string closing)
+    public void Ordinary_stream_closing_recovery_is_explicit(string closing)
     {
         foreach (var repair in new[] { false, true })
         {
             var text = Encoding.Latin1.GetString(Build(closing, repair)).Replace("/ObjStm", "/OtherX", StringComparison.Ordinal);
             var file = PdfFile.Load(Encoding.Latin1.GetBytes(text));
             Assert.Equal("2 0 << /Type /Target >>"u8.ToArray(), Assert.IsType<PdfStream>(file.GetObject(3)).RawData);
-            Assert.Equal(repair, file.Repaired);
+            Assert.True(file.Repaired);
         }
     }
 

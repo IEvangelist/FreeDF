@@ -4,6 +4,547 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary numeric token syntax
+
+ISO 32000-1 7.3.3 (printed p14) defines integer tokens as decimal
+digits with at most an optional sign. Real tokens contain decimal digits
+with an optional sign and decimal point; exponent notation is not PDF
+number syntax. Existing `PdfLexer.IsNumericToken` already enforces this
+grammar for indexed headers and compressed object-stream members, but
+ordinary values could be converted permissively (`++42`, `1.2junk`,
+`1.2e3`) without explicit repair.
+
+The existing numeric-token validation now also records invalid numeric
+spellings during ordinary parsing. Before publishing an unrepaired
+object, the loader checks this lexer flag. Existing permissive parsed
+values remain available after explicit recovery; direct content lexer
+behavior and object-stream errors are unchanged. Valid `+.5`, `4.`,
+signed integers and ordinary decimal forms remain supported. This does
+not cover number overflow/range policy, malformed tokens that never
+enter numeric parsing, or every grammar/lifecycle rule.
+
+162 controls cover nine malformed and eleven valid tokens at top-level,
+inside arrays/dictionaries and in stream metadata, with indexed and
+forced-repair forms. The unchanged-production baseline is 36 failures/
+126 passes; the former permissive `++42` expectation was updated to
+require explicit repair while preserving its recovered numeric value.
+Focused parser selection passes 2,286; the full sequential Release suite
+passes 21,184, zero failed/skipped. Solution/benchmark builds have zero
+warnings/errors. Final rebuilt UaDump results are unchanged for 435
+PDFs/870 records; all provider/parser preflights pass.
+
+MuPDF 1.28.5 opens all 160 independent PDF fixtures. Of 36 malformed
+indexed inputs, all remain natively unrepaired; six (top-level forms)
+fail lookup, the remaining 30 resolve, and none warn. All 36 forced
+malformed inputs set repaired state and emit warnings, while six still
+fail lookup. All 44 valid indexed forms resolve without repair/warnings;
+all 44 forced valid forms resolve repaired. This permissive reference
+behavior is retained as a behavioral difference, not a normative rule.
+
+Four nested fresh-load/full-traversal cases reuse the exact 9a974da3
+benchmark as control, without repeating it. Three means are higher and
+one lower, but all intervals overlap; managed allocations are unchanged
+in two cases and differ by only +3.458/+0.167 bytes/op in the two large
+cases. This supports neither a causal overhead claim nor a performance
+improvement claim. It does not explain or dismiss prior name/dictionary
+timing concerns. [Reports, hashes and raw managed counters](../bench/FreeDF.Bench/README.md#ordinary-numeric-token-syntax-2026-11-05)
+retain all comparisons.
+
+## 2026-11-05 ordinary hexadecimal string syntax
+
+ISO 32000-1 7.3.4.3 (printed p16) requires hexadecimal strings to
+contain hexadecimal digits and ignores PDF whitespace; an unmatched
+final nibble is padded with zero. The lexer already preserves that
+odd-digit rule, but previously discarded every non-hex/non-whitespace
+byte and returned a value without explicit repair.
+
+The lexer now records such bytes while parsing the existing string.
+Unrepaired ordinary loading checks that flag before publishing direct,
+nested or stream-dictionary values. Existing object-stream errors are
+preserved. Already-repaired values and direct content lexing retain
+their previous invalid-character recovery; raw stream bytes are never
+interpreted as strings by this check. Unterminated values already
+triggered an existing recovery path and were deliberately excluded from
+this malformed-character control set.
+
+Thirty-seven tests cover six closed malformed hex forms at top-level,
+nested array/dictionary, and stream-metadata positions, valid empty,
+whitespace and odd-nibble forms, escaped ordinary literal strings
+containing angle brackets, raw bytes and direct content recovery.
+Corrected unchanged-production baseline: 7 failures/30 passes. Final
+focused parser selection passes 2,124. The full sequential Release suite
+passes 21,022 with zero failed/skipped; solution and benchmark builds
+have zero warnings/errors. Final rebuilt UaDump yields unchanged complete
+JSON over 435 PDFs/870 results. All provider/parser correctness preflights
+pass.
+
+MuPDF 1.28.5 opens all 36 independently encoded PDFs without lookup
+errors. Seven invalid indexed inputs remain unrepaired but generate
+native warnings; all seven forced-repair forms set native repaired.
+Ten valid indexed forms resolve without repair/warnings, and ten forced
+valid forms resolve repaired. Both raw-stream controls preserve the
+literal `<4G>` bytes. Native warnings/repair state are an independent
+behavior comparison, not normative acceptance or a claim of output
+equivalence.
+
+Four existing nested fresh-load/full-traversal benchmark cases reuse
+the retained 98ff9597 source/input control. Three final means are lower,
+one is higher; the large dictionary and stream intervals do not overlap.
+This is not causal or universal speedup evidence. The matched harness
+runs vary materially, and managed allocation counters increase by about
+536/1,048/
+32,804/65,539 bytes per operation. The counters are managed allocation,
+not native/retained memory and not a causal explanation. Preserve the
+timings as observed and do not infer a parser cost/benefit from an
+uncontrolled allocation variation. Timing is still not for malformed
+recovery or hex-heavy inputs.
+[Matched reports and allocation records](../bench/FreeDF.Bench/README.md#ordinary-hexadecimal-string-syntax-2026-11-05)
+retain all four comparisons and identities.
+
+## 2026-11-05 ordinary name escape syntax
+
+ISO 32000-1 7.3.5 (printed pp16-17) excludes null from name bytes
+and requires each literal NUMBER SIGN to introduce two hexadecimal
+digits. Names may be empty; valid escapes can encode delimiters,
+whitespace, NUMBER SIGN and non-ASCII bytes. The escape rules date
+from PDF 1.2; this slice's PDF fixtures declare 1.7.
+
+The lexer flags incomplete/non-hexadecimal escapes and decoded null
+during existing name parsing. Unrepaired ordinary loading checks that
+flag before publishing values or stream metadata. No extra name scan,
+reference resolution or raw-stream inspection is added. Repaired
+recovery and direct content lexing retain their existing decoded
+names; strict object-stream exceptions remain unchanged. This does
+not establish all version-dependent name semantics, UTF-8/byte-identity
+parity, implementation limits, trailer grammar or complete token grammar.
+
+The 173 controls exercise seven malformed names in top-level, array,
+dictionary-key, nested-value and stream-metadata positions, with valid
+empty/escaped names and forced-repair counterparts. Raw stream/comment
+lookalikes and direct content-lexer compatibility are included.
+Unchanged-production baseline: 35 failures/138 passes. Final focused
+checks pass 2,087; full Release suite passes 20,985, zero failed/skipped.
+Solution and benchmark builds have zero warnings/errors; final rebuilt
+UaDump retains identical complete JSON for 435 PDFs/870 results.
+All provider/parser correctness preflights pass.
+
+MuPDF 1.28.5 independently opens all 172 PDF controls (the extra test
+uses the lexer directly), with no target lookup errors. All 35 malformed
+indexed inputs resolve without repair or warnings; all 35 forced-repair
+counterparts resolve repaired with warnings. Fifty valid indexed
+controls resolve cleanly without repair; fifty forced counterparts
+resolve repaired. Both raw/comment controls resolve with the expected
+repair state, and all 36 stream cases return matching bytes. Native
+acceptance of malformed original names is preserved as a disagreement,
+not treated as normative conformance or proof of decoded-name parity.
+
+Four existing nested dictionary/stream fresh-load traversal benchmarks
+use retained 84935d2f results as matched source/input controls, without
+repeating them. All four final means are higher (about 0.9-3.6%),
+with overlapping 99.9% intervals. This unfavorable direction is retained
+as a performance concern, not dismissed or called zero overhead.
+Two managed counters match; large dictionary/stream counters change
+by about -1.667/+17.333 bytes/op, without causal attribution. The
+control's 89.807 ms minimum-iteration warning remains documented.
+[Timings, identities and raw managed counters](../bench/FreeDF.Bench/README.md#ordinary-name-escape-syntax-2026-11-05)
+do not establish native/retained memory or a universal performance claim.
+
+## 2026-11-05 ASCII name-token parsing fast path
+
+Common unescaped ASCII names now decode directly from the input span,
+avoiding a temporary byte list, copied byte array and per-name strict UTF-8
+decoder allocation. Escaped and non-ASCII names retain the existing
+strict-UTF-8-then-Latin-1 fallback and validation behavior. This is a
+performance-only change; it does not change PDF name acceptance. The
+fallback path's performance is not measured by this benchmark.
+
+The name-syntax and object-stream name-escape selections pass 196 tests;
+the full Release suite passes 21,201 with zero failures/skips. The
+Release solution build succeeds with zero errors and five existing
+machine-source NU1507 warnings; benchmark correctness preflights pass.
+
+Matched `IndirectObjectBench.LoadValues` runs compare baseline commit
+`f93701b` with final engine MVID
+`d08d28bc-9906-4948-b72f-23ad6b193562` (control MVID
+`54b7127b-9e05-4176-b46d-feb5f7e93c56`). On identical 64- and 4,096-object
+inputs, both dictionary-name workload intervals are disjoint and managed
+allocations fall 14.78 KB and 896.77 KB respectively. Numeric-only object
+workload intervals overlap. These are bounded synthetic repeated-name
+results, not a universal load-time, escaped-name, native-memory or provider
+comparison. See the [benchmark record](../bench/FreeDF.Bench/README.md#ascii-name-token-fast-path-2026-11-05)
+for exact timings, intervals, hashes and settings.
+
+## 2026-11-05 Reference-token integer allocation
+
+`PdfLexer` now keeps the primitive result of integer parsing while checking
+whether the token begins an indirect reference. It allocates `PdfInteger`
+only when the integer is an ordinary value, avoiding a temporary object for
+each successfully parsed reference. This is performance-only and preserves
+existing numeric syntax, reference resolution and repair behavior.
+
+The focused numeric/reference selector passes 288 tests. The Release
+solution build succeeds with zero errors and five existing machine-source
+NU1507 warnings. One full-suite run had an unrelated ICC allocation assertion
+fail; that test passed in isolation and the immediate full-suite rerun passed
+all 21,201 tests with zero failures or skips.
+
+Matched `IndirectReferenceBench` measurements show 1.52 KB less managed
+allocation for 64 references and 96.03 KB less for 4,096 references.
+Timing intervals overlap substantially, including a very wide baseline
+interval for the larger input, so no timing improvement or regression is
+claimed. This evidence is limited to the generated reference-heavy inputs;
+see the [benchmark record](../bench/FreeDF.Bench/README.md#reference-token-integer-allocation-2026-11-05)
+for MVIDs, input hashes, timings and settings.
+
+## 2026-11-05 ordinary dictionary entry grammar
+
+ISO 32000-1 7.3.7 (printed p18) requires dictionary keys to be names,
+prohibits multiple entries with the same key and defines dictionaries
+as enclosed key/value pairs. Decoded name bytes determine identity;
+null values do not permit duplicate written entries. Ordinary loading
+previously discarded invalid keys, silently kept the last duplicate
+value or synthesized null for a name immediately followed by `>>`,
+without entering explicit repair.
+
+The lexer records those violations while parsing existing dictionary
+entries. TryAdd detects duplicates during insertion, without a second
+lookup on successful insertion or a recursive tree walk. Unrepaired
+indirect loading checks the flag before publishing ordinary values or
+stream dictionaries. Already-repaired recovery retains the previous
+last-value/discarded-key/null behavior and raw bytes; direct content
+lexing and existing strict object-stream errors are preserved. This
+does not validate all original syntax, trailer dictionaries, numeric,
+name or string tokens, missing container delimiters or resource budgets.
+
+Sixty-nine controls cover invalid key types, missing values, direct
+and escaped duplicate names (including null values), nested scopes,
+stream metadata, forced recovery, valid comments/names/strings/references
+and unchanged content-lexer recovery. The unchanged-production baseline
+is 20 failures/49 passes. Final focused checks pass 1,914; the integrated
+full Release suite passes 20,812, with zero failed/skipped. Current main
+4346ac39 was merged cleanly before the slice, with no Core or benchmark
+source changes from d6e94416; its editor node CI selection passes.
+Solution and benchmark builds have zero warnings/errors; final rebuilt
+UaDump retains identical complete JSON for 435 PDFs/870 results, and
+all provider/parser correctness preflights pass.
+
+MuPDF 1.28.5 independently opens 67 of 68 PDF controls (the extra test
+uses the content lexer directly). All 14 valid indexed controls resolve
+cleanly without repair; all 14 forced-repair valid controls resolve
+with repair. Twenty malformed indexed inputs all remain natively
+unrepaired: twelve fail lookup, eight return values, one warns and one
+returns the expected raw stream bytes. Of twenty forced-repair malformed
+inputs, one fails open, eleven fail lookup and eight return values;
+all nineteen that open are repaired. Native duplicate-name recovery
+keeps the last value, including escaped equivalents and null, without
+requiring indexed repair. These disagreements are retained, not used
+to define normative acceptance or a recovery interoperability claim.
+
+The existing flat/nested fresh-load and full-traversal benchmarks use
+the retained d6e94416 single-pass results as their matched source/input
+control, without repeating completed measurements. Five final means
+are lower and three higher; all 99.9% intervals overlap except the
+large nested stream, which is lower. Six managed counters match;
+large nested dictionary/stream counters differ by about +1.167/+5.667
+bytes/op. The new nested run logs an 89.807 ms minimum-iteration warning.
+There is no causal speedup, exact-neutrality, universal improvement or
+zero-overhead claim. This does not explain or dismiss the previous
+keyword slice's unfavorable large-stream result and longer diagnostic.
+[Scoped reports and all eight comparisons](../bench/FreeDF.Bench/README.md#ordinary-dictionary-entry-grammar-2026-11-05)
+retain original timings, fixture/input identities and raw managed counters.
+
+## 2026-11-05 ordinary object keyword values
+
+ISO 32000-1 7.3.1 (printed p13) lists the eight basic object types;
+7.3.6/7.3.7 (printed p18) define array elements and dictionary values
+as objects. Bare operator, delimiter or unknown keywords are not
+additional value types. Ordinary loading previously converted a
+top-level keyword to null or retained keywords inside collections
+without requiring explicit repair.
+
+The lexer now records keyword values encountered inside arrays and
+dictionary values during their existing parse; ordinary loading checks
+that flag and the top-level value before unrepaired publication,
+including stream dictionaries. It does not resolve referenced objects
+or inspect raw stream bytes. The existing object-stream predicate and
+recovery semantics remain unchanged. Already-repaired recovery retains the previous
+null/collection values and stream bytes. Content operators, names,
+strings, comments, booleans, null and indirect references remain valid.
+At this slice, duplicate keys and discarded invalid dictionary keys
+remained separate work (addressed in the subsequent section above).
+This is not complete value grammar: malformed
+numeric/name/string tokens, missing values
+and container delimiters require separate original-syntax validation.
+
+Eighty-three controls have a corrected unchanged-production baseline
+of 24 failures/59 passes against archived 981d7a3c Core. The initial
+catalog control replaced a reference with a longer keyword, making
+the xref offset stale and accidentally testing existing repair.
+It was changed to a same-length substitution; the corrected baseline
+now fails for the intended missing keyword-value guard. The original
+23-failure/60-pass run is retained but is not the final baseline.
+Controls cover top-level and nested keywords, dictionary metadata
+on streams, valid object kinds, raw stream operators, explicit recovery,
+cached identity and unrelated catalog/target lookups.
+
+Final focused checks pass 1,857; the corrected full Release suite
+passes 20,742 with zero failed/skipped. Solution/benchmark builds have
+zero warnings/errors. Final rebuilt UaDump yields unchanged complete
+JSON across the pinned 435-PDF/870-result corpus; all provider/parser
+correctness preflights pass. The full suite was rerun after correcting
+the catalog fixture and again for the single-pass production change, not
+to replace or hide the initial evidence.
+
+The first production implementation reused a recursive post-parse
+container walk. Its matched nested 64-stream benchmark was about 9.5%
+slower than the archived control with non-overlapping 99.9% intervals.
+That implementation was rejected, its reports/raw counters retained,
+and replaced by the single-pass lexer flag. The completed archived
+control is reused, not repeatedly measured.
+
+MuPDF 1.28.5 independently opens 82 of 83 encoded comparisons. All
+18 valid indexed controls resolve without warnings or repair; all
+18 forced-repair valid controls resolve with the native repaired flag.
+The 23 malformed indexed controls remain natively unrepaired: ten
+fail lookup, one returns null and twelve return a recovered value.
+Of 23 forced-repair malformed inputs, one fails open, nine fail lookup,
+one returns null and twelve return a recovered value; all 22 that open
+set the repaired flag. The malformed-catalog control resolves natively
+without repair or warnings. FreeDF explicitly repairs malformed values
+while preserving its existing recovered results. These policies are
+not equivalent, and native acceptance is not normative conformance.
+External PDFs remain outside the repository.
+
+The new NestedObjectBench and existing IndirectObjectBench compare
+fresh loads/full-value traversal with correctness outside timing.
+Exact archived 981d7a3c, rejected tree-walk and final single-pass
+sources share fixture/input hashes and isolated project flags.
+Final means are lower in five of eight cases and higher in three;
+the large nested-stream mean remains about 9.6% higher with separate
+99.9% intervals in the original eight-iteration comparison. A targeted
+longer matched diagnostic of that case gives 14.53 +/- 0.717 ms
+control versus 14.66 +/- 0.411 ms final, with overlapping intervals.
+That diagnostic does not reproduce the original interval separation,
+but does not explain or dismiss it. Both results and the rejected
+implementation remain visible; no universal speedup, zero-overhead
+or proven-regression conclusion follows.
+
+Final raw managed counters match in six of eight cases; the two large
+nested cases differ by about +0.667/-1 bytes/op. The longer diagnostic
+differs by -1.8 bytes/op. All observations are retained without causal
+allocation or native/retained-memory claims. Malformed-input repair
+cost is not measured. Wider grammar, footer discovery, Size cardinality,
+budgets, object lifecycle and full PDF-spec parity remain open.
+
+## 2026-11-05 indexed indirect header integer syntax
+
+ISO 32000-1 7.3.3 (printed p14) defines an integer as decimal digits
+with at most one optional sign; 7.3.10 (printed p21) requires integer
+object/generation identifiers. Ordinary indexed loading previously
+checked their parsed values but bypassed the original-token check
+already used when loading an unindexed cross-reference stream.
+Repeated signs could therefore publish an unrepaired object.
+
+The existing token predicate and identifier bounds now also run for
+unrepaired indexed loads. Token starts are captured after whitespace/
+comments, not before them. Already-repaired recovery and the general
+numeric lexer remain unchanged. This is not complete header/xref
+offset, effective-entry identity, generation lifecycle or value grammar
+validation.
+
+Eighty-one controls have an actual unchanged-production baseline of
+24 failures/57 passes: integer, dictionary and stream values; repeated
+object/generation signs; valid single signs, padding, negative zero,
+comments/PDF whitespace; nonzero-generation identity; already-repaired
+compatibility and an intentionally unchanged permissive numeric value.
+Malformed object-number prefixes can still recover physical values;
+malformed generation headers remain absent under the existing repair
+scanner. Unrelated catalog lookup and repeated cached lookup remain
+usable in both cases.
+
+Final focused checks pass 1,774; full Release passes 20,659 with zero
+failed/skipped. Solution/benchmark builds have zero warnings/errors.
+Final rebuilt UaDump yields unchanged complete JSON across the pinned
+435-PDF/870-result corpus; all provider/parser correctness preflights
+pass. Historical earlier counts remain dated evidence.
+
+MuPDF 1.28.5 independently opens all 81 encoded comparisons. All 54
+valid header controls resolve without warnings or repair. Nine malformed
+object-number controls set the native repaired flag but fail target
+lookup. Nine of fifteen malformed-generation controls likewise repair
+and fail lookup; the other six (plus-minus-zero and minus-minus-zero,
+across three value kinds) return the target unrepaired without warnings.
+Both forced-repair compatibility controls fail native lookup. The one
+ordinary repeated-sign numeric-value control fails native lookup while
+FreeDF retains its historical recovery. These disagreements are retained;
+permissive reference acceptance is not normative conformance or proof
+that a target lookup succeeds. No external PDFs are bundled.
+
+Matched IndirectObjectBench runs reuse the existing fixture source and
+fresh-load/full-value-traversal timing boundary against exact archived
+ec347d19/final Core. Input lengths/hashes match and engine identities
+differ. All four final means are higher (about 0.3-7.7%), with overlapping
+99.9% confidence intervals. This is a retained performance concern, not
+proof of a regression or justification to claim zero overhead. Managed
+counters match in three cases and differ by about -0.032 bytes/op in
+the large integer case; no causal allocation reduction or native/
+retained-memory guarantee follows. Malformed-header repair cost is not
+measured. Broader grammar, footer discovery, Size cardinality, budgets,
+object lifecycle and full PDF-spec parity remain open.
+
+## 2026-11-05 ordinary embedded stream framing
+
+ISO 32000-1 7.3.8.1 (printed p19), 7.3.8.2 and Table 5 (printed
+p20) require LF/CRLF after stream, an integer Length matching the
+encoded byte extent with at most one optional additional EOL, and
+endstream followed by whitespace/comments and endobj. These checks
+now apply to ordinary embedded streams before explicit repair, not
+only cross-reference/object streams. Already-repaired ordinary stream
+recovery remains tolerant and preserves the recovered bytes/cache.
+The existing external F path is unchanged: Table 5 makes its inline
+Length a recommendation, not the embedded-data requirement. This is
+not external-file support or complete stream/filter conformance.
+
+The 120 new controls have an actual unchanged-production baseline of
+34 failures/86 passes. They cover invalid openings, Length types and
+extents, keyword boundaries/closers, missing endstream at physical EOF,
+empty streams, counted marker-like bytes, all optional closing EOLs,
+comments, indirect Length and already-repaired/external compatibility.
+Five older ordinary-stream recovery tests now expect the explicit
+repaired state while retaining their exact recovered-byte assertions.
+The first focused run exposed twelve object-stream lifecycle failures
+from validating Length too early and three outdated ordinary-recovery
+expectations. Object-stream Length schema validation remains at its
+existing index stage; moving it earlier can repair during nested
+container loading and then continue an invalid member lookup.
+Those failures were corrected rather than weakening the assertions.
+
+Final focused checks pass 1,693; full Release passes 20,578 with zero
+failed/skipped. Solution/benchmark builds have zero warnings/errors.
+Final rebuilt UaDump yields unchanged complete JSON across the pinned
+435-PDF/870-result corpus; all provider/parser correctness preflights
+pass. Historical earlier counts remain dated evidence.
+
+MuPDF 1.28.5 independently opens all 120 encoded comparisons without
+open/lookup errors. All 25 valid indexed controls return expected
+bytes without warnings or repair. The 34 malformed indexed controls
+remain unrepaired natively; 20 return the expected recovered bytes and
+19 emit warnings. All 58 forced-repair controls set the native repaired
+flag; 30 return expected bytes, while the other 28 retain different
+extents. Two of those disagreements are otherwise-valid forced-repair
+controls (empty data and indirect Length). Three external compatibility
+controls return the inline bytes unrepaired, two with warnings; that
+does not validate external-file reading. FreeDF's explicit repair and
+the recorded native byte differences are not equivalent policies.
+Permissive native open acceptance is not normative conformance.
+External PDFs remain outside the repository.
+
+A new OrdinaryStreamBench times fresh loading plus traversal/checksum
+of all bytes in 64/4,096 ordinary streams with direct or shared indirect
+Length. Correctness, source/input hashes and engine identities are
+checked outside timing. Matched archived e8dd5642/final runs have four
+lower means; only the 64-stream indirect-Length confidence intervals
+do not overlap. This is bounded single-run evidence, not a universal
+or causal speedup claim. Managed counters match in three cases and
+increase by about 1.4 bytes/op in the large direct-Length case; the
+difference is retained without causal attribution. Native/retained
+memory and malformed-input repair costs are not measured. Complete
+value/header grammar, footer discovery, external streams, budgets,
+object lifecycle and full PDF-spec parity remain open.
+
+## 2026-11-05 ordinary indirect object closers
+
+ISO 32000-1 7.3.10 (printed p21) requires an indirect value to be
+bracketed by obj/endobj; 7.2.2/7.2.3 (printed p13) define token
+boundaries and comments as whitespace. Ordinary non-stream objects
+previously returned their value without checking the closing keyword.
+Unrepaired loading now requires a delimited endobj immediately after
+the value and whitespace/comments. Malformed indexed targets enter
+the existing explicit repair path, preserving lazy loading and cached
+identity. Already-repaired ordinary values remain recoverable.
+
+Sixty initial controls cover dictionary/integer/array/string/name/null
+values, missing/misspelled/joined/intervening-token closers, complete
+comments/PDF whitespace, catalog-open repair and already-repaired
+recovery. Actual unchanged-production baseline: 39 failures/21 passes.
+The first implementation's full suite exposed an out-of-range span for
+an unterminated hexadecimal string: ordinary lexer recovery can leave
+its position one byte past EOF. A new focused control reproduced that
+failure before adding a position bound to the closing guard. The lexer
+itself and ordinary stream closing policy are unchanged.
+
+Final 61 controls pass; focused checks pass 1,583 and full Release
+passes 20,458 with zero failed/skipped. Solution/benchmark builds have
+zero warnings/errors. Final rebuilt UaDump yields unchanged complete
+JSON across the pinned 435-PDF/870-result corpus; all provider/parser
+benchmark correctness preflights pass. The initial failing full run
+(20,456 pass/one failure) is retained, not dismissed as unrelated.
+
+Sixty independently encoded MuPDF 1.28.5 comparisons all open. The
+eighteen well-closed value controls load and resolve without warnings.
+Thirty malformed non-integer values still resolve unrepaired with
+closing-keyword warnings; six malformed integer values fail lookup
+with expected-R errors. The three malformed-catalog controls resolve
+the integer target unrepaired with catalog warnings. Three forced-
+repair integer controls set the repaired flag but fail target lookup.
+FreeDF explicitly repairs malformed closers and retains the physical
+value; native permissive acceptance is not conformance. The additional
+hex-EOF regression is a FreeDF control, not part of those sixty native
+comparisons. No external PDFs are bundled.
+
+A new IndirectObjectBench measures a fresh load plus traversal of all
+64/4,096 integer or dictionary values, not just eager catalog loading.
+Correctness, source/input hashes and engine identities are checked
+outside timing. Matched archived 2a61e790/final runs retain three
+higher means and one lower, with all 99.9% intervals overlapping.
+Managed counters match in three cases and differ by about -3.77
+bytes/op in the large-dictionary case; no proven timing/causal
+allocation reduction or native/retained-memory guarantee follows.
+Ordinary stream strictness, complete value/header grammar, global
+budgets, object lifecycle and full spec parity remain open.
+
+## 2026-11-05 primary xref chain cycles
+
+ISO 32000-1 7.5.6 (printed p44) requires incremental trailers to
+identify the previous cross-reference section; 7.5.8.1 (printed p49)
+describes the equivalent section information in xref streams. A cyclic
+primary Prev path cannot identify a terminating revision history.
+Previously, the visited-set loop condition silently stopped at a
+repeated offset and could publish an unrepaired but incomplete index.
+
+A repeated primary offset now enters explicit repair. The existing
+visited set is reused; no offset ordering is imposed and supplemental
+stream deduplication remains separate. This does not claim complete
+linearization, hybrid ownership, arbitrary dependency-cycle detection
+or free-list/lifecycle validation.
+
+The initial twelve mixed classic/stream controls have a real
+unchanged-production baseline of eight failures/four passes. Four
+additional acyclic forward-link topology controls remain unrepaired;
+they are not complete linearized-file conformance fixtures. Final
+sixteen controls pass, focused checks pass 1,503 and full Release
+passes 20,397 with zero failed/skipped. Solution/benchmark builds have
+zero warnings/errors; final rebuilt UaDump yields unchanged complete
+JSON across the pinned 435-PDF/870-result corpus. All provider/parser
+benchmark correctness preflights pass.
+
+Sixteen independently encoded MuPDF 1.28.5 comparisons all open without
+the native repaired flag. Each of the eight cyclic inputs fails lookup
+of the physical target with an explicit missing-xref-object error;
+all eight terminating/backward-or-forward controls expose the target.
+FreeDF now repairs cyclic inputs and recovers that target. Native open
+acceptance is not normative conformance or a successful lookup. Each
+native process has a fifteen-second timeout; none times out. External
+PDFs remain outside the repository.
+
+The existing XrefHybridBench exercises terminating chains without
+timing fixture creation or validation. A new final run uses the same
+source/input hashes and isolated harness as the retained immediately
+preceding hybrid-target control; that control is not rerun. Three means
+increase and one decreases, all 99.9% intervals overlap. Raw managed
+allocation observations are retained without a causal reduction or
+zero-overhead claim; malformed-chain repair cost is not measured.
+
 ## 2026-11-05 hybrid supplemental stream targets
 
 ISO 32000-1 Table 19 (printed p51) defines XRefStm as the offset
@@ -4966,11 +5507,30 @@ Twelve authored cases additionally cover mapped header-ID targets.
 Two exploratory twelve-control sets are retained separately, not used
 as negative regularity evidence. Undefined Headers on all TDs, and empty
 Headers on one TD, are accepted by the reference when valid Scope permits
-algorithmic determination. FreeDF's existing header-reference/consistency
-policy still rejects their six broken cases in each set. Pinned tests 5/6
-explicitly allow algorithmic determination; complete header fallback,
-legacy section/grouping endpoints and row-span/intersection geometry
-remain incomplete. No external PDFs, reports or engine code are bundled.
+algorithmic determination. At the time, FreeDF's header-reference and
+cross-cell consistency checks rejected six cases in each set; the
+cross-cell consistency restriction is removed in the following slice.
+Pinned tests 5/6 explicitly allow algorithmic determination; full
+association checking, legacy section/grouping endpoints and row-span/
+intersection geometry remain incomplete. No external PDFs, reports or
+engine code are bundled.
+
+## 2026-11-05 UA-2 implicit table-header determination
+
+The official [PDF 2.0 errata, 14.8.4.8.3](https://pdf-issues.pdfa.org/32000-2-2020/clause14.html#H14.8.4.8.3)
+states that when a cell does not explicitly identify its headers, the
+implicit table-header algorithm may be used. UA-2 no longer rejects a TD
+without `/Headers` solely because another cell in the same table has it.
+This keeps omitted and empty `/Headers` cases available for implicit
+determination; explicit header IDs are still checked against unique TH
+targets. UA-1 behavior is unchanged.
+
+Focused regression controls reproduce the mixed explicit/implicit case
+for both omitted and empty `/Headers`. The validator does not yet execute
+the complete header-association algorithm or claim inferred association
+correctness; row/column search, `WritingMode`, spans and scope-direction
+rules remain open. No benchmark was added because the change removes a
+UA-2-only diagnostic path and adds no parsing or traversal work.
 
 ## 2026-11-05 UA-2 TOC containment without legacy roles
 
@@ -8944,3 +9504,49 @@ may still lack mappings, and a family match does not prove an exact predicate.
 No percentages of standards coverage are inferred. Classify those unmapped and
 other-rule-only cases before choosing further fixes; the prior zero file-verdict
 misses do not close this work.
+
+### 2026-11-05 PDF 2.0 indirect-object identifier syntax
+
+The [PDF Association's ISO 32000-2:2020 Clause 7.3.10 erratum](https://pdf-issues.pdfa.org/32000-2-2020/clause07.html#H7.3.10),
+tracked as [issue #379](https://github.com/pdf-association/pdf-issues/issues/379),
+requires an object number to be a positive decimal integer with no leading
+plus sign or leading zero. A generation number is nonnegative and follows the
+same syntax except that the single digit `0` is permitted. This applies to
+both indirect-object headers and indirect references. The existing PDF 1.7
+acceptance of signed and zero-padded integer spellings is intentionally kept.
+
+The lexer records noncanonical reference spellings in ordinary and compressed
+object values. Header spellings are checked from their original bytes; the
+effective version is determined after resolving the catalog, so `/Version`
+overrides work in either direction without prematurely tightening a PDF 1.7
+document. A nonconforming identifier enters the existing explicit xref-repair
+path. This is not a strict rejection or a whole-file validator: objects are
+checked when loaded, and the existing repair scan may not recover every
+malformed header.
+
+`Pdf20ObjectIdentifierSyntaxTests` covers header and reference signs/padding,
+object number zero, compressed-member references, and catalog version
+overrides. Together with the existing indexed-header compatibility controls,
+the focused selector passes 96 tests with zero failures or skips. The first
+pre-fix run failed all 10 new syntax expectations while both PDF 1.7 controls
+passed.
+
+`IndirectReferenceBench` measures fresh PDF 2.0 loads of 64 and 4,096 objects
+with one reference per object. Matched baseline/final input hashes are
+`A4C111E79A1682B5334FA8809CFECD4CC004A13815D806D1F68DC620B3D3D85F` (64) and
+`15114B6A443289F3F7DBC8E4F81ABEEB7AEFCC187326284391AEABC7A8ED139D` (4,096);
+engine MVIDs are `2d5bcc60-a0da-43df-a1ad-cb291c490788` and
+`72f66e52-82c2-41b5-b8fc-721462d07635`. BenchmarkDotNet ShortRun (3
+iterations, 3 warmups; .NET 10.0.14, i7-14700K) measured 17.749±3.466 us
+versus 16.88±2.311 us at 64 objects, and 2,575.68±352.61 us versus
+2,590.67±1,511.02 us at 4,096 (99.9% confidence margins). Managed allocation
+counters are unchanged at 63.88 KB and 4,011.14 KB respectively. Both
+intervals overlap substantially; no causal speedup or regression is claimed.
+Independent Poppler 4.06 text extraction accepted canonical, padded-reference,
+and padded-header PDF 2.0 controls (all exit 0 and emit the same `Parity`
+text). That records provider recovery behavior, not an alternative to the
+normative erratum. No cross-provider throughput comparison was run. The full
+Release suite passes 21,201 tests with zero failures or skips; the Release
+solution build has zero errors and five existing machine-source NU1507
+warnings. All benchmark correctness preflights pass; no repository
+package-source configuration was changed.

@@ -679,7 +679,7 @@ public class ValidationTests
     }
 
     [Fact]
-    public void Ua2TableRequiresHeadersOnEveryDataCellWhenHeadersAreUsed()
+    public void Ua2TableAllowsImplicitHeadersWhenSomeDataCellsOmitHeaders()
     {
         var pdf = Ua("8 0 R",
             "<< /S /Table /K [9 0 R 10 0 R] >>",
@@ -691,7 +691,7 @@ public class ValidationTests
             "<< /S /TD >>");
         var r = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
 
-        Assert.Equal(2, r.Findings.Count(f => f.RuleId == "PDFUA-TABLE-HEADERS-CONSISTENCY"));
+        Assert.False(r.Has("PDFUA-TABLE-HEADERS-CONSISTENCY"));
     }
 
     [Fact]

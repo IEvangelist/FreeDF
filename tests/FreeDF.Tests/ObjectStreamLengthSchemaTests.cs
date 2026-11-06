@@ -48,14 +48,14 @@ public class ObjectStreamLengthSchemaTests
     [InlineData("null")]
     [InlineData("22.0")]
     [InlineData("-1")]
-    public void Ordinary_stream_recovery_is_not_made_strict(string length)
+    public void Ordinary_stream_Length_recovery_is_explicit(string length)
     {
         foreach (var repair in new[] { false, true })
         {
             var file = PdfFile.Load(Build(length, repair, ordinary: true));
             var stream = Assert.IsType<PdfStream>(file.GetObject(3));
             Assert.Equal("2 0 << /Type /Target >>"u8.ToArray(), stream.RawData);
-            Assert.Equal(repair, file.Repaired);
+            Assert.True(file.Repaired);
         }
     }
 

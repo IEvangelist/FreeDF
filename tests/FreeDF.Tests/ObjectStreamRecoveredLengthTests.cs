@@ -65,13 +65,13 @@ public class ObjectStreamRecoveredLengthTests
     [InlineData("0")]
     [InlineData("21")]
     [InlineData("1000")]
-    public void Ordinary_stream_mismatched_Length_recovery_remains_permissive(string length)
+    public void Ordinary_stream_mismatched_Length_recovery_is_explicit(string length)
     {
         foreach (var repair in new[] { false, true })
         {
             var file = PdfFile.Load(ObjectStreamLengthSchemaTests.Build(length, repair, ordinary: true));
             Assert.Equal("2 0 << /Type /Target >>"u8.ToArray(), Assert.IsType<PdfStream>(file.GetObject(3)).RawData);
-            Assert.Equal(repair, file.Repaired);
+            Assert.True(file.Repaired);
         }
     }
 

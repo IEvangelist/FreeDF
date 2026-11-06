@@ -10,6 +10,8 @@ public class PdfParseException(string message) : Exception(message);
 /// <summary>Tokenizer + object parser used for both file bodies and content streams (ISO 32000-2 §7.2-7.3).</summary>
 public sealed class PdfLexer
 {
+    static readonly UTF8Encoding StrictNameEncoding = new(false, true);
+
     // Only fixed operators are shared; arbitrary input must not grow a process-wide cache.
     static readonly FrozenDictionary<int, PdfKeyword> ShortKeywords =
         ("q Q cm w J j M d ri i gs m l c v y h re S s f F f* B B* b b* n W W* " +
@@ -37,6 +39,12 @@ public sealed class PdfLexer
     }
     public int Length => _end;
     public byte[] Data => _d;
+    internal bool HasKeywordValue { get; private set; }
+    internal bool HasInvalidDictionary { get; private set; }
+    internal bool HasInvalidName { get; private set; }
+    internal bool HasInvalidHexString { get; private set; }
+    internal bool HasInvalidNumberToken { get; private set; }
+    internal bool HasInvalidObjectIdentifierSyntax { get; private set; }
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
@@ -95,12 +103,17 @@ public sealed class PdfLexer
         while (Pos < _end && IsRegular(_d[Pos])) Pos++;
         CheckTokenBoundary();
         var token = _d.AsSpan(start, Pos - start);
-        if (TryNumber(token, out var num))
+        if (TryNumber(token, out var num, out var integer, out var isInteger))
         {
-            if (_objectStreamMember && !IsNumericToken(token))
-                throw new PdfParseException("invalid numeric token in object stream member");
-            if (resolveRefs && num is PdfInteger n1 && n1.Value >= 0) return TryRef(n1, start) ?? num;
-            return num;
+            if (!IsNumericToken(token))
+            {
+                if (_objectStreamMember)
+                    throw new PdfParseException("invalid numeric token in object stream member");
+                HasInvalidNumberToken = true;
+            }
+            if (resolveRefs && isInteger && integer >= 0 && TryRef(integer, start) is { } reference)
+                return reference;
+            return isInteger ? new PdfInteger(integer) : num;
         }
         if (ShortKeywords.TryGetValue(ShortKeywordKey(token), out var keyword)) return keyword;
         var tok = Encoding.Latin1.GetString(_d, start, Pos - start);
@@ -113,10 +126,12 @@ public sealed class PdfLexer
         };
     }
 
-    PdfObject? TryRef(PdfInteger first, int startPos)
+    PdfObject? TryRef(long first, int startPos)
     {
         var save = Pos;
+        var firstEnd = Pos;
         SkipWhite();
+        var generationStart = Pos;
         var negative = false;
         if (_objectStreamMember && Pos < _end && _d[Pos] is (byte)'+' or (byte)'-')
             negative = _d[Pos++] == '-';
@@ -138,14 +153,21 @@ public sealed class PdfLexer
                     throw new PdfParseException("indirect reference generation exceeds 65535 in object stream member");
                 if (_objectStreamMember && Pos == generationEnd)
                     throw new PdfParseException("indirect reference requires white space in object stream member");
-                if (first.Value > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
+                if (first > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
+                if (!IsPdf20ObjectIdentifierToken(_d.AsSpan(startPos, firstEnd - startPos), allowZero: false)
+                    || !IsPdf20ObjectIdentifierToken(_d.AsSpan(generationStart, generationEnd - generationStart), allowZero: true))
+                    HasInvalidObjectIdentifierSyntax = true;
                 Pos++;
-                return new PdfRef((int)first.Value, gen);
+                return new PdfRef((int)first, gen);
             }
         }
         Pos = save;
         return null;
     }
+
+    internal static bool IsPdf20ObjectIdentifierToken(ReadOnlySpan<byte> token, bool allowZero) =>
+        token.Length > 0 && (token[0] is >= (byte)'1' and <= (byte)'9'
+            || allowZero && token.SequenceEqual("0"u8));
 
     void CheckTokenBoundary()
     {
@@ -169,9 +191,11 @@ public sealed class PdfLexer
         return digits > 0 && i == token.Length;
     }
 
-    static bool TryNumber(ReadOnlySpan<byte> t, out PdfObject o)
+    static bool TryNumber(ReadOnlySpan<byte> t, out PdfObject o, out long integer, out bool isInteger)
     {
         o = null!;
+        integer = 0;
+        isInteger = false;
         if (t.Length == 0) return false;
         var c = t[0];
         if (!(c is >= (byte)'0' and <= (byte)'9' or (byte)'+' or (byte)'-' or (byte)'.')) return false;
@@ -184,7 +208,12 @@ public sealed class PdfLexer
         while (digits < s.Length && s[digits] is >= (byte)'0' and <= (byte)'9') digits++;
         if (digits == s.Length)
         {
-            if (long.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var l)) { o = new PdfInteger(neg ? -l : l); return true; }
+            if (long.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var l))
+            {
+                integer = neg ? -l : l;
+                isInteger = true;
+                return true;
+            }
             if (double.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var big)) { o = new PdfReal(neg ? -big : big); return true; }
             return false;
         }
@@ -202,6 +231,17 @@ public sealed class PdfLexer
     PdfName ReadName()
     {
         Pos++;
+        var start = Pos;
+        var ascii = true;
+        while (Pos < _end && IsRegular(_d[Pos]))
+        {
+            var c = _d[Pos++];
+            if (c >= 0x80 || c == '#') ascii = false;
+        }
+        CheckTokenBoundary();
+        if (ascii) return new PdfName(Encoding.ASCII.GetString(_d.AsSpan(start, Pos - start)));
+
+        Pos = start;
         var sb = new List<byte>();
         while (Pos < _end && IsRegular(_d[Pos]))
         {
@@ -209,22 +249,30 @@ public sealed class PdfLexer
             if (c == '#' && Pos + 1 < _end && Hex(_d[Pos]) >= 0 && Hex(_d[Pos + 1]) >= 0)
             {
                 var decoded = (byte)(Hex(_d[Pos]) * 16 + Hex(_d[Pos + 1]));
-                if (_objectStreamMember && decoded == 0)
-                    throw new PdfParseException("null byte in name in object stream member");
+                if (decoded == 0)
+                {
+                    if (_objectStreamMember)
+                        throw new PdfParseException("null byte in name in object stream member");
+                    HasInvalidName = true;
+                }
                 sb.Add(decoded);
                 Pos += 2;
             }
             else
             {
-                if (_objectStreamMember && c == '#')
-                    throw new PdfParseException("invalid name escape in object stream member");
+                if (c == '#')
+                {
+                    if (_objectStreamMember)
+                        throw new PdfParseException("invalid name escape in object stream member");
+                    HasInvalidName = true;
+                }
                 sb.Add(c);
             }
         }
         CheckTokenBoundary();
         var arr = sb.ToArray();
         string s;
-        try { s = new UTF8Encoding(false, true).GetString(arr); } catch { s = Encoding.Latin1.GetString(arr); }
+        try { s = StrictNameEncoding.GetString(arr); } catch { s = Encoding.Latin1.GetString(arr); }
         return new PdfName(s);
     }
 
@@ -244,8 +292,12 @@ public sealed class PdfLexer
         while (Pos < _end && _d[Pos] != '>')
         {
             var h = Hex(_d[Pos++]);
-            if (h < 0 && _objectStreamMember && !IsWhite(_d[Pos - 1]))
-                throw new PdfParseException("invalid hexadecimal string in object stream member");
+            if (h < 0 && !IsWhite(_d[Pos - 1]))
+            {
+                if (_objectStreamMember)
+                    throw new PdfParseException("invalid hexadecimal string in object stream member");
+                HasInvalidHexString = true;
+            }
             if (h < 0) continue;
             if (hi < 0) hi = h; else { bytes.Add((byte)(hi * 16 + h)); hi = -1; }
         }
@@ -304,6 +356,7 @@ public sealed class PdfLexer
             if (o is null && _objectStreamMember)
                 throw new PdfParseException("unterminated array in object stream member");
             if (o is null || o is PdfKeyword { Value: "]" }) break;
+            if (o is PdfKeyword) HasKeywordValue = true;
             items.Add(o);
         }
         _nesting--;
@@ -324,6 +377,7 @@ public sealed class PdfLexer
             {
                 if (_objectStreamMember)
                     throw new PdfParseException("dictionary key must be a name in object stream member");
+                HasInvalidDictionary = true;
                 continue;
             }
             if (_objectStreamMember && d.ContainsKey(name.Value))
@@ -336,10 +390,16 @@ public sealed class PdfLexer
             {
                 if (_objectStreamMember)
                     throw new PdfParseException("missing dictionary value in object stream member");
+                HasInvalidDictionary = true;
                 d[name.Value] = PdfNull.Instance;
                 break;
             }
-            d[name.Value] = v;
+            if (v is PdfKeyword) HasKeywordValue = true;
+            if (!d.TryAdd(name.Value, v))
+            {
+                HasInvalidDictionary = true;
+                d[name.Value] = v;
+            }
         }
         _nesting--;
         return new PdfDictionary(d);

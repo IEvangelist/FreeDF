@@ -49,6 +49,17 @@ if (args.Contains("--preflight"))
     foreach (var rows in new[] { 64, 4096 })
         foreach (var updates in new[] { 1, 16 })
             new XrefHybridBench { Rows = rows, Updates = updates }.Setup();
+    foreach (var objects in new[] { 64, 4096 })
+        foreach (var dictionaryValues in new[] { false, true })
+            new IndirectObjectBench { Objects = objects, DictionaryValues = dictionaryValues }.Setup();
+    foreach (var objects in new[] { 64, 4096 })
+        new IndirectReferenceBench { Objects = objects }.Setup();
+    foreach (var streams in new[] { 64, 4096 })
+        foreach (var indirectLength in new[] { false, true })
+            new OrdinaryStreamBench { Streams = streams, IndirectLength = indirectLength }.Setup();
+    foreach (var objects in new[] { 64, 4096 })
+        foreach (var streamValues in new[] { false, true })
+            new NestedObjectBench { Objects = objects, StreamValues = streamValues }.Setup();
     foreach (var rows in new[] { 64, 4096 })
         foreach (var fixedEntry in new[] { false, true })
             new XrefClassicBench { Rows = rows, FixedEntry = fixedEntry }.Setup();

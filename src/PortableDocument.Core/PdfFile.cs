@@ -17,6 +17,8 @@ public sealed class PdfFile
     readonly HashSet<PdfDictionary> _resolvingObjectStreamTypes = [];
     readonly HashSet<int> _readingObjectStreamIndexes = [];
     readonly HashSet<long> _loadingObjectOffsets = [];
+    bool _pdf20IdentifierSyntax;
+    bool _hasInvalidObjectIdentifierSyntax;
 
     PdfFile(byte[] data) { Data = data; }
 
@@ -40,7 +42,11 @@ public sealed class PdfFile
         {
             f.ReadXrefChain();
             f.SetupEncryption(password);
-            if (f.Trailer.Get("Root") is null || f.Resolve(f.Trailer.Get("Root")) is not PdfDictionary) throw new PdfParseException("bad root");
+            if (f.Resolve(f.Trailer.Get("Root")) is not PdfDictionary root) throw new PdfParseException("bad root");
+            var version = f.Resolve(root.Get("Version")) is PdfName catalogVersion ? catalogVersion.Value : f.Version;
+            f._pdf20IdentifierSyntax = UsesPdf20IdentifierSyntax(version);
+            if (f._pdf20IdentifierSyntax && f._hasInvalidObjectIdentifierSyntax && !f.Repaired)
+                throw new PdfParseException("PDF 2.0 indirect object identifiers must use canonical decimal syntax");
         }
         catch (PdfPasswordException) { throw; }
         catch (Exception e) when (e is PdfParseException or IndexOutOfRangeException or ArgumentException or FormatException or InvalidCastException or KeyNotFoundException or InvalidOperationException or NullReferenceException or OverflowException)
@@ -68,6 +74,25 @@ public sealed class PdfFile
         var depth = 0;
         while (o is PdfRef r && depth++ < 32) o = GetObject(r);
         return o is PdfRef ? PdfNull.Instance : o;
+    }
+
+    void CheckObjectIdentifierSyntax(bool invalid)
+    {
+        if (!invalid) return;
+        _hasInvalidObjectIdentifierSyntax = true;
+        if (!Repaired && _pdf20IdentifierSyntax)
+            throw new PdfParseException("PDF 2.0 indirect object identifiers must use canonical decimal syntax");
+    }
+
+    static bool UsesPdf20IdentifierSyntax(string version)
+    {
+        var separator = version.IndexOf('.');
+        if (separator <= 0 || !int.TryParse(version.AsSpan(0, separator), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var major)
+            || !int.TryParse(version.AsSpan(separator + 1), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var minor))
+            return false;
+        return major >= 2;
     }
 
     /// <summary>Reads one indirect reference, returning null-object for a missing, free or different-generation target without following further references.</summary>
@@ -128,28 +153,52 @@ public sealed class PdfFile
     {
         if (offset < 0 || offset >= Data.Length) throw new PdfParseException("offset out of range");
         var lx = new PdfLexer(Data, (int)offset);
-        if (expectNum < 0) lx.SkipWhite();
+        lx.SkipWhite();
         var numberStart = lx.Pos;
         var n = lx.ReadObject(false) as PdfInteger;
         var numberEnd = lx.Pos;
-        if (expectNum < 0) lx.SkipWhite();
+        lx.SkipWhite();
         var generationStart = lx.Pos;
         var g = lx.ReadObject(false) as PdfInteger;
         var generationEnd = lx.Pos;
         var kw = lx.ReadObject(false) as PdfKeyword;
         if (n is null || g is null || kw?.Value != "obj" || (expectNum >= 0 && n.Value != expectNum)
             || (expectGeneration is { } generation && g.Value != generation)) throw new PdfParseException($"object header mismatch at {offset}");
-        if (expectNum < 0 && (n.Value is <= 0 or > int.MaxValue || g.Value is < 0 or > 65535
+        var invalidIdentifierSyntax =
+            !PdfLexer.IsPdf20ObjectIdentifierToken(Data.AsSpan(numberStart, numberEnd - numberStart), allowZero: false)
+            || !PdfLexer.IsPdf20ObjectIdentifierToken(Data.AsSpan(generationStart, generationEnd - generationStart), allowZero: true);
+        if ((expectNum < 0 || !Repaired) && (n.Value is <= 0 or > int.MaxValue || g.Value is < 0 or > 65535
             || !PdfLexer.IsNumericToken(Data.AsSpan(numberStart, numberEnd - numberStart))
             || !PdfLexer.IsNumericToken(Data.AsSpan(generationStart, generationEnd - generationStart))))
-            throw new PdfParseException($"invalid or unsupported cross-reference stream object header at {offset}");
+            throw new PdfParseException(expectNum < 0
+                ? $"invalid or unsupported cross-reference stream object header at {offset}"
+                : $"invalid or unsupported indirect object header at {offset}");
+        CheckObjectIdentifierSyntax(invalidIdentifierSyntax);
         var obj = lx.ReadObject() ?? throw new PdfParseException("eof in object");
+        if (!Repaired && (obj is PdfKeyword || lx.HasKeywordValue))
+            throw new PdfParseException("indirect object contains a keyword value");
+        if (!Repaired && lx.HasInvalidDictionary)
+            throw new PdfParseException("indirect object contains invalid dictionary entries");
+        if (!Repaired && lx.HasInvalidName)
+            throw new PdfParseException("indirect object contains an invalid name");
+        if (!Repaired && lx.HasInvalidHexString)
+            throw new PdfParseException("indirect object contains an invalid hexadecimal string");
+        if (!Repaired && lx.HasInvalidNumberToken)
+            throw new PdfParseException("indirect object contains an invalid numeric token");
+        CheckObjectIdentifierSyntax(lx.HasInvalidObjectIdentifierSyntax);
         if (obj is PdfDictionary d)
         {
             var save = lx.Pos;
             if (lx.ReadObject() is PdfKeyword { Value: "stream" })
                 return ReadStream(d, lx);
             lx.Pos = save;
+        }
+        if (!Repaired)
+        {
+            lx.SkipWhite();
+            if ((uint)lx.Pos > (uint)Data.Length || !Data.AsSpan(lx.Pos).StartsWith("endobj"u8)
+                || lx.Pos + 6 < Data.Length && PdfLexer.IsRegular(Data[lx.Pos + 6]))
+                throw new PdfParseException("indirect object value must be followed by endobj");
         }
         return obj is PdfKeyword ? PdfNull.Instance : obj;
     }
@@ -172,16 +221,18 @@ public sealed class PdfFile
     PdfStream ReadStream(PdfDictionary d, PdfLexer lx)
     {
         var xref = d.Get("Type") is PdfName { Value: "XRef" };
-        var kind = xref ? "cross-reference stream" : "object stream";
+        var embedded = !Repaired && Resolve(d.Get("F")) is null or PdfNull;
+        PdfParseException FramingError(string message) => new(
+            $"{(xref ? "cross-reference stream" : IsObjectStream(d) ? "object stream" : "stream")} {message}");
         var p = lx.Pos;
         if (p < Data.Length && Data[p] == 13) p++;
         if (p < Data.Length && Data[p] == 10) p++;
-        if ((p == lx.Pos || Data[p - 1] != 10) && (xref || IsObjectStream(d)))
-            throw new PdfParseException($"{kind} keyword must be followed by LF or CRLF");
+        if ((p == lx.Pos || Data[p - 1] != 10) && (xref || embedded || IsObjectStream(d)))
+            throw FramingError("keyword must be followed by LF or CRLF");
         var length = d.Get("Length");
         if (length is PdfRef) length = Resolve(length);
-        if (xref && length is not PdfInteger { Value: >= 0 })
-            throw new PdfParseException("cross-reference stream Length must resolve to a nonnegative integer");
+        if (length is not PdfInteger { Value: >= 0 } && (xref || embedded && !IsObjectStream(d)))
+            throw FramingError("Length must resolve to a nonnegative integer");
         long len = length switch
         {
             PdfInteger integer => integer.Value,
@@ -192,16 +243,16 @@ public sealed class PdfFile
         {
             if (!ExactEndStreamFollows(p + (int)len, out var afterEndStream))
             {
-                if (xref || IsObjectStream(d))
-                    throw new PdfParseException($"{kind} endstream must follow Length with at most one EOL");
+                if (xref || embedded || IsObjectStream(d))
+                    throw FramingError("endstream must follow Length with at most one EOL");
             }
             else
             {
                 var closing = new PdfLexer(Data, afterEndStream);
                 closing.SkipWhite();
                 if ((!Data.AsSpan(closing.Pos).StartsWith("endobj"u8)
-                    || closing.Pos + 6 < Data.Length && PdfLexer.IsRegular(Data[closing.Pos + 6])) && (xref || IsObjectStream(d)))
-                    throw new PdfParseException($"{kind} endstream must be followed by endobj");
+                    || closing.Pos + 6 < Data.Length && PdfLexer.IsRegular(Data[closing.Pos + 6])) && (xref || embedded || IsObjectStream(d)))
+                    throw FramingError("endstream must be followed by endobj");
             }
             return new PdfStream(d, Data.AsSpan(p, (int)len).ToArray());
         }
@@ -210,11 +261,11 @@ public sealed class PdfFile
         var end = idx;
         if (end > p && Data[end - 1] == 10) end--;
         if (end > p && Data[end - 1] == 13) end--;
-        if (length is PdfInteger { Value: >= 0 } && (xref || IsObjectStream(d)))
+        if (length is PdfInteger { Value: >= 0 } && (xref || embedded || IsObjectStream(d)))
         {
             if (len != end - p)
-                throw new PdfParseException($"{kind} recovered byte count disagrees with Length");
-            throw new PdfParseException($"{kind} is missing a valid endstream marker");
+                throw FramingError("recovered byte count disagrees with Length");
+            throw FramingError("is missing a valid endstream marker");
         }
         return new PdfStream(d, Data.AsSpan(p, end - p).ToArray());
     }
@@ -267,6 +318,7 @@ public sealed class PdfFile
         var lexer = new PdfLexer(map.Data, start, objectStreamMember: true,
             end: map.First + member.End);
         var parsed = lexer.ReadObject();
+        CheckObjectIdentifierSyntax(lexer.HasInvalidObjectIdentifierSyntax);
         if (lexer.Pos > map.First + member.End)
             throw new PdfParseException("object stream member exceeds its boundary");
         if (parsed is null or PdfKeyword)
@@ -440,8 +492,9 @@ public sealed class PdfFile
         HashSet<long>? supplementalStreams = null;
         var pos = so.Value;
         var first = true;
-        while (pos >= 0 && visited.Add(pos))
+        while (pos >= 0)
         {
+            if (!visited.Add(pos)) throw new PdfParseException("cyclic primary cross-reference chain");
             var trailer = ReadXrefSection(pos);
             if (first) { Trailer = trailer; first = false; }
             else foreach (var kv in trailer.Entries) Trailer.Entries.TryAdd(kv.Key, kv.Value);

@@ -66,14 +66,14 @@ public class ObjectStreamEndstreamTests
     [InlineData(" ")]
     [InlineData("\t")]
     [InlineData("%note")]
-    public void Ordinary_stream_terminator_recovery_remains_permissive(string padding)
+    public void Ordinary_stream_terminator_recovery_is_explicit(string padding)
     {
         foreach (var repair in new[] { false, true })
         {
             var text = Encoding.Latin1.GetString(Build(padding, repair)).Replace("/ObjStm", "/OtherX", StringComparison.Ordinal);
             var file = PdfFile.Load(Encoding.Latin1.GetBytes(text));
             Assert.Equal("2 0 << /Type /Target >>"u8.ToArray(), Assert.IsType<PdfStream>(file.GetObject(3)).RawData);
-            Assert.Equal(repair, file.Repaired);
+            Assert.True(file.Repaired);
         }
     }
 

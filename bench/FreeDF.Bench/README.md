@@ -9,6 +9,474 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary numeric token syntax: 2026-11-05
+
+This slice reuses the four existing NestedObjectBench cases and the
+retained 9a974da3 results as the matched control, not remeasured.
+Timed work remains fresh load plus full nested traversal/checksum.
+Fixtures include valid integer numeric tokens, not malformed-token
+recovery; all values, stream bytes, count, checksum and unrepaired state
+are preflighted outside timing. Tests, corpus and all correctness
+preflights finish before timing.
+
+Fixture source and PDF length/SHA256 are identical; BDN runtime/harness
+flags match while engine identities differ. BDN0.15.8/.NET10.0.14/
+SDK10.0.403/Windows11/i7-14700K; one launch, 3 warmups, 8x500ms
+iterations; errors are 99.9% confidence-interval half-widths.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+|64 nested dictionary|42.68 +/- 1.144|44.02 +/- 2.138|183,688 ->183,688|
+|64 nested stream|53.04 +/- 1.080|52.06 +/- 2.335|214,920 ->214,920|
+|4,096 nested dictionary|9,353.73 +/- 585.942|9,697.25 +/- 576.247|11,676,884.667 ->11,676,888.125|
+|4,096 nested stream|11,860.24 +/- 483.904|12,154.84 +/- 647.026|13,675,702.667 ->13,675,702.833|
+
+Three means are higher and one lower, with all intervals overlapping.
+Managed allocations are unchanged in two cases and differ by only
++3.458/+0.167 bytes/op in the larger cases. There is no causal cost or
+speedup claim. This does not resolve or dismiss the prior name/dictionary
+benchmark concerns.
+
+[Control](results/2026-11-05-ordinary-numeric-nested-control-9a974da3.md)
+and [final](results/2026-11-05-ordinary-numeric-nested-final.md), adjacent
+CSVs and [raw counters/identities](results/2026-11-05-ordinary-numeric-gc.csv)
+retain all four comparisons.
+
+## Ordinary hexadecimal string syntax: 2026-11-05
+
+This slice reuses the four existing NestedObjectBench cases and the
+retained 98ff9597 result as control, not remeasured. Timed work is fresh
+PDF load plus complete nested traversal/checksum; the fixtures contain
+literal strings and nested dictionaries, not malformed or hex-heavy
+strings. Correctness preflight checks all values, stream bytes,
+unrepaired state, counts and checksums outside timing. Tests, final
+corpus comparison and provider/parser preflights finish before timing.
+
+Fixture source and PDF length/SHA256 are identical; BDN runtime/harness
+flags match while engine identities differ. BDN0.15.8/.NET10.0.14/
+SDK10.0.403/Windows11/i7-14700K; one launch, 3 warmups, 8x500ms
+iterations; errors are 99.9% confidence-interval half-widths.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 nested dictionary | 42.81 +/- 2.564 | 42.68 +/- 1.144 | 183,152 -> 183,688 |
+| 64 nested stream | 52.06 +/- 1.373 | 53.04 +/- 1.080 | 213,872 -> 214,920 |
+| 4,096 nested dictionary | 10,898.58 +/- 1,110.366 | 9,353.73 +/- 585.942 | 11,644,080.833 -> 11,676,884.667 |
+| 4,096 nested stream | 14,092.70 +/- 1,088.522 | 11,860.24 +/- 483.904 | 13,610,164 -> 13,675,702.667 |
+
+Three means are lower and one is higher; large dictionary/stream
+intervals do not overlap. That is not a causal or universal speedup
+claim. Managed allocations increase by about
+536/1,048/32,804/65,539 bytes per operation, a material
+variation not attributed to the simple scan guard. This is managed
+allocation only, not native or retained memory. Timing is not malformed
+recovery or hex-heavy workload evidence; no optimization/dismissal of
+the prior name/dictionary concerns is claimed.
+
+[Control](results/2026-11-05-ordinary-hex-nested-control-98ff9597.md)
+and [final](results/2026-11-05-ordinary-hex-nested-final.md), adjacent
+CSVs and [raw counters/identities](results/2026-11-05-ordinary-hex-gc.csv)
+retain all four comparisons.
+
+## Ordinary name escape syntax: 2026-11-05
+
+This slice reuses the four existing NestedObjectBench cases and the
+retained 84935d2f results as control, not remeasured. These fixtures
+include ordinary name keys and values in nested dictionary/stream
+objects; timed boundaries remain fresh load plus full traversal to
+checksum. Every value shape, stream byte, count and unrepaired state
+is preflighted outside timing. Malformed-name recovery, escape-heavy
+names, native/retained memory and conformance are not timed.
+
+Source archives, unchanged fixture source/input lengths/hashes and
+matching isolated project/runtime flags establish the comparison;
+engine identities differ. Tests, final corpus comparison and all
+provider/parser preflights finish before timing. BDN 0.15.8 /
+.NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K; one launch,
+three warmups, eight 500 ms iterations. Error is the 99.9% interval
+half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / nested dictionary | 42.20 +/- 1.772 | 42.81 +/- 2.564 | 183,152 -> 183,152 |
+| 64 / nested stream | 50.25 +/- 1.161 | 52.06 +/- 1.373 | 213,872 -> 213,872 |
+| 4,096 / nested dictionary | 10,798.17 +/- 627.658 | 10,898.58 +/- 1,110.366 | 11,644,082.5 -> 11,644,080.833 |
+| 4,096 / nested stream | 13,853.55 +/- 578.083 | 14,092.70 +/- 1,088.522 | 13,610,146.667 -> 13,610,164 |
+
+All four means are higher (about 0.9-3.6%) with overlapping intervals.
+Retain this direction as a performance concern, not zero overhead or
+proof that the guard caused a regression. Two managed counters match;
+two differ by about -1.667/+17.333 bytes/op, not causal allocation
+attribution. The control's 89.807 ms minimum-iteration warning and
+previous keyword-slice large-stream concern remain documented; this
+run does not explain or dismiss either. No repeated measurements are
+used to select a favorable outcome.
+
+[Control](results/2026-11-05-ordinary-name-nested-control-84935d2f.md)
+and [final](results/2026-11-05-ordinary-name-nested-final.md), adjacent
+CSVs and [raw counters/identities](results/2026-11-05-ordinary-name-gc.csv)
+retain all four cases.
+
+## ASCII name-token fast path: 2026-11-05
+
+Matched `IndirectObjectBench.LoadValues` runs compare commit `f93701b`
+with the ASCII-name fast path. Inputs, generated source, benchmark settings
+and runtime are identical; input hashes are shown below. The fast path is
+for unescaped ASCII names only. Numeric-only object values are a control;
+escaped/non-ASCII name performance is not measured. BDN 0.15.8 / .NET
+10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K; one launch, three
+warmups, five 500 ms iterations. Error is the 99.9% confidence-interval
+half-width. Engine MVIDs: control `54b7127b-9e05-4176-b46d-feb5f7e93c56`,
+final `d08d28bc-9906-4948-b72f-23ad6b193562`.
+
+| Objects / workload | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / numeric values | 9.252 +/- 1.2973 | 8.784 +/- 0.4408 | 26.38 KB -> 25.60 KB |
+| 64 / dictionary names | 16.907 +/- 0.2918 | 14.348 +/- 0.7203 | 64.38 KB -> 49.60 KB |
+| 4,096 / numeric values | 680.683 +/- 57.5337 | 664.244 +/- 29.5261 | 1,611.14 KB -> 1,610.36 KB |
+| 4,096 / dictionary names | 2,563.016 +/- 197.1543 | 1,187.144 +/- 265.7315 | 4,043.13 KB -> 3,146.36 KB |
+
+Both dictionary-name timing intervals are disjoint and their managed
+allocations fall by 14.78 KB and 896.77 KB respectively. Numeric-control
+timing intervals overlap. This is evidence for these synthetic repeated
+ASCII-name workloads, not a general PDF/provider ranking or a claim about
+escaped/non-ASCII names, native memory or all document loads.
+
+| Objects / workload | Input bytes | SHA-256 |
+|---|---:|---|
+| 64 / numeric values | 2,631 | `EE0271889A4923C5A23AD617A1486DF6726232479F62E40ECA8CE8E1CFBC6290` |
+| 64 / dictionary names | 3,463 | `972BD608A7035AEAB3223E30271E6D215EC6495AC81979937D297534C02DDC1E` |
+| 4,096 / numeric values | 174,076 | `9A9B5A8CAACC6778AD7664090CB4D2D1CCE9B74A8F7373E9DA5C1A573168614F` |
+| 4,096 / dictionary names | 227,325 | `F8F4E0DAD1AB7A1F9614E2138D1609CAE90841BD08B3484CAD756B1BB1652306` |
+
+## Reference-token integer allocation: 2026-11-05
+
+When a nonnegative integer begins an indirect reference, `PdfLexer` now
+retains its primitive parsed value and creates a `PdfInteger` only if the
+token is not part of a reference. This avoids one short-lived object per
+successfully parsed reference without changing token acceptance or repair.
+
+Matched `IndirectReferenceBench` runs compare baseline commit `bce32c2`
+(control MVID `6b65115e-ee4b-42a0-98b0-5f9100852f76`) with the pending
+implementation (MVID `fcc035d8-04f5-4086-864e-2dac24013589`). Both generated
+PDFs contain one reference per object. BDN ShortRun used three warmups and
+three measured iterations; errors are the 99.9% confidence-interval
+half-widths. Environment: .NET 10.0.14 / SDK 10.0.403 / Windows 11 /
+i7-14700K.
+
+| Objects | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---:|---:|---:|---:|
+| 64 | 15.006 +/- 3.873 | 15.114 +/- 1.034 | 51.10 KB -> 49.58 KB |
+| 4,096 | 1,242.33 +/- 1,536.368 | 1,161.69 +/- 274.779 | 3,242.36 KB -> 3,146.33 KB |
+
+Managed allocation falls by 1.52 KB and 96.03 KB respectively. Both timing
+intervals overlap; the wide 4,096-object control interval makes timing
+inconclusive, so no speedup or regression is claimed. These synthetic
+reference-heavy loads do not establish native/retained memory or performance
+for all documents or providers.
+
+| Objects | Input bytes | SHA-256 |
+|---:|---:|---|
+| 64 | 3,655 | `A4C111E79A1682B5334FA8809CFECD4CC004A13815D806D1F68DC620B3D3D85F` |
+| 4,096 | 239,613 | `15114B6A443289F3F7DBC8E4F81ABEEB7AEFCC187326284391AEABC7A8ED139D` |
+
+## Ordinary dictionary entry grammar: 2026-11-05
+
+This slice reuses the unchanged IndirectObjectBench and NestedObjectBench:
+fresh load plus complete flat/nested value traversal/checksum, not just
+catalog opening. All value shapes, unrepaired state, stream bytes,
+counts and checksums are checked outside timing. Tests, integrated
+editor CI node selection, final corpus comparison and provider/parser
+preflights finish before timing. No provider dependency is added.
+
+The retained single-pass keyword implementation at d6e94416 is the
+control; it was not remeasured. Incoming main 4346ac39 has no Core or
+benchmark changes. Source archives, identical fixture sources/input
+lengths/hashes and matching isolated project/runtime flags establish
+the comparison; engine MVIDs differ. BDN 0.15.8 / .NET 10.0.14 /
+SDK 10.0.403 / Windows 11 / i7-14700K; one launch, three warmups,
+eight 500 ms iterations. Error is the 99.9% interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / flat integer | 8.306 +/- 0.5265 | 8.354 +/- 0.1334 | 26,480 -> 26,480 |
+| 64 / flat dictionary | 16.650 +/- 0.2711 | 15.898 +/- 0.6181 | 65,392 -> 65,392 |
+| 4,096 / flat integer | 623.126 +/- 17.7894 | 621.925 +/- 17.3084 | 1,617,013.16 -> 1,617,013.16 |
+| 4,096 / flat dictionary | 2,499.328 +/- 150.7849 | 2,408.889 +/- 62.1715 | 4,107,375 -> 4,107,375 |
+| 64 / nested dictionary | 41.93 +/- 1.438 | 42.20 +/- 1.772 | 183,152 -> 183,152 |
+| 64 / nested stream | 52.18 +/- 2.490 | 50.25 +/- 1.161 | 213,872 -> 213,872 |
+| 4,096 / nested dictionary | 10,755.72 +/- 654.979 | 10,798.17 +/- 627.658 | 11,644,081.333 -> 11,644,082.5 |
+| 4,096 / nested stream | 15,422.98 +/- 342.441 | 13,853.55 +/- 578.083 | 13,610,141 -> 13,610,146.667 |
+
+Five means lower/three higher; only the large nested-stream intervals
+separate, favorably. The nested final logs an 89.807 ms minimum-iteration
+warning, retained with raw logs in session artifacts. Six managed
+counters match and two differ slightly (+1.167/+5.667 bytes/op);
+these are not native/retained memory measurements or causal allocation
+attribution. No universal/causal speedup, zero overhead or exact
+neutrality is established. This run does not explain or dismiss the
+previous keyword slice's large-stream separation and longer diagnostic.
+Repair performance, general token grammar and provider conformance are
+not measured.
+
+[Flat control](results/2026-11-05-ordinary-dictionary-flat-control-d6e94416.md)
+and [final](results/2026-11-05-ordinary-dictionary-flat-final.md),
+[nested control](results/2026-11-05-ordinary-dictionary-nested-control-d6e94416.md)
+and [final](results/2026-11-05-ordinary-dictionary-nested-final.md),
+their adjacent CSVs and [raw counters/identities](results/2026-11-05-ordinary-dictionary-gc.csv)
+retain all eight cases.
+
+## Ordinary object keyword values: 2026-11-05
+
+The new NestedObjectBench times fresh PdfFile.Load plus traversal of
+64/4,096 nested dictionaries or stream dictionaries to a numeric
+checksum. Fixtures contain nested arrays/dictionaries, booleans, null,
+names and strings; stream content includes raw operator-like bytes.
+Setup checks every nested value and raw stream byte, row count,
+unrepaired state and checksum outside timing. The unchanged
+IndirectObjectBench additionally measures flat integer/dictionary
+loads and full traversal. Neither workload measures malformed-input
+repair, decoding, native/retained memory or provider conformance.
+
+Exact archived 981d7a3c Core/central properties, a rejected recursive
+post-parse tree walk and final single-pass lexer classification use
+identical fixture sources/input lengths/SHA256 hashes and isolated
+matching-name harness/project flags. Engine MVIDs differ. Tests,
+corpus and all correctness preflights finish before timing.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K.
+The initial comparison uses one launch, three warmups and eight 500 ms
+iterations; error is the 99.9% confidence-interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / flat integer | 8.354 +/- 0.1118 | 8.306 +/- 0.5265 | 26,480 -> 26,480 |
+| 64 / flat dictionary | 16.475 +/- 0.3977 | 16.650 +/- 0.2711 | 65,392 -> 65,392 |
+| 4,096 / flat integer | 652.307 +/- 28.4294 | 623.126 +/- 17.7894 | 1,617,013.16 -> 1,617,013.16 |
+| 4,096 / flat dictionary | 2,504.824 +/- 114.5658 | 2,499.328 +/- 150.7849 | 4,107,375 -> 4,107,375 |
+| 64 / nested dictionary | 44.27 +/- 2.413 | 41.93 +/- 1.438 | 183,152 -> 183,152 |
+| 64 / nested stream | 51.95 +/- 1.733 | 52.18 +/- 2.490 | 213,872 -> 213,872 |
+| 4,096 / nested dictionary | 11,072.97 +/- 844.614 | 10,755.72 +/- 654.979 | 11,644,080.667 -> 11,644,081.333 |
+| 4,096 / nested stream | 14,066.03 +/- 583.082 | 15,422.98 +/- 342.441 | 13,610,142 -> 13,610,141 |
+
+Five means are lower and three higher. All intervals overlap except
+the large nested-stream case, whose mean is about 9.6% higher.
+The rejected tree walk instead showed a 64-stream mean of
+56.86 +/- 2.800 us versus 51.95 +/- 1.733 us control (about +9.5%,
+non-overlapping intervals). That implementation was replaced rather
+than hiding its unfavorable result. The initial control also logged
+a 95.475 ms minimum-iteration warning; raw logs remain in session
+artifacts.
+
+The final large-stream separation prompted one targeted longer
+matched diagnostic: one launch, three warmups, twelve 1,000 ms
+iterations of only 4,096 nested streams. Control is
+14.53 +/- 0.717 ms and final 14.66 +/- 0.411 ms; intervals overlap.
+This diagnostic does not reproduce the original interval separation,
+but does not explain or dismiss it. Final managed counters match in
+six initial cases and differ by about +0.667/-1 bytes/op in the two
+large nested cases. Diagnostic counters are 13,610,156.4 ->
+13,610,154.6 bytes/op. No causal allocation reduction, exact
+neutrality, universal speedup, zero overhead or proven-regression
+claim follows. Earlier classic-xref allocation observations remain
+unexplained by this workload.
+
+[Flat control](results/2026-11-05-ordinary-keywords-flat-control.md),
+[rejected](results/2026-11-05-ordinary-keywords-flat-rejected.md) and
+[final](results/2026-11-05-ordinary-keywords-flat-final.md), plus
+[nested control](results/2026-11-05-ordinary-keywords-nested-control.md),
+[rejected](results/2026-11-05-ordinary-keywords-nested-rejected.md) and
+[final](results/2026-11-05-ordinary-keywords-nested-final.md), retain
+all initial reports and matching CSVs.
+[Rejected raw counters](results/2026-11-05-ordinary-keywords-rejected-gc.csv)
+and [final raw counters](results/2026-11-05-ordinary-keywords-gc.csv)
+each include the eight control rows and eight comparison rows.
+The [longer diagnostic control](results/2026-11-05-ordinary-keywords-large-stream-control.md),
+[final](results/2026-11-05-ordinary-keywords-large-stream-final.md) and
+[raw counters](results/2026-11-05-ordinary-keywords-large-stream-gc.csv)
+are separately labeled, not substituted for the initial comparison.
+
+Reproduce using separate net10.0 BDN 0.15.8 executables linking
+IndirectObjectBench.cs and NestedObjectBench.cs against archived/final
+Core, matching assembly/project names, Optimize/TieredPGO enabled and
+ServerGarbageCollector disabled. Run `--filter '*ObjectBench*'
+--warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1`
+for the initial comparison; the targeted diagnostic uses
+`--filter '*NestedObjectBench*4096*True*' --warmupCount 3
+--iterationCount 12 --iterationTime 1000 --launchCount 1`.
+
+## Indexed indirect header integer syntax: 2026-11-05
+
+The existing IndirectObjectBench times fresh PdfFile.Load plus
+traversal/checksum of all 64/4,096 integer or dictionary objects.
+Correctness, source/input hashes, unrepaired state, row count and
+engine identities are checked outside timing. This measures valid
+indexed-load overhead, not malformed repair, native/retained memory
+or provider conformance.
+
+Exact archived ec347d19 Core and central properties are compared with
+final Core through isolated matching-name BDN executables linking the
+same unchanged fixture source and project flags. Input lengths/SHA256
+hashes match in all four cases; engine MVIDs differ. Tests, corpus and
+all correctness preflights finish before sequential control/final timing.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / integer | 7.858 +/- 0.3915 | 8.394 +/- 0.3731 | 26,480 -> 26,480 |
+| 64 / dictionary | 15.673 +/- 0.5124 | 16.712 +/- 0.8637 | 65,392 -> 65,392 |
+| 4,096 / integer | 621.890 +/- 8.4489 | 624.033 +/- 12.9855 | 1,617,013.1923 -> 1,617,013.1600 |
+| 4,096 / dictionary | 2,303.305 +/- 40.8396 | 2,480.579 +/- 171.8589 | 4,107,375 -> 4,107,375 |
+
+All four final means are higher (about 0.3-7.7%); the 99.9% confidence
+intervals overlap. This remains a performance concern, not proof of
+a regression, an improvement or zero overhead. Managed counters match
+in three cases; the approximately -0.032-byte/op large-integer
+observation is retained without causal attribution or exact-neutrality
+claims. These results do not explain the earlier classic-xref delta.
+
+[Control report](results/2026-11-05-indexed-header-control.md),
+[final report](results/2026-11-05-indexed-header-final.md), matching
+CSV and [eight raw GC/source/input/MVID rows](results/2026-11-05-indexed-header-gc.csv)
+retain the evidence. Reproduce with separate net10.0 BDN 0.15.8
+executables linking IndirectObjectBench.cs against archived/final Core,
+matching assembly/project names, Optimize/TieredPGO enabled and
+ServerGarbageCollector disabled; run `--filter '*IndirectObjectBench*'
+--warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1`
+independently for each source.
+
+## Ordinary embedded stream framing: 2026-11-05
+
+OrdinaryStreamBench times fresh PdfFile.Load plus traversal/checksum
+of all raw bytes in 64/4,096 ordinary streams with direct or shared
+indirect Length. Setup independently checks every stream's exact
+bytes, row count, unrepaired state and checksum. Fixture generation,
+correctness checks and source/input/MVID reporting are not timed.
+This measures ordinary lazy stream loading, not decoding, malformed
+repair, external-file loading or a provider-conformance ranking.
+
+The exact archived e8dd5642 Core/control central properties and final
+Core are linked by separate minimal BDN executables with matching
+project flags and the same checked-in fixture source. All four input
+lengths/SHA256 hashes match; engine MVIDs differ. Tests, corpus and
+all correctness preflights finish before sequential control/final
+timing. The first harness attempt executed zero benchmarks because
+its project filename differed from the assembly name. Its failed
+logs/NA output are retained separately in session artifacts; only the
+corrected matching-name harnesses supply the reports below.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Streams / Length | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / direct | 20.48 +/- 0.205 | 19.82 +/- 0.732 | 77,168 -> 77,168 |
+| 64 / indirect | 22.74 +/- 0.346 | 21.14 +/- 0.773 | 78,872 -> 78,872 |
+| 4,096 / direct | 3,059.76 +/- 422.172 | 2,739.69 +/- 66.945 | 4,861,037.60 -> 4,861,039.00 |
+| 4,096 / indirect | 2,946.36 +/- 81.916 | 2,914.20 +/- 161.269 | 4,959,509.60 -> 4,959,509.60 |
+
+All four final means are lower. Only the 64-stream indirect-Length
+confidence intervals do not overlap; this limited single-run result
+does not establish a universal or causal improvement or zero overhead.
+Managed counters match in three cases; the +1.4-byte/op large direct
+observation is retained without causal attribution or an exact
+neutrality claim. Native/retained memory is not measured. These
+results do not explain the earlier classic-xref allocation delta.
+
+[Control report](results/2026-11-05-ordinary-stream-control.md),
+[final report](results/2026-11-05-ordinary-stream-final.md), matching
+CSV and [eight raw GC/source/input/MVID rows](results/2026-11-05-ordinary-stream-gc.csv)
+retain the evidence. Reproduce with separate net10.0 BDN 0.15.8
+executables linking OrdinaryStreamBench.cs against archived/final Core,
+matching assembly/project names, Optimize/TieredPGO enabled and
+ServerGarbageCollector disabled; run `--filter '*OrdinaryStreamBench*'
+--warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1`
+independently for each source.
+
+## Ordinary indirect object closers: 2026-11-05
+
+IndirectObjectBench times fresh PdfFile.Load followed by traversal of
+all 64/4,096 integer or dictionary values and a checksum. It exercises
+lazy non-stream loads, not merely catalog parsing. Setup separately
+checks each value, row count, unrepaired state and checksum; fixture
+creation, correctness checks and SHA256/MVID reporting are not timed.
+Inputs are synthetic correctness/performance fixtures, not a full
+spec-conformance corpus or provider comparison.
+
+The control archives exact 2a61e790 Core and central project/package
+properties. Final production adds only the unrepaired non-stream
+endobj/bounds guard. Both minimal isolated BDN executables link the
+same checked-in IndirectObjectBench source with matching project flags;
+all four input lengths/hashes match and engine MVIDs differ. Tests,
+corpus and correctness preflights finish before sequential timing.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / integer | 7.913 +/- 0.1974 | 8.116 +/- 0.4013 | 26,480 -> 26,480 |
+| 64 / dictionary | 15.869 +/- 0.2132 | 16.120 +/- 1.1222 | 65,392 -> 65,392 |
+| 4,096 / integer | 597.317 +/- 12.1756 | 606.692 +/- 12.8214 | 1,617,013.21 -> 1,617,013.21 |
+| 4,096 / dictionary | 2,450.040 +/- 133.5840 | 2,430.302 +/- 201.0937 | 4,107,378.77 -> 4,107,375.00 |
+
+Three means increase, one decreases; all confidence intervals overlap.
+No proven timing improvement, regression or zero-overhead claim.
+Managed allocation counters match in three cases; the approximately
+-3.77-byte/op observation in the large-dictionary case is retained,
+not asserted to be a causal reduction or exact neutrality. Native/
+retained memory and malformed-object repair costs are not measured.
+This workload does not explain the earlier classic allocation delta.
+
+[Control report](results/2026-11-05-indirect-endobj-control.md),
+[final report](results/2026-11-05-indirect-endobj-final.md), matching
+CSV and [eight raw GC/source/input/MVID rows](results/2026-11-05-indirect-endobj-gc.csv)
+retain the evidence. Reproduce with separate net10.0 BDN 0.15.8
+executables linking IndirectObjectBench.cs against archived/final Core,
+Optimize/TieredPGO enabled, ServerGarbageCollector disabled; run
+`--filter '*IndirectObjectBench*' --warmupCount 3 --iterationCount 8
+--iterationTime 500 --launchCount 1` independently for each source.
+
+## Primary xref chain cycle guard: 2026-11-05
+
+A new XrefHybridBench final run compares the primary-cycle guard with
+the retained preceding hybrid-target final (faecce41 Core, unchanged
+by the later editor-only main integration). The same isolated harness,
+fixture source, input hashes/lengths and fresh PdfFile.Load boundary
+are used. Preflight checks run outside timing; engine MVIDs differ.
+Tests/corpus finish before the final timing run. The retained control
+is reused, not rerun. This measures terminating-chain overhead, not
+malformed-chain repair cost or complete linearized-file conformance.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Rows / updates | Hybrid-target control +/- error (us) | Cycle final +/- error (us) | Managed bytes/load control -> final |
+|---|---:|---:|---:|
+| 64 / 1 | 4.690 +/- 0.0496 | 4.837 +/- 0.1436 | 23,272 -> 23,272 |
+| 64 / 16 | 12.521 +/- 0.6365 | 13.374 +/- 1.1797 | 53,616 -> 53,552 |
+| 4,096 / 1 | 261.820 +/- 7.3428 | 271.591 +/- 4.5186 | 882,662.12 -> 882,534.33 |
+| 4,096 / 16 | 286.196 +/- 12.1715 | 283.922 +/- 11.6385 | 912,878.11 -> 912,814.32 |
+
+Three means increase and one decreases; all confidence intervals
+overlap. These measurements establish neither a timing improvement nor
+a regression/zero-overhead result. Observed managed-byte decreases are
+retained but are not attributed causally to moving the visited-set check.
+No native/retained-memory guarantee or explanation of the historical
+classic allocation discrepancy follows.
+
+[Retained control](results/2026-11-05-xref-hybrid-final.md),
+[cycle final](results/2026-11-05-xref-primary-cycle-final.md), matching
+CSV and [eight raw GC/hash/MVID rows](results/2026-11-05-xref-primary-cycle-gc.csv)
+preserve the observations. The isolated reproduction recipe below
+applies with the corresponding control/final Core sources.
+
 ## Hybrid supplemental-stream validation: 2026-11-05
 
 XrefHybridBench measures fresh PdfFile.Load with 64/4,096 rows and
