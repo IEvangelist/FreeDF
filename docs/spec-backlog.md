@@ -4,6 +4,52 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary numeric token syntax
+
+ISO 32000-1 7.3.3 (printed p14) defines integer tokens as decimal
+digits with at most an optional sign. Real tokens contain decimal digits
+with an optional sign and decimal point; exponent notation is not PDF
+number syntax. Existing `PdfLexer.IsNumericToken` already enforces this
+grammar for indexed headers and compressed object-stream members, but
+ordinary values could be converted permissively (`++42`, `1.2junk`,
+`1.2e3`) without explicit repair.
+
+The existing numeric-token validation now also records invalid numeric
+spellings during ordinary parsing. Before publishing an unrepaired
+object, the loader checks this lexer flag. Existing permissive parsed
+values remain available after explicit recovery; direct content lexer
+behavior and object-stream errors are unchanged. Valid `+.5`, `4.`,
+signed integers and ordinary decimal forms remain supported. This does
+not cover number overflow/range policy, malformed tokens that never
+enter numeric parsing, or every grammar/lifecycle rule.
+
+162 controls cover nine malformed and eleven valid tokens at top-level,
+inside arrays/dictionaries and in stream metadata, with indexed and
+forced-repair forms. The unchanged-production baseline is 36 failures/
+126 passes; the former permissive `++42` expectation was updated to
+require explicit repair while preserving its recovered numeric value.
+Focused parser selection passes 2,286; the full sequential Release suite
+passes 21,184, zero failed/skipped. Solution/benchmark builds have zero
+warnings/errors. Final rebuilt UaDump results are unchanged for 435
+PDFs/870 records; all provider/parser preflights pass.
+
+MuPDF 1.28.5 opens all 160 independent PDF fixtures. Of 36 malformed
+indexed inputs, all remain natively unrepaired; six (top-level forms)
+fail lookup, the remaining 30 resolve, and none warn. All 36 forced
+malformed inputs set repaired state and emit warnings, while six still
+fail lookup. All 44 valid indexed forms resolve without repair/warnings;
+all 44 forced valid forms resolve repaired. This permissive reference
+behavior is retained as a behavioral difference, not a normative rule.
+
+Four nested fresh-load/full-traversal cases reuse the exact 9a974da3
+benchmark as control, without repeating it. Three means are higher and
+one lower, but all intervals overlap; managed allocations are unchanged
+in two cases and differ by only +3.458/+0.167 bytes/op in the two large
+cases. This supports neither a causal overhead claim nor a performance
+improvement claim. It does not explain or dismiss prior name/dictionary
+timing concerns. [Reports, hashes and raw managed counters](../bench/FreeDF.Bench/README.md#ordinary-numeric-token-syntax-2026-11-05)
+retain all comparisons.
+
 ## 2026-11-05 ordinary hexadecimal string syntax
 
 ISO 32000-1 7.3.4.3 (printed p16) requires hexadecimal strings to

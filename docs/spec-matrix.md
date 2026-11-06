@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [ordinary numeric-token guard](spec-backlog.md#2026-11-05-ordinary-numeric-token-syntax)
+requires explicit repair when a token permissively parsed as an ordinary
+number violates PDF integer/real syntax. Existing indexed-header and
+object-stream checks share the grammar; repaired/content behavior remains.
+Matched benchmark intervals overlap; no causal performance result claimed.
+
 The [ordinary hexadecimal-string guard](spec-backlog.md#2026-11-05-ordinary-hexadecimal-string-syntax)
 requires explicit repair for non-hexadecimal, non-whitespace bytes in
 ordinary hex strings; valid whitespace and odd final nibbles remain

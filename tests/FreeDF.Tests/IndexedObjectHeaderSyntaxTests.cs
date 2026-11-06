@@ -64,11 +64,11 @@ public class IndexedObjectHeaderSyntaxTests
     }
 
     [Fact]
-    public void Ordinary_numeric_value_recovery_is_not_made_strict_by_header_checks()
+    public void Ordinary_numeric_value_recovery_requires_explicit_repair()
     {
         var file = PdfFile.Load(Build("2", "0", "++42"));
         Assert.Equal(42, Assert.IsType<PdfInteger>(file.GetObject(2)).Value);
-        Assert.False(file.Repaired);
+        Assert.True(file.Repaired);
     }
 
     internal static byte[] Build(string number, string generation, string value, string separator = " ", bool repair = false)

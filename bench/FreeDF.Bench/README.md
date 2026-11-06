@@ -9,6 +9,39 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary numeric token syntax: 2026-11-05
+
+This slice reuses the four existing NestedObjectBench cases and the
+retained 9a974da3 results as the matched control, not remeasured.
+Timed work remains fresh load plus full nested traversal/checksum.
+Fixtures include valid integer numeric tokens, not malformed-token
+recovery; all values, stream bytes, count, checksum and unrepaired state
+are preflighted outside timing. Tests, corpus and all correctness
+preflights finish before timing.
+
+Fixture source and PDF length/SHA256 are identical; BDN runtime/harness
+flags match while engine identities differ. BDN0.15.8/.NET10.0.14/
+SDK10.0.403/Windows11/i7-14700K; one launch, 3 warmups, 8x500ms
+iterations; errors are 99.9% confidence-interval half-widths.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+|64 nested dictionary|42.68 +/- 1.144|44.02 +/- 2.138|183,688 ->183,688|
+|64 nested stream|53.04 +/- 1.080|52.06 +/- 2.335|214,920 ->214,920|
+|4,096 nested dictionary|9,353.73 +/- 585.942|9,697.25 +/- 576.247|11,676,884.667 ->11,676,888.125|
+|4,096 nested stream|11,860.24 +/- 483.904|12,154.84 +/- 647.026|13,675,702.667 ->13,675,702.833|
+
+Three means are higher and one lower, with all intervals overlapping.
+Managed allocations are unchanged in two cases and differ by only
++3.458/+0.167 bytes/op in the larger cases. There is no causal cost or
+speedup claim. This does not resolve or dismiss the prior name/dictionary
+benchmark concerns.
+
+[Control](results/2026-11-05-ordinary-numeric-nested-control-9a974da3.md)
+and [final](results/2026-11-05-ordinary-numeric-nested-final.md), adjacent
+CSVs and [raw counters/identities](results/2026-11-05-ordinary-numeric-gc.csv)
+retain all four comparisons.
+
 ## Ordinary hexadecimal string syntax: 2026-11-05
 
 This slice reuses the four existing NestedObjectBench cases and the

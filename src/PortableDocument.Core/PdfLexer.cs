@@ -41,6 +41,7 @@ public sealed class PdfLexer
     internal bool HasInvalidDictionary { get; private set; }
     internal bool HasInvalidName { get; private set; }
     internal bool HasInvalidHexString { get; private set; }
+    internal bool HasInvalidNumberToken { get; private set; }
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
@@ -101,8 +102,12 @@ public sealed class PdfLexer
         var token = _d.AsSpan(start, Pos - start);
         if (TryNumber(token, out var num))
         {
-            if (_objectStreamMember && !IsNumericToken(token))
-                throw new PdfParseException("invalid numeric token in object stream member");
+            if (!IsNumericToken(token))
+            {
+                if (_objectStreamMember)
+                    throw new PdfParseException("invalid numeric token in object stream member");
+                HasInvalidNumberToken = true;
+            }
             if (resolveRefs && num is PdfInteger n1 && n1.Value >= 0) return TryRef(n1, start) ?? num;
             return num;
         }
