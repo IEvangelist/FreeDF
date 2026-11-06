@@ -146,6 +146,8 @@ public sealed class PdfFile
                 ? $"invalid or unsupported cross-reference stream object header at {offset}"
                 : $"invalid or unsupported indirect object header at {offset}");
         var obj = lx.ReadObject() ?? throw new PdfParseException("eof in object");
+        if (!Repaired && (obj is PdfKeyword || lx.HasKeywordValue))
+            throw new PdfParseException("indirect object contains a keyword value");
         if (obj is PdfDictionary d)
         {
             var save = lx.Pos;

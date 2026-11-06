@@ -9,6 +9,85 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary object keyword values: 2026-11-05
+
+The new NestedObjectBench times fresh PdfFile.Load plus traversal of
+64/4,096 nested dictionaries or stream dictionaries to a numeric
+checksum. Fixtures contain nested arrays/dictionaries, booleans, null,
+names and strings; stream content includes raw operator-like bytes.
+Setup checks every nested value and raw stream byte, row count,
+unrepaired state and checksum outside timing. The unchanged
+IndirectObjectBench additionally measures flat integer/dictionary
+loads and full traversal. Neither workload measures malformed-input
+repair, decoding, native/retained memory or provider conformance.
+
+Exact archived 981d7a3c Core/central properties, a rejected recursive
+post-parse tree walk and final single-pass lexer classification use
+identical fixture sources/input lengths/SHA256 hashes and isolated
+matching-name harness/project flags. Engine MVIDs differ. Tests,
+corpus and all correctness preflights finish before timing.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K.
+The initial comparison uses one launch, three warmups and eight 500 ms
+iterations; error is the 99.9% confidence-interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / flat integer | 8.354 +/- 0.1118 | 8.306 +/- 0.5265 | 26,480 -> 26,480 |
+| 64 / flat dictionary | 16.475 +/- 0.3977 | 16.650 +/- 0.2711 | 65,392 -> 65,392 |
+| 4,096 / flat integer | 652.307 +/- 28.4294 | 623.126 +/- 17.7894 | 1,617,013.16 -> 1,617,013.16 |
+| 4,096 / flat dictionary | 2,504.824 +/- 114.5658 | 2,499.328 +/- 150.7849 | 4,107,375 -> 4,107,375 |
+| 64 / nested dictionary | 44.27 +/- 2.413 | 41.93 +/- 1.438 | 183,152 -> 183,152 |
+| 64 / nested stream | 51.95 +/- 1.733 | 52.18 +/- 2.490 | 213,872 -> 213,872 |
+| 4,096 / nested dictionary | 11,072.97 +/- 844.614 | 10,755.72 +/- 654.979 | 11,644,080.667 -> 11,644,081.333 |
+| 4,096 / nested stream | 14,066.03 +/- 583.082 | 15,422.98 +/- 342.441 | 13,610,142 -> 13,610,141 |
+
+Five means are lower and three higher. All intervals overlap except
+the large nested-stream case, whose mean is about 9.6% higher.
+The rejected tree walk instead showed a 64-stream mean of
+56.86 +/- 2.800 us versus 51.95 +/- 1.733 us control (about +9.5%,
+non-overlapping intervals). That implementation was replaced rather
+than hiding its unfavorable result. The initial control also logged
+a 95.475 ms minimum-iteration warning; raw logs remain in session
+artifacts.
+
+The final large-stream separation prompted one targeted longer
+matched diagnostic: one launch, three warmups, twelve 1,000 ms
+iterations of only 4,096 nested streams. Control is
+14.53 +/- 0.717 ms and final 14.66 +/- 0.411 ms; intervals overlap.
+This diagnostic does not reproduce the original interval separation,
+but does not explain or dismiss it. Final managed counters match in
+six initial cases and differ by about +0.667/-1 bytes/op in the two
+large nested cases. Diagnostic counters are 13,610,156.4 ->
+13,610,154.6 bytes/op. No causal allocation reduction, exact
+neutrality, universal speedup, zero overhead or proven-regression
+claim follows. Earlier classic-xref allocation observations remain
+unexplained by this workload.
+
+[Flat control](results/2026-11-05-ordinary-keywords-flat-control.md),
+[rejected](results/2026-11-05-ordinary-keywords-flat-rejected.md) and
+[final](results/2026-11-05-ordinary-keywords-flat-final.md), plus
+[nested control](results/2026-11-05-ordinary-keywords-nested-control.md),
+[rejected](results/2026-11-05-ordinary-keywords-nested-rejected.md) and
+[final](results/2026-11-05-ordinary-keywords-nested-final.md), retain
+all initial reports and matching CSVs.
+[Rejected raw counters](results/2026-11-05-ordinary-keywords-rejected-gc.csv)
+and [final raw counters](results/2026-11-05-ordinary-keywords-gc.csv)
+each include the eight control rows and eight comparison rows.
+The [longer diagnostic control](results/2026-11-05-ordinary-keywords-large-stream-control.md),
+[final](results/2026-11-05-ordinary-keywords-large-stream-final.md) and
+[raw counters](results/2026-11-05-ordinary-keywords-large-stream-gc.csv)
+are separately labeled, not substituted for the initial comparison.
+
+Reproduce using separate net10.0 BDN 0.15.8 executables linking
+IndirectObjectBench.cs and NestedObjectBench.cs against archived/final
+Core, matching assembly/project names, Optimize/TieredPGO enabled and
+ServerGarbageCollector disabled. Run `--filter '*ObjectBench*'
+--warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1`
+for the initial comparison; the targeted diagnostic uses
+`--filter '*NestedObjectBench*4096*True*' --warmupCount 3
+--iterationCount 12 --iterationTime 1000 --launchCount 1`.
+
 ## Indexed indirect header integer syntax: 2026-11-05
 
 The existing IndirectObjectBench times fresh PdfFile.Load plus

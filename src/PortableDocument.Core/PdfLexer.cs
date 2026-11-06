@@ -37,6 +37,7 @@ public sealed class PdfLexer
     }
     public int Length => _end;
     public byte[] Data => _d;
+    internal bool HasKeywordValue { get; private set; }
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
@@ -304,6 +305,7 @@ public sealed class PdfLexer
             if (o is null && _objectStreamMember)
                 throw new PdfParseException("unterminated array in object stream member");
             if (o is null || o is PdfKeyword { Value: "]" }) break;
+            if (o is PdfKeyword) HasKeywordValue = true;
             items.Add(o);
         }
         _nesting--;
@@ -339,6 +341,7 @@ public sealed class PdfLexer
                 d[name.Value] = PdfNull.Instance;
                 break;
             }
+            if (v is PdfKeyword) HasKeywordValue = true;
             d[name.Value] = v;
         }
         _nesting--;

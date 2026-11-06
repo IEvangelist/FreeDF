@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [ordinary keyword-value guard](spec-backlog.md#2026-11-05-ordinary-object-keyword-values)
+requires explicit repair for bare keywords in ordinary values and
+stream dictionaries. The single-pass lexer flag preserves
+content operators in raw streams and already-repaired recovery.
+Original-syntax collection, numeric/name/string and lifecycle rules
+remain incomplete.
+
 The [indexed header integer-syntax guard](spec-backlog.md#2026-11-05-indexed-indirect-header-integer-syntax)
 extends original-token checks to unrepaired indexed objects, retaining
 repaired-header and general numeric-value recovery. Matched traversal

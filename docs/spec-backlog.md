@@ -4,6 +4,87 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary object keyword values
+
+ISO 32000-1 7.3.1 (printed p13) lists the eight basic object types;
+7.3.6/7.3.7 (printed p18) define array elements and dictionary values
+as objects. Bare operator, delimiter or unknown keywords are not
+additional value types. Ordinary loading previously converted a
+top-level keyword to null or retained keywords inside collections
+without requiring explicit repair.
+
+The lexer now records keyword values encountered inside arrays and
+dictionary values during their existing parse; ordinary loading checks
+that flag and the top-level value before unrepaired publication,
+including stream dictionaries. It does not resolve referenced objects
+or inspect raw stream bytes. The existing object-stream predicate and
+recovery semantics remain unchanged. Already-repaired recovery retains the previous
+null/collection values and stream bytes. Content operators, names,
+strings, comments, booleans, null and indirect references remain valid.
+This is not complete value grammar: duplicate keys, discarded invalid
+dictionary keys, malformed numeric/name/string tokens, missing values
+and container delimiters require separate original-syntax validation.
+
+Eighty-three controls have a corrected unchanged-production baseline
+of 24 failures/59 passes against archived 981d7a3c Core. The initial
+catalog control replaced a reference with a longer keyword, making
+the xref offset stale and accidentally testing existing repair.
+It was changed to a same-length substitution; the corrected baseline
+now fails for the intended missing keyword-value guard. The original
+23-failure/60-pass run is retained but is not the final baseline.
+Controls cover top-level and nested keywords, dictionary metadata
+on streams, valid object kinds, raw stream operators, explicit recovery,
+cached identity and unrelated catalog/target lookups.
+
+Final focused checks pass 1,857; the corrected full Release suite
+passes 20,742 with zero failed/skipped. Solution/benchmark builds have
+zero warnings/errors. Final rebuilt UaDump yields unchanged complete
+JSON across the pinned 435-PDF/870-result corpus; all provider/parser
+correctness preflights pass. The full suite was rerun after correcting
+the catalog fixture and again for the single-pass production change, not
+to replace or hide the initial evidence.
+
+The first production implementation reused a recursive post-parse
+container walk. Its matched nested 64-stream benchmark was about 9.5%
+slower than the archived control with non-overlapping 99.9% intervals.
+That implementation was rejected, its reports/raw counters retained,
+and replaced by the single-pass lexer flag. The completed archived
+control is reused, not repeatedly measured.
+
+MuPDF 1.28.5 independently opens 82 of 83 encoded comparisons. All
+18 valid indexed controls resolve without warnings or repair; all
+18 forced-repair valid controls resolve with the native repaired flag.
+The 23 malformed indexed controls remain natively unrepaired: ten
+fail lookup, one returns null and twelve return a recovered value.
+Of 23 forced-repair malformed inputs, one fails open, nine fail lookup,
+one returns null and twelve return a recovered value; all 22 that open
+set the repaired flag. The malformed-catalog control resolves natively
+without repair or warnings. FreeDF explicitly repairs malformed values
+while preserving its existing recovered results. These policies are
+not equivalent, and native acceptance is not normative conformance.
+External PDFs remain outside the repository.
+
+The new NestedObjectBench and existing IndirectObjectBench compare
+fresh loads/full-value traversal with correctness outside timing.
+Exact archived 981d7a3c, rejected tree-walk and final single-pass
+sources share fixture/input hashes and isolated project flags.
+Final means are lower in five of eight cases and higher in three;
+the large nested-stream mean remains about 9.6% higher with separate
+99.9% intervals in the original eight-iteration comparison. A targeted
+longer matched diagnostic of that case gives 14.53 +/- 0.717 ms
+control versus 14.66 +/- 0.411 ms final, with overlapping intervals.
+That diagnostic does not reproduce the original interval separation,
+but does not explain or dismiss it. Both results and the rejected
+implementation remain visible; no universal speedup, zero-overhead
+or proven-regression conclusion follows.
+
+Final raw managed counters match in six of eight cases; the two large
+nested cases differ by about +0.667/-1 bytes/op. The longer diagnostic
+differs by -1.8 bytes/op. All observations are retained without causal
+allocation or native/retained-memory claims. Malformed-input repair
+cost is not measured. Wider grammar, footer discovery, Size cardinality,
+budgets, object lifecycle and full PDF-spec parity remain open.
+
 ## 2026-11-05 indexed indirect header integer syntax
 
 ISO 32000-1 7.3.3 (printed p14) defines an integer as decimal digits
