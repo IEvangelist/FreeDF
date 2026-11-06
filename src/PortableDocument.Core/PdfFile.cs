@@ -440,8 +440,9 @@ public sealed class PdfFile
         HashSet<long>? supplementalStreams = null;
         var pos = so.Value;
         var first = true;
-        while (pos >= 0 && visited.Add(pos))
+        while (pos >= 0)
         {
+            if (!visited.Add(pos)) throw new PdfParseException("cyclic primary cross-reference chain");
             var trailer = ReadXrefSection(pos);
             if (first) { Trailer = trailer; first = false; }
             else foreach (var kv in trailer.Entries) Trailer.Entries.TryAdd(kv.Key, kv.Value);

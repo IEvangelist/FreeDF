@@ -9,6 +9,41 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Primary xref chain cycle guard: 2026-11-05
+
+A new XrefHybridBench final run compares the primary-cycle guard with
+the retained preceding hybrid-target final (faecce41 Core, unchanged
+by the later editor-only main integration). The same isolated harness,
+fixture source, input hashes/lengths and fresh PdfFile.Load boundary
+are used. Preflight checks run outside timing; engine MVIDs differ.
+Tests/corpus finish before the final timing run. The retained control
+is reused, not rerun. This measures terminating-chain overhead, not
+malformed-chain repair cost or complete linearized-file conformance.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Rows / updates | Hybrid-target control +/- error (us) | Cycle final +/- error (us) | Managed bytes/load control -> final |
+|---|---:|---:|---:|
+| 64 / 1 | 4.690 +/- 0.0496 | 4.837 +/- 0.1436 | 23,272 -> 23,272 |
+| 64 / 16 | 12.521 +/- 0.6365 | 13.374 +/- 1.1797 | 53,616 -> 53,552 |
+| 4,096 / 1 | 261.820 +/- 7.3428 | 271.591 +/- 4.5186 | 882,662.12 -> 882,534.33 |
+| 4,096 / 16 | 286.196 +/- 12.1715 | 283.922 +/- 11.6385 | 912,878.11 -> 912,814.32 |
+
+Three means increase and one decreases; all confidence intervals
+overlap. These measurements establish neither a timing improvement nor
+a regression/zero-overhead result. Observed managed-byte decreases are
+retained but are not attributed causally to moving the visited-set check.
+No native/retained-memory guarantee or explanation of the historical
+classic allocation discrepancy follows.
+
+[Retained control](results/2026-11-05-xref-hybrid-final.md),
+[cycle final](results/2026-11-05-xref-primary-cycle-final.md), matching
+CSV and [eight raw GC/hash/MVID rows](results/2026-11-05-xref-primary-cycle-gc.csv)
+preserve the observations. The isolated reproduction recipe below
+applies with the corresponding control/final Core sources.
+
 ## Hybrid supplemental-stream validation: 2026-11-05
 
 XrefHybridBench measures fresh PdfFile.Load with 64/4,096 rows and

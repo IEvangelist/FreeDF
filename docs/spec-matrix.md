@@ -4,10 +4,15 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [primary-chain cycle guard](spec-backlog.md#2026-11-05-primary-xref-chain-cycles)
+repairs repeated Prev offsets rather than silently truncating the index.
+Acyclic forward links and shared supplemental streams remain supported;
+complete linearization, dependency cycles and lifecycle remain open.
+
 The [hybrid target guard](spec-backlog.md#2026-11-05-hybrid-supplemental-stream-targets)
 requires XRefStm to identify a cross-reference stream, even when its
 offset already identifies a visited classic table. Shared supplemental
-streams remain deduplicated; wider cycle/ownership/free-list rules and
+streams remain deduplicated; wider ownership/free-list rules and
 the recorded native same-section precedence disagreement remain open.
 
 The [xref header integer-syntax guard](spec-backlog.md#2026-11-05-xref-stream-header-integer-syntax)

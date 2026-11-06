@@ -4,6 +4,48 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 primary xref chain cycles
+
+ISO 32000-1 7.5.6 (printed p44) requires incremental trailers to
+identify the previous cross-reference section; 7.5.8.1 (printed p49)
+describes the equivalent section information in xref streams. A cyclic
+primary Prev path cannot identify a terminating revision history.
+Previously, the visited-set loop condition silently stopped at a
+repeated offset and could publish an unrepaired but incomplete index.
+
+A repeated primary offset now enters explicit repair. The existing
+visited set is reused; no offset ordering is imposed and supplemental
+stream deduplication remains separate. This does not claim complete
+linearization, hybrid ownership, arbitrary dependency-cycle detection
+or free-list/lifecycle validation.
+
+The initial twelve mixed classic/stream controls have a real
+unchanged-production baseline of eight failures/four passes. Four
+additional acyclic forward-link topology controls remain unrepaired;
+they are not complete linearized-file conformance fixtures. Final
+sixteen controls pass, focused checks pass 1,503 and full Release
+passes 20,397 with zero failed/skipped. Solution/benchmark builds have
+zero warnings/errors; final rebuilt UaDump yields unchanged complete
+JSON across the pinned 435-PDF/870-result corpus. All provider/parser
+benchmark correctness preflights pass.
+
+Sixteen independently encoded MuPDF 1.28.5 comparisons all open without
+the native repaired flag. Each of the eight cyclic inputs fails lookup
+of the physical target with an explicit missing-xref-object error;
+all eight terminating/backward-or-forward controls expose the target.
+FreeDF now repairs cyclic inputs and recovers that target. Native open
+acceptance is not normative conformance or a successful lookup. Each
+native process has a fifteen-second timeout; none times out. External
+PDFs remain outside the repository.
+
+The existing XrefHybridBench exercises terminating chains without
+timing fixture creation or validation. A new final run uses the same
+source/input hashes and isolated harness as the retained immediately
+preceding hybrid-target control; that control is not rerun. Three means
+increase and one decreases, all 99.9% intervals overlap. Raw managed
+allocation observations are retained without a causal reduction or
+zero-overhead claim; malformed-chain repair cost is not measured.
+
 ## 2026-11-05 hybrid supplemental stream targets
 
 ISO 32000-1 Table 19 (printed p51) defines XRefStm as the offset
