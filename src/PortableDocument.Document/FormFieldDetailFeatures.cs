@@ -134,7 +134,7 @@ public static class FormFieldDetailFeatures
             f.Resolve(d.Get("MaxLen")) is PdfInteger ml ? ml.Value : inh.MaxLen,
             f.Resolve(d.Get("Opt")) as PdfArray ?? inh.Opt);
         var kids = f.Resolve(d.Get("Kids")) as PdfArray;
-        if (kids is not null && kids.Items.Any(k => f.Resolve(k) is PdfDictionary kd && kd.Get("T") is not null))
+        if (kids is not null && kids.Items.Any(k => f.Resolve(k) is PdfDictionary kd && f.Resolve(kd.Get("T")) is not (null or PdfNull)))
         {
             foreach (var k in kids.Items) Walk(f, k, name, inh, depth + 1, ctx);
             return;

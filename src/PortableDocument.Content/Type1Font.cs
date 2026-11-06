@@ -1,4 +1,5 @@
 using System.Text;
+using PortableDocument.Core;
 
 namespace PortableDocument.Content;
 

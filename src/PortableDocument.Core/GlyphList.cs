@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace PortableDocument.Content;
+namespace PortableDocument.Core;
 
 /// <summary>Adobe Glyph List 2.9 name-to-text algorithm, with lazily loaded official mapping tables.</summary>
 internal static class GlyphList
@@ -12,7 +12,7 @@ internal static class GlyphList
     static Dictionary<string, string> Load(string file, int capacity)
     {
         var d = new Dictionary<string, string>(capacity, StringComparer.Ordinal);
-        using var s = typeof(GlyphList).Assembly.GetManifestResourceStream("PortableDocument.Content.Resources." + file)
+        using var s = typeof(GlyphList).Assembly.GetManifestResourceStream("PortableDocument.Core.Resources." + file)
             ?? throw new InvalidOperationException($"Missing embedded Adobe glyph list: {file}.");
         using var r = new StreamReader(s);
         for (var line = r.ReadLine(); line is not null; line = r.ReadLine())
@@ -27,6 +27,8 @@ internal static class GlyphList
         }
         return d;
     }
+
+    public static bool ContainsName(string name) => Map.Value.ContainsKey(name);
 
     public static string? Lookup(string name, bool zapfDingbats = false)
     {

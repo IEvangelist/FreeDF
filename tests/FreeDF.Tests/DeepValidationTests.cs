@@ -1,4 +1,5 @@
 using System.Text;
+using PortableDocument.Core;
 using PortableDocument.Document;
 
 namespace FreeDF.Tests;
@@ -249,8 +250,8 @@ public class DeepValidationTests
     [Fact]
     public void NamedActionsAreRestrictedAndNeedAppearancesMustBeFalse()
     {
-        Assert.False(A(PdfA(Xmp(), extras: "<< /Type /Action /S /Named /N /NextPage >>")).Has("PDFA-ACTION-NAMED"));
-        Assert.True(A(PdfA(Xmp(), extras: "<< /Type /Action /S /Named /N /Print >>")).Has("PDFA-ACTION-NAMED"));
+        Assert.False(A(PdfA(Xmp(), "/OpenAction 6 0 R", extras: "<< /Type /Action /S /Named /N /NextPage >>")).Has("PDFA-ACTION-NAMED"));
+        Assert.True(A(PdfA(Xmp(), "/OpenAction 6 0 R", extras: "<< /Type /Action /S /Named /N /Print >>")).Has("PDFA-ACTION-NAMED"));
         Assert.True(A(PdfA(Xmp(), "/AcroForm << /Fields [] /NeedAppearances true >>")).Has("PDFA-FORM-NEEDAPPEARANCES"));
         Assert.False(A(PdfA(Xmp(), "/AcroForm << /Fields [] /NeedAppearances false >>")).Has("PDFA-FORM-NEEDAPPEARANCES"));
     }
@@ -282,6 +283,140 @@ public class DeepValidationTests
 
     const string Para = "<< /Type /StructElem /S /P /P 7 0 R /Pg 3 0 R /K 0 >>";
     const string TaggedText = "/P <</MCID 0>> BDC BT 10 10 Td (x) Tj ET EMC";
+
+    public static IEnumerable<object[]> PropertyLanguageCases()
+    {
+        (string Value, bool Invalid)[] values =
+        [
+            ("(en)", false), ("(EN-us)", false), ("(i-klingon)", false),
+            ("(zh-Hant-TW)", false), ("(abcdefgh-12345678)", false),
+            ("null", false), ("()", true), ("<FEFF>", true), ("( )", true),
+            ("(-pt)", true), ("(portugues-pt)", true), ("(1-pt)", true),
+            ("(en_Us)", true), ("(en--US)", true), ("(en-123456789)", true),
+            ("<656E0A>", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var source in new[] { "direct", "named", "form" })
+        foreach (var indirect in new[] { false, true })
+        foreach (var (value, invalid) in values)
+            if (!indirect || source == "named")
+                yield return [part, source, indirect, value, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(PropertyLanguageCases))]
+    public void SpanPropertyLanguageTagsAreValidated(
+        int part, string source, bool indirect, string value, bool invalid)
+    {
+        var language = indirect ? "9 0 R" : value;
+        var properties = $"<< /Lang {language} >>";
+        var text = $"/Span {properties} BDC BT (x) Tj ET EMC";
+        var pageExtra = "";
+        var content = $"/P << /MCID 0 >> BDC {text} EMC";
+        if (source == "named")
+        {
+            content = "/P << /MCID 0 >> BDC /Span /Language BDC BT (x) Tj ET EMC EMC";
+            pageExtra = $"/Resources << /Properties << /Language {properties} >> >>";
+        }
+        else if (source == "form")
+        {
+            content = "/P << /MCID 0 >> BDC /Form Do EMC";
+            pageExtra = "/Resources << /XObject << /Form 10 0 R >> >>";
+        }
+        var pdf = Ua(content, "8 0 R", pageExtra,
+            extras: [Para, value, ObjPdf.Stream(text, "/Type /XObject /Subtype /Form /BBox [0 0 100 100]")]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(invalid, report.Has("PDFUA-LANG-INVALID"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void TrailingLineFeedIsNotPartOfAValidLanguageTag(int part, bool structure)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            extras: structure ? Para.Replace("/K 0", "/K 0 /Lang <656E0A>") : Para);
+        if (!structure)
+            pdf = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(pdf).Replace("/Lang (en)", "/Lang <656E0A>"));
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.True(report.Has("PDFUA-LANG-INVALID"));
+    }
+
+    [Theory]
+    [InlineData(1, false, "()")]
+    [InlineData(1, false, "<FEFF>")]
+    [InlineData(1, true, "()")]
+    [InlineData(1, true, "<FEFF>")]
+    [InlineData(2, false, "()")]
+    [InlineData(2, false, "<FEFF>")]
+    [InlineData(2, true, "()")]
+    [InlineData(2, true, "<FEFF>")]
+    public void PresentEmptyLanguageIsNotAConformingUaLanguageTag(int part, bool structure, string value)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            extras: structure ? Para.Replace("/K 0", $"/K 0 /Lang {value}") : Para);
+        if (!structure)
+            pdf = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(pdf).Replace("/Lang (en)", $"/Lang {value}"));
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.True(report.Has("PDFUA-LANG-INVALID"));
+    }
+
+    public static IEnumerable<object[]> PrivateUseTextCases()
+    {
+        int[] codepoints = [0xD7FF, 0xE000, 0xF00C, 0xF8FF, 0xF900,
+            0xEFFFF, 0xF0000, 0xFFFFD, 0xFFFFE, 0x100000, 0x10FFFD, 0x10FFFE];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var target in new[] { "catalog", "structure", "property" })
+        foreach (var codepoint in codepoints)
+        foreach (var utf8 in new[] { false, true })
+            yield return [part, target, codepoint, utf8,
+                part == 2 && (codepoint is >= 0xE000 and <= 0xF8FF or >= 0xF0000 and <= 0xFFFFD or >= 0x100000 and <= 0x10FFFD)];
+    }
+
+    [Theory]
+    [MemberData(nameof(PrivateUseTextCases))]
+    public void Ua2LanguageStringsExcludePrivateUseCodepoints(
+        int part, string target, int codepoint, bool utf8, bool privateUse)
+    {
+        var text = "a" + char.ConvertFromUtf32(codepoint) + "b";
+        var bytes = utf8 ? Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(text)).ToArray()
+            : Encoding.BigEndianUnicode.GetPreamble().Concat(Encoding.BigEndianUnicode.GetBytes(text)).ToArray();
+        var value = $"<{Convert.ToHexString(bytes)}>";
+        var pdf = Ua(target == "property" ? $"/P << /MCID 0 >> BDC /Span << /Lang {value} >> BDC BT (x) Tj ET EMC EMC" : TaggedText,
+            "8 0 R", extras: target == "structure" ? Para.Replace("/K 0", $"/K 0 /Lang {value}") : Para);
+        if (target == "catalog")
+            pdf = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(pdf).Replace("/Lang (en)", $"/Lang {value}"));
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(privateUse, report.Has("PDFUA2-TEXT-STRING-PUA"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Fact]
+    public void UnclassifiedFieldStringsDoNotBecomePrivateUseViolations()
+    {
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T <FEFFE000> /TU <FEFFE000> /TM <FEFFE000> >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf), PdfValidationProfile.PdfUA2);
+        Assert.False(report.Has("PDFUA2-TEXT-STRING-PUA"));
+    }
+
+    [Fact]
+    public void EarlierInvalidTagDoesNotHideLaterPrivateUseAndRepeatedPrivateUseIsBounded()
+    {
+        var pdf = Ua("/P << /MCID 0 >> BDC /Span << /Lang (-en) >> BDC EMC " +
+            "/Span << /Lang <FEFFE000> >> BDC EMC /Span << /Lang <FEFFF8FF> >> BDC EMC EMC",
+            "8 0 R", extras: Para);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf), PdfValidationProfile.PdfUA2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-LANG-INVALID");
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-TEXT-STRING-PUA");
+    }
 
     [Fact]
     public void ContentTaggingConformantPageIsClean()
@@ -392,6 +527,268 @@ public class DeepValidationTests
         Assert.False(r.Has("PDFUA-FORM-TU"));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("/T null")]
+    [InlineData("/T 11 0 R")]
+    [InlineData("/T 999 0 R")]
+    public void NullWidgetPartialNameKeepsUa1TerminalFieldTooltip(string name)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]",
+            "/AcroForm << /Fields [10 0 R] >>", extras:
+        [
+            "<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+            $"<< /Type /Annot /Subtype /Widget /Parent 10 0 R /Rect [0 0 10 10] /F 4 {name} >>",
+            "<< /FT /Tx /T (name) /TU (Field description) /Kids [9 0 R] >>",
+            "null",
+        ]);
+        var report = U(pdf);
+        Assert.False(report.Has("PDFUA-FORM-TU"));
+        Assert.False(report.Has("PDFUA-FORM-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> WidgetStructureCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "form", "artifact", "mapped-form", "mapped-artifact",
+            "ancestor-artifact", "mapped-ancestor-artifact", "paragraph", "pdf17-artifact", "foreign-unmapped" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(WidgetStructureCases))]
+    public void Ua2WidgetStructureResolvesFormAndArtifactNamespaces(int part, string kind)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            "<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /TU (name) /Contents (description) /StructParent 1 /Rect [0 0 10 10] >>",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray([new PdfInteger(1), new PdfRef(8, 0)]) },
+        };
+        var parent = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var document = Assert.IsType<PdfDictionary>(doc.File.GetObject(7));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind is "artifact" or "pdf17-artifact")
+        {
+            parent.Entries["S"] = new PdfName("Artifact");
+            if (kind == "artifact") parent.Entries["NS"] = pdf2;
+        }
+        if (kind is "mapped-form" or "mapped-artifact" or "mapped-ancestor-artifact" or "foreign-unmapped")
+        {
+            var element = kind == "mapped-ancestor-artifact" ? document : parent;
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:widget-structure")) } };
+            if (kind != "foreign-unmapped")
+                ns.Entries["RoleMapNS"] = new PdfDictionary
+                {
+                    Entries = { ["Custom"] = new PdfArray([new PdfName(kind == "mapped-form" ? "Form" : "Artifact"), pdf2]) },
+                };
+            element.Entries["S"] = new PdfName("Custom");
+            element.Entries["NS"] = ns;
+        }
+        if (kind is "ancestor-artifact" or "mapped-ancestor-artifact" or "paragraph")
+        {
+            parent.Entries["S"] = new PdfName("P");
+            if (kind == "ancestor-artifact")
+            {
+                document.Entries["S"] = new PdfName("Artifact");
+                document.Entries["NS"] = pdf2;
+            }
+        }
+        var expected = part == 1 ? kind != "form" : kind is "paragraph" or "pdf17-artifact" or "foreign-unmapped";
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(expected, report.Has("PDFUA-FORM-STRUCT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> FormWidgetCountCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default-form", "pdf2-form", "mapped-form", "mapped-chain-form",
+            "mapped-artifact", "mapped-paragraph", "foreign-unmapped", "artifact" })
+        foreach (var count in new[] { 0, 1, 2 })
+            yield return [part, kind, count, "Widget"];
+        foreach (var kind in new[] { "default-form", "mapped-form", "mapped-chain-form" })
+            yield return [2, kind, 2, "Link"];
+    }
+
+    [Theory]
+    [MemberData(nameof(FormWidgetCountCases))]
+    public void Ua2FormWidgetCountUsesResolvedNamespaceType(int part, string kind, int count, string subtype)
+    {
+        var references = string.Join(" ", Enumerable.Range(9, count).Select(id => $"{id} 0 R"));
+        var objects = string.Join(" ", Enumerable.Range(9, count).Select(id =>
+            $"<< /Type /OBJR /Obj {id} 0 R /Pg 3 0 R >>"));
+        var pdf = Ua("", "8 0 R", $"/Annots [{references}]",
+            catalogExtra: $"/AcroForm << /Fields [{references}] >>", extras:
+            [
+                $"<< /Type /StructElem /S /Form /P 7 0 R /K [{objects}] >>",
+                $"<< /Type /Annot /Subtype /{subtype} /FT /Tx /T (first) /TU (First) /Contents (First) /StructParent 1 /Rect [0 0 10 10] >>",
+                $"<< /Type /Annot /Subtype /{subtype} /FT /Tx /T (second) /TU (Second) /Contents (Second) /StructParent 2 /Rect [20 0 30 10] >>",
+            ]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray(Enumerable.Range(1, count)
+                .SelectMany(id => new PdfObject[] { new PdfInteger(id), new PdfRef(8, 0) }).ToList()) },
+        };
+        var form = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind is "pdf2-form" or "artifact")
+        {
+            form.Entries["NS"] = pdf2;
+            if (kind == "artifact") form.Entries["S"] = new PdfName("Artifact");
+        }
+        if (kind.StartsWith("mapped-", StringComparison.Ordinal) || kind == "foreign-unmapped")
+        {
+            var role = kind is "mapped-form" or "mapped-chain-form" ? "Custom" : "Form";
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:form-count")) } };
+            if (kind != "foreign-unmapped")
+            {
+                var target = kind == "mapped-artifact" ? "Artifact" : kind == "mapped-paragraph" ? "P" : "Form";
+                var targetNamespace = pdf2;
+                if (kind == "mapped-chain-form")
+                    targetNamespace = new PdfDictionary
+                    {
+                        Entries =
+                        {
+                            ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:form-count-intermediate")),
+                            ["RoleMapNS"] = new PdfDictionary { Entries = { ["Form"] = new PdfArray([new PdfName("Form"), pdf2]) } },
+                        },
+                    };
+                ns.Entries["RoleMapNS"] = new PdfDictionary
+                {
+                    Entries = { [role] = new PdfArray([new PdfName(target), targetNamespace]) },
+                };
+            }
+            form.Entries["S"] = new PdfName(role);
+            form.Entries["NS"] = ns;
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var expected = part == 2 && subtype == "Widget" && count > 1
+            && kind is "default-form" or "pdf2-form" or "mapped-form" or "mapped-chain-form";
+        Assert.Equal(expected, report.Has("PDFUA2-FORM-WIDGETS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> WidgetFieldTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var fieldType in new[] { "", "/FT null", "/FT 11 0 R", "/FT 999 0 R", "/FT /Tx", "/FT 12 0 R" })
+        foreach (var parentType in new[] { "", "/FT null", "/FT /Tx" })
+        foreach (var tooltip in new[] { "", "/TU (Name)" })
+            yield return [part, fieldType, parentType, tooltip];
+    }
+
+    [Theory]
+    [MemberData(nameof(WidgetFieldTypeCases))]
+    public void UaNullFieldTypeDoesNotEstablishFieldDescriptionRequirement(int part, string fieldType, string parentType, string tooltip)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            "<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+            $"<< /Type /Annot /Subtype /Widget /Parent 10 0 R /Rect [0 0 10 10] /F 4 {fieldType} {tooltip} >>",
+            $"<< {parentType} >>",
+            "null",
+            "/Tx",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        var hasType = fieldType is "/FT /Tx" or "/FT 12 0 R" || parentType == "/FT /Tx";
+        Assert.Equal(hasType && tooltip == "", report.Has("PDFUA-FORM-TU"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> WidgetActionContextCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var contents in new[] { "", "/Contents null", "/Contents ()", "/Contents (description)" })
+        foreach (var context in new[] { "normal", "hidden", "outside", "untagged", "artifact", "nonfield" })
+        foreach (var action in new[] { "", "/AA null", "/AA << >>" })
+            yield return [part, contents, context, action];
+    }
+
+    [Theory]
+    [MemberData(nameof(WidgetActionContextCases))]
+    public void Ua2WidgetAdditionalActionRequiresOwnContents(int part, string contents, string context, string action)
+    {
+        var type = context == "artifact" ? "/Artifact /NS << /NS (http://iso.org/pdf2/ssn) >>" : "/Form";
+        var flags = context == "hidden" ? 2 : 4;
+        var rect = context == "outside" ? "[200 200 210 210]" : "[0 0 10 10]";
+        var structParent = context == "untagged" ? "" : "/StructParent 1";
+        var field = context == "nonfield" ? "" : "/FT /Tx /T (name) /TU (tooltip)";
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]",
+            extras: [$"<< /Type /StructElem /S {type} /P 7 0 R /Alt (alternative) /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+                $"<< /Type /Annot /Subtype /Widget {field} {structParent} /Rect {rect} /F {flags} {contents} {action} >>"]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray([new PdfInteger(1), new PdfRef(8, 0)]) },
+        };
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var expected = part == 2 && action == "/AA << >>"
+            && contents is "" or "/Contents null"
+            && context is "normal" or "hidden" or "outside";
+        Assert.Equal(expected, report.Has("PDFUA2-WIDGET-AA-CONTENTS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("inherited-contents", true)]
+    [InlineData("field-parent", true)]
+    [InlineData("mapped-artifact", false)]
+    [InlineData("ancestor-artifact", false)]
+    public void Ua2WidgetActionContextUsesOwnContentsAndResolvedArtifactAncestors(string context, bool expected)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]",
+            extras: ["<< /Type /StructElem /S /Form /P 7 0 R /K << /Type /OBJR /Obj 9 0 R /Pg 3 0 R >> >>",
+                "<< /Type /Annot /Subtype /Widget /Parent 10 0 R /StructParent 1 /Rect [0 0 10 10] /AA << >> >>",
+                "<< /FT /Tx /T (name) /Contents (not the widget description) /Kids [9 0 R] >>"]);
+        var doc = PdfDocument.Load(pdf);
+        var root = Assert.IsType<PdfDictionary>(doc.File.Resolve(doc.File.Catalog.Get("StructTreeRoot")));
+        root.Entries["ParentTree"] = new PdfDictionary
+        {
+            Entries = { ["Nums"] = new PdfArray([new PdfInteger(1), new PdfRef(8, 0)]) },
+        };
+        var form = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        if (context == "mapped-artifact")
+        {
+            var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+            form.Entries["S"] = new PdfName("CustomArtifact");
+            form.Entries["NS"] = new PdfDictionary
+            {
+                Entries =
+                {
+                    ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:widget-test")),
+                    ["RoleMapNS"] = new PdfDictionary
+                    {
+                        Entries = { ["CustomArtifact"] = new PdfArray([new PdfName("Artifact"), pdf2]) },
+                    },
+                },
+            };
+        }
+        if (context == "ancestor-artifact")
+        {
+            var document = Assert.IsType<PdfDictionary>(doc.File.GetObject(7));
+            document.Entries["S"] = new PdfName("Artifact");
+            document.Entries["NS"] = new PdfDictionary
+            {
+                Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) },
+            };
+        }
+        if (context == "field-parent")
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Entries.Remove("Contents");
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(expected, report.Has("PDFUA2-WIDGET-AA-CONTENTS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     [Fact]
     public void DocumentFlagsSuspectsAndOptionalContent()
     {
@@ -402,11 +799,4891 @@ public class DeepValidationTests
         Assert.True(U(Encoding.Latin1.GetBytes(suspects)).Has("PDFUA-SUSPECTS"));
     }
 
+    public static IEnumerable<object[]> OptionalContentNameCases()
+    {
+        string[] configurations = ["", "/Configs null", "/Configs []",
+            "/Configs [9 0 R]", "/Configs [<< /Name (Alternative) >>]"];
+        foreach (var part in new[] { 1, 2 })
+        for (var index = 0; index < configurations.Length; index++)
+        foreach (var name in new[] { "", "/Name ()", "/Name (Default)", "/Name /NotAString" })
+        foreach (var automaticState in new[] { "", "/AS []", "/AS null", "/AS 10 0 R", "/AS 11 0 R" })
+            yield return [part, configurations[index], name, automaticState,
+                (part == 1 || index >= 3) && name != "/Name (Default)"];
+    }
+
+    [Theory]
+    [MemberData(nameof(OptionalContentNameCases))]
+    public void ConfigurationNameRequirementIsConditionalOnlyForUa2(
+        int part, string configurations, string name, string automaticState, bool missingName)
+    {
+        var properties = $"/OCProperties << /OCGs [] /D << {name} {automaticState} >> {configurations} >>";
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: properties,
+            extras: [Para, "<< /Name (Alternative) >>", "null", "[]"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missingName, report.Has("PDFUA-OC-NAME"));
+        Assert.Equal(automaticState is "/AS []" or "/AS 11 0 R", report.Has("PDFUA-OC-AS"));
+    }
+
+    [Theory]
+    [InlineData(1, "", true)]
+    [InlineData(1, "/Name ()", true)]
+    [InlineData(1, "/Name /NotAString", true)]
+    [InlineData(1, "/Name (Alternative)", false)]
+    [InlineData(2, "", true)]
+    [InlineData(2, "/Name ()", true)]
+    [InlineData(2, "/Name /NotAString", true)]
+    [InlineData(2, "/Name (Alternative)", false)]
+    public void NonDefaultConfigurationStillRequiresNameAndForbidsAutomaticState(int part, string name, bool missingName)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: "/OCProperties << /OCGs [] /D << /Name (Default) >> /Configs [9 0 R] >>",
+            extras: [Para, $"<< {name} /AS [] >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missingName, report.Has("PDFUA-OC-NAME"));
+        Assert.True(report.Has("PDFUA-OC-AS"));
+    }
+
+    [Theory]
+    [InlineData(1, "<FEFF>", true)]
+    [InlineData(1, "<FEFF004E>", false)]
+    [InlineData(2, "<FEFF>", true)]
+    [InlineData(2, "<FEFF004E>", false)]
+    public void RequiredConfigurationNameUsesDecodedTextLength(int part, string name, bool missingName)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: $"/OCProperties << /OCGs [] /D << /Name {name} >> /Configs [9 0 R] >>",
+            extras: [Para, "<< /Name (Alternative) >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missingName, report.Has("PDFUA-OC-NAME"));
+    }
+
     [Fact]
     public void EmbeddedFileSpecificationNeedsFAndUf()
     {
         Assert.True(U(Ua(TaggedText, "8 0 R", extras: [Para, "<< /Type /Filespec /F (a.txt) /EF << /F 10 0 R >> >>", ObjPdf.Stream("x", "/Type /EmbeddedFile")])).Has("PDFUA-FILESPEC-UF"));
         Assert.False(U(Ua(TaggedText, "8 0 R", extras: [Para, "<< /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F 10 0 R >> >>", ObjPdf.Stream("x", "/Type /EmbeddedFile")])).Has("PDFUA-FILESPEC-UF"));
+    }
+
+    public static IEnumerable<object[]> FontEmbeddingUseCases()
+    {
+        (string Text, bool Rendered)[] cases =
+        [
+            ("", false), ("BT /UF 12 Tf ET", false),
+            ("BT /UF 12 Tf 3 Tr (x) Tj ET", false),
+            ("BT /UF 12 Tf 3 Tr q 0 Tr Q (x) Tj ET", false),
+            ("BT /UF 12 Tf () Tj ET", true),
+            ("BT /UF 12 Tf [100] TJ ET", true),
+            ("BT /UF 12 Tf (x) Tj ET", true),
+            ("BT /UF 12 Tf 1 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 2 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 4 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 5 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 6 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 7 Tr (x) Tj ET", true),
+            ("BT /UF 12 Tf 3 Tr (x) Tj 0 Tr (y) Tj ET", true),
+            ("BT /UF 12 Tf q 3 Tr Q (x) Tj ET", true),
+            ("BT /UF 12 Tf (x) ' ET", true),
+            ("BT /UF 12 Tf 0 0 (x) \" ET", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var surface in new[] { "page", "form", "appearance", "uninvoked-form" })
+        foreach (var (text, rendered) in cases)
+            yield return [part, surface, text, rendered];
+    }
+
+    [Theory]
+    [MemberData(nameof(FontEmbeddingUseCases))]
+    public void UaFontEmbeddingRequiresRenderingUse(int part, string surface, string text, bool rendered)
+    {
+        const string fontResources = "/Font << /UF 9 0 R >>";
+        var resources = $"/Resources << {fontResources} /XObject << /FontForm 10 0 R >> >>";
+        var pageExtra = resources;
+        var content = surface == "uninvoked-form" ? "" : text;
+        if (surface == "form") content = "/FontForm Do";
+        if (surface == "appearance")
+        {
+            content = "";
+            pageExtra += " /Annots [11 0 R]";
+        }
+        var pdf = Ua($"/P << /MCID 0 >> BDC {content} EMC", "8 0 R", pageExtra,
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+                ObjPdf.Stream(text, $"/Type /XObject /Subtype /Form /BBox [0 0 100 100] /Resources << {fontResources} >>"),
+                "<< /Type /Annot /Subtype /Stamp /Rect [0 0 10 10] /AP << /N 10 0 R >> >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(rendered && surface != "uninvoked-form", report.Has("PDFUA-FONT-EMBEDDED"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-FONT-USAGE-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFontEmbeddingCannotExemptUninspectedUse(int part)
+    {
+        var pdf = Ua("/P << /MCID 0 >> BDC /Missing Do EMC", "8 0 R",
+            "/Resources << /Font << /UF 9 0 R >> >>",
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA-FONT-EMBEDDED"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFontScanLimitDoesNotEstablishUnusedExemption(int part)
+    {
+        var pdf = Ua("BT /UF 12 Tf (x) Tj ET", "8 0 R",
+            "/Resources << /Font << /UF 9 0 R >> >>",
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"]);
+        var context = new ValidationContext(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2, contentScanTokenLimit: 2);
+        PdfUAChecks.Run(context);
+        Assert.False(context.FontUsageComplete);
+        Assert.Single(context.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData("BT /UF 12 Tf 3 Tr (unterminated")]
+    [InlineData("BT /Missing 12 Tf (x) Tj ET")]
+    [InlineData("BT /UF 12 Tf /Bad Tr ET")]
+    [InlineData("BT /UF 12 Tf [true] TJ ET")]
+    [InlineData("/Missing Do")]
+    public void UaFontEmbeddingReportsUnknownRatherThanUnused(string content)
+    {
+        foreach (var part in new[] { 1, 2 })
+        {
+            var pdf = Ua(content, "8 0 R", "/Resources << /Font << /UF 9 0 R >> >>",
+                extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]);
+            var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+            Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+            Assert.False(report.Has("PDFUA-FONT-EMBEDDED"));
+            Assert.False(report.Has("VALIDATION-INTERNAL"));
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFontEmbeddingReportsMalformedFlateContent(int part)
+    {
+        var pdf = Ua("", "8 0 R", "/Resources << /Font << /UF 9 0 R >> >>",
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]);
+        var doc = PdfDocument.Load(pdf);
+        doc.Pages[0].Dict.Entries["Contents"] = new PdfStream(new PdfDictionary
+        {
+            Entries = { ["Filter"] = new PdfName("FlateDecode") },
+        }, System.Text.Encoding.ASCII.GetBytes("BT /UF 12 Tf 3 Tr (x) Tj ET"));
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.True(report.Has("PDFUA-FONT-USAGE-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA-CONTENT-SCAN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, "pattern")]
+    [InlineData(2, "pattern")]
+    [InlineData(1, "type3")]
+    [InlineData(2, "type3")]
+    public void UaFontEmbeddingDoesNotExemptUninspectedPatternOrCharProcUse(int part, string surface)
+    {
+        var resources = "/Resources << /Font << /UF 9 0 R /T3 10 0 R >> /Pattern << /Pat 11 0 R >> >>";
+        var content = surface == "pattern" ? "/Pattern cs /Pat scn 0 0 10 10 re f" : "BT /T3 12 Tf (x) Tj ET";
+        var pdf = Ua(content, "8 0 R", resources,
+            extras: [Para, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+                "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << >> >>",
+                ObjPdf.Stream("BT /UF 12 Tf (x) Tj ET", "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 10 10] /XStep 10 /YStep 10")]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FONT-USAGE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA-FONT-EMBEDDED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    const string XfaConfigNamespace = "http://www.xfa.org/schema/xci/3.0/";
+
+    public static IEnumerable<object[]> DynamicXfaCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var stream in new[] { false, true })
+        foreach (var needs in new[] { "", "/NeedsRendering false", "/NeedsRendering true" })
+        foreach (var value in new[] { "required", "forbidden", "", "Required", " required " })
+            yield return [part, stream, needs, value, part == 1 && value == "required"];
+    }
+
+    [Theory]
+    [MemberData(nameof(DynamicXfaCases))]
+    public void Ua1DynamicXfaUsesConfigurationInsteadOfRenderingFlag(
+        int part, bool stream, string needs, string value, bool dynamic)
+    {
+        var config = $"<config xmlns='{XfaConfigNamespace}'><acrobat><acrobat7><dynamicRender>{value}</dynamicRender></acrobat7></acrobat></config>";
+        var xml = stream ? $"<xdp:xdp xmlns:xdp='http://ns.adobe.com/xdp/'>{config}</xdp:xdp>" : config;
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: $"{needs} /AcroForm << /Fields [] /XFA {(stream ? "9 0 R" : "[(config) 9 0 R]")} >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(dynamic, report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.Equal(part == 2, report.Has("PDFUA2-XFA"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-XFA-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    public static IEnumerable<object[]> XfaPresenceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var value in new[] { "", "/XFA null", "/XFA 9 0 R", "/XFA 999 0 R", "/XFA []" })
+        foreach (var needs in new[] { "", "/NeedsRendering false", "/NeedsRendering true" })
+            yield return [part, value, needs];
+    }
+
+    [Theory]
+    [MemberData(nameof(XfaPresenceCases))]
+    public void Ua2XfaPresenceDoesNotDependOnRenderingFlag(int part, string value, string needs)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: $"{needs} /AcroForm << /Fields [] {value} >>",
+            extras: [Para, "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && value == "/XFA []", report.Has("PDFUA2-XFA"));
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-XFA-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("<config xmlns='urn:foreign'><acrobat><acrobat7><dynamicRender>required</dynamicRender></acrobat7></acrobat></config>")]
+    [InlineData("<config><acrobat><acrobat7><dynamicRender>required</dynamicRender></acrobat7></acrobat></config>")]
+    [InlineData("<config xmlns='http://www.xfa.org/schema/xci/3.0/'><dynamicRender>required</dynamicRender></config>")]
+    [InlineData("<config xmlns='http://www.xfa.org/schema/xci/3.0/'><acrobat><acrobat7><dynamicRender xmlns='urn:foreign'>required</dynamicRender></acrobat7></acrobat></config>")]
+    public void LookalikeXfaElementsAreNotDynamicConfiguration(string xml)
+    {
+        var pdf = Ua(TaggedText, "8 0 R",
+            catalogExtra: "/NeedsRendering true /AcroForm << /XFA [(config) 9 0 R] >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        var report = U(pdf);
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<config>")]
+    [InlineData("<!DOCTYPE config SYSTEM 'https://invalid.example/never-load'><config/>")]
+    public void MalformedXfaConfigurationIsExplicitlyIncomplete(string xml)
+    {
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: "/AcroForm << /XFA [(config) 9 0 R] >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        var report = U(pdf);
+        Assert.True(report.Has("PDFUA-XFA-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("null", false)]
+    [InlineData("9 0 R", false)]
+    [InlineData("99 0 R", false)]
+    [InlineData("[]", false)]
+    [InlineData("[(config)]", true)]
+    [InlineData("[(config) null]", true)]
+    [InlineData("[(config) 99 0 R]", true)]
+    [InlineData("(not packets)", true)]
+    public void XfaPacketBoundariesDoNotSilentlyLookComplete(string xfa, bool incomplete)
+    {
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: $"/AcroForm << /XFA {xfa} >>",
+            extras: [Para, "null"]);
+        var report = U(pdf);
+        Assert.Equal(incomplete, report.Has("PDFUA-XFA-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XFA-DYNAMIC"));
+    }
+
+    [Fact]
+    public void XfaConfigurationInspectionIsBounded()
+    {
+        var xml = $"<config xmlns='{XfaConfigNamespace}'>" + string.Concat(Enumerable.Repeat("<a>", 70))
+            + string.Concat(Enumerable.Repeat("</a>", 70)) + "</config>";
+        var pdf = Ua(TaggedText, "8 0 R", catalogExtra: "/AcroForm << /XFA [(config) 9 0 R] >>",
+            extras: [Para, ObjPdf.Stream(xml)]);
+        Assert.True(U(pdf).Has("PDFUA-XFA-INCOMPLETE"));
+        var packets = string.Concat(Enumerable.Repeat("(config) 9 0 R ", 1001));
+        pdf = Ua(TaggedText, "8 0 R", catalogExtra: $"/AcroForm << /XFA [{packets}] >>",
+            extras: [Para, ObjPdf.Stream($"<config xmlns='{XfaConfigNamespace}'/>")]);
+        Assert.Single(U(pdf).Findings, f => f.RuleId == "PDFUA-XFA-INCOMPLETE");
+    }
+
+    public static IEnumerable<object[]> FileSpecificationNameCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var key in new[] { "F", "UF" })
+        foreach (var indirect in new[] { false, true })
+        foreach (var value in new[] { "(a.txt)", "<FEFF0061>", "<FEFF>", "()", "null", "( )" })
+            yield return [part, key, indirect, value,
+                value is "()" or "null" || part == 1 && key == "UF" && value == "<FEFF>"];
+    }
+
+    [Theory]
+    [MemberData(nameof(FileSpecificationNameCases))]
+    public void EmbeddedFileUnicodeNameMustHaveDecodedText(
+        int part, string key, bool indirect, string value, bool missing)
+    {
+        var names = "/F (a.txt) /UF (a.txt)".Replace($"/{key} (a.txt)", $"/{key} {(indirect ? "11 0 R" : value)}");
+        var pdf = Ua(TaggedText, "8 0 R", extras:
+            [Para, $"<< /Type /Filespec {names} /EF << /F 10 0 R >> >>",
+             ObjPdf.Stream("x", "/Type /EmbeddedFile"), value]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missing, report.Has("PDFUA-FILESPEC-UF"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    public static IEnumerable<object[]> FileSpecificationEmbeddedEntryCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var names in new[] { false, true })
+        foreach (var ef in new[] { "", "/EF null", "/EF 11 0 R", "/EF 99 0 R",
+            "/EF << /F 10 0 R >>", "/EF 12 0 R" })
+            yield return [part, names, ef,
+                !names && ef is "/EF << /F 10 0 R >>" or "/EF 12 0 R"];
+    }
+
+    [Theory]
+    [MemberData(nameof(FileSpecificationEmbeddedEntryCases))]
+    public void UaNullEmbeddedFileEntryIsEquivalentToOmission(int part, bool names, string ef, bool missing)
+    {
+        var pdf = Ua(TaggedText, "8 0 R", extras:
+            [Para, $"<< /Type /Filespec {(names ? "/F (a.txt) /UF (a.txt)" : "")} {ef} >>",
+             ObjPdf.Stream("x", "/Type /EmbeddedFile"), "null", "<< /F 10 0 R >>"]);
+        var report = PdfValidator.Validate(PdfDocument.Load(pdf),
+            part == 1 ? PdfValidationProfile.PdfUA1 : PdfValidationProfile.PdfUA2);
+        Assert.Equal(missing, report.Has("PDFUA-FILESPEC-UF"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("default", true)]
+    [InlineData("mapped-parent", true)]
+    [InlineData("mapped-children", true)]
+    [InlineData("mapped-both", true)]
+    [InlineData("parent-div", false)]
+    [InlineData("child-p", false)]
+    public void Ua2TocContainmentUsesNamespaceNestingNotLegacyRoles(string kind, bool valid)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /TOC /P 7 0 R /K 9 0 R >>",
+            "<< /Type /StructElem /S /TOCI /P 8 0 R /Ref [10 0 R] /K 10 0 R >>",
+            "<< /Type /StructElem /S /P /P 9 0 R >>",
+        ]));
+        var pdf17 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf/ssn")) } };
+        void Map(int number, string role, string target)
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(number));
+            element.Entries["S"] = new PdfName(role);
+            element.Entries["NS"] = new PdfDictionary
+            {
+                Entries =
+                {
+                    ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:toc-test")),
+                    ["RoleMapNS"] = new PdfDictionary { Entries = { [role] = new PdfArray([new PdfName(target), pdf17]) } },
+                },
+            };
+        }
+        if (kind is "mapped-parent" or "mapped-both" or "parent-div") Map(8, "Contents", kind == "parent-div" ? "Div" : "TOC");
+        if (kind is "mapped-children" or "mapped-both" or "child-p") Map(9, "Entry", kind == "child-p" ? "P" : "TOCI");
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA-TOC-CHILD"));
+        Assert.False(report.Has("PDFUA-TOCI-PARENT"));
+        Assert.Equal(!valid, report.Has("PDFUA2-NESTING"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> ListAttributeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "owner-list", "owner-layout", "owner-omitted", "class-valid", "class-none",
+            "class-layout", "local-valid-class-none", "local-none-class-valid", "local-null-class-valid" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(ListAttributeCases))]
+    public void Ua2ListNumberingUsesOwnedLocalAndClassAttributes(int part, string kind)
+    {
+        var owner = kind == "owner-layout" ? "/O /Layout" : kind == "owner-omitted" ? "" : "/O /List";
+        var localValue = kind == "local-none-class-valid" ? "/None" : kind == "local-null-class-valid" ? "null" : "/Decimal";
+        var local = kind.StartsWith("class", StringComparison.Ordinal) ? "" : $"/A << {owner} /ListNumbering {localValue} >>";
+        var classValue = kind is "class-none" or "local-valid-class-none" ? "/None" : "/Decimal";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {local} /C /First >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfDictionary
+        {
+            Entries =
+            {
+                ["First"] = new PdfDictionary
+                {
+                    Entries =
+                    {
+                        ["O"] = new PdfName(kind == "class-layout" ? "Layout" : "List"),
+                        ["ListNumbering"] = new PdfName(classValue[1..]),
+                    },
+                },
+            },
+        };
+        if (!kind.Contains("class", StringComparison.Ordinal))
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries.Remove("C");
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var required = kind is "owner-layout" or "owner-omitted" or "class-none" or "class-layout" or "local-none-class-valid";
+        Assert.Equal(part == 2 && required, report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("C")]
+    [InlineData("ClassMap")]
+    public void Ua2ListCyclicAttributeLookupIsIncomplete(string key)
+    {
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {(key == "A" ? "/A 12 0 R" : key == "C" ? "/C 12 0 R" : "/C /First")} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+            "12 0 R",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        doc.Structure!.Root.Entries["ClassMap"] = key == "ClassMap" ? new PdfRef(12, 0) : new PdfDictionary();
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2ListClassAndAttributeWorkShareOneBound(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R /C /First >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var attributes = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfDictionary(), count - 1)
+            .Append(new PdfDictionary { Entries = { ["O"] = new PdfName("List"), ["ListNumbering"] = new PdfName("Decimal") } }).ToList());
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfDictionary { Entries = { ["First"] = attributes } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+    }
+
+    [Theory]
+    [InlineData("/C /First /A << /O /List /ListNumbering /Decimal >>")]
+    [InlineData("/C [/First /Second] /A [<< /O /Layout /ListNumbering /None >> << /O /List /ListNumbering /Decimal >>]")]
+    public void Ua2ListLocalValueSkipsUnusedCyclicClassMap(string attributes)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {attributes} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+            "12 0 R",
+        ]));
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfRef(12, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+    }
+
+    public static IEnumerable<object[]> ListNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default", "mapped-list", "mapped-item", "mapped-label", "mapped-body", "mapped-all",
+            "foreign-list", "mapped-div-list", "mapped-span-label" })
+        foreach (var numbering in new[] { "", "/ListNumbering /None", "/ListNumbering /Decimal" })
+            yield return [part, kind, numbering];
+    }
+
+    [Theory]
+    [MemberData(nameof(ListNamespaceCases))]
+    public void Ua2ListNumberingAndListChildrenUseNamespaceRoles(int part, string kind, string numbering)
+    {
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /A << /O /List {numbering} >> /K 9 0 R >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]);
+        var doc = PdfDocument.Load(pdf);
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        void Map(int number, string role, string? target)
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(number));
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:list-test")) } };
+            if (target is not null)
+                ns.Entries["RoleMapNS"] = new PdfDictionary
+                {
+                    Entries = { [role] = new PdfArray([new PdfName(target), pdf2]) },
+                };
+            element.Entries["S"] = new PdfName(role);
+            element.Entries["NS"] = ns;
+        }
+        if (kind is "mapped-list" or "mapped-all") Map(8, "CustomList", "L");
+        if (kind is "mapped-item" or "mapped-all") Map(9, "CustomItem", "LI");
+        if (kind is "mapped-label" or "mapped-all") Map(10, "CustomLabel", "Lbl");
+        if (kind is "mapped-body" or "mapped-all") Map(11, "CustomBody", "LBody");
+        if (kind == "foreign-list") Map(8, "L", null);
+        if (kind == "mapped-div-list") Map(8, "L", "Div");
+        if (kind == "mapped-span-label") Map(10, "Lbl", "Span");
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        var list = kind is not ("foreign-list" or "mapped-div-list");
+        var label = kind != "mapped-span-label";
+        Assert.Equal(part == 2 && list && label && numbering != "/ListNumbering /Decimal",
+            report.Has("PDFUA2-LIST-NUMBERING"));
+        if (part == 2 && kind.StartsWith("mapped-", StringComparison.Ordinal) && kind is not ("mapped-div-list" or "mapped-span-label"))
+            Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-LIST-CHILD" or "PDFUA-LI-PARENT" or "PDFUA-LI-CHILD" or "PDFUA-LBODY-PARENT");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, true)]
+    public void Ua2MappedListItemDirectContentIsRejected(int part, bool expected)
+    {
+        var pdf = Ua("/CustomItem << /MCID 0 >> BDC 0 0 10 10 re f EMC", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R >>",
+            "<< /Type /StructElem /S /CustomItem /P 8 0 R /K 0 /NS << /NS (urn:list-content) /RoleMapNS << /CustomItem [/LI << /NS (http://iso.org/pdf2/ssn) >>] >> >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(expected, report.Has("PDFUA2-LI-CONTENT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("L", "P", "PDFUA-LIST-CHILD")]
+    [InlineData("LI", "P", "PDFUA-LI-CHILD")]
+    [InlineData("Document", "LI", "PDFUA-LI-PARENT")]
+    [InlineData("Document", "LBody", "PDFUA2-NESTING")]
+    public void Ua2MappedListRolesRetainInvalidContainmentFindings(string parent, string child, string rule)
+    {
+        var ns = $"/NS << /NS (urn:list-containment) /RoleMapNS << /CustomParent [/{parent} << /NS (http://iso.org/pdf2/ssn) >>] /CustomChild [/{child} << /NS (http://iso.org/pdf2/ssn) >>] >> >>";
+        var pdf = Ua("", "8 0 R", extras: parent == "Document"
+            ? [$"<< /Type /StructElem /S /CustomChild /P 7 0 R {ns} >>"]
+            : [$"<< /Type /StructElem /S /CustomParent /P 7 0 R /K 9 0 R {ns} >>",
+               $"<< /Type /StructElem /S /CustomChild /P 8 0 R {ns} >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has(rule));
+        Assert.True(report.Has("PDFUA2-NESTING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("L", "Custom", "PDFUA-LIST-CHILD", false)]
+    [InlineData("L", "Custom", "PDFUA-LIST-CHILD", true)]
+    [InlineData("Custom", "LI", "PDFUA-LI-PARENT", false)]
+    [InlineData("Custom", "LI", "PDFUA-LI-PARENT", true)]
+    [InlineData("Custom", "LBody", "PDFUA-LBODY-PARENT", false)]
+    [InlineData("Custom", "LBody", "PDFUA-LBODY-PARENT", true)]
+    public void Ua2UnresolvedListRolesRetainIncompleteWithoutKnownShapeErrors(string parent, string child, string rule, bool cyclic)
+    {
+        var ns = $"/NS << /NS (urn:list-unresolved) /RoleMapNS << {(cyclic ? "/Custom /Custom" : "")} >> >>";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{parent} /P 7 0 R /K 9 0 R {(parent == "Custom" ? ns : "")} >>",
+            $"<< /Type /StructElem /S /{child} /P 8 0 R {(child == "Custom" ? ns : "")} >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has(rule));
+        Assert.True(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> ReferenceXObjectCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var subtype in new[] { "Form", "Image" })
+        foreach (var reference in new[] { "", "/Ref null", "/Ref 10 0 R", "/Ref 99 0 R",
+            "/Ref << /F (other.pdf) /Page 0 >>", "/Ref 11 0 R" })
+            yield return [part, subtype, reference];
+    }
+
+    [Theory]
+    [MemberData(nameof(ReferenceXObjectCases))]
+    public void Ua1ReferenceXObjectNullIsEquivalentToOmission(int part, string subtype, string reference)
+    {
+        var pdf = Ua("", "8 0 R", "/Resources << /XObject << /Form 9 0 R >> >>", extras:
+        [
+            Para, ObjPdf.Stream("", $"/Type /XObject /Subtype /{subtype} /BBox [0 0 10 10] {reference}"),
+            "null", "<< /F (other.pdf) /Page 0 >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 1 && subtype == "Form" && reference is "/Ref << /F (other.pdf) /Page 0 >>" or "/Ref 11 0 R",
+            report.Has("PDFUA-XOBJECT-REF"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-XOBJECT-REF-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Ua1CyclicReferenceXObjectIsIncompleteNotNull(int part)
+    {
+        var pdf = Ua("", "8 0 R", "/Resources << /XObject << /Form 9 0 R >> >>",
+            extras: [Para, ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Ref 10 0 R"), "10 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 1, report.Has("PDFUA-XOBJECT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XOBJECT-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, true)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, false)]
+    public void Ua1ReferenceXObjectReferenceDepthBoundaryIsExplicit(int part, int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, length).Select(n => n == 9 + length ? "null" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", "/Resources << /XObject << /Form 9 0 R >> >>",
+            extras: new[] { Para, ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Ref 10 0 R") }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(incomplete, report.Has("PDFUA-XOBJECT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-XOBJECT-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, "Hello", false)]
+    [InlineData(false, "Goodbye", true)]
+    [InlineData(true, "Hello", false)]
+    [InlineData(true, "Goodbye", true)]
+    public void Ua2RichFieldPlainValueMatchesSingleParagraphText(bool stream, string plain, bool mismatch)
+    {
+        const string xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>Hel<span>lo</span></p></body>";
+        var rich = stream ? "/RV 12 0 R" : $"/RV ({xml})";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /Tx /T (field) {rich} /V ({plain}) >>", "null", "null",
+            ObjPdf.Stream(xml),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FORM-VALUE-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    public static IEnumerable<object[]> RichFieldEqualityCases()
+    {
+        (string Content, string Plain, bool Mismatch)[] cases =
+        [
+            ("<p>Hello</p>", "Hello", false),
+            ("<p>Hello</p>", "Goodbye", true),
+            ("<p>Hel<span>lo</span></p>", "Hello", false),
+            ("<p>A&amp;B</p>", "A&B", false),
+            ("<p></p>", "", false),
+            ("<p> Hello </p>", " Hello ", false),
+            ("<p> Hello </p>", "Hello", true),
+            ("<p>A</p><p>B</p>", "AB", false),
+            ("<p>A</p><p>B</p>", "A\nB", true),
+            ("<p>A</p><p>B</p>", "A\rB", true),
+            ("<p>A</p><p>B</p>", "A\r\nB", true),
+            ("<p>A<br/>B</p>", "AB", false),
+            ("<p>A<br/>B</p>", "A\nB", true),
+            ("<p>A<br/>B</p>", "A\rB", true),
+            ("<p>A<br/>B</p>", "A\r\nB", true),
+            ("\n  <p>Hello</p>\n", "Hello", true),
+            ("<p>A&#x20;B</p>", "A B", false),
+            ("<p>caf&#xE9;</p>", "caf\u00e9", false),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var stream in new[] { false, true })
+        foreach (var test in cases)
+            yield return [part, stream, test.Content, test.Plain, test.Mismatch];
+    }
+
+    [Theory]
+    [MemberData(nameof(RichFieldEqualityCases))]
+    public void RichFieldEqualityPreservesXmlTextOrderAndWhitespace(int part, bool stream, string content, string plain, bool mismatch)
+    {
+        var xml = $"<body xmlns='http://www.w3.org/1999/xhtml'>{content}</body>";
+        var rich = stream ? "/RV 12 0 R" : $"/RV <{Convert.ToHexString(Encoding.UTF8.GetBytes(xml))}>";
+        var value = Convert.ToHexString(Encoding.BigEndianUnicode.GetBytes("\uFEFF" + plain));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /Tx /T (field) {rich} /V <{value}> >>", "null", "null", ObjPdf.Stream(xml),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FORM-VALUE-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("<body xmlns='http://www.w3.org/1999/xhtml'><p>text</body>")]
+    [InlineData("<body xmlns='urn:foreign'><p>text</p></body>")]
+    [InlineData("<!DOCTYPE body [<!ENTITY x 'text'>]><body xmlns='http://www.w3.org/1999/xhtml'>&x;</body>")]
+    [InlineData("<!DOCTYPE body SYSTEM 'file:///does-not-exist'><body xmlns='http://www.w3.org/1999/xhtml'>text</body>")]
+    public void RichFieldEqualityMalformedOrDtdXmlIsIncomplete(string xml)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV <{Convert.ToHexString(Encoding.UTF8.GetBytes(xml))}> /V (text) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-VALUE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(62, false)]
+    [InlineData(63, true)]
+    public void RichFieldEqualityXmlDepthBoundaryIsExplicit(int spans, bool incomplete)
+    {
+        var xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>" + string.Concat(Enumerable.Repeat("<span>", spans))
+            + "text" + string.Concat(Enumerable.Repeat("</span>", spans)) + "</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV <{Convert.ToHexString(Encoding.UTF8.GetBytes(xml))}> /V (text) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199998, false)]
+    [InlineData(199999, true)]
+    public void RichFieldEqualityXmlWorkBoundaryIsExplicit(int spans, bool incomplete)
+    {
+        var xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>"
+            + string.Concat(Enumerable.Repeat("<span/>", spans)) + "text</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, "<< /FT /Tx /T (field) /RV 12 0 R /V (text) >>", "null", "null", ObjPdf.Stream(xml)]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Filter /Unknown")]
+    [InlineData("/Filter /DCTDecode")]
+    [InlineData("/Filter /FlateDecode")]
+    [InlineData("/Filter << >>")]
+    [InlineData("/Filter /ASCIIHexDecode /DecodeParms 11 0 R")]
+    public void RichFieldEqualityUnsupportedMalformedOrCyclicFiltersAreIncomplete(string filter)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (field) /RV 12 0 R /V (text) >>", "null", "11 0 R",
+            ObjPdf.Stream("<body xmlns='http://www.w3.org/1999/xhtml'><p>text</p></body>", filter),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-VALUE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void RichFieldEqualityXfaBodyAttributesDoNotChangeStreamText(bool stream, bool unicode)
+    {
+        const string xml = "<body xmlns='http://www.w3.org/1999/xhtml' xmlns:xfa='http://www.xfa.org/schema/xfa-data/1.0/' xfa:contentType='text/html' xfa:APIVersion='Control:1.0' xfa:spec='2.4'><p>Hello</p></body>";
+        var rich = stream ? "/RV 12 0 R" : $"/RV ({xml})";
+        var value = unicode ? "<FEFF00480065006C006C006F>" : "(Hello)";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) {rich} /V {value} >>", "null", "null", ObjPdf.Stream(xml)]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(33554432, false)]
+    [InlineData(33554433, true)]
+    public void RichFieldEqualityPlainByteBoundaryIsExplicit(int bytes, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, "<< /FT /Tx /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>a</p></body>) /V (a) >>"]);
+        var doc = PdfDocument.Load(pdf);
+        var value = new byte[bytes];
+        Array.Fill(value, (byte)'a');
+        doc.GetFormFieldDetails().Fields.Single().Dictionary.Entries["V"] = new PdfString(value);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("math", "P", false, true)]
+    [InlineData("Math", "P", false, true)]
+    [InlineData("mi", "P", false, true)]
+    [InlineData("math", "Formula", false, false)]
+    [InlineData("mi", "Formula", false, false)]
+    [InlineData("mi", "math", false, false)]
+    [InlineData("Custom", "Formula", true, false)]
+    [InlineData("Custom", "P", true, true)]
+    [InlineData("Math", "P", true, false)]
+    public void Ua2MathParentUsesResolvedNamespace(string role, string parent, bool mapped, bool invalid)
+    {
+        var mathNamespace = "<< /Type /Namespace /NS (http://www.w3.org/1998/Math/MathML) >>";
+        var mapping = role == "Math" ? "/Math [/P 12 0 R]" : "/Custom [/math 11 0 R]";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{parent} /NS {(parent == "math" ? 11 : 12)} 0 R /P 7 0 R /K [9 0 R] /Alt (formula) >>",
+            $"<< /Type /StructElem /S /{role} /NS {(mapped ? 13 : 11)} 0 R /P 8 0 R /K [] >>",
+            "null", mathNamespace,
+            "<< /Type /Namespace /NS (http://iso.org/pdf2/ssn) >>",
+            $"<< /Type /Namespace /NS (urn:math-test) /RoleMapNS << {mapping} >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        // The outer math under Document is invalid independently of its valid mi child.
+        var expected = invalid || parent == "math";
+        Assert.Equal(expected, report.Has("PDFUA2-MATH-PARENT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2MathMlDescendantUnderFormulaIsValid()
+    {
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /Formula /P 7 0 R /K [9 0 R] /Alt (formula) >>",
+            "<< /Type /StructElem /S /math /NS 11 0 R /P 8 0 R /K [10 0 R] >>",
+            "<< /Type /StructElem /S /mi /NS 11 0 R /P 9 0 R /K [] >>",
+            "<< /Type /Namespace /NS (http://www.w3.org/1998/Math/MathML) >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-MATH-PARENT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> StructureKidNullCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var root in new[] { false, true })
+        foreach (var kids in new[] { "null", "[]", "[null]", "[99 0 R]", "[9 0 R]",
+            "[8 0 R null]", "[[null]]" })
+            yield return [part, root, kids];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureKidNullCases))]
+    public void Ua2StructureKidArraysMustNotContainNull(int part, bool root, string kids)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>", "null"]));
+        var dictionary = Assert.IsType<PdfDictionary>(doc.File.GetObject(root ? 5 : 7));
+        dictionary.Entries["K"] = new PdfLexer(Encoding.ASCII.GetBytes(kids)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && kids is "[null]" or "[99 0 R]" or "[9 0 R]" or "[8 0 R null]",
+            report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, "9 0 R")]
+    [InlineData(false, "[9 0 R]")]
+    [InlineData(true, "9 0 R")]
+    [InlineData(true, "[9 0 R]")]
+    public void Ua2StructureKidReferenceCyclesAreIncompleteNotGuessedNull(bool root, string kids)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>", "9 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(root ? 5 : 7)).Entries["K"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(kids)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, 200000, false)]
+    [InlineData(false, 200001, true)]
+    [InlineData(true, 200000, false)]
+    [InlineData(true, 200001, true)]
+    public void Ua2StructureKidNullInspectionIsBounded(bool root, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(root ? 5 : 7)).Entries["K"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(PdfNull.Instance, count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ua2StructureKidKnownNullSurvivesLaterIncompleteReference(bool root)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>", "9 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(root ? 5 : 7)).Entries["K"] =
+            new PdfArray([PdfNull.Instance, new PdfRef(9, 0)]);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, 32, false)]
+    [InlineData(false, 33, true)]
+    [InlineData(true, 32, false)]
+    [InlineData(true, 33, true)]
+    public void Ua2StructureKidReferenceDepthIsBounded(bool root, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n =>
+            n == 8 + count ? "[]" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K [] >>" }.Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(root ? 5 : 7)).Entries["K"] = new PdfRef(9, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> StructureAttributeNullCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var key in new[] { "A", "C" })
+        foreach (var value in new[] { "null", "[]", "[0]", "[null]", "[99 0 R]", "[9 0 R]", "[[null]]" })
+            yield return [part, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureAttributeNullCases))]
+    public void Ua2StructureAttributeArraysMustNotContainNull(int part, string key, string value)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>", "null"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries[key] =
+            new PdfLexer(Encoding.ASCII.GetBytes(value)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && value is "[null]" or "[99 0 R]" or "[9 0 R]",
+            report.Has($"PDFUA2-STRUCT-{key}-NULL"));
+        Assert.False(report.Has($"PDFUA2-STRUCT-{key}-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("A", false)]
+    [InlineData("C", false)]
+    [InlineData("A", true)]
+    [InlineData("C", true)]
+    public void Ua2StructureAttributeNullAndIncompleteAreDistinct(string key, bool knownNull)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>", "9 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries[key] =
+            new PdfArray(knownNull ? [PdfNull.Instance, new PdfRef(9, 0)] : [new PdfRef(9, 0)]);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has($"PDFUA2-STRUCT-{key}-INCOMPLETE"));
+        Assert.Equal(knownNull, report.Has($"PDFUA2-STRUCT-{key}-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("A", 200000, false)]
+    [InlineData("A", 200001, true)]
+    [InlineData("C", 200000, false)]
+    [InlineData("C", 200001, true)]
+    public void Ua2StructureAttributeNullInspectionIsBounded(string key, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries[key] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(PdfNull.Instance, count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has($"PDFUA2-STRUCT-{key}-INCOMPLETE"));
+        Assert.True(report.Has($"PDFUA2-STRUCT-{key}-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> StructureRevisionCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var value in new[] { "null", "0", "7", "-1", "1.0", "1.5", "/Revision", "[]", "99 0 R", "9 0 R" })
+            yield return [part, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureRevisionCases))]
+    public void Ua2StructureRevisionMustBeNonNegativeInteger(int part, string value)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>", "7"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["R"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(value)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && value is "-1" or "1.0" or "1.5" or "/Revision" or "[]",
+            report.Has("PDFUA2-STRUCT-R-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-R-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2StructureRevisionReferenceDepthIsBounded(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "7" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K [] /R 9 0 R >>" }.Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-R-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-R-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2StructureRevisionReferenceCycleIsIncompleteNotInvalidType()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /R 9 0 R >>", "9 0 R"])), 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-R-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-R-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> NamespaceIndirectCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var value in new[] { "null", "99 0 R", "9 0 R",
+            "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>",
+            "<< /Type /Namespace /NS (urn:indirect) /RoleMapNS << /P [/P 9 0 R] >> >>" })
+            yield return [part, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(NamespaceIndirectCases))]
+    public void Ua2ElementNamespaceDictionaryMustBeIndirect(int part, string value)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["NS"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(value)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && value.StartsWith("<<", StringComparison.Ordinal),
+            report.Has("PDFUA2-NS-INDIRECT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, "null")]
+    [InlineData(1, "[]")]
+    [InlineData(2, "null")]
+    [InlineData(2, "[]")]
+    [InlineData(2, "[9 0 R]")]
+    [InlineData(2, "[10 0 R]")]
+    [InlineData(2, "[9 0 R 10 0 R]")]
+    public void Ua2NamespaceRegistrationUsesDictionaryIdentity(int part, string registry)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(registry)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && !registry.Contains("9 0 R", StringComparison.Ordinal),
+            report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("11 0 R")]
+    [InlineData("[11 0 R]")]
+    public void Ua2IncompleteNamespaceRegistryDoesNotGuessMissingMembership(string registry)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>", "null", "11 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(registry)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2NamespaceRegistryInspectionIsBounded(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(new PdfRef(9, 0), count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Bad")]
+    [InlineData("[/Bad]")]
+    public void Ua2MalformedNamespaceRegistryIsExplicitlyIncomplete(string registry)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+             "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(registry)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2NamespaceRegistryReferenceDepthIsBounded(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "[9 0 R]" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K [] /NS 9 0 R >>",
+                "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>" }.Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["Namespaces"] = new PdfRef(10, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2NamespaceRegistrationIsOptionalWhenNoElementReferencesANamespace()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"])), 2);
+        Assert.False(report.Has("PDFUA2-NS-UNREGISTERED"));
+        Assert.False(report.Has("PDFUA2-NS-REGISTRY-INCOMPLETE"));
+    }
+
+    public static IEnumerable<object[]> RootKidsShapeCases()
+    {
+        (string Kids, bool Invalid)[] values =
+        [
+            ("7 0 R", false), ("[7 0 R]", false), ("[]", false), ("null", false),
+            ("/Bad", true), ("1", true), ("1.0", true), ("(bad)", true), ("true", true),
+            ("[7 0 R 0]", true), ("[7 0 R [7 0 R]]", true), ("[7 0 R null]", false),
+            ("[7 0 R 9 0 R]", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var (kids, invalid) in values)
+            yield return [part, kids, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(RootKidsShapeCases))]
+    public void Ua2RootKidsRequireDictionaryOrFlatDictionaryArray(int part, string kids, bool invalid)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: [Para, "/Bad"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(kids)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.Equal(part == 2 && kids == "[7 0 R null]", report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2RootKidsTypeReferenceDepthIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "[7 0 R /Bad]" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: new[] { Para }.Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] = new PdfRef(9, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2RootKidsKnownTypeAndNullErrorsSurviveLaterIncompleteItem()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: [Para, "9 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] =
+            new PdfArray([new PdfRef(7, 0), new PdfName("Bad"), new PdfNull(), new PdfRef(9, 0)]);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.True(report.Has("PDFUA2-STRUCT-K-NULL"));
+        Assert.True(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2RootKidsTypeArrayWorkBoundRetainsKnownInvalidType(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: [Para]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["K"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(new PdfName("Bad"), count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-ROOT-K-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, false, false)]
+    [InlineData(1, false, true)]
+    [InlineData(1, true, false)]
+    [InlineData(1, true, true)]
+    [InlineData(2, false, false)]
+    [InlineData(2, false, true)]
+    [InlineData(2, true, false)]
+    [InlineData(2, true, true)]
+    public void Ua2OnlyElementKidArraysMustBeNonempty(int part, bool root, bool indirect)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R >>", "[]"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(root ? 5 : 8)).Entries["K"] =
+            indirect ? new PdfRef(9, 0) : new PdfArray([]);
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && !root, report.Has("PDFUA2-STRUCT-K-EMPTY"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/K null")]
+    [InlineData("/K 10 0 R")]
+    [InlineData("/K [9 0 R]")]
+    public void Ua2ElementKidArraySizePreservesOptionalAndNonemptyEntries(string kids)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {kids} >>",
+                "<< /Type /StructElem /S /Span /P 8 0 R >>", "null"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-STRUCT-K-EMPTY"));
+        Assert.False(report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ElementKidArraySizeResolutionIsBounded(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "[]" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K 9 0 R >>" }.Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-K-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-STRUCT-K-EMPTY"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> ClassEntryTypeCases()
+    {
+        (string Entry, bool Invalid)[] values =
+        [
+            ("", false), ("/C null", false), ("/C /Unknown", false), ("/C []", false),
+            ("/C [/Unknown 0]", false), ("/C 9 0 R", false),
+            ("/C 0", true), ("/C 1.0", true), ("/C (bad)", true), ("/C true", true),
+            ("/C << /O /Layout >>", true), ("/C 10 0 R", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var (entry, invalid) in values)
+            yield return [part, entry, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(ClassEntryTypeCases))]
+    public void Ua2ClassEntryRequiresNameOrArray(int part, string entry, bool invalid)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {entry} >>", "/Unknown", "0"]));
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-STRUCT-C-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ClassEntryTypeReferenceDepthIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "0" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /C 9 0 R >>" }.Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-STRUCT-C-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> AttributePrecedenceCases()
+    {
+        foreach (var route in new[] { "local-array", "class-attribute-array", "class-list", "local-over-class" })
+        foreach (var last in new[] { "Decimal", "None" })
+            yield return [route, last];
+    }
+
+    [Theory]
+    [MemberData(nameof(AttributePrecedenceCases))]
+    public void Ua2ListAttributeArraysUseLastSpecifiedOwnedValue(string route, string last)
+    {
+        var first = last == "Decimal" ? "None" : "Decimal";
+        string Attribute(string value) => $"<< /O /List /ListNumbering /{value} >>";
+        var local = route is "local-array" or "local-over-class" ? $"/A [{Attribute(first)} {Attribute(last)}]" : "";
+        var classes = route == "class-list" ? "/C [/First /Last]" : route == "class-attribute-array" ? "/C /Repeated" :
+            route == "local-over-class" ? "/C /Other" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {local} {classes} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var map = $"<< /First {Attribute(first)} /Last {Attribute(last)} /Other {Attribute(first)} /Repeated [{Attribute(first)} {Attribute(last)}] >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(last == "None", report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("<< /O /Layout /ListNumbering /None >>")]
+    [InlineData("<< /O /List >>")]
+    [InlineData("<< /O /List /ListNumbering null >>")]
+    [InlineData("0")]
+    public void Ua2LaterUnspecifiedOrUnrelatedAttributeDoesNotEraseOwnedValue(string tail)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R /A [<< /O /List /ListNumbering /Decimal >> {tail}] >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array")]
+    [InlineData("class-attribute-array")]
+    [InlineData("class-list")]
+    public void Ua2LaterAttributeCannotBeSkippedAfterAKnownValue(string route)
+    {
+        const string valid = "<< /O /List /ListNumbering /Decimal >>";
+        var local = route == "local-array" ? $"/A [{valid} 12 0 R]" : "";
+        var classes = route == "class-list" ? "/C [/Good /Unknown]" : route == "class-attribute-array" ? "/C /Repeated" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R {local} {classes} >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>", "12 0 R",
+        ]));
+        var map = $"<< /Good {valid} /Unknown 12 0 R /Repeated [{valid} 12 0 R] >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array", 200000, false)]
+    [InlineData("local-array", 200001, true)]
+    [InlineData("class-attribute-array", 200000, false)]
+    [InlineData("class-attribute-array", 200001, true)]
+    [InlineData("class-list", 200000, false)]
+    [InlineData("class-list", 200001, true)]
+    public void Ua2RepeatedAttributeScanningRetainsSharedWorkBounds(string route, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>",
+        ]));
+        var valid = new PdfDictionary { Entries = { ["O"] = new PdfName("List"), ["ListNumbering"] = new PdfName("Decimal") } };
+        var list = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var map = new PdfDictionary { Entries = { ["Good"] = valid } };
+        if (route == "class-list")
+            list.Entries["C"] = new PdfArray(new PdfObject[] { new PdfName("Good") }
+                .Concat(Enumerable.Repeat<PdfObject>(new PdfInteger(0), count - 1)).ToList());
+        else
+        {
+            int length = route == "class-attribute-array" ? count - 1 : count;
+            var attributes = new PdfArray(new PdfObject[] { valid }
+                .Concat(Enumerable.Repeat<PdfObject>(new PdfInteger(0), length - 1)).ToList());
+            if (route == "local-array") list.Entries["A"] = attributes;
+            else { list.Entries["C"] = new PdfName("Repeated"); map.Entries["Repeated"] = attributes; }
+        }
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] = map;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> AttributeOwnerCases()
+    {
+        (string Entry, bool Invalid)[] values =
+        [
+            ("/O /Layout", false), ("", true), ("/O null", true), ("/O 0", true),
+            ("/O (Layout)", true), ("/O << >>", true), ("/O 9 0 R", false), ("/O 10 0 R", true),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var route in new[] { "local", "local-array", "class", "class-array" })
+        foreach (var (entry, invalid) in values)
+            yield return [part, route, entry, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(AttributeOwnerCases))]
+    public void Ua2AttachedAttributeObjectsRequireAnOwnerName(int part, string route, string entry, bool invalid)
+    {
+        var attribute = $"<< {entry} >>";
+        var local = route == "local" ? $"/A {attribute}" : route == "local-array" ? $"/A [{attribute}]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>", "/Layout", "null"]));
+        var map = $"<< /Used {(route == "class-array" ? $"[{attribute}]" : attribute)} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local", false)]
+    [InlineData("local", true)]
+    [InlineData("local-array", false)]
+    [InlineData("local-array", true)]
+    [InlineData("class", false)]
+    [InlineData("class", true)]
+    [InlineData("class-array", false)]
+    [InlineData("class-array", true)]
+    public void Ua2AttributeStreamOwnerNameUsesItsDictionaryWithoutInterpretingData(string route, bool invalid)
+    {
+        var local = route == "local" ? "/A 9 0 R" : route == "local-array" ? "/A [9 0 R]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>",
+                ObjPdf.Stream("opaque attribute data", invalid ? "" : "/O /Layout")]));
+        var map = $"<< /Used {(route == "class-array" ? "[9 0 R]" : "9 0 R")} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("A", 32, false)]
+    [InlineData("A", 33, true)]
+    [InlineData("O", 32, false)]
+    [InlineData("O", 33, true)]
+    [InlineData("class", 32, false)]
+    [InlineData("class", 33, true)]
+    public void Ua2AttributeOwnerReferenceDepthDoesNotBecomeGuessedMissingOwner(string route, int count, bool incomplete)
+    {
+        var entry = route == "A" ? "/A 9 0 R" : route == "O" ? "/A << /O 9 0 R >>" : "/C /Used";
+        var terminal = route == "O" ? "/Layout" : "<< /O /Layout >>";
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { $"<< /Type /StructElem /S /P /P 7 0 R {entry} >>" }.Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Used"] = new PdfRef(9, 0) } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array", 200000, false)]
+    [InlineData("local-array", 200001, true)]
+    [InlineData("class-array", 200000, false)]
+    [InlineData("class-array", 200001, true)]
+    [InlineData("class-list", 200000, false)]
+    [InlineData("class-list", 200001, true)]
+    public void Ua2AttributeOwnerSharedWorkBoundRetainsKnownMissingOwner(string route, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: ["<< /Type /StructElem /S /P /P 7 0 R >>"]));
+        var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var missing = new PdfDictionary();
+        var valid = new PdfDictionary { Entries = { ["O"] = new PdfName("Layout") } };
+        var map = new PdfDictionary { Entries = { ["Used"] = missing } };
+        if (route == "class-list")
+            element.Entries["C"] = new PdfArray(new PdfObject[] { new PdfName("Used") }
+                .Concat(Enumerable.Repeat<PdfObject>(new PdfInteger(0), count - 1)).ToList());
+        else
+        {
+            int length = route == "class-array" ? count - 1 : count;
+            var attributes = new PdfArray(new PdfObject[] { missing }
+                .Concat(Enumerable.Repeat<PdfObject>(valid, length - 1)).ToList());
+            if (route == "local-array") element.Entries["A"] = attributes;
+            else { element.Entries["C"] = new PdfName("Used"); map.Entries["Used"] = attributes; }
+        }
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] = map;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-ATTR-OWNER");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2OwnerChecksRetainKnownErrorBeforeLaterOwnerCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /A [<< >> << /O 9 0 R >>] >>", "9 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2LocalValueShortcutDoesNotSuppressReferencedClassOwnerInspection()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            "<< /Type /StructElem /S /L /P 7 0 R /K 9 0 R /A << /O /List /ListNumbering /Decimal >> /C /Used >>",
+            "<< /Type /StructElem /S /LI /P 8 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 9 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 9 0 R >>", "12 0 R",
+        ]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Used"] = new PdfRef(12, 0) } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-LIST-NUMBERING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2OwnerChecksDoNotInventAttributesForUndefinedClassesOrInspectUnusedClasses()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: ["<< /Type /StructElem /S /P /P 7 0 R /C /Undefined >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Unused"] = new PdfDictionary() } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> NsoNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var route in new[] { "local", "local-array", "class", "class-array" })
+        foreach (var entry in new[] { "", "/NS null", "/NS 9 0 R", "/NS 999999 0 R", "/NS 12 0 R" })
+            yield return [part, route, entry, entry != "/NS 12 0 R"];
+    }
+
+    [Theory]
+    [MemberData(nameof(NsoNamespaceCases))]
+    public void Ua2NsoNamespaceCannotBeAbsentOrResolveToNull(int part, string route, string entry, bool invalid)
+    {
+        var attribute = $"<< /O 10 0 R {entry} >>";
+        var local = route == "local" ? $"/A {attribute}" : route == "local-array" ? $"/A [{attribute}]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>", "null", "/NSO", "11 0 R",
+            "<< /Type /Namespace /NS (https://example.com/attributes) >>",
+        ]));
+        var map = $"<< /Used {(route == "class-array" ? $"[{attribute}]" : attribute)} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local", false)]
+    [InlineData("local", true)]
+    [InlineData("local-array", false)]
+    [InlineData("local-array", true)]
+    [InlineData("class", false)]
+    [InlineData("class", true)]
+    [InlineData("class-array", false)]
+    [InlineData("class-array", true)]
+    public void Ua2NsoNamespaceOnAttributeStreamsDoesNotRequireDataInterpretation(string route, bool invalid)
+    {
+        var local = route == "local" ? "/A 9 0 R" : route == "local-array" ? "/A [9 0 R]" : "";
+        var classes = route is "class" or "class-array" ? "/C /Used" : "";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /P /P 7 0 R {local} {classes} >>",
+            ObjPdf.Stream("opaque attribute data", $"/O /NSO /NS {(invalid ? "null" : "10 0 R")}"),
+            "<< /Type /Namespace /NS (https://example.com/attributes) >>",
+        ]));
+        var map = $"<< /Used {(route == "class-array" ? "[9 0 R]" : "9 0 R")} >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2NsoNamespaceReferenceDepthDoesNotBecomeGuessedAbsence(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count
+            ? "<< /Type /Namespace /NS (https://example.com/attributes) >>" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /A << /O /NSO /NS 9 0 R >> >>" }
+                .Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ua2NsoNamespaceKeepsKnownAbsenceBeforeLaterCycle(bool useClass)
+    {
+        const string attributes = "[<< /O /NSO >> << /O /NSO /NS 9 0 R >>]";
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R {(useClass ? "/C /Used" : $"/A {attributes}")} >>", "9 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes($"<< /Used {attributes} >>")).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.True(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array", 200000, false)]
+    [InlineData("local-array", 200001, true)]
+    [InlineData("class-array", 200000, false)]
+    [InlineData("class-array", 200001, true)]
+    public void Ua2NsoNamespaceWorkBoundRetainsOneKnownAbsence(string route, int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras: ["<< /Type /StructElem /S /P /P 7 0 R >>"]));
+        var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var missing = new PdfDictionary { Entries = { ["O"] = new PdfName("NSO") } };
+        var valid = new PdfDictionary { Entries = { ["O"] = new PdfName("Layout") } };
+        int length = route == "class-array" ? count - 1 : count;
+        var attributes = new PdfArray(new PdfObject[] { missing }
+            .Concat(Enumerable.Repeat<PdfObject>(valid, length - 1)).ToList());
+        if (route == "local-array") element.Entries["A"] = attributes;
+        else
+        {
+            element.Entries["C"] = new PdfName("Used");
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+                new PdfDictionary { Entries = { ["Used"] = attributes } };
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-ATTR-NSO-NS");
+        Assert.Equal(incomplete, report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Layout", false)]
+    [InlineData("(NSO)", true)]
+    public void Ua2NsoNamespaceConditionDoesNotInspectOtherOrInvalidOwners(string owner, bool invalidOwner)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R /A << /O {owner} /NS 9 0 R >> >>", "9 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(invalidOwner, report.Has("PDFUA2-ATTR-OWNER"));
+        Assert.False(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2NsoNamespaceInspectsUsedClassDespiteLocalValuePrecedence()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /A << /O /Layout >> /C /Used >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Used"] = new PdfDictionary { Entries = { ["O"] = new PdfName("NSO") } } } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2NsoNamespaceDoesNotInspectUnusedClassDefinitions()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /C /Undefined >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["ClassMap"] =
+            new PdfDictionary { Entries = { ["Unused"] = new PdfDictionary { Entries = { ["O"] = new PdfName("NSO") } } } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-ATTR-NSO-NS"));
+        Assert.False(report.Has("PDFUA2-ATTR-OWNER-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> DefaultRoleMapShapeCases()
+    {
+        (string Value, bool Invalid)[] mappings =
+        [
+            ("/P", false), ("null", false), ("0", true), ("1.5", true), ("(P)", true),
+            ("true", true), ("<< >>", true), ("[/P]", true), ("8 0 R", false),
+            ("9 0 R", true), ("10 0 R", true), ("999999 0 R", false),
+        ];
+        (string Value, bool Invalid)[] roots =
+        [
+            ("", false), ("null", false), ("<< >>", false), ("0", true), ("(P)", true),
+            ("[/P]", true), ("10 0 R", true), ("11 0 R", false),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        {
+            foreach (var (value, invalid) in mappings) yield return [part, "value", value, invalid];
+            foreach (var (value, invalid) in roots) yield return [part, "root", value, invalid];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultRoleMapShapeCases))]
+    public void Ua2DefaultRoleMapShapeInspectsUnusedDefinedValues(int part, string route, string value, bool invalid)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            ["/P", "0", ObjPdf.Stream("opaque"), "<< /Unused /P >>"]));
+        if (value.Length > 0)
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+                new PdfLexer(Encoding.ASCII.GetBytes(route == "value" ? $"<< /Unused {value} >>" : value)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("root", 32, false)]
+    [InlineData("root", 33, true)]
+    [InlineData("value", 32, false)]
+    [InlineData("value", 33, true)]
+    public void Ua2DefaultRoleMapShapeReferenceDepthDoesNotGuessInvalidType(string route, int count, bool incomplete)
+    {
+        var terminal = route == "root" ? "<< /Unused /P >>" : "/P";
+        var chain = Enumerable.Range(8, count).Select(n => n == 7 + count ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", extras: chain.ToArray()));
+        var map = route == "root" ? "8 0 R" : "<< /Unused 8 0 R >>";
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(map)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2DefaultRoleMapShapeWorkBoundRetainsOneKnownInvalidValue(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", ""));
+        var map = new PdfDictionary { Entries = { ["Bad"] = new PdfInteger(0) } };
+        for (int i = 1; i < count; i++) map.Entries[$"Unused{i}"] = new PdfName("P");
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] = map;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-ROLEMAP-SHAPE");
+        Assert.Equal(incomplete, report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultRoleMapShapeRetainsKnownTypeErrorBeforeLaterCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras: ["8 0 R"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+            new PdfLexer(Encoding.ASCII.GetBytes("<< /Bad 0 /Unknown 8 0 R >>")).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.True(report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultRoleMapShapePreservesValidUsedRoleLookup()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /Custom /P 7 0 R >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(5)).Entries["RoleMap"] =
+            new PdfDictionary { Entries = { ["Custom"] = new PdfName("P") } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ROLEMAP-MISSING"));
+        Assert.False(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> PageStructureParentConflictCases()
+    {
+        (string Single, string Multiple, bool Conflict)[] values =
+        [
+            ("", "0", false), ("null", "0", false), ("0", "", false), ("0", "null", false),
+            ("0", "0", true), ("1", "0", true), ("8 0 R", "0", true),
+            ("9 0 R", "0", false), ("0", "8 0 R", true), ("0", "9 0 R", false),
+            ("999999 0 R", "0", false),
+        ];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var (single, multiple, conflict) in values)
+            yield return [part, single, multiple, conflict];
+    }
+
+    [Theory]
+    [MemberData(nameof(PageStructureParentConflictCases))]
+    public void Ua2PageStructureParentKeysAreMutuallyExclusive(int part, string single, string multiple, bool conflict)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras: ["0", "null"]));
+        var page = doc.Pages[0].Dict;
+        if (single.Length > 0)
+            page.Entries["StructParent"] = new PdfLexer(Encoding.ASCII.GetBytes(single)).ReadObject()!;
+        if (multiple.Length > 0)
+            page.Entries["StructParents"] = new PdfLexer(Encoding.ASCII.GetBytes(multiple)).ReadObject()!;
+        else page.Entries.Remove("StructParents");
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && conflict, report.Has("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("StructParent", 32, false)]
+    [InlineData("StructParent", 33, true)]
+    [InlineData("StructParents", 32, false)]
+    [InlineData("StructParents", 33, true)]
+    public void Ua2PageStructureParentReferenceDepthDoesNotGuessExclusivity(string key, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(8, count).Select(n => n == 7 + count ? "0" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", extras: chain.ToArray()));
+        doc.Pages[0].Dict.Entries["StructParent"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries["StructParents"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries[key] = new PdfRef(8, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("StructParent")]
+    [InlineData("StructParents")]
+    public void Ua2PageStructureParentCycleIsIncompleteRatherThanGuessedConflict(string key)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras: ["8 0 R"]));
+        doc.Pages[0].Dict.Entries["StructParent"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries["StructParents"] = new PdfInteger(0);
+        doc.Pages[0].Dict.Entries[key] = new PdfRef(8, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [MemberData(nameof(PageStructureParentConflictCases))]
+    public void Ua2AnnotationStructureParentKeysAreMutuallyExclusive(int part, string single, string multiple, bool conflict)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [10 0 R]", extras:
+            ["0", "null", "<< /Type /Annot /Subtype /PrinterMark /Rect [0 0 1 1] >>"]));
+        var annotation = Assert.IsType<PdfDictionary>(doc.File.GetObject(10));
+        if (single.Length > 0)
+            annotation.Entries["StructParent"] = new PdfLexer(Encoding.ASCII.GetBytes(single)).ReadObject()!;
+        if (multiple.Length > 0)
+            annotation.Entries["StructParents"] = new PdfLexer(Encoding.ASCII.GetBytes(multiple)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && conflict, report.Has("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("StructParent", 32, false)]
+    [InlineData("StructParent", 33, true)]
+    [InlineData("StructParents", 32, false)]
+    [InlineData("StructParents", 33, true)]
+    public void Ua2AnnotationParentKeyDepthDoesNotBecomeGuessedConflict(string key, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "0" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            new[] { "<< /Type /Annot /Subtype /PrinterMark /Rect [0 0 1 1] /StructParent 0 /StructParents 0 >>" }
+                .Concat(chain).ToArray()));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries[key] = new PdfRef(9, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, 32, false)]
+    [InlineData(false, 33, true)]
+    [InlineData(true, 32, false)]
+    [InlineData(true, 33, true)]
+    public void Ua2AnnotationParentInspectionBoundsArrayAndEntryReferences(bool arrayReference, int count, bool incomplete)
+    {
+        var terminal = arrayReference ? "[<< /Subtype /PrinterMark /StructParent 0 /StructParents 0 >>]"
+            : "<< /Subtype /PrinterMark /StructParent 0 /StructParents 0 >>";
+        var chain = Enumerable.Range(8, count).Select(n => n == 7 + count ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: arrayReference ? "/Annots 8 0 R" : "/Annots [8 0 R]",
+            extras: chain.ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2AnnotationParentWorkBoundRetainsKnownConflictAndDeduplicates(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", ""));
+        var annotation = new PdfDictionary { Entries = { ["Subtype"] = new PdfName("PrinterMark"),
+            ["StructParent"] = new PdfInteger(0), ["StructParents"] = new PdfInteger(0) } };
+        doc.Pages[0].Dict.Entries["Annots"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(annotation, count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("[0]")]
+    [InlineData("8 0 R")]
+    [InlineData("[8 0 R]")]
+    public void Ua2AnnotationParentMalformedOrCyclicContainerIsExplicitlyIncomplete(string annots)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: $"/Annots {annots}", extras: ["8 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2AnnotationParentInspectionRetainsKnownConflictBeforeLaterCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "",
+            pageExtra: "/Annots [<< /Subtype /PrinterMark /StructParent 0 /StructParents 0 >> 8 0 R]",
+            extras: ["8 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT"));
+        Assert.True(report.Has("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [MemberData(nameof(PageStructureParentConflictCases))]
+    public void Ua2ResourceXObjectStructureParentKeysAreMutuallyExclusive(int part, string single, string multiple, bool conflict)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Resources << /XObject << /Unused 10 0 R >> >>",
+            extras: ["0", "null", ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 1 1]")]));
+        var dictionary = Assert.IsType<PdfStream>(doc.File.GetObject(10)).Dict;
+        if (single.Length > 0) dictionary.Entries["StructParent"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(single)).ReadObject()!;
+        if (multiple.Length > 0) dictionary.Entries["StructParents"] =
+            new PdfLexer(Encoding.ASCII.GetBytes(multiple)).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && conflict, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Form", false)]
+    [InlineData("Form", true)]
+    [InlineData("Image", false)]
+    [InlineData("Image", true)]
+    public void Ua2ResourceXObjectParentInspectionIncludesNestedAndInheritedResources(string subtype, bool inherited)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+        [
+            ObjPdf.Stream("", "/Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject << /Child 9 0 R >> >>"),
+            ObjPdf.Stream("x", $"/Type /XObject /Subtype /{subtype} /StructParent 0 /StructParents 0"),
+        ]));
+        var resources = new PdfLexer(Encoding.ASCII.GetBytes("<< /XObject << /Unused 8 0 R >> >>")).ReadObject()!;
+        (inherited ? Assert.IsType<PdfDictionary>(doc.File.GetObject(2)) : doc.Pages[0].Dict)
+            .Entries["Resources"] = resources;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("resource", 32, false)]
+    [InlineData("resource", 33, true)]
+    [InlineData("xobjects", 32, false)]
+    [InlineData("xobjects", 33, true)]
+    [InlineData("stream", 32, false)]
+    [InlineData("stream", 33, true)]
+    [InlineData("key", 32, false)]
+    [InlineData("key", 33, true)]
+    public void Ua2ResourceXObjectParentReferenceBoundsDoNotGuessConflict(string route, int count, bool incomplete)
+    {
+        var terminal = route switch
+        {
+            "resource" => "<< /XObject << /Unused 8 0 R >> >>",
+            "xobjects" => "<< /Unused 8 0 R >>",
+            "stream" => ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0"),
+            _ => "0",
+        };
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            new[] { ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0") }.Concat(chain).ToArray()));
+        var resource = route == "resource" ? "9 0 R" :
+            route == "xobjects" ? "<< /XObject 9 0 R >>" :
+            $"<< /XObject << /Unused {(route == "stream" ? "9" : "8")} 0 R >> >>";
+        doc.Pages[0].Dict.Entries["Resources"] = new PdfLexer(Encoding.ASCII.GetBytes(resource)).ReadObject()!;
+        if (route == "key") Assert.IsType<PdfStream>(doc.File.GetObject(8)).Dict.Entries["StructParent"] = new PdfRef(9, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ResourceXObjectParentWorkBoundCountsDuplicateEntries(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            [ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var map = new PdfDictionary();
+        for (int i = 0; i < count; i++) map.Entries[$"Unused{i}"] = new PdfRef(8, 0);
+        doc.Pages[0].Dict.Entries["Resources"] = new PdfDictionary { Entries = { ["XObject"] = map } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ResourceXObjectParentInspectionRetainsConflictBeforeLaterReferenceCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "",
+            pageExtra: "/Resources << /XObject << /Known 8 0 R /Unknown 9 0 R >> >>",
+            extras: [ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0"), "9 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.True(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ResourceXObjectParentGraphCycleIsVisitedOnceWithoutDecodingData()
+    {
+        var doc = PdfDocument.Load(Ua("", "",
+            pageExtra: "/Resources 9 0 R",
+            extras: [ObjPdf.Stream("opaque", "/Subtype /Form /StructParent 0 /StructParents 0 /Resources 9 0 R"),
+                "<< /XObject << /Self 8 0 R >> >>"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("<< /XObject 0 >>")]
+    [InlineData("<< /XObject << /Unknown 0 >> >>")]
+    [InlineData("8 0 R")]
+    public void Ua2ResourceXObjectParentMalformedResourcesAreExplicitlyIncomplete(string resources)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: $"/Resources {resources}", extras: ["8 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ResourceXObjectParentInheritanceBoundIsExplicit(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", extras:
+            [ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var ancestor = doc.Pages[0].Dict;
+        for (int i = 1; i < count; i++)
+        {
+            var parent = new PdfDictionary();
+            ancestor.Entries["Parent"] = parent;
+            ancestor = parent;
+        }
+        ancestor.Entries["Resources"] =
+            new PdfLexer(Encoding.ASCII.GetBytes("<< /XObject << /Unused 8 0 R >> >>")).ReadObject()!;
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2ResourceXObjectParentWorkBudgetIsSharedAcrossNestedResources(int nestedCount, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Resources << /XObject << /Container 8 0 R >> >>",
+            extras: [ObjPdf.Stream("", "/Subtype /Form"), ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var nested = new PdfDictionary();
+        for (int i = 0; i < nestedCount; i++) nested.Entries[$"Unused{i}"] = new PdfRef(9, 0);
+        Assert.IsType<PdfStream>(doc.File.GetObject(8)).Dict.Entries["Resources"] =
+            new PdfDictionary { Entries = { ["XObject"] = nested } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> AppearanceStructureParentCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var entry in new[] { "N", "R", "D" })
+        foreach (var state in new[] { false, true })
+        foreach (var conflict in new[] { false, true })
+            yield return [part, entry, state, conflict];
+    }
+
+    [Theory]
+    [MemberData(nameof(AppearanceStructureParentCases))]
+    public void Ua2AppearanceStructureParentKeysIncludeAllEntriesAndStates(int part, string entry, bool state, bool conflict)
+    {
+        var value = state ? "<< /Unused 9 0 R >>" : "9 0 R";
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            $"<< /Subtype /PrinterMark /AP << /{entry} {value} >> >>",
+            ObjPdf.Stream("opaque", $"/Subtype /Form /StructParent 0 {(conflict ? "/StructParents 0" : "")}"),
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, part);
+        Assert.Equal(part == 2 && conflict, report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("AP", 32, false)]
+    [InlineData("AP", 33, true)]
+    [InlineData("stream", 32, false)]
+    [InlineData("stream", 33, true)]
+    [InlineData("key", 32, false)]
+    [InlineData("key", 33, true)]
+    public void Ua2AppearanceStructureParentReferenceBoundsDoNotGuessConflict(string route, int count, bool incomplete)
+    {
+        var terminal = route == "AP" ? "<< /N 9 0 R >>" : route == "key" ? "0"
+            : ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0");
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? terminal : $"{n + 1} 0 R");
+        var ap = route == "AP" ? "10 0 R" : $"<< /N {(route == "stream" ? "10" : "9")} 0 R >>";
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            new[] { $"<< /Subtype /PrinterMark /AP {ap} >>",
+                ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0") }.Concat(chain).ToArray()));
+        if (route == "key") Assert.IsType<PdfStream>(doc.File.GetObject(9)).Dict.Entries["StructParent"] = new PdfRef(10, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("<< /N 0 >>")]
+    [InlineData("<< /N << /State 0 >> >>")]
+    [InlineData("10 0 R")]
+    [InlineData("<< /N 10 0 R >>")]
+    public void Ua2AppearanceStructureParentMalformedOrCyclicContainersAreIncomplete(string ap)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            [$"<< /Subtype /PrinterMark /AP {ap} >>", "null", "10 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199998, false)]
+    [InlineData(199999, true)]
+    public void Ua2AppearanceStructureParentSharedWorkBoundRetainsKnownConflict(int states, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            ["<< /Subtype /PrinterMark >>", ObjPdf.Stream("", "/StructParent 0 /StructParents 0")]));
+        var map = new PdfDictionary();
+        for (int i = 0; i < states; i++) map.Entries[$"State{i}"] = new PdfRef(9, 0);
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["AP"] =
+            new PdfDictionary { Entries = { ["N"] = map } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2AppearanceStructureParentRetainsConflictBeforeLaterStateCycle()
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            ["<< /Subtype /PrinterMark /AP << /N << /Known 9 0 R /Unknown 10 0 R >> >> >>",
+                ObjPdf.Stream("", "/StructParent 0 /StructParents 0"), "10 0 R"]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2AppearanceStructureParentDeduplicatesSharedStreamsAcrossAnnotationsAndStates()
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R 10 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R /R << /Unused 9 0 R >> >> >>",
+            ObjPdf.Stream("", "/StructParent 0 /StructParents 0"),
+            "<< /Subtype /PrinterMark /AP << /D 9 0 R >> >>",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Form", false)]
+    [InlineData("Form", true)]
+    [InlineData("Image", false)]
+    [InlineData("Image", true)]
+    public void Ua2AppearanceResourceParentKeysIncludeNestedFormsAndImages(string subtype, bool state)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            $"<< /Subtype /PrinterMark /AP << /N {(state ? "<< /Off 9 0 R >>" : "9 0 R")} >> >>",
+            ObjPdf.Stream("", "/Resources << /XObject << /Container 10 0 R >> >>"),
+            ObjPdf.Stream("", "/Subtype /Form /Resources << /XObject << /Nested 11 0 R >> >>"),
+            ObjPdf.Stream("", $"/Subtype /{subtype} /StructParent 0 /StructParents 0"),
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199998, false)]
+    [InlineData(199999, true)]
+    public void Ua2AppearanceResourceParentBudgetIncludesAnnotationAndAppearanceWork(int entries, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            ["<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>", ObjPdf.Stream(""),
+                ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0")]));
+        var map = new PdfDictionary();
+        for (int i = 0; i < entries; i++) map.Entries[$"Unused{i}"] = new PdfRef(10, 0);
+        Assert.IsType<PdfStream>(doc.File.GetObject(9)).Dict.Entries["Resources"] =
+            new PdfDictionary { Entries = { ["XObject"] = map } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2AppearanceResourceParentReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "<< /XObject << /Self 9 0 R >> >>" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+            new[] { "<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>",
+                ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0 /Resources 10 0 R") }
+                .Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2AppearanceResourceParentGraphCyclesPreserveDeduplication()
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R /D 10 0 R >> >>",
+            ObjPdf.Stream("", "/Resources 11 0 R"),
+            ObjPdf.Stream("", "/Subtype /Form /StructParent 0 /StructParents 0 /Resources 11 0 R"),
+            "<< /XObject << /Child 10 0 R /Root 9 0 R >> >>",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("<< /XObject 0 >>")]
+    [InlineData("<< /XObject << /Unknown 10 0 R >> >>")]
+    public void Ua2AppearanceResourceParentMalformedOrCyclicResourcesRetainKnownError(string resources)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>",
+            ObjPdf.Stream("", $"/StructParent 0 /StructParents 0 /Resources {resources}"),
+            "10 0 R",
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-CONFLICT"));
+        Assert.True(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/Subtype /Unknown")]
+    [InlineData("/Subtype /Form")]
+    [InlineData("/Subtype /Image")]
+    public void Ua2AppearanceResourceParentUnknownSubtypeDoesNotSuppressLaterAppearance(string subtype)
+    {
+        var doc = PdfDocument.Load(Ua("", "", pageExtra: "/Annots [8 0 R]", extras:
+        [
+            "<< /Subtype /PrinterMark /AP << /N 9 0 R /D 10 0 R >> >>",
+            ObjPdf.Stream("", "/Resources << /XObject << /Shared 10 0 R >> >>"),
+            ObjPdf.Stream("", $"{subtype} /StructParent 0 /StructParents 0"),
+        ]));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-AP-STRUCT-PARENT-CONFLICT");
+        Assert.False(report.Has("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    static byte[] StructureParentKeyTypePdf(string surface, string keys, params string[] tail)
+    {
+        string pageExtra = "";
+        string[] objects = surface switch
+        {
+            "PAGE" => [],
+            "ANNOT" => [$"<< /Subtype /PrinterMark {keys} >>"],
+            "FORM" => [ObjPdf.Stream("", $"/Subtype /Form {keys}")],
+            "IMAGE" => [ObjPdf.Stream("", $"/Subtype /Image {keys}")],
+            "AP" => ["<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>", ObjPdf.Stream("", keys)],
+            "AP-FORM" => ["<< /Subtype /PrinterMark /AP << /N 9 0 R >> >>",
+                ObjPdf.Stream("", "/Resources << /XObject << /Unused 10 0 R >> >>"),
+                ObjPdf.Stream("", $"/Subtype /Form {keys}")],
+            "AP-IMAGE" => ["<< /Subtype /PrinterMark /AP << /N << /Off 9 0 R >> >> >>",
+                ObjPdf.Stream("", "/Resources << /XObject << /Unused 10 0 R >> >>"),
+                ObjPdf.Stream("", $"/Subtype /Image {keys}")],
+            _ => throw new ArgumentOutOfRangeException(nameof(surface)),
+        };
+        if (surface == "PAGE") pageExtra = "/StructParents null " + keys;
+        else if (surface is "FORM" or "IMAGE") pageExtra = "/Resources << /XObject << /Unused 8 0 R >> >>";
+        else pageExtra = "/Annots [8 0 R]";
+        var extras = objects.Concat(Enumerable.Repeat("null", 12 - objects.Length)).Concat(tail).ToArray();
+        return Ua("", "", pageExtra: pageExtra, extras: extras);
+    }
+
+    public static IEnumerable<object[]> StructureParentKeyTypeCases()
+    {
+        foreach (var surface in new[] { "PAGE", "ANNOT", "FORM", "IMAGE", "AP", "AP-FORM", "AP-IMAGE" })
+        foreach (var part in new[] { 1, 2 })
+        foreach (var key in new[] { "StructParent", "StructParents" })
+        foreach (var value in new[] { "", "null", "99 0 R", "0", "-1", "1.5", "/Name", "(key)", "true",
+            "[]", "<< >>", "20 0 R", "21 0 R", "22 0 R" })
+            yield return [surface, part, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureParentKeyTypeCases))]
+    public void Ua2StructureParentKeyTypesRequireIntegerOnEveryKnownSurface(string surface, int part, string key, string value)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            value == "" ? "" : $"/{key} {value}", "0", "(indirect)", "null")), part);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        bool invalid = value is "1.5" or "/Name" or "(key)" or "true" or "[]" or "<< >>" or "21 0 R";
+        Assert.Equal(part == 2 && invalid, report.Has($"PDFUA2-{family}-STRUCT-PARENT-TYPE"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("PAGE")]
+    [InlineData("ANNOT")]
+    [InlineData("FORM")]
+    [InlineData("IMAGE")]
+    [InlineData("AP")]
+    [InlineData("AP-FORM")]
+    [InlineData("AP-IMAGE")]
+    public void Ua2StructureParentKeyTypesRetainKnownErrorWithOtherCyclicKey(string surface)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            "/StructParent (wrong) /StructParents 20 0 R", "20 0 R")), 2);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        Assert.True(report.Has($"PDFUA2-{family}-STRUCT-PARENT-TYPE"));
+        Assert.True(report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> StructureParentKeyTypeBoundaryCases()
+    {
+        foreach (var surface in new[] { "PAGE", "ANNOT", "FORM", "IMAGE", "AP", "AP-FORM", "AP-IMAGE" })
+        foreach (var count in new[] { 32, 33 })
+        foreach (var invalid in new[] { false, true })
+            yield return [surface, count, invalid];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureParentKeyTypeBoundaryCases))]
+    public void Ua2StructureParentKeyTypesResolveOnlyWithinExplicitBound(string surface, int count, bool invalid)
+    {
+        var chain = Enumerable.Range(20, count).Select(n => n == 19 + count ? invalid ? "(key)" : "0" : $"{n + 1} 0 R").ToArray();
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            "/StructParent 20 0 R", chain)), 2);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        Assert.Equal(count == 32 && invalid, report.Has($"PDFUA2-{family}-STRUCT-PARENT-TYPE"));
+        Assert.Equal(count == 33, report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("PAGE")]
+    [InlineData("ANNOT")]
+    [InlineData("FORM")]
+    [InlineData("IMAGE")]
+    [InlineData("AP")]
+    [InlineData("AP-FORM")]
+    [InlineData("AP-IMAGE")]
+    public void Ua2StructureParentKeyTypesAggregateBothInvalidKeysWithIndependentConflict(string surface)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(StructureParentKeyTypePdf(surface,
+            "/StructParent (wrong) /StructParents /Wrong")), 2);
+        string family = surface is "FORM" or "IMAGE" ? "XOBJECT" : surface.StartsWith("AP") ? "AP" : surface;
+        Assert.Single(report.Findings, finding => finding.RuleId == $"PDFUA2-{family}-STRUCT-PARENT-TYPE");
+        Assert.True(report.Has($"PDFUA2-{family}-STRUCT-PARENT-CONFLICT"));
+        Assert.False(report.Has($"PDFUA2-{family}-STRUCT-PARENT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> StructureClassArrayItemCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var local in new[] { false, true })
+        foreach (var map in new[] { "", "/ClassMap null", "/ClassMap << /Known << /O /Layout >> >>" })
+        foreach (var item in new[] { "/Known", "0", "-1", "1.5", "(class)", "true", "<< >>", "[]",
+            "[/Known]", "20 0 R", "21 0 R", "22 0 R", "null", "99 0 R" })
+            yield return [part, local, map, item];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureClassArrayItemCases))]
+    public void Ua2StructureClassArrayItemsRequireNamesOrNumericRevisions(int part, bool local, string map, string item)
+    {
+        var extras = new[] { $"<< /Type /StructElem /S /P /P 7 0 R /K [] /C [/Known {item}] " +
+            (local ? "/A << /O /Layout >>" : "") + " >>" }
+            .Concat(Enumerable.Repeat("null", 11)).Concat(new[] { "/Known", "(indirect)", "null" }).ToArray();
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua(map, "8 0 R", extras: extras)), part);
+        bool invalid = item is "(class)" or "true" or "<< >>" or "[]" or "[/Known]" or "21 0 R";
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-STRUCT-C-ITEM-TYPE"));
+        Assert.Equal(part == 2 && item is "22 0 R" or "null" or "99 0 R", report.Has("PDFUA2-STRUCT-C-NULL"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2StructureClassArrayItemReferenceBoundsRetainPriorTypeErrors(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(9, count).Select(n => n == 8 + count ? "(class)" : $"{n + 1} 0 R").ToArray();
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /P /P 7 0 R /K [] /C [(known bad) 9 0 R] >>" }.Concat(chain).ToArray())), 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-C-ITEM-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2StructureClassArrayItemWorkBoundsRetainPriorTypeErrors(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"]));
+        var items = Enumerable.Repeat<PdfObject>(new PdfName("Unknown"), count).ToList();
+        items[0] = new PdfString("bad"u8.ToArray());
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["C"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-C-ITEM-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-C-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-C-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> StructureReferenceShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var role in new[] { "P", "TOCI" })
+        foreach (var reference in new[] { "", "/Ref null", "/Ref []", "/Ref 42", "/Ref << >>",
+            "/Ref [null]", "/Ref [99 0 R]", "/Ref [42]", "/Ref [(id)]" })
+            yield return [part, role, reference];
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureReferenceShapeCases))]
+    public void Ua2StructureRefRequiresArrayWithoutNullElements(int part, string role, string reference)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /{role} /P 7 0 R /K [] {reference} >>"])), part);
+        Assert.Equal(part == 2 && reference is "/Ref 42" or "/Ref << >>", report.Has("PDFUA2-STRUCT-REF-TYPE"));
+        Assert.Equal(part == 2 && reference is "/Ref [null]" or "/Ref [99 0 R]", report.Has("PDFUA2-STRUCT-REF-NULL"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("9 0 R")]
+    [InlineData("[9 0 R]")]
+    public void Ua2StructureRefCycleIsIncompleteNotGuessedNull(string reference)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R", extras:
+            [$"<< /Type /StructElem /S /P /P 7 0 R /K [] /Ref {reference} >>", "9 0 R"])), 2);
+        Assert.True(report.Has("PDFUA2-STRUCT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-NULL"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2StructureRefArrayWorkIsBounded(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /P /P 7 0 R /K [] >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(8)).Entries["Ref"] =
+            new PdfArray(Enumerable.Repeat<PdfObject>(new PdfInteger(42), count).ToList());
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-STRUCT-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-TYPE"));
+        Assert.False(report.Has("PDFUA2-STRUCT-REF-NULL"));
+    }
+
+    public static IEnumerable<object[]> TociReferenceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var mapped in new[] { false, true })
+        foreach (var descendant in new[] { false, true })
+        foreach (var reference in new[] { "", "/Ref null", "/Ref []", "/Ref [10 0 R]", "/Ref 42", "/Ref [99 0 R]", "/Ref [null]" })
+            yield return [part, mapped, descendant, reference];
+    }
+
+    [Theory]
+    [MemberData(nameof(TociReferenceCases))]
+    public void Ua2TociRequiresReferencePresenceOnSelfOrDescendant(int part, bool mapped, bool descendant, string reference)
+    {
+        var role = mapped ? "Entry" : "TOCI";
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{role} /P 7 0 R /NS {(mapped ? 12 : 11)} 0 R /K [9 0 R] {(descendant ? "" : reference)} >>",
+            $"<< /Type /StructElem /S /P /P 8 0 R /K [] {(descendant ? reference : "")} >>",
+            "<< /Type /StructElem /S /P /P 7 0 R /K [] >>",
+            "<< /Type /Namespace /NS (http://iso.org/pdf/ssn) >>",
+            "<< /Type /Namespace /NS (urn:toci-test) /RoleMapNS << /Entry [/TOCI 11 0 R] >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && reference is "" or "/Ref null", report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TociCyclicReferenceIsIncomplete()
+    {
+        var pdf = Ua("", "8 0 R", extras:
+            ["<< /Type /StructElem /S /TOCI /P 7 0 R /K [] /Ref 9 0 R >>", "9 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-TOCI-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2TociReferenceResolutionBoundaryIsExplicit(int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, length).Select(n => n == 9 + length ? "[]" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", extras:
+            new[] { "<< /Type /StructElem /S /TOCI /P 7 0 R /K [] /Ref 10 0 R >>", "null" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-TOCI-REF-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-TOCI-REF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> CaptionNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var parent in new[] { "Figure", "Table", "L", "TOC" })
+        foreach (var mapping in new[] { "direct", "mapped", "foreign-to-p" })
+        foreach (var position in new[] { 0, 1, 2 })
+            yield return [part, parent, mapping, position];
+    }
+
+    [Theory]
+    [MemberData(nameof(CaptionNamespaceCases))]
+    public void Ua2CaptionOrderUsesResolvedRolesForEveryParent(int part, string parent, string mapping, int position)
+    {
+        var role = mapping == "mapped" ? "Custom" : "Caption";
+        var ns = mapping == "direct" ? 12 : 13;
+        var children = Enumerable.Range(0, 3).Select(i =>
+            $"<< /Type /StructElem /S /{(i == position ? role : "P")} /NS {(i == position ? ns : 12)} 0 R /P 8 0 R /K [] >>").ToArray();
+        var pdf = Ua("", "8 0 R", extras:
+        [
+            $"<< /Type /StructElem /S /{parent} /NS 12 0 R /P 7 0 R /K [9 0 R 10 0 R 11 0 R] /Alt (illustration) >>",
+            .. children,
+            "<< /Type /Namespace /NS (http://iso.org/pdf2/ssn) >>",
+            $"<< /Type /Namespace /NS (urn:caption-test) /RoleMapNS << /{role} [/{(mapping == "mapped" ? "Caption" : "P")} 12 0 R] >> >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && mapping != "foreign-to-p" && position == 1, report.Has("PDFUA2-CAPTION-POSITION"));
+        if (part == 2)
+            Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA-LIST-CAPTION" or "PDFUA-TABLE-CAPTION" or "PDFUA-TOC-CAPTION");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("pdfdoc", false)]
+    [InlineData("utf16", false)]
+    [InlineData("utf8-bom", false)]
+    [InlineData("utf8", true)]
+    public void RichXmlStringUsesPdfTextEncodingBeforeParsing(string encoding, bool mismatch)
+    {
+        const string xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>caf\u00e9</p></body>";
+        byte[] bytes = encoding switch
+        {
+            "pdfdoc" => Encoding.Latin1.GetBytes(xml),
+            "utf16" => Encoding.BigEndianUnicode.GetBytes("\uFEFF" + xml),
+            "utf8-bom" => Encoding.UTF8.GetBytes("\uFEFF" + xml),
+            _ => Encoding.UTF8.GetBytes(xml),
+        };
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV <{Convert.ToHexString(bytes)}> /V <FEFF00630061006600E9> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> RichFieldPdfDocEncodingCases()
+    {
+        int[] accents = [0x02D8, 0x02C7, 0x02C6, 0x02D9, 0x02DD, 0x02DB, 0x02DA, 0x02DC];
+        int[] symbols = [0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x0192, 0x2044,
+            0x2039, 0x203A, 0x2212, 0x2030, 0x201E, 0x201C, 0x201D, 0x2018, 0x2019,
+            0x201A, 0x2122, 0xFB01, 0xFB02, 0x0141, 0x0152, 0x0160, 0x0178, 0x017D,
+            0x0131, 0x0142, 0x0153, 0x0161, 0x017E];
+        foreach (var part in new[] { 1, 2 })
+        foreach (var mismatch in new[] { false, true })
+        {
+            for (int i = 0; i < accents.Length; i++) yield return [part, i + 0x18, accents[i], mismatch];
+            for (int i = 0; i < symbols.Length; i++) yield return [part, i + 0x80, symbols[i], mismatch];
+            yield return [part, 0xA0, 0x20AC, mismatch];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RichFieldPdfDocEncodingCases))]
+    public void RichFieldEqualityUsesPdfDocEncoding(int part, int value, int codepoint, bool mismatch)
+    {
+        var xml = $"<body xmlns='http://www.w3.org/1999/xhtml'><p>&#x{(mismatch ? 0x58 : codepoint):X};</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV ({xml}) /V <{value:X2}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && mismatch, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("00")]
+    [InlineData("7F")]
+    [InlineData("9F")]
+    [InlineData("AD")]
+    [InlineData("FEFF00")]
+    [InlineData("FEFFD800")]
+    [InlineData("EFBBBF80")]
+    public void RichFieldEqualityInvalidPlainEncodingIsIncomplete(string hex)
+    {
+        var xml = "<body xmlns='http://www.w3.org/1999/xhtml'><p>&#xFFFD;</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) /RV ({xml}) /V <{hex}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-VALUE-INCOMPLETE");
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> TextFieldValueTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Tx", "Ch", "Btn" })
+        foreach (var rich in new[] { "", "/RV null", "/RV 10 0 R", "/RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>)" })
+        foreach (var value in new[] { "", "null", "(plain)", "0", "1.5", "true", "/Name", "[]", "<< >>",
+            "10 0 R", "11 0 R", "12 0 R", "99 0 R" })
+            yield return [part, type, rich, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(TextFieldValueTypeCases))]
+    public void Ua2TextFieldValueTypesApplyWithoutRichValue(int part, string type, string rich, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /{type} /T (field) {rich} {(value == "" ? "" : $"/V {value}")} >>",
+            "null", "/Name", ObjPdf.Stream("plain"),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = value is "0" or "1.5" or "true" or "/Name" or "[]" or "<< >>" or "11 0 R";
+        Assert.Equal(part == 2 && type == "Tx" && invalid, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/V null", true)]
+    [InlineData("/V 12 0 R", true)]
+    [InlineData("/V 99 0 R", true)]
+    [InlineData("/V (override)", false)]
+    public void Ua2TextFieldValueTypesUseInheritedValueUntilNonNullOverride(string local, bool invalid)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (parent) /V /Wrong /Kids [10 0 R] >>",
+            $"<< /T (child) /Parent 9 0 R {local} >>", "null", "null",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2TextFieldValueTypesReferenceBoundsAreExplicitWithoutRichValue(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "/Wrong" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /V 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TextFieldValueTypesRetainKnownTypeErrorWithCyclicRichValue()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, "<< /FT /Tx /T (field) /V /Wrong /RV 10 0 R >>", "10 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2TextFieldValueTypesInheritanceDepthIsExplicitWithoutRichValue(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, depth).Select(n => n == 9 + depth
+            ? "<< /V /Wrong >>" : $"<< /Parent {n + 1} 0 R >>");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /Parent 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/V 10 0 R", "10 0 R", true)]
+    [InlineData("/Parent 10 0 R", "<< /Parent 9 0 R >>", true)]
+    [InlineData("/Parent 10 0 R", "0", true)]
+    [InlineData("/V /Wrong /Parent 10 0 R", "0", false)]
+    public void Ua2TextFieldValueTypesUnknownValueOrParentIsIncompleteWithoutRichValue(string entry, string target, bool incomplete)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            [Para, $"<< /FT /Tx /T (field) {entry} >>", target])), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> TextFieldMaxLenCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Tx", "Ch", "Btn" })
+        foreach (var limit in new[] { "", "null", "0", "1", "-1", "1.5", "/Name", "(length)", "true",
+            "[]", "<< >>", "10 0 R", "11 0 R", "12 0 R", "13 0 R", "14 0 R", "99 0 R" })
+            yield return [part, type, limit];
+    }
+
+    [Theory]
+    [MemberData(nameof(TextFieldMaxLenCases))]
+    public void Ua2TextFieldMaxLenRequiresNonNegativeInteger(int part, string type, string limit)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /{type} /T (field) /V (plain) {(limit == "" ? "" : $"/MaxLen {limit}")} >>",
+            "null", "0", "-1", "(length)", ObjPdf.Stream("0"),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = limit is "-1" or "1.5" or "/Name" or "(length)" or "true" or "[]" or "<< >>" or "12 0 R" or "13 0 R" or "14 0 R";
+        Assert.Equal(part == 2 && type == "Tx" && invalid, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/MaxLen null", true)]
+    [InlineData("/MaxLen 12 0 R", true)]
+    [InlineData("/MaxLen 99 0 R", true)]
+    [InlineData("/MaxLen 0", false)]
+    [InlineData("/MaxLen 1", false)]
+    [InlineData("/MaxLen (bad override)", true)]
+    public void Ua2TextFieldMaxLenUsesInheritedValueUntilNonNullOverride(string local, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (parent) /MaxLen -1 /Kids [10 0 R] >>",
+            $"<< /T (child) /Parent 9 0 R /V (plain) {local} >>", "null", "null",
+        ])), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2TextFieldMaxLenReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "-1" : $"{n + 1} 0 R");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /V (plain) /MaxLen 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2TextFieldMaxLenInheritanceDepthIsExplicit(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, depth).Select(n => n == 9 + depth
+            ? "<< /MaxLen -1 >>" : $"<< /Parent {n + 1} 0 R >>");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+            new[] { Para, "<< /FT /Tx /T (field) /V (plain) /Parent 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TextFieldMaxLenKnownInvalidValueSurvivesUnresolvedTextValue()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /MaxLen -1 /V 10 0 R >>", "10 0 R"])), 2);
+        Assert.True(report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/MaxLen 10 0 R", "10 0 R")]
+    [InlineData("/Parent 10 0 R", "<< /Parent 9 0 R >>")]
+    [InlineData("/Parent 10 0 R", "0")]
+    public void Ua2TextFieldMaxLenUnknownLimitDoesNotSuppressKnownTextType(string entry, string target)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /V /Wrong {entry} >>", target])), 2);
+        Assert.True(report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-MAXLEN-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-MAXLEN-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> DefaultAppearanceTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Tx", "Ch", "Btn" })
+        foreach (var appearance in new[] { "", "null", "()", "(/F1 12 Tf)", "0", "1.5", "/Name", "true",
+            "[]", "<< >>", "10 0 R", "11 0 R", "12 0 R", "13 0 R", "99 0 R" })
+            yield return [part, type, appearance];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceTypeCases))]
+    public void Ua2DefaultAppearanceFieldValueMustBeByteString(int part, string type, string appearance)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /{type} /T (field) /V (plain) {(appearance == "" ? "" : $"/DA {appearance}")} >>",
+            "null", "(/F1 12 Tf)", "/Wrong", ObjPdf.Stream("/F1 12 Tf"),
+        ])), part);
+        bool invalid = appearance is "0" or "1.5" or "/Name" or "true" or "[]" or "<< >>" or "12 0 R" or "13 0 R";
+        Assert.Equal(part == 2 && type == "Tx" && invalid, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/DA null")]
+    [InlineData("/DA (valid override)")]
+    public void Ua2DefaultAppearanceDocumentValueTypeIsCheckedEvenWithFieldOverride(string local)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /DA /Wrong /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {local} >>"])), 2);
+        Assert.Single(report.Findings, finding => finding.RuleId == "PDFUA2-FORM-DA-TYPE");
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/DA null", true)]
+    [InlineData("/DA 12 0 R", true)]
+    [InlineData("/DA 99 0 R", true)]
+    [InlineData("/DA ()", false)]
+    public void Ua2DefaultAppearanceTypesUseInheritedNonNullFieldValue(string local, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /DA (/Doc 12 Tf) /Fields [9 0 R] >>", extras:
+        [
+            Para, "<< /FT /Tx /T (parent) /DA /Wrong /Kids [10 0 R] >>",
+            $"<< /T (child) /Parent 9 0 R {local} >>", "null", "null",
+        ])), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2DefaultAppearanceTypeReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "/Wrong" : $"{n + 1} 0 R");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /DA 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2DefaultAppearanceTypeInheritanceDepthIsExplicit(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, depth).Select(n => n == 9 + depth
+            ? "<< /DA /Wrong >>" : $"<< /Parent {n + 1} 0 R >>");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /V (plain) /Parent 10 0 R >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("null", false)]
+    [InlineData("()", false)]
+    [InlineData("0", true)]
+    [InlineData("[]", true)]
+    [InlineData("8 0 R", false)]
+    [InlineData("9 0 R", true)]
+    [InlineData("10 0 R", true)]
+    public void Ua2DefaultAppearanceDocumentTypeIsCheckedWithoutTextFields(string value, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "",
+            catalogExtra: $"/AcroForm << /Fields [] {(value == "" ? "" : $"/DA {value}")} >>",
+            extras: ["(valid)", "/Wrong", ObjPdf.Stream("/F1 12 Tf")])), 2);
+        Assert.Equal(invalid, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2DefaultAppearanceDocumentReferenceBoundRetainsKnownFieldError(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "/Wrong" : $"{n + 1} 0 R");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /DA 10 0 R /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /V (plain) /DA /Wrong >>" }.Concat(chain).ToArray())), 2);
+        Assert.Equal(incomplete ? 1 : 2, report.Findings.Count(finding => finding.RuleId == "PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/DA 10 0 R /V /Wrong", "10 0 R", true)]
+    [InlineData("/DA /Wrong /V 10 0 R", "10 0 R", false)]
+    public void Ua2DefaultAppearanceTypeAndValueUnknownsAreIndependent(string entries, string target, bool appearanceIncomplete)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {entries} >>", target])), 2);
+        Assert.Equal(appearanceIncomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.Equal(!appearanceIncomplete, report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(!appearanceIncomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.Equal(appearanceIncomplete, report.Has("PDFUA2-FORM-TEXT-V-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> DefaultAppearanceMatrixCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var content in new[]
+        {
+            "/F1 12 Tf", "/F1 12 Tf 1 0 0 1 0 0 Tm",
+            "/F1 12 Tf 1 0 0 1 0 0 Tm 1 0 0 1 1 1 Tm",
+            "/F1 12 Tf % Tm Tm\n1 0 0 1 0 0 Tm",
+            "/F1 12 Tf (Tm Tm) Tj", "/F1 12 Tf <546D20546D> Tj",
+            "/Tm 12 Tf", "/F1 12 Tf [(Tm) (Tm)] TJ",
+            "/F1 12 Tf (\\(Tm\\) Tm) Tj", "/T#6D 12 Tf",
+            "/F1 12 Tf << /Name (Tm Tm) >>", "TmX TmX",
+        })
+            yield return [part, scope, content];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceMatrixCases))]
+    public void Ua2DefaultAppearanceHasAtMostOneTextMatrixOperator(int part, string scope, string content)
+    {
+        var value = $"<{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}>";
+        string form = "/Fields [9 0 R]" + (scope == "document" ? $" /DA {value}" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? $"<< /FT /Tx /T (parent) /DA {value} /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) /V (plain) {(scope == "field" ? $"/DA {value}" : "")} >>",
+            "<< /T (child) /Parent 9 0 R /V (plain) >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && content.EndsWith("1 1 Tm"), report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2DefaultAppearanceMatrixTokenBudgetRetainsKnownError(int tokens, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /V (plain) >>"]));
+        var content = "Tm Tm " + string.Concat(Enumerable.Repeat("0 ", tokens - 2));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(Encoding.ASCII.GetBytes(content));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Tm Tm BI /W 1 ID Tm Tm EI")]
+    [InlineData("Tm Tm ]")]
+    public void Ua2DefaultAppearanceMatrixKnownErrorSurvivesUnsupportedTail(string content)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA <{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200, false)]
+    [InlineData(201, true)]
+    public void Ua2DefaultAppearanceMatrixNestingBoundary(int depth, bool incomplete)
+    {
+        var content = "Tm Tm " + new string('[', depth) + "(Tm Tm)" + new string(']', depth);
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA <{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1048576, false)]
+    [InlineData(1048577, true)]
+    public void Ua2DefaultAppearanceMatrixByteBoundary(int bytes, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) >>"]));
+        var content = Encoding.ASCII.GetBytes("Tm Tm " + new string(' ', bytes - 6));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(content);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ua2DefaultAppearanceMatrixByteBudgetIsSharedButAliasesAreNotReparsed(bool alias)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (first) >>", "<< /FT /Tx /T (second) >>"]));
+        var first = new PdfString(Encoding.ASCII.GetBytes("Tm Tm " + new string(' ', 1048576 - 6)));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = first;
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Entries["DA"] = alias
+            ? first : new PdfString(Encoding.ASCII.GetBytes("Tm Tm"));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-TM-COUNT");
+        Assert.Equal(!alias, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceMatrixInlineImageDataIsNotScanned()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (BI /W 1 /H 1 ID Tm Tm EI) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Ch")]
+    [InlineData("Btn")]
+    public void Ua2DefaultAppearanceMatrixFieldScopeRemainsTerminalText(string type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (field) /DA (Tm Tm) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceMatrixTokenBudgetIsSharedAndPreservesEarlierFindings()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (first) >>", "<< /FT /Tx /T (second) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes("Tm Tm " + string.Concat(Enumerable.Repeat("0 ", 99998))));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(10)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes("Tm Tm " + string.Concat(Enumerable.Repeat("0 ", 99999))));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/DA 11 0 R", "(Tm Tm)", true, false)]
+    [InlineData("/DA 11 0 R", "11 0 R", false, true)]
+    [InlineData("/DA 42", "null", false, false)]
+    public void Ua2DefaultAppearanceMatrixIndependentOfDocumentTypeAndReferenceErrors(
+        string entry, string target, bool count, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] /DA 42 >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(count, report.Has("PDFUA2-FORM-DA-TM-COUNT"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> DefaultAppearanceFontPresenceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var content in new[]
+        {
+            "", "/F1 12 Tf", "/F1 0 Tf", "% Tf\n", "(Tf) Tj", "<5466> Tj",
+            "/Tf", "[(Tf)] TJ", "<< /Font (Tf) >>", "/T#66", "Tfoo", "Tf",
+        })
+            yield return [part, scope, content];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceFontPresenceCases))]
+    public void Ua2DefaultAppearanceRequiresTopLevelTextFontOperator(int part, string scope, string content)
+    {
+        var value = $"<{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}>";
+        var form = "/Fields [9 0 R]" + (scope == "document" ? $" /DA {value}" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? $"<< /FT /Tx /T (parent) /DA {value} /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) {(scope == "field" ? $"/DA {value}" : "")} >>",
+            "<< /T (child) /Parent 9 0 R >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && content is not ("/F1 12 Tf" or "/F1 0 Tf" or "Tf"),
+            report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("BI /W 1 ID Tf EI")]
+    [InlineData("] Tf")]
+    [InlineData("/F1 12 Tf BI /W 1 ID anything EI")]
+    public void Ua2DefaultAppearanceIncompleteScanDoesNotClaimMissingTextFont(string content)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA <{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2DefaultAppearanceFontAbsenceNeedsCompleteTokenScan(int tokens, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("0 ", tokens))));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("42", false)]
+    [InlineData("(BI ID Tf EI)", true)]
+    [InlineData("11 0 R", true)]
+    public void Ua2DefaultAppearanceKnownFontAbsenceSurvivesIndependentFieldError(string value, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] /DA () >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA {value} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-TF-MISSING");
+        Assert.Equal(value == "42", report.Has("PDFUA2-FORM-DA-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> DefaultAppearanceFontResourceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var resources in new[]
+        {
+            "", "/DR null", "/DR << >>", "/DR << /Font << >> >>",
+            "/DR << /Font << /F1 11 0 R >> >>", "/DR << /Font << /Other 11 0 R >> >>",
+            "/DR << /Font << /F1 null >> >>", "/DR << /Font << /F1 99 0 R >> >>",
+        })
+            yield return [part, scope, resources];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceFontResourceCases))]
+    public void Ua2DefaultAppearanceFontNameMustMatchAcroFormDefaultResource(int part, string scope, string resources)
+    {
+        var form = $"/Fields [9 0 R] {resources}" + (scope == "document" ? " /DA (/F1 12 Tf)" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? "<< /FT /Tx /T (parent) /DA (/F1 12 Tf) /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) {(scope == "field" ? "/DA (/F1 12 Tf)" : "")} >>",
+            "<< /T (child) /Parent 9 0 R >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && resources != "/DR << /Font << /F1 11 0 R >> >>",
+            report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/DR 11 0 R", "11 0 R")]
+    [InlineData("/DR << /Font 11 0 R >>", "11 0 R")]
+    [InlineData("/DR << /Font << /F1 11 0 R >> >>", "11 0 R")]
+    [InlineData("/DR 42", "null")]
+    [InlineData("/DR << /Font 42 >>", "null")]
+    [InlineData("/DR << /Font << /F1 42 >> >>", "null")]
+    public void Ua2DefaultAppearanceUnknownFontResourcesAreIncomplete(string resources, string target)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << /Fields [9 0 R] {resources} >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (/F1 12 Tf) >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Tf")]
+    [InlineData("12 Tf")]
+    [InlineData("(F1) 12 Tf")]
+    [InlineData("/F1 (12) Tf")]
+    [InlineData("0 /F1 12 Tf")]
+    public void Ua2DefaultAppearanceMalformedFontOperandsCannotClaimResourceMatch(string content)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA ({content}) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/F1 12 Tf /Missing 0 Tf", false)]
+    [InlineData("/Missing 12 Tf /Unknown 0 Tf", true)]
+    [InlineData("/Missing 12 Tf Tf", true)]
+    [InlineData("/Missing 12 Tf BI ID anything EI", false)]
+    public void Ua2DefaultAppearanceKnownMissingFontSurvivesLaterUncertainty(string content, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] /DR << /Font << /F1 11 0 R /Unknown 12 0 R >> >> >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA ({content}) >>", "null",
+                "<< /Type /Font >>", "12 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-FONT-RESOURCE");
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("DR", 32, false)]
+    [InlineData("DR", 33, true)]
+    [InlineData("Font", 32, false)]
+    [InlineData("Font", 33, true)]
+    [InlineData("F1", 32, false)]
+    [InlineData("F1", 33, true)]
+    public void Ua2DefaultAppearanceFontResourceReferenceBoundary(string key, int hops, bool incomplete)
+    {
+        var terminal = key == "DR" ? "<< /Font << /F1 11 0 R >> >>"
+            : key == "Font" ? "<< /F1 11 0 R >>" : "<< /Type /Font >>";
+        var resources = key == "DR" ? "/DR 12 0 R"
+            : key == "Font" ? "/DR << /Font 12 0 R >>" : "/DR << /Font << /F1 12 0 R >> >>";
+        var chain = Enumerable.Range(12, hops).Select(n => n == 11 + hops ? terminal : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: $"/AcroForm << /Fields [9 0 R] {resources} >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /DA (/F1 12 Tf) >>", "null", "<< /Type /Font >>" }
+                .Concat(chain).ToArray()));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/F#31 0 Tf")]
+    [InlineData("0 g /F1 12 Tf")]
+    [InlineData("(Tf) Tj /F1 12 Tf")]
+    [InlineData("/F1 12 Tf /F1 0 Tf")]
+    public void Ua2DefaultAppearanceFontResourceUsesDecodedNameAndOperatorBoundaries(string content)
+    {
+        var pdf = Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] /DR << /Font << /F1 11 0 R >> >> >>",
+            extras: [Para, $"<< /FT /Tx /T (field) /DA ({content}) >>", "null", "<< /Type /Font >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceFontDoesNotUseFieldOrPageResourcesInsteadOfAcroForm()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (/F1 12 Tf) /DR << /Font << /F1 11 0 R >> >> >>",
+                "null", "<< /Type /Font >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceFontResourcesAreNotInspectedWithoutAFontOperator()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [] /DA () /DR 9 0 R >>",
+            extras: [Para, "9 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-DA-TF-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> DefaultAppearanceFontOperandCountCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var scope in new[] { "field", "parent", "document" })
+        foreach (var content in new[]
+        {
+            "Tf", "/F1 Tf", "12 Tf", "/F1 12 Tf", "/F1 0 Tf",
+            "0 /F1 12 Tf", "/F1 12 0 0 Tf", "(F1) (12) Tf",
+            "/F1 % ignored operand\n12 Tf", "0 g /F1 12 Tf",
+            "/F1 12 Tf Tf", "Tf BI ID anything EI", "/F1 12 Tf BI ID anything EI",
+        })
+            yield return [part, scope, content];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultAppearanceFontOperandCountCases))]
+    public void Ua2DefaultAppearanceTextFontRequiresTwoOperands(int part, string scope, string content)
+    {
+        var value = $"<{Convert.ToHexString(Encoding.ASCII.GetBytes(content))}>";
+        var form = "/Fields [9 0 R] /DR << /Font << /F1 11 0 R >> >>"
+            + (scope == "document" ? $" /DA {value}" : "");
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << {form} >>", extras:
+        [
+            Para, scope == "parent"
+                ? $"<< /FT /Tx /T (parent) /DA {value} /Kids [10 0 R] >>"
+                : $"<< /FT /Tx /T (field) {(scope == "field" ? $"/DA {value}" : "")} >>",
+            "<< /T (child) /Parent 9 0 R >>", "<< /Type /Font >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = content is "Tf" or "/F1 Tf" or "12 Tf" or "0 /F1 12 Tf"
+            or "/F1 12 0 0 Tf" or "/F1 12 Tf Tf" or "Tf BI ID anything EI";
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-FORM-DA-TF-OPERANDS"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, true)]
+    [InlineData(200001, false)]
+    public void Ua2DefaultAppearanceTextFontOperandErrorRequiresReachingOperator(int tokens, bool reached)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Tx /T (field) >>"]));
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["DA"] = new PdfString(
+            Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("0 ", tokens - 1)) + "Tf"));
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(reached, report.Has("PDFUA2-FORM-DA-TF-OPERANDS"));
+        Assert.Equal(!reached, report.Has("PDFUA2-FORM-DA-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2DefaultAppearanceFontOperandErrorsAggregateAndSurviveUnknownResources()
+    {
+        var pdf = Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R] /DR 11 0 R >>",
+            extras: [Para, "<< /FT /Tx /T (field) /DA (Tf /F1 Tf /F1 12 Tf) >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-DA-TF-OPERANDS");
+        Assert.True(report.Has("PDFUA2-FORM-DA-FONT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-DA-FONT-RESOURCE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> ChoiceFieldIndexShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Ch", "Tx", "Btn" })
+        foreach (var entry in new[]
+        {
+            "", "/I null", "/I []", "/I [0]", "/I [0 1 2]", "/I [0 0 1]",
+            "/I 0", "/I (0)", "/I [0 (1)]", "/I [0 1.5]", "/I [null]",
+            "/I [-1]", "/I [1 0]", "/I [2 1 0]", "/I [0 11 0 R]", "/I 12 0 R",
+        })
+            yield return [part, type, entry];
+    }
+
+    [Theory]
+    [MemberData(nameof(ChoiceFieldIndexShapeCases))]
+    public void Ua2ChoiceFieldIndicesRequireNonnegativeOrderedIntegers(int part, string type, string entry)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (field) {entry} >>", "null", "1", "[0 1]"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool shape = entry is "/I 0" or "/I (0)" or "/I [0 (1)]" or "/I [0 1.5]" or "/I [null]";
+        bool order = entry is "/I [-1]" or "/I [1 0]" or "/I [2 1 0]";
+        Assert.Equal(part == 2 && type == "Ch" && shape, report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.Equal(part == 2 && type == "Ch" && order, report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/I 11 0 R", "11 0 R", false)]
+    [InlineData("/I [(bad) 11 0 R]", "11 0 R", true)]
+    [InlineData("/I [1 0 11 0 R]", "11 0 R", false)]
+    public void Ua2ChoiceFieldIndexKnownErrorsSurviveUnknownItems(string entry, string target, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (field) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.Equal(entry == "/I [1 0 11 0 R]", report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceFieldIndexErrorsAreNotInheritedFromNonterminalParent()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [Para, "<< /FT /Ch /T (parent) /I (bad) /Kids [10 0 R] >>", "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ChoiceFieldIndexWorkBudgetRetainsKnownTypeError(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (field) >>"]));
+        var items = Enumerable.Repeat<PdfObject>(new PdfInteger(0), count).ToList();
+        items[0] = new PdfName("bad");
+        Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Entries["I"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(false, 32, false)]
+    [InlineData(false, 33, true)]
+    [InlineData(true, 32, false)]
+    [InlineData(true, 33, true)]
+    public void Ua2ChoiceFieldIndexReferenceBoundaryIsExplicit(bool item, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? item ? "0" : "[0 1]" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Ch /T (field) /I {(item ? "[10 0 R]" : "10 0 R")} >>" }
+                .Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-ORDER"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceFieldIndexWorkBudgetIsSharedAcrossFields()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (first) >>", "<< /FT /Ch /T (second) >>"]));
+        foreach (var id in new[] { 9, 10 })
+        {
+            var items = Enumerable.Repeat<PdfObject>(new PdfInteger(0), id == 9 ? 100000 : 100001).ToList();
+            items[0] = new PdfName("bad");
+            Assert.IsType<PdfDictionary>(doc.File.GetObject(id)).Entries["I"] = new PdfArray(items);
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-CHOICE-I-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> SignatureLockFieldShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var action in new[] { "Include", "Exclude", "All" })
+        foreach (var entry in new[]
+        {
+            "", "/Fields null", "/Fields []", "/Fields [(first) (parent.child)]",
+            "/Fields 0", "/Fields (first)", "/Fields [/first]", "/Fields [null]",
+            "/Fields [(first) 1]", "/Fields [11 0 R]", "/Fields 12 0 R",
+        })
+            yield return [part, type, action, entry];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureLockFieldShapeCases))]
+    public void Ua2SignatureLockFieldsHaveDeclaredArrayShape(int part, string type, string action, string entry)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /Lock << /Action /{action} {entry} >> >>",
+                "null", "(first)", "[(first)]"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool scope = part == 2 && type == "Sig";
+        bool invalid = entry is "/Fields 0" or "/Fields (first)" or "/Fields [/first]"
+            or "/Fields [null]" or "/Fields [(first) 1]";
+        Assert.Equal(scope && invalid, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(scope && action != "All" && entry is "" or "/Fields null",
+            report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Lock 11 0 R", "11 0 R", false)]
+    [InlineData("/Lock << /Action /Include /Fields 11 0 R >>", "11 0 R", false)]
+    [InlineData("/Lock << /Action /Include /Fields [(first) 11 0 R] >>", "11 0 R", false)]
+    [InlineData("/Lock << /Action /Include /Fields [42 11 0 R] >>", "11 0 R", true)]
+    [InlineData("/Lock << /Action 11 0 R /Fields 42 >>", "11 0 R", true)]
+    [InlineData("/Lock 42", "null", false)]
+    public void Ua2SignatureLockUnknownTraversalDoesNotInventMissingFields(string entry, string target, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2SignatureLockFieldsWorkBoundRetainsKnownTypeError(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (signature) /Lock << /Action /Include >> >>"]));
+        var field = Assert.IsType<PdfDictionary>(doc.File.GetObject(9));
+        var dictionary = Assert.IsType<PdfDictionary>(field.Get("Lock"));
+        var items = Enumerable.Repeat<PdfObject>(new PdfString(Encoding.ASCII.GetBytes("first")), count).ToList();
+        items[0] = new PdfInteger(0);
+        dictionary.Entries["Fields"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("Lock", 32, false)]
+    [InlineData("Lock", 33, true)]
+    [InlineData("Action", 32, false)]
+    [InlineData("Action", 33, true)]
+    [InlineData("Fields", 32, false)]
+    [InlineData("Fields", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    public void Ua2SignatureLockReferencesHaveExplicitDepthBoundary(string route, int count, bool incomplete)
+    {
+        var terminal = route switch
+        {
+            "Lock" => "<< /Action /Include /Fields [] >>",
+            "Action" => "/Include",
+            "Fields" => "[]",
+            _ => "(first)",
+        };
+        var entry = route switch
+        {
+            "Lock" => "10 0 R",
+            "Action" => "<< /Action 10 0 R /Fields [] >>",
+            "Fields" => "<< /Action /Include /Fields 10 0 R >>",
+            _ => "<< /Action /Include /Fields [10 0 R] >>",
+        };
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? terminal : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /Lock {entry} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureLockWorkBudgetIsSharedAcrossFields()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>", extras:
+            [Para, "<< /FT /Sig /T (first) /Lock << /Action /Include >> >>",
+                "<< /FT /Sig /T (second) /Lock << /Action /Exclude >> >>"]));
+        foreach (var id in new[] { 9, 10 })
+        {
+            var field = Assert.IsType<PdfDictionary>(doc.File.GetObject(id));
+            var dictionary = Assert.IsType<PdfDictionary>(field.Get("Lock"));
+            var items = Enumerable.Repeat<PdfObject>(new PdfString([]), id == 9 ? 100000 : 100001).ToList();
+            items[0] = new PdfInteger(0);
+            dictionary.Entries["Fields"] = new PdfArray(items);
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureLockDoesNotInheritParentLock()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /Lock << /Action /Include >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> SignatureSeedDigestShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var entry in new[]
+        {
+            "", "/DigestMethod null", "/DigestMethod []", "/DigestMethod [/SHA256]",
+            "/DigestMethod [/SHA512 /SHA256 /SHA256]", "/DigestMethod [/Custom]",
+            "/DigestMethod /SHA256", "/DigestMethod 0", "/DigestMethod [(SHA256)]",
+            "/DigestMethod [null]", "/DigestMethod [/SHA256 42]", "/DigestMethod [11 0 R]",
+            "/DigestMethod 12 0 R",
+        })
+            yield return [part, type, entry];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureSeedDigestShapeCases))]
+    public void Ua2SignatureSeedDigestMethodHasDeclaredNameArrayShape(int part, string type, string entry)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /SV << {entry} >> >>",
+                "null", "/SHA256", "[/SHA256]"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool invalid = entry is "/DigestMethod /SHA256" or "/DigestMethod 0" or "/DigestMethod [(SHA256)]"
+            or "/DigestMethod [null]" or "/DigestMethod [/SHA256 42]";
+        Assert.Equal(part == 2 && type == "Sig" && invalid, report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/SV 11 0 R", "11 0 R", false)]
+    [InlineData("/SV << /DigestMethod 11 0 R >>", "11 0 R", false)]
+    [InlineData("/SV << /DigestMethod [42 11 0 R] >>", "11 0 R", true)]
+    [InlineData("/SV 42", "null", false)]
+    public void Ua2SignatureSeedDigestUnknownTraversalPreservesKnownErrors(string entry, string target, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) {entry} >>", "null", target]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("SV", 32, false)]
+    [InlineData("SV", 33, true)]
+    [InlineData("DigestMethod", 32, false)]
+    [InlineData("DigestMethod", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    public void Ua2SignatureSeedDigestReferenceDepthIsExplicit(string route, int count, bool incomplete)
+    {
+        var terminal = route == "SV" ? "<< /DigestMethod [/SHA256] >>"
+            : route == "DigestMethod" ? "[/SHA256]" : "/SHA256";
+        var entry = route == "SV" ? "10 0 R" : route == "DigestMethod"
+            ? "<< /DigestMethod 10 0 R >>" : "<< /DigestMethod [10 0 R] >>";
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? terminal : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /SV {entry} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2SignatureSeedDigestWorkBoundRetainsKnownTypeError(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (signature) /SV << >> >>"]));
+        var seed = Assert.IsType<PdfDictionary>(Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("SV"));
+        var items = Enumerable.Repeat<PdfObject>(new PdfName("SHA256"), count).ToList();
+        items[0] = new PdfInteger(0);
+        seed.Entries["DigestMethod"] = new PdfArray(items);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureSeedDigestWorkBudgetIsSharedAcrossFields()
+    {
+        var doc = PdfDocument.Load(Ua("", "8 0 R",
+            catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>", extras:
+            [Para, "<< /FT /Sig /T (first) /SV << >> >>", "<< /FT /Sig /T (second) /SV << >> >>"]));
+        foreach (var id in new[] { 9, 10 })
+        {
+            var seed = Assert.IsType<PdfDictionary>(Assert.IsType<PdfDictionary>(doc.File.GetObject(id)).Get("SV"));
+            var items = Enumerable.Repeat<PdfObject>(new PdfName("SHA256"), id == 9 ? 100000 : 100001).ToList();
+            items[0] = new PdfInteger(0);
+            seed.Entries["DigestMethod"] = new PdfArray(items);
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(2, report.Findings.Count(f => f.RuleId == "PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureSeedDigestDoesNotInheritParentSeed()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /SV << /DigestMethod 42 >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Ua2SignatureSeedAndLockKnownErrorsAreIndependent(bool seedUnknown)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV {(seedUnknown ? "11 0 R" : "<< /DigestMethod 42 >>")} /Lock {(seedUnknown ? "<< /Action /Include /Fields 42 >>" : "11 0 R")} >>",
+                "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(seedUnknown, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(!seedUnknown, report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.Equal(seedUnknown, report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.Equal(!seedUnknown, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> SignatureSeedScalarCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var key in new[] { "V", "AddRevInfo" })
+        foreach (var value in new[] { "null", "0", "-1", "3", "1.5", "true", "false", "(value)", "/Name", "[]", "<< >>", "11 0 R", "99 0 R" })
+            yield return [part, type, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureSeedScalarCases))]
+    public void Ua2SignatureSeedScalarsHaveDeclaredTypes(int part, string type, string key, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /SV << /{key} {value} >> >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool absent = value is "null" or "11 0 R" or "99 0 R";
+        bool valid = key == "V" ? value is "0" or "-1" or "3" : value is "true" or "false";
+        Assert.Equal(part == 2 && type == "Sig" && !absent && !valid,
+            report.Has(key == "V" ? "PDFUA2-FORM-SEED-V-TYPE" : "PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Ua2SignatureSeedScalarKnownErrorSurvivesOtherUnknown(bool versionUnknown)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /V {(versionUnknown ? "11 0 R" : "(bad)")} /AddRevInfo {(versionUnknown ? "42" : "11 0 R")} >> >>",
+                "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!versionUnknown, report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.Equal(versionUnknown, report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("V", 32, false)]
+    [InlineData("V", 33, true)]
+    [InlineData("AddRevInfo", 32, false)]
+    [InlineData("AddRevInfo", 33, true)]
+    public void Ua2SignatureSeedScalarReferenceBoundaryIsExplicit(string key, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? key == "V" ? "3" : "true" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /SV << /{key} 10 0 R >> >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2SignatureSeedScalarDictionaryDepthIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? "<< /V 3 /AddRevInfo true >>" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Sig /T (signature) /SV 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/SV 42", true)]
+    [InlineData("/SV 11 0 R", true)]
+    [InlineData("/SV null", false)]
+    [InlineData("/SV 99 0 R", false)]
+    public void Ua2SignatureSeedScalarDictionaryUncertaintyIsExplicit(string entry, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) {entry} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureSeedScalarsDoNotInheritParentSeed()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /SV << /V (bad) /AddRevInfo 42 >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-ADDREVINFO-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> CertificateSeedAsciiCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var key in new[] { "KeyUsage", "SignaturePolicyCommitmentType" })
+        foreach (var value in new[] { "null", "[]", "[(1XXXXXXXX)]", "[() <007F>]", "[<80>]", "[<FEFF0031>]",
+            "(1XXXXXXXX)", "/Name", "42", "[null]", "[/Name]", "[99 0 R]", "[11 0 R]", "11 0 R", "99 0 R" })
+            yield return [part, type, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(CertificateSeedAsciiCases))]
+    public void Ua2CertificateSeedAsciiArraysHaveDeclaredTypes(int part, string type, string key, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /SV << /Cert << /{key} {value} >> >> >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = value is "null" or "[]" or "[(1XXXXXXXX)]" or "[() <007F>]" or "11 0 R" or "99 0 R";
+        Assert.Equal(part == 2 && type == "Sig" && !valid, report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/KeyUsage [12 0 R (1)]", false)]
+    [InlineData("/KeyUsage [12 0 R /Bad]", true)]
+    [InlineData("/KeyUsage 12 0 R /SignaturePolicyCommitmentType [<80>]", true)]
+    [InlineData("/KeyUsage [/Bad] /SignaturePolicyCommitmentType 12 0 R", true)]
+    public void Ua2CertificateSeedAsciiUnknownPreservesKnownErrors(string entries, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert << {entries} >> >> >>",
+                "null", "null", "12 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("SV", 32, false)]
+    [InlineData("SV", 33, true)]
+    [InlineData("Cert", 32, false)]
+    [InlineData("Cert", 33, true)]
+    [InlineData("KeyUsage", 32, false)]
+    [InlineData("KeyUsage", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    public void Ua2CertificateSeedAsciiReferenceBoundIsExplicit(string route, int count, bool incomplete)
+    {
+        var last = route switch
+        {
+            "SV" => "<< /Cert << /KeyUsage [(1)] >> >>",
+            "Cert" => "<< /KeyUsage [(1)] >>",
+            "KeyUsage" => "[(1)]",
+            _ => "(1)"
+        };
+        var seed = route switch
+        {
+            "SV" => "10 0 R",
+            "Cert" => "<< /Cert 10 0 R >>",
+            "KeyUsage" => "<< /Cert << /KeyUsage 10 0 R >> >>",
+            _ => "<< /Cert << /KeyUsage [10 0 R] >> >>"
+        };
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? last : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Sig /T (signature) /SV {seed} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2CertificateSeedAsciiItemWorkBoundIsExplicit(int count, bool incomplete)
+    {
+        var items = "/Bad " + string.Concat(Enumerable.Repeat("() ", count - 1));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert << /KeyUsage [{items}] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1048576, false)]
+    [InlineData(1048577, true)]
+    public void Ua2CertificateSeedAsciiByteWorkBoundIsExplicit(int count, bool incomplete)
+    {
+        var bytes = "80" + new string('0', (count - 1) * 2);
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert << /KeyUsage [<{bytes}>] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiByteBudgetIsSharedAcrossFields()
+    {
+        var bytes = new string('0', 1048576);
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (one) /SV << /Cert << /KeyUsage [<{bytes}>] >> >> >>",
+                $"<< /FT /Sig /T (two) /SV << /Cert << /SignaturePolicyCommitmentType [<{bytes}> () (1)] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("42", true)]
+    [InlineData("11 0 R", true)]
+    [InlineData("null", false)]
+    [InlineData("99 0 R", false)]
+    public void Ua2CertificateSeedAsciiDictionaryUncertaintyIsExplicit(string certificate, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /SV << /Cert {certificate} >> >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiDoesNotInheritParentSeed()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /SV << /Cert << /KeyUsage [<80>] >> >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiItemBudgetIsSharedAcrossKeysAndFields()
+    {
+        var items = string.Concat(Enumerable.Repeat("() ", 100000));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (one) /SV << /Cert << /KeyUsage [{items}] >> >> >>",
+                $"<< /FT /Sig /T (two) /SV << /Cert << /KeyUsage [{items}] /SignaturePolicyCommitmentType [()] >> >> >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2CertificateSeedAsciiUncertaintyDoesNotSuppressOtherSeedErrors()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (one) /SV << /Cert 11 0 R /V (bad) /DigestMethod [(bad)] >> >>",
+                "<< /FT /Sig /T (two) /SV << /Cert << /KeyUsage [<80>] >> /V 11 0 R /DigestMethod 11 0 R >> >>",
+                "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-CERT-ASCII-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-V-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> SignatureLockPermissionCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch" })
+        foreach (var value in new[] { "null", "-1", "0", "3", "1.5", "true", "(1)", "/All", "[]", "<< >>", "11 0 R", "99 0 R" })
+            yield return [part, type, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(SignatureLockPermissionCases))]
+    public void Ua2SignatureLockPermissionHasDeclaredNumberType(int part, string type, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (signature) /Lock << /Action /All /P {value} >> >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = value is "null" or "-1" or "0" or "3" or "1.5" or "11 0 R" or "99 0 R";
+        Assert.Equal(part == 2 && type == "Sig" && !valid, report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2SignatureLockPermissionReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "1.5" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Sig /T (signature) /Lock << /Action /All /P 10 0 R >> >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/P (bad) /Fields 11 0 R", true, false)]
+    [InlineData("/P 11 0 R /Fields [(name)]", false, false)]
+    [InlineData("/P 11 0 R /Fields [/Bad]", false, true)]
+    [InlineData("/P 11 0 R /Fields null", false, false)]
+    public void Ua2SignatureLockPermissionAndFieldsUncertaintyAreIndependent(string entries, bool permissionType, bool fieldsType)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Sig /T (signature) /Lock << /Action /Include {entries} >> >>",
+                "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(permissionType, report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.Equal(fieldsType, report.Has("PDFUA2-FORM-LOCK-FIELDS-TYPE"));
+        Assert.Equal(entries.EndsWith("null", StringComparison.Ordinal), report.Has("PDFUA2-FORM-LOCK-FIELDS-MISSING"));
+        Assert.True(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2SignatureLockPermissionDoesNotInheritParentLock()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Sig /T (parent) /Lock << /Action /All /P (bad) >> /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-P-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-LOCK-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> TerminalFieldEntryTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Sig", "Tx", "Ch", "Btn" })
+        foreach (var key in new[] { "T", "AA" })
+        foreach (var value in new[] { "null", "()", "(name)", "<< >>", "42", "true", "/Name", "[]", "11 0 R", "99 0 R" })
+            yield return [part, type, key, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(TerminalFieldEntryTypeCases))]
+    public void Ua2TerminalFieldEntriesHaveDeclaredTypes(int part, string type, string key, string value)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /{key} {value} >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = value is "null" or "11 0 R" or "99 0 R"
+            || (key == "T" ? value is "()" or "(name)" : value == "<< >>");
+        Assert.Equal(part == 2 && !valid, report.Has(key == "T" ? "PDFUA2-FORM-T-TYPE" : "PDFUA2-FORM-AA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("T", 32, false)]
+    [InlineData("T", 33, true)]
+    [InlineData("AA", 32, false)]
+    [InlineData("AA", 33, true)]
+    public void Ua2TerminalFieldEntryReferenceBoundIsExplicit(string key, int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count
+            ? key == "T" ? "(name)" : "<< >>" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Btn /{key} 10 0 R >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-T-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-AA-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/T 11 0 R /AA 42", false, true)]
+    [InlineData("/T 42 /AA 11 0 R", true, false)]
+    public void Ua2TerminalFieldEntryUnknownPreservesOtherKnownTypeError(string entries, bool nameType, bool actionType)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Btn {entries} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(nameType, report.Has("PDFUA2-FORM-T-TYPE"));
+        Assert.Equal(actionType, report.Has("PDFUA2-FORM-AA-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2TerminalFieldEntryTypesDoNotProjectParentEntries()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Btn /T 42 /AA 42 /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-T-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-AA-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-ENTRY-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> ChoiceLocalIndexRangeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Ch", "Tx", "Btn", "Sig" })
+        foreach (var options in new[] { "[]", "[(a)]", "[(a) [(b) (B)]]" })
+        foreach (var index in new[] { "0", "1", "2", "9223372036854775807" })
+            yield return [part, type, options, index];
+    }
+
+    [Theory]
+    [MemberData(nameof(ChoiceLocalIndexRangeCases))]
+    public void Ua2ChoiceLocalIndexMustFitExplicitOptionArray(int part, string type, string options, string index)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (choice) /Opt {options} /I [{index}] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        int count = options == "[]" ? 0 : options == "[(a)]" ? 1 : 2;
+        Assert.Equal(part == 2 && type == "Ch" && long.Parse(index, System.Globalization.CultureInfo.InvariantCulture) >= count,
+            report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("null", false)]
+    [InlineData("99 0 R", false)]
+    [InlineData("11 0 R", true)]
+    [InlineData("42", true)]
+    [InlineData("(options)", true)]
+    public void Ua2ChoiceLocalIndexOptionUncertaintyIsExplicit(string options, bool incomplete)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt {options} /I [3] >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2ChoiceLocalIndexOptionReferenceBoundIsExplicit(int count, bool incomplete)
+    {
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? "[(a)]" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Ch /T (choice) /Opt 10 0 R /I [1] >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("[1 11 0 R]")]
+    [InlineData("[11 0 R 1]")]
+    public void Ua2ChoiceLocalIndexKnownRangeErrorSurvivesUnknownIndex(string indices)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt [(a)] /I {indices} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("[(not an integer)]")]
+    public void Ua2ChoiceLocalIndexDoesNotInspectUnknownOptionsWithoutKnownIndex(string indices)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt 11 0 R /I {indices} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceLocalIndexRangeDoesNotSubstituteParentOptions()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (parent) /Opt [] /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R /I [1] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ChoiceLocalIndexRangeSurvivesItemWorkLimit(int count, bool incomplete)
+    {
+        var indices = string.Concat(Enumerable.Repeat("1 ", count));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt [(a)] /I [{indices}] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-I-RANGE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-I-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> ChoiceLocalOptionShapeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Ch", "Tx", "Btn", "Sig" })
+        foreach (var options in new[] { "null", "[]", "[(a)]", "[() [(a) (A)]]", "[[(a) (A)] (b)]",
+            "(a)", "42", "[null]", "[/Name]", "[[]]", "[[(a)]]", "[[(a) (A) (extra)]]",
+            "[[(a) /Name]]", "[[42 (A)]]", "[[[(a)] (A)]]", "[11 0 R]", "[99 0 R]", "11 0 R", "99 0 R" })
+            yield return [part, type, options];
+    }
+
+    [Theory]
+    [MemberData(nameof(ChoiceLocalOptionShapeCases))]
+    public void Ua2ChoiceLocalOptionsHaveDeclaredStringOrPairShape(int part, string type, string options)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /{type} /T (choice) /Opt {options} >>", "null", "null"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        bool valid = options is "null" or "[]" or "[(a)]" or "[() [(a) (A)]]" or "[[(a) (A)] (b)]" or "11 0 R" or "99 0 R";
+        Assert.Equal(part == 2 && type == "Ch" && !valid, report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("[11 0 R (a)]", false)]
+    [InlineData("[11 0 R /Bad]", true)]
+    [InlineData("[/Bad 11 0 R]", true)]
+    [InlineData("[[11 0 R (A)]]", false)]
+    [InlineData("[[11 0 R /Bad]]", true)]
+    [InlineData("[[11 0 R]]", true)]
+    [InlineData("[[(a) 11 0 R]]", false)]
+    public void Ua2ChoiceLocalOptionUnknownPreservesKnownShapeError(string options, bool type)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt {options} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(type, report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("root", 32, false)]
+    [InlineData("root", 33, true)]
+    [InlineData("item", 32, false)]
+    [InlineData("item", 33, true)]
+    [InlineData("pair", 32, false)]
+    [InlineData("pair", 33, true)]
+    public void Ua2ChoiceLocalOptionReferenceBoundIsExplicit(string route, int count, bool incomplete)
+    {
+        var last = route == "root" ? "[(a)]" : "(a)";
+        var options = route == "root" ? "10 0 R" : route == "item" ? "[10 0 R]" : "[[10 0 R (A)]]";
+        var chain = Enumerable.Range(10, count).Select(n => n == 9 + count ? last : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Ch /T (choice) /Opt {options} >>" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2ChoiceLocalOptionWorkBoundRetainsKnownType(int count, bool incomplete)
+    {
+        var options = "/Bad " + string.Concat(Enumerable.Repeat("() ", count - 1));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (choice) /Opt [{options}] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceLocalOptionWorkBudgetIncludesPairMembersAndAllFields()
+    {
+        var options = string.Concat(Enumerable.Repeat("[() ()] ", 66666));
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R 10 0 R] >>",
+            extras: [Para, $"<< /FT /Ch /T (one) /Opt [{options}] >>",
+                "<< /FT /Ch /T (two) /Opt [() [() /Bad]] >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2ChoiceLocalOptionDoesNotInheritParentOptions()
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, "<< /FT /Ch /T (parent) /Opt [/Bad] /Kids [10 0 R] >>",
+                "<< /T (child) /Parent 9 0 R >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-TYPE"));
+        Assert.False(report.Has("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> RichFieldValuePresenceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var type in new[] { "Tx", "Ch" })
+        foreach (var rich in new[] { "", "/RV null", "/RV 11 0 R", "/RV 99 0 R", "/RV (rich)", "/RV 12 0 R" })
+        foreach (var value in new[] { "", "/V null", "/V 11 0 R", "/V 99 0 R", "/V ()", "/V (plain)", "/V 13 0 R" })
+            yield return [part, type, rich, value];
+    }
+
+    [Theory]
+    [MemberData(nameof(RichFieldValuePresenceCases))]
+    public void Ua2RichTextFieldRequiresPlainValuePresence(int part, string type, string rich, string value)
+    {
+        var xml = $"<body xmlns='http://www.w3.org/1999/xhtml'><p>{(value == "/V ()" ? "" : "plain")}</p></body>";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /{type} /T (field) {rich.Replace("/RV (rich)", $"/RV ({xml})")} {value} >>", "null", "null",
+            ObjPdf.Stream(xml),
+            ObjPdf.Stream("plain"),
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        var missing = part == 2 && type == "Tx" && rich is "/RV (rich)" or "/RV 12 0 R"
+            && value is not ("/V ()" or "/V (plain)" or "/V 13 0 R");
+        Assert.Equal(missing, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FORM-VALUE-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/V null", true)]
+    [InlineData("/V 12 0 R", true)]
+    [InlineData("/V (inherited)", false)]
+    public void Ua2RichFieldNullLocalValueDoesNotShadowInheritedValue(string parentValue, bool missing)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>", extras:
+        [
+            Para, $"<< /FT /Tx /T (parent) {parentValue} /Kids [10 0 R] >>",
+            "<< /T (child) /Parent 9 0 R /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>inherited</p></body>) /V null >>", "null", "null",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(missing, report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("RV")]
+    [InlineData("V")]
+    public void Ua2RichFieldCyclicValueReferenceIsIncomplete(string key)
+    {
+        var entry = key == "RV" ? "/RV 11 0 R" : "/RV (rich) /V 11 0 R";
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {entry} >>", "null", "11 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FORM-VALUE-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("RV", 32, false)]
+    [InlineData("RV", 33, true)]
+    [InlineData("V", 32, false)]
+    [InlineData("V", 33, true)]
+    public void Ua2RichFieldReferenceBoundaryIsExplicit(string key, int length, bool incomplete)
+    {
+        const string rich = "(<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>)";
+        var entries = key == "RV" ? "/RV 14 0 R /V (plain)" : $"/RV {rich} /V 14 0 R";
+        var chain = Enumerable.Range(14, length).Select(n => n == 13 + length ? key == "RV" ? rich : "(plain)" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, $"<< /FT /Tx /T (field) {entries} >>", "null", "null", "null", "null" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2RichFieldValueInheritanceDepthBoundaryIsExplicit(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(14, depth).Select(n => n == 13 + depth
+            ? "<< /V (plain) >>" : $"<< /Parent {n + 1} 0 R >>");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: new[] { Para, "<< /FT /Tx /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>) /Parent 14 0 R >>", "null", "null", "null", "null" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/RV 42 /V (plain)")]
+    [InlineData("/RV (rich) /V 42")]
+    public void Ua2RichFieldMalformedValueTypesAreIncomplete(string entries)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [9 0 R] >>",
+            extras: [Para, $"<< /FT /Tx /T (field) {entries} >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.True(report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2RichFieldReaderDepthTruncationIsExplicit(int depth, bool incomplete)
+    {
+        var chain = Enumerable.Range(14, depth + 1).Select(n => n == 14 + depth
+            ? "<< /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>) /V (plain) >>"
+            : $"<< /FT /Tx /T (group) /Kids [{n + 1} 0 R] >>");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/AcroForm << /Fields [14 0 R] >>",
+            extras: new[] { Para, "null", "null", "null", "null", "null" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(100000, false)]
+    [InlineData(100001, true)]
+    public void Ua2RichFieldReaderWorkTruncationIsExplicit(int fields, bool incomplete)
+    {
+        var entries = string.Concat(Enumerable.Repeat("9 0 R ", fields));
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/AcroForm << /Fields [{entries}] >>",
+            extras: [Para, "<< /FT /Tx /T (field) /RV (<body xmlns='http://www.w3.org/1999/xhtml'><p>plain</p></body>) /V (plain) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FORM-VALUE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FORM-RV-V"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> AttachmentRelationshipCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var direct in new[] { false, true })
+        foreach (var relationship in new[] { "", "/AFRelationship null", "/AFRelationship 11 0 R",
+            "/AFRelationship 99 0 R", "/AFRelationship /Data", "/AFRelationship 12 0 R" })
+            yield return [part, direct, relationship];
+    }
+
+    [Theory]
+    [MemberData(nameof(AttachmentRelationshipCases))]
+    public void Ua2AttachmentRelationshipNullIsEquivalentToOmission(int part, bool direct, string relationship)
+    {
+        var spec = $"<< /Type /Filespec /F (file) /UF (file) {relationship} >>";
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            Para, $"<< /Type /Annot /Subtype /FileAttachment /FS {(direct ? spec : "10 0 R")} /Rect [0 0 10 10] /Contents (file) >>",
+            spec, "null", "/Data",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && relationship is not ("/AFRelationship /Data" or "/AFRelationship 12 0 R"),
+            report.Has("PDFUA2-FILEATTACH-AFRELATIONSHIP"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FILEATTACH-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void Ua2AttachmentRelationshipCyclicReferencesAreIncomplete(int part, bool fileSpecification)
+    {
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+        [
+            Para, $"<< /Type /Annot /Subtype /FileAttachment /FS {(fileSpecification ? "11 0 R" : "10 0 R")} /Rect [0 0 10 10] /Contents (file) >>",
+            "<< /Type /Filespec /F (file) /UF (file) /AFRelationship 11 0 R >>", "11 0 R",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2, report.Has("PDFUA2-FILEATTACH-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FILEATTACH-AFRELATIONSHIP"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, false)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, true)]
+    public void Ua2AttachmentRelationshipReferenceBoundaryIsExplicit(int part, int length, bool incomplete)
+    {
+        var nodes = Enumerable.Range(13, length).Select(n => n == 12 + length ? "/Data" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", "/Annots [9 0 R]", extras:
+            new[] { Para, "<< /Type /Annot /Subtype /FileAttachment /FS 10 0 R /Rect [0 0 10 10] /Contents (file) >>",
+                "<< /Type /Filespec /F (file) /UF (file) /AFRelationship 13 0 R >>", "null", "null" }.Concat(nodes).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILEATTACH-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FILEATTACH-AFRELATIONSHIP"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> FileDescriptionCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var location in new[] { "orphan", "associated", "name-tree", "nested" })
+        foreach (var ef in new[] { "", "/EF null", "/EF 11 0 R", "/EF 99 0 R",
+            "/EF << /F 10 0 R >>", "/EF 12 0 R" })
+        foreach (var description in new[] { "", "/Desc (description)" })
+            yield return [part, location, ef, description];
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, true)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, true)]
+    public void UaFileSpecificationReferenceBoundaryDoesNotBecomeNull(int part, int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(11, length).Select(n => n == 10 + length ? "null" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", extras:
+            new[] { Para, "<< /Type /Filespec /EF 11 0 R >>", "null" }.Concat(chain).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(incomplete, report.Has("PDFUA-FILESPEC-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-FILESPEC-UF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaFileSpecificationCyclicEmbeddedFileEntryIsIncomplete(int part)
+    {
+        var pdf = Ua("", "8 0 R", extras: [Para, "<< /Type /Filespec /EF 10 0 R >>", "10 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA-FILESPEC-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("PDFUA-FILESPEC-UF"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [MemberData(nameof(FileDescriptionCases))]
+    public void Ua2FileDescriptionsFollowEmbeddedFilesNameTree(int part, string location, string ef, string description)
+    {
+        var catalog = location switch
+        {
+            "associated" => "/AF [9 0 R]",
+            "name-tree" => "/Names << /EmbeddedFiles << /Names [(file) 9 0 R] >> >>",
+            "nested" => "/Names << /EmbeddedFiles << /Kids [13 0 R] >> >>",
+            _ => "",
+        };
+        var pdf = Ua("", "8 0 R", catalogExtra: catalog, extras:
+        [
+            Para, $"<< /Type /Filespec /F (file) /UF (file) {ef} {description} >>",
+            ObjPdf.Stream("x", "/Type /EmbeddedFile"), "null", "<< /F 10 0 R >>",
+            "<< /Limits [(file) (file)] /Names [(file) 9 0 R] >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        Assert.Equal(part == 2 && location is "name-tree" or "nested" && description == "",
+            report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "PDFUA2-FILES-INCOMPLETE" or "VALIDATION-INTERNAL");
+    }
+
+    [Theory]
+    [InlineData("/Names << /EmbeddedFiles 13 0 R >>", "<< /Kids [13 0 R 14 0 R] >>")]
+    [InlineData("/Names << /EmbeddedFiles 13 0 R >>", "<< /Names [(file) 9 0 R (orphan)] >>")]
+    public void Ua2FileDescriptionInspectionReportsIncompleteAndRetainsKnownMissingDescription(string catalog, string tree)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: catalog, extras:
+        [
+            Para, "<< /Type /Filespec /F (file) /UF (file) >>",
+            "null", "null", "null", tree, "<< /Names [(file) 9 0 R] >>",
+        ]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FILESPEC-DESC");
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FILES-INCOMPLETE" && f.Severity == ValidationSeverity.Error);
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void Ua2FileDescriptionTreeDepthBoundaryIsExplicit(int depth, bool incomplete)
+    {
+        var nodes = Enumerable.Range(13, depth + 1).Select(n => n == 13 + depth
+            ? "<< /Names [(file) 9 0 R] >>" : $"<< /Kids [{n + 1} 0 R] >>");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/Names << /EmbeddedFiles 13 0 R >>",
+            extras: new[] { Para, "<< /Type /Filespec /F (file) /UF (file) >>", "null", "null", "null" }.Concat(nodes).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILES-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("/Names 13 0 R")]
+    [InlineData("/Names << /EmbeddedFiles 13 0 R >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Names 13 0 R >> >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Names [(file) 13 0 R] >> >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Names [13 0 R 9 0 R] >> >>")]
+    [InlineData("/Names << /EmbeddedFiles << /Kids 13 0 R >> >>")]
+    public void Ua2FileDescriptionUnresolvedTreeReferencesAreIncomplete(string catalog)
+    {
+        var pdf = Ua("", "8 0 R", catalogExtra: catalog, extras:
+            [Para, "<< /Type /Filespec /F (file) /UF (file) /Desc (description) >>", "null", "null", "null", "13 0 R"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-FILES-INCOMPLETE");
+        Assert.False(report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2FileDescriptionReferenceDepthBoundaryIsExplicit(int length, bool incomplete)
+    {
+        var nodes = Enumerable.Range(13, length).Select(n => n == 12 + length
+            ? "<< /Names [(file) 9 0 R] >>" : $"{n + 1} 0 R");
+        var pdf = Ua("", "8 0 R", catalogExtra: "/Names << /EmbeddedFiles 13 0 R >>",
+            extras: new[] { Para, "<< /Type /Filespec /F (file) /UF (file) >>", "null", "null", "null" }.Concat(nodes).ToArray());
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILES-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2FileDescriptionTreeWorkBoundaryIsExplicit(int pairs, bool incomplete)
+    {
+        var entries = string.Concat(Enumerable.Repeat("(file) 9 0 R ", pairs));
+        var pdf = Ua("", "8 0 R", catalogExtra: $"/Names << /EmbeddedFiles << /Names [{entries}] >> >>",
+            extras: [Para, "<< /Type /Filespec /F (file) /UF (file) /Desc (description) >>"]);
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FILES-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FILESPEC-DESC"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
     }
 
     [Fact]

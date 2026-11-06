@@ -4,6 +4,1151 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [hybrid target guard](spec-backlog.md#2026-11-05-hybrid-supplemental-stream-targets)
+requires XRefStm to identify a cross-reference stream, even when its
+offset already identifies a visited classic table. Shared supplemental
+streams remain deduplicated; wider cycle/ownership/free-list rules and
+the recorded native same-section precedence disagreement remain open.
+
+The [xref header integer-syntax guard](spec-backlog.md#2026-11-05-xref-stream-header-integer-syntax)
+checks original object/generation tokens during unindexed section
+loading, not just recovered values. Ordinary indexed recovery remains
+unchanged. Matched cumulative header/footer benchmark intervals overlap;
+effective-entry identity and full grammar/lifecycle remain open.
+
+The [startxref integer-syntax guard](spec-backlog.md#2026-11-05-startxref-offset-integer-syntax)
+rejects repeated signs in footer offsets using the existing strict token
+predicate. Ordinary numeric recovery and valid single-sign/padded
+integer spellings remain unchanged; wider footer framing stays open.
+
+The [startxref token-boundary guard](spec-backlog.md#2026-11-05-startxref-token-boundaries)
+checks both sides of the selected last marker, explicitly recovering
+joined regular-character tokens without selecting an earlier revision.
+Existing separator compatibility remains; complete footer framing,
+marker discovery and EOF validation remain open.
+
+The [classic xref token-boundary guard](spec-backlog.md#2026-11-05-classic-xref-keyword-token-boundary)
+rejects joined regular-character suffixes instead of recognizing a
+four-byte prefix. Existing whitespace/comment compatibility is preserved;
+full line framing, startxref discovery and wider grammar remain open.
+
+The [classic Size-schema guard](spec-backlog.md#2026-11-05-required-classic-trailer-size-schema)
+requires a direct positive integer in every classic section, including
+older incremental sections. Invalid metadata explicitly recovers;
+Size cardinality and out-of-Size filtering remain open. Cumulative
+timings and the unresolved allocation difference are retained.
+
+The [negative classic field guard](spec-backlog.md#2026-11-05-negative-classic-cross-reference-fields)
+explicitly recovers negative offsets and next-free object numbers before
+publishing an unrepaired index. Nonnegative compatibility behavior and
+lazy object loading are preserved; full offset/topology checks remain open.
+
+The [classic xref generation guard](spec-backlog.md#2026-11-05-classic-cross-reference-generation-bounds)
+explicitly recovers generations above 65,535 in both fixed-width and
+fallback parsing. Lossless ordinary header recovery is preserved within
+its scanning limits. Free-list topology and reuse lifecycle remain open;
+matched classic load benchmark intervals all overlap.
+
+The [xref header-range guard](spec-backlog.md#2026-11-05-cross-reference-stream-object-header-ranges)
+explicitly recovers invalid or unsupported object identifiers at the
+startxref entry point. Sparse supported identifiers and matching
+nonzero-generation references stay lossless; ordinary reference lookup
+is unchanged. Hybrid/incremental self-entry ownership and full object
+lifecycle/grammar validation remain open.
+
+The [xref generation guard](spec-backlog.md#2026-11-05-cross-reference-stream-generation-bounds)
+explicitly recovers type 0/1 generation fields above 65,535 without
+narrowing type-2 member indexes or unknown types. Wide-header scanning
+limits and permissive reference-reader disagreement remain documented;
+free-list lifecycle and full grammar/identity parity remain open.
+
+The [xref Length-schema guard](spec-backlog.md#2026-11-05-cross-reference-length-value-schema)
+requires a resolved nonnegative integer instead of real truncation or
+silent missing/invalid-Length recovery. Valid integer spellings remain
+supported; pre-index unresolved indirect lengths explicitly recover,
+not a claim that indirect Length is forbidden. Ordinary streams and
+broader parser/performance scope remain unchanged or explicitly open.
+
+The [xref framing guard](spec-backlog.md#2026-11-05-cross-reference-stream-framing)
+extends existing object-stream framing checks to direct Type XRef:
+LF/CRLF opening, exact declared physical extent and closing delimiters.
+Malformed framing explicitly recovers; ordinary-stream behavior remains
+unchanged. Length schema/pre-index references and wider grammar/identity
+remain incomplete; no new performance claim is made.
+
+The [external xref source guard](spec-backlog.md#2026-11-05-declared-external-cross-reference-stream-sources)
+prevents declared external F sources from silently indexing inline rows.
+Unsupported or pre-index unresolved sources explicitly recover; absent
+and direct-null sources preserve indexed loading. Indirect F is not
+claimed forbidden, ordinary APIs are unchanged, and external-stream
+loading/preservation remains incomplete.
+
+The [decoded xref row-extent guard](spec-backlog.md#2026-11-05-exact-decoded-cross-reference-row-extents)
+requires exactly the rows declared by Index/Size and W before publishing
+an index. Surplus decoded bytes now trigger explicit recovery; physical
+EOL outside Length remains supported. Matched performance uncertainty
+and a rejected LZW optimization are retained; wider framing, metadata
+and parser parity remain open.
+
+The [self-limiting xref filter guard](spec-backlog.md#2026-11-05-self-limiting-cross-reference-filter-completion)
+reuses strict ASCIIHex/ASCII85/RunLength/Flate/LZW decoding and explicitly
+recovers malformed completion, checksums, padding and encoded suffixes.
+Ordinary partial recovery remains intact. Matched benchmarks retain
+measured validation costs; full extent/framing/xref parity is not claimed.
+
+The [xref filter-schema guard](spec-backlog.md#2026-11-05-cross-reference-filter-metadata-schemas)
+reuses strict metadata parsing so malformed names/parameter shapes and
+misaligned known nondefault parameters explicitly recover rather than
+silently producing a clean index. Ordinary recovery/default compatibility
+remain intact; broader metadata stays open. The later scoped
+self-limiting-codec completion guard is described above.
+
+The [xref decode-completion guard](spec-backlog.md#2026-11-05-unfinished-cross-reference-decode-pipelines)
+prevents remaining image-codec bytes and skipped later stages from being
+used as a clean index. Unsupported decoding takes explicit recovery;
+ordinary image APIs remain unchanged. Actual Core image decoding,
+wider extent/framing and xref parity remain open. The later strict
+self-limiting-codec guard is described above.
+
+The [encoded xref metadata guard](spec-backlog.md#2026-11-05-direct-encoded-cross-reference-filter-metadata)
+requires direct standard top-level Filter/DecodeParms rather than silently
+ignoring unresolved references before index construction. Direct defaults,
+unused unencoded parameters and ordinary indirect metadata remain supported;
+nested metadata and wider filter schemas remain separate work.
+
+The [xref Crypt-filter guard](spec-backlog.md#2026-11-05-prohibited-cross-reference-crypt-filter)
+routes prohibited Crypt stages through explicit recovery rather than silently
+accepting their rows. Allowed xref filters and ordinary Crypt recovery remain
+unchanged; permissive reference-reader disagreement and broader xref
+metadata/encryption limits are retained.
+
+The [compressed-reference generation guard](spec-backlog.md#2026-11-05-compressed-reference-generation-bounds)
+rejects recognized member references above 65,535 while preserving valid
+signed/padded spellings and ordinary-reader recovery. Reference-reader
+null substitution differs from strict member rejection; this does not
+complete generation-lifecycle or generic-parser parity.
+
+The [typed alignment guard](spec-backlog.md#2026-11-05-integer-types-in-conditional-filter-alignment)
+rejects noninteger recognized Predictor/LZW EarlyChange values in strict
+misaligned multi-filter metadata, including discarded dictionary bypasses.
+Resolved-null defaults, filter-specific handling, aligned lazy resolution
+and ordinary recovery remain intact; broader parameter-schema parity stays open.
+
+The [temporary event-state correction](spec-backlog.md#2026-11-05-temporary-optional-content-event-overlays)
+applies viewer Print/Export recommendations over manual/current View state
+without persisting temporary changes. Missing recommendations retain that
+state across shared-state rendering and direct interpretation. Caller-supplied
+zoom/context, measured fallback cost and standalone printing-policy limits
+are explicit; this is not complete optional-content lifecycle parity.
+
+The [conditional parameter-alignment guard](spec-backlog.md#2026-11-05-conditional-nondefault-filter-parameter-alignment)
+rejects strict multi-filter metadata with mismatched known nondefault
+Flate/LZW parameters, preserving ordinary recovery and default-only
+compatibility forms. Detection is stage-aware and explicitly not complete
+parameter-schema validation; permissive reference-reader disagreement is retained.
+
+The [measured LZW dictionary change](spec-backlog.md#2026-11-05-measured-lzw-dictionary-allocation-removal)
+replaces per-entry byte arrays with pooled output-offset/length pairs,
+preserving strict completion and ordinary recovery. Matched decoded-output
+benchmarks report scoped timing/allocation improvements and retained-pool
+limits, not full filter or PDF-spec parity.
+
+The [radio-group inheritance correction](spec-backlog.md#2026-11-05-resolved-null-radio-group-inheritance)
+resolves named RBGroups before applying omission defaults, preserving
+explicit empty-array overrides. It also records the distinction between
+writer-normalized null inputs and independently encoded raw-reference controls.
+
+The [intent-participation correction](spec-backlog.md#2026-11-05-optional-content-intent-participation)
+keeps layer ON/OFF state separate from configuration intent matching across
+marked content, Forms, images and annotations. Nonmatching groups have no
+contribution to membership policies or nested expressions; empty intent
+selection makes valid optional content visible. Broader lifecycle/schema
+parity remains open, and measured default-path overhead is reported explicitly.
+
+The [null visibility-expression fallback](spec-backlog.md#2026-11-05-null-visibility-expression-fallback)
+treats resolved null VE entries as absent and uses membership policy.
+Real expressions still take precedence; invalid non-null expressions retain
+their existing diagnosed disposition and traversal limits.
+
+The [membership-policy optimization](spec-backlog.md#2026-11-05-membership-policy-allocation-removal)
+preserves four-policy/null-member behavior and all-member diagnostics while
+removing temporary lists. Matched interpreter benchmarks retain exact
+inputs, output counts and allocation evidence; this is not full-render timing.
+
+The [single-operand visibility-expression correction](spec-backlog.md#2026-11-05-single-operand-visibility-expressions)
+accepts And/Or with one operand as required by 8.11.2.2. Empty expressions
+and over-budget traversal retain their existing diagnosed/hidden behavior.
+Native controls follow the primary rule; the differing MuPDF output is
+recorded rather than counted as equivalent reference confirmation.
+
+The [optional-content recommendation correction](spec-backlog.md#2026-11-05-optional-content-usage-recommendations)
+conjoins selected categories across applications, lets in-range Zoom enable
+an initially OFF group, and permits categories independent of event names.
+Current View/manual state is retained when no temporary Print/Export
+recommendation is available, as detailed in the later event-state correction.
+The [corrected default-configuration controls](spec-backlog.md#2026-11-05-conforming-optional-content-default-controls)
+use BaseState ON plus an OFF array, as Table 101 requires; earlier event
+timings are retained but no longer labelled valid default-config controls.
+
+The [optional-content application selection correction](spec-backlog.md#2026-11-05-optional-content-application-group-selection)
+applies automatic usage rules only to groups selected by the application's
+OCGs array. Omitted/null/empty selection affects no groups; invalid non-array
+entries are diagnosed rather than treated as selecting all groups.
+
+The [optional-content zoom boundary correction](spec-backlog.md#2026-11-05-optional-content-upper-zoom-boundary)
+uses Table 102's half-open range, min <= zoom < max, in shared state/render
+visibility evaluation. Exact upper-bound content is now OFF; lower inclusion
+is retained. Temporary Print/Export fallback is detailed in the later
+event-state correction above.
+
+The [strict marker extent correction](spec-backlog.md#2026-11-05-strict-ascii-and-runlength-input-extent)
+requires ASCIIHex/ASCII85/RunLength EOD to finish logical filter input before
+object-stream publication. Ordinary suffix recovery and the physical EOL
+outside Length remain supported. Reference readers accept the retained
+negatives permissively; their acceptance does not override stream-extent rules.
+
+The [single-filter array correction](spec-backlog.md#2026-11-05-single-filter-array-parameters)
+applies a parameter dictionary to a one-element Filter array in ordinary and
+strict decoding, including resolved metadata. Nondefault predictor bytes now
+decode correctly; accepted default/compatibility forms remain unchanged.
+MuPDF's differing result is recorded against the primary Table 5 requirement,
+not counted as reference agreement. Wider parameter/cardinality and complete
+filter conformance remain open.
+
+The [exact Flate extent follow-up](spec-backlog.md#2026-11-05-exact-flate-input-extent)
+reserves only the last source byte from bulk reads and requires completed
+inflation at exactly the input length. Native checksum validation now replaces
+the redundant managed Adler scan; corrupt-trailer, read-boundary and recovery
+controls remain. An initial four-byte boundary and the final one-byte boundary
+are measured separately. Ordinary recovery is unchanged; complete filter/spec
+parity is not claimed.
+
+The [completed Flate guard](spec-backlog.md#2026-11-05-completed-flate-inflation)
+rejects matching-checksum inputs whose inflater still needs bytes at EOF.
+Complete multiblock streams and ordinary partial recovery remain supported,
+without a second bit scan or process-global compression setting. Its buffered
+consumption gap is addressed by the follow-up above.
+
+The [strict LZW extension](spec-backlog.md#2026-11-05-strict-lzw-code-streams)
+requires initial clear, completed EOD, zero final-byte padding and valid
+dictionary references before object-stream publication. Both EarlyChange modes,
+9-12-bit transitions, full-table resets and the next-entry special case remain
+supported; ordinary recovery is unchanged. Strict paths reject invalid parameter
+types and dictionary growth beyond entry 4095. This is bounded code-stream
+validation, not complete LZW/filter or full-spec parity.
+The [LZW extent follow-up](spec-backlog.md#2026-11-05-lzw-end-of-data-extent)
+also rejects complete encoded bytes after EOD's final padded byte, preserving
+all eight valid byte alignments and ordinary recovery. This checks logical
+pipeline input, not the optional physical EOL preceding endstream.
+
+The [object-stream strict-filter path](spec-backlog.md#2026-11-05-object-stream-strict-filter-decoding)
+uses existing ASCIIHex/ASCII85/RunLength and zlib/predictor checks before
+publishing members; ordinary partial recovery is unchanged. Its initial
+bounded managed Adler accumulation is superseded by native checksum validation
+in the exact-extent follow-up above.
+Native/reference differences, retained initial/final performance costs and
+unchanged corpus JSON are recorded. Full codec/parameter, cardinality and
+resource-budget parity remain incomplete.
+
+The [object-stream external-payload guard](spec-backlog.md#2026-11-05-object-stream-external-payload-containment)
+prevents inline member bytes from substituting for non-null F declarations.
+Null/undefined/indirect omission remains supported; no external file is opened.
+Ordinary recovery is unchanged, not claimed conformant for external streams.
+Reference differences, valid-path benchmarks and unchanged corpus JSON are
+recorded. Actual external-file support remains incomplete.
+
+The [object-stream decoder-completion guard](spec-backlog.md#2026-11-05-object-stream-decoder-completion)
+prevents parsing encoded bytes as members when the decoder returns a remaining
+image codec. Ordinary image bytes/codec/parameters remain available to their
+consumer. This is unsupported-decoding containment, not complete codec support
+or a blanket normative image-codec ban. Native/reference differences,
+matched benchmarks and unchanged corpus JSON are recorded.
+
+The [object-stream DecodeParms-type check](spec-backlog.md#2026-11-05-object-stream-decodeparms-value-types)
+requires dictionaries or null for parameter entries, including unused trailing
+entries, and applies the bounded metadata resolver to parameter aliases.
+Nondefault pipeline controls, unchanged ordinary recovery, native/reference
+differences, parameter benchmarks and unchanged corpus JSON are recorded.
+Cardinality/alignment, codec-specific semantics/EOD and resource budgets
+remain separate.
+
+The [object-stream Filter-name check](spec-backlog.md#2026-11-05-object-stream-filter-names)
+requires a resolved name or array of names before publishing members, while
+preserving null omission, valid indirect forms and ordinary-stream recovery.
+Reference-depth controls, native/reference disagreement, matched valid-path
+benchmarks and unchanged corpus JSON are recorded. DecodeParms/EOD consistency,
+external-file/image-codec handling and global resource budgets remain separate.
+
+The [empty Flate encoding correction](spec-backlog.md#2026-11-05-complete-empty-flate-encoding)
+emits a complete zlib stream for empty public-encoder input, annotation
+attachments and sample blank-page/Form/embedded-file streams. Nonempty bytes
+and raw unfiltered empty streams are preserved. Independent zlib EOD checks,
+native/reference differences, encoder benchmarks and unchanged corpus JSON
+are recorded; exhaustive filter consistency remains separate.
+
+The [encryption-dictionary-reference-chain check](spec-backlog.md#2026-11-05-encryption-dictionary-reference-chains)
+rejects compressed terminal dictionaries hidden by uncompressed aliases and
+preserves the terminal dictionary's unencrypted bytes/cache identity.
+Independent source-byte controls, reference differences and unchanged corpus
+JSON are recorded. Global forbidden-object inventory and exhaustive encryption
+conformance remain separate.
+
+The [compressed Length-reference-chain check](spec-backlog.md#2026-11-05-compressed-length-reference-chains)
+checks each resolved reference identity before object-stream member publication,
+preventing uncompressed intermediaries from hiding a compressed Length integer.
+The existing depth limit and ordinary-stream behavior remain unchanged. Nine
+changed native negatives, three stable negatives, reference disagreement and
+unchanged corpus JSON are recorded; global forbidden-object inventory remains
+separate.
+
+The [object-stream endobj-grammar check](spec-backlog.md#2026-11-05-object-stream-endobj-grammar)
+requires the complete closing keyword after whitespace/comments, rejecting
+intervening values, keyword prefixes and missing markers. Valid-boundary Type
+resolution stays lazy; ordinary-stream recovery remains permissive. Native
+differences and unchanged corpus JSON are recorded. Generic indirect-object
+grammar, filter EOD consistency and resource budgets remain separate.
+
+The [object-stream opening-EOL check](spec-backlog.md#2026-11-05-object-stream-opening-eol)
+requires LF or CRLF after stream, rejecting CR-only and disguised counted
+header-prefix alternatives before decryption. Valid empty/encrypted containers
+and ordinary-stream recovery remain supported. Native differences and unchanged
+corpus JSON are recorded. Object endobj grammar, filter EOD consistency and
+resource budgets remain separate.
+
+The [object-stream endstream-boundary check](spec-backlog.md#2026-11-05-object-stream-endstream-boundaries)
+requires the complete keyword at Length, allowing only one uncounted LF, CR or
+CRLF. Counted trivia and ordinary-stream recovery remain supported; EOF and
+keyword prefixes do not suffice. Exact parent controls, reference disagreement
+and unchanged corpus JSON are recorded. Stream-opening EOL, object endobj
+grammar, filter EOD consistency and resource budgets remain separate.
+
+The [recovered object-stream byte-count check](spec-backlog.md#2026-11-05-recovered-object-stream-byte-counts)
+rejects silent replacement of declared integer Length with different scanned
+bytes, before decryption. AES controls distinguish physical and decrypted
+extents; schema-only Length-22 positives are corrected to the actual 23 bytes.
+Native differences, the controlled signature-fixture race and unchanged corpus
+JSON are recorded. Normal terminator padding, filter EOD and generic strict
+stream parsing remain separate.
+
+The [required object-stream Length-type check](spec-backlog.md#2026-11-05-required-object-stream-length-type)
+requires resolved non-negative integer metadata before member publication,
+without making ordinary stream recovery strict. Earlier compressed-Length
+recovery ordering is now atomic. Native disagreement and unchanged corpus
+JSON are recorded; exact physical byte-count validation remains separate.
+
+The [cyclic indirect stream-Length loading check](spec-backlog.md#2026-11-05-cyclic-indirect-stream-length-loading)
+rejects active physical-object reentry, eliminating six isolated baseline
+stack overflows while preserving direct/indirect valid stream bytes.
+Reference recovery differences and unchanged corpus JSON are recorded;
+complete Length schema, general reference cycles and depth budgets remain separate.
+
+The [recursive object-stream index-metadata check](spec-backlog.md#2026-11-05-recursive-object-stream-index-metadata)
+bounds reentry while building a container index, preserving ordinary indirect
+metadata. Two isolated pre-fix process overflows now terminate explicitly.
+Reference differences and unchanged corpus JSON are recorded; general
+reference cycles, Length recursion and dependency-depth budgets remain separate.
+
+The [object-stream container self-identity check](spec-backlog.md#2026-11-05-object-stream-container-self-identities)
+rejects the container's own number before member publication, preserving
+uncompressed recovery identities. Safe index-state controls, native
+disagreement and unchanged corpus JSON are recorded. Cross-stream cycles,
+metadata reentrancy, global inventory and lifecycle rules remain separate.
+
+The [compressed member regular-token-start check](spec-backlog.md#2026-11-05-compressed-member-regular-token-starts)
+rejects requested offsets splitting consecutive regular bytes, without
+eagerly parsing adjacent members. Valid delimiter adjacency remains supported.
+Exact reference suffix values and unchanged corpus JSON are recorded;
+complete source alignment and resource budgets remain separate.
+
+The [padded compressed reference-generation check](spec-backlog.md#2026-11-05-padded-compressed-reference-generations)
+applies the existing supported magnitude limit after leading zeros rather
+than rejecting source width. Exact reference values, long padding and
+unchanged corpus JSON are recorded. Default parsing, complete generation
+range/lifecycle policy and resource budgets remain separate.
+
+The [signed compressed reference-generation check](spec-backlog.md#2026-11-05-signed-compressed-reference-generations)
+accepts explicitly signed non-negative integer generations in compressed
+values while retaining default lexer behavior and existing digit limits.
+Exact nested reference identities and unchanged corpus JSON are recorded;
+complete range, zero-padding and lifecycle policy remain separate.
+
+The [compressed reference keyword-separator check](spec-backlog.md#2026-11-05-compressed-reference-keyword-separators)
+requires whitespace or a complete comment between a generation and R,
+including nested references. Default lexer recovery remains unchanged.
+Native disagreement and unchanged corpus JSON are recorded; complete
+reference spelling/range policy and global validation remain separate.
+
+The [byte-bounded compressed value parser](spec-backlog.md#2026-11-05-byte-bounded-compressed-value-parsing)
+stops consumption at each member's end, preserving full-buffer default
+lexing. A following-byte token-separation check prevents valid prefixes of
+cut tokens. Exact position controls and unchanged corpus JSON are recorded;
+decoded-buffer budgets, global source alignment and eager validation remain separate.
+
+The [compressed member trailing-comment check](spec-backlog.md#2026-11-05-compressed-member-trailing-comment-boundaries)
+bounds trailing trivia at the member end and rejects comments crossing into
+the next member. Complete comments, whitespace, lazy access and existing EOF
+comment support remain. Native disagreement and unchanged corpus JSON are
+recorded; full byte-limited parsing and global source alignment remain separate.
+
+The [positive compressed object-number check](spec-backlog.md#2026-11-05-positive-compressed-object-numbers)
+rejects reserved zero identities before publishing a complete member index,
+including later zero entries during recovery. Positive numbers and empty
+streams remain supported. Native reference differences and unchanged corpus
+JSON are recorded; general indirect-object and lifecycle validation remain separate.
+
+The [recovery object-stream generation check](spec-backlog.md#2026-11-05-recovery-object-stream-container-generations)
+requires generation-zero container entries and headers before indexing
+compressed members. Recoverable uncompressed identities and existing ordinary
+stream compatibility are preserved. Reference differences and unchanged corpus
+JSON are recorded. Eager whole-file and free-list lifecycle checks remain separate.
+
+The [object-stream Extends check](spec-backlog.md#2026-11-05-object-stream-extends-collection-links)
+iteratively validates stream identity, type and acyclic collection links
+before member indexing, without parsing ancestor members or merging sets.
+Native disagreement and unchanged corpus JSON are recorded. Complete ancestor
+schemas, eager whole-file conformance and resource budgets remain separate.
+
+The [object-stream header padding check](spec-backlog.md#2026-11-05-object-stream-header-padding)
+permits only whitespace and completed comments between header pairs and First,
+preventing ignored tokens or a comment crossing the first member boundary.
+Lazy isolation, valid padding and corpus JSON remain unchanged. Reference
+disagreements, remaining source alignment and resource limits are explicit.
+
+The [first compressed member offset check](spec-backlog.md#2026-11-05-first-compressed-member-relative-offset)
+requires the initial header offset to be zero relative to First before
+lazy/recovery indexing. Existing zero-offset leading trivia remains supported.
+Native disagreement and unchanged corpus JSON are recorded. Complete source
+boundary checks, header padding and resource budgets remain separate.
+
+The [compressed encryption dictionary check](spec-backlog.md#2026-11-05-compressed-encryption-dictionary-references)
+rejects a direct trailer Encrypt reference to a compressed entry before
+authentication. Valid uncompressed dictionaries retain password behavior.
+Native disagreement, repair diagnostics and unchanged corpus JSON are recorded.
+Reference chains, global inventory, complete encryption schema and budgets
+remain separate.
+
+The [object-stream compressed Length check](spec-backlog.md#2026-11-05-object-stream-compressed-length-references)
+rejects direct Length references to compressed objects before publishing an
+affected member index, including own-container members. Valid uncompressed
+indirect lengths and ordinary streams with compressed lengths remain supported.
+Native disagreement, recovery ordering and unchanged corpus JSON are recorded.
+Global forbidden-object inventory, reference chains and budgets remain separate.
+
+The [object-stream header integer check](spec-backlog.md#2026-11-05-object-stream-header-integer-spellings)
+uses scoped numeric spelling checks before lazy/recovery header indexing.
+Positive integer spellings and atomic recovery remain supported; native
+reference disagreements and unchanged corpus JSON are recorded. Outer
+dictionary source spelling, complete offset semantics and budgets remain separate.
+
+The [compressed name escape check](spec-backlog.md#2026-11-05-compressed-name-escape-grammar)
+rejects malformed hexadecimal escapes and decoded null bytes, including
+nested values and keys. Valid decoded names and default lexer recovery remain
+supported; native/reference limits and unchanged corpus JSON are recorded.
+Name byte identity, parser-wide strictness and resource limits remain separate.
+
+The [compressed numeric token check](spec-backlog.md#2026-11-05-compressed-numeric-token-spelling)
+rejects repeated signs, digitless periods and truncated numeric tokens in
+member-only lexing. Valid ordinary values and default lexer recovery remain
+supported; native/reference limits and unchanged corpus JSON are recorded.
+Numeric precision, name/header grammar and resource limits remain separate.
+
+The [compressed dictionary entry check](spec-backlog.md#2026-11-05-compressed-dictionary-entry-grammar)
+requires name keys, values and unique decoded keys before caching. Valid nulls,
+key scopes, references and default lexer recovery remain supported. Native
+controls, reference limits and unchanged corpus JSON are recorded. Numeric/name
+grammar, parser-wide strictness and resource limits remain separate.
+
+The [compressed hexadecimal grammar check](spec-backlog.md#2026-11-05-compressed-hexadecimal-string-grammar)
+rejects nonhexadecimal/nonwhitespace bytes and missing closers in member-only
+lexing. Positive decoded bytes, whitespace and odd-nibble padding are pinned.
+Default lexer recovery and corpus JSON remain unchanged; reference limits,
+remaining dictionary/numeric/name grammar and resource limits are explicit.
+
+The [compressed literal string termination check](spec-backlog.md#2026-11-05-compressed-literal-string-termination)
+rejects unbalanced strings in the member-only lexer mode, preserving exact
+positive string bytes and default lexer recovery. Native/reference limits
+and unchanged corpus JSON are recorded. Hexadecimal and dictionary/numeric/name
+grammar, byte-limited parsing and resource budgets remain separate.
+
+The [compressed container closer check](spec-backlog.md#2026-11-05-compressed-container-closing-delimiters)
+requires array/dictionary closing delimiters in an internal member-only lexer
+mode. Default lexer behavior and lazy member isolation remain unchanged.
+Native controls, reference limits and unchanged corpus JSON are recorded.
+Skipped keys, missing values, string grammar and resource budgets remain separate.
+
+The [compressed nested-value check](spec-backlog.md#2026-11-05-compressed-nested-object-values)
+rejects retained keywords inside arrays and dictionary values before caching,
+without resolving nested references or changing content-stream operators.
+Native controls, reference limits and unchanged corpus JSON are recorded.
+Skipped keys, missing values/delimiters and parser-wide budgets remain separate.
+
+The [required object-stream Type check](spec-backlog.md#2026-11-05-required-object-stream-type)
+validates resolved ObjStm names before decoding/indexing and uses the same
+classification during recovery. Valid indirect names are recovered; wrong
+types cannot supply members. Reentrant header dependency handling, native
+reference differences and unchanged corpus JSON are recorded. Complete
+metadata dependencies, collections and resource limits remain separate.
+
+The [compressed member trailing-token check](spec-backlog.md#2026-11-05-compressed-member-trailing-tokens)
+requires only whitespace/comments after a parsed value up to its recorded
+end. Extra values/keywords/closers cannot silently disappear before caching;
+other members remain independently lazy. Reference differences and unchanged
+corpus JSON are recorded. Complete delimiters, recursive container grammar
+and resource limits remain separate.
+
+The [compressed keyword/missing-value check](spec-backlog.md#2026-11-05-compressed-keyword-and-missing-values)
+requires an actual object value before caching rather than accepting a
+keyword or substituting null at EOF. Literal null, names, reals and booleans
+remain supported; other members remain lazy. Reference differences and
+unchanged corpus JSON are recorded. Recursive container grammar, complete
+delimiter/trailing-token validation and budgets remain separate.
+
+The [compressed stream-value check](spec-backlog.md#2026-11-05-forbidden-compressed-stream-values)
+rejects dictionary-plus-stream syntax within a member boundary before it
+can be cached as a dictionary. Ordinary names, strings, Type entries and
+comments remain supported; other members remain lazy. Reference differences
+and unchanged corpus JSON are recorded. Remaining forbidden objects,
+delimiter/trailing-token validation and budgets are separate.
+
+The [compressed member consumption check](spec-backlog.md#2026-11-05-compressed-member-consumption-boundaries)
+records next-offset boundaries and rejects a parsed value that consumes a
+following member before caching. Other members remain independently lazy;
+reference disposition differences and unchanged corpus JSON are recorded.
+This is post-parse validation, not a bounded lexer or complete delimiter/
+trailing-token validation.
+
+The [compressed standalone-reference correction](spec-backlog.md#2026-11-05-compressed-standalone-reference-values)
+rejects a parsed member that is solely a PdfRef before caching, while
+retaining references nested inside arrays/dictionaries and lazy isolation
+of other members. Explicit rejection/reference differences and unchanged
+corpus JSON are recorded. Complete member boundaries, stream-valued members
+and remaining object-stream/resource rules are separate.
+
+The [object-stream member offset check](spec-backlog.md#2026-11-05-object-stream-member-offset-order)
+requires strictly increasing offsets in both normal and recovery indexing,
+without requiring object numbers to be sorted or eagerly parsing bodies.
+Native recovery differences and unchanged corpus JSON are recorded.
+First-offset semantics, body/value rules and budgets remain separate.
+
+The [object-stream recovery header correction](spec-backlog.md#2026-11-05-object-stream-recovery-header-identity)
+shares existing lazy-loader number/offset/duplicate validation and installs
+members only after the complete header passes. Malformed recovery headers
+cannot wrap identities or leave a partial index; body parsing remains lazy.
+Native recovery differences and unchanged corpus JSON are recorded.
+Increasing offsets and remaining object-stream/resource rules are separate.
+
+The [object-stream dictionary bounds check](spec-backlog.md#2026-11-05-object-stream-dictionary-integer-bounds)
+requires resolved integer N/First metadata before narrowing in both lazy
+loading and recovery. Invalid metadata cannot reinstall compressed members;
+valid indirect integers and on-demand body isolation remain supported.
+Native reference differences and unchanged corpus JSON are recorded.
+Increasing offsets, full recovery-header validation and budgets remain
+separate.
+
+The [classic xref uniqueness check](spec-backlog.md#2026-11-05-classic-xref-same-section-uniqueness)
+explicitly repairs duplicate numbers within a single section. Disjoint
+subsections may still appear in any order; repeated numbers across update
+sections retain newest-revision precedence. Corpus JSON is unchanged and
+MuPDF recovery/format differences are recorded. Complete free-list and
+resource validation remain separate.
+
+The [classic xref status check](spec-backlog.md#2026-11-05-classic-xref-entry-status-tokens)
+requires exact n/f status keywords in the fallback parser instead of
+silently treating unknown keywords as free. Native status-isolated controls
+agree with MuPDF and corpus JSON is unchanged. Whitespace compatibility,
+full free-list semantics and generation maxima remain separate.
+
+The [classic xref generation storage check](spec-backlog.md#2026-11-05-classic-xref-generation-storage)
+prevents fallback generation values from wrapping before indexing. Invalid
+values explicitly repair; fixed-format and lossless compatibility behavior
+remain unchanged. Native reference differences and unchanged corpus JSON
+are recorded. This is not complete classic syntax/free-list validation or
+enforcement of the normative generation maximum.
+
+The [cross-reference chain offset correction](spec-backlog.md#2026-11-05-cross-reference-chain-offset-types)
+requires present Prev/XRefStm offsets to be direct in-range integers.
+Malformed values explicitly repair instead of truncating or silently
+omitting index sections; null, valid updates and supplemental lookup remain
+unchanged. Official Table 15 correction provenance, native reference
+disagreements and unchanged corpus JSON are recorded. Complete cycle/hybrid
+schema and resource handling remain separate.
+
+The [xref-stream entry identity correction](spec-backlog.md#2026-11-05-xref-stream-entry-storage-identity)
+decodes eight-byte fields losslessly before checking destination ranges.
+Known generations, offsets, containers and indices cannot wrap into other
+identities; unknown entry types retain null behavior. Native recovery and
+MuPDF disagreements are documented; corpus JSON is unchanged. Normative
+generation maxima, free lists and full field semantics remain separate.
+
+The [xref-stream row completeness check](spec-backlog.md#2026-11-05-xref-stream-declared-row-completeness)
+rejects short decoded data before installing a partial section. Declared
+rows are compared without attacker-sized allocation; split subsections and
+surplus-byte compatibility are retained. Corpus JSON is unchanged. Entry
+fields, free lists and resource budgets remain separate.
+
+The [xref-stream raw W correction](spec-backlog.md#2026-11-05-xref-stream-raw-field-widths)
+requires integer byte widths before narrowing. Zero-width defaults,
+eight-byte fields and existing extension strides are retained as scoped
+compatibility behavior. Invalid widths explicitly repair; corpus JSON is
+unchanged and reference disagreements are recorded. Complete row/entry
+validation and budgets remain separate.
+
+The [xref-stream Index/Size correction](spec-backlog.md#2026-11-05-xref-stream-index-and-size-ranges)
+checks integer types, paired ascending non-overlapping ranges and Size
+bounds before narrowing object numbers. Invalid native cases repair
+explicitly; missing/null Index and valid controls are unchanged. Pinned
+corpus JSON is unchanged; MuPDF recovery disagreements are recorded.
+Complete entry schema, exact Size across updates and resource budgets
+remain separate.
+
+The [classic xref subsection range check](spec-backlog.md#2026-11-05-classic-xref-subsection-ranges)
+prevents negative or overflowing start/count ranges from wrapping into
+unrelated object numbers in either entry path. Invalid native ranges now
+repair explicitly; supported sparse/empty behavior and corpus JSON remain
+unchanged. This is the current int implementation boundary, not a normative
+PDF maximum or complete xref-stream/schema/resource validation.
+
+The [compressed member identity correction](spec-backlog.md#2026-11-05-compressed-member-index-and-container-identity)
+matches member number/index before cached parsing, rejects duplicate header
+numbers and requires a generation-zero container. Seven native controls
+retain two positives, explicitly repair three index errors and reject two
+ambiguous/invalid identities. MuPDF accepts those invalid controls; repair/
+rejection differences are recorded. Corpus JSON is unchanged. Complete
+object-stream/xref schema and parser-wide budgets remain separate.
+
+The [object header generation check](spec-backlog.md#2026-11-05-object-header-generation-consistency)
+compares reached uncompressed headers against xref generations, using
+explicit parse errors and existing repair. Four native mismatches no
+longer resolve the old-generation reference; MuPDF's more lenient result
+is recorded as a disagreement. Corpus JSON is unchanged. Complete xref/
+compressed-member identity validation is not claimed.
+
+The [generation-aware reference correction](spec-backlog.md#2026-11-05-indirect-reference-generations-and-incremental-preservation)
+honors current xref generations before/after caching and repair, with a
+shared bounded-consumer one-hop API. Editor incremental writes preserve
+headers, xrefs, references and encryption generations instead of silently
+resetting them. Four stale native targets become null; MuPDF accepts them,
+an explicit reference disagreement. Corpus JSON is unchanged. The legacy
+low-level writer requires its xref-aware overload for nonzero generations;
+full header/xref integrity and malformed-graph rewrite normalization remain open.
+
+The [indirect reference range guard](spec-backlog.md#2026-11-05-indirect-reference-object-number-overflow)
+rejects recognized references above the current int object-number limit
+instead of wrapping to another object. Two native catalog aliases are
+eliminated; MuPDF uses null rather than FreeDF's explicit rejection.
+Ordinary large numbers remain supported and corpus JSON is unchanged.
+This is not a normative PDF maximum or parser-wide range coverage.
+
+The [local choice option shape check](spec-backlog.md#2026-11-05-primary-local-choice-option-shape)
+checks terminal Ch local Opt raw string/exact two-string-pair shape with
+bounded references and shared work. Eleven native controls retain four
+raw-shape positives; seven primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Encoding, inherited options and
+selected-value matching remain separate.
+
+The [explicit local choice index bound check](spec-backlog.md#2026-11-05-primary-explicit-local-choice-index-bounds)
+checks reached I integers against explicitly resolved local Opt array length,
+with separate option-resolution incompleteness. Eight native controls retain
+four bounded-range positives; four primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Missing/inherited options, full option
+schema and V precedence remain separate.
+
+The [shared PDFDocEncoding text-string correction](spec-backlog.md#2026-11-05-shared-pdfdocencoding-text-string-decoding)
+replaces Latin-1 fallback for forty defined text-string codes across metadata,
+field values/names and ActualText, preserving raw bytes, glyph interpretation
+and existing Unicode BOM handling. Forty native PDFs produce 160 corrected
+metadata outputs matching MuPDF; UA corpus JSON is unchanged. Undefined-byte
+reader leniency, full text validation and Unicode language escapes remain separate.
+
+The [primary terminal field entry type checks](spec-backlog.md#2026-11-05-primary-terminal-field-entry-types)
+check local T raw strings and AA dictionaries on recognized terminal fields
+with explicit unresolved/bounded diagnostics. Fifteen native controls retain
+five raw-type positives; ten primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Nonterminal traversal, name syntax/
+encoding and complete action schema remain separate; actions stay inert.
+
+The [primary signature-lock permission type check](spec-backlog.md#2026-11-05-primary-signature-lock-permission-type)
+checks local terminal Sig Lock/P raw number type independently of Fields.
+Nine native controls retain five raw-type positives; four primary negatives
+remain reference-accepted. Corpus and UA-1 JSON are unchanged. Permission
+ranges, incremental-update policy and signing enforcement remain separate.
+
+The [primary certificate-seed ASCII-array checks](spec-backlog.md#2026-11-05-primary-certificate-seed-ascii-arrays)
+check local terminal Sig SV/Cert KeyUsage and SignaturePolicyCommitmentType
+raw arrays and 7-bit string bytes, with shared item/byte limits and explicit
+incompleteness. Eighteen native controls retain eight raw-shape positives;
+ten primary negatives remain reference-accepted. Corpus and UA-1 JSON
+are unchanged. Payload semantics, flags and signing enforcement remain separate.
+
+The [primary signature-seed scalar type checks](spec-backlog.md#2026-11-05-primary-signature-seed-scalar-types)
+check local terminal Sig SV/V integers and SV/AddRevInfo booleans with
+independent unresolved-reference diagnostics. Twelve native controls
+retain six shape positives; six primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Capability ranges/support, flags,
+revocation behavior and signing enforcement remain separate.
+
+The [primary signature-seed DigestMethod shape check](spec-backlog.md#2026-11-05-primary-signature-seed-digest-array-shape)
+checks local terminal Sig seed raw name arrays with independent
+reference/work incompleteness. Nine native controls retain five shape
+positives; four primary negatives remain reference-accepted. Corpus and
+UA-1 JSON are unchanged. Digest vocabulary/extensions, flags,
+credential applicability and signing enforcement remain separate.
+
+The [primary signature-lock Fields shape check](spec-backlog.md#2026-11-05-primary-signature-lock-field-name-array-shape)
+checks local terminal Sig Lock Fields raw string-array types and required
+presence for known Include/Exclude actions with independent incompleteness.
+Twenty-one native controls retain seven shape/presence positives; fourteen
+primary negatives remain reference-accepted. Corpus and UA-1 JSON are
+unchanged. Text encoding/name identity, full lock schema, permissions
+and signature enforcement remain separate.
+
+The [primary choice-field index shape check](spec-backlog.md#2026-11-05-primary-choice-field-index-array-shape)
+checks local terminal Ch I arrays for integer/nonnegative/nondecreasing
+shape with explicit reference/work incompleteness. Eleven native controls
+retain five shape positives; six primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Required presence, Opt range,
+duplicate-selection semantics, V consistency and full field traversal
+remain separate.
+
+The [primary DA Tf operand-count check](spec-backlog.md#2026-11-05-primary-default-appearance-tf-operand-count)
+adds a known wrong-count finding independently of resource-matching
+uncertainty. Twenty-one native controls retain nine positives; twelve
+existing negatives gain the diagnostic and remain reference-accepted.
+Corpus and UA-1 JSON are unchanged. Complete operand types and grammar
+remain separate.
+
+The [primary DA font-resource check](spec-backlog.md#2026-11-05-primary-default-appearance-font-resource-matching)
+matches recognizable Tf font names against bounded AcroForm DR/Font
+lookup, with independent incomplete results for ambiguous operands/resources.
+Twenty-four isolated native controls retain nine positives; fifteen
+primary negatives remain reference-accepted. Three existing corpus
+negatives gain a missing-/Helv finding without verdict changes; UA-1 JSON
+is unchanged. Complete grammar/font schema and layout remain separate.
+
+The [primary DA text-font presence check](spec-backlog.md#2026-11-05-primary-default-appearance-text-font-presence)
+requires a top-level Tf in completely inspected known defaults, without
+claiming absence after an incomplete scan. Eighteen native controls
+retain six positives; twelve primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are wholly unchanged. Operand arity/types, required
+DA, font resources, complete grammar and layout remain separate.
+
+The [primary DA text-matrix cardinality check](spec-backlog.md#2026-11-05-primary-default-appearance-text-matrix-cardinality)
+limits known defaults to one top-level Tm, preserving operand/comment
+distinctions, shared byte/token bounds and independent incomplete findings.
+Eighteen native controls retain fifteen positives; three primary negatives
+remain reference-accepted. Corpus and UA-1 JSON are wholly unchanged.
+Complete operator syntax, required Tf/presence, font matching and layout
+remain separate; the permissive lexer is not a strict grammar validator.
+
+The [primary DA byte-string type check](spec-backlog.md#2026-11-05-primary-default-appearance-byte-string-types)
+checks document-wide defaults and inherited terminal Tx defaults with
+explicit independent incomplete handling. Twenty-four native controls
+retain six positives; eighteen primary negatives remain reference-accepted.
+Corpus and UA-1 JSON are wholly unchanged. Required presence, choice/button
+DA rules, operator grammar, font resources and layout remain separate.
+
+The [primary inherited MaxLen shape check](spec-backlog.md#2026-11-05-primary-inherited-text-field-maxlen-shape)
+requires terminal Tx MaxLen metadata to be a non-negative integer, reusing
+bounded inherited V lookup and separate incomplete findings. Twenty native
+controls retain six positives; fourteen primary negatives remain
+reference-accepted. Corpus and UA-1 JSON are wholly unchanged. Actual
+text-length enforcement, complete field schema/traversal and rich/layout
+semantics remain separate.
+
+The [primary text-field V type check](spec-backlog.md#2026-11-05-primary-text-field-v-declared-types)
+requires resolved non-null terminal Tx values to be strings/streams
+independently of RV, preserving bounded inheritance and existing rich-value
+findings. Twenty native controls retain five clean positives; seven newly
+rejected no-RV negatives remain reference-accepted. Pre-existing rich
+negative findings, corpus and UA-1 JSON are unchanged. Complete field
+schema/traversal, RV inheritance/layout and MaxLen remain separate.
+
+The [primary class-array item type check](spec-backlog.md#2026-11-05-primary-attribute-class-array-item-types)
+rejects non-name/non-number C items independently of ClassMap/local-A
+lookup, preserving existing explicit null/reference/work findings.
+Eighteen native controls retain eight positives; ten primary negatives
+remain reference-accepted. Corpus and UA-1 JSON are wholly unchanged.
+Numeric revision integrality/ranges/order, ClassMap schema and complete
+element K types remain separate.
+
+The [primary parent-key integer type check](spec-backlog.md#2026-11-05-primary-structure-parent-integer-key-types)
+checks both resolved keys across existing page, annotation, appearance and
+known resource-XObject surfaces, preserving explicit incomplete/conflict
+findings. Thirty-nine native controls retain twelve clean positives; all
+twenty-six type negatives reject, twenty-three remain reference-accepted.
+Three pre-existing PrinterMark negatives are kept separate. Corpus and
+UA-1 JSON are wholly unchanged. Full traversal, key ranges, required-key
+conditions and parent-tree identity remain open.
+
+The [nested appearance resource parent-key check](spec-backlog.md#2026-11-05-primary-nested-appearance-resource-parent-key-exclusivity)
+adds Form/Image resource graphs under direct/state annotation appearances
+using the shared iterative page-resource walker, explicit combined work
+bounds and per-page identity deduplication. Eight native controls retain
+four positives; four primary negatives remain reference-accepted. Corpus
+and UA-1 reports are wholly unchanged. Patterns, soft masks, other stream
+references and full key type/identity remain separate. Earlier summaries
+below retain their delivery-time scope.
+
+The [primary appearance parent-key check](spec-backlog.md#2026-11-05-primary-appearance-structure-parent-exclusivity)
+adds annotation AP N/R/D streams and named states, with shared raw-annotation
+traversal, explicit bounds and stream-identity deduplication. Twelve native
+controls retain six positives; six primary negatives remain reference-accepted.
+Corpus and UA-1 reports are wholly unchanged. Appearance resource graphs,
+patterns, soft masks and full key type/identity remain separate.
+
+The [primary resource XObject parent-key check](spec-backlog.md#2026-11-05-primary-resource-xobject-structure-parent-exclusivity)
+adds Form/Image streams in inherited page and nested Form resource graphs,
+including unused entries, with shared bounds and identity deduplication.
+Twelve native controls retain six positives; six primary negatives remain
+reference-accepted. Corpus and UA-1 reports are wholly unchanged.
+Appearances, patterns, other stream references and full key type/identity
+remain separate.
+
+The [primary annotation parent-key exclusivity check](spec-backlog.md#2026-11-05-primary-annotation-structure-parent-exclusivity)
+adds page Annots dictionaries, including tagging-exempt annotations, using
+the shared page key resolver and explicit bounded raw-array inspection.
+Six native controls retain three positives; three primary negatives remain
+reference-accepted. Corpus and UA-1 reports are wholly unchanged.
+XObjects/appearances and complete key type/identity remain separate.
+
+The [primary page parent-key exclusivity check](spec-backlog.md#2026-11-05-primary-page-structure-parent-exclusivity)
+rejects page dictionaries carrying both non-null StructParent and
+StructParents, preserving explicit reference incompleteness. Six native
+controls have matching reference verdicts; the reference's negative
+predicate is untagged content, not explicit exclusivity. Corpus and UA-1
+reports are wholly unchanged. Annotation/XObject coverage and complete
+key type/parent-tree semantics remain separate.
+
+The [primary default RoleMap shape check](spec-backlog.md#2026-11-05-primary-default-rolemap-declared-shape)
+inspects raw dictionary/name-valued mappings, including unused entries,
+with explicit reference/work incompleteness. Twenty native controls retain
+eight positives; twelve primary negatives remain reference-accepted.
+Corpus and UA-1 reports are wholly unchanged. Role resolution is unchanged;
+global target semantics, RoleMapNS schema and parser-wide bounds remain open.
+
+The [primary NSO namespace-presence check](spec-backlog.md#2026-11-05-primary-nso-attribute-namespace-presence)
+rejects absent/resolved-null NS for known NSO attribute owners, preserving
+explicit incomplete handling and standard-owner value lookup. Twenty-six
+native controls retain eight positives; eighteen primary negatives remain
+reference-accepted. Corpus and UA-1 results are wholly unchanged. Namespace
+type/schema, owner identity and registration remain separate requirements.
+
+The [primary mandatory attribute-owner check](spec-backlog.md#2026-11-05-primary-mandatory-attribute-owner-names)
+requires O names on known attached dictionary/stream attributes in local A
+and used C/ClassMap entries, with separate bounded-inspection errors.
+Referenced class owners are checked even when local values win; undefined
+classes remain empty and unused definitions are not inspected. Sixteen native
+controls retain six positives and reject ten negatives accepted by the
+reference: ten explicit disagreements. Fresh corpus and UA-1 results are
+wholly unchanged. NSO namespaces, semantic owner validity, full attribute
+schema, stream interpretation, revisions and inheritance remain deferred.
+
+The [primary repeated-attribute precedence correction](spec-backlog.md#2026-11-05-primary-repeated-attribute-precedence)
+uses the last specified owned value in local A arrays, ClassMap arrays and
+C class lists, retaining local A precedence and explicit shared bounds.
+List, note and table consumers are covered. Twelve native controls correct
+eight reversed primary outcomes while the reference retains first-wins:
+eight explicit disagreements, not reference confirmation. The fresh corpus
+and UA-1 outputs are wholly unchanged. Full owner/schema, streams, revisions,
+inheritance and NSO namespace semantics remain deferred.
+
+The [primary attribute-class entry check](spec-backlog.md#2026-11-05-primary-attribute-class-entry-type)
+requires C name/array type, retaining optional null/omission and existing
+array/reference boundaries. Fifteen native controls retain eight positives;
+seven newly rejected primary negatives remain accepted by the reference.
+The fresh corpus is wholly unchanged. Complete array syntax, revision
+ordering and ClassMap attribute objects remain outside this slice.
+
+The [primary element child-array size check](spec-backlog.md#2026-11-05-primary-nonempty-element-child-arrays)
+rejects direct/indirect empty element K arrays without changing root arrays,
+optional null/omission or UA-1. Five native controls retain three positives;
+two newly rejected primary negatives remain accepted by the reference.
+Two already-invalid corpus fixtures gain diagnostics not reported by the
+reference; every verdict and UA-1 output is unchanged. Full element-child
+types/identity and ClassMap syntax remain deferred. Separate declared NS
+type controls verify existing rejection, not a new implementation.
+
+The [primary root child-type check](spec-backlog.md#2026-11-05-primary-structure-root-child-types)
+requires root K dictionary/flat dictionary-array shape, retaining existing
+null and bounded-inspection diagnostics. Nine corrected native controls
+retain two positives and an existing integer rejection; six newly rejected
+primary negatives are still accepted by the reference. The fresh corpus is
+wholly unchanged. Complete dictionary identity/schema and element K rules
+remain outside this slice.
+
+The [primary namespace registry check](spec-backlog.md#2026-11-05-primary-namespace-registration-identity)
+requires referenced dictionaries in the root Namespaces array by identity,
+with explicit bounded-inspection errors. Six native controls retain two
+positives and reject four primary negatives accepted by the reference.
+Two already-invalid corpus fixtures gain diagnostics not reported by the
+reference; every verdict and UA-1 result stays unchanged. Full namespace
+shape, RoleMapNS targets and complete traversal remain deferred.
+
+The [primary indirect namespace check](spec-backlog.md#2026-11-05-primary-indirect-element-namespaces)
+rejects direct element NS dictionaries under published PDF 2.0 errata.
+Four native positives have normal reference agreement; the two primary
+negatives trigger reference exceptions and have no usable reference verdict.
+Corpus/UA-1 JSON results are unchanged. Root namespace registration and
+complete namespace dictionary/reference shape remain deferred.
+
+The [primary R revision check](spec-backlog.md#2026-11-05-primary-structure-revision-shape)
+requires non-negative integer values with a separate incomplete-resolution
+error. Eight native controls retain four positives and reject four primary
+negatives accepted by the reference: four explicit primary/profile differences.
+Corpus/UA-1 JSON results are unchanged; revision selection and inheritance
+semantics remain deferred.
+
+The [primary A/C-array null checks](spec-backlog.md#2026-11-05-primary-attribute-and-class-array-nulls)
+reject null attribute/class array items with separate bounded-inspection
+errors. Ten native controls retain four positives and reject six primary
+negatives accepted by the reference: six explicit primary/profile differences.
+Corpus/UA-1 JSON results are unchanged; ClassMap arrays and full revision/
+inheritance/attribute syntax remain deferred.
+
+The [primary K-array null check](spec-backlog.md#2026-11-05-primary-structure-child-array-nulls)
+rejects null child entries under published PDF 2.0 errata, with separate
+bounded-inspection errors. Fifteen native controls retain five positives and
+reject ten primary negatives accepted by the reference: ten explicit
+primary/profile differences, not reference-verified parity. Corpus/UA-1
+JSON results remain unchanged; complete child shape and identity are deferred.
+
+The [heading-cardinality correction](spec-backlog.md#2026-11-05-namespace-resolved-heading-cardinality)
+uses existing resolved limits instead of legacy raw H-child counts.
+Six independent native outcomes agree, correcting two false rejections;
+one redundant corpus diagnostic is removed with exact independent Sect-H
+evidence. Every file verdict and UA-1 output remain unchanged; full grouping
+and heading semantics are not claimed.
+
+The [occupied-column span correction](spec-backlog.md#2026-11-05-occupied-column-table-span-intersections)
+detects ColSpan intersections with active RowSpan carry, preserving the longer
+span after an overlap. Six independent native outcomes agree, correcting
+two missed equal-width intersections. Fresh 435-PDF/870-result corpus output
+is unchanged. Group geometry and full intersection/header algorithms remain deferred.
+
+The [section-cardinality correction](spec-backlog.md#2026-11-05-namespace-resolved-section-cardinality)
+uses existing resolved ISO 32005 limits instead of legacy raw-role counts.
+Six native outcomes agree, correcting two false rejections. Two redundant
+corpus diagnostics are removed with independent limit evidence; all file
+verdicts and UA-1 output remain unchanged. Grouping-dependent limits are deferred.
+
+The [conditional table-header correction](spec-backlog.md#2026-11-05-conditional-ua-2-table-header-presence)
+retains unconditional TH presence for UA-1 only. Six native file outcomes
+agree, correcting two false rejections while keeping width negatives.
+One redundant corpus diagnostic is removed; all file verdicts and UA-1
+output are unchanged. Semantic classification and full header fallback
+remain deferred.
+
+The [terminal RowSpan check](spec-backlog.md#2026-11-05-terminal-table-rowspan-overflow)
+rejects spans remaining past the final table row. Six native outcomes
+agree, correcting three missed violations; two new corpus diagnostics
+retain explicit reference predicate differences. All file verdicts and
+UA-1 output are unchanged. Full column/group geometry remains deferred.
+
+The [owned table-span correction](spec-backlog.md#2026-11-05-owned-table-span-and-class-attributes)
+uses bounded /Table local/ClassMap lookup for UA-2 spans and header attributes.
+Eight native width controls agree, correcting two false rejections and two
+missed violations. UA-1 and fresh corpus output are unchanged. Full attribute
+inheritance/revision, geometry and header fallback remain deferred.
+
+The [structure Ref shape check](spec-backlog.md#2026-11-05-pdf-20-structure-ref-array-shape)
+uses official ISO 32000-2 Table 355 errata to require arrays without null
+elements in UA-2. Three native malformed cases now fail despite reference
+acceptance; these primary/profile differences are explicit. Presence,
+UA-1 and fresh corpus output are unchanged. Non-null item validity and
+target identity remain deferred.
+
+The [table section correction](spec-backlog.md#2026-11-05-ua-2-table-section-containment)
+retains legacy section constraints for UA-1 only and uses existing
+namespace-aware containment for UA-2. Eighteen native outcomes agree,
+correcting eleven false rejections. Ten redundant corpus diagnostics
+are removed with independent reference evidence; all file verdicts
+and UA-1 output are unchanged. Grouping and complete geometry remain deferred.
+
+The [table namespace correction](spec-backlog.md#2026-11-05-namespace-aware-table-row-and-header-endpoints)
+resolves table, row, cell and header-ID endpoints. Twelve native width
+controls agree, correcting four false rejections and one missed violation;
+UA-1 and fresh corpus output are unchanged. Explicit exploratory header
+fallback differences, section/grouping and complete geometry remain deferred.
+
+The [UA-2 TOC containment correction](spec-backlog.md#2026-11-05-ua-2-toc-containment-without-legacy-roles)
+uses existing namespace-resolved ISO 32005 nesting instead of redundant
+legacy raw-role checks. Six combined native outcomes agree, correcting
+two false rejections. Two redundant corpus diagnostics are removed with
+independent exclusion evidence; file verdicts and UA-1 output are unchanged.
+TOCI target identity/shape and grouping-dependent semantics remain deferred.
+
+The [owned list-numbering correction](spec-backlog.md#2026-11-05-owned-list-numbering-attributes)
+resolves local and class attributes with owner-aware bounded lookup.
+Nine native controls agree, correcting two missed violations and two false
+rejections. UA-1 and fresh corpus output are unchanged. Full attribute
+inheritance/revision and grouping-dependent list semantics remain deferred.
+
+The [rich XML string-decoding correction](spec-backlog.md#2026-11-05-rich-xml-string-decoding)
+decodes RV strings as PDF text before XML parsing. Four native string
+controls agree, correcting one false rejection and one missed mismatch;
+stream behavior, explicit disagreements, UA-1 and fresh corpus output
+remain unchanged. Complete text-stream syntax is not claimed.
+
+The [resolved MathML parent correction](spec-backlog.md#2026-11-05-resolved-mathml-parent-rule)
+uses endpoint namespaces for both child selection and Formula/MathML
+parents. Nine native parent-rule outcomes agree, correcting two missed
+file violations; one separate containment disagreement remains explicit.
+UA-1 and fresh 435-PDF/870-result corpus output are unchanged.
+Full MathML vocabulary/schema/rendering conformance remains incomplete.
+
+The [TOCI reference-presence check](spec-backlog.md#2026-11-05-toci-reference-presence)
+requires non-null Ref on resolved TOCI or descendants and reports bounded
+inspection separately. Eight native controls agree, correcting two missed
+file violations; malformed reference-accepted values are not claimed as
+valid targets. Six new corpus predicates agree with the reference; all
+870 file verdicts and UA-1 outputs are unchanged. Target identity/shape
+and semantic destination completeness remain deferred.
+
+The [UA-2 caption-order correction](spec-backlog.md#2026-11-05-namespace-aware-ua-2-caption-ordering)
+uses namespace-resolved Caption roles and one first-or-last policy for
+every parent. Twelve clean-file controls agree, correcting one missed
+violation and two false rejections; three additional TOC controls retain
+missing-target reference differences. Six corpus diagnostic changes agree
+with the reference; all 870 file verdicts and UA-1 outputs are unchanged.
+
+The [FENote ClassMap/C extension](spec-backlog.md#2026-11-05-class-mapped-fenote-notetype-names)
+extends the earlier local NoteType-name check, preserving local precedence
+and bounding class/attribute inspection together. Twenty native controls
+agree, correcting eight additional false negatives; UA-1 and fresh
+435-PDF/870-result corpus output are unchanged. Inheritance, complete
+revision/type syntax and reciprocal FENote references remain outside
+this slice.
+
+The [UA-2 namespace-aware Note correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-note-restriction)
+resolves Note restriction/ID selectors and rejects Note in the PDF-2.0
+vocabulary. Eleven native file verdicts agree, correcting one false negative
+and two false positives; two cyclic-role rule classifications remain
+explicit disagreements. UA-1 and fresh 435-PDF/870-result corpus output
+are unchanged. FENote reference/attribute semantics remain incomplete.
+
+The [UA-2 namespace-aware H correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-h-prohibition)
+prohibits resolved H rather than foreign raw names and removes the
+contradictory H-within-Sect diagnostic alternative. Eleven native controls
+agree on heading-rule/whole-file verdicts, correcting two false negatives
+and two false positives. UA-1 and fresh 435-PDF/870-result corpus output
+are unchanged; complete heading semantics are not claimed.
+
+The [UA-2 tagged annotation Artifact correction](spec-backlog.md#2026-11-05-ua-2-tagged-annotation-artifacts)
+honors resolved direct/mapped/ancestor Artifacts for PrinterMark and
+Invisible/NoView disposition without bypassing parent-tree/OBJR checks.
+Thirty native controls agree, correcting 12 false rejections. Popup
+exclusion, UA-1 and fresh 435-PDF/870-result corpus output are unchanged.
+Grouping-dependent structure semantics and full parity are not claimed.
+
+The [null annotation-tag correction](spec-backlog.md#2026-11-05-null-annotation-structure-parent-keys)
+makes resolved null StructParent equivalent to omission in both profiles,
+retaining visible-untagged checks and reporting unresolved chains separately.
+Fifty native controls give 41 whole-file agreements and 21 corrected false
+rejections; nine existing Popup/visible-widget reference disagreements remain
+explicit. Fresh 435-PDF/870-result corpus output is unchanged. Full artifact
+and annotation/field classification semantics are not claimed.
+
+The [UA-2 namespace-aware list correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-list-checks)
+resolves L/LI/Lbl roles for numbering and direct content, and aligns
+list-shape endpoints without treating unresolved roles as known violations.
+Eighteen native namespace controls give exact numbering-rule agreement,
+correcting five false-positive file verdicts; two additional native LI
+content negatives agree. Four standalone-reference disagreements retain
+their existing ISO/TS 32005 findings and are independently rejected by
+the combined reference too. UA-1 and fresh 435-PDF/870-result corpus
+output are unchanged; grouping and complete list semantics remain scoped.
+
+The [UA-1 null reference-XObject correction](spec-backlog.md#2026-11-05-ua-1-null-reference-xobject-entries)
+distinguishes resolved non-null Ref presence from null/omission, retaining
+genuine reference prohibitions and reporting incomplete chains separately.
+Six native controls give four exact-rule/file agreements; two indirect-null
+reference disagreements follow primary null equivalence. UA-2 and fresh
+435-PDF/870-result corpus output are unchanged.
+
+The [rich-field plain-text encoding correction](spec-backlog.md#2026-11-05-rich-field-plain-text-encoding)
+uses PDFDocEncoding and strict Unicode decoding within the UA-2 equality
+check, leaving the shared string decoder unchanged. Twelve native controls
+agree, correcting six false positives; UA-1 and fresh 435-PDF/870-result
+corpus output are unchanged. Invalid encodings report incomplete inspection.
+
+The [UA-2 rich-field XML text-equality extension](spec-backlog.md#2026-11-05-ua-2-rich-field-xml-text-equality)
+compares RV body text nodes with decoded V while preserving presence and
+inheritance selection. Thirty-six native controls agree, correcting 18
+additional false negatives; UA-1 and fresh 435-PDF/870-result corpus output
+are unchanged. Eight stream-attribute and eight inheritance controls retain
+six explicit disagreements; earlier dated presence disagreements are not
+erased. XML inspection is bounded with separate incomplete findings.
+Rendered/CSS/schema/type semantics and complete field classification
+remain outside the implemented scope.
+
+The [UA-2 null attachment-relationship correction](spec-backlog.md#2026-11-05-ua-2-null-file-attachment-relationships)
+rejects omitted/null/dangling AFRelationship values consistently and
+reports unresolved reference boundaries separately. Twelve native
+controls give exact-rule/file agreement and six corrected false negatives.
+UA-1 and fresh 435-PDF/870-result corpus output are unchanged; relationship
+vocabulary/type validation is not broadened.
+
+The [file-description/name-tree correction](spec-backlog.md#2026-11-05-file-descriptions-and-null-embedded-file-entries)
+scopes UA-2 Desc to EmbeddedFiles name-tree membership, makes null EF
+equivalent to omission and reports bounded/cyclic inspection explicitly.
+All 54 native UA-2 description-rule results agree; 104/108 native
+whole-file verdicts agree, with four retained filename/null disagreements.
+Two missed violations and 13 false positives are corrected. Fresh
+435-PDF/870-result verdicts are unchanged; seven irrelevant Desc findings
+are removed. This is not complete name-tree syntax or file-specification
+conformance.
+
+The [UA-2 namespace-aware Form widget limit](spec-backlog.md#2026-11-05-ua-2-namespace-aware-form-widget-cardinality)
+applies the existing direct-widget count to resolved Form roles rather
+than foreign names. Twenty-seven native controls give exact-rule/file
+agreement, correcting two false negatives and one false positive; other
+invalid controls retain their independent errors. UA-1 and fresh
+435-PDF/870-result corpus output are unchanged. Grouping and descendant
+count semantics are not broadened.
+
+The [UA-2 unconditional XFA exclusion](spec-backlog.md#2026-11-05-ua-2-unconditional-xfa-exclusion)
+replaces the dynamic-rendering proxy with resolved non-null XFA presence,
+independent of NeedsRendering. Fifty-four native controls give 48 exact-rule
+and whole-file agreements, ten corrected false negatives and six explicit
+null-reference disagreements. UA-1 is unchanged. Fresh 435-PDF/870-result
+verdicts are unchanged; one cross-profile finding ID changes.
+
+The [UA-2 namespace-aware widget structure correction](spec-backlog.md#2026-11-05-ua-2-namespace-aware-widget-structure)
+honours mapped Form roles and Artifact ancestry. Nine native controls give
+exact-rule/file agreement, including three corrected false positives;
+two invalid-root controls remain negative. UA-1 is unchanged. Nonfield
+classification and label semantics remain incomplete, and fresh
+435-PDF/870-result corpus output is unchanged.
+
+The [null widget-name ownership correction](spec-backlog.md#2026-11-05-null-widget-names-and-terminal-field-ownership)
+keeps terminal-field ownership consistent in readers, value updates and
+the editor index. Nineteen authored controls and six newly agreeing
+native UA-1 tooltip controls cover the fix; twelve broader field/label
+disagreements remain. Fresh 435-PDF/870-result corpus output is unchanged.
+
+The [null field-type equivalence correction](spec-backlog.md#2026-11-05-pdfua-null-field-type-equivalence)
+makes missing/null/dangling FT entries consistent without suppressing real
+parent field types. Seventy-two authored cases and 36 independent native
+controls cover the boundary; only 18 whole-file verdicts agree with the
+reference, with the remaining field/label/ownership disagreements retained.
+Fresh 435-PDF/870-result corpus output is unchanged.
+
+The [UA-2 widget additional-action context check](spec-backlog.md#2026-11-05-ua-2-widget-additional-action-context)
+requires own Contents on tagged, non-Artifact field widgets with AA.
+Thirty-two controls give exact-rule agreement and ten newly corrected
+verdicts, but only 18 whole-file agreements; label/Contents coverage and
+existing field/structure disagreements remain explicitly incomplete.
+Fresh 435-PDF/870-result corpus output is unchanged.
+
+The [2026-11-05 rendering-only PDF/UA font embedding correction](spec-backlog.md#2026-11-05-pdfua-rendering-only-font-embedding)
+exempts unused and solely mode-3 font use, preserves clipping/mixed-mode
+embedding requirements, and explicitly reports incomplete usage inspection.
+Forty-eight native-profile controls give 44 exact-rule/file agreements,
+including 16 corrected false positives; four mixed-mode reference
+disagreements are retained. Fresh 435-PDF/870-result file verdicts are
+unchanged; only an unused-font finding on the dynamic-XFA negative is
+removed. Other font predicates and PDF/A policies are not broadened.
+
 The [2026-11-03 full PDF/UA corpus remeasurement](spec-backlog.md#2026-11-03-full-pdfua-corpus-remeasurement)
 compares all 297 UA-1 and 138 UA-2 files with veraPDF 1.30.3: 14 UA-1 misses
 and 9 UA-2 misses, zero false positives/exclusions. Explicit standalone and
@@ -28,13 +1173,476 @@ then closes the widget-only-tooltip miss: 10 UA-1 / 6 UA-2 remaining misses,
 zero false positives/exclusions. Actual field tooltips and each widget's
 structure Alt are distinguished; UA-2 rows are unchanged.
 
+The [symbolic TrueType cmap-record check](spec-backlog.md#2026-11-04-pdfua-symbolic-truetype-cmap-records)
+adds profile-specific `/FontFile2` encoding-record requirements and explicit
+incomplete-header errors. Ten mutated real-font controls agree with the exact
+reference rules; all 435 corpus verdicts remain unchanged (10/6 misses).
+Subtable mappings, glyph programs, non-symbolic use and FontFile3 remain open.
+
+The [literal TrueType Differences-name check](spec-backlog.md#2026-11-04-pdfua-truetype-differences-glyph-names)
+closes the two character-encoding misses: 9 UA-1 / 5 UA-2 remaining misses,
+zero false positives/exclusions. The shared official AGL data now resides in
+Core; extraction's algorithmic-name support is unchanged. Twenty exact-rule
+controls agree; glyph lookup and embedded-program requirements remain partial.
+
+The [literal CMap WMode comparison](spec-backlog.md#2026-11-04-pdfua-literal-cmap-writing-modes)
+replaces regex matching with bounded token inspection, defaults and explicit
+incompleteness. Twenty-eight exact-rule reference controls agree; all 435
+corpus verdicts remain unchanged. General PostScript/inheritance is not evaluated.
+
 PDF/A image/Form checks also reject prohibited Alternates/OPI/PS entries and
 profile-invalid image/mask bit depths. Fifty-one independent controls close
 22 reference-reported misses; agreement is 48/51, with three explicitly recorded
 standalone-stencil disagreements where FreeDF enforces the base standard's
 one-bit constraint. Null-key controls remain accepted. See
 [dictionary-policy evidence and limits](spec-backlog.md#pdfa-imageform-dictionary-policies);
-inline parsing, general image validity and standalone PS XObjects remain open.
+inline parsing and general image validity remain open.
+
+The [standalone PostScript XObject check](spec-backlog.md#2026-11-04-pdfa-standalone-postscript-xobjects)
+now rejects typed `/Subtype /PS` streams across PDF/A-1/2/3, including unused
+objects. Nine painted negatives and three image positives agree with veraPDF;
+three unused-object controls explicitly disagree (FreeDF rejects, veraPDF
+accepts). This is a file-wide prohibition, not complete XObject well-formedness.
+
+The [annotation visibility flag correction](spec-backlog.md#2026-11-04-pdfa-annotation-visibility-flags)
+adds Invisible and part-specific ToggleNoView rejection and corrects Popup's
+overbroad exemption. Non-Popup `/F` remains mandatory in every part;
+PDF/A-2/3 Popup may omit it but supplied flags must be valid. All 108
+independent controls agree on exact rules and verdicts. General annotation
+validity remains partial.
+
+The [external-stream null correction](spec-backlog.md#2026-11-04-pdfa-external-stream-null-entries)
+accepts null `/F`, `/FFilter` and `/FDecodeParms` while retaining the
+non-null prohibition and exact part-specific clauses. All 36 independent
+controls agree on exact rules and verdicts. General stream/reference
+validity remains outside this check.
+
+The [Hide/GoToE action policy correction](spec-backlog.md#2026-11-04-pdfa-hidegotoe-action-policy)
+rejects Hide in all parts and GoToE in PDF/A-1, and prevents explicit-null
+Type from bypassing the known-action scan. All 36 independent controls
+agree on exact rules and verdicts. Unknown/deprecated action kinds and
+complete context/target validation remain open.
+
+The [PDF/A-2/3 embedded CIDFont map check](spec-backlog.md#2026-11-04-pdfa-23-embedded-cidfont-mapping-entries)
+requires a stream or `/Identity`, including invisible text. All 52
+real-font controls agree on the exact predicate, but remain non-PDF/A
+whole files and do not close measured corpus verdicts. PDF/A-1's distinct
+rendering-mode requirement and full map/glyph validity remain open.
+
+The [PDF/A-2/3 literal Differences correction](spec-backlog.md#2026-11-04-pdfa-23-literal-truetype-differences)
+accepts AGL names instead of banning every array, reusing bounded PDF/UA
+inspection. PDF/A-1's ban and base-encoding requirements remain. Thirty
+exact-rule real-font controls agree; all 435 public UA verdicts and finding
+ID sets are unchanged. Embedded (3,1) cmap and glyph-use requirements remain
+open; this is not complete font conformance.
+
+The [PDF/A symbolic cmap record check](spec-backlog.md#2026-11-04-pdfa-symbolic-truetype-cmap-records)
+requires one encoding in PDF/A-1 or one/Symbol (3,0) in PDF/A-2/3,
+reusing the unchanged bounded PDF/UA scanner. Fifteen real-font controls
+agree on exact predicates; malformed/unsupported headers produce explicit
+incomplete Errors. Subtable, glyph, non-symbolic and FontFile3 completeness
+remain open.
+
+The [PDF/A annotation subtype vocabulary](spec-backlog.md#2026-11-04-pdfa-annotation-subtype-vocabulary)
+now applies explicit part-specific allowed types, including Screen/3D
+prohibitions in PDF/A-2/3 and PDF 1.4-only types in PDF/A-1. All 198
+independent controls agree on exact rules and verdicts (120 positives,
+78 negatives). Other annotation dictionary/appearance requirements remain
+partial.
+
+The [PDF/A-2/3 appearance presence check](spec-backlog.md#2026-11-04-pdfa-23-annotation-appearance-presence)
+requires AP except for Link, Popup or rectangles with both dimensions zero.
+All 225 independent controls agree on exact rules and verdicts (201 positives,
+24 negatives). PDF/A-1 presence is unchanged. The separate
+[normal-only appearance dictionary check](spec-backlog.md#2026-11-04-pdfa-normal-only-appearance-dictionary-keys)
+applies to all three parts, ignoring null-valued extra keys while rejecting
+empty/rollover/down/custom active keys. All 66 independent controls agree
+on its exact rule and whole-file verdict (18 positives, 48 negatives).
+The [non-Widget N stream check](spec-backlog.md#2026-11-04-pdfa-non-widget-normal-appearance-streams)
+now rejects scalar/array/dictionary normal values. All 144 non-Widget
+control verdicts agree; 135 exact stream predicates agree and nine
+indirect-null diagnostic disagreements are retained explicitly.
+The [inherited Widget type check](spec-backlog.md#2026-11-04-pdfa-inherited-widget-normal-appearances)
+requires non-button streams or button dictionaries with at least one stream,
+with explicit incomplete Errors for exhausted parent/state inspection.
+Across 600 controls, 558 appearance-rule sets and 588 verdicts agree;
+42 indirect-null rule differences include 12 FT-inheritance verdict
+disagreements, all retained with ISO null/inheritance provenance.
+All-state/AS/V validity, field-tree membership, Form/content validity and
+general annotation well-formedness remain open.
+
+The [PDF/A-1 annotation opacity check](spec-backlog.md#2026-11-04-pdfa-1-annotation-opacity)
+rejects optional numeric CA other than 1 without imposing that restriction
+on parts 2/3. All 192 controls agree on the exact rule and verdict
+(172 positives, 20 negatives); general CA type/range validity remains open.
+
+The [PDF/A-1 annotation colour-array check](spec-backlog.md#2026-11-04-pdfa-1-annotation-colour-arrays)
+requires an RGB PDF/A output profile for C/IC arrays, independently of
+DefaultRGB. All 144 exact predicates and whole-file verdicts agree;
+the generated/version-4 and header-mutated ICC controls are not claimed
+clean PDF/A-1 colour conformance positives. General array and ICC
+validity remain open.
+
+The [PDF/A-2/3 XFA and NeedsRendering checks](spec-backlog.md#2026-11-04-pdfa-23-xfa-and-needsrendering-policy)
+reject present non-null XFA and require absent/null/false NeedsRendering.
+Across 108 controls, 104 rule sets and verdicts agree; four indirect-null
+verdict disagreements are retained under ISO null-as-omitted semantics.
+PDF/A-1 is unchanged; general form/XFA validity remains open.
+
+The [context-specific action-entry checks](spec-backlog.md#2026-11-04-context-specific-pdfa-action-entries)
+prohibit catalog AA, parts-2/3 page AA and Widget A/AA with correct
+part/clause attribution, without banning ordinary Link actions.
+Across 168 controls, 157 scoped predicates and 151 verdicts agree;
+11 indirect-null differences and six real empty-Link-action misses remain
+explicit. Non-Widget fields and complete action classification remain open.
+
+The [action-context subtype whitelist](spec-backlog.md#2026-11-04-pdfa-action-context-subtype-vocabulary)
+now rejects unknown/missing/prohibited types through the existing inert
+bounded action report, with explicit traversal/finding incompleteness.
+All 90 new controls agree on exact rules and verdicts; the six prior
+empty-Link-action misses are closed (157/168 prior verdicts now agree,
+11 indirect-null differences retained). Unknown AA events, root-kind
+validity, arbitrary action sources and target/required-key semantics remain open.
+
+The [field-tree AA check](spec-backlog.md#2026-11-04-pdfa-field-additional-action-entries)
+now covers non-Widget terminal fields and ancestors, with explicit
+depth/work/finding/cycle/malformed-child incompleteness.
+Across 63 controls, 54 rules and verdicts agree; nine indirect-null
+differences are retained. Field A and general tree validity remain open.
+
+The [PDF/A-1 page Widget appearance check](spec-backlog.md#2026-11-04-pdfa-1-page-widget-appearance-presence)
+requires AP dictionaries even for point rectangles or unregistered page
+Widgets. All 87 independent controls agree on the exact rule and verdict,
+including off-page and separate-child controls. Parts 2/3 presence rules
+are unchanged; general field/data association and visual validity remain open.
+
+The [NeedAppearances kind correction](spec-backlog.md#2026-11-04-pdfa-needappearances-value-kinds)
+rejects wrong-kind values rather than only boolean true, preserving absent,
+null and false. Across 42 controls, 39 exact rules and verdicts agree;
+three indirect-null differences remain explicit under null-as-omitted
+semantics. This is not general AcroForm validity.
+
+The [Named action context correction](spec-backlog.md#2026-11-04-pdfa-named-action-context-correction)
+reuses the bounded action walk rather than classifying arbitrary S/Named
+dictionaries as actions. All 84 controls agree on exact rules and verdicts,
+correcting 36 false rejections without losing a reference negative.
+Unknown-event/root-kind validity and the separate known-prohibited
+all-object scan remain outside this correction.
+
+The subsequent [known-prohibited context correction](spec-backlog.md#2026-11-04-pdfa-known-prohibited-action-context-correction)
+moves that legacy scan onto the same bounded action report, preserving
+its ID, kind/Type policy and explicit incompleteness. All 63 controls
+agree on exact rules and verdicts, correcting 28 more false rejections;
+the 84 Named controls remain unchanged. Exhaustive action sources,
+required parameters and root/event validity remain open.
+
+The [PDF/A-1 CIDSet kind correction](spec-backlog.md#2026-11-04-pdfa-1-cidset-entry-kinds)
+requires a resolved stream for embedded subset CIDFonts. Across 60 real-font
+controls, 57 exact rules and verdicts agree; seven A1 wrong-kind misses
+are closed and all three empty-stream listing misses remain explicit.
+Parts 2/3 and glyph-list completeness remain unchanged.
+
+The [PDF/A-1 CharSet kind correction](spec-backlog.md#2026-11-04-pdfa-1-charset-entry-kinds)
+likewise requires a resolved string for embedded Type1 subsets.
+Across 66 real-font controls, 63 exact rules and verdicts agree;
+seven A1 wrong-kind misses are closed and all three empty-string
+listing misses remain explicit. Parts 2/3 and listing completeness
+remain unchanged.
+
+The subsequent [Type1C CharSet completeness slice](spec-backlog.md#2026-11-04-pdfa-type1c-charset-completeness)
+compares complete defined glyph-name sets for embedded Type1 subsets with
+raw Type1C programs. All 66 retained kind controls now agree; 55/60 listing
+controls agree, with five explicit complete-list/`.notdef` disagreements.
+FontTools independently agrees on ordered names for five distinct programs.
+Malformed, unsupported or bounded-out metadata produces an incomplete Error.
+Legacy Type1/OpenType/CID-keyed programs, CIDSet and full font validity
+remain outside this slice; broad status stays Partial.
+
+The [Identity CIDSet completeness slice](spec-backlog.md#2026-11-04-pdfa-identity-cidset-completeness)
+compares all program CIDs for explicit Identity-mapped subset CIDFontType2
+fonts with raw TrueType programs. All 60 retained kind controls now agree;
+52/60 bitmap controls agree, including all 16 reference negatives, with
+eight explicit complete-list/CID0 disagreements. Malformed or bounded-out
+metadata produces an incomplete Error. Non-Identity mappings, CID-keyed
+CFF, OpenType wrappers and full font validity remain open.
+
+The subsequent [stream-mapped CIDSet slice](spec-backlog.md#2026-11-04-pdfa-stream-mapped-truetype-cidset-completeness)
+extends raw TrueType checking to explicit map streams, including GID 0
+aliases. All 38 reference negatives are closed; 125/144 corrected controls
+agree, with 19 explicit all-CID/CID0 disagreements. The first sparse-map
+experiment is retained separately, not called clean evidence.
+Odd, oversized or out-of-range map metadata reports incomplete.
+Identity/kind outcomes are unchanged; CID-keyed CFF, OpenType wrappers
+and complete font validity remain open.
+
+The [raw CID-keyed CFF CIDSet slice](spec-backlog.md#2026-11-04-pdfa-raw-cid-keyed-cff-cidset-completeness)
+reads actual sparse charset CIDs, not glyph indices. All 16 reference
+negatives are closed; 52/60 clean controls agree, with eight explicit
+all-CID/CID0 disagreements. FontTools independently agrees on ordered CIDs
+for five distinct programs. Malformed/unsupported metadata reports incomplete.
+A name-keyed transplant experiment with unrelated width failures is
+retained separately, not called clean evidence. Name-keyed CFF CIDFonts,
+OpenType wrappers and full program validity remain open.
+
+The [name-keyed CFF selection follow-up](spec-backlog.md#2026-11-04-pdfa-name-keyed-cff-cidset-selection)
+uses sequential GIDs as CIDs under ISO 32000-1 9.7.4.2.
+Sixty corrected painted-GID controls have no collateral width failures;
+46/60 agree, with 14 explicit normative disagreements, including four
+complete-list positives accepted by FreeDF but rejected by the reference.
+The initial width-failing experiment remains separate. Raw name-keyed
+and CID-keyed CFF are covered within this scope; OpenType wrappers and
+full font validity remain open.
+
+The [OpenType CFF CharSet slice](spec-backlog.md#2026-11-04-pdfa-opentype-cff-charset-completeness)
+reads a bounded unique CFF table and reuses complete glyph-name checks.
+All eight independent A2/3 reference negatives are closed; 22/24 controls
+agree, with two explicit `.notdef` disagreements. Exact selected table
+bytes and 852 names agree with FontTools for one real OpenType program.
+Malformed selected-table metadata reports incomplete; full wrapper validity,
+OpenType CIDSet and legacy Type1 completeness remain open.
+
+The [OpenType CFF CIDSet slice](spec-backlog.md#2026-11-04-pdfa-opentype-cff-cidset-completeness)
+extends bounded extraction to CIDFontType0 with both keyed and name-keyed
+CFF selection. Independent controls agree on exact table bytes/CIDs for two
+programs: 72/80 verdict agreements, 28/32 reference negatives rejected, eight
+explicit normative disagreements (including four complete-list positives
+accepted by FreeDF). OpenType glyf CIDSet and full font validity remain open.
+
+The [OpenType glyf CIDSet slice](spec-backlog.md#2026-11-04-pdfa-opentype-glyf-cidset-completeness)
+extends existing TrueType maxp/Identity/stream-map comparison to FontFile3
+OpenType CIDFontType2 programs. All 44 independent reference negatives close;
+126/136 controls agree, with ten explicit mandatory-CID0 disagreements.
+Full integrated Release tests pass 11344/11344. Simple-TrueType OpenType
+encoding inspection and complete font validity remain open.
+
+The [OpenType symbolic cmap slice](spec-backlog.md#2026-11-04-opentype-symbolic-cmap-inspection)
+also selects FontFile3 OpenType for symbolic simple-TrueType A2/3 and
+UA1/2 checks, preserving each profile's record policy and raw FontFile2
+priority. All 20 independent exact-rule pairs agree (12 positives/eight
+new negatives); UA-derived PDF/A controls are not whole-file closures.
+Malformed selected metadata reports incomplete; full subtable/glyph/font
+validity remains open. Latest focused integration passes 8279 cases.
+
+The [non-symbolic cmap slice](spec-backlog.md#2026-11-04-non-symbolic-truetype-cmap-records)
+adds profile-specific necessary record requirements for embedded A2/3 and
+UA1/2 simple-TrueType fonts, including OpenType; A1 is unchanged.
+All 64 independent exact-rule pairs agree (46 positives/18 new negatives),
+without claiming whole-file closures for collateral-failing mutations.
+Fresh 435-file/870-result UA controls have zero changed verdicts or
+reference-positive regressions. Focused integration passes 8361 cases;
+glyph lookup, Differences-dependent (3,1) and full font validity remain open.
+
+The [Differences cmap prerequisite](spec-backlog.md#2026-11-04-differences-unicode-cmap-prerequisite)
+requires embedded Microsoft Unicode (3,1) for non-symbolic A2/3 and UA1/2
+fonts defining an array, even empty/indirect; null is absent and A1 is unchanged.
+All 144 clean independent controls agree on exact rules and whole-file verdicts
+(112 positives/32 newly detected negatives), with no collateral failures.
+Focused integration passes 8523 cases; public UA file verdicts remain unchanged.
+Glyph lookup, mapping/width agreement and full font validity remain open.
+
+The [A1 rendering-aware CID mapping correction](spec-backlog.md#2026-11-04-pdfa-1-rendering-aware-cid-mapping-entries)
+checks resolved stream/Identity kinds under 6.3.3.2 while preserving the
+mode-3 exemption and A2/3's unchanged policy. Font use follows Tf/gs,
+q/Q, inherited/local Form state, appearances and shared pages; later
+rendered uses cannot be masked by earlier invisible ones. Strict A1 Flate
+inspection and explicit incomplete errors prevent failed or unsupported
+scans from proving an exemption. Of 51 independent controls, 48 agree
+on exact rules and whole-file verdicts (24 positives/24 negatives);
+three accepted reference controls with later rendered use remain explicit
+normative disagreements. This closes 23 reference negatives and removes
+one old false positive. All 11800 Release tests pass. Unsupported execution/
+decoding surfaces, embedding exemptions and full glyph/program validity
+remain partial; historical corpus totals are not replaced.
+
+The [PDF/UA forbidden ToUnicode destination slice](spec-backlog.md#2026-11-04-pdfua-forbidden-tounicode-destinations)
+adds bounded literal bfchar/bfrange inspection, UTF-16BE multi-character
+values, effective overrides, final-byte range arithmetic and explicit
+incomplete decoding/inheritance/procedures/limits. Thirty-eight of 40
+real-font controls agree exactly/whole-file (24 new negatives/14 clean
+positives); two unused forbidden mappings are explicit all-values versus
+used-glyph reference disagreements. A fresh FreeDF run of 435 public
+files/870 profile results closes exactly six missed file verdicts:
+**6 UA-1 / 2 UA-2 misses remain**, zero reference-positive regressions
+or new internal/incomplete findings. The full Release suite passes
+12174/12174 before the subsequent odd-hex boundary correction. That
+correction has six further exact/whole reference controls (four clean
+positives/two U+0000 negatives), independent padding/UTF-16BE checks and
+79 passing focused cases; no repeat corpus/full-suite count is claimed.
+Complete glyph mapping, UTF-16/CMap validity, metrics and
+overall font parity remain partial; dated earlier totals are preserved.
+
+The [PDF/UA-1 supplied subset-listing slice](spec-backlog.md#2026-11-04-pdfua-1-supplied-subset-font-listings)
+reuses the PDF/A CFF/TrueType inspectors without adding UA-2 requirements.
+Twenty of 24 real-font controls agree on exact rule and whole-file verdict;
+three malformed programs are explicitly incomplete, and one sparse
+TrueType empty-slot omission exposes a retained maxp-policy disagreement.
+A fresh 435-file/870-result FreeDF run closes exactly the three UA-1
+subset-listing misses: **3 UA-1 / 2 UA-2 misses remain**, zero
+reference-positive regressions, internal errors or new subset-incomplete
+findings. All UA-2 findings/verdicts are unchanged. The full Release suite
+passes 12245/12245. Sparse-slot semantics, legacy Type1 programs,
+unsupported mappings and complete font/glyph validity remain partial.
+
+The [explicit Identity CFF .notdef slice](spec-backlog.md#2026-11-04-pdfua-explicit-identity-cff-notdef-references)
+rejects shown CID 0 in Identity-H/V CIDFontType0 fonts, regardless of
+rendering mode, through existing font/Form/appearance state tracking.
+Forty-two of 44 real-font controls agree on exact rule and whole-file
+verdict; two reference-accepted double-quote negatives are independently
+confirmed as GID 0 by PyMuPDF and remain explicit disagreements.
+A fresh 435-file/870-result run closes both public .notdef misses:
+**2 UA-1 / 1 UA-2 misses remain**, zero reference-positive regressions,
+internal errors or new incomplete findings. The full Release suite passes
+12295/12295. Other font mappings, fallback glyphs, complete content
+coverage and metrics remain partial.
+
+The [rendered ASCII TrueType-width slice](spec-backlog.md#2026-11-04-pdfua-rendered-ascii-truetype-widths)
+compares actually shown, non-mode-3 ASCII bytes for non-symbolic
+WinAnsi FontFile2 fonts through bounded (3,1) format-4 cmap and
+hmtx inspection. Forty-six of 48 real-font controls agree on exact
+rule and whole-file verdict; two reference-accepted double-quote
+negatives remain explicit disagreements, independently confirmed
+as shown by PyMuPDF. A fresh 435-file/870-result run closes both
+public metrics misses: **1 UA-1 / 0 UA-2 misses remain**, zero
+reference-positive regressions, internal errors or new incomplete
+findings. The full Release suite passes 12445/12445. Other encodings,
+font types, fallbacks and full glyph/metric validity remain partial;
+zero measured UA-2 misses is not complete conformance.
+
+The [UA-1 complete Scope-presence check](spec-backlog.md#2026-11-04-pdfua-1-tables-without-headers-require-complete-scope)
+requires every TH to have valid Scope when no TD supplies Headers,
+instead of leaving partial Scope as an advisory in that case.
+All 256 mutations of the public partial-Scope table agree with the
+reference on exact rule/whole-file verdict (81 positives, 175 negatives).
+A fresh 435-file/870-result run closes the last measured miss:
+**0 UA-1 / 0 UA-2 file-verdict misses**, zero reference-positive
+regressions/internal errors; UA-2 results are unchanged.
+The full Release suite passes 12512/12512. Scope direction, mixed
+Headers inference and full per-rule/semantic coverage remain partial;
+this is corpus exhaustion, not full PDF/UA parity or certification.
+
+The [optional-content boundary correction](spec-backlog.md#2026-11-04-pdfua-optional-content-configuration-boundaries)
+conditions UA-2 configuration names on non-empty Configs, checks decoded
+name length, and treats direct/indirect null AS as absent. All 58 independent
+controls agree exactly/whole-file (13 positives, 45 negatives). The full
+Release suite passes 12724/12724. A fresh 435-file/870-result measurement
+has no verdict changes: native UA-1/UA-2 outputs are unchanged, and two
+cross-profile UA-2-on-UA-1 evaluations lose an unnecessary name Error.
+Existing traversal bounds and incomplete rule/semantic coverage remain.
+
+The [property-list language syntax check](spec-backlog.md#2026-11-04-pdfua-property-list-language-syntax)
+validates Span Lang strings in page/invoked-Form content and named properties,
+rejects present empty catalog/structure tags and trailing LF, and corrects
+UA-2 clause references. All 76 independent controls agree exactly/whole-file
+(28 positives, 48 negatives). Full Release passes 12864/12864. A fresh
+435-file/870-result run adds the correct syntax finding to 24 evaluations
+without verdict changes; native syntax-family overlap is 16/16 UA-1 and
+17/17 UA-2. Non-string/unused/non-Span properties, appearance-only streams,
+full language determinability and registry semantics remain outside this
+slice. The tooltip inheritance/reference discrepancy is documented, not
+silently resolved in favour of reference rejection.
+
+The [UA-1 dynamic-XFA configuration check](spec-backlog.md#2026-11-04-ua-1-dynamic-xfa-configuration)
+replaces the NeedsRendering proxy with bounded inert XCI 3.0 configuration
+inspection and a separate incomplete Error. Corrected real-document
+controls have 36 exact-rule/whole-file agreements (30 clean positives/six
+negatives), four newly rejected dynamics and ten corrected canonical
+static acceptances. Twelve namespace disagreements remain explicit; the
+initial unused-font masking error is not counted as clean evidence.
+UA-2 is unchanged. Full Release passes 13163/13163; fresh 435-file/870-result
+public-corpus outputs are unchanged. Other XCI versions, full schema
+semantics, rendering and complete dynamic-XFA parity remain open.
+
+The [UA-1 embedded-file name boundary fix](spec-backlog.md#2026-11-04-ua-1-embedded-file-unicode-name-boundaries)
+rejects marker-only Unicode UF names and treats resolved-null EF as
+omission. Independent native-document controls show three corrected
+verdicts and 16/18 exact-rule/whole-file agreements; F encoding and
+indirect-null reference disagreements remain explicit. All UA-2 outputs
+are unchanged. Full Release passes 13087/13087; fresh 435-file/870-result
+public-corpus outputs are unchanged. Complete file-specification parity
+is not claimed.
+
+The [UA-1 encrypted-permission presence fix](spec-backlog.md#2026-11-04-ua-1-encryption-permission-presence)
+rejects missing/null P without changing reader authentication or UA-2.
+Four independent absent/null controls change from compliant to rejected;
+one clean enabled-bit positive and the disabled-bit negative retain their
+outcomes. veraPDF completes only those two bit-value controls; its four
+absent/null encryption failures are exclusions, not predicate agreements.
+Full Release passes 13015/13015; fresh 435-file/870-result corpus outputs
+are unchanged. Complete permission-dictionary validation is not claimed.
+
+The [remaining implemented-family reconciliation](spec-backlog.md#2026-11-04-remaining-implemented-family-reconciliation)
+adds twelve reporting mappings without changing validation: 31/33 newly
+mapped reference-rule/file occurrences have Error-family overlap; two font
+occurrences remain explicitly unmatched. Current native counts are UA-1
+56/97 failing reference tests mapped, 42 with no observed overlap; UA-2
+45/48 mapped, three with no overlap. These are not predicate-completeness
+or standards-coverage measures.
+
+The [private-use language-string check](spec-backlog.md#2026-11-04-pdfua-2-private-use-language-strings)
+adds a distinct UA-2 8.6 finding for catalog/structure/visited Span language
+strings across all three Unicode PUA ranges. All 78 independent controls
+agree exactly/whole-file: 42 PUA rejections and 36 non-PUA controls, of which
+six are clean positives and 30 still have invalid language syntax.
+Full Release passes 13010/13010. A fresh 435-file/870-result run adds one
+correct finding without verdict changes; UA-1 is unchanged. Broader
+human-readable string classification remains open; unverified field-string
+rejections were removed before shipping.
+
+The [complete Flate predictor slice](spec-backlog.md#2026-11-04-complete-flate-predictor-inspection)
+adds strict A1 parameter/frame/tag inspection while preserving tolerant
+reader recovery. All 30 valid encodings have independent byte checks;
+18 eligible controls agree exactly/whole-file (nine positives/nine
+negatives). Eight packed TIFF controls expose a logged reference decoder
+limit and are not counted as agreement; four PDF 1.5-only 16-bit controls
+retain A1 incompleteness. Thirteen conservative invisible-use rejections
+are removed. Ten malformed controls retain explicit Errors, with four
+reference acceptances/four rejections/two exceptions recorded. Other
+profiles' full findings/verdicts remain unchanged across all 40 controls;
+the full Release suite passes 12100/12100. Existing PDF/A LZW prohibition
+already rejects all 48 direct/chained investigation controls, so no
+unnecessary strict LZW extension was shipped. Full execution and font
+validity remain partial.
+
+The [strict RunLength content-filter slice](spec-backlog.md#2026-11-04-strict-runlength-content-filter-inspection)
+adds complete bounded packets/EOD and chains without changing normal reader
+recovery. Twelve valid independent controls agree exactly and whole-file
+(six positives/six negatives), removing six conservative incomplete
+rejections; six malformed controls remain explicit incomplete errors with
+five accepted/one rejected reference result retained. All 8672 selected
+profile/filter/discovery cases pass. LZW/predictor/execution completeness
+and full font validity remain open.
+
+The [strict ASCII content-filter slice](spec-backlog.md#2026-11-04-strict-ascii-content-filter-inspection)
+extends A1 exemption inspection to complete ASCIIHex/ASCII85, including
+Flate chains, without changing ordinary reader recovery. Sixteen valid
+real-font controls give eight positives/eight negatives in exact and whole
+agreement, removing eight conservative incomplete rejections. Sixteen
+malformed controls remain explicit incomplete Errors; eleven reference
+acceptances/five rejections are not misreported as exact agreement.
+All 8649 selected profile/filter/discovery tests pass. Other decoding
+and full font-use/program validity remain partial.
+
+The [ExtGState-only shown-font correction](spec-backlog.md#2026-11-04-extgstate-only-shown-font-discovery)
+extends discovery to A2/3 and UA1/2, including mode-3 text, while preserving
+A1's exemption and ignoring unused/unshown state-only fonts. Existing
+embedding, mapping and encoding checks now reach these fonts, including
+restored and inherited/local Form state. All 32 independent controls agree
+on exact rules and whole-file verdicts (24 clean positives/eight new negatives).
+The full11980 suite passes, and fresh public UA pre/post runs have zero
+changed verdicts/findings or reference-positive regressions. Complete
+traversal, malformed-state interpretation and font/glyph validity remain open.
+
+The [A1 null Differences correction](spec-backlog.md#2026-11-04-pdfa-1-null-differences-entries)
+resolves null as omission while retaining base-encoding and non-null-array
+restrictions. Across 30 painted real-font controls, 28 exact rules and
+verdicts agree; two direct-null false rejections are corrected and two
+indirect-null policy disagreements remain explicit. Parts 2/3 and general
+glyph/program completeness are unchanged.
+
+Exceeding the existing 10000-entry per-page PDF/A annotation budget now
+produces an [explicit incomplete Error](spec-backlog.md#2026-11-04-explicit-pdfa-annotation-traversal-incompleteness),
+rather than silently omitting later entries. The limit is a library resource
+bound, not a normative annotation-count restriction.
 
 PDF/A-1b/2b/3b now reject explicit true image-XObject `/Interpolate` flags.
 This is not full image-policy coverage: inline `/I` and malformed/unresolved
@@ -253,7 +1861,7 @@ targeted color-rule evidence only, not full PDF/A conformance.
 | 7.10-7.11 | File specs, embedded files, data structures | Partial | Reads file specifications from Names/EmbeddedFiles and associated-file arrays on catalog, AcroForm/fields, structure elements, pages, annotations and nested Form XObjects, with bounded traversal/resource paths. Exposes file-name variants, description, IDs, volatility, AFRelationship, embedded Params, raw objects and decoded bytes. `/FS`, `/Thumb`, `/EP`, recursive `/RF` and `/CI` remain inert. Collection schema/view/sort metadata now includes folders/navigators. Bounded tree diagnostics check ordering, limits, duplicates, malformed pairs and cycles; embedded-file diagnostics check decoded size and specified MD5 checksum. Encrypted metadata strings are preserved across save paths. No embedded code is executed or external payload opened. Remaining: broader tree-boundary, attachment and preservation combinations |
 | 12 | Annotations, forms, outlines, actions | Partial | Outlines, named destinations, page labels, bounded action `/Next` traversal and scope-specific additional-action events, including link `/PA`. Typed inert action subtypes retain original dictionaries, malformed values and unknown entries without script/media execution, external access or navigation. Common/markup/subtype annotation details and inherited field metadata/flags/options, signature lock/seed dictionaries and XFA presence are exposed. Normal-appearance `/AP /N` and `/AS` rendering plus generated appearances remain available for supported annotations; text/button/choice filling includes multiline, comb, alignment and MK borders/backgrounds. See latest integration above and action-specific notes below. Remaining: exhaustive action-bearing objects/triggers, annotation appearances and complete form/action semantics |
 | 14 | Metadata, tagged PDF, logical structure | Partial | Info, XMP, tagged flag and language; bounded StructTreeRoot/StructElem, RoleMap, ParentTree, page/Form MCIDs and `/Stm` content; Alt/ActualText/Lang and structure-ordered extraction. Form-local marked-content state is isolated/restored on errors and page-owned Do associations survive. Selected local normal-appearance MCRs remain stream-scoped with StmOwn owner checks. Whole-object OBJR now reads locally attributed annotation/Form text, including bounded nested Forms, suppressing MCR/Artifact duplication and scoping roots per page. Parse/parent/duplicate ownership/ParentTree consistency diagnostics and one-pass bounded ParentTree indexing expose truncation. Plain ExtractText/Analyze still exclude annotation text. Remaining: external streams, arbitrary owner graphs, per-invocation tagging and exhaustive malformed/reused-form semantics; not PDF/UA certification. The editor can now create, move and remove structure elements, add MCR/OBJR kids and rebuild `/ParentTree`/`/ParentTreeNextKey` (page, `/Stm` and OBJR owners), and `AutoTagUntagged` tags text as P and other painted content as Artifact without inferring semantics; extraction still has no per-invocation Form tagging and the editor does not yet edit `/Stm`-owned content streams or structure namespaces |
-| 14.8/PDF/A,UA | Validation | Partial | Heuristic validators: PDF/A-1b/2b/3b now add ICC profile header/version/class/colour-space/component checks, XMP packet-header and extension-schema checks, PDF/A-1 Info/XMP value/date equivalence, font widths/encoding/CIDSystemInfo checks, `/NeedAppearances`, and named-action restrictions. PDF/UA-1/2 add document/optional-content flags, embedded-file `/F`/`/UF`, font mapping checks, MCID/Artifact/content-tagging consistency, heading/table/list/TOC/note structure rules, alongside MarkInfo, Lang, Title + DisplayDocTitle, Figure alt text and existing table-header checks. Missing TH Scope is informational per cell for UA-1, but `PDFUA-TABLE-HEADER-CONNECTION` is an error when no TD has `/Headers` and no TH has a valid Scope (ISO 14289-1 7.5; veraPDF 7.5-1); a TD sharing a row/column with a Scope-less TH is only the advisory `PDFUA-TABLE-HEADER-SCOPE-PARTIAL`; no visual/semantic header inference or higher-header inference. Deep-rule references were compared by hand against published veraPDF profile XMLs and, since 2026-10-31, run against veraPDF 1.30.3 (user-local, not bundled): over the veraPDF-corpus PDF_UA-1 files (297) our verdict has 0 false positives against veraPDF's own pass verdicts and misses 17 of 156 failing files (font-program rules 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clip 7.18.6.2, one widget case, one partial-Scope table); these are file-verdict figures only, and the per-rule overlap printed by `tools/ua_crosscheck.py` shows many veraPDF rules (e.g. 7.2-x structure nesting, 7.4.x headings, 7.9 notes, UA-2 8.4.4) have no mapped rule of ours, so rule-level coverage is established only for the mapped rules; over PDF_UA-2 (138) 0 false positives and 11 misses of 84 (font-program rules and 8.2.5.20-2 link targets); PDF/UA-2 now parses structure namespaces (`/NS`, `RoleMapNS`) and checks PDF 2.0 version, pdf2 Document root, role mapping, H/Note/Math/ListNumbering/Caption, structure destinations, annotation artifacts and file-spec Desc/AFRelationship; ISO/TS 32005 Table 5 nesting is partially implemented as detailed below, not a complete matrix. Sample 19 is veraPDF-clean for UA-1. The corpus is external evidence only and not committed; this is not certification. Unconfirmed rules/heuristics remain: `PDFA-ICC-SIZE`, `PDFA-XMP-EXTENSION-INVALID`, `PDFA-FONT-CMAP-SYSTEMINFO`, heuristic `PDFUA-FONT-TOUNICODE` and `PDFUA-TABLE-HEADER-CONNECTION` (empirically derived), advisory `PDFUA-BOOKMARKS`, and `PDFUA-LINK-DESCRIPTION` for UA-2. |
+| 14.8/PDF/A,UA | Validation | Partial | Heuristic validators: PDF/A-1b/2b/3b now add ICC profile header/version/class/colour-space/component checks, XMP packet-header and extension-schema checks, PDF/A-1 Info/XMP value/date equivalence, font widths/encoding/CIDSystemInfo checks, `/NeedAppearances`, and named-action restrictions. PDF/UA-1/2 add document/optional-content flags, embedded-file `/F`/`/UF`, font mapping checks, MCID/Artifact/content-tagging consistency, heading/table/list/TOC/note structure rules, alongside MarkInfo, Lang, Title + DisplayDocTitle, Figure alt text and existing table-header checks. UA-1 now emits `PDFUA-TABLE-HEADER-CONNECTION` when no TD has `/Headers` and any TH lacks valid Scope (ISO 14289-1 7.5; veraPDF 7.5-1); mixed Headers tables retain the existing advisory `PDFUA-TABLE-HEADER-SCOPE-PARTIAL` fallback. No full Scope-direction, visual/semantic or higher-header inference is claimed. Deep-rule references were compared by hand against published veraPDF profile XMLs and, since 2026-10-31, run against veraPDF 1.30.3 (user-local, not bundled). Historical initial corpus evidence: over PDF_UA-1 files (297), 0 false positives and 17 misses of 156 failing files (font-program rules 7.21.4.2/7.21.5/7.21.7-2/7.21.8, media clip 7.18.6.2, one widget case, one partial-Scope table); over PDF_UA-2 (138), 0 false positives and 11 misses of 84 (font-program rules and 8.2.5.20-2 link targets). Subsequent dated measurements above close those file-verdict misses; this does not establish full per-rule coverage. The per-rule overlap printed by `tools/ua_crosscheck.py` shows unmapped rules, so rule-level coverage is established only for mapped rules. PDF/UA-2 parses structure namespaces (`/NS`, `RoleMapNS`) and checks PDF 2.0 version, pdf2 Document root, role mapping, H/Note/Math/ListNumbering/Caption, structure destinations, annotation artifacts and file-spec Desc/AFRelationship; ISO/TS 32005 Table 5 nesting is partially implemented as detailed below, not a complete matrix. Sample 19 is veraPDF-clean for UA-1. The corpus is external evidence only and not committed; this is not certification. Unconfirmed rules/heuristics remain: `PDFA-ICC-SIZE`, `PDFA-XMP-EXTENSION-INVALID`, `PDFA-FONT-CMAP-SYSTEMINFO`, heuristic `PDFUA-FONT-TOUNICODE` and mixed-Headers connection inference, advisory `PDFUA-BOOKMARKS`, and `PDFUA-LINK-DESCRIPTION` for UA-2. |
 | Robustness | Fuzz/truncation tests | Done | Deterministic mutation of all fixtures (400-seed run green): only PdfException (or NotSupported for unsupported filters), timeouts enforced. Caps added: lexer nesting 200, inflate 1 GiB, raster 100M px, JBIG2/CCITT budgets |
 | Perf | Hot paths | Partial | Rasterizer/JPEG already tuned earlier; added static system-font cache and bounded immutable lexer operator-token reuse. On identical base `60107c7`, already-open vector rendering was 9.4–16.1% faster across two run orders with about 15.5% fewer managed allocations; fresh-vector and text CPU gains were not reliable. Six-document decoded-byte/token hashes matched. Existing results: text.pdf 96dpi render 107→98 ms, vector.pdf 246→243 ms; load scales linearly (1000 pages ≈12 ms) |
 

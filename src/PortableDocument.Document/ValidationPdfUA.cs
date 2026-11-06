@@ -7,8 +7,8 @@ namespace PortableDocument.Document;
 internal static partial class PdfUAChecks
 {
     // RFC 3066 shape, as ISO 14289 requires of ISO 32000 14.9.2 language identifiers (veraPDF PDFUA-1 7.2-29 accepts 1-8 letter primary subtags).
-    [GeneratedRegex(@"^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*$")]
-    private static partial Regex LangTag();
+    [GeneratedRegex(@"\A[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*\z")]
+    internal static partial Regex LangTag();
 
     public static void Run(ValidationContext c)
     {
@@ -52,10 +52,11 @@ internal static partial class PdfUAChecks
         {
             // UA-1 only requires that the language of text be determinable (checked per structure element); UA-2 requires the catalog entry.
             if (c.Part != 1 || c.Doc.Structure is null)
-                c.Add("PDFUA-LANG", ValidationSeverity.Error, "catalog /Lang is missing or empty", Clause(c, "7.2", "8.4.2"));
+                c.Add("PDFUA-LANG", ValidationSeverity.Error, "catalog /Lang is missing or empty", Clause(c, "7.2", "8.4.4"));
         }
-        else if (!LangTag().IsMatch(lang))
-            c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"catalog /Lang '{lang}' is not a well-formed language tag", Clause(c, "7.2", "8.4.2"));
+        if (lang is not null && !LangTag().IsMatch(lang))
+            c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"catalog /Lang '{lang}' is not a well-formed language tag", Clause(c, "7.2", "8.4.4"));
+        if (lang is not null) PdfUA2Checks.LanguagePrivateUse(c, lang);
         if (f.Resolve(f.Catalog.Get("ViewerPreferences")) is not PdfDictionary vp || f.Resolve(vp.Get("DisplayDocTitle")) is not PdfBoolean { Value: true })
             c.Add("PDFUA-DISPLAYDOCTITLE", ValidationSeverity.Error, "ViewerPreferences /DisplayDocTitle is not true", Clause(c, "7.1", "8.5"));
     }
@@ -81,16 +82,33 @@ internal static partial class PdfUAChecks
     {
         var f = c.F;
         if (!f.IsEncrypted && f.Trailer.Get("Encrypt") is null) return;
-        if (f.Resolve(f.Trailer.Get("Encrypt")) is PdfDictionary enc && f.Resolve(enc.Get("P")).AsNumber() is { } p && ((long)p & 0x200) == 0)
-            c.Add("PDFUA-ENCRYPT-ACCESS", ValidationSeverity.Error, "encrypted document does not permit content extraction for accessibility (P bit 10)", Clause(c, "7.16", "8.9"));
+        if (f.Resolve(f.Trailer.Get("Encrypt")) is PdfDictionary enc)
+        {
+            var permissions = f.Resolve(enc.Get("P"));
+            if (c.Part == 1 && permissions is (null or PdfNull))
+                c.Add("PDFUA-ENCRYPT-ACCESS", ValidationSeverity.Error, "encrypted document has no /P accessibility permissions entry", "ISO 14289-1 7.16");
+            else if (permissions.AsNumber() is { } p && ((long)p & 0x200) == 0)
+                c.Add("PDFUA-ENCRYPT-ACCESS", ValidationSeverity.Error, "encrypted document does not permit content extraction for accessibility (P bit 10)", Clause(c, "7.16", "8.9"));
+        }
     }
 
     static void Fonts(ValidationContext c)
     {
         c.EnsureWalked();
+        var usageReported = false;
         foreach (var u in c.Fonts)
             if (!FontChecks.IsEmbedded(c.F, u.Font))
-                c.Add("PDFUA-FONT-EMBEDDED", ValidationSeverity.Error, $"font {FontChecks.Name(c.F, u.Font)} is not embedded", Clause(c, "7.21.4.1", "8.8"), u.Page);
+            {
+                if (u.RenderingPage is { } page)
+                    c.Add("PDFUA-FONT-EMBEDDED", ValidationSeverity.Error, $"font {FontChecks.Name(c.F, u.Font)} used for rendering is not embedded", Clause(c, "7.21.4.1", "8.4.5.5.1"), page);
+                else if (!c.FontUsageComplete && !usageReported)
+                {
+                    usageReported = true;
+                    c.Add("PDFUA-FONT-USAGE-INCOMPLETE", ValidationSeverity.Error,
+                        "Font use could not be completely inspected; the unused or mode-3-only exemption for unembedded fonts cannot be established",
+                        Clause(c, "7.21.4.1", "8.4.5.5.1"));
+                }
+            }
     }
 
     static void Pages(ValidationContext c)
@@ -171,7 +189,7 @@ internal static partial class PdfUAChecks
             while (value is PdfRef reference)
             {
                 if (references.Count >= 32 || !references.Add(reference.Number)) { Incomplete(); return null; }
-                value = f.GetObject(reference.Number);
+                value = f.GetObject(reference);
             }
             return value;
         }
@@ -250,12 +268,13 @@ internal static partial class PdfUAChecks
         var reported = catalogLang || c.Part != 1;
         foreach (var e in tree.Elements())
         {
-            if (e.Lang is { Length: > 0 } l && !LangTag().IsMatch(l))
-                c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"element /{e.Type} has malformed /Lang '{l}'", Clause(c, "7.2", "8.4.2"), e.PageIndex);
+            if (e.Lang is { } l && !LangTag().IsMatch(l))
+                c.Add("PDFUA-LANG-INVALID", ValidationSeverity.Error, $"element /{e.Type} has malformed /Lang '{l}'", Clause(c, "7.2", "8.4.4"), e.PageIndex);
+            if (e.Lang is { } language) PdfUA2Checks.LanguagePrivateUse(c, language, e.PageIndex);
             if (!reported && string.IsNullOrEmpty(e.EffectiveLang) && e.MarkedContent.Any(m => c.TextMcids.Contains((m.PageIndex ?? e.PageIndex ?? -1, m.Mcid))))
             {
                 reported = true;
-                c.Add("PDFUA-LANG", ValidationSeverity.Error, $"no catalog /Lang and /{e.Type} content has no inherited /Lang, so its natural language is not determinable (veraPDF PDFUA-1 7.2-34 considers text items)", Clause(c, "7.2", "8.4.2"), e.PageIndex);
+                c.Add("PDFUA-LANG", ValidationSeverity.Error, $"no catalog /Lang and /{e.Type} content has no inherited /Lang, so its natural language is not determinable (veraPDF PDFUA-1 7.2-34 considers text items)", Clause(c, "7.2", "8.4.4"), e.PageIndex);
             }
         }
     }
@@ -299,6 +318,9 @@ internal static partial class PdfUAChecks
             c.Add("PDFUA2-HEADING-HN", ValidationSeverity.Info, "numbered Hn headings are deprecated in PDF 2.0; prefer H nested in Sect elements", "ISO 32000-2 14.8.4.3");
     }
 
+    static string? TableType(ValidationContext c, StructureTree tree, StructElement element) =>
+        c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, element) : element.StandardType;
+
     static void Tables(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
@@ -307,21 +329,23 @@ internal static partial class PdfUAChecks
             .GroupBy(e => e.Id!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         var headerTargets = tree.Elements()
-            .Where(e => e.StandardType == "TH" && !string.IsNullOrEmpty(e.Id))
+            .Where(e => TableType(c, tree, e) == "TH" && !string.IsNullOrEmpty(e.Id))
             .GroupBy(e => e.Id!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
-        foreach (var t in tree.Elements().Where(e => e.StandardType == "Table"))
+        foreach (var t in tree.Elements().Where(e => TableType(c, tree, e) == "Table"))
         {
             var rows = new List<StructElement>();
             foreach (var ch in t.ChildElements)
             {
-                if (ch.StandardType == "TR") rows.Add(ch);
-                else if (ch.StandardType is "THead" or "TBody" or "TFoot") rows.AddRange(ch.ChildElements.Where(r => r.StandardType == "TR"));
-                else if (ch.StandardType != "Caption")
+                var type = TableType(c, tree, ch);
+                if (type == "TR") rows.Add(ch);
+                else if (type is "THead" or "TBody" or "TFoot") rows.AddRange(ch.ChildElements.Where(r => TableType(c, tree, r) == "TR"));
+                else if (type != "Caption" && (c.Part != 2 || type is not null))
                     c.Add("PDFUA-TABLE-CHILD", ValidationSeverity.Error, $"Table contains unexpected /{ch.Type}", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
             }
             if (rows.Count == 0) { c.Add("PDFUA-TABLE-ROWS", ValidationSeverity.Error, "Table has no TR rows", Clause(c, "7.5", "8.2.5.26"), t.PageIndex); continue; }
             var hasTh = false;
+            var spanOverlap = false;
             var carry = new Dictionary<int, int>();
             var widths = new List<int>();
             foreach (var r in rows)
@@ -329,33 +353,54 @@ internal static partial class PdfUAChecks
                 var col = 0;
                 foreach (var cell in r.ChildElements)
                 {
-                    if (cell.StandardType is not ("TH" or "TD"))
+                    var type = TableType(c, tree, cell);
+                    if (type is not ("TH" or "TD"))
                     { c.Add("PDFUA-ROW-CHILD", ValidationSeverity.Error, $"TR contains /{cell.Type}, expected TH or TD", Clause(c, "7.5", "8.2.5.26"), t.PageIndex); continue; }
-                    hasTh |= cell.StandardType == "TH";
+                    hasTh |= type == "TH";
                     while (carry.TryGetValue(col, out var rem) && rem > 0) col++;
-                    var cs = Math.Clamp((int)(cell.Attribute(f, "ColSpan").AsNumber() ?? 1), 1, 1000);
-                    var rs = Math.Clamp((int)(cell.Attribute(f, "RowSpan").AsNumber() ?? 1), 1, 1000);
-                    for (var k = 0; k < cs; k++) if (rs > 1) carry[col + k] = rs;
+                    var cs = Math.Clamp((int)((c.Part == 2 ? TableAttribute(c, tree, cell, "ColSpan") : cell.Attribute(f, "ColSpan")).AsNumber() ?? 1), 1, 1000);
+                    var rs = Math.Clamp((int)((c.Part == 2 ? TableAttribute(c, tree, cell, "RowSpan") : cell.Attribute(f, "RowSpan")).AsNumber() ?? 1), 1, 1000);
+                    for (var k = 0; k < cs; k++)
+                    {
+                        carry.TryGetValue(col + k, out var remaining);
+                        if (c.Part == 2 && remaining > 0) spanOverlap = true;
+                        if (rs > 1) carry[col + k] = c.Part == 2 ? Math.Max(rs, remaining) : rs;
+                    }
                     col += cs;
                 }
                 widths.Add(Math.Max(col, carry.Where(kv => kv.Value > 0).Select(kv => kv.Key + 1).DefaultIfEmpty(0).Max()));
                 foreach (var key in carry.Keys.ToList()) if (--carry[key] <= 0) carry.Remove(key);
             }
-            if (!hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
+            if (c.Part == 1 && !hasTh) c.Add("PDFUA-TABLE-HEADERS", ValidationSeverity.Error, "Table has no TH header cells", Clause(c, "7.5", "8.2.5.26"), t.PageIndex);
+            if (spanOverlap)
+                c.Add("PDFUA2-TABLE-SPAN-OVERLAP", ValidationSeverity.Error,
+                    "table cell ColSpan crosses a column occupied by an earlier RowSpan",
+                    "ISO 14289-2 8.2.5.26", t.PageIndex);
+            if (c.Part == 2 && carry.Values.Any(remaining => remaining > 0))
+                c.Add("PDFUA2-TABLE-ROWSPAN-END", ValidationSeverity.Error,
+                    "table cell RowSpan extends beyond the final table row",
+                    "ISO 14289-2 8.2.5.26", t.PageIndex);
             if (widths.Distinct().Count() > 1)
                 c.Add("PDFUA-TABLE-IRREGULAR", ValidationSeverity.Error, "table rows have differing column counts (veraPDF PDFUA-1 7.2-42/43, PDFUA-2 8.2.5.26-3/4)", Clause(c, "7.2", "8.2.5.26"), t.PageIndex);
             TableHeaderAssociations(c, tree, rows, idCounts, headerTargets);
         }
-        foreach (var cell in tree.Elements().Where(e => e.StandardType is "TH" or "TD" or "TR"))
+        foreach (var cell in tree.Elements().Where(e => TableType(c, tree, e) is "TH" or "TD" or "TR"))
         {
-            var expected = cell.StandardType == "TR" ? new[] { "Table", "THead", "TBody", "TFoot" } : ["TR"];
-            if (cell.Parent is null || !expected.Contains(cell.Parent.StandardType))
-                c.Add("PDFUA-TABLE-PARENT", ValidationSeverity.Error, $"{cell.StandardType} is not inside {string.Join("/", expected)}", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+            var type = TableType(c, tree, cell);
+            var expected = type == "TR" ? new[] { "Table", "THead", "TBody", "TFoot" } : ["TR"];
+            var parentType = cell.Parent is null ? null : TableType(c, tree, cell.Parent);
+            if ((cell.Parent is null || parentType is not null || c.Part != 2) && !expected.Contains(parentType))
+                c.Add("PDFUA-TABLE-PARENT", ValidationSeverity.Error, $"{type} is not inside {string.Join("/", expected)}", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
         }
     }
 
     static PdfObject? TableAttribute(ValidationContext c, StructureTree tree, StructElement element, string key)
     {
+        if (c.Part == 2)
+            return PdfUA2Checks.OwnedAttribute(c, tree, element, "Table", key, () =>
+                c.Add("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE", ValidationSeverity.Error,
+                    $"Table /{key} attribute inspection is malformed or exceeds its reference/work bound",
+                    "ISO 14289-2 8.2.5.26", element.PageIndex));
         var f = c.F;
 
         PdfObject? Find(PdfObject? raw)
@@ -387,28 +432,29 @@ internal static partial class PdfUAChecks
     {
         var f = c.F;
         var cells = rows.SelectMany(row => row.ChildElements)
-            .Where(cell => cell.StandardType is "TH" or "TD")
+            .Where(cell => TableType(c, tree, cell) is "TH" or "TD")
             .ToArray();
         var headerAttributes = new Dictionary<StructElement, PdfObject?>();
 
         foreach (var cell in cells)
         {
+            var type = TableType(c, tree, cell);
             var scope = TableAttribute(c, tree, cell, "Scope");
             if (scope is not null)
             {
-                if (cell.StandardType != "TH" || f.Resolve(scope).AsName() is not ("Row" or "Column" or "Both"))
-                    c.Add("PDFUA-TABLE-SCOPE", ValidationSeverity.Error, $"/Scope on {cell.StandardType} must be a name with value /Row, /Column, or /Both", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
+                if (type != "TH" || f.Resolve(scope).AsName() is not ("Row" or "Column" or "Both"))
+                    c.Add("PDFUA-TABLE-SCOPE", ValidationSeverity.Error, $"/Scope on {type} must be a name with value /Row, /Column, or /Both", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
             }
-            else if (c.Part == 1 && cell.StandardType == "TH")
+            else if (c.Part == 1 && type == "TH")
                 c.Add("PDFUA-TABLE-SCOPE-RECOMMENDED", ValidationSeverity.Info, "TH should have a /Scope attribute; whether the table's header relationships can be determined without it requires semantic review", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
 
             var cellHeaders = TableAttribute(c, tree, cell, "Headers");
             headerAttributes[cell] = cellHeaders;
-            if (cell.Id is { Length: > 0 } id && cell.StandardType == "TH" && idCounts.GetValueOrDefault(id) > 1)
+            if (cell.Id is { Length: > 0 } id && type == "TH" && idCounts.GetValueOrDefault(id) > 1)
                 c.Add("PDFUA-TABLE-HEADER-ID-DUPLICATE", ValidationSeverity.Error, $"TH /ID '{id}' is not unique in the structure tree", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
             if (cellHeaders is null) continue;
             // veraPDF (PDFUA-1 7.5-1/2) only evaluates /Headers on TD cells; dangling or empty references on TH cells are reported as warnings.
-            var headerSeverity = cell.StandardType == "TD" ? ValidationSeverity.Error : ValidationSeverity.Warning;
+            var headerSeverity = type == "TD" ? ValidationSeverity.Error : ValidationSeverity.Warning;
 
             if (f.Resolve(cellHeaders) is not PdfArray idArray)
             {
@@ -432,7 +478,7 @@ internal static partial class PdfUAChecks
         if (c.Part == 1)
             TableScopeConnections(c, tree, rows, headerAttributes);
         if (c.Part == 2 && headerAttributes.Values.Any(value => value is not null))
-            foreach (var cell in cells.Where(cell => cell.StandardType == "TD" && headerAttributes[cell] is null))
+            foreach (var cell in cells.Where(cell => TableType(c, tree, cell) == "TD" && headerAttributes[cell] is null))
                 c.Add("PDFUA-TABLE-HEADERS-CONSISTENCY", ValidationSeverity.Error, "TD has no /Headers attribute although /Headers is used in this table", Clause(c, "7.5", "8.2.5.26"), cell.PageIndex);
     }
 
@@ -440,6 +486,17 @@ internal static partial class PdfUAChecks
     static void TableScopeConnections(ValidationContext c, StructureTree tree, List<StructElement> rows, Dictionary<StructElement, PdfObject?> headerAttributes)
     {
         var f = c.F;
+        var cells = rows.SelectMany(row => row.ChildElements).ToList();
+        var dataCells = cells.Where(cell => cell.StandardType == "TD").ToList();
+        if (dataCells.Count > 0 && dataCells.All(cell => headerAttributes.GetValueOrDefault(cell) is null)
+            && cells.FirstOrDefault(cell => cell.StandardType == "TH"
+                && f.Resolve(TableAttribute(c, tree, cell, "Scope")).AsName() is not ("Row" or "Column" or "Both")) is { } missingScope)
+        {
+            c.Add("PDFUA-TABLE-HEADER-CONNECTION", ValidationSeverity.Error,
+                "no TD supplies /Headers, so every TH requires a valid /Scope to describe header associations",
+                "ISO 14289-1 7.5", missingScope.PageIndex);
+            return;
+        }
         var carry = new Dictionary<int, int>();
         var placed = new List<(StructElement Cell, int Row, int Col, int ColSpan, int RowSpan)>();
         for (var r = 0; r < rows.Count; r++)
@@ -480,16 +537,28 @@ internal static partial class PdfUAChecks
 
     static void Lists(ValidationContext c, StructureTree tree)
     {
-        foreach (var l in tree.Elements().Where(e => e.StandardType == "L"))
+        string? Type(StructElement? element) => element is null ? null
+            : c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, element) : element.StandardType;
+        foreach (var l in tree.Elements().Where(e => Type(e) == "L"))
             foreach (var ch in l.ChildElements)
-                if (ch.StandardType is not ("LI" or "Caption" or "L"))
+            {
+                var childType = Type(ch);
+                if (c.Part == 2 && childType is null) continue;
+                if (childType is not ("LI" or "Caption" or "L"))
                     c.Add("PDFUA-LIST-CHILD", ValidationSeverity.Error, $"L contains /{ch.Type}, expected LI", Clause(c, "7.6", "8.2.5.24"), l.PageIndex);
-        foreach (var li in tree.Elements().Where(e => e.StandardType == "LI"))
+            }
+        foreach (var li in tree.Elements().Where(e => Type(e) == "LI"))
         {
-            if (li.Parent?.StandardType != "L") c.Add("PDFUA-LI-PARENT", ValidationSeverity.Error, "LI is not inside an L", Clause(c, "7.6", "8.2.5.24"), li.PageIndex);
+            var parentType = Type(li.Parent);
+            if (parentType != "L" && (c.Part != 2 || li.Parent is null || parentType is not null))
+                c.Add("PDFUA-LI-PARENT", ValidationSeverity.Error, "LI is not inside an L", Clause(c, "7.6", "8.2.5.24"), li.PageIndex);
             foreach (var ch in li.ChildElements)
-                if (ch.StandardType is not ("Lbl" or "LBody"))
+            {
+                var childType = Type(ch);
+                if (c.Part == 2 && childType is null) continue;
+                if (childType is not ("Lbl" or "LBody"))
                     c.Add("PDFUA-LI-CHILD", ValidationSeverity.Error, $"LI contains /{ch.Type}, expected Lbl or LBody", Clause(c, "7.6", "8.2.5.24"), li.PageIndex);
+            }
         }
     }
 
@@ -516,7 +585,19 @@ internal static partial class PdfUAChecks
             {
                 if (f.Resolve(a) is not PdfDictionary ad) continue;
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
-                var key = f.Resolve(ad.Get("StructParent"));
+                var tagIncomplete = false;
+                var key = PdfUA2Checks.ResolveBounded(f, ad.Get("StructParent"), () => tagIncomplete = true);
+                if (key is PdfNull) key = null;
+                if (tagIncomplete)
+                    c.Add("PDFUA-ANNOT-TAG-INCOMPLETE", ValidationSeverity.Error,
+                        $"/{sub} annotation /StructParent resolution is cyclic or exceeds the reference bound",
+                        "ISO 32000-2 14.7.5.4", i);
+                var parent = key is PdfInteger { Value: >= 0 and <= int.MaxValue } number
+                    && AnnotationParentTreeValue(f, tree, (int)number.Value) is PdfRef reference
+                    && f.Xref.TryGetValue(reference.Number, out var entry) && entry.InUse
+                    && reference.Generation == (entry.Compressed ? 0 : entry.GenOrIndex)
+                    && f.Resolve(reference) is PdfDictionary dict ? tree.ElementFor(dict) : null;
+                var inArtifact = c.Part == 2 && parent is not null && PdfUA2Checks.InsideArtifact(c, tree, parent);
                 var exempt = (((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) & 2) != 0 || OutsideCropBox(f, ad, c.Doc.Pages[i].CropBox);
                 if (sub is "Popup")
                 {
@@ -526,33 +607,30 @@ internal static partial class PdfUAChecks
                 }
                 if (c.Part == 2 && sub is "Sound" or "Movie")
                     c.Add("PDFUA2-ANNOT-DEPRECATED", ValidationSeverity.Error, $"/{sub} annotations cannot be used with PDF/UA-2 (veraPDF PDFUA-2 8.9.2.4.11)", "ISO 14289-2 8.9.2.4.11", i);
-                if (c.Part == 2 && !exempt && key is not null && ((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) is var flags2 && ((flags2 & 1) != 0 || (flags2 & 32) != 0 && (flags2 & 256) == 0))
+                if (c.Part == 2 && !exempt && key is not null && !inArtifact && ((int?)f.Resolve(ad.Get("F")).AsNumber() ?? 0) is var flags2 && ((flags2 & 1) != 0 || (flags2 & 32) != 0 && (flags2 & 256) == 0))
                     c.Add("PDFUA2-ANNOT-ARTIFACT", ValidationSeverity.Error, $"/{sub} annotation has the Invisible or NoView flag but is in the structure tree; it must be an artifact (veraPDF PDFUA-2 8.9.2.2)", "ISO 14289-2 8.9.2.2", i);
                 if (sub is "TrapNet" or "PrinterMark")
                 {
-                    if (sub == "TrapNet" ? c.Part == 2 || !exempt : key is not null && (c.Part == 2 || !exempt))
+                    if (sub == "TrapNet" ? c.Part == 2 || !exempt : key is not null && !inArtifact && (c.Part == 2 || !exempt))
                         c.Add(sub == "TrapNet" ? "PDFUA-ANNOT-TRAPNET" : "PDFUA-ANNOT-PRINTERMARK", ValidationSeverity.Error, sub == "TrapNet" ? "TrapNet annotations are not permitted (veraPDF PDFUA-1 7.18.2-1, PDFUA-2 8.9.2.4.15-1)" : "PrinterMark annotation is in the structure tree but must be an artifact (veraPDF PDFUA-1 7.18.8-1, PDFUA-2 8.9.2.4.14-1)", Clause(c, "7.18", "8.9"), i);
-                    continue;
+                    if (sub == "TrapNet" || !inArtifact) continue;
                 }
-                StructElement? parent = null;
-                if (key is null)
+                if (!tagIncomplete && key is null)
                 {
                     if (!exempt) c.Add("PDFUA-ANNOT-UNTAGGED", ValidationSeverity.Error, $"/{sub} annotation has no /StructParent (not tagged)", Clause(c, "7.18.1", "8.9"), i);
                 }
-                else if (key is not PdfInteger { Value: >= 0 and <= int.MaxValue } number
-                    || AnnotationParentTreeValue(f, tree, (int)number.Value) is not PdfRef reference
-                    || !f.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse
-                    || reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex)
-                    || f.Resolve(reference) is not PdfDictionary dict
-                    || (parent = tree.ElementFor(dict)) is null)
+                else if (!tagIncomplete && parent is null)
                     c.Add("PDFUA-ANNOT-PARENTTREE", ValidationSeverity.Error, $"/{sub} annotation /StructParent must be a non-negative integer key mapping to a parsed structure element in /ParentTree", "ISO 32000-2 14.7.5.4", i);
-                else
+                else if (parent is not null)
                 {
                     if (!objectRefs.TryGetValue(parent, out var objects))
                         objectRefs[parent] = objects = AnnotationObjectReferences(f, parent);
                     if (!objects.Contains(ad))
                         c.Add("PDFUA-ANNOT-OBJR", ValidationSeverity.Error, $"/{sub} annotation's parent structure element has no direct /OBJR child with an indirect /Obj identifying this annotation", "ISO 32000-2 14.7.5.3", i);
                 }
+                if (sub == "PrinterMark") continue;
+                if (c.Part == 2 && sub == "Widget" && parent is not null)
+                    PdfUA2Checks.WidgetAdditionalActions(c, tree, ad, parent, i);
                 if (exempt) continue;
                 if (sub == "Link")
                 {
@@ -566,8 +644,10 @@ internal static partial class PdfUAChecks
                 }
                 else if (sub == "Widget")
                 {
-                    if (parent is not null && parent.StandardType != "Form")
-                        c.Add("PDFUA-FORM-STRUCT", ValidationSeverity.Error, $"Widget annotation is nested in /{parent.Type}, expected Form", Clause(c, "7.18.4", "8.9"), i);
+                    var parentType = parent is null ? null : c.Part == 2 ? PdfUA2Checks.StandardType(c, tree, parent) : parent.StandardType;
+                    if (parent is not null && parentType != "Form"
+                        && !(c.Part == 2 && PdfUA2Checks.InsideArtifact(c, tree, parent)))
+                        c.Add("PDFUA-FORM-STRUCT", ValidationSeverity.Error, $"Widget annotation is nested in /{parent.Type}, expected Form", Clause(c, "7.18.4", "8.10.1"), i);
                     var hasTooltip = c.Part == 1 && widgetFields.TryGetValue(ad, out var field)
                         ? f.Resolve(field.Get("TU")) is PdfString { Bytes.Length: > 0 }
                         : HasText(f, ad, "TU");
@@ -596,7 +676,7 @@ internal static partial class PdfUAChecks
     static bool HasFieldType(PdfFile f, PdfDictionary? d)
     {
         for (var n = 0; d is not null && n < 64; n++, d = f.Resolve(d.Get("Parent")) as PdfDictionary)
-            if (d.Get("FT") is not null) return true;
+            if (f.Resolve(d.Get("FT")) is not (null or PdfNull)) return true;
         return false;
     }
 

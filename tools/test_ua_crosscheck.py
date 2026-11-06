@@ -60,6 +60,92 @@ class CommandBatchTests(unittest.TestCase):
             self.assertEqual(2, process.call_count)
 
 
+class RuleOverlapTests(unittest.TestCase):
+    mappings = [
+        (2, "8.2.5.26-1", "PDFUA2-TABLE-SPAN-OVERLAP"),
+        (2, "8.2.5.26-2", "PDFUA2-TABLE-ROWSPAN-END"),
+        (1, "7.21.4.2-1", "PDFUA-FONT-CHARSET-LIST"),
+        (1, "7.21.4.2-2", "PDFUA-FONT-CIDSET-LIST"),
+        (1, "7.21.5-1", "PDFUA-FONT-WIDTH"),
+        (1, "7.21.7-2", "PDFUA-FONT-TOUNICODE-VALUE"),
+        (1, "7.21.8-1", "PDFUA-FONT-NOTDEF"),
+        (2, "8.4.5.6-1", "PDFUA-FONT-WIDTH"),
+        (2, "8.4.5.8-2", "PDFUA-FONT-TOUNICODE-VALUE"),
+        (2, "8.4.5.9-1", "PDFUA-FONT-NOTDEF"),
+        (2, "8.7-1", "PDFUA-OC-NAME"),
+        (2, "8.4.4-2", "PDFUA-LANG-INVALID"),
+        (2, "8.6-1", "PDFUA2-TEXT-STRING-PUA"),
+        (1, "7.10-1", "PDFUA-OC-NAME"),
+        (1, "7.10-2", "PDFUA-OC-AS"),
+        (1, "7.11-1", "PDFUA-FILESPEC-UF"),
+        (1, "7.16-1", "PDFUA-ENCRYPT-ACCESS"),
+        (1, "7.15-1", "PDFUA-XFA-DYNAMIC"),
+        (2, "5-1", "PDFUA-XMP-ID-MISSING"),
+        (2, "5-3", "PDFUA-XMP-ID-PREFIX"),
+        (2, "8.4.4-1", "PDFUA-LANG"),
+        (2, "8.4.5.3.1-1", "PDFUA-FONT-CMAP-SYSTEMINFO"),
+        (2, "8.4.5.3.2-1", "PDFUA-FONT-CIDTOGID"),
+        (2, "8.4.5.4-1", "PDFUA-FONT-CMAP-EMBEDDED"),
+        (2, "8.4.5.5.1-1", "PDFUA-FONT-EMBEDDED"),
+        (2, "8.4.5.8-1", "PDFUA-FONT-TOUNICODE"),
+        (2, "8.10.2.3-2", "PDFUA2-WIDGET-AA-CONTENTS"),
+        (2, "8.10.1-1", "PDFUA-FORM-STRUCT"),
+        (2, "8.10.1-2", "PDFUA2-FORM-WIDGETS"),
+        (2, "8.10.1-3", "PDFUA2-XFA"),
+        (1, "7.20-1", "PDFUA-XOBJECT-REF"),
+        (2, "8.2.5.25-1", "PDFUA2-LIST-NUMBERING"),
+        (2, "8.2.5.25-2", "PDFUA2-LI-CONTENT"),
+        (1, "7.18.8-1", "PDFUA-ANNOT-PRINTERMARK"),
+        (2, "8.9.2.4.9-1", "PDFUA2-ANNOT-POPUP"),
+        (2, "8.9.2.4.14-1", "PDFUA-ANNOT-PRINTERMARK"),
+        (2, "8.9.2.2-1", "PDFUA2-ANNOT-ARTIFACT"),
+        (2, "8.9.2.2-2", "PDFUA2-ANNOT-ARTIFACT"),
+        (2, "8.2.5.12-1", "PDFUA2-HEADING-H"),
+        (2, "8.2.5.14-1", "PDFUA2-NOTE"),
+        (2, "8.2.5.14-4", "PDFUA2-FENOTE-TYPE"),
+        (2, "8.2.5.8-1", "PDFUA2-TOCI-REF"),
+        (2, "8.10.3.3-1", "PDFUA2-FORM-RV-V"),
+        (2, "8.14.1-1", "PDFUA2-FILESPEC-DESC"),
+        (2, "8.9.2.4.10-1", "PDFUA2-FILEATTACH-AFRELATIONSHIP"),
+    ]
+
+    def overlap(self, part, rule, errors):
+        path = os.path.abspath("a.pdf")
+        truth = {path: (False, [rule])}
+        mine = {(path, part): {"file": path, "part": part, "compliant": False, "errors": errors}}
+        output = io.StringIO()
+        with patch.object(crosscheck, "collect", return_value=[path]), \
+                patch.object(crosscheck, "vera_batch", return_value=truth), \
+                patch.object(crosscheck, "ours", return_value=mine), contextlib.redirect_stdout(output):
+            crosscheck.corpus("directory", part)
+        return output.getvalue()
+
+    def test_delivered_findings_count_as_mapped_family_overlap(self):
+        for part, rule, finding in self.mappings:
+            with self.subTest(part=part, rule=rule):
+                self.assertIn(f"  {rule}: 1 / 1 / 0", self.overlap(part, rule, [finding]))
+
+    def test_incomplete_or_other_findings_are_only_file_verdict_agreement(self):
+        for part, rule, finding in self.mappings:
+            with self.subTest(part=part, rule=rule):
+                self.assertIn(f"  {rule}: 1 / 0 / 1",
+                              self.overlap(part, rule, ["PDFUA-FONT-WIDTH-INCOMPLETE", "PDFUA-TITLE"]))
+
+    def test_unimplemented_reference_rule_remains_unmapped(self):
+        self.assertIn("  unimplemented-1*: 1 / 0 / 1",
+                      self.overlap(2, "unimplemented-1", ["PDFUA-FONT-WIDTH"]))
+
+    def test_incomplete_xfa_is_not_dynamic_rule_overlap(self):
+        self.assertIn("  7.15-1: 1 / 0 / 1",
+                      self.overlap(1, "7.15-1", ["PDFUA-XFA-INCOMPLETE"]))
+
+    def test_incomplete_font_usage_is_not_embedding_rule_overlap(self):
+        for part, rule in [(1, "7.21.4.1-1"), (2, "8.4.5.5.1-1")]:
+            with self.subTest(part=part):
+                self.assertIn(f"  {rule}: 1 / 0 / 1",
+                              self.overlap(part, rule, ["PDFUA-FONT-USAGE-INCOMPLETE", "PDFUA-CONTENT-SCAN-INCOMPLETE"]))
+
+
 class ProfileSelectionTests(unittest.TestCase):
     def test_default_and_explicit_profiles_are_mutually_exclusive(self):
         xml = '<?xml version="1.0"?><report><jobs/></report>'

@@ -31,8 +31,8 @@ VERA = os.environ.get("VERAPDF", os.path.expanduser(r"~\tools\verapdf\verapdf.ba
 FLAVOURS = {1: "ua1", 2: "ua2"}
 COMMAND_LINE_LIMIT = 24000
 
-# veraPDF rule key (clause-testNumber) -> our rule ids that cover it. Keys absent here are reported as unmapped
-# (marked *), never silently counted as caught.
+# veraPDF rule key (clause-testNumber) -> related implemented finding families, not complete predicates.
+# Incomplete-inspection findings deliberately do not count as overlap. Absent keys remain unmapped (*).
 RULE_MAP = {
     1: {
         "5-1": ["PDFUA-XMP-ID-MISSING"], "5-2": ["PDFUA-XMP-ID-PART"], "5-3": ["PDFUA-XMP-ID-PREFIX"], "5-4": ["PDFUA-XMP-ID-PREFIX"], "5-5": ["PDFUA-XMP-ID-PREFIX"],
@@ -47,21 +47,45 @@ RULE_MAP = {
         "7.18.5-2": ["PDFUA-LINK-DESCRIPTION"], "7.18.8-1": ["PDFUA-ANNOT-PRINTERMARK"], "7.20-1": ["PDFUA-XOBJECT-REF"], "7.20-2": ["PDFUA-FORM-REUSED-TAGGED"],
         "7.18.6.2-1": ["PDFUA-MEDIA-CT"], "7.18.6.2-2": ["PDFUA-MEDIA-ALT"],
         "7.21.3.1-1": ["PDFUA-FONT-CMAP-SYSTEMINFO"], "7.21.3.2-1": ["PDFUA-FONT-CIDTOGID"], "7.21.3.3-1": ["PDFUA-FONT-CMAP-EMBEDDED"],
-        "7.21.3.3-2": ["PDFUA-FONT-CMAP-WMODE"], "7.21.4.1-1": ["PDFUA-FONT-EMBEDDED"], "7.21.6-2": ["PDFUA-FONT-TRUETYPE-ENCODING"],
+        "7.21.3.3-2": ["PDFUA-FONT-CMAP-WMODE"], "7.21.4.1-1": ["PDFUA-FONT-EMBEDDED"], "7.21.6-2": ["PDFUA-FONT-TRUETYPE-ENCODING", "PDFUA-FONT-TRUETYPE-DIFFERENCES"],
         "7.21.3.3-3": ["PDFUA-FONT-CMAP-REFERENCE"],
-        "7.21.6-3": ["PDFUA-FONT-TRUETYPE-ENCODING"], "7.21.7-1": ["PDFUA-FONT-TOUNICODE"],
+        "7.21.6-3": ["PDFUA-FONT-TRUETYPE-ENCODING"], "7.21.6-4": ["PDFUA-FONT-SYMBOLIC-CMAP"], "7.21.7-1": ["PDFUA-FONT-TOUNICODE"],
+        "7.21.4.2-1": ["PDFUA-FONT-CHARSET-LIST"], "7.21.4.2-2": ["PDFUA-FONT-CIDSET-LIST"],
+        "7.21.5-1": ["PDFUA-FONT-WIDTH"], "7.21.7-2": ["PDFUA-FONT-TOUNICODE-VALUE"], "7.21.8-1": ["PDFUA-FONT-NOTDEF"],
+        "7.10-1": ["PDFUA-OC-NAME"], "7.10-2": ["PDFUA-OC-AS"],
+        "7.11-1": ["PDFUA-FILESPEC-UF"], "7.16-1": ["PDFUA-ENCRYPT-ACCESS"],
+        "7.15-1": ["PDFUA-XFA-DYNAMIC"],
     },
     2: {
         "5-2": ["PDFUA-XMP-ID-PART"], "5-4": ["PDFUA-XMP-ID-PREFIX"], "5-5": ["PDFUA2-XMP-ID-REV"], "6.1-1": ["PDFUA2-VERSION"], "6.2-1": ["PDFUA-MARKINFO"],
         "8.2.1-1": ["PDFUA-STRUCTTREE"], "8.2.2-1": ["PDFUA-CONTENT-UNTAGGED"], "8.2.4-1": ["PDFUA2-ROLEMAP-MISSING"], "8.2.4-2": ["PDFUA2-ROLEMAP-CIRCULAR"],
         "8.2.4-3": ["PDFUA2-ROLEMAP-SAME-NS"], "8.2.4-4": ["PDFUA2-ROLEMAP-MISSING"], "8.2.5.2-1": ["PDFUA2-DOCUMENT-ROOT"], "8.2.5.2-2": ["PDFUA2-DOCUMENT-NS"],
         "8.2.5.12-1": ["PDFUA2-HEADING-H"], "8.2.5.14-1": ["PDFUA2-NOTE"], "8.2.5.20-1": ["PDFUA-LINK-STRUCT"], "8.2.5.20-2": ["PDFUA2-LINK-TARGETS"], "8.2.5.25-1": ["PDFUA2-LIST-NUMBERING"], "8.2.5.25-2": ["PDFUA2-LI-CONTENT"],
+        "8.2.5.14-4": ["PDFUA2-FENOTE-TYPE"],
+        "8.2.5.26-1": ["PDFUA2-TABLE-SPAN-OVERLAP"],
+        "8.2.5.26-2": ["PDFUA2-TABLE-ROWSPAN-END"],
         "8.2.5.26-3": ["PDFUA-TABLE-IRREGULAR"], "8.2.5.26-4": ["PDFUA-TABLE-IRREGULAR"], "8.2.5.27-1": ["PDFUA2-CAPTION-POSITION"],
+        "8.2.5.8-1": ["PDFUA2-TOCI-REF"],
         "8.2.5.28.2-1": ["PDFUA-ALT-MISSING"], "8.2.5.29-1": ["PDFUA2-MATH-PARENT"], "8.8-1": ["PDFUA2-DEST-NOT-STRUCTURE"], "8.8-2": ["PDFUA2-DEST-NOT-STRUCTURE"],
-        "8.9.2.2-1": ["PDFUA2-ANNOT-ARTIFACT"], "8.9.2.4.9-1": ["PDFUA2-ANNOT-POPUP"], "8.9.2.4.10-1": ["PDFUA2-FILEATTACH-AFRELATIONSHIP"],
-        "8.9.2.4.15-1": ["PDFUA-ANNOT-TRAPNET"], "8.9.3.3-1": ["PDFUA-TABS"], "8.10.1-2": ["PDFUA2-FORM-WIDGETS"], "8.11.1-1": ["PDFUA-TITLE"],
-        "8.4.5.4-3": ["PDFUA-FONT-CMAP-REFERENCE"],
+        "8.9.2.2-1": ["PDFUA2-ANNOT-ARTIFACT"], "8.9.2.2-2": ["PDFUA2-ANNOT-ARTIFACT"], "8.9.2.4.9-1": ["PDFUA2-ANNOT-POPUP"], "8.9.2.4.10-1": ["PDFUA2-FILEATTACH-AFRELATIONSHIP"],
+        "8.9.2.4.14-1": ["PDFUA-ANNOT-PRINTERMARK"], "8.9.2.4.15-1": ["PDFUA-ANNOT-TRAPNET"], "8.9.3.3-1": ["PDFUA-TABS"], "8.10.1-2": ["PDFUA2-FORM-WIDGETS"], "8.11.1-1": ["PDFUA-TITLE"],
+        "8.4.5.4-2": ["PDFUA-FONT-CMAP-WMODE"], "8.4.5.4-3": ["PDFUA-FONT-CMAP-REFERENCE"],
+        "8.4.5.7-2": ["PDFUA-FONT-TRUETYPE-ENCODING", "PDFUA-FONT-TRUETYPE-DIFFERENCES"], "8.4.5.7-3": ["PDFUA-FONT-TRUETYPE-ENCODING"],
+        "8.4.5.7-4": ["PDFUA-FONT-SYMBOLIC-CMAP"],
+        "8.4.5.6-1": ["PDFUA-FONT-WIDTH"], "8.4.5.8-2": ["PDFUA-FONT-TOUNICODE-VALUE"], "8.4.5.9-1": ["PDFUA-FONT-NOTDEF"],
         "8.11.1-2": ["PDFUA-XMP-MISSING"], "8.11.2-1": ["PDFUA-DISPLAYDOCTITLE"], "8.14.1-1": ["PDFUA2-FILESPEC-DESC"],
+        "8.7-1": ["PDFUA-OC-NAME"],
+        "8.4.4-2": ["PDFUA-LANG-INVALID"],
+        "8.6-1": ["PDFUA2-TEXT-STRING-PUA"],
+        "5-1": ["PDFUA-XMP-ID-MISSING"], "5-3": ["PDFUA-XMP-ID-PREFIX"],
+        "8.4.4-1": ["PDFUA-LANG"],
+        "8.4.5.3.1-1": ["PDFUA-FONT-CMAP-SYSTEMINFO"], "8.4.5.3.2-1": ["PDFUA-FONT-CIDTOGID"],
+        "8.4.5.4-1": ["PDFUA-FONT-CMAP-EMBEDDED"], "8.4.5.5.1-1": ["PDFUA-FONT-EMBEDDED"],
+        "8.4.5.8-1": ["PDFUA-FONT-TOUNICODE"],
+        "8.10.2.3-2": ["PDFUA2-WIDGET-AA-CONTENTS"],
+        "8.10.1-1": ["PDFUA-FORM-STRUCT"],
+        "8.10.1-3": ["PDFUA2-XFA"],
+        "8.10.3.3-1": ["PDFUA2-FORM-RV-V"],
     },
 }
 

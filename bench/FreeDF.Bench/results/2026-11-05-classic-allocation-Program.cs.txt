@@ -1,0 +1,35 @@
+using System.Text.Json;
+using PortableDocument.Core;
+
+foreach (var rows in new[] { 64, 4096 })
+    foreach (var fixedEntry in new[] { false, true })
+    {
+        var benchmark = new XrefClassicBench { Rows = rows, FixedEntry = fixedEntry };
+        benchmark.Setup();
+        PdfFile? last = null;
+        for (var i = 0; i < 1024; i++) last = benchmark.Load();
+        Thread.Sleep(500);
+        for (var sample = 0; sample < 3; sample++)
+        {
+            long total = 0, minimum = long.MaxValue, maximum = 0;
+            for (var i = 0; i < 256; i++)
+            {
+                var before = GC.GetAllocatedBytesForCurrentThread();
+                last = benchmark.Load();
+                var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                total += allocated;
+                minimum = Math.Min(minimum, allocated);
+                maximum = Math.Max(maximum, allocated);
+            }
+            if (last is null || last.Repaired || last.Xref.Count != rows)
+                throw new InvalidOperationException("Allocation diagnostic correctness failed.");
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                rows, fixedEntry, sample, total, operations = 256,
+                bytesPerOperation = total / 256.0, minimum, maximum,
+                engine = typeof(PdfFile).Module.ModuleVersionId,
+                tieredCompilation = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation")
+            }));
+        }
+        GC.KeepAlive(last);
+    }

@@ -143,6 +143,61 @@ public class OptionalContentStateTests
         Assert.Throws<ArgumentException>(() => new OptionalContentState(doc, "missing"));
     }
 
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("/RBGroups null", true)]
+    [InlineData("/RBGroups 7 0 R", true)]
+    [InlineData("/RBGroups 99 0 R", true)]
+    [InlineData("/RBGroups []", false)]
+    [InlineData("/RBGroups 9 0 R", false)]
+    [InlineData("/RBGroups 10 0 R", true)]
+    public void Named_radio_groups_resolve_null_before_inheritance(string entry, bool radio)
+    {
+        var objects = new Dictionary<int, string>
+        {
+            [1] = "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R] " +
+                "/D << /BaseState /ON /OFF [6 0 R] /RBGroups [[5 0 R 6 0 R]] >> /Configs [8 0 R] >> >>",
+            [2] = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            [3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R " +
+                "/Resources << /Properties << /A 5 0 R /B 6 0 R >> >> >>",
+            [4] = $"<< /Length {Content.Length} >>\nstream\n{Content}\nendstream",
+            [5] = "<< /Type /OCG /Name (A) >>",
+            [6] = "<< /Type /OCG /Name (B) >>",
+            [7] = "null",
+            [8] = $"<< /Name (Named) /BaseState /ON /OFF [6 0 R] {entry} >>",
+            [9] = "[]",
+            [10] = "[[5 0 R 6 0 R]]"
+        };
+        // Encode independently: PdfWriter normalizes nonexistent references to direct null.
+        var bytes = new System.Text.StringBuilder("%PDF-1.7\n");
+        var offsets = new List<int>();
+        foreach (var (number, body) in objects.OrderBy(pair => pair.Key))
+        {
+            offsets.Add(bytes.Length);
+            bytes.Append($"{number} 0 obj\n{body}\nendobj\n");
+        }
+        var xref = bytes.Length;
+        bytes.Append($"xref\n0 {objects.Count + 1}\n0000000000 65535 f \n");
+        foreach (var offset in offsets) bytes.Append($"{offset:D10} 00000 n \n");
+        bytes.Append($"trailer\n<< /Size {objects.Count + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
+        var document = PdfDocument.Load(System.Text.Encoding.ASCII.GetBytes(bytes.ToString()));
+        Assert.False(document.File.Repaired);
+        var state = new OptionalContentState(document, "Named");
+        Assert.Equal(radio ? 1 : 0, state.RadioButtonGroups.Count);
+        var a = state.Groups.Single(g => (g.Get("Name") as PdfString)?.Text == "A");
+        var b = state.Groups.Single(g => (g.Get("Name") as PdfString)?.Text == "B");
+        Assert.True(state.IsVisible(a));
+        Assert.False(state.IsVisible(b));
+        state.SetVisibility(b, true);
+        Assert.Equal(!radio, state.IsVisible(a));
+        Assert.True(state.IsVisible(b));
+        var rendered = Render(document, state);
+        Assert.Equal(radio ? (255, 255, 255) : (255, 0, 0), Pixel(rendered, 50));
+        Assert.Equal((0, 0, 255), Pixel(rendered, 150));
+        Assert.Empty(state.Warnings);
+        Assert.Empty(rendered.Warnings);
+    }
+
     [Fact]
     public void Named_configuration_locks_do_not_prevent_configuration_or_usage_initialization()
     {
@@ -598,6 +653,7 @@ public class OptionalContentStateTests
 
     [Theory]
     [InlineData("5 1 R", true)]
+    [InlineData("99 0 R", true)]
     [InlineData("5 0 R 6 1 R", true)]
     [InlineData("5 0 R 99 0 R", true)]
     [InlineData("5 0 R << /Type /OCG /Usage << /Language << /Lang (en-US) >> >> >>", true)]

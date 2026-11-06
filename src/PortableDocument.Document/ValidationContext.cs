@@ -173,9 +173,28 @@ internal sealed class ValidationContext
         catch (Exception e) when (e is PdfParseException or InvalidDataException) { return new XmpData { Present = true, WellFormed = false }; }
     }
 
-    public sealed record FontUse(PdfDictionary Font, int Page);
+    public sealed record FontUse(PdfDictionary Font, int Page)
+    {
+        public int? RenderingPage { get; set; }
+        public int? ZeroTwoByteCodePage { get; private set; }
+        public Dictionary<byte, int> RenderingAsciiCodes { get; } = [];
+
+        public void NoteRenderingAscii(PdfString text, int page)
+        {
+            foreach (var code in text.Bytes)
+                if (code is >= 32 and <= 126) RenderingAsciiCodes.TryAdd(code, page);
+        }
+
+        public void NoteTwoByteCodes(PdfString text, int page)
+        {
+            if (ZeroTwoByteCodePage is not null) return;
+            for (var i = 0; i + 1 < text.Bytes.Length; i += 2)
+                if (text.Bytes[i] == 0 && text.Bytes[i + 1] == 0) { ZeroTwoByteCodePage = page; return; }
+        }
+    }
 
     public List<FontUse> Fonts { get; } = [];
+    public bool FontUsageComplete { get; private set; } = true;
     public List<(PdfDictionary Gs, int Page)> ExtGStates { get; } = [];
     public List<(PdfStream Image, int Page)> Images { get; } = [];
     public List<PdfStream> IccBased { get; } = [];
@@ -185,6 +204,7 @@ internal sealed class ValidationContext
     public bool UsesUnmappedDeviceCmyk { get; private set; }
     bool _walked;
     readonly HashSet<PdfObject> _seen = new(ReferenceEqualityComparer.Instance);
+    readonly Dictionary<PdfDictionary, FontUse> _fontUses = new(ReferenceEqualityComparer.Instance);
     readonly Dictionary<PdfDictionary, Dictionary<string, bool>> _defaultColorValidity = new(ReferenceEqualityComparer.Instance);
 
     static readonly Regex DeviceOps = new(@"(?<![\w/])[-+.\d]+(?:\s+[-+.\d]+){0,3}\s+(rg|RG|g|G|k|K)(?![\w])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -198,7 +218,8 @@ internal sealed class ValidationContext
     {
         public int Tokens;
         public bool LimitReported;
-        public Dictionary<PdfStream, HashSet<(PdfDictionary Resources, DeviceColor Fill, DeviceColor Stroke, int RenderMode)>> FormStates { get; } = new(ReferenceEqualityComparer.Instance);
+        public HashSet<PdfStream> ActiveForms { get; } = new(ReferenceEqualityComparer.Instance);
+        public Dictionary<PdfStream, HashSet<(PdfDictionary Resources, DeviceColor Fill, DeviceColor Stroke, int RenderMode, PdfDictionary? Font)>> FormStates { get; } = new(ReferenceEqualityComparer.Instance);
     }
 
     /// <summary>Collects fonts, graphics states, images and device-colour usage from every page (resources, forms, patterns, annotation appearances).</summary>
@@ -209,12 +230,15 @@ internal sealed class ValidationContext
         for (var i = 0; i < Doc.Pages.Count; i++)
         {
             var i0 = i;
+            var completed = false;
             Guard($"resources of page {i + 1}", () =>
             {
                 var page = Doc.Pages[i0];
                 Walk(page.Resources, i0, 0);
-                ScanContent(page.GetContents(), page.Resources, page: i0);
+                ScanContent(PageContents(page), page.Resources, page: i0);
                 if (F.Resolve(page.Dict.Get("Annots")) is PdfArray annots)
+                {
+                    if (annots.Count > 10_000) FontUsageComplete = false;
                     foreach (var a in annots.Items.Take(10_000))
                         if (F.Resolve(a) is PdfDictionary ad && F.Resolve(ad.Get("AP")) is PdfDictionary ap)
                             foreach (var (_, v) in ap.Entries)
@@ -223,7 +247,63 @@ internal sealed class ValidationContext
                                 if (n is PdfStream ns) ScanAppearance(ns, i0, page.Resources);
                                 else if (n is PdfDictionary nd) foreach (var (_, sv) in nd.Entries) if (F.Resolve(sv) is PdfStream ss) ScanAppearance(ss, i0, page.Resources);
                             }
+                }
+                completed = true;
             });
+            if (!completed) FontUsageComplete = false;
+        }
+    }
+
+    FontUse FontFor(PdfDictionary font, int page)
+    {
+        if (_fontUses.TryGetValue(font, out var use)) return use;
+        use = new FontUse(font, page);
+        _fontUses.Add(font, use);
+        _seen.Add(font);
+        Fonts.Add(use);
+        return use;
+    }
+
+    byte[] PageContents(PdfPage page)
+    {
+        if (Profile is not (PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)) return page.GetContents();
+        var contents = F.Resolve(page.Dict.Get("Contents"));
+        using var output = new MemoryStream();
+        if (contents is null or PdfNull) return [];
+        foreach (var item in contents is PdfArray array ? array.Items : [contents])
+        {
+            if (F.Resolve(item) is not PdfStream stream) { FontUsageComplete = false; continue; }
+            output.Write(ContentBytes(stream));
+            output.WriteByte((byte)'\n');
+        }
+        return output.ToArray();
+    }
+
+    byte[] ContentBytes(PdfStream stream)
+    {
+        if (Profile is not (PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)) return F.DecodeStream(stream);
+        var filters = PdfFilters.GetFilters(stream.Dict, F.Resolve);
+        var filter = F.Resolve(stream.Dict.Get("Filter") ?? stream.Dict.Get("F"));
+        var parms = F.Resolve(stream.Dict.Get("DecodeParms") ?? stream.Dict.Get("DP"));
+        if (filter is not (null or PdfNull or PdfName or PdfArray)
+            || filter is PdfArray array && array.Count != filters.Count
+            || parms is not (null or PdfNull or PdfDictionary or PdfArray)
+            || filter is PdfArray && parms is PdfDictionary
+            || parms is PdfArray parameters && (parameters.Count != filters.Count
+                || parameters.Items.Any(x => F.Resolve(x) is not (null or PdfNull or PdfDictionary)))
+            || filters.Any(x => x.Name is not ("FlateDecode" or "ASCIIHexDecode" or "ASCII85Decode" or "RunLengthDecode")
+                || x.Name != "FlateDecode" && F.Resolve(x.Parms?.Get("Predictor")) is { } predictor and not PdfNull
+                    && predictor.AsNumber() != 1
+                || F.Resolve(x.Parms?.Get("Predictor")).AsNumber() > 1
+                    && F.Resolve(x.Parms?.Get("BitsPerComponent")).AsNumber() == 16))
+            FontUsageComplete = false;
+        try { return PdfFilters.Decode(stream.RawData, filters, F.Resolve, strictContentFilters: true).Data; }
+        catch (Exception e) when (e is InvalidDataException or IOException or PdfParseException)
+        {
+            FontUsageComplete = false;
+            Add(Profile == PdfValidationProfile.PdfA1b ? "PDFA-CONTENT-SCAN-INCOMPLETE" : "PDFUA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
+                $"Content decoding did not complete: {e.Message}");
+            return [];
         }
     }
 
@@ -330,14 +410,14 @@ internal sealed class ValidationContext
     void ScanAppearance(PdfStream appearance, int page, PdfDictionary resources)
     {
         WalkForm(appearance, page, 1);
-        ScanContent(F.DecodeStream(appearance), FormResources(appearance, resources), page: page);
+        ScanContent(ContentBytes(appearance), FormResources(appearance, resources), page: page);
     }
 
     PdfDictionary FormResources(PdfStream form, PdfDictionary? inheritedResources) =>
         F.Resolve(form.Dict.Get("Resources")) as PdfDictionary ?? inheritedResources ?? new PdfDictionary();
 
     void ScanContent(byte[] content, PdfDictionary resources, DeviceColor? initialFill = null, DeviceColor? initialStroke = null,
-        int initialRenderMode = 0, int depth = 0, ContentScanBudget? budget = null, int page = 0)
+        int initialRenderMode = 0, int depth = 0, ContentScanBudget? budget = null, int page = 0, PdfDictionary? initialFont = null)
     {
         budget ??= new ContentScanBudget();
         foreach (Match match in DeviceOps.Matches(Encoding.Latin1.GetString(content)))
@@ -350,8 +430,9 @@ internal sealed class ValidationContext
         var fill = initialFill ?? UnmappedDeviceColor(new PdfName("DeviceGray"), resources);
         var stroke = initialStroke ?? fill;
         var renderMode = initialRenderMode;
+        var font = initialFont;
         var path = false;
-        var states = new Stack<(DeviceColor Fill, DeviceColor Stroke, int RenderMode)>();
+        var states = new Stack<(DeviceColor Fill, DeviceColor Stroke, int RenderMode, PdfDictionary? Font)>();
         var operands = new List<PdfObject>();
         var lexer = new PdfLexer(content);
         while (budget.Tokens < _contentScanTokenLimit)
@@ -359,8 +440,12 @@ internal sealed class ValidationContext
             budget.Tokens++;
             PdfObject? item;
             try { item = lexer.ReadObject(false); }
-            catch (PdfParseException) { break; }
-            if (item is null) break;
+            catch (PdfParseException) { FontUsageComplete = false; break; }
+            if (item is null)
+            {
+                if (operands.Count != 0) FontUsageComplete = false;
+                break;
+            }
             if (item is not PdfKeyword keyword)
             {
                 operands.Add(item);
@@ -372,13 +457,48 @@ internal sealed class ValidationContext
             switch (op)
             {
                 case "BI":
+                    // The inline-image skipper is heuristic, so it cannot prove that no text was skipped.
+                    FontUsageComplete = false;
                     PdfUADeepChecks.SkipInlineImage(lexer);
                     break;
                 case "q":
-                    states.Push((fill, stroke, renderMode));
+                    states.Push((fill, stroke, renderMode, font));
                     break;
                 case "Q":
-                    if (states.TryPop(out var saved)) (fill, stroke, renderMode) = saved;
+                    if (states.TryPop(out var saved)) (fill, stroke, renderMode, font) = saved;
+                    else FontUsageComplete = false;
+                    break;
+                case "Tf":
+                    font = null;
+                    if (operands.Count == 2 && operands[0] is PdfName fontName
+                        && operands[1].AsNumber() is { } fontSize && double.IsFinite(fontSize)
+                        && F.Resolve(resources.Get("Font")) is PdfDictionary fonts
+                        && F.Resolve(fonts.Get(fontName.Value)) is PdfDictionary selectedFont)
+                        font = selectedFont;
+                    else FontUsageComplete = false;
+                    break;
+                case "gs":
+                    if (operands.Count != 1 || operands[0] is not PdfName gsName
+                        || F.Resolve(resources.Get("ExtGState")) is not PdfDictionary graphicsStates
+                        || F.Resolve(graphicsStates.Get(gsName.Value)) is not PdfDictionary graphicsState)
+                    {
+                        FontUsageComplete = false;
+                        font = null;
+                    }
+                    else if (F.Resolve(graphicsState.Get("Font")) is { } stateFont and not PdfNull)
+                    {
+                        if (stateFont is PdfArray { Count: 2 } fontArray
+                            && F.Resolve(fontArray[0]) is PdfDictionary gsFont
+                            && F.Resolve(fontArray[1]).AsNumber() is { } size && double.IsFinite(size))
+                            font = gsFont;
+                        else { FontUsageComplete = false; font = null; }
+                    }
+                    break;
+                case "scn" or "SCN" when Profile is PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2:
+                    if (operands.LastOrDefault() is PdfName patternName
+                        && F.Resolve(resources.Get("Pattern")) is PdfDictionary patterns
+                        && F.Resolve(patterns.Get(patternName.Value)) is PdfStream)
+                        FontUsageComplete = false;
                     break;
                 case "g":
                     fill = UnmappedDeviceColor(new PdfName("DeviceGray"), resources);
@@ -428,12 +548,23 @@ internal sealed class ValidationContext
                             if (!budget.FormStates.TryGetValue(xObject, out var formStates))
                                 budget.FormStates.Add(xObject, formStates = []);
                             var formResources = FormResources(xObject, resources);
-                            if (formStates.Add((formResources, fill, stroke, renderMode)))
-                                ScanContent(F.DecodeStream(xObject), formResources, fill, stroke, renderMode, depth + 1, budget, page);
+                            if (budget.ActiveForms.Contains(xObject)) FontUsageComplete = false;
+                            else if (formStates.Add((formResources, fill, stroke, renderMode, font)))
+                            {
+                                budget.ActiveForms.Add(xObject);
+                                ScanContent(ContentBytes(xObject), formResources, fill, stroke, renderMode, depth + 1, budget, page, font);
+                                budget.ActiveForms.Remove(xObject);
+                            }
                         }
+                        else if (subtype == "Form") FontUsageComplete = false;
                     }
+                    else FontUsageComplete = false;
                     break;
                 case "Tr":
+                    var mode = operands.LastOrDefault()?.AsNumber();
+                    if (operands.Count != 1 || mode is not { } m || !double.IsFinite(m)
+                        || m < 0 || m > 7 || m != Math.Truncate(m))
+                        FontUsageComplete = false;
                     renderMode = (int)(operands.LastOrDefault()?.AsNumber() ?? 0);
                     break;
                 default:
@@ -454,6 +585,44 @@ internal sealed class ValidationContext
                         path = false;
                     else if (op is "Tj" or "TJ" or "'" or "\"")
                     {
+                        var text = operands.LastOrDefault();
+                        var valid = operands.Count == (op == "\"" ? 3 : 1)
+                            && (op == "TJ" ? text is PdfArray array
+                                && array.Items.All(x => x is PdfString || x.AsNumber() is { } n && double.IsFinite(n))
+                                : text is PdfString);
+                        if (op == "\"")
+                            valid &= operands.Take(2).All(x => x.AsNumber() is { } n && double.IsFinite(n));
+                        if (!valid) FontUsageComplete = false;
+                        if (valid && (Profile != PdfValidationProfile.PdfA1b || renderMode != 3))
+                        {
+                            if (font is null) FontUsageComplete = false;
+                            else
+                            {
+                                var use = FontFor(font, page);
+                                if (Profile is PdfValidationProfile.PdfUA1 or PdfValidationProfile.PdfUA2)
+                                {
+                                    if (renderMode != 3) use.RenderingPage ??= page;
+                                    if (renderMode != 3 && F.Resolve(font.Get("Subtype")).AsName() == "Type3") FontUsageComplete = false;
+                                    if (text is PdfString shown)
+                                    {
+                                        use.NoteTwoByteCodes(shown, page);
+                                        if (renderMode != 3) use.NoteRenderingAscii(shown, page);
+                                    }
+                                    else if (text is PdfArray shownArray)
+                                        foreach (var value in shownArray.Items)
+                                            if (value is PdfString shownItem)
+                                            {
+                                                use.NoteTwoByteCodes(shownItem, page);
+                                                if (renderMode != 3) use.NoteRenderingAscii(shownItem, page);
+                                            }
+                                }
+                                if (Profile == PdfValidationProfile.PdfA1b)
+                                {
+                                    use.RenderingPage ??= page;
+                                    if (F.Resolve(font.Get("Subtype")).AsName() == "Type3") FontUsageComplete = false;
+                                }
+                            }
+                        }
                         var paintsFill = renderMode is 0 or 2 or 4 or 6;
                         var paintsStroke = renderMode is 1 or 2 or 5 or 6;
                         if (paintsFill) NotePaintedDeviceColor(fill);
@@ -463,8 +632,7 @@ internal sealed class ValidationContext
             }
             operands.Clear();
         }
-        if (budget.Tokens >= _contentScanTokenLimit && !budget.LimitReported
-            && Profile is PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfA2b or PdfValidationProfile.PdfA3b)
+        if (budget.Tokens >= _contentScanTokenLimit && !budget.LimitReported)
         {
             var contentRemains = false;
             try
@@ -475,8 +643,10 @@ internal sealed class ValidationContext
             if (contentRemains)
             {
                 budget.LimitReported = true;
-                Add("PDFA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
-                    $"Content scanning stopped after {_contentScanTokenLimit} tokens before all content was examined", page: page);
+                FontUsageComplete = false;
+                if (Profile is PdfValidationProfile.PdfA1b or PdfValidationProfile.PdfA2b or PdfValidationProfile.PdfA3b)
+                    Add("PDFA-CONTENT-SCAN-INCOMPLETE", ValidationSeverity.Error,
+                        $"Content scanning stopped after {_contentScanTokenLimit} tokens before all content was examined", page: page);
             }
         }
     }
@@ -507,7 +677,7 @@ internal sealed class ValidationContext
         if (res is null || depth > 16) return;
         if (F.Resolve(res.Get("Font")) is PdfDictionary fonts)
             foreach (var (_, v) in fonts.Entries)
-                if (F.Resolve(v) is PdfDictionary fd && _seen.Add(fd)) Fonts.Add(new FontUse(fd, page));
+                if (F.Resolve(v) is PdfDictionary fd && _seen.Add(fd)) FontFor(fd, page);
         if (F.Resolve(res.Get("ExtGState")) is PdfDictionary gss)
             foreach (var (_, v) in gss.Entries)
                 if (F.Resolve(v) is PdfDictionary gd && _seen.Add(gd)) ExtGStates.Add((gd, page));

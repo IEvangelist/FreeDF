@@ -180,12 +180,13 @@ internal static class PdfUA2NestingChecks
             while (rawNs is PdfRef reference)
             {
                 if (seen.Count >= 32 || !seen.Add(reference.Number)
-                    || !c.F.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse)
+                    || !c.F.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse
+                    || reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex))
                 {
                     incomplete = true;
                     return null;
                 }
-                rawNs = c.F.GetObject(reference.Number);
+                rawNs = c.F.GetObject(reference);
             }
             if (rawNs is not (null or PdfNull) && (e.NamespaceDict is null || e.Namespace is null))
             {

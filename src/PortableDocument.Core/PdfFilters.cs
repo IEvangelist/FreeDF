@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO.Compression;
 
 namespace PortableDocument.Core;
@@ -15,24 +16,89 @@ public static class PdfFilters
     };
 
     public static List<(string Name, PdfDictionary? Parms)> GetFilters(PdfDictionary d, Func<PdfObject?, PdfObject?> resolve)
+        => GetFilters(d, resolve, strictMetadataResolver: null);
+
+    internal static List<(string Name, PdfDictionary? Parms)> GetFilters(PdfDictionary d,
+        Func<PdfObject?, PdfObject?> resolve, Func<PdfObject?, PdfObject?>? strictMetadataResolver)
     {
-        var f = resolve(d.Get("Filter") ?? d.Get("F"));
-        var p = resolve(d.Get("DecodeParms") ?? d.Get("DP"));
+        var resolveMetadata = strictMetadataResolver ?? resolve;
+        var strictMetadata = strictMetadataResolver is not null;
+        var f = resolveMetadata(d.Get("Filter") ?? d.Get("F"));
+        var p = resolveMetadata(d.Get("DecodeParms") ?? d.Get("DP"));
+        if (strictMetadata && p is not null and not PdfNull and not PdfDictionary and not PdfArray)
+            throw new PdfParseException("stream DecodeParms must be a dictionary or an array of dictionaries");
         var list = new List<(string, PdfDictionary?)>();
-        if (f is PdfName n) list.Add((Canon(n.Value), resolve(p is PdfArray pa0 && pa0.Count > 0 ? pa0[0] : p) as PdfDictionary));
+        if (f is PdfName n)
+        {
+            var parms = p is PdfArray pa0 ? pa0.Count > 0
+                ? ResolveDecodeParms(pa0[0], resolveMetadata, strictMetadata) : null
+                : ResolveDecodeParms(p, resolveMetadata, strictMetadata);
+            list.Add((Canon(n.Value), parms));
+        }
         else if (f is PdfArray fa)
             for (var i = 0; i < fa.Count; i++)
             {
-                var nm = resolve(fa[i]).AsName();
-                if (nm is null) continue;
-                var pp = p is PdfArray pa && i < pa.Count ? resolve(pa[i]) as PdfDictionary : null;
+                var nm = resolveMetadata(fa[i]).AsName();
+                if (nm is null)
+                {
+                    if (strictMetadata) throw new PdfParseException("stream Filter array entries must be names");
+                    continue;
+                }
+                var pp = p is PdfArray pa && i < pa.Count
+                    ? ResolveDecodeParms(pa[i], resolveMetadata, strictMetadata)
+                    : fa.Count == 1 ? p as PdfDictionary : null;
                 list.Add((Canon(nm), pp));
             }
+        else if (strictMetadata && f is not null and not PdfNull)
+            throw new PdfParseException("stream Filter must be a name or an array of names");
+        if (strictMetadata && list.Count > 1 && (p is not PdfArray aligned || aligned.Count != list.Count))
+        {
+            var prediction = false;
+            var lzw = false;
+            foreach (var filter in list)
+            {
+                prediction |= filter.Item1 is "FlateDecode" or "LZWDecode";
+                lzw |= filter.Item1 == "LZWDecode";
+            }
+            bool NondefaultInteger(PdfDictionary parameters, string key) =>
+                resolveMetadata(parameters.Get(key)) switch
+                {
+                    null or PdfNull => false,
+                    PdfInteger integer => integer.Value != 1,
+                    _ => throw new PdfParseException($"stream DecodeParms {key} must be an integer")
+                };
+            bool Nondefault(PdfDictionary parameters, bool usesPrediction, bool usesLzw) =>
+                usesPrediction && NondefaultInteger(parameters, "Predictor")
+                || usesLzw && NondefaultInteger(parameters, "EarlyChange");
+            var nondefault = p is PdfDictionary dictionary && Nondefault(dictionary, prediction, lzw);
+            if (p is PdfArray candidates)
+                for (var i = 0; i < Math.Min(candidates.Count, list.Count); i++)
+                    if (resolveMetadata(candidates[i]) is PdfDictionary candidateParameters)
+                        nondefault |= Nondefault(candidateParameters,
+                            list[i].Item1 is "FlateDecode" or "LZWDecode", list[i].Item1 == "LZWDecode");
+            if (nondefault)
+                throw new PdfParseException("nondefault stream DecodeParms must have one array entry per filter");
+        }
+        if (strictMetadata && p is PdfArray parameters)
+            for (var i = list.Count; i < parameters.Count; i++)
+                ResolveDecodeParms(parameters[i], resolveMetadata, strictMetadata);
         return list;
+    }
+
+    static PdfDictionary? ResolveDecodeParms(PdfObject? value, Func<PdfObject?, PdfObject?> resolve, bool strictMetadata)
+    {
+        var resolved = resolve(value);
+        if (strictMetadata && resolved is not null and not PdfNull and not PdfDictionary)
+            throw new PdfParseException("stream DecodeParms array entries must be dictionaries or null");
+        return resolved as PdfDictionary;
     }
 
     /// <summary>Decodes until an image codec filter is reached; returns the remaining image filter name, if any.</summary>
     public static (byte[] Data, string? ImageFilter, PdfDictionary? ImageParms) Decode(byte[] raw, List<(string Name, PdfDictionary? Parms)> filters, Func<PdfObject?, PdfObject?> resolve)
+        => Decode(raw, filters, resolve, strictContentFilters: false);
+
+    internal static (byte[] Data, string? ImageFilter, PdfDictionary? ImageParms) Decode(byte[] raw,
+        List<(string Name, PdfDictionary? Parms)> filters, Func<PdfObject?, PdfObject?> resolve, bool strictContentFilters)
     {
         var data = raw;
         foreach (var (name, parms) in filters)
@@ -40,11 +106,13 @@ public static class PdfFilters
             if (ImageCodecs.Contains(name)) return (data, name, parms);
             data = name switch
             {
-                "FlateDecode" => Predict(Flate(data), parms, resolve),
-                "LZWDecode" => Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
-                "ASCIIHexDecode" => AsciiHex(data),
-                "ASCII85Decode" => Ascii85(data),
-                "RunLengthDecode" => RunLength(data),
+                "FlateDecode" => strictContentFilters ? StrictPredict(StrictFlate(data), parms, resolve)
+                    : Predict(Flate(data), parms, resolve),
+                "LZWDecode" => strictContentFilters ? StrictPredict(StrictLzw(data, parms, resolve), parms, resolve)
+                    : Predict(Lzw(data, (int)(resolve(parms?.Get("EarlyChange")).AsNumber() ?? 1)), parms, resolve),
+                "ASCIIHexDecode" => strictContentFilters ? StrictAsciiHex(data) : AsciiHex(data),
+                "ASCII85Decode" => strictContentFilters ? StrictAscii85(data) : Ascii85(data),
+                "RunLengthDecode" => strictContentFilters ? StrictRunLength(data) : RunLength(data),
                 "Crypt" => data,
                 _ => throw new NotSupportedException($"Filter {name}")
             };
@@ -56,18 +124,23 @@ public static class PdfFilters
 
     static void InflateInto(Stream z, MemoryStream output)
     {
-        var buf = new byte[81920];
-        int n;
-        while ((n = z.Read(buf, 0, buf.Length)) > 0)
+        const int bufferSize = 81920;
+        var buf = ArrayPool<byte>.Shared.Rent(bufferSize);
+        try
         {
-            output.Write(buf, 0, n);
-            if (output.Length > MaxInflated) throw new PdfParseException("Decompressed stream exceeds the size limit");
+            int n;
+            while ((n = z.Read(buf, 0, bufferSize)) > 0)
+            {
+                output.Write(buf, 0, n);
+                if (output.Length > MaxInflated) throw new PdfParseException("Decompressed stream exceeds the size limit");
+            }
         }
+        finally { ArrayPool<byte>.Shared.Return(buf, clearArray: true); }
     }
 
     public static byte[] Flate(byte[] src)
     {
-        var output = new MemoryStream();
+        var output = new MemoryStream(Math.Min(src.Length, 65536));
         try
         {
             using var z = new ZLibStream(new MemoryStream(src), CompressionMode.Decompress);
@@ -89,11 +162,96 @@ public static class PdfFilters
         return output.ToArray();
     }
 
+    static byte[] StrictFlate(byte[] src)
+    {
+        if (src.Length < 6 || (src[0] & 15) != 8 || src[0] >> 4 > 7
+            || (src[0] * 256 + src[1]) % 31 != 0 || (src[1] & 32) != 0)
+            throw new InvalidDataException("Invalid zlib header in content stream");
+        using var output = new MemoryStream(Math.Min(src.Length, 65536));
+        using var input = new StrictFlateInput(src);
+        using (var z = new ZLibStream(input, CompressionMode.Decompress, leaveOpen: true))
+            InflateInto(z, output);
+        if (input.Position != src.Length)
+            throw new InvalidDataException("Unexpected bytes after zlib content stream");
+        return output.ToArray();
+    }
+
+    sealed class StrictFlateInput(byte[] data) : MemoryStream(data, writable: false)
+    {
+        // The inflater requests input only while unfinished; ordinary EOF would hide truncation.
+        public override int Read(byte[] buffer, int offset, int count) =>
+            RequireData(base.Read(buffer, offset, ReadCount(count)), count);
+        public override int Read(Span<byte> buffer) => RequireData(base.Read(buffer[..ReadCount(buffer.Length)]), buffer.Length);
+
+        // Keep the last byte separate so inflater read-ahead cannot hide excess data.
+        int ReadCount(int requested) => (int)Math.Min(requested, Math.Max(1L, Length - Position - 1));
+
+        static int RequireData(int read, int requested) => read == 0 && requested != 0
+            ? throw new InvalidDataException("Incomplete zlib content stream") : read;
+    }
+
     public static byte[] DeflateEncode(byte[] data)
     {
+        // Empty zlib stream: header, final fixed-Huffman block, Adler-32 of empty input.
+        if (data.Length == 0) return [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01];
         var ms = new MemoryStream();
         using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true)) z.Write(data);
         return ms.ToArray();
+    }
+
+    static byte[] StrictAsciiHex(byte[] data)
+    {
+        for (var i = 0; i < data.Length; i++)
+        {
+            var c = data[i];
+            if (c == '>')
+            {
+                if (i + 1 != data.Length)
+                    throw new InvalidDataException("Excess data after ASCIIHex content-stream end marker");
+                return AsciiHex(data);
+            }
+            if (!PdfLexer.IsWhite(c) && c is not (>= (byte)'0' and <= (byte)'9'
+                or >= (byte)'a' and <= (byte)'f' or >= (byte)'A' and <= (byte)'F'))
+                throw new InvalidDataException("Invalid ASCIIHex content-stream character");
+        }
+        throw new InvalidDataException("ASCIIHex content-stream end marker was not found");
+    }
+
+    static byte[] StrictAscii85(byte[] data)
+    {
+        ulong group = 0;
+        var count = 0;
+        for (var i = 0; i < data.Length; i++)
+        {
+            var c = data[i];
+            if (PdfLexer.IsWhite(c)) continue;
+            if (c == '~')
+            {
+                if (i + 1 >= data.Length || data[i + 1] != '>' || count == 1)
+                    throw new InvalidDataException("Invalid ASCII85 content-stream end marker or final group");
+                if (i + 2 != data.Length)
+                    throw new InvalidDataException("Excess data after ASCII85 content-stream end marker");
+                if (count > 1)
+                {
+                    for (var n = count; n < 5; n++) group = group * 85 + 84;
+                    if (group > uint.MaxValue)
+                        throw new InvalidDataException("ASCII85 content-stream final group overflows");
+                }
+                return Ascii85(data);
+            }
+            if (c == 'z' && count == 0) continue;
+            if (c is < (byte)'!' or > (byte)'u')
+                throw new InvalidDataException("Invalid ASCII85 content-stream character or zero group");
+            group = group * 85 + (uint)(c - '!');
+            if (++count == 5)
+            {
+                if (group > uint.MaxValue)
+                    throw new InvalidDataException("ASCII85 content-stream group overflows");
+                count = 0;
+                group = 0;
+            }
+        }
+        throw new InvalidDataException("ASCII85 content-stream end marker was not found");
     }
 
     static byte[] AsciiHex(byte[] s)
@@ -139,6 +297,29 @@ public static class PdfFilters
         }
     }
 
+    static byte[] StrictRunLength(byte[] data)
+    {
+        long length = 0;
+        for (var i = 0; i < data.Length;)
+        {
+            var run = data[i++];
+            if (run == 128)
+            {
+                if (i != data.Length)
+                    throw new InvalidDataException("Excess data after RunLength content-stream end marker");
+                return RunLength(data);
+            }
+            var input = run < 128 ? run + 1 : 1;
+            if (input > data.Length - i)
+                throw new InvalidDataException("Incomplete RunLength content-stream packet");
+            i += input;
+            length += run < 128 ? run + 1 : 257 - run;
+            if (length > MaxInflated)
+                throw new PdfParseException("Decompressed stream exceeds the size limit");
+        }
+        throw new InvalidDataException("RunLength content-stream end marker was not found");
+    }
+
     static byte[] RunLength(byte[] s)
     {
         var o = new List<byte>();
@@ -152,34 +333,126 @@ public static class PdfFilters
         return o.ToArray();
     }
 
-    static byte[] Lzw(byte[] s, int early)
+    static byte[] StrictLzw(byte[] data, PdfDictionary? parms, Func<PdfObject?, PdfObject?> resolve)
     {
-        var o = new List<byte>();
-        var table = new List<byte[]>();
-        void Reset() { table.Clear(); for (var i = 0; i < 256; i++) table.Add([(byte)i]); table.Add([]); table.Add([]); }
-        Reset();
-        var bits = 9; var bitBuf = 0; var bitCnt = 0; var pos = 0;
-        byte[]? prev = null;
-        while (true)
+        var value = resolve(parms?.Get("EarlyChange"));
+        var early = value is null or PdfNull ? 1 : value is PdfInteger { Value: 0 or 1 } number
+            ? (int)number.Value : throw new InvalidDataException("Invalid LZW EarlyChange parameter");
+        return Lzw(data, early, strict: true);
+    }
+
+    static byte[] Lzw(byte[] s, int early, bool strict = false)
+    {
+        using var output = new MemoryStream();
+        var dictionary = ArrayPool<int>.Shared.Rent(8192);
+        try
         {
-            while (bitCnt < bits && pos < s.Length) { bitBuf = (bitBuf << 8) | s[pos++]; bitCnt += 8; }
-            if (bitCnt < bits) break;
-            var code = (bitBuf >> (bitCnt - bits)) & ((1 << bits) - 1);
-            bitCnt -= bits;
-            bitBuf &= (1 << bitCnt) - 1;
-            if (code == 256) { Reset(); bits = 9; prev = null; continue; }
-            if (code == 257) break;
-            byte[] entry;
-            if (code < table.Count) entry = table[code];
-            else if (prev is not null) entry = [.. prev, prev[0]];
-            else break;
-            o.AddRange(entry);
-            if (prev is not null) table.Add([.. prev, entry[0]]);
-            prev = entry;
-            var n = table.Count + early;
-            bits = n >= 4096 ? 12 : n >= 2048 ? 12 : n >= 1024 ? 11 : n >= 512 ? 10 : 9;
+            var count = 258;
+            var bits = 9; var bitBuf = 0; var bitCnt = 0; var pos = 0;
+            var first = true;
+            var previousOffset = 0;
+            var previousLength = 0;
+            while (true)
+            {
+                while (bitCnt < bits && pos < s.Length) { bitBuf = (bitBuf << 8) | s[pos++]; bitCnt += 8; }
+                if (bitCnt < bits)
+                {
+                    if (strict) throw new InvalidDataException("LZW end marker was not found");
+                    break;
+                }
+                var code = (bitBuf >> (bitCnt - bits)) & ((1 << bits) - 1);
+                bitCnt -= bits;
+                bitBuf &= (1 << bitCnt) - 1;
+                if (strict && first && code != 256)
+                    throw new InvalidDataException("LZW stream must start with a clear-table code");
+                first = false;
+                if (code == 256) { count = 258; bits = 9; previousLength = 0; continue; }
+                if (code == 257)
+                {
+                    if (strict && bitBuf != 0) throw new InvalidDataException("LZW final byte padding must be zero");
+                    if (strict && pos != s.Length) throw new InvalidDataException("Unexpected bytes after LZW end marker");
+                    break;
+                }
+
+                var offset = 0;
+                var length = 1;
+                var nextEntry = code >= count;
+                if (nextEntry)
+                {
+                    if (previousLength == 0 || strict && code != count)
+                    {
+                        if (strict) throw new InvalidDataException("Invalid LZW dictionary code");
+                        break;
+                    }
+                    offset = previousOffset;
+                    length = previousLength + 1;
+                }
+                else if (code >= 258)
+                {
+                    offset = dictionary[code];
+                    length = dictionary[4096 + code];
+                }
+                if (strict && length > MaxInflated - output.Length)
+                    throw new PdfParseException("Decompressed stream exceeds the size limit");
+                var start = (int)output.Length;
+                var firstByte = code < 256 ? (byte)code : output.GetBuffer()[offset];
+                if (code < 256) output.WriteByte(firstByte);
+                else
+                {
+                    output.Write(output.GetBuffer().AsSpan(offset, nextEntry ? previousLength : length));
+                    if (nextEntry) output.WriteByte(firstByte);
+                }
+                if (previousLength != 0)
+                {
+                    if (strict && count >= 4096)
+                        throw new InvalidDataException("LZW table must be cleared when full");
+                    if (count < 4096)
+                    {
+                        // Previous output followed by this entry's first byte is already contiguous.
+                        dictionary[count] = previousOffset;
+                        dictionary[4096 + count] = previousLength + 1;
+                    }
+                    count++;
+                }
+                previousOffset = start;
+                previousLength = length;
+                var n = count + early;
+                bits = n >= 2048 ? 12 : n >= 1024 ? 11 : n >= 512 ? 10 : 9;
+            }
+            return output.ToArray();
         }
-        return o.ToArray();
+        finally { ArrayPool<int>.Shared.Return(dictionary, clearArray: true); }
+    }
+
+    static byte[] StrictPredict(byte[] data, PdfDictionary? parameters, Func<PdfObject?, PdfObject?> resolve)
+    {
+        long Integer(string key, int fallback)
+        {
+            var value = resolve(parameters?.Get(key));
+            if (value is null or PdfNull) return fallback;
+            if (value is PdfInteger number) return number.Value;
+            throw new InvalidDataException($"Invalid content-stream predictor {key} parameter");
+        }
+        var predictor = Integer("Predictor", 1);
+        if (predictor == 1) return data;
+        if (predictor is not (2 or >= 10 and <= 15))
+            throw new InvalidDataException("Unknown content-stream predictor");
+        var colors = Integer("Colors", 1);
+        var bits = Integer("BitsPerComponent", 8);
+        var columns = Integer("Columns", 1);
+        const long maxRowBits = 1 << 28;
+        if (colors < 1 || columns < 1 || bits is not (1 or 2 or 4 or 8 or 16)
+            || colors > maxRowBits / bits || columns > maxRowBits / (colors * bits))
+            throw new InvalidDataException("Invalid or oversized content-stream predictor parameters");
+        var rowBytes = (int)((colors * bits * columns + 7) / 8);
+        var frameBytes = rowBytes + (predictor == 2 ? 0 : 1);
+        if (data.Length % frameBytes != 0)
+            throw new InvalidDataException("Incomplete content-stream predictor row");
+        if (predictor != 2)
+            for (var offset = 0; offset < data.Length; offset += frameBytes)
+                if (data[offset] > 4)
+                    throw new InvalidDataException("Unknown content-stream PNG predictor row tag");
+        return Predict(data, parameters, resolve);
     }
 
     static byte[] Predict(byte[] data, PdfDictionary? p, Func<PdfObject?, PdfObject?> r)

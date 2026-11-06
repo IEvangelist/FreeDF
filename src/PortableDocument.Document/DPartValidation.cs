@@ -172,13 +172,12 @@ public static class DPartValidation
 
         PdfObject? Resolve(PdfObject? raw)
         {
-            // PdfFile.Resolve has the same hop cap, but does not check reference generations.
             for (var depth = 0; raw is PdfRef reference && depth < 32; depth++)
             {
                 if (!file.Xref.TryGetValue(reference.Number, out var entry) || !entry.InUse ||
                     reference.Generation != (entry.Compressed ? 0 : entry.GenOrIndex))
                     return null;
-                raw = file.GetObject(reference.Number);
+                raw = file.GetObject(reference);
             }
             return raw is PdfRef ? null : raw;
         }

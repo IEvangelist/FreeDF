@@ -1,4 +1,4 @@
-namespace PortableDocument.Content;
+namespace PortableDocument.Core;
 
 /// <summary>CFF standard strings and predefined charset/encoding tables from Adobe TN 5176 and fontTools 4.63.0.</summary>
 internal static class CffStandardStrings

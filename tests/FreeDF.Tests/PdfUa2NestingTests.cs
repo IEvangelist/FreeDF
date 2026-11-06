@@ -40,6 +40,18 @@ public class PdfUa2NestingTests
     }
 
     [Fact]
+    public void Wrong_generation_namespace_is_unresolved_not_a_default_namespace()
+    {
+        foreach (var number in new[] { 6, 7 })
+        {
+            var doc = Load("P", "Span", (number, number == 6
+                ? "<< /S /P /NS 8 1 R /P 5 0 R /K 7 0 R >>"
+                : "<< /S /Span /NS 8 1 R /P 6 0 R /Pg 3 0 R >>"));
+            Assert.Contains(Nesting(doc), f => f.RuleId == "PDFUA2-NESTING-INCOMPLETE");
+        }
+    }
+
+    [Fact]
     public void EveryUnconditionalPairMatchesThePinnedPublishedFacts()
     {
         var failed = new List<string>();

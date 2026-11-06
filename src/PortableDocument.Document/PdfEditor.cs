@@ -336,7 +336,7 @@ public sealed partial class PdfEditor
             var full = partial is null ? prefix : prefix.Length == 0 ? partial : prefix + "." + partial;
             ft = (Res(d.Get("FT")) as PdfName)?.Value ?? ft;
             var kids = Res(d.Get("Kids")) as PdfArray;
-            var hasFieldKids = kids is not null && kids.Items.Any(k => Res(k) is PdfDictionary kd && kd.Get("T") is not null);
+            var hasFieldKids = kids is not null && kids.Items.Any(k => Res(k) is PdfDictionary kd && FormEntryPresent(kd, "T"));
             if (hasFieldKids) { foreach (var k in kids!.Items) Walk(k, full, ft, depth + 1); return; }
             if (full != name) return;
             done = true;
@@ -816,6 +816,6 @@ public sealed partial class PdfEditor
         var tailText = System.Text.Encoding.Latin1.GetString(data, Math.Max(0, data.Length - 1024), Math.Min(1024, data.Length))[(sx + 9)..].Trim();
         var prev = long.Parse(new string(tailText.TakeWhile(char.IsDigit).ToArray()));
         var isStream = !(prev < data.Length && System.Text.Encoding.Latin1.GetString(data, (int)prev, Math.Min(4, data.Length - (int)prev)) == "xref");
-        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream, f.Decryptor, f.Trailer.Get("Encrypt"));
+        return PdfWriter.WriteIncremental(data, prev, changed, next, catalog, info, f.Resolve(f.Trailer.Get("ID")), isStream, f.Decryptor, f.Trailer.Get("Encrypt"), f.Xref);
     }
 }

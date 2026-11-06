@@ -13,6 +13,7 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
     <PackageReference Include="PdfPig" />
+    <PackageReference Include="PDFsharp" />
     <ProjectReference Include="..\..\src\PortableDocument.Render\PortableDocument.Render.csproj" />
     <ProjectReference Include="..\..\src\PortableDocument.Document\PortableDocument.Document.csproj" />
   </ItemGroup>

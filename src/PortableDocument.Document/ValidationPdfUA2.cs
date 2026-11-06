@@ -1,3 +1,5 @@
+using System.Text;
+using System.Xml;
 using PortableDocument.Core;
 
 namespace PortableDocument.Document;
@@ -18,26 +20,713 @@ internal static class PdfUA2Checks
     {
         c.Guard("PDF/UA-2 version", () => Version(c));
         c.Guard("PDF/UA-2 root", () => Root(c, tree));
+        c.Guard("PDF/UA-2 page structure parent keys", () => PageStructureParents(c));
+        c.Guard("PDF/UA-2 annotation structure parent keys", () => AnnotationStructureParents(c));
+        c.Guard("PDF/UA-2 appearance structure parent keys", () => AppearanceStructureParents(c));
+        c.Guard("PDF/UA-2 XObject structure parent keys", () => XObjectStructureParents(c));
+        c.Guard("PDF/UA-2 role map shape", () => RoleMapShape(c, tree));
         c.Guard("PDF/UA-2 roles", () => Roles(c, tree));
         c.Guard("PDF/UA-2 containment", () => PdfUA2NestingChecks.Run(c, tree));
+        c.Guard("PDF/UA-2 namespace registration", () => NamespaceRegistration(c, tree));
         c.Guard("PDF/UA-2 element rules", () => Elements(c, tree));
         c.Guard("PDF/UA-2 link targets", () => LinkTargets(c, tree));
         c.Guard("PDF/UA-2 destinations", () => Destinations(c));
         c.Guard("PDF/UA-2 file specifications", () => Files(c));
+        c.Guard("PDF/UA-2 text field values", () => TextFieldValues(c));
     }
 
-    /// <summary>8.14.1-1 (Desc on embedded-file specifications) and 8.9.2.4.10-1 (AFRelationship on file-attachment targets). Specifications are found by scanning all objects, a superset of the EmbeddedFiles name tree.</summary>
+    static void TextFieldValues(ValidationContext c)
+    {
+        var fields = c.Doc.GetFormFieldDetails();
+        FieldEntryTypes(c, fields);
+        DefaultAppearances(c, fields);
+        ChoiceFieldIndices(c, fields);
+        ChoiceFieldOptions(c, fields);
+        SignatureLockFields(c, fields);
+        SignatureSeedDigests(c, fields);
+        SignatureSeedScalars(c, fields);
+        CertificateSeedAsciiArrays(c, fields);
+        bool incomplete = false, limitIncomplete = false;
+        if (fields.Truncated) { Incomplete(); LimitIncomplete(); }
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Tx") continue;
+            bool limitComplete = true;
+            var limit = InheritedFieldValue(c, field.Dictionary, "MaxLen", () =>
+            {
+                limitComplete = false;
+                LimitIncomplete();
+            });
+            if (limitComplete && limit is not (null or PdfNull or PdfInteger { Value: >= 0 }))
+                c.Add("PDFUA2-FORM-MAXLEN-TYPE", ValidationSeverity.Error,
+                    "a text field MaxLen must be a non-negative integer",
+                    "ISO 32000-2 12.7.5.3 Table 232");
+            bool complete = true;
+            void Unresolved() { complete = false; Incomplete(); }
+            var value = InheritedFieldValue(c, field.Dictionary, "V", Unresolved);
+            if (!complete) continue;
+            if (value is not (null or PdfNull or PdfString or PdfStream))
+                c.Add("PDFUA2-FORM-TEXT-V-TYPE", ValidationSeverity.Error,
+                    "a non-null text field V value must be a text string or stream",
+                    "ISO 32000-2 12.7.5.3");
+            var rich = ResolveBounded(c.F, field.Dictionary.Get("RV"), Unresolved);
+            if (!complete || rich is null or PdfNull) continue;
+            if (rich is not (PdfString or PdfStream)) { Incomplete(); continue; }
+            if (value is null or PdfNull)
+                c.Add("PDFUA2-FORM-RV-V", ValidationSeverity.Error,
+                    "a text field with /RV must also provide a plain /V value",
+                    "ISO 14289-2 8.10.3.3");
+            else if (value is not (PdfString or PdfStream)) Incomplete();
+            else
+            {
+                try
+                {
+                    var bytes = RichFieldBytes(c, value);
+                    if (bytes.Length > XfaReader.MaxBytes) { Unresolved(); continue; }
+                    var richText = RichFieldText(c, rich, Unresolved);
+                    if (complete && richText != RichFieldPlainText(bytes))
+                        c.Add("PDFUA2-FORM-RV-V", ValidationSeverity.Error,
+                            "a text field's /RV XML text content differs from its plain /V value",
+                            "ISO 14289-2 8.10.3.3");
+                }
+                catch (Exception e) when (e is IOException or InvalidDataException or PdfParseException or XmlException or NotSupportedException or DecoderFallbackException)
+                {
+                    Unresolved();
+                }
+            }
+        }
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-VALUE-INCOMPLETE", ValidationSeverity.Error,
+                "text-field value inspection is truncated, cyclic, malformed or bounded",
+                "ISO 14289-2 8.10.3.3");
+        }
+
+        void LimitIncomplete()
+        {
+            if (limitIncomplete) return;
+            limitIncomplete = true;
+            c.Add("PDFUA2-FORM-MAXLEN-INCOMPLETE", ValidationSeverity.Error,
+                "text-field MaxLen inspection is truncated, cyclic, unsupported or bounded",
+                "ISO 32000-2 12.7.5.3 Table 232");
+        }
+    }
+
+    static void FieldEntryTypes(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.4.1 Table 226";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-ENTRY-INCOMPLETE", ValidationSeverity.Error,
+                "terminal field entry inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            var name = ResolveBounded(c.F, field.Dictionary.Get("T"), Incomplete);
+            if (name is not (null or PdfNull or PdfString))
+                c.Add("PDFUA2-FORM-T-TYPE", ValidationSeverity.Error,
+                    "field T must be a text string", clause);
+            var actions = ResolveBounded(c.F, field.Dictionary.Get("AA"), Incomplete);
+            if (actions is not (null or PdfNull or PdfDictionary))
+                c.Add("PDFUA2-FORM-AA-TYPE", ValidationSeverity.Error,
+                    "field AA must be a dictionary", clause);
+        }
+    }
+
+    static void CertificateSeedAsciiArrays(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 238";
+        const int maxBytes = 1 << 20;
+        bool incomplete = false;
+        int work = 0, bytes = 0;
+        string[] keys = ["KeyUsage", "SignaturePolicyCommitmentType"];
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-SEED-CERT-INCOMPLETE", ValidationSeverity.Error,
+                "certificate seed inspection is truncated, unresolved, cyclic, unsupported or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var seed = ResolveBounded(c.F, field.Dictionary.Get("SV"), Incomplete);
+            if (seed is null or PdfNull) continue;
+            if (seed is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var certificate = ResolveBounded(c.F, dictionary.Get("Cert"), Incomplete);
+            if (certificate is null or PdfNull) continue;
+            if (certificate is not PdfDictionary cert) { Incomplete(); continue; }
+            foreach (var key in keys)
+            {
+                var value = ResolveBounded(c.F, cert.Get(key), Incomplete);
+                if (value is null or PdfNull) continue;
+                bool type = value is not PdfArray;
+                if (value is PdfArray array)
+                    foreach (var item in array.Items)
+                    {
+                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                        bool resolved = true;
+                        var entry = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                        if (!resolved) continue;
+                        if (entry is not PdfString text) { type = true; continue; }
+                        int length = Math.Min(text.Bytes.Length, maxBytes - bytes);
+                        for (int i = 0; i < length; i++)
+                            if (text.Bytes[i] > 127) type = true;
+                        bytes += length;
+                        if (length < text.Bytes.Length) Incomplete();
+                    }
+                if (type)
+                    c.Add("PDFUA2-FORM-SEED-CERT-ASCII-TYPE", ValidationSeverity.Error,
+                        $"certificate seed {key} must be an array of ASCII strings", clause);
+            }
+        }
+    }
+
+    static void SignatureSeedScalars(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 237";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-SEED-SCALAR-INCOMPLETE", ValidationSeverity.Error,
+                "signature-seed scalar inspection is truncated, unresolved, cyclic or unsupported", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var seed = ResolveBounded(c.F, field.Dictionary.Get("SV"), Incomplete);
+            if (seed is null or PdfNull) continue;
+            if (seed is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var version = ResolveBounded(c.F, dictionary.Get("V"), Incomplete);
+            if (version is not (null or PdfNull or PdfInteger))
+                c.Add("PDFUA2-FORM-SEED-V-TYPE", ValidationSeverity.Error,
+                    "signature-seed V must be an integer", clause);
+            var revocation = ResolveBounded(c.F, dictionary.Get("AddRevInfo"), Incomplete);
+            if (revocation is not (null or PdfNull or PdfBoolean))
+                c.Add("PDFUA2-FORM-SEED-ADDREVINFO-TYPE", ValidationSeverity.Error,
+                    "signature-seed AddRevInfo must be a boolean", clause);
+        }
+    }
+
+    static void SignatureSeedDigests(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 237";
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-SEED-DIGEST-INCOMPLETE", ValidationSeverity.Error,
+                "signature-seed digest inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("SV"), Incomplete);
+            if (value is null or PdfNull) continue;
+            if (value is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var digests = ResolveBounded(c.F, dictionary.Get("DigestMethod"), Incomplete);
+            if (digests is null or PdfNull) continue;
+            bool type = digests is not PdfArray;
+            if (digests is PdfArray array)
+                foreach (var item in array.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var digest = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (resolved && digest is not PdfName) type = true;
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-SEED-DIGEST-TYPE", ValidationSeverity.Error,
+                    "signature-seed DigestMethod must be an array of names", clause);
+        }
+    }
+
+    static void SignatureLockFields(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.5 Table 236";
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-LOCK-INCOMPLETE", ValidationSeverity.Error,
+                "signature-lock metadata inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Sig") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("Lock"), Incomplete);
+            if (value is null or PdfNull) continue;
+            if (value is not PdfDictionary dictionary) { Incomplete(); continue; }
+            var permissions = ResolveBounded(c.F, dictionary.Get("P"), Incomplete);
+            if (permissions is not (null or PdfNull or PdfInteger or PdfReal))
+                c.Add("PDFUA2-FORM-LOCK-P-TYPE", ValidationSeverity.Error,
+                    "signature-lock P must be a number", clause);
+            bool actionComplete = true, namesComplete = true;
+            var action = ResolveBounded(c.F, dictionary.Get("Action"), () => { actionComplete = false; Incomplete(); });
+            var names = ResolveBounded(c.F, dictionary.Get("Fields"), () => { namesComplete = false; Incomplete(); });
+            if (!namesComplete) continue;
+            if (names is null or PdfNull)
+            {
+                if (actionComplete && action is PdfName { Value: "Include" or "Exclude" })
+                    c.Add("PDFUA2-FORM-LOCK-FIELDS-MISSING", ValidationSeverity.Error,
+                        "signature-lock Include or Exclude requires a Fields array", clause);
+                continue;
+            }
+            bool type = names is not PdfArray;
+            if (names is PdfArray array)
+                foreach (var item in array.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var name = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (resolved && name is not PdfString) type = true;
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-LOCK-FIELDS-TYPE", ValidationSeverity.Error,
+                    "signature-lock Fields must be an array of text strings", clause);
+        }
+    }
+
+    static void ChoiceFieldOptions(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.4 Table 234";
+        bool incomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-CHOICE-OPT-INCOMPLETE", ValidationSeverity.Error,
+                "choice-field option inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Ch") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("Opt"), Incomplete);
+            if (value is null or PdfNull) continue;
+            bool type = value is not PdfArray;
+            if (value is PdfArray options)
+                foreach (var item in options.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var option = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (!resolved || option is PdfString) continue;
+                    if (option is not PdfArray pair) { type = true; continue; }
+                    if (pair.Count != 2) type = true;
+                    foreach (var member in pair.Items)
+                    {
+                        if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                        resolved = true;
+                        var text = ResolveBounded(c.F, member, () => { resolved = false; Incomplete(); });
+                        if (resolved && text is not PdfString) type = true;
+                    }
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-CHOICE-OPT-TYPE", ValidationSeverity.Error,
+                    "choice-field Opt must be an array of text strings or exact two-text-string pairs", clause);
+        }
+    }
+
+    static void ChoiceFieldIndices(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.5.4 Table 234";
+        bool incomplete = false, rangeIncomplete = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-CHOICE-I-INCOMPLETE", ValidationSeverity.Error,
+                "choice-field index inspection is truncated, unresolved, cyclic or bounded", clause);
+        }
+        void RangeIncomplete()
+        {
+            if (rangeIncomplete) return;
+            rangeIncomplete = true;
+            c.Add("PDFUA2-FORM-CHOICE-I-RANGE-INCOMPLETE", ValidationSeverity.Error,
+                "choice-field local option array inspection is truncated, unresolved, cyclic or unsupported", clause);
+        }
+        if (fields.Truncated) { Incomplete(); RangeIncomplete(); }
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Ch") continue;
+            var value = ResolveBounded(c.F, field.Dictionary.Get("I"), Incomplete);
+            if (value is null or PdfNull) continue;
+            bool type = value is not PdfArray, order = false, range = false, optionsRead = false;
+            int? optionCount = null;
+            long? previous = null;
+            if (value is PdfArray indices)
+                foreach (var item in indices.Items)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                    bool resolved = true;
+                    var index = ResolveBounded(c.F, item, () => { resolved = false; Incomplete(); });
+                    if (!resolved) { previous = null; continue; }
+                    if (index is not PdfInteger integer) { type = true; previous = null; continue; }
+                    if (integer.Value < 0 || previous is { } prior && integer.Value < prior) order = true;
+                    previous = integer.Value;
+                    if (!optionsRead)
+                    {
+                        optionsRead = true;
+                        var options = ResolveBounded(c.F, field.Dictionary.Get("Opt"), RangeIncomplete);
+                        if (options is PdfArray array) optionCount = array.Count;
+                        else if (options is not (null or PdfNull)) RangeIncomplete();
+                    }
+                    if (optionCount is { } count && integer.Value >= count) range = true;
+                }
+            if (type)
+                c.Add("PDFUA2-FORM-CHOICE-I-TYPE", ValidationSeverity.Error,
+                    "a choice-field I entry must be an array of integers", clause);
+            if (order)
+                c.Add("PDFUA2-FORM-CHOICE-I-ORDER", ValidationSeverity.Error,
+                    "choice-field I indices must be non-negative and sorted in ascending order", clause);
+            if (range)
+                c.Add("PDFUA2-FORM-CHOICE-I-RANGE", ValidationSeverity.Error,
+                    "choice-field I index exceeds the explicit local Opt array bounds", clause);
+        }
+    }
+
+    const int MaxDefaultAppearanceBytes = 1024 * 1024;
+
+    static void DefaultAppearances(ValidationContext c, PdfFormFieldDetailSet fields)
+    {
+        const string clause = "ISO 32000-2 12.7.3 Table 224, 12.7.4.3 Table 228";
+        bool incomplete = false;
+        int work = 0;
+        int bytes = 0;
+        var seen = new HashSet<PdfString>(ReferenceEqualityComparer.Instance);
+        PdfDictionary? formDictionary = null, fonts = null;
+        bool resourcesInspected = false, resourcesComplete = true, fontIncomplete = false;
+        void FontIncomplete()
+        {
+            if (fontIncomplete) return;
+            fontIncomplete = true;
+            c.Add("PDFUA2-FORM-DA-FONT-INCOMPLETE", ValidationSeverity.Error,
+                "default appearance font-resource inspection is unresolved, cyclic or unsupported",
+                "ISO 32000-2 12.7.4.3");
+        }
+        bool MissingFont(PdfName name)
+        {
+            void Unknown() { resourcesComplete = false; FontIncomplete(); }
+            if (!resourcesInspected)
+            {
+                resourcesInspected = true;
+                var resources = ResolveBounded(c.F, formDictionary?.Get("DR"), Unknown);
+                if (resources is PdfDictionary dictionary)
+                {
+                    var value = ResolveBounded(c.F, dictionary.Get("Font"), Unknown);
+                    fonts = value as PdfDictionary;
+                    if (value is not (null or PdfNull or PdfDictionary)) Unknown();
+                }
+                else if (resources is not (null or PdfNull)) Unknown();
+            }
+            if (!resourcesComplete) return false;
+            bool complete = true;
+            var font = ResolveBounded(c.F, fonts?.Get(name.Value), () => { complete = false; FontIncomplete(); });
+            if (!complete) return false;
+            if (font is null or PdfNull) return true;
+            if (font is not PdfDictionary) FontIncomplete();
+            return false;
+        }
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FORM-DA-INCOMPLETE", ValidationSeverity.Error,
+                "default appearance inspection is truncated, cyclic, unsupported or bounded", clause);
+        }
+        void Inspect(PdfObject? appearance)
+        {
+            if (appearance is PdfString text)
+            {
+                if (!seen.Add(text)) return;
+                if (text.Bytes.Length > MaxDefaultAppearanceBytes - bytes) { Incomplete(); return; }
+                bytes += text.Bytes.Length;
+                var lexer = new PdfLexer(text.Bytes);
+                int matrices = 0;
+                int operandCount = 0;
+                PdfObject? firstOperand = null, secondOperand = null;
+                bool scanned = true, textFont = false, missingFont = false, invalidFontOperands = false;
+                try
+                {
+                    while (true)
+                    {
+                        lexer.SkipWhite();
+                        if (lexer.Pos >= lexer.Length) break;
+                        if (++work > PdfTreeDiagnostics.MaxWork) { scanned = false; Incomplete(); break; }
+                        var item = lexer.ReadObject(false);
+                        if (item is not PdfKeyword keyword)
+                        {
+                            if (operandCount == 0) firstOperand = item;
+                            if (operandCount == 1) secondOperand = item;
+                            if (operandCount < 3) operandCount++;
+                            continue;
+                        }
+                        if (keyword.Value is "BI" or "ID" or "EI" or "]" or ">>" or ">" or ")" or "{" or "}")
+                        { scanned = false; Incomplete(); break; }
+                        if (keyword.Value == "Tm" && matrices < 2) matrices++;
+                        if (keyword.Value == "Tf")
+                        {
+                            textFont = true;
+                            if (operandCount != 2) invalidFontOperands = true;
+                            if (operandCount == 2 && firstOperand is PdfName name
+                                && secondOperand?.AsNumber() is { } size && double.IsFinite(size))
+                                missingFont |= MissingFont(name);
+                            else FontIncomplete();
+                        }
+                        operandCount = 0;
+                        firstOperand = secondOperand = null;
+                    }
+                }
+                catch (PdfParseException) { scanned = false; Incomplete(); }
+                if (matrices > 1)
+                    c.Add("PDFUA2-FORM-DA-TM-COUNT", ValidationSeverity.Error,
+                        "a default appearance byte string must contain at most one Tm operator",
+                        "ISO 32000-2 12.7.4.3");
+                if (scanned && !textFont)
+                    c.Add("PDFUA2-FORM-DA-TF-MISSING", ValidationSeverity.Error,
+                        "a default appearance byte string must include a Tf operator",
+                        "ISO 32000-2 12.7.4.3");
+                if (missingFont)
+                    c.Add("PDFUA2-FORM-DA-FONT-RESOURCE", ValidationSeverity.Error,
+                        "a default appearance Tf font name must match an AcroForm DR Font resource",
+                        "ISO 32000-2 12.7.4.3");
+                if (invalidFontOperands)
+                    c.Add("PDFUA2-FORM-DA-TF-OPERANDS", ValidationSeverity.Error,
+                        "a default appearance Tf operator must have two operands",
+                        "ISO 32000-2 12.7.4.3");
+            }
+            else if (appearance is not (null or PdfNull))
+                c.Add("PDFUA2-FORM-DA-TYPE", ValidationSeverity.Error,
+                    "a default appearance DA value must be a byte string", clause);
+        }
+        if (fields.Truncated) Incomplete();
+        var form = ResolveBounded(c.F, c.F.Catalog.Get("AcroForm"), Incomplete);
+        formDictionary = form as PdfDictionary;
+        if (form is PdfDictionary dictionary)
+            Inspect(ResolveBounded(c.F, dictionary.Get("DA"), Incomplete));
+        else if (form is not (null or PdfNull)) Incomplete();
+        foreach (var field in fields.Fields)
+        {
+            if (field.FieldType?.Value != "Tx") continue;
+            bool complete = true;
+            var appearance = InheritedFieldValue(c, field.Dictionary, "DA", () =>
+            {
+                complete = false;
+                Incomplete();
+            });
+            if (complete) Inspect(appearance);
+        }
+    }
+
+    static PdfObject? InheritedFieldValue(ValidationContext c, PdfDictionary dictionary, string key, Action incompleteInspection)
+    {
+        bool complete = true;
+        void Incomplete() { complete = false; incompleteInspection(); }
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        PdfDictionary? current = dictionary;
+        while (current is not null)
+        {
+            if (seen.Count > FormFieldDetailFeatures.MaxDepth || !seen.Add(current)) { Incomplete(); return null; }
+            var value = ResolveBounded(c.F, current.Get(key), Incomplete);
+            if (!complete || value is not (null or PdfNull)) return value;
+            var parent = ResolveBounded(c.F, current.Get("Parent"), Incomplete);
+            if (!complete) return null;
+            if (parent is not (null or PdfNull or PdfDictionary)) { Incomplete(); return null; }
+            current = parent as PdfDictionary;
+        }
+        return null;
+    }
+
+    static string RichFieldPlainText(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return new UnicodeEncoding(true, false, true).GetString(bytes, 2, bytes.Length - 2);
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            return new UnicodeEncoding(false, false, true).GetString(bytes, 2, bytes.Length - 2);
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return new UTF8Encoding(false, true).GetString(bytes, 3, bytes.Length - 3);
+        foreach (byte value in bytes)
+        {
+            if (value is < 0x18 and not (9 or 10 or 13) or 0x7F or 0x9F or 0xAD)
+                throw new InvalidDataException("undefined PDFDocEncoding byte in rich-field text value");
+        }
+        return PdfString.Decode(bytes);
+    }
+
+    static byte[] RichFieldBytes(ValidationContext c, PdfObject value)
+    {
+        if (value is PdfString text) return text.Bytes;
+        var stream = (PdfStream)value;
+        PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw,
+            () => throw new InvalidDataException("rich-field stream filter resolution did not complete"));
+        var filter = Resolve(stream.Dict.Get("Filter") ?? stream.Dict.Get("F"));
+        var parameters = Resolve(stream.Dict.Get("DecodeParms") ?? stream.Dict.Get("DP"));
+        if (filter is not (null or PdfNull or PdfName or PdfArray)
+            || filter is PdfArray array && (array.Count > XfaReader.MaxElements
+                || array.Items.Any(item => Resolve(item) is not PdfName))
+            || parameters is not (null or PdfNull or PdfDictionary or PdfArray))
+            throw new InvalidDataException("malformed rich-field stream filters");
+        var filters = PdfFilters.GetFilters(stream.Dict, Resolve);
+        if (filter is PdfArray && parameters is PdfDictionary
+            || parameters is PdfArray parms && (parms.Count != filters.Count
+                || parms.Items.Any(item => Resolve(item) is not (null or PdfNull or PdfDictionary))))
+            throw new InvalidDataException("malformed rich-field stream filter parameters");
+        var (bytes, imageFilter, _) = PdfFilters.Decode(stream.RawData, filters, Resolve, strictContentFilters: true);
+        if (imageFilter is not null) throw new NotSupportedException("image filter on rich-field text stream");
+        return bytes;
+    }
+
+    static string? RichFieldText(ValidationContext c, PdfObject rich, Action incomplete)
+    {
+        var bytes = RichFieldBytes(c, rich);
+        if (bytes.Length > XfaReader.MaxBytes) { incomplete(); return null; }
+        var settings = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersInDocument = XfaReader.MaxBytes,
+            IgnoreComments = true,
+            IgnoreProcessingInstructions = true,
+            CloseInput = true,
+        };
+        using var reader = rich is PdfString
+            ? XmlReader.Create(new StringReader(RichFieldPlainText(bytes)), settings)
+            : XmlReader.Create(new MemoryStream(bytes), settings);
+        var result = new StringBuilder();
+        bool body = false;
+        int elements = 0;
+        while (reader.Read())
+        {
+            if (reader.NodeType == XmlNodeType.Element)
+            {
+                if (++elements > XfaReader.MaxElements || reader.Depth >= XfaReader.MaxDepth)
+                { incomplete(); return null; }
+                if (!body)
+                {
+                    if (reader.LocalName != "body" || reader.NamespaceURI != "http://www.w3.org/1999/xhtml")
+                    { incomplete(); return null; }
+                    body = true;
+                }
+            }
+            else if (body && reader.Depth > 0 && reader.NodeType is (XmlNodeType.Text or XmlNodeType.CDATA
+                or XmlNodeType.Whitespace or XmlNodeType.SignificantWhitespace))
+                result.Append(reader.Value);
+        }
+        if (!body) { incomplete(); return null; }
+        return result.ToString();
+    }
+
+    internal static bool LanguagePrivateUse(ValidationContext c, string language, int? page = null)
+    {
+        if (c.Part == 2 && language.EnumerateRunes().Any(r =>
+            r.Value is >= 0xE000 and <= 0xF8FF or >= 0xF0000 and <= 0xFFFFD or >= 0x100000 and <= 0x10FFFD))
+        {
+            c.Add("PDFUA2-TEXT-STRING-PUA", ValidationSeverity.Error,
+                "language text string contains a Unicode private-use codepoint", "ISO 14289-2 8.6", page);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>8.14.1-1 (Desc on EmbeddedFiles name-tree specifications) and 8.9.2.4.10-1 (AFRelationship on file-attachment targets).</summary>
     static void Files(ValidationContext c)
     {
         var f = c.F;
-        bool desc = false, rel = false;
+        FileDescriptions(c);
+        bool rel = false, incomplete = false;
         foreach (var o in c.AllObjects())
         {
-            if (o is not PdfDictionary d) continue;
-            if (!desc && d.Get("EF") is not null && f.Resolve(d.Get("Type")).AsName() is "Filespec" or null && f.Resolve(d.Get("Desc")) is not PdfString)
-            { desc = true; c.Add("PDFUA2-FILESPEC-DESC", ValidationSeverity.Error, "an embedded-file specification has no /Desc (veraPDF PDFUA-2 8.14.1-1)", "ISO 14289-2 8.14.1"); }
-            if (!rel && f.Resolve(d.Get("Subtype")).AsName() == "FileAttachment" && f.Resolve(d.Get("FS")) is PdfDictionary fs && fs.Get("AFRelationship") is null)
+            if (rel || o is not PdfDictionary d || f.Resolve(d.Get("Subtype")).AsName() != "FileAttachment") continue;
+            if (ResolveBounded(f, d.Get("FS"), Incomplete) is not PdfDictionary fs) continue;
+            bool complete = true;
+            var relationship = ResolveBounded(f, fs.Get("AFRelationship"), () => { complete = false; Incomplete(); });
+            if (complete && relationship is null or PdfNull)
             { rel = true; c.Add("PDFUA2-FILEATTACH-AFRELATIONSHIP", ValidationSeverity.Error, "a file-attachment annotation's file specification has no /AFRelationship (veraPDF PDFUA-2 8.9.2.4.10-1)", "ISO 14289-2 8.9.2.4.10"); }
+        }
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FILEATTACH-INCOMPLETE", ValidationSeverity.Error,
+                "file-attachment relationship inspection encountered a cyclic or bounded reference",
+                "ISO 14289-2 8.9.2.4.10");
+        }
+    }
+
+    static void FileDescriptions(ValidationContext c)
+    {
+        var f = c.F;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        int work = 0;
+        bool incomplete = false, missing = false;
+        PdfObject? Resolve(PdfObject? value) => ResolveBounded(f, value, Incomplete);
+        var names = Resolve(f.Catalog.Get("Names"));
+        if (names is null or PdfNull) return;
+        if (names is not PdfDictionary dictionary) Incomplete();
+        else if (Resolve(dictionary.Get("EmbeddedFiles")) is { } tree && tree is not PdfNull) Visit(tree, 0);
+
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FILES-INCOMPLETE", ValidationSeverity.Error,
+                "EmbeddedFiles name-tree inspection is cyclic, malformed or bounded; file descriptions could not be fully checked",
+                "ISO 14289-2 8.14.1");
+        }
+
+        void Visit(PdfObject raw, int depth)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork || depth > PdfTreeDiagnostics.MaxDepth) { Incomplete(); return; }
+            if (Resolve(raw) is not PdfDictionary node || !seen.Add(node)) { Incomplete(); return; }
+            var names = Resolve(node.Get("Names"));
+            if (names is PdfArray pairs)
+            {
+                if (pairs.Count % 2 != 0) Incomplete();
+                for (var i = 0; i + 1 < pairs.Count; i += 2)
+                {
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+                    if (Resolve(pairs[i]) is not PdfString || Resolve(pairs[i + 1]) is not PdfDictionary spec)
+                    { Incomplete(); continue; }
+                    var description = Resolve(spec.Get("Desc"));
+                    if (!missing && description is not PdfString)
+                    {
+                        missing = true;
+                        c.Add("PDFUA2-FILESPEC-DESC", ValidationSeverity.Error,
+                            "a file specification in the EmbeddedFiles name tree has no /Desc (veraPDF PDFUA-2 8.14.1-1)",
+                            "ISO 14289-2 8.14.1");
+                    }
+                }
+            }
+            else if (names is not (null or PdfNull)) Incomplete();
+            var kids = Resolve(node.Get("Kids"));
+            if (kids is PdfArray children)
+                foreach (var child in children.Items)
+                {
+                    Visit(child, depth + 1);
+                    if (work > PdfTreeDiagnostics.MaxWork) return;
+                }
+            else if (kids is not (null or PdfNull)) Incomplete();
         }
     }
 
@@ -61,18 +750,24 @@ internal static class PdfUA2Checks
     enum RoleOutcome { Standard, Circular, Unmapped }
 
     static RoleOutcome Resolve(PdfFile f, StructureTree tree, string type, PdfDictionary? nsDict, string? ns, out string? standardType)
+        => Resolve(f, tree, type, nsDict, ns, out standardType, out _);
+
+    static RoleOutcome Resolve(PdfFile f, StructureTree tree, string type, PdfDictionary? nsDict, string? ns,
+        out string? standardType, out string? resolvedNamespace)
     {
         standardType = null;
+        resolvedNamespace = null;
         var seen = new HashSet<(string, string?)>();
         for (var depth = 0; depth < MaxRoleDepth; depth++)
         {
             if (((ns is null || ns == Pdf17Namespace) && StructureTree.IsPdf17StandardType(type) && !tree.RoleMap.ContainsKey(type))
-                || ns == Pdf2Namespace && StructureTree.IsStandardType(type))
+                || ns == Pdf2Namespace && type != "Note" && StructureTree.IsStandardType(type))
             {
                 standardType = type;
+                resolvedNamespace = ns ?? Pdf17Namespace;
                 return RoleOutcome.Standard;
             }
-            if (ns == MathMlNamespace) return RoleOutcome.Standard;
+            if (ns == MathMlNamespace) { resolvedNamespace = ns; return RoleOutcome.Standard; }
             if (!seen.Add((type, ns))) return RoleOutcome.Circular;
             if (nsDict is not null && ns is not null && ns != Pdf17Namespace && ns != Pdf2Namespace)
             {
@@ -101,6 +796,257 @@ internal static class PdfUA2Checks
     {
         roleResolved = Resolve(c.F, tree, element.Type, element.NamespaceDict, element.Namespace, out var type) == RoleOutcome.Standard;
         return type;
+    }
+
+    static void PageStructureParents(ValidationContext c)
+    {
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            var dictionary = c.Doc.Pages[page].Dict;
+            if (InspectStructureParentKeys(c, dictionary, "PDFUA2-PAGE-STRUCT-PARENT-TYPE", page, () =>
+                c.Add("PDFUA2-PAGE-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "page structure parent key inspection exceeds its reference bound", StructureParentClause, page)))
+                c.Add("PDFUA2-PAGE-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                    "page must not contain both StructParent and StructParents", StructureParentClause, page);
+        }
+    }
+
+    const string StructureParentClause = "ISO 32000-2 14.7.5.4 Table 359";
+
+    static bool InspectStructureParentKeys(ValidationContext c, PdfDictionary dictionary, string typeRule, int page,
+        Action incompleteInspection)
+    {
+        bool incomplete = false;
+        void Incomplete() => incomplete = true;
+        var single = ResolveBounded(c.F, dictionary.Get("StructParent"), Incomplete);
+        var multiple = ResolveBounded(c.F, dictionary.Get("StructParents"), Incomplete);
+        if (single is not (null or PdfNull or PdfInteger) || multiple is not (null or PdfNull or PdfInteger))
+            c.Add(typeRule, ValidationSeverity.Error,
+                "StructParent and StructParents values must be integers when present", StructureParentClause, page);
+        if (incomplete) { incompleteInspection(); return false; }
+        return single is not (null or PdfNull) && multiple is not (null or PdfNull);
+    }
+
+    static void AnnotationStructureParents(ValidationContext c)
+    {
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            bool incomplete = false;
+            void Incomplete()
+            {
+                if (incomplete) return;
+                incomplete = true;
+                c.Add("PDFUA2-ANNOT-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "annotation structure parent inspection is unsupported or exceeds its reference/work bound",
+                    StructureParentClause, page);
+            }
+            int work = 0;
+            VisitPageAnnotations(c, page, annotation =>
+            {
+                if (InspectStructureParentKeys(c, annotation, "PDFUA2-ANNOT-STRUCT-PARENT-TYPE", page, Incomplete))
+                    c.Add("PDFUA2-ANNOT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                        "annotation must not contain both StructParent and StructParents", StructureParentClause, page);
+                return !incomplete;
+            }, Incomplete, ref work);
+        }
+    }
+
+    static void VisitPageAnnotations(ValidationContext c, int page, Func<PdfDictionary, bool> inspect,
+        Action incompleteInspection, ref int work)
+    {
+        bool incomplete = false;
+        void Incomplete() { incomplete = true; incompleteInspection(); }
+        var raw = ResolveBounded(c.F, c.Doc.Pages[page].Dict.Get("Annots"), Incomplete);
+        if (incomplete || raw is null or PdfNull) return;
+        if (raw is not PdfArray array) { Incomplete(); return; }
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        foreach (var item in array.Items)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+            var value = ResolveBounded(c.F, item, Incomplete);
+            if (incomplete) return;
+            if (value is null or PdfNull) continue;
+            if (value is not PdfDictionary annotation) { Incomplete(); return; }
+            if (seen.Add(annotation) && !inspect(annotation)) return;
+        }
+    }
+
+    static void AppearanceStructureParents(ValidationContext c)
+    {
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            bool incomplete = false;
+            int work = 0;
+            var seen = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+            var seenResources = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            void Incomplete()
+            {
+                if (incomplete) return;
+                incomplete = true;
+                c.Add("PDFUA2-AP-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "appearance structure parent inspection is unsupported or exceeds its reference/work bound",
+                    StructureParentClause, page);
+            }
+            PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw, Incomplete);
+            bool InspectStream(PdfObject? raw)
+            {
+                var value = Resolve(raw);
+                if (incomplete) return false;
+                if (value is null or PdfNull) return true;
+                if (value is not PdfStream stream) { Incomplete(); return false; }
+                if (!seen.Add(stream)) return true;
+                if (InspectStructureParentKeys(c, stream.Dict, "PDFUA2-AP-STRUCT-PARENT-TYPE", page, Incomplete))
+                    c.Add("PDFUA2-AP-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                        "appearance stream must not contain both StructParent and StructParents", StructureParentClause, page);
+                if (incomplete) return false;
+                var resources = Resolve(stream.Dict.Get("Resources"));
+                if (incomplete) return false;
+                if (resources is PdfDictionary dictionary)
+                    VisitXObjectResources(c, dictionary, child =>
+                    {
+                        if (InspectStructureParentKeys(c, child.Dict, "PDFUA2-AP-STRUCT-PARENT-TYPE", page, Incomplete))
+                            c.Add("PDFUA2-AP-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                                "appearance resource XObject must not contain both StructParent and StructParents",
+                                StructureParentClause, page);
+                        return !incomplete;
+                    }, Incomplete, seenResources, seen, ref work);
+                else if (resources is not (null or PdfNull)) Incomplete();
+                return !incomplete;
+            }
+            VisitPageAnnotations(c, page, annotation =>
+            {
+                var raw = Resolve(annotation.Get("AP"));
+                if (incomplete) return false;
+                if (raw is null or PdfNull) return true;
+                if (raw is not PdfDictionary appearances) { Incomplete(); return false; }
+                foreach (var key in new[] { "N", "R", "D" })
+                {
+                    var entry = Resolve(appearances.Get(key));
+                    if (incomplete) return false;
+                    if (entry is null or PdfNull) continue;
+                    if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+                    if (entry is PdfDictionary states)
+                    {
+                        foreach (var state in states.Entries.Values)
+                        {
+                            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+                            if (!InspectStream(state)) return false;
+                        }
+                    }
+                    else if (!InspectStream(entry)) return false;
+                }
+                return true;
+            }, Incomplete, ref work);
+        }
+    }
+
+    static void XObjectStructureParents(ValidationContext c)
+    {
+        for (int page = 0; page < c.Doc.Pages.Count; page++)
+        {
+            bool incomplete = false;
+            void Incomplete()
+            {
+                if (incomplete) return;
+                incomplete = true;
+                c.Add("PDFUA2-XOBJECT-STRUCT-PARENT-INCOMPLETE", ValidationSeverity.Error,
+                    "XObject structure parent inspection is unsupported or exceeds its reference/work bound",
+                    StructureParentClause, page);
+            }
+            PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw, Incomplete);
+            var ancestors = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            PdfDictionary? ancestor = c.Doc.Pages[page].Dict;
+            PdfObject? root = null;
+            while (ancestor is not null)
+            {
+                if (ancestors.Count >= 32 || !ancestors.Add(ancestor)) { Incomplete(); break; }
+                root = Resolve(ancestor.Get("Resources"));
+                if (incomplete || root is not (null or PdfNull)) break;
+                var parent = Resolve(ancestor.Get("Parent"));
+                if (incomplete) break;
+                if (parent is not (null or PdfNull or PdfDictionary)) { Incomplete(); break; }
+                ancestor = parent as PdfDictionary;
+            }
+            if (incomplete || root is null or PdfNull) continue;
+            if (root is not PdfDictionary resources) { Incomplete(); continue; }
+            var seenResources = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+            var seenObjects = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+            int work = 0;
+            VisitXObjectResources(c, resources, stream =>
+            {
+                if (InspectStructureParentKeys(c, stream.Dict, "PDFUA2-XOBJECT-STRUCT-PARENT-TYPE", page, Incomplete))
+                    c.Add("PDFUA2-XOBJECT-STRUCT-PARENT-CONFLICT", ValidationSeverity.Error,
+                        "XObject must not contain both StructParent and StructParents", StructureParentClause, page);
+                return !incomplete;
+            }, Incomplete, seenResources, seenObjects, ref work);
+        }
+    }
+
+    static void VisitXObjectResources(ValidationContext c, PdfDictionary resources, Func<PdfStream, bool> inspect,
+        Action incompleteInspection, HashSet<PdfDictionary> seenResources, HashSet<PdfStream> seenObjects, ref int work)
+    {
+        bool incomplete = false;
+        void Incomplete() { incomplete = true; incompleteInspection(); }
+        PdfObject? Resolve(PdfObject? raw) => ResolveBounded(c.F, raw, Incomplete);
+        var pending = new Stack<PdfDictionary>();
+        pending.Push(resources);
+        while (pending.TryPop(out var current))
+        {
+            if (!seenResources.Add(current)) continue;
+            var rawMap = Resolve(current.Get("XObject"));
+            if (incomplete) return;
+            if (rawMap is null or PdfNull) continue;
+            if (rawMap is not PdfDictionary map) { Incomplete(); return; }
+            foreach (var raw in map.Entries.Values)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+                var value = Resolve(raw);
+                if (incomplete) return;
+                if (value is null or PdfNull) continue;
+                if (value is not PdfStream stream) { Incomplete(); return; }
+                if (seenObjects.Contains(stream)) continue;
+                var subtype = Resolve(stream.Dict.Get("Subtype")).AsName();
+                if (incomplete) return;
+                if (subtype is not ("Form" or "Image")) continue;
+                seenObjects.Add(stream);
+                if (!inspect(stream)) return;
+                if (subtype != "Form") continue;
+                var nested = Resolve(stream.Dict.Get("Resources"));
+                if (incomplete) return;
+                if (nested is PdfDictionary dictionary) pending.Push(dictionary);
+                else if (nested is not (null or PdfNull)) { Incomplete(); return; }
+            }
+        }
+    }
+
+    static void RoleMapShape(ValidationContext c, StructureTree tree)
+    {
+        const string clause = "ISO 32000-2 14.7.3";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-ROLEMAP-SHAPE-INCOMPLETE", ValidationSeverity.Error,
+                "RoleMap shape inspection exceeds its reference/work bound", clause);
+        }
+        var map = ResolveBounded(c.F, tree.Root.Get("RoleMap"), Incomplete);
+        if (incomplete || map is null or PdfNull) return;
+        bool invalid = map is not PdfDictionary;
+        if (map is PdfDictionary dictionary)
+        {
+            int work = 0;
+            foreach (var raw in dictionary.Entries.Values)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                var value = ResolveBounded(c.F, raw, Incomplete);
+                if (incomplete) break;
+                invalid |= value is not (null or PdfNull or PdfName);
+            }
+        }
+        if (invalid)
+            c.Add("PDFUA2-ROLEMAP-SHAPE", ValidationSeverity.Error,
+                "RoleMap must be a dictionary with name-valued defined mappings", clause);
     }
 
     static void Roles(ValidationContext c, StructureTree tree)
@@ -136,42 +1082,418 @@ internal static class PdfUA2Checks
         }
     }
 
+    internal static void WidgetAdditionalActions(ValidationContext c, StructureTree tree, PdfDictionary widget, StructElement parent, int page)
+    {
+        var f = c.F;
+        if (f.Resolve(widget.Get("AA")) is not PdfDictionary
+            || f.Resolve(widget.Get("Contents")) is PdfString
+            || !(f.Resolve(widget.Get("FT")) is PdfName || f.Resolve(widget.Get("T")) is PdfString
+                || f.Resolve(widget.Get("Parent")) is PdfDictionary)) return;
+        if (InsideArtifact(c, tree, parent)) return;
+        c.Add("PDFUA2-WIDGET-AA-CONTENTS", ValidationSeverity.Error,
+            "a tagged field widget with additional actions requires its own /Contents description",
+            "ISO 14289-2 8.10.2.3", page);
+    }
+
+    internal static bool InsideArtifact(ValidationContext c, StructureTree tree, StructElement parent)
+    {
+        for (var element = parent; element is not null; element = element.Parent)
+            if (StandardType(c, tree, element) == "Artifact") return true;
+        return false;
+    }
+
+    static void NamespaceRegistration(ValidationContext c, StructureTree tree)
+    {
+        const string clause = "ISO 32000-2 14.7.2 Tables 354/355";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-NS-REGISTRY-INCOMPLETE", ValidationSeverity.Error,
+                "namespace registration inspection is malformed or exceeds its reference/work bound", clause);
+        }
+        var registered = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var value = ResolveBounded(c.F, tree.Root.Get("Namespaces"), Incomplete);
+        if (value is PdfArray array)
+        {
+            int work = 0;
+            foreach (var raw in array.Items)
+            {
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+                var item = ResolveBounded(c.F, raw, Incomplete);
+                if (incomplete) break;
+                if (item is PdfDictionary dictionary) registered.Add(dictionary);
+                else if (item is not (null or PdfNull)) { Incomplete(); break; }
+            }
+        }
+        else if (value is not (null or PdfNull)) Incomplete();
+        if (incomplete) return;
+        foreach (var element in tree.Elements())
+        {
+            var ns = ResolveBounded(c.F, element.Dict.Get("NS"), Incomplete);
+            if (incomplete) break;
+            if (ns is PdfDictionary dictionary && !registered.Contains(dictionary))
+                c.Add("PDFUA2-NS-UNREGISTERED", ValidationSeverity.Error,
+                    "structure element NS dictionary is not an element of the root Namespaces array",
+                    clause, element.PageIndex);
+        }
+    }
+
     static void Elements(ValidationContext c, StructureTree tree)
     {
         var f = c.F;
+        StructureRootKids(c, tree.Root);
         foreach (var e in tree.Elements())
         {
-            var inPdf17 = e.Namespace is null or Pdf17Namespace;
-            if (e.Type == "Math" && e.Parent?.StandardType != "Formula")
-                c.Add("PDFUA2-MATH-PARENT", ValidationSeverity.Error, "a Math element may only occur as a child of Formula", "ISO 14289-2 8.2.5.29", e.PageIndex);
-            if (e.StandardType == "H")
-                c.Add("PDFUA2-HEADING-H", ValidationSeverity.Error, "the unnumbered H structure type must not be used (use Hn or H within Sect)", "ISO 14289-2 8.2.5.12", e.PageIndex);
-            if (inPdf17 && e.Type == "Note" && !tree.RoleMap.ContainsKey("Note"))
+            if (e.Dict.Get("NS") is PdfDictionary)
+                c.Add("PDFUA2-NS-INDIRECT", ValidationSeverity.Error,
+                    "structure element NS namespace dictionary must be an indirect reference",
+                    "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            StructureArrayShape(c, e.Dict, "K", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            StructureArrayShape(c, e.Dict, "A", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            StructureArrayShape(c, e.Dict, "C", "ISO 32000-2 14.7.2 Table 355", e.PageIndex);
+            AttributeOwners(c, tree, e);
+            StructureReferenceShape(c, e);
+            StructureRevision(c, e);
+            var outcome = Resolve(f, tree, e.Type, e.NamespaceDict, e.Namespace, out var standardType, out var resolvedNamespace);
+            if (outcome == RoleOutcome.Standard && resolvedNamespace == MathMlNamespace)
+            {
+                var parent = e.Parent;
+                if (parent is null
+                    || Resolve(f, tree, parent.Type, parent.NamespaceDict, parent.Namespace, out var parentType, out var parentNamespace) == RoleOutcome.Standard
+                    && parentType != "Formula" && parentNamespace != MathMlNamespace)
+                    c.Add("PDFUA2-MATH-PARENT", ValidationSeverity.Error,
+                        "a MathML structure element must have a Formula or MathML parent",
+                        "ISO 14289-2 8.2.5.29", e.PageIndex);
+            }
+            if (standardType == "H")
+                c.Add("PDFUA2-HEADING-H", ValidationSeverity.Error, "the H structure type must not be used; use numbered headings", "ISO 14289-2 8.2.5.12", e.PageIndex);
+            if (standardType == "Note")
                 c.Add("PDFUA2-NOTE", ValidationSeverity.Error, "the Note structure type is only permitted when role mapped to a PDF 2.0 namespace element", "ISO 14289-2 8.2.5.14", e.PageIndex);
-            switch (e.StandardType)
+            if (standardType == "Form"
+                && e.Children.OfType<StructObjectRef>().Count(o => o.Object is PdfDictionary d && f.Resolve(d.Get("Subtype")).AsName() == "Widget") > 1)
+                c.Add("PDFUA2-FORM-WIDGETS", ValidationSeverity.Error, "a Form structure element must contain at most one widget annotation", "ISO 14289-2 8.10.1", e.PageIndex);
+            switch (standardType)
             {
                 case "L":
-                    if (e.ChildElements.Any(li => li.StandardType == "LI" && li.ChildElements.Any(l => l.StandardType == "Lbl"))
-                        && (e.Attribute(f, "ListNumbering").AsName() is null or "None"))
-                        c.Add("PDFUA2-LIST-NUMBERING", ValidationSeverity.Error, "L contains Lbl elements but has no ListNumbering attribute other than None", "ISO 14289-2 8.2.5.25", e.PageIndex);
+                    if (e.ChildElements.Any(li => StandardType(c, tree, li) == "LI"
+                        && li.ChildElements.Any(l => StandardType(c, tree, l) == "Lbl")))
+                    {
+                        bool complete = true;
+                        var numbering = OwnedAttribute(c, tree, e, "List", "ListNumbering", () =>
+                        {
+                            if (!complete) return;
+                            complete = false;
+                            c.Add("PDFUA2-LIST-ATTRIBUTE-INCOMPLETE", ValidationSeverity.Error,
+                                "ListNumbering attribute inspection is malformed or exceeds its reference/work bound",
+                                "ISO 14289-2 8.2.5.25", e.PageIndex);
+                        });
+                        if (complete && numbering.AsName() is null or "None")
+                            c.Add("PDFUA2-LIST-NUMBERING", ValidationSeverity.Error, "L contains Lbl elements but has no ListNumbering attribute other than None", "ISO 14289-2 8.2.5.25", e.PageIndex);
+                    }
                     break;
                 case "LI":
                     if (e.MarkedContent.Any())
                         c.Add("PDFUA2-LI-CONTENT", ValidationSeverity.Error, "content directly inside LI must be enclosed in Lbl or LBody", "ISO 14289-2 8.2.5.25", e.PageIndex);
                     break;
-                case "Form":
-                    if (e.Children.OfType<StructObjectRef>().Count(o => o.Object is PdfDictionary d && f.Resolve(d.Get("Subtype")).AsName() == "Widget") > 1)
-                        c.Add("PDFUA2-FORM-WIDGETS", ValidationSeverity.Error, "a Form structure element must contain at most one widget annotation", "ISO 14289-2 8.10.1", e.PageIndex);
+                case "FENote":
+                    FenoteType(c, tree, e);
+                    break;
+                case "TOCI":
+                    TociReference(c, e);
                     break;
             }
-            if (e.StandardType is not ("Table" or "L" or "TOC"))
+            var kids = e.ChildElements.ToList();
+            for (var i = 1; i < kids.Count - 1; i++)
+                if (StandardType(c, tree, kids[i]) == "Caption")
+                { c.Add("PDFUA2-CAPTION-POSITION", ValidationSeverity.Error, $"Caption must be the first or last child of /{e.Type}", "ISO 14289-2 8.2.5.27", e.PageIndex); break; }
+        }
+    }
+
+    static void TociReference(ValidationContext c, StructElement element)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-TOCI-REF-INCOMPLETE", ValidationSeverity.Error,
+                "TOCI reference-presence inspection is cyclic or exceeds its reference/work bound",
+                "ISO 14289-2 8.2.5.8", element.PageIndex);
+        }
+        var pending = new Stack<StructElement>();
+        var seen = new HashSet<StructElement>(ReferenceEqualityComparer.Instance);
+        int work = 1;
+        pending.Push(element);
+        while (pending.TryPop(out var current))
+        {
+            if (seen.Count >= PdfTreeDiagnostics.MaxWork || !seen.Add(current))
+            { Incomplete(); return; }
+            var reference = ResolveBounded(c.F, current.Dict.Get("Ref"), Incomplete);
+            if (incomplete) return;
+            if (reference is not (null or PdfNull)) return;
+            foreach (var child in current.ChildElements)
             {
-                var kids = e.ChildElements.ToList();
-                for (var i = 0; i < kids.Count; i++)
-                    if (kids[i].StandardType == "Caption" && i != 0 && i != kids.Count - 1)
-                    { c.Add("PDFUA2-CAPTION-POSITION", ValidationSeverity.Error, $"Caption must be the first or last child of /{e.Type}", "ISO 14289-2 8.2.5.27", e.PageIndex); break; }
+                if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return; }
+                pending.Push(child);
             }
         }
+        c.Add("PDFUA2-TOCI-REF", ValidationSeverity.Error,
+            "TOCI and its descendants have no non-null /Ref entry; target shape and identity are not evaluated",
+            "ISO 14289-2 8.2.5.8", element.PageIndex);
+    }
+
+    static void StructureReferenceShape(ValidationContext c, StructElement element)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-STRUCT-REF-INCOMPLETE", ValidationSeverity.Error,
+                "structure Ref inspection exceeds its reference/work bound",
+                "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+        }
+        var value = ResolveBounded(c.F, element.Dict.Get("Ref"), Incomplete);
+        if (incomplete || value is null or PdfNull) return;
+        if (value is not PdfArray references)
+        {
+            c.Add("PDFUA2-STRUCT-REF-TYPE", ValidationSeverity.Error,
+                "structure Ref must be an array", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+            return;
+        }
+        if (ArrayContainsNull(c, references, Incomplete))
+            c.Add("PDFUA2-STRUCT-REF-NULL", ValidationSeverity.Error,
+                "structure Ref array contains a null element", "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+    }
+
+    static void StructureArrayShape(ValidationContext c, PdfDictionary dictionary, string key, string clause, int? page)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add($"PDFUA2-STRUCT-{key}-INCOMPLETE", ValidationSeverity.Error,
+                $"structure {key} null-item inspection exceeds its reference/work bound", clause, page);
+        }
+        var value = ResolveBounded(c.F, dictionary.Get(key), Incomplete);
+        if (incomplete) return;
+        if (key == "C" && value is not (null or PdfNull or PdfName or PdfArray))
+            c.Add("PDFUA2-STRUCT-C-TYPE", ValidationSeverity.Error,
+                "structure C must be a name or array", clause, page);
+        if (value is not PdfArray array) return;
+        if (key == "K" && array.Count == 0)
+            c.Add("PDFUA2-STRUCT-K-EMPTY", ValidationSeverity.Error,
+                "structure element K array must contain one or more children", clause, page);
+        bool invalidClassItem = false;
+        if (ArrayContainsNull(c, array, Incomplete,
+            item => invalidClassItem |= key == "C" && item is not (null or PdfNull or PdfName or PdfInteger or PdfReal)))
+            c.Add($"PDFUA2-STRUCT-{key}-NULL", ValidationSeverity.Error,
+                $"structure {key} array contains a null item", clause, page);
+        if (invalidClassItem)
+            c.Add("PDFUA2-STRUCT-C-ITEM-TYPE", ValidationSeverity.Error,
+                "structure C array items must be class names or numeric revision markers",
+                "ISO 32000-2 14.7.6.2", page);
+    }
+
+    static void StructureRootKids(ValidationContext c, PdfDictionary root)
+    {
+        const string clause = "ISO 32000-2 14.7.2 Table 354";
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-STRUCT-K-INCOMPLETE", ValidationSeverity.Error,
+                "structure root K inspection exceeds its reference/work bound", clause);
+        }
+        var value = ResolveBounded(c.F, root.Get("K"), Incomplete);
+        if (incomplete || value is null or PdfNull) return;
+        bool invalidType = value is not (PdfDictionary or PdfArray);
+        if (value is PdfArray array && ArrayContainsNull(c, array, Incomplete,
+            item => invalidType |= item is not (null or PdfNull or PdfDictionary)))
+            c.Add("PDFUA2-STRUCT-K-NULL", ValidationSeverity.Error,
+                "structure K array contains a null item", clause);
+        if (invalidType)
+            c.Add("PDFUA2-STRUCT-ROOT-K-TYPE", ValidationSeverity.Error,
+                "structure root K must be a dictionary or a flat array of dictionaries", clause);
+    }
+
+    static bool ArrayContainsNull(ValidationContext c, PdfArray array, Action incompleteInspection,
+        Action<PdfObject?>? inspectItem = null)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            incomplete = true;
+            incompleteInspection();
+        }
+        int work = 0;
+        bool foundNull = false;
+        foreach (var raw in array.Items)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); break; }
+            var item = ResolveBounded(c.F, raw, Incomplete);
+            if (incomplete) break;
+            foundNull |= item is null or PdfNull;
+            inspectItem?.Invoke(item);
+        }
+        return foundNull;
+    }
+
+    static void StructureRevision(ValidationContext c, StructElement element)
+    {
+        bool incomplete = false;
+        var value = ResolveBounded(c.F, element.Dict.Get("R"), () =>
+        {
+            incomplete = true;
+            c.Add("PDFUA2-STRUCT-R-INCOMPLETE", ValidationSeverity.Error,
+                "structure R revision inspection exceeds its reference bound",
+                "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+        });
+        if (!incomplete && value is not (null or PdfNull or PdfInteger { Value: >= 0 }))
+            c.Add("PDFUA2-STRUCT-R-TYPE", ValidationSeverity.Error,
+                "structure R revision must be a non-negative integer",
+                "ISO 32000-2 14.7.2 Table 355", element.PageIndex);
+    }
+
+    static void FenoteType(ValidationContext c, StructureTree tree, StructElement element)
+    {
+        bool incomplete = false;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-FENOTE-INCOMPLETE", ValidationSeverity.Error,
+                "FENote attribute inspection is malformed or exceeds its reference/work bound",
+                "ISO 14289-2 8.2.5.14", element.PageIndex);
+        }
+
+        var noteType = OwnedAttribute(c, tree, element, "FENote", "NoteType", Incomplete);
+        if (!incomplete && noteType is PdfName name && name.Value is not ("Footnote" or "Endnote" or "None"))
+            c.Add("PDFUA2-FENOTE-TYPE", ValidationSeverity.Error,
+                $"FENote NoteType name /{name.Value} is not Footnote, Endnote or None",
+                "ISO 14289-2 8.2.5.14", element.PageIndex);
+    }
+
+    static bool VisitAttributeObjects(ValidationContext c, PdfObject? raw, Func<PdfDictionary, bool> inspect,
+        Action incompleteInspection, ref int work, bool includeStreams = false)
+    {
+        bool complete = true;
+        void Incomplete() { complete = false; incompleteInspection(); }
+        bool Visit(PdfObject? value, bool arrayItem)
+        {
+            if (value is PdfDictionary dictionary) return inspect(dictionary);
+            if (includeStreams && value is PdfStream stream) return inspect(stream.Dict);
+            if (value is null or PdfNull || arrayItem && value is PdfInteger) return true;
+            Incomplete();
+            return false;
+        }
+        var attributes = ResolveBounded(c.F, raw, Incomplete);
+        if (!complete) return false;
+        if (attributes is not PdfArray array) return Visit(attributes, false);
+        foreach (var rawItem in array.Items)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+            var item = ResolveBounded(c.F, rawItem, Incomplete);
+            if (!complete || !Visit(item, true)) return false;
+        }
+        return true;
+    }
+
+    static bool VisitClassAttributes(ValidationContext c, StructureTree tree, StructElement element,
+        Func<PdfDictionary, bool> inspect, Action incompleteInspection, ref int work, bool includeStreams = false)
+    {
+        bool complete = true;
+        void Incomplete() { complete = false; incompleteInspection(); }
+        var classes = ResolveBounded(c.F, element.Dict.Get("C"), Incomplete);
+        if (!complete) return false;
+        if (classes is null or PdfNull) return true;
+        var rawMap = ResolveBounded(c.F, tree.Root.Get("ClassMap"), Incomplete);
+        if (!complete) return false;
+        if (rawMap is null or PdfNull) return true;
+        if (rawMap is not PdfDictionary classMap) { Incomplete(); return false; }
+        IEnumerable<PdfObject>? names = classes is PdfName name ? [name] : classes is PdfArray array ? array.Items : null;
+        if (names is null) { Incomplete(); return false; }
+        foreach (var rawName in names)
+        {
+            if (++work > PdfTreeDiagnostics.MaxWork) { Incomplete(); return false; }
+            var value = ResolveBounded(c.F, rawName, Incomplete);
+            if (!complete) return false;
+            if (value is PdfName className)
+            {
+                if (!VisitAttributeObjects(c, classMap.Get(className.Value), inspect, Incomplete, ref work, includeStreams))
+                    return false;
+            }
+            else if (value is not (null or PdfNull or PdfInteger)) { Incomplete(); return false; }
+        }
+        return true;
+    }
+
+    static void AttributeOwners(ValidationContext c, StructureTree tree, StructElement element)
+    {
+        const string clause = "ISO 32000-2 14.7.6.1 Table 360";
+        bool incomplete = false, invalid = false, missingNamespace = false;
+        int work = 0;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            c.Add("PDFUA2-ATTR-OWNER-INCOMPLETE", ValidationSeverity.Error,
+                "attribute owner inspection is unsupported or exceeds its reference/work bound", clause, element.PageIndex);
+        }
+        bool Inspect(PdfDictionary dictionary)
+        {
+            bool complete = true;
+            var owner = ResolveBounded(c.F, dictionary.Get("O"), () => { complete = false; Incomplete(); });
+            if (complete)
+            {
+                invalid |= owner is not PdfName;
+                if (owner.AsName() == "NSO")
+                {
+                    var ns = ResolveBounded(c.F, dictionary.Get("NS"), () => { complete = false; Incomplete(); });
+                    if (complete) missingNamespace |= ns is null or PdfNull;
+                }
+            }
+            return complete;
+        }
+        if (VisitAttributeObjects(c, element.Dict.Get("A"), Inspect, Incomplete, ref work, includeStreams: true))
+            VisitClassAttributes(c, tree, element, Inspect, Incomplete, ref work, includeStreams: true);
+        if (invalid)
+            c.Add("PDFUA2-ATTR-OWNER", ValidationSeverity.Error,
+                "attached attribute object O owner must be a name", clause, element.PageIndex);
+        if (missingNamespace)
+            c.Add("PDFUA2-ATTR-NSO-NS", ValidationSeverity.Error,
+                "NSO-owned attribute object NS must be present and non-null", clause, element.PageIndex);
+    }
+
+    internal static PdfObject? OwnedAttribute(ValidationContext c, StructureTree tree, StructElement element,
+        string ownerName, string key, Action incompleteInspection)
+    {
+        bool incomplete = false;
+        int work = 0;
+        PdfObject? result = null;
+        void Incomplete()
+        {
+            if (incomplete) return;
+            incomplete = true;
+            incompleteInspection();
+        }
+        bool Inspect(PdfDictionary dictionary)
+        {
+            var owner = ResolveBounded(c.F, dictionary.Get("O"), Incomplete);
+            if (incomplete) return false;
+            if (owner.AsName() != ownerName) return true;
+            var value = ResolveBounded(c.F, dictionary.Get(key), Incomplete);
+            if (incomplete) return false;
+            if (value is not (null or PdfNull)) result = value;
+            return true;
+        }
+        if (!VisitAttributeObjects(c, element.Dict.Get("A"), Inspect, Incomplete, ref work)) return null;
+        if (result is null && !VisitClassAttributes(c, tree, element, Inspect, Incomplete, ref work)) return null;
+        return result;
     }
 
     static void LinkTargets(ValidationContext c, StructureTree tree)
@@ -187,7 +1509,7 @@ internal static class PdfUA2Checks
                 PdfObject? destination;
                 if (annotation.Get("A") is { } rawAction)
                 {
-                    if (ResolveDestination(f, rawAction, Incomplete) is not PdfDictionary action || f.Resolve(action.Get("S")).AsName() != "GoTo") continue;
+                    if (ResolveBounded(f, rawAction, Incomplete) is not PdfDictionary action || f.Resolve(action.Get("S")).AsName() != "GoTo") continue;
                     destination = action.Get("SD") ?? action.Get("D");
                 }
                 else destination = annotation.Get("Dest");
@@ -206,13 +1528,13 @@ internal static class PdfUA2Checks
             "a reference, destination or name-tree traversal boundary prevented comparison of Link annotation targets", "ISO 14289-2 8.2.5.20");
     }
 
-    static PdfObject? ResolveDestination(PdfFile file, PdfObject? value, Action incomplete)
+    internal static PdfObject? ResolveBounded(PdfFile file, PdfObject? value, Action incomplete)
     {
         var seen = new HashSet<int>();
         while (value is PdfRef reference)
         {
             if (seen.Count >= MaxRoleDepth || !seen.Add(reference.Number)) { incomplete(); return null; }
-            value = file.GetObject(reference.Number);
+            value = file.GetObject(reference);
         }
         return value;
     }
@@ -222,7 +1544,7 @@ internal static class PdfUA2Checks
         var seen = new HashSet<PdfObject>(ReferenceEqualityComparer.Instance);
         for (var depth = 0; destination is not null && depth < MaxRoleDepth; depth++)
         {
-            var value = ResolveDestination(c.F, destination, incomplete);
+            var value = ResolveBounded(c.F, destination, incomplete);
             if (value is null or PdfNull) return null;
             if (!seen.Add(value)) { incomplete(); return null; }
             switch (value)
@@ -238,7 +1560,7 @@ internal static class PdfUA2Checks
                     destination = dictionary.Get("SD") ?? dictionary.Get("D");
                     break;
                 case PdfArray { Count: > 0 } array:
-                    return ResolveDestination(c.F, array[0], incomplete) as PdfDictionary;
+                    return ResolveBounded(c.F, array[0], incomplete) as PdfDictionary;
                 default:
                     return null;
             }
@@ -252,7 +1574,7 @@ internal static class PdfUA2Checks
     {
         var f = c.F;
         bool incomplete = false;
-        PdfObject? Resolve(PdfObject? value) => ResolveDestination(f, value, Incomplete);
+        PdfObject? Resolve(PdfObject? value) => ResolveBounded(f, value, Incomplete);
         bool PageTarget(PdfObject? destination) =>
             DestinationTarget(c, destination, Incomplete) is { } target && Resolve(target.Get("Type")).AsName() == "Page";
 

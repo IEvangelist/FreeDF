@@ -15,7 +15,7 @@ public class GlyphNameTests
     [InlineData("zapfdingbats.txt", 201, "F6394E3CB8A447E84A1DAD75D4BAAF2AA7F45DC104FAF369F4720E1A774EF2DC")]
     public void Every_official_mapping_is_embedded_unmodified_and_resolves(string file, int count, string sha256)
     {
-        using var resource = typeof(PdfFont).Assembly.GetManifestResourceStream("PortableDocument.Content.Resources." + file);
+        using var resource = typeof(PdfFile).Assembly.GetManifestResourceStream("PortableDocument.Core.Resources." + file);
         Assert.NotNull(resource);
         using var bytes = new MemoryStream();
         resource.CopyTo(bytes);
@@ -31,6 +31,7 @@ public class GlyphNameTests
             var actual = file == "glyphlist.txt" ? PdfFont.NameToUnicode(parts[0]) :
                 Font(parts[0], "ZapfDingbats").ToUnicode(128);
             Assert.Equal(expected, actual);
+            if (file == "glyphlist.txt") Assert.True(GlyphList.ContainsName(parts[0]));
         }
     }
 

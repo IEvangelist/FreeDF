@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using PortableDocument.Core;
@@ -10,6 +11,9 @@ namespace PortableDocument.Document;
 /// </summary>
 internal static partial class PdfADeepChecks
 {
+    static readonly HashSet<string> ForbiddenActions = new(StringComparer.Ordinal)
+        { "Launch", "Sound", "Movie", "ResetForm", "ImportData", "Hide", "JavaScript", "SetOCGState", "Rendition", "Trans", "GoTo3DView" };
+
     [GeneratedRegex("^[A-Z]{6}\\+")]
     private static partial Regex SubsetPrefix();
 
@@ -177,16 +181,175 @@ internal static partial class PdfADeepChecks
                 if (subtype == "TrueType") TrueTypeEncoding(c, font, name, u.Page);
             }
             if (c.Part == 1 && subtype == "Type1" && SubsetPrefix().IsMatch(name) && FontChecks.IsEmbedded(f, font)
-                && !(f.Resolve(font.Get("FontDescriptor")) is PdfDictionary fd && fd.Get("CharSet") is not null))
-                c.Add("PDFA1-FONT-CHARSET", ValidationSeverity.Error, $"subset font {name} has no /CharSet in its descriptor (listing completeness is not verified)", "ISO 19005-1 6.3.5", u.Page);
+                && !(f.Resolve(font.Get("FontDescriptor")) is PdfDictionary fd && f.Resolve(fd.Get("CharSet")) is PdfString))
+                c.Add("PDFA1-FONT-CHARSET", ValidationSeverity.Error, $"subset font {name} has no /CharSet string in its descriptor", "ISO 19005-1 6.3.5", u.Page);
+            SubsetListings(c, font, subtype, name, u.Page);
             if (subtype == "Type0" && f.Resolve(font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df && f.Resolve(df[0]) is PdfDictionary cid)
             {
                 if (c.Part == 1 && SubsetPrefix().IsMatch(FontChecks.Name(f, cid)) && FontChecks.IsEmbedded(f, font)
-                    && !(f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cd && cd.Get("CIDSet") is not null))
-                    c.Add("PDFA1-FONT-CIDSET", ValidationSeverity.Error, $"subset CIDFont {FontChecks.Name(f, cid)} has no /CIDSet in its descriptor (listing completeness is not verified)", "ISO 19005-1 6.3.5", u.Page);
+                    && !(f.Resolve(cid.Get("FontDescriptor")) is PdfDictionary cd && f.Resolve(cd.Get("CIDSet")) is PdfStream))
+                    c.Add("PDFA1-FONT-CIDSET", ValidationSeverity.Error, $"subset CIDFont {FontChecks.Name(f, cid)} has no /CIDSet stream in its descriptor", "ISO 19005-1 6.3.5", u.Page);
                 if (f.Resolve(font.Get("Encoding")) is PdfStream cmap && SystemInfo(f, cmap.Dict) is { } a && SystemInfo(f, cid) is { } b && a != b)
                     c.Add("PDFA-FONT-CMAP-SYSTEMINFO", ValidationSeverity.Error, $"embedded CMap of {name} has CIDSystemInfo {a} but the CIDFont has {b}", Clause(c, "6.3.3.1", "6.2.11.3.3", "6.2.11.3.3"), u.Page);
             }
+        }
+    }
+
+    internal static void SubsetListings(ValidationContext c, PdfDictionary font, string? subtype, string name, int page)
+    {
+        var f = c.F;
+        if (subtype == "Type1" && SubsetPrefix().IsMatch(name)
+            && f.Resolve(font.Get("FontDescriptor")) is PdfDictionary type1Descriptor
+            && f.Resolve(type1Descriptor.Get("CharSet")) is PdfString charset
+            && f.Resolve(type1Descriptor.Get("FontFile3")) is PdfStream type1Program
+            && f.Resolve(type1Program.Dict.Get("Subtype")) is PdfName { Value: "Type1C" or "OpenType" } programType)
+            Type1CCharSet(c, type1Program, charset, name, page, programType.Value == "OpenType");
+        if (subtype != "Type0" || f.Resolve(font.Get("DescendantFonts")) is not PdfArray { Count: > 0 } descendants
+            || f.Resolve(descendants[0]) is not PdfDictionary cid || !SubsetPrefix().IsMatch(FontChecks.Name(f, cid))
+            || f.Resolve(cid.Get("FontDescriptor")) is not PdfDictionary descriptor
+            || f.Resolve(descriptor.Get("CIDSet")) is not PdfStream cidSet) return;
+        if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2"
+            && f.Resolve(cid.Get("CIDToGIDMap")) is (PdfStream or PdfName { Value: "Identity" }) and { } mapping
+            && FontChecks.TrueTypeProgram(f, descriptor) is { } program)
+            TrueTypeCidSet(c, program, cidSet, mapping, FontChecks.Name(f, cid), page);
+        if (f.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType0"
+            && f.Resolve(descriptor.Get("FontFile3")) is PdfStream cff
+            && f.Resolve(cff.Dict.Get("Subtype")) is PdfName { Value: "CIDFontType0C" or "OpenType" } type)
+            CffCidSet(c, cff, cidSet, FontChecks.Name(f, cid), page, type.Value == "OpenType");
+    }
+
+    static string SubsetClause(ValidationContext c) => c.Profile == PdfValidationProfile.PdfUA1
+        ? "ISO 14289-1 7.21.4.2" : Clause(c, "6.3.5", "6.2.11.4.2", "6.2.11.4.2");
+
+    static string SubsetRule(ValidationContext c, string suffix) =>
+        (c.Profile == PdfValidationProfile.PdfUA1 ? "PDFUA-FONT-" : "PDFA-FONT-") + suffix;
+
+    static void TrueTypeCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, PdfObject mapping, string name, int page)
+    {
+        var clause = SubsetClause(c);
+        void Incomplete(string reason) =>
+            c.Add(SubsetRule(c, "CIDSET-INCOMPLETE"), ValidationSeverity.Error, $"cannot completely inspect TrueType CIDSet of {name}: {reason}", clause, page);
+        try
+        {
+            var data = c.F.DecodeStream(program);
+            if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
+            if (FontChecks.TrueTypeGlyphCount(data) is not { } glyphCount)
+            { Incomplete("malformed or unsupported TrueType maxp metadata"); return; }
+            var count = glyphCount;
+            if (mapping is PdfStream map)
+            {
+                var mapData = c.F.DecodeStream(map);
+                if (mapData.Length > 131_072 || mapData.Length % 2 != 0)
+                { Incomplete("CIDToGIDMap has an odd byte count or exceeds 131072 bytes"); return; }
+                count = Math.Max(1, mapData.Length / 2);
+                for (var cid = 0; cid < mapData.Length / 2; cid++)
+                {
+                    if (BinaryPrimitives.ReadUInt16BigEndian(mapData.AsSpan(cid * 2)) < glyphCount) continue;
+                    Incomplete("CIDToGIDMap refers to a GID outside the font program");
+                    return;
+                }
+            }
+            var expected = new byte[(count + 7) / 8];
+            for (var cid = 0; cid < count; cid++) expected[cid / 8] |= (byte)(128 >> (cid % 8));
+            CidSetListing(c, cidSet, expected, name, page);
+        }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException
+            or InvalidOperationException or ArgumentException or IndexOutOfRangeException or KeyNotFoundException or OverflowException)
+        {
+            Incomplete(e.Message);
+        }
+    }
+
+    static void CffCidSet(ValidationContext c, PdfStream program, PdfStream cidSet, string name, int page, bool openType)
+    {
+        var clause = SubsetClause(c);
+        void Incomplete(string reason) =>
+            c.Add(SubsetRule(c, "CIDSET-INCOMPLETE"), ValidationSeverity.Error, $"cannot completely inspect CFF CIDSet of {name}: {reason}", clause, page);
+        try
+        {
+            var data = c.F.DecodeStream(program);
+            if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
+            if (openType) data = FontChecks.OpenTypeCff(data);
+            var cids = CffGlyphNames.ReadCids(data);
+            var expected = new byte[(cids.Max() + 8) / 8];
+            foreach (var cid in cids) expected[cid / 8] |= (byte)(128 >> (cid % 8));
+            CidSetListing(c, cidSet, expected, name, page);
+        }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException
+            or InvalidOperationException or ArgumentException or IndexOutOfRangeException or KeyNotFoundException or OverflowException)
+        {
+            Incomplete(e.Message);
+        }
+    }
+
+    static void CidSetListing(ValidationContext c, PdfStream cidSet, byte[] expected, string name, int page)
+    {
+        var clause = SubsetClause(c);
+        var bitmap = c.F.DecodeStream(cidSet);
+        if (bitmap.Length > 1_048_576)
+        {
+            c.Add(SubsetRule(c, "CIDSET-INCOMPLETE"), ValidationSeverity.Error,
+                $"cannot completely inspect CIDSet of {name}: decoded CIDSet exceeds 1048576 bytes", clause, page);
+            return;
+        }
+        for (var i = 0; i < Math.Max(bitmap.Length, expected.Length); i++)
+        {
+            if ((i < bitmap.Length ? bitmap[i] : 0) == (i < expected.Length ? expected[i] : 0)) continue;
+            c.Add(SubsetRule(c, "CIDSET-LIST"), ValidationSeverity.Error,
+                $"CIDSet of {name} must identify exactly the CIDs defined by the font program and applicable CIDToGIDMap", clause, page);
+            return;
+        }
+    }
+
+    static void Type1CCharSet(ValidationContext c, PdfStream program, PdfString charset, string name, int page, bool openType)
+    {
+        var clause = SubsetClause(c);
+        void Incomplete(string reason) =>
+            c.Add(SubsetRule(c, "CHARSET-INCOMPLETE"), ValidationSeverity.Error, $"cannot completely inspect Type1C CharSet of {name}: {reason}", clause, page);
+        void Invalid(string reason) =>
+            c.Add(SubsetRule(c, "CHARSET-LIST"), ValidationSeverity.Error, $"Type1C CharSet of {name} {reason}", clause, page);
+        try
+        {
+            if (charset.Bytes.Length > 1_048_576) { Incomplete("CharSet exceeds 1048576 bytes"); return; }
+            var data = c.F.DecodeStream(program);
+            if (data.Length > 16_777_216) { Incomplete("decoded font program exceeds 16777216 bytes"); return; }
+            if (openType) data = FontChecks.OpenTypeCff(data);
+            var names = CffGlyphNames.Read(data);
+            var expected = new HashSet<string>(StringComparer.Ordinal);
+            for (var gid = 1; gid < names.Length; gid++)
+            {
+                var glyph = names[gid];
+                if (glyph.Length == 0 || glyph == ".notdef" || !expected.Add(glyph))
+                { Incomplete("program glyph names are missing or duplicated"); return; }
+            }
+            var actual = new HashSet<string>(StringComparer.Ordinal);
+            var lexer = new PdfLexer(charset.Bytes);
+            var entries = 0;
+            while (true)
+            {
+                lexer.SkipWhite();
+                if (lexer.Pos == lexer.Length) break;
+                if (entries++ >= 65_535) { Incomplete("CharSet exceeds 65535 name entries"); return; }
+                var start = lexer.Pos;
+                if (lexer.Data[lexer.Pos] != '/' || lexer.ReadObject(false) is not PdfName glyph)
+                { Invalid("does not contain only names in PDF syntax"); return; }
+                for (var i = start + 1; i < lexer.Pos; i++)
+                {
+                    if (lexer.Data[i] != '#') continue;
+                    if (i + 2 >= lexer.Pos || !char.IsAsciiHexDigit((char)lexer.Data[i + 1])
+                        || !char.IsAsciiHexDigit((char)lexer.Data[i + 2]))
+                    { Invalid("contains an invalid PDF name escape"); return; }
+                    i += 2;
+                }
+                actual.Add(glyph.Value);
+            }
+            if (!expected.SetEquals(actual))
+                Invalid("must list exactly the program's defined glyph names, excluding .notdef");
+        }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException
+            or InvalidOperationException or ArgumentException or IndexOutOfRangeException or KeyNotFoundException or OverflowException)
+        {
+            Incomplete(e.Message);
         }
     }
 
@@ -200,32 +363,142 @@ internal static partial class PdfADeepChecks
         var symbolic = ((int)flags & 4) != 0;
         var enc = f.Resolve(font.Get("Encoding"));
         var clause = Clause(c, "6.3.7", "6.2.11.6", "6.2.11.6");
+        var hasDifferences = enc is PdfDictionary encoding && f.Resolve(encoding.Get("Differences")) is PdfArray;
+        if (symbolic || c.Part != 1) TrueTypeCmap(c, desc, name, page, clause, symbolic, hasDifferences);
         if (symbolic && enc is not null and not PdfNull)
             c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"symbolic TrueType font {name} must not have an /Encoding entry", clause, page);
         else if (!symbolic)
         {
             var baseOk = enc.AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
-                || (enc is PdfDictionary ed && f.Resolve(ed.Get("BaseEncoding")).AsName() is "MacRomanEncoding" or "WinAnsiEncoding" && ed.Get("Differences") is null);
+                || (enc is PdfDictionary ed && f.Resolve(ed.Get("BaseEncoding")).AsName() is "MacRomanEncoding" or "WinAnsiEncoding"
+                    && (c.Part != 1 || f.Resolve(ed.Get("Differences")) is null or PdfNull));
             if (!baseOk)
-                c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding without /Differences", clause, page);
+                c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error,
+                    c.Part == 1 ? $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding without /Differences"
+                        : $"non-symbolic TrueType font {name} needs MacRomanEncoding or WinAnsiEncoding", clause, page);
+            if (c.Part != 1 && enc is PdfDictionary differencesEncoding)
+            {
+                var result = FontChecks.InspectDifferences(f, differencesEncoding);
+                if (result.InvalidName is { } glyph)
+                    c.Add("PDFA-FONT-TRUETYPE-ENCODING", ValidationSeverity.Error, $"non-symbolic TrueType font {name} has a /Differences name /{glyph} not listed in the Adobe Glyph List", clause, page);
+                else if (result.IncompleteReason is { } reason)
+                    c.Add("PDFA-FONT-ENCODING-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect /Differences of {name}: {reason}", clause, page);
+            }
         }
+    }
+
+    static void TrueTypeCmap(ValidationContext c, PdfDictionary descriptor, string name, int page, string clause, bool symbolic, bool hasDifferences)
+    {
+        if (FontChecks.TrueTypeProgram(c.F, descriptor) is not { } program) return;
+        FontChecks.CmapRecords? records;
+        try { records = FontChecks.TrueTypeCmapRecords(c.F.DecodeStream(program)); }
+        catch (Exception e) when (e is PdfParseException or InvalidDataException or NotSupportedException)
+        {
+            c.Add("PDFA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"cannot inspect embedded TrueType cmap records of {name}: {e.Message}", clause, page);
+            return;
+        }
+        if (records is not { } found)
+        {
+            c.Add("PDFA-FONT-CMAP-INCOMPLETE", ValidationSeverity.Error, $"embedded TrueType cmap headers of {name} are truncated, malformed or unsupported; encoding validation is incomplete", clause, page);
+            return;
+        }
+        if (symbolic && found.Count != 1 && (c.Part == 1 || !found.Symbol))
+            c.Add("PDFA-FONT-SYMBOLIC-CMAP", ValidationSeverity.Error,
+                c.Part == 1 ? $"symbolic TrueType font {name} needs exactly one cmap encoding"
+                    : $"symbolic TrueType font {name} needs exactly one cmap encoding or Microsoft Symbol (3,0)",
+                clause, page);
+        else if (!symbolic && !found.NonSymbolic)
+            c.Add("PDFA-FONT-NONSYMBOLIC-CMAP", ValidationSeverity.Error,
+                $"non-symbolic TrueType font {name} needs at least one non-symbolic cmap encoding", clause, page);
+        if (!symbolic && hasDifferences && !found.Unicode)
+            c.Add("PDFA-FONT-DIFFERENCES-CMAP", ValidationSeverity.Error,
+                $"embedded non-symbolic TrueType font {name} with a Differences array needs Microsoft Unicode (3,1) cmap encoding", clause, page);
+    }
+
+    public static void FieldAdditionalActions(ValidationContext c)
+    {
+        var f = c.F;
+        if (f.Resolve(f.Catalog.Get("AcroForm")) is not PdfDictionary form
+            || f.Resolve(form.Get("Fields")) is not PdfArray fields) return;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var work = 0;
+        var findings = 0;
+        var incomplete = false;
+        var stopped = false;
+        void Walk(PdfObject? value, int depth)
+        {
+            if (stopped) return;
+            if (++work > FormFieldDetailFeatures.MaxFields) { incomplete = stopped = true; return; }
+            if (depth >= FormFieldDetailFeatures.MaxDepth
+                || f.Resolve(value) is not PdfDictionary field || !seen.Add(field))
+            { incomplete = true; return; }
+            if (f.Resolve(field.Get("AA")) is not null and not PdfNull)
+            {
+                if (findings++ >= 1000) { incomplete = stopped = true; return; }
+                c.Add("PDFA-FIELD-AA", ValidationSeverity.Error, "form field additional-actions entry is not permitted", Clause(c, "6.6.2", "6.4.1", "6.4.1"));
+            }
+            var kids = f.Resolve(field.Get("Kids"));
+            if (kids is null or PdfNull) return;
+            if (kids is not PdfArray children) { incomplete = true; return; }
+            foreach (var child in children.Items)
+            {
+                Walk(child, depth + 1);
+                if (stopped) break;
+            }
+        }
+        foreach (var field in fields.Items)
+        {
+            Walk(field, 0);
+            if (stopped) break;
+        }
+        if (incomplete)
+            c.Add("PDFA-FIELD-INCOMPLETE", ValidationSeverity.Error, "field additional-action inspection is incomplete due to malformed/repeated/cyclic field nodes or the 64-depth, 100000-node or 1000-finding bound", Clause(c, "6.6.2", "6.4.1", "6.4.1"));
     }
 
     public static void ActionsAndForms(ValidationContext c)
     {
         var f = c.F;
-        if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary form && f.Resolve(form.Get("NeedAppearances")) is PdfBoolean { Value: true })
+        if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary form
+            && f.Resolve(form.Get("NeedAppearances")) is { } needAppearances and not PdfNull
+            && needAppearances is not PdfBoolean { Value: false })
             c.Add("PDFA-FORM-NEEDAPPEARANCES", ValidationSeverity.Error, "AcroForm /NeedAppearances must be absent or false", Clause(c, "6.9", "6.4.1", "6.4.1"));
-        var reported = false;
-        foreach (var o in c.AllObjects())
+        if (c.Part != 1)
         {
-            if (reported) break;
-            if (o is not PdfDictionary d || f.Resolve(d.Get("S")).AsName() != "Named") continue;
-            if (f.Resolve(d.Get("N")).AsName() is not ("NextPage" or "PrevPage" or "FirstPage" or "LastPage"))
-            {
-                reported = true;
-                c.Add("PDFA-ACTION-NAMED", ValidationSeverity.Error, $"named action /{f.Resolve(d.Get("N")).AsName() ?? "(missing)"} is not permitted (only NextPage, PrevPage, FirstPage, LastPage)", Clause(c, "6.6.1", "6.5.1", "6.5.1"));
-            }
+            if (f.Resolve(f.Catalog.Get("AcroForm")) is PdfDictionary acroForm && f.Resolve(acroForm.Get("XFA")) is not null and not PdfNull)
+                c.Add("PDFA-FORM-XFA", ValidationSeverity.Error, "AcroForm /XFA is not permitted", Clause(c, "6.9", "6.4.2", "6.4.2"));
+            if (f.Resolve(f.Catalog.Get("NeedsRendering")) is { } rendering and not PdfNull && rendering is not PdfBoolean { Value: false })
+                c.Add("PDFA-NEEDSRENDERING", ValidationSeverity.Error, "catalog /NeedsRendering must be absent or false", Clause(c, "6.9", "6.4.2", "6.4.2"));
         }
+        var actions = c.Doc.GetActionReport();
+        var actionFindings = 0;
+        var actionIncomplete = actions.Truncated;
+        var namedReported = false;
+        var prohibitedReported = false;
+        foreach (var action in actions.Actions)
+        {
+            if (action.EventKey is not null && action.Event is null) continue;
+            var rootArray = action.Trigger.IndexOf('[');
+            var nextHop = action.Trigger.IndexOf("/Next", StringComparison.Ordinal);
+            if (rootArray >= 0 && (nextHop < 0 || rootArray < nextHop)) continue;
+            if (!prohibitedReported && action.ActionType is { } actionType
+                && (ForbiddenActions.Contains(actionType) || c.Part == 1 && actionType == "GoToE")
+                && f.Resolve(action.Dictionary.Get("Type")) is null or PdfNull or PdfName { Value: "Action" })
+            {
+                prohibitedReported = true;
+                c.Add("PDFA-ACTION", ValidationSeverity.Error, $"action /{actionType} is not permitted", Clause(c, "6.6.1", "6.5.1", "6.5.1"), action.PageIndex);
+            }
+            if (!namedReported && action.ActionType == "Named"
+                && f.Resolve(action.Dictionary.Get("N")).AsName() is not ("NextPage" or "PrevPage" or "FirstPage" or "LastPage"))
+            {
+                namedReported = true;
+                c.Add("PDFA-ACTION-NAMED", ValidationSeverity.Error, $"named action /{f.Resolve(action.Dictionary.Get("N")).AsName() ?? "(missing)"} is not permitted (only NextPage, PrevPage, FirstPage, LastPage)", Clause(c, "6.6.1", "6.5.1", "6.5.1"), action.PageIndex);
+            }
+            if (action.ActionType is "GoTo" or "GoToR" or "Thread" or "URI" or "Named" or "SubmitForm"
+                || c.Part != 1 && action.ActionType == "GoToE") continue;
+            if (actionFindings++ >= 1000) { actionIncomplete = true; break; }
+            c.Add("PDFA-ACTION-TYPE", ValidationSeverity.Error, $"action subtype /{action.ActionType ?? "(missing or non-name)"} is not permitted", Clause(c, "6.6.1", "6.5.1", "6.5.1"), action.PageIndex);
+        }
+        if (actionIncomplete)
+            c.Add("PDFA-ACTION-INCOMPLETE", ValidationSeverity.Error, "action inspection was truncated by traversal limits, a cycle or the 1000 subtype-finding bound", Clause(c, "6.6.1", "6.5.1", "6.5.1"));
     }
 }

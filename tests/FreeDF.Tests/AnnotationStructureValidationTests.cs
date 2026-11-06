@@ -16,7 +16,7 @@ public class AnnotationStructureValidationTests
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [9 0 R] /Tabs /S >>",
             ObjPdf.Stream(""),
-            "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R >>",
+            $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R {(part == 2 ? "/Namespaces [14 0 R]" : "")} >>",
             ObjPdf.Xmp($"<rdf:Description rdf:about='' xmlns:pdfuaid='http://www.aiim.org/pdfua/ns/id/' xmlns:dc='http://purl.org/dc/elements/1.1/' pdfuaid:part='{part}'{(part == 2 ? " pdfuaid:rev='2024'" : "")}><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>Doc</rdf:li></rdf:Alt></dc:title></rdf:Description>"),
             "<< /Type /StructElem /S /Document /P 5 0 R /K 8 0 R >>",
             Element,
@@ -102,6 +102,7 @@ public class AnnotationStructureValidationTests
     public void Ua2LinkParentsResolveNamespaceRoleMappings(string target, bool invalid)
     {
         var doc = Load(2,
+            (5, "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /Namespaces [13 0 R 14 0 R] >>"),
             (8, Element.Replace("/S /Annot", "/S /Citation /NS 13 0 R")),
             (9, Annotation.Replace("/Subtype /Stamp", "/Subtype /Link")),
             (13, $"<< /Type /Namespace /NS (urn:test) /RoleMapNS << /Citation [/{target} 14 0 R] >> >>"));
@@ -142,7 +143,7 @@ public class AnnotationStructureValidationTests
     [InlineData(2)]
     public void StructParentMustBeAnInRangeNonNegativeIntegerWithAMapping(int part)
     {
-        foreach (var key in new[] { "/One", "(1)", "true", "[]", "<< >>", "null", "1.0", "1.5", "-1", "2147483648", "9223372036854775807", "2" })
+        foreach (var key in new[] { "/One", "(1)", "true", "[]", "<< >>", "1.0", "1.5", "-1", "2147483648", "9223372036854775807", "2" })
         {
             var doc = Load(part, (9, Annotation.Replace("/StructParent 1", $"/StructParent {key}")));
             var raw = Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent");
@@ -167,11 +168,409 @@ public class AnnotationStructureValidationTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    public void UnresolvedStructParentReportsInvalidMappingAndKeepsRawReference(int part)
+    public void NonexistentStructParentIsOmissionAndKeepsRawReference(int part)
     {
         var doc = Load(part, (9, Annotation.Replace("/StructParent 1", "/StructParent 99 0 R")));
-        OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
+        OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-UNTAGGED");
         Assert.IsType<PdfRef>(Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent"));
+    }
+
+    public static IEnumerable<object[]> NullStructParentCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var context in new[] { "visible", "hidden", "outside", "popup", "printermark", "hidden-widget" })
+        foreach (var key in new[] { "", "null", "13 0 R", "99 0 R", "1", "cycle" })
+            yield return [part, context, key];
+    }
+
+    [Theory]
+    [MemberData(nameof(NullStructParentCases))]
+    public void NullStructParentMatchesOmissionWithoutLosingVisibleOrIncompleteErrors(int part, string context, string key)
+    {
+        var annotation = Annotation.Replace("/StructParent 1", key.Length == 0 ? "" : $"/StructParent {(key == "cycle" ? "13 0 R" : key)}");
+        if (context is "hidden" or "hidden-widget") annotation = annotation.Replace("/Rect", "/F 2 /Rect");
+        if (context == "outside") annotation = annotation.Replace("[0 0 10 10]", "[200 200 220 220]");
+        if (context is "popup" or "printermark" or "hidden-widget")
+            annotation = annotation.Replace("/Subtype /Stamp", "/Subtype /" + (context == "popup" ? "Popup" : context == "printermark" ? "PrinterMark" : "Widget"));
+        var doc = Load(part, (9, annotation), (13, key == "cycle" ? "13 0 R" : "null"));
+        var raw = Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent");
+        var report = Validate(doc, part);
+        Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
+        Assert.Equal(key == "cycle", report.Has("PDFUA-ANNOT-TAG-INCOMPLETE"));
+        Assert.Equal(context == "visible" && key is not ("1" or "cycle"), report.Has("PDFUA-ANNOT-UNTAGGED"));
+        Assert.Equal(context == "popup" && part == 2 && key == "1", report.Has("PDFUA2-ANNOT-POPUP"));
+        Assert.Equal(context == "printermark" && key == "1", report.Has("PDFUA-ANNOT-PRINTERMARK"));
+        Assert.Same(raw, Assert.IsType<PdfDictionary>(doc.File.GetObject(9)).Get("StructParent"));
+    }
+
+    [Theory]
+    [InlineData(1, 32, false)]
+    [InlineData(1, 33, true)]
+    [InlineData(2, 32, false)]
+    [InlineData(2, 33, true)]
+    public void StructParentReferenceBoundDoesNotBecomeOmission(int part, int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(8, length).Select(n => n == 7 + length ? "null" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(ObjPdf.Build(new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Annots [7 0 R] /Tabs /S >>",
+            ObjPdf.Stream(""),
+            "<< /Type /StructTreeRoot /K 6 0 R >>",
+            "<< /Type /StructElem /S /Document /P 5 0 R >>",
+            Annotation.Replace("/StructParent 1", "/StructParent 8 0 R"),
+        }.Concat(chain).ToArray()));
+        var report = Validate(doc, part);
+        Assert.Equal(incomplete, report.Has("PDFUA-ANNOT-TAG-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA-ANNOT-UNTAGGED"));
+        Assert.False(report.Has("PDFUA-ANNOT-PARENTTREE"));
+    }
+
+    public static IEnumerable<object[]> FenoteClassCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "invalid", "valid", "array", "wrong-owner", "local-valid", "local-invalid",
+            "local-null", "missing-class", "class-invalid-valid", "class-valid-invalid" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(FenoteClassCases))]
+    public void Ua2FenoteClassAttributesRespectLocalAndClassPrecedence(int part, string kind)
+    {
+        var cls = kind == "missing-class" ? "/Missing" : kind is "class-invalid-valid" or "class-valid-invalid"
+            ? "[/First /Second]" : kind == "array" ? "[/First]" : "/First";
+        var value = kind is "valid" or "local-invalid" or "class-valid-invalid" ? "/None" : "/Other";
+        var owner = kind == "wrong-owner" ? "/Layout" : "/FENote";
+        var second = kind == "class-valid-invalid" ? "/Other" : "/None";
+        var local = kind is "local-valid" or "local-invalid" or "local-null"
+            ? $"/A << /O /FENote /NoteType {(kind == "local-valid" ? "/None" : kind == "local-invalid" ? "/Other" : "null")} >>" : "";
+        var doc = Load(part,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /ClassMap << /First << /O {owner} /NoteType {value} >> /Second << /O /FENote /NoteType {second} >> >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /FENote /NS << /NS (http://iso.org/pdf2/ssn) >> /C {cls} {local}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>"));
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && kind is "invalid" or "array" or "local-invalid" or "local-null" or "class-valid-invalid",
+            report.Has("PDFUA2-FENOTE-TYPE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+    }
+
+    [Theory]
+    [InlineData("ClassMap")]
+    [InlineData("C")]
+    [InlineData("First")]
+    public void Ua2FenoteClassReferenceCyclesAreIncomplete(string key)
+    {
+        var classMap = key == "ClassMap" ? "13 0 R" : $"<< /First {(key == "First" ? "13 0 R" : "<< /O /FENote /NoteType /Other >>")} >>";
+        var doc = Load(2,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /ClassMap {classMap} >>"),
+            (8, Element.Replace("/S /Annot", $"/S /FENote /NS 14 0 R /C {(key == "C" ? "13 0 R" : "/First")}")),
+            (13, "13 0 R"));
+        var report = Validate(doc, 2);
+        Assert.True(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2FenoteClassAndAttributeWorkShareOneBound(int count, bool incomplete)
+    {
+        var doc = Load(2, (8, Element.Replace("/S /Annot", "/S /FENote /NS 14 0 R /C /First")));
+        var attributes = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfDictionary(), count - 1)
+            .Append(new PdfDictionary { Entries = { ["O"] = new PdfName("FENote"), ["NoteType"] = new PdfName("Other") } }).ToList());
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfDictionary { Entries = { ["First"] = attributes } };
+        var report = Validate(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Fact]
+    public void Ua2FenoteLocalValueDoesNotInspectUnusedCyclicClassMap()
+    {
+        var doc = Load(2,
+            (5, "<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /ClassMap 13 0 R >>"),
+            (8, Element.Replace("/S /Annot", "/S /FENote /NS 14 0 R /C /First /A << /O /FENote /NoteType /None >>")),
+            (13, "13 0 R"));
+        var report = Validate(doc, 2);
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Theory]
+    [InlineData("local-array", "Footnote")]
+    [InlineData("local-array", "Other")]
+    [InlineData("class-attribute-array", "Footnote")]
+    [InlineData("class-attribute-array", "Other")]
+    [InlineData("class-list", "Footnote")]
+    [InlineData("class-list", "Other")]
+    [InlineData("local-over-class", "Footnote")]
+    [InlineData("local-over-class", "Other")]
+    public void Ua2FenoteAttributeArraysUseLastSpecifiedOwnedValue(string route, string last)
+    {
+        var first = last == "Footnote" ? "Other" : "Footnote";
+        string Attribute(string value) => $"<< /O /FENote /NoteType /{value} >>";
+        var local = route is "local-array" or "local-over-class" ? $"/A [{Attribute(first)} {Attribute(last)}]" : "";
+        var classes = route == "class-list" ? "/C [/First /Last]" : route == "class-attribute-array" ? "/C /Repeated" :
+            route == "local-over-class" ? "/C /Other" : "";
+        var map = $"/First {Attribute(first)} /Last {Attribute(last)} /Other {Attribute(first)} /Repeated [{Attribute(first)} {Attribute(last)}]";
+        var doc = Load(2,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /Namespaces [14 0 R] /ClassMap << {map} >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /FENote /NS 14 0 R {local} {classes}")));
+        var report = Validate(doc, 2);
+        Assert.Equal(last == "Other", report.Has("PDFUA2-FENOTE-TYPE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+    }
+
+    public static IEnumerable<object[]> FenoteTypeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var mapped in new[] { false, true })
+        foreach (var attribute in new[] { "", "/A null", "/A << /O /FENote /NoteType null >>",
+            "/A << /O /FENote /NoteType /None >>", "/A << /O /FENote /NoteType /Footnote >>",
+            "/A << /O /FENote /NoteType /Endnote >>", "/A << /O /FENote /NoteType /Other >>",
+            "/A << /O /FENote /NoteType (Footnote) >>", "/A << /O /Layout /NoteType /Other >>",
+            "/A [<< /O /FENote /NoteType /Other >>]",
+            "/A [<< /O /FENote /NoteType /Other >> << /O /FENote /NoteType /None >>]",
+            "/A [<< /O /FENote /NoteType /None >> << /O /FENote /NoteType /Other >>]",
+            "/A [<< /O /Layout /NoteType /Other >> << /O /FENote /NoteType /None >>]" })
+            yield return [part, mapped, attribute];
+    }
+
+    [Theory]
+    [MemberData(nameof(FenoteTypeCases))]
+    public void Ua2FenoteTypeChecksTheLastExplicitOwnedName(int part, bool mapped, string attribute)
+    {
+        var ns = mapped ? "/NS << /NS (urn:fenote-type) /RoleMapNS << /CustomNote [/FENote << /NS (http://iso.org/pdf2/ssn) >>] >> >>"
+            : "/NS << /NS (http://iso.org/pdf2/ssn) >>";
+        var doc = Load(part,
+            (8, Element.Replace("/S /Annot", $"/S /{(mapped ? "CustomNote" : "FENote")} {ns} {attribute}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var invalid = attribute is "/A << /O /FENote /NoteType /Other >>"
+            or "/A [<< /O /FENote /NoteType /Other >>]"
+            or "/A [<< /O /FENote /NoteType /None >> << /O /FENote /NoteType /Other >>]";
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && invalid, report.Has("PDFUA2-FENOTE-TYPE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+    }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("O")]
+    [InlineData("NoteType")]
+    public void Ua2FenoteAttributeReferenceCyclesReportIncomplete(string key)
+    {
+        var attribute = key == "A" ? "/A 13 0 R"
+            : $"/A << /O {(key == "O" ? "13 0 R" : "/FENote")} /NoteType {(key == "NoteType" ? "13 0 R" : "/Other")} >>";
+        var doc = Load(2, (8, Element.Replace("/S /Annot", $"/S /FENote /NS 14 0 R {attribute}")), (13, "13 0 R"));
+        var report = Validate(doc, 2);
+        Assert.True(report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void Ua2FenoteNameReferenceBoundaryIsExplicit(int length, bool incomplete)
+    {
+        var chain = Enumerable.Range(8, length).Select(n => n == 7 + length ? "/Other" : $"{n + 1} 0 R");
+        var doc = PdfDocument.Load(ObjPdf.Build(new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+            ObjPdf.Stream(""),
+            "<< /Type /StructTreeRoot /K 6 0 R >>",
+            "<< /Type /StructElem /S /Document /P 5 0 R /K 7 0 R >>",
+            "<< /Type /StructElem /S /FENote /NS << /NS (http://iso.org/pdf2/ssn) >> /P 6 0 R /A << /O /FENote /NoteType 8 0 R >> >>",
+        }.Concat(chain).ToArray()));
+        var report = Validate(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    [Theory]
+    [InlineData(200000, false)]
+    [InlineData(200001, true)]
+    public void Ua2FenoteAttributeWorkBoundaryIsExplicit(int count, bool incomplete)
+    {
+        var doc = Load(2, (8, Element.Replace("/S /Annot", "/S /FENote /NS 14 0 R")));
+        var note = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        note.Entries["A"] = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfDictionary(), count - 1)
+            .Append(new PdfDictionary { Entries = { ["O"] = new PdfName("FENote"), ["NoteType"] = new PdfName("Other") } }).ToList());
+        var report = Validate(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-FENOTE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA2-FENOTE-TYPE"));
+    }
+
+    public static IEnumerable<object[]> NoteNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default", "pdf17", "pdf2", "default-mapped", "namespace-mapped",
+            "mapped-paragraph", "mapped-fenote", "mapped-pdf2-note", "foreign", "cyclic", "default-cyclic" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(NoteNamespaceCases))]
+    public void Ua2NoteRestrictionUsesResolvedNamespaceRoles(int part, string kind)
+    {
+        var role = kind is "default-mapped" or "namespace-mapped" ? "CustomNote" : "Note";
+        var map = kind == "default-mapped" ? "/CustomNote /Note" : kind == "default-cyclic" ? "/Note /Note" : "";
+        var doc = Load(part,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /RoleMap << {map} >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /{role}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var note = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind is "pdf17" or "pdf2")
+            note.Entries["NS"] = kind == "pdf2" ? pdf2
+                : new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf/ssn")) } };
+        if (kind is "namespace-mapped" or "mapped-paragraph" or "mapped-fenote" or "mapped-pdf2-note" or "foreign" or "cyclic")
+        {
+            var roles = new PdfDictionary();
+            if (kind != "foreign")
+                roles.Entries[role] = kind == "cyclic" ? new PdfName(role)
+                    : new PdfArray([new PdfName(kind == "mapped-paragraph" ? "P" : kind == "mapped-fenote" ? "FENote" : "Note"),
+                        kind == "namespace-mapped" ? new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf/ssn")) } } : pdf2]);
+            note.Entries["NS"] = new PdfDictionary
+            {
+                Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("urn:note-namespace")), ["RoleMapNS"] = roles },
+            };
+        }
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && kind is "default" or "pdf17" or "default-mapped" or "namespace-mapped", report.Has("PDFUA2-NOTE"));
+        if (part == 2)
+            Assert.Equal(kind is "default" or "pdf17" or "default-mapped" or "namespace-mapped", report.Has("PDFUA-NOTE-ID"));
+        if (part == 2 && kind is "pdf2" or "mapped-pdf2-note" or "foreign" or "cyclic" or "default-cyclic")
+            Assert.True(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+    }
+
+    public static IEnumerable<object[]> HeadingNamespaceCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "default", "pdf2", "default-mapped", "namespace-mapped", "mapped-paragraph", "mapped-numbered", "foreign", "cyclic", "numbered" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(HeadingNamespaceCases))]
+    public void Ua2UnnumberedHeadingProhibitionUsesResolvedNamespaceRoles(int part, string kind)
+    {
+        var role = kind is "default-mapped" or "namespace-mapped" or "cyclic" ? "CustomHeading" : kind == "numbered" ? "H1" : "H";
+        var doc = Load(part,
+            (5, $"<< /Type /StructTreeRoot /K 7 0 R /ParentTree 10 0 R /RoleMap << {(kind == "default-mapped" ? "/CustomHeading /H" : "")} >> >>"),
+            (8, Element.Replace("/S /Annot", $"/S /{role}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var heading = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        if (kind == "pdf2") heading.Entries["NS"] = pdf2;
+        if (kind is "namespace-mapped" or "mapped-paragraph" or "mapped-numbered" or "foreign" or "cyclic")
+        {
+            var map = new PdfDictionary();
+            if (kind != "foreign")
+                map.Entries[role] = kind == "cyclic" ? new PdfName(role)
+                    : new PdfArray([new PdfName(kind == "mapped-paragraph" ? "P" : kind == "mapped-numbered" ? "H1" : "H"), pdf2]);
+            heading.Entries["NS"] = new PdfDictionary
+            {
+                Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("urn:heading-namespace")), ["RoleMapNS"] = map },
+            };
+        }
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2 && kind is "default" or "pdf2" or "default-mapped" or "namespace-mapped", report.Has("PDFUA2-HEADING-H"));
+        if (part == 2 && kind is "foreign" or "cyclic") Assert.True(report.Has("PDFUA2-NESTING-INCOMPLETE"));
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void Ua2HWithinSectHasNoExceptionToTheProhibition(int part, bool mapped)
+    {
+        var role = mapped ? "CustomHeading" : "H";
+        var ns = mapped ? "/NS << /NS (urn:heading-sect) /RoleMapNS << /CustomHeading [/H << /NS (http://iso.org/pdf2/ssn) >>] >> >>" : "";
+        var doc = Load(part, (8, Element.Replace("/S /Annot", $"/S /{role} {ns}")),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Tabs /S >>"));
+        var parent = Assert.IsType<PdfDictionary>(doc.File.GetObject(part == 2 ? 15 : 7));
+        parent.Entries["S"] = new PdfName("Sect");
+        var report = Validate(doc, part);
+        Assert.Equal(part == 2, report.Has("PDFUA2-HEADING-H"));
+        if (part == 2)
+            Assert.DoesNotContain("H within Sect", Assert.Single(report.Findings, f => f.RuleId == "PDFUA2-HEADING-H").Message);
+    }
+
+    public static IEnumerable<object[]> AnnotationArtifactCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var structure in new[] { "annot", "artifact", "mapped-artifact", "ancestor-artifact", "mapped-ancestor-artifact" })
+        foreach (var context in new[] { "printermark", "invisible", "noview", "toggle", "popup", "hidden" })
+            yield return [part, structure, context];
+    }
+
+    [Theory]
+    [MemberData(nameof(AnnotationArtifactCases))]
+    public void Ua2AnnotationDispositionHonorsResolvedArtifactParents(int part, string structure, string context)
+    {
+        var annotation = Annotation;
+        if (context is "printermark" or "popup")
+            annotation = annotation.Replace("/Subtype /Stamp", context == "printermark" ? "/Subtype /PrinterMark" : "/Subtype /Popup");
+        var flags = context switch { "invisible" => 1, "noview" => 32, "toggle" => 288, "hidden" => 2, _ => 0 };
+        annotation = annotation.Replace("/Rect", $"/F {flags} /Rect");
+        var doc = Load(part, (9, annotation));
+        if (structure != "annot")
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(8));
+            var mapped = structure.StartsWith("mapped-", StringComparison.Ordinal);
+            var ancestor = structure.Contains("ancestor", StringComparison.Ordinal);
+            var artifact = ancestor ? Assert.IsType<PdfDictionary>(doc.File.GetObject(part == 2 ? 15 : 7)) : element;
+            artifact.Entries["S"] = new PdfName(mapped ? "CustomArtifact" : "Artifact");
+            var ns = new PdfDictionary { Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+            if (mapped)
+                ns = new PdfDictionary
+                {
+                    Entries = { ["NS"] = new PdfString(System.Text.Encoding.ASCII.GetBytes("urn:annotation-artifact")),
+                        ["RoleMapNS"] = new PdfDictionary { Entries = { ["CustomArtifact"] = new PdfArray([new PdfName("Artifact"), ns]) } } },
+                };
+            artifact.Entries["NS"] = ns;
+        }
+        var report = Validate(doc, part);
+        var isArtifact = part == 2 && structure != "annot";
+        Assert.Equal(context == "printermark" && !isArtifact, report.Has("PDFUA-ANNOT-PRINTERMARK"));
+        Assert.Equal(part == 2 && context is "invisible" or "noview" && !isArtifact, report.Has("PDFUA2-ANNOT-ARTIFACT"));
+        Assert.Equal(part == 2 && context == "popup", report.Has("PDFUA2-ANNOT-POPUP"));
+    }
+
+    [Theory]
+    [InlineData("PrinterMark", 0, "PDFUA-ANNOT-PRINTERMARK")]
+    [InlineData("Stamp", 1, "PDFUA2-ANNOT-ARTIFACT")]
+    [InlineData("Stamp", 32, "PDFUA2-ANNOT-ARTIFACT")]
+    public void Ua2ArtifactDispositionRequiresValidIndirectParentTreeIdentity(string subtype, int flags, string rule)
+    {
+        foreach (var value in new[] { "null", "[8 0 R]", "<< /Type /StructElem /S /Artifact /NS 14 0 R >>", "8 1 R", "99 0 R" })
+        {
+            var doc = Load(2,
+                (8, Element.Replace("/S /Annot", "/S /Artifact /NS 14 0 R")),
+                (9, Annotation.Replace("/Subtype /Stamp", $"/Subtype /{subtype} /F {flags}")),
+                (10, $"<< /Nums [1 {value}] >>"));
+            Assert.True(Validate(doc, 2).Has(rule));
+        }
+    }
+
+    [Theory]
+    [InlineData("PrinterMark", 0)]
+    [InlineData("Stamp", 1)]
+    [InlineData("Stamp", 32)]
+    public void Ua2TaggedArtifactDispositionDoesNotHideMissingObjr(string subtype, int flags)
+    {
+        var doc = Load(2,
+            (8, Element.Replace("/S /Annot", "/S /Artifact /NS 14 0 R").Replace("/K 11 0 R", "")),
+            (9, Annotation.Replace("/Subtype /Stamp", $"/Subtype /{subtype} /F {flags}")));
+        var report = Validate(doc, 2);
+        Assert.True(report.Has("PDFUA-ANNOT-OBJR"));
+        Assert.False(report.Has("PDFUA-ANNOT-PRINTERMARK"));
+        Assert.False(report.Has("PDFUA2-ANNOT-ARTIFACT"));
     }
 
     [Theory]
@@ -272,7 +671,7 @@ public class AnnotationStructureValidationTests
 
         var wrongReference = new PdfRef(8, compressed ? genOrIndex : generation == 0 ? 1 : 0);
         nums.Items[1] = wrongReference;
-        Assert.Same(element, doc.File.Resolve(wrongReference));
+        Assert.IsType<PdfNull>(doc.File.Resolve(wrongReference));
         OnlyAnnotationFinding(Validate(doc, part), "PDFUA-ANNOT-PARENTTREE");
         Assert.Same(wrongReference, nums[1]);
 

@@ -43,6 +43,53 @@ if (args is ["--raster-bench", var rdpi, var riter, ..var rrest])
 if (args.Contains("--preflight"))
 {
     Console.WriteLine($"Accepted documents: {string.Join(", ", ComparisonCorpus.ValidatedFiles)}");
+    foreach (var members in new[] { 1, 1000 })
+        foreach (var encrypted in new[] { false, true })
+            new ObjectStreamBench { MemberCount = members, Encrypted = encrypted }.Setup();
+    foreach (var rows in new[] { 64, 4096 })
+        foreach (var updates in new[] { 1, 16 })
+            new XrefHybridBench { Rows = rows, Updates = updates }.Setup();
+    foreach (var rows in new[] { 64, 4096 })
+        foreach (var fixedEntry in new[] { false, true })
+            new XrefClassicBench { Rows = rows, FixedEntry = fixedEntry }.Setup();
+    foreach (var rows in new[] { 64, 4096 })
+        foreach (var filter in new[] { "FlateDecode", "LZWDecode" })
+            new XrefFilterBench { Rows = rows, Filter = filter }.Setup();
+    foreach (var filters in new[] { 1, 2 })
+        foreach (var indirect in new[] { false, true })
+            foreach (var codec in new[] { "FlateDecode", "LZWDecode" })
+                new ObjectStreamMetadataBench
+                {
+                    FilterCount = filters, IndirectParameters = indirect, CompressionFilter = codec
+                }.Setup();
+    foreach (var indirect in new[] { false, true })
+        foreach (var codec in new[] { "FlateDecode", "LZWDecode" })
+            new SingleFilterArrayMetadataBench
+            {
+                IndirectParameters = indirect, CompressionFilter = codec
+            }.Setup();
+    foreach (var size in new[] { 256, 1048576 })
+        foreach (var random in new[] { false, true })
+            foreach (var strict in new[] { false, true })
+                new FlateBench { DecodedBytes = size, RandomInput = random, Strict = strict }.Setup();
+    foreach (var size in new[] { 0, 256, 1048576 })
+        new FlateEncodeBench { DecodedBytes = size }.Setup();
+    foreach (var pattern in new[] { "Literal", "Repeated" })
+        foreach (var strict in new[] { false, true })
+            new LzwBench { Pattern = pattern, Strict = strict }.Setup();
+    foreach (var zoom in new[] { 1, 3 })
+        new OptionalContentZoomBench { Zoom = zoom }.Setup();
+    foreach (var displayEvent in new[] { "View", "Print", "Export" })
+        new OptionalContentEventBench { Event = displayEvent }.Setup();
+    foreach (var displayEvent in new[] { "Print", "Export" })
+        foreach (var manual in new[] { false, true })
+            foreach (var recommendation in new[] { false, true })
+                new OptionalContentTemporaryEventBench
+                {
+                    Event = displayEvent, Manual = manual, Recommendation = recommendation
+                }.Setup();
+    foreach (var policy in new[] { "AnyOn", "AllOn", "AnyOff", "AllOff" })
+        new OptionalContentMembershipBench { Policy = policy }.Setup();
     return;
 }
 

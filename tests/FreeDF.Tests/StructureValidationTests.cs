@@ -404,6 +404,280 @@ public class ValidationTests
         Assert.Contains(r.Findings, f => f.RuleId == "PDFUA-TABLE-HEADERS-FORMAT");
     }
 
+    [Theory]
+    [InlineData(1, "Table", 2, false)]
+    [InlineData(2, "Table", 2, true)]
+    [InlineData(2, "Table", 1, false)]
+    [InlineData(2, "Layout", 2, false)]
+    [InlineData(2, "", 2, false)]
+    [InlineData(2, "Class", 2, true)]
+    [InlineData(2, "Class", 1, false)]
+    public void Ua2TableDetectsColSpanCrossingAnOccupiedColumn(int part, string owner, int columns, bool overlap)
+    {
+        var attribute = owner == "Class" ? "/C /Span /A << /O /Table /Scope /Column >>" :
+            $"/A [<< /O /Table /Scope /Column >> << {(owner == "" ? "" : $"/O /{owner}")} /RowSpan 2 >>]";
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(UaWithClassMap("8 0 R",
+            "/Span << /O /Table /RowSpan 2 >>",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R 13 0 R 14 0 R] >>",
+            "<< /S /TR /K [15 0 R 16 0 R 17 0 R] >>",
+            "<< /S /TH /A << /O /Table /Scope /Column >> >>",
+            $"<< /S /TH {attribute} >>",
+            "<< /S /TD >>", "<< /S /TD >>",
+            $"<< /S /TD /A << /O /Table /ColSpan {columns} >> >>",
+            "<< /S /TD >>", "<< /S /TD >>")), part);
+        Assert.Equal(overlap, report.Has("PDFUA2-TABLE-SPAN-OVERLAP"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Fact]
+    public void Ua2OverlappingCellCannotEraseAnEarlierRowSpanOverflow()
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R 11 0 R] >>",
+            "<< /S /TR /K [12 0 R 13 0 R 14 0 R 15 0 R] >>",
+            "<< /S /TR /K [16 0 R 17 0 R 18 0 R] >>",
+            "<< /S /TR /K [19 0 R 20 0 R] >>",
+            "<< /S /TH /A << /O /Table /Scope /Column >> >>",
+            "<< /S /TH /A << /O /Table /Scope /Column /RowSpan 4 >> >>",
+            "<< /S /TD >>", "<< /S /TD >>",
+            "<< /S /TD /A << /O /Table /ColSpan 2 /RowSpan 2 >> >>",
+            "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>")), 2);
+        Assert.True(report.Has("PDFUA2-TABLE-SPAN-OVERLAP"));
+        Assert.True(report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("local-array", 1)]
+    [InlineData("local-array", 2)]
+    [InlineData("class-attribute-array", 1)]
+    [InlineData("class-attribute-array", 2)]
+    [InlineData("class-list", 1)]
+    [InlineData("class-list", 2)]
+    [InlineData("local-over-class", 1)]
+    [InlineData("local-over-class", 2)]
+    public void Ua2TableColSpanArraysUseLastSpecifiedOwnedValue(string route, int last)
+    {
+        int first = 3 - last;
+        string Attribute(int value) => $"<< /O /Table /ColSpan {value} >>";
+        var local = route is "local-array" or "local-over-class"
+            ? $"/A [<< /O /Table /Scope /Column >> {Attribute(first)} {Attribute(last)}]"
+            : "/A << /O /Table /Scope /Column >>";
+        var classes = route == "class-list" ? "/C [/First /Last]" : route == "class-attribute-array" ? "/C /Repeated" :
+            route == "local-over-class" ? "/C /Other" : "";
+        var map = $"/First {Attribute(first)} /Last {Attribute(last)} /Other {Attribute(first)} /Repeated [{Attribute(first)} {Attribute(last)}]";
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(UaWithClassMap("8 0 R", map,
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>", "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TH {local} {classes} >>", "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>")), 2);
+        Assert.Equal(last == 2, report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, 1, false)]
+    [InlineData(1, 2, false)]
+    [InlineData(2, 1, false)]
+    [InlineData(2, 2, true)]
+    [InlineData(2, 1000, true)]
+    public void Ua2TableRejectsSpansBeyondFinalRow(int part, int span, bool invalid)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH /A << /O /Table /Scope /Column >> >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>",
+            $"<< /S /TD /A << /O /Table /RowSpan {span} >> >>")), part);
+        Assert.Equal(invalid, report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UaTableRowSpanEndingAtFinalRowIsValid(int part)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K 13 0 R >>",
+            "<< /S /TH /A << /O /Table /Scope /Column /RowSpan 2 >> >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>")), part);
+        Assert.False(report.Has("PDFUA2-TABLE-ROWSPAN-END"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void Ua2TableWithoutHeaderCellsRetainsGeometryChecks(int part, bool irregular)
+    {
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TD /A << /O /Table /ColSpan {(irregular ? 2 : 1)} >> >>",
+            "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>")), part);
+        Assert.Equal(part == 1, report.Has("PDFUA-TABLE-HEADERS"));
+        Assert.Equal(irregular, report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    public static IEnumerable<object[]> TableSpanAttributeCases()
+    {
+        foreach (var part in new[] { 1, 2 })
+        foreach (var kind in new[] { "local-table", "local-layout", "local-omitted", "class-table", "class-layout",
+            "local-null-class", "local-one-class-two", "local-two-class-one" })
+            yield return [part, kind];
+    }
+
+    [Theory]
+    [MemberData(nameof(TableSpanAttributeCases))]
+    public void Ua2TableSpansUseOwnedLocalAndClassAttributes(int part, string kind)
+    {
+        var local = kind switch
+        {
+            "local-layout" => "<< /O /Layout /ColSpan 2 >>",
+            "local-omitted" => "<< /ColSpan 2 >>",
+            "class-table" or "class-layout" => "null",
+            "local-null-class" => "<< /O /Table /ColSpan null >>",
+            "local-one-class-two" => "<< /O /Table /ColSpan 1 >>",
+            _ => "<< /O /Table /ColSpan 2 >>",
+        };
+        var classes = kind.Contains("class", StringComparison.Ordinal) ? "/C /Span" : "";
+        var owner = kind == "class-layout" ? "Layout" : "Table";
+        var span = kind == "local-two-class-one" ? 1 : 2;
+        var pdf = UaWithClassMap("8 0 R", $"/Span << /O /{owner} /ColSpan {span} >>",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TH /A {local} {classes} >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>",
+            "<< /S /TD >>");
+        var report = PdfValidator.ValidatePdfUA(PdfDocument.Load(pdf), part);
+        var irregular = part == 2
+            ? kind is "local-table" or "class-table" or "local-null-class" or "local-two-class-one"
+            : kind is "local-table" or "local-layout" or "local-omitted" or "local-two-class-one";
+        Assert.Equal(irregular, report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.False(report.Has("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("C")]
+    [InlineData("ClassMap")]
+    public void Ua2TableCyclicAttributeReferencesAreIncomplete(string key)
+    {
+        var doc = PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TH {(key == "A" ? "/A 15 0 R" : key == "C" ? "/C 15 0 R" : "/C /Span")} >>",
+            "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>", "15 0 R"));
+        doc.Structure!.Root.Entries["ClassMap"] = key == "ClassMap" ? new PdfRef(15, 0) : new PdfDictionary();
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.True(report.Has("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
+    [Theory]
+    [InlineData(199999, false)]
+    [InlineData(200000, true)]
+    public void Ua2TableClassAndAttributeWorkShareOneBound(int count, bool incomplete)
+    {
+        var doc = PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH /C /Span >>",
+            "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>"));
+        var attributes = new PdfArray(Enumerable.Repeat<PdfObject>(new PdfDictionary(), count - 1)
+            .Append(new PdfDictionary { Entries = { ["O"] = new PdfName("Table"), ["ColSpan"] = new PdfInteger(2) } }).ToList());
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfDictionary { Entries = { ["Span"] = attributes } };
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(incomplete, report.Has("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE"));
+        Assert.Equal(!incomplete, report.Has("PDFUA-TABLE-IRREGULAR"));
+    }
+
+    [Fact]
+    public void Ua2TableLocalAttributesSkipUnusedCyclicClassMap()
+    {
+        var doc = PdfDocument.Load(Ua("8 0 R",
+            "<< /S /Table /K [9 0 R 10 0 R] >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            "<< /S /TH /C /Span /A << /O /Table /ColSpan 1 /RowSpan 1 /Scope /Column /Headers [] >> >>",
+            "<< /S /TD >>", "<< /S /TD >>", "<< /S /TD >>", "15 0 R"));
+        doc.Structure!.Root.Entries["ClassMap"] = new PdfRef(15, 0);
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.False(report.Has("PDFUA2-TABLE-ATTRIBUTE-INCOMPLETE"));
+        Assert.False(report.Has("PDFUA-TABLE-IRREGULAR"));
+    }
+
+    public static IEnumerable<object[]> TableNamespaceCases()
+    {
+        foreach (var kind in new[] { "default", "table", "rows", "headers", "data", "all" })
+        foreach (var broken in new[] { false, true })
+            yield return [kind, broken, ""];
+        foreach (var section in new[] { "THead", "TBody", "TFoot" })
+        foreach (var kind in new[] { "default", "table", "rows", "all" })
+            yield return [kind, false, section];
+    }
+
+    [Theory]
+    [MemberData(nameof(TableNamespaceCases))]
+    public void Ua2TableRowsAndHeaderAssociationsUseNamespaceRoles(string kind, bool broken, string section)
+    {
+        var doc = PdfDocument.Load(Ua("8 0 R",
+            $"<< /S /Table /K {(section.Length == 0 ? "[9 0 R 10 0 R]" : "15 0 R")} >>",
+            "<< /S /TR /K [11 0 R 12 0 R] >>",
+            "<< /S /TR /K [13 0 R 14 0 R] >>",
+            $"<< /S /TH /ID (h1) /A << /O /Table /Scope /Column /ColSpan {(broken ? 2 : 1)} >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(h1)] >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(h1)] >> >>",
+            "<< /S /TD /A << /O /Table /Headers [(h1)] >> >>",
+            section.Length == 0 ? "null" : $"<< /S /{section} /K [9 0 R 10 0 R] >>"));
+        var pdf2 = new PdfDictionary { Entries = { ["NS"] = new PdfString(Encoding.ASCII.GetBytes("http://iso.org/pdf2/ssn")) } };
+        for (int number = 8; number <= 14; number++)
+        {
+            var element = Assert.IsType<PdfDictionary>(doc.File.GetObject(number));
+            var role = Assert.IsType<PdfName>(element.Get("S")).Value;
+            if (kind != "all" && (kind, role) is not (("table", "Table") or ("rows", "TR") or ("headers", "TH") or ("data", "TD")))
+                continue;
+            var custom = "Custom" + role;
+            element.Entries["S"] = new PdfName(custom);
+            element.Entries["NS"] = new PdfDictionary
+            {
+                Entries =
+                {
+                    ["NS"] = new PdfString(Encoding.ASCII.GetBytes("urn:table-test")),
+                    ["RoleMapNS"] = new PdfDictionary { Entries = { [custom] = new PdfArray([new PdfName(role), pdf2]) } },
+                },
+            };
+        }
+        var report = PdfValidator.ValidatePdfUA(doc, 2);
+        Assert.Equal(broken, report.Has("PDFUA-TABLE-IRREGULAR"));
+        Assert.DoesNotContain(report.Findings, finding => finding.RuleId is "PDFUA-TABLE-PARENT" or "PDFUA-TABLE-ROWS"
+            or "PDFUA-TABLE-CHILD" or "PDFUA-TABLE-HEADERS" or "PDFUA-ROW-CHILD" or "PDFUA-TABLE-SCOPE"
+            or "PDFUA-TABLE-HEADERS-REFERENCE" or "PDFUA-TABLE-HEADERS-CONSISTENCY"
+            or "PDFUA-TABLE-SECTION-PARENT" or "PDFUA-TABLE-SECTION-CHILD" or "PDFUA-TABLE-TBODY");
+        Assert.False(report.Has("VALIDATION-INTERNAL"));
+    }
+
     [Fact]
     public void Ua2TableRequiresHeadersOnEveryDataCellWhenHeadersAreUsed()
     {
@@ -426,7 +700,7 @@ public class ValidationTests
         var pdf = ObjPdf.Build(
             "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>",
             ObjPdf.Stream("BT /F1 12 Tf (x) Tj ET"),
             "<< /Type /StructTreeRoot /K 6 0 R >>",
             "<< /S /Weird >>");

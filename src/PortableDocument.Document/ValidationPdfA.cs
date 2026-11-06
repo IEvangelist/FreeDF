@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using PortableDocument.Core;
 
 namespace PortableDocument.Document;
@@ -20,27 +21,209 @@ internal static class FontChecks
     }
 
     public static string Name(PdfFile f, PdfDictionary font) => f.Resolve(font.Get("BaseFont")).AsName() ?? "(unnamed)";
+
+    public static PdfStream? TrueTypeProgram(PdfFile f, PdfDictionary descriptor)
+    {
+        if (f.Resolve(descriptor.Get("FontFile2")) is PdfStream raw) return raw;
+        return f.Resolve(descriptor.Get("FontFile3")) is PdfStream openType
+            && f.Resolve(openType.Dict.Get("Subtype")).AsName() == "OpenType" ? openType : null;
+    }
+
+    static bool TrySfntTable(ReadOnlySpan<byte> data, ReadOnlySpan<byte> tag, out (int Offset, int Length)? result, bool cff = false)
+    {
+        result = null;
+        if (data.Length < 12) return false;
+        var signature = BinaryPrimitives.ReadUInt32BigEndian(data);
+        if (cff ? signature != 0x4F54544F : signature is not (0x00010000 or 0x74727565)) return false;
+        var tables = BinaryPrimitives.ReadUInt16BigEndian(data[4..]);
+        var directoryEnd = 12 + tables * 16;
+        if (directoryEnd > data.Length) return false;
+        for (var i = 0; i < tables; i++)
+        {
+            var entry = data.Slice(12 + i * 16, 16);
+            if (!entry[..4].SequenceEqual(tag)) continue;
+            if (result is not null) return false;
+            var offset = BinaryPrimitives.ReadUInt32BigEndian(entry[8..]);
+            var length = BinaryPrimitives.ReadUInt32BigEndian(entry[12..]);
+            if (offset < directoryEnd || offset > data.Length || length > data.Length - offset) return false;
+            result = ((int)offset, (int)length);
+        }
+        return true;
+    }
+
+    public static int? TrueTypeGlyphCount(ReadOnlySpan<byte> data)
+    {
+        if (!TrySfntTable(data, "maxp"u8, out var table) || table is not { Length: >= 32 } t) return null;
+        var maxp = data.Slice(t.Offset, t.Length);
+        if (BinaryPrimitives.ReadUInt32BigEndian(maxp) != 0x00010000) return null;
+        var count = BinaryPrimitives.ReadUInt16BigEndian(maxp[4..]);
+        return count == 0 ? null : count;
+    }
+
+    public static byte[] OpenTypeCff(ReadOnlySpan<byte> data)
+    {
+        if (!TrySfntTable(data, "CFF "u8, out var table, cff: true) || table is not { Length: > 0 } t)
+            throw new InvalidDataException("missing, duplicate or malformed OpenType CFF table");
+        return data.Slice(t.Offset, t.Length).ToArray();
+    }
+
+    public static double?[] TrueTypeAsciiWidths(byte[] data)
+    {
+        if (data.Length > 16_777_216) throw new InvalidDataException("decoded font exceeds 16777216 bytes");
+        ReadOnlySpan<byte> Table(ReadOnlySpan<byte> tag, int minimum)
+        {
+            if (!TrySfntTable(data, tag, out var table) || table is not { } t || t.Length < minimum)
+                throw new InvalidDataException("missing, duplicate or malformed TrueType metric/cmap table");
+            return data.AsSpan(t.Offset, t.Length);
+        }
+        var glyphCount = TrueTypeGlyphCount(data)
+            ?? throw new InvalidDataException("malformed TrueType maxp metadata");
+        var head = Table("head"u8, 54);
+        var units = BinaryPrimitives.ReadUInt16BigEndian(head[18..]);
+        if (BinaryPrimitives.ReadUInt32BigEndian(head) != 0x00010000
+            || BinaryPrimitives.ReadUInt32BigEndian(head[12..]) != 0x5F0F3CF5 || units is < 16 or > 16384)
+            throw new InvalidDataException("unsupported head version, magic or unitsPerEm");
+        var hhea = Table("hhea"u8, 36);
+        var metrics = BinaryPrimitives.ReadUInt16BigEndian(hhea[34..]);
+        if (BinaryPrimitives.ReadUInt32BigEndian(hhea) != 0x00010000 || metrics == 0 || metrics > glyphCount)
+            throw new InvalidDataException("unsupported hhea version or numberOfHMetrics");
+        var hmtx = Table("hmtx"u8, metrics * 4 + (glyphCount - metrics) * 2);
+        var cmap = Table("cmap"u8, 4);
+        var records = BinaryPrimitives.ReadUInt16BigEndian(cmap[2..]);
+        var recordsEnd = 4 + records * 8;
+        if (BinaryPrimitives.ReadUInt16BigEndian(cmap) != 0 || recordsEnd > cmap.Length)
+            throw new InvalidDataException("malformed cmap records");
+        int? selected = null;
+        for (var i = 0; i < records; i++)
+        {
+            var record = cmap.Slice(4 + i * 8, 8);
+            if (BinaryPrimitives.ReadUInt16BigEndian(record) != 3
+                || BinaryPrimitives.ReadUInt16BigEndian(record[2..]) != 1) continue;
+            var offset = BinaryPrimitives.ReadUInt32BigEndian(record[4..]);
+            if (selected is not null || offset < recordsEnd || offset > cmap.Length - 16)
+                throw new InvalidDataException("missing, duplicate or invalid Microsoft Unicode cmap");
+            selected = (int)offset;
+        }
+        if (selected is not { } start) throw new InvalidDataException("Microsoft Unicode (3,1) cmap is not present");
+        var map = cmap[start..];
+        var length = BinaryPrimitives.ReadUInt16BigEndian(map[2..]);
+        var segCountX2 = BinaryPrimitives.ReadUInt16BigEndian(map[6..]);
+        if (BinaryPrimitives.ReadUInt16BigEndian(map) != 4 || length > map.Length || length < 16 || length % 2 != 0
+            || segCountX2 == 0 || segCountX2 % 2 != 0 || 16 + segCountX2 * 4 > length)
+            throw new InvalidDataException("malformed or unsupported Unicode cmap format 4");
+        map = map[..length];
+        var segments = segCountX2 / 2;
+        var starts = 16 + segCountX2;
+        var deltas = starts + segCountX2;
+        var offsets = deltas + segCountX2;
+        var glyphArray = offsets + segCountX2;
+        if (BinaryPrimitives.ReadUInt16BigEndian(map[(14 + segCountX2)..]) != 0)
+            throw new InvalidDataException("invalid cmap reservedPad");
+        var result = new double?[127];
+        var previousEnd = -1;
+        for (var i = 0; i < segments; i++)
+        {
+            var end = BinaryPrimitives.ReadUInt16BigEndian(map[(14 + 2 * i)..]);
+            var first = BinaryPrimitives.ReadUInt16BigEndian(map[(starts + 2 * i)..]);
+            var delta = BinaryPrimitives.ReadUInt16BigEndian(map[(deltas + 2 * i)..]);
+            var offset = BinaryPrimitives.ReadUInt16BigEndian(map[(offsets + 2 * i)..]);
+            if (first > end || first <= previousEnd || offset % 2 != 0 || i == segments - 1 && first != 65535)
+                throw new InvalidDataException("unordered/overlapping cmap segments or odd glyph offset");
+            var glyphStart = offsets + 2 * i + offset;
+            if (offset != 0 && (glyphStart < glyphArray || glyphStart + 2 * (end - first) + 2 > map.Length))
+                throw new InvalidDataException("cmap glyph array is outside subtable bounds");
+            previousEnd = end;
+            for (var code = Math.Max(32, (int)first); code <= Math.Min(126, (int)end); code++)
+            {
+                var glyph = offset == 0 ? (code + delta) & 65535
+                    : BinaryPrimitives.ReadUInt16BigEndian(map[(glyphStart + 2 * (code - first))..]);
+                if (offset != 0 && glyph != 0) glyph = (glyph + delta) & 65535;
+                if (glyph >= glyphCount) throw new InvalidDataException("cmap glyph index exceeds maxp glyph count");
+                if (glyph == 0) continue;
+                var advance = BinaryPrimitives.ReadUInt16BigEndian(hmtx[(Math.Min(glyph, metrics - 1) * 4)..]);
+                result[code] = advance * 1000.0 / units;
+            }
+        }
+        if (previousEnd != 65535) throw new InvalidDataException("cmap format 4 has no terminal segment");
+        return result;
+    }
+
+    public readonly record struct CmapRecords(int Count, bool Symbol, bool Roman, bool Unicode, bool NonSymbolic);
+
+    public static CmapRecords? TrueTypeCmapRecords(ReadOnlySpan<byte> data)
+    {
+        if (!TrySfntTable(data, "cmap"u8, out var table)) return null;
+        if (table is not { } t) return new(0, false, false, false, false);
+        if (t.Length < 4) return null;
+        var cmap = data.Slice(t.Offset, t.Length);
+        if (BinaryPrimitives.ReadUInt16BigEndian(cmap) != 0) return null;
+        var count = BinaryPrimitives.ReadUInt16BigEndian(cmap[2..]);
+        var recordsEnd = 4 + count * 8;
+        if (recordsEnd > cmap.Length) return null;
+        var symbol = false;
+        var roman = false;
+        var unicode = false;
+        var nonSymbolic = false;
+        for (var j = 0; j < count; j++)
+        {
+            var record = cmap.Slice(4 + j * 8, 8);
+            var subtable = BinaryPrimitives.ReadUInt32BigEndian(record[4..]);
+            if (subtable < recordsEnd || subtable > cmap.Length - 2) return null;
+            var platform = BinaryPrimitives.ReadUInt16BigEndian(record);
+            var encoding = BinaryPrimitives.ReadUInt16BigEndian(record[2..]);
+            symbol |= platform == 3 && encoding == 0;
+            roman |= platform == 1 && encoding == 0;
+            unicode |= platform == 3 && encoding == 1;
+            nonSymbolic |= platform != 3 || encoding != 0;
+        }
+        return new(count, symbol, roman, unicode, nonSymbolic);
+    }
+
+    public static (string? InvalidName, string? IncompleteReason) InspectDifferences(PdfFile f, PdfDictionary encoding)
+    {
+        var raw = encoding.Get("Differences");
+        if (raw is null || f.Resolve(raw) is PdfNull) return (null, null);
+        if (f.Resolve(raw) is not PdfArray { Count: <= 10_000 } differences)
+            return (null, "non-array value or more than 10000 entries");
+        long? code = null;
+        foreach (var item in differences.Items)
+        {
+            switch (f.Resolve(item))
+            {
+                case PdfInteger { Value: >= 0 and <= 255 } next:
+                    code = next.Value;
+                    break;
+                case PdfName glyph when code is >= 0 and <= 255:
+                    if (glyph.Value != ".notdef" && !GlyphList.ContainsName(glyph.Value))
+                        return (glyph.Value, null);
+                    code++;
+                    break;
+                default:
+                    return (null, "expected a byte character code followed by glyph names");
+            }
+        }
+        return (null, null);
+    }
 }
 
 /// <summary>PDF/A-1b/2b/3b basic checks (ISO 19005-1/2/3).</summary>
 internal static class PdfAChecks
 {
-    static readonly HashSet<string> ForbiddenActions = new(StringComparer.Ordinal)
-        { "Launch", "Sound", "Movie", "ResetForm", "ImportData", "JavaScript", "SetOCGState", "Rendition", "Trans", "GoTo3DView" };
-
     public static void Run(ValidationContext c)
     {
+        var outputSpaces = new HashSet<string>(StringComparer.Ordinal);
         c.Guard("file structure", () => FileStructure(c));
         c.Guard("metadata", () => Metadata(c));
         c.Guard("fonts", () => Fonts(c));
-        c.Guard("output intent", () => OutputIntent(c));
+        c.Guard("output intent", () => OutputIntent(c, outputSpaces));
         c.Guard("transparency", () => Transparency(c));
-        c.Guard("annotations", () => Annotations(c));
+        c.Guard("annotations", () => Annotations(c, outputSpaces));
         c.Guard("object scan", () => ObjectScan(c));
         c.Guard("metadata consistency", () => PdfADeepChecks.Metadata(c));
         c.Guard("icc profiles", () => PdfADeepChecks.IccProfiles(c));
         c.Guard("font dictionaries", () => PdfADeepChecks.FontDictionaries(c));
         c.Guard("actions and forms", () => PdfADeepChecks.ActionsAndForms(c));
+        c.Guard("field additional actions", () => PdfADeepChecks.FieldAdditionalActions(c));
     }
 
     internal static string Clause(ValidationContext c, string a1, string a2, string a3) => c.Part switch { 1 => $"ISO 19005-1 {a1}", 2 => $"ISO 19005-2 {a2}", _ => $"ISO 19005-3 {a3}" };
@@ -75,8 +258,8 @@ internal static class PdfAChecks
             c.Add("PDFA-VERSION", ValidationSeverity.Error, $"PDF version {version} is not allowed (PDF/A-1/2/3 are based on PDF 1.x)", Clause(c, "6.1.2", "6.1.2", "6.1.2"));
         if (c.Part == 1 && f.Resolve(f.Catalog.Get("OCProperties")) is not null and not PdfNull)
             c.Add("PDFA-OPTIONAL-CONTENT", ValidationSeverity.Error, "optional content is not permitted in PDF/A-1", "ISO 19005-1 6.1.13");
-        if (f.Resolve(f.Catalog.Get("AA")) is PdfDictionary)
-            c.Add("PDFA-CATALOG-AA", ValidationSeverity.Error, "catalog additional-actions dictionary is not permitted", Clause(c, "6.6.2", "6.6.1", "6.6.1"));
+        if (f.Resolve(f.Catalog.Get("AA")) is not null and not PdfNull)
+            c.Add("PDFA-CATALOG-AA", ValidationSeverity.Error, "catalog additional-actions entry is not permitted", Clause(c, "6.6.2", "6.5.2", "6.5.2"));
     }
 
     static void Metadata(ValidationContext c)
@@ -102,17 +285,34 @@ internal static class PdfAChecks
     static void Fonts(ValidationContext c)
     {
         c.EnsureWalked();
+        var usageReported = false;
         foreach (var u in c.Fonts)
         {
             if (!FontChecks.IsEmbedded(c.F, u.Font))
                 c.Add("PDFA-FONT-EMBEDDED", ValidationSeverity.Error, $"font {FontChecks.Name(c.F, u.Font)} is not embedded", Clause(c, "6.3.4", "6.2.11.4.1", "6.2.11.4.1"), u.Page);
             else if (c.F.Resolve(u.Font.Get("Subtype")).AsName() == "Type0" && c.F.Resolve(u.Font.Get("DescendantFonts")) is PdfArray { Count: > 0 } df
-                && c.F.Resolve(df[0]) is PdfDictionary cid && c.F.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2" && cid.Get("CIDToGIDMap") is null)
-                c.Add("PDFA-FONT-CIDTOGID", ValidationSeverity.Error, $"CIDFontType2 {FontChecks.Name(c.F, cid)} has no /CIDToGIDMap", Clause(c, "6.3.5", "6.2.11.3.2", "6.2.11.3.2"), u.Page);
+                && c.F.Resolve(df[0]) is PdfDictionary cid && c.F.Resolve(cid.Get("Subtype")).AsName() == "CIDFontType2"
+                && c.F.Resolve(cid.Get("CIDToGIDMap")) is not (PdfStream or PdfName { Value: "Identity" }))
+            {
+                if (c.Part == 1)
+                {
+                    if (!c.FontUsageComplete && !usageReported)
+                    {
+                        usageReported = true;
+                        c.Add("PDFA-FONT-USAGE-INCOMPLETE", ValidationSeverity.Error,
+                            "Font rendering use could not be completely inspected; the mode-3 exemption for invalid CIDToGIDMap entries cannot be established",
+                            "ISO 19005-1 6.3.3.2");
+                    }
+                    if (u.RenderingPage is null) continue;
+                }
+                c.Add("PDFA-FONT-CIDTOGID", ValidationSeverity.Error,
+                    $"embedded CIDFontType2 {FontChecks.Name(c.F, cid)}{(c.Part == 1 ? " used for rendering" : "")} requires /CIDToGIDMap to be a stream or /Identity",
+                    Clause(c, "6.3.3.2", "6.2.11.3.2", "6.2.11.3.2"), u.RenderingPage ?? u.Page);
+            }
         }
     }
 
-    static void OutputIntent(ValidationContext c)
+    static void OutputIntent(ValidationContext c, HashSet<string> outputSpaces)
     {
         var f = c.F;
         c.EnsureWalked();
@@ -124,7 +324,6 @@ internal static class PdfAChecks
             return;
         }
         PdfStream? profile = null;
-        var outputSpaces = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in intents.Items)
         {
             if (f.Resolve(item) is not PdfDictionary oi) continue;
@@ -179,22 +378,103 @@ internal static class PdfAChecks
                 c.Add("PDFA1-TRANSPARENCY-GROUP", ValidationSeverity.Error, "page transparency group is not permitted", clause, i);
     }
 
-    static void Annotations(ValidationContext c)
+    static bool AnnotationFieldType(PdfFile f, PdfDictionary annotation, out string? fieldType)
     {
+        fieldType = null;
+        var current = annotation;
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        for (var depth = 0; depth < 64; depth++)
+        {
+            if (!seen.Add(current)) return false;
+            var value = f.Resolve(current.Get("FT"));
+            if (value is not null and not PdfNull)
+            {
+                fieldType = value.AsName();
+                return true;
+            }
+            var parent = f.Resolve(current.Get("Parent"));
+            if (parent is null or PdfNull) return true;
+            if (parent is not PdfDictionary dictionary) return false;
+            current = dictionary;
+        }
+        return false;
+    }
+
+    static void Annotations(ValidationContext c, HashSet<string> outputSpaces)
+    {
+        const int annotationLimit = 10_000;
         var f = c.F;
         for (var i = 0; i < c.Doc.Pages.Count; i++)
         {
+            if (c.Part != 1 && f.Resolve(c.Doc.Pages[i].Dict.Get("AA")) is not null and not PdfNull)
+                c.Add("PDFA-PAGE-AA", ValidationSeverity.Error, "page additional-actions entry is not permitted", Clause(c, "6.6.2", "6.5.2", "6.5.2"), i);
             if (f.Resolve(c.Doc.Pages[i].Dict.Get("Annots")) is not PdfArray annots) continue;
-            foreach (var a in annots.Items.Take(10_000))
+            if (annots.Count > annotationLimit)
+                c.Add("PDFA-ANNOT-INCOMPLETE", ValidationSeverity.Error, $"cannot completely inspect {annots.Count} page annotation entries: limit is {annotationLimit}", Clause(c, "6.5", "6.3", "6.3"), i);
+            foreach (var a in annots.Items.Take(annotationLimit))
             {
                 if (f.Resolve(a) is not PdfDictionary ad) continue;
                 var sub = f.Resolve(ad.Get("Subtype")).AsName();
-                if (sub is "Sound" or "Movie" or "Screen" or "3D" && c.Part == 1 || sub is "Sound" or "Movie")
-                    c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
-                if (sub == "Popup") continue;
-                var flags = (int)(f.Resolve(ad.Get("F")).AsNumber() ?? 0);
+                var allowed = sub is "Text" or "Link" or "FreeText" or "Line" or "Square" or "Circle" or "Highlight" or "Underline"
+                    or "Squiggly" or "StrikeOut" or "Stamp" or "Ink" or "Popup" or "Widget" or "PrinterMark" or "TrapNet"
+                    || c.Part != 1 && sub is "Polygon" or "PolyLine" or "Caret" or "FileAttachment" or "Watermark" or "Redact";
+                if (!allowed)
+                    c.Add("PDFA-ANNOT-TYPE", ValidationSeverity.Error, $"annotation subtype /{sub ?? "(missing or non-name)"} is not permitted", Clause(c, "6.5.2", "6.3.1", "6.3.1"), i);
+                if (sub == "Widget")
+                {
+                    if (f.Resolve(ad.Get("A")) is not null and not PdfNull)
+                        c.Add("PDFA-WIDGET-ACTIONS", ValidationSeverity.Error, "Widget /A action entry is not permitted", Clause(c, "6.6.1", "6.4.1", "6.4.1"), i);
+                    if (f.Resolve(ad.Get("AA")) is not null and not PdfNull)
+                        c.Add("PDFA-WIDGET-ACTIONS", ValidationSeverity.Error, "Widget /AA additional-actions entry is not permitted", Clause(c, "6.6.2", "6.4.1", "6.4.1"), i);
+                }
+                if (c.Part == 1 && f.Resolve(ad.Get("CA")).AsNumber() is { } opacity && opacity != 1)
+                    c.Add("PDFA1-ANNOT-OPACITY", ValidationSeverity.Error, "annotation opacity must be 1 in PDF/A-1", "ISO 19005-1 6.5.3", i);
+                if (c.Part == 1 && !outputSpaces.Contains("RGB ")
+                    && (f.Resolve(ad.Get("C")) is PdfArray || f.Resolve(ad.Get("IC")) is PdfArray))
+                    c.Add("PDFA1-ANNOT-COLORSPACE", ValidationSeverity.Error, "annotation /C or /IC array requires an RGB PDF/A output profile", "ISO 19005-1 6.5.3", i);
+                var appearance = f.Resolve(ad.Get("AP")) as PdfDictionary;
+                if (c.Part == 1 && sub == "Widget" && appearance is null)
+                    c.Add("PDFA1-FIELD-APPEARANCE", ValidationSeverity.Error, "page Widget field has no appearance dictionary", "ISO 19005-1 6.9", i);
+                var normal = f.Resolve(appearance?.Get("N"));
+                var normalOnly = appearance is not null && normal is not null and not PdfNull
+                    && !appearance.Entries.Any(entry => entry.Key != "N" && f.Resolve(entry.Value) is not null and not PdfNull);
+                if (appearance is not null && !normalOnly)
+                    c.Add("PDFA-ANNOT-APPEARANCE-KEYS", ValidationSeverity.Error, "annotation appearance dictionary must contain only a non-null /N entry", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                if (normalOnly)
+                {
+                    string? fieldType = null;
+                    if (sub == "Widget" && !AnnotationFieldType(f, ad, out fieldType))
+                        c.Add("PDFA-ANNOT-APPEARANCE-INCOMPLETE", ValidationSeverity.Error, "cannot resolve Widget field type within the 64-node parent traversal bound or through a cyclic/malformed parent chain", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                    else if (sub == "Widget" && fieldType == "Btn")
+                    {
+                        const int stateLimit = 10_000;
+                        var states = normal as PdfDictionary;
+                        if (states?.Entries.Take(stateLimit).Any(entry => f.Resolve(entry.Value) is PdfStream) != true)
+                        {
+                            if (states?.Entries.Count > stateLimit)
+                                c.Add("PDFA-ANNOT-APPEARANCE-INCOMPLETE", ValidationSeverity.Error, $"cannot determine whether button Widget has an appearance stream within the {stateLimit}-entry state search bound", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                            else
+                                c.Add("PDFA-ANNOT-APPEARANCE-BUTTON", ValidationSeverity.Error, "button Widget normal appearance must be a dictionary containing at least one stream", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                        }
+                    }
+                    else if (normal is not PdfStream)
+                        c.Add("PDFA-ANNOT-APPEARANCE-STREAM", ValidationSeverity.Error, "non-button annotation normal appearance must be a stream", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                }
+                if (c.Part != 1 && sub is not ("Popup" or "Link") && appearance is null)
+                {
+                    var point = f.Resolve(ad.Get("Rect")) is PdfArray { Count: 4 } rect
+                        && f.Resolve(rect[0]).AsNumber() is { } x0 && f.Resolve(rect[1]).AsNumber() is { } y0
+                        && f.Resolve(rect[2]).AsNumber() is { } x1 && f.Resolve(rect[3]).AsNumber() is { } y1
+                        && x0 == x1 && y0 == y1;
+                    if (!point)
+                        c.Add("PDFA-ANNOT-APPEARANCE-MISSING", ValidationSeverity.Error, "non-exempt annotation has no appearance dictionary", Clause(c, "6.5.3", "6.3.3", "6.3.3"), i);
+                }
+                var flagValue = f.Resolve(ad.Get("F"));
+                if (c.Part != 1 && sub == "Popup" && flagValue is null or PdfNull) continue;
+                var flags = (int)(flagValue.AsNumber() ?? 0);
                 if ((flags & 4) == 0) c.Add("PDFA-ANNOT-PRINT", ValidationSeverity.Error, "annotation lacks the Print flag", Clause(c, "6.5.3", "6.3.2", "6.3.2"), i);
-                if ((flags & (2 | 32)) != 0) c.Add("PDFA-ANNOT-HIDDEN", ValidationSeverity.Error, "annotation has the Hidden or NoView flag", Clause(c, "6.5.3", "6.3.2", "6.3.2"), i);
+                if ((flags & (1 | 2 | 32 | (c.Part == 1 ? 0 : 256))) != 0)
+                    c.Add("PDFA-ANNOT-HIDDEN", ValidationSeverity.Error, $"annotation visibility flags are not permitted in this PDF/A part (/F {flags})", Clause(c, "6.5.3", "6.3.2", "6.3.2"), i);
             }
         }
     }
@@ -202,7 +482,7 @@ internal static class PdfAChecks
     static void ObjectScan(ValidationContext c)
     {
         var f = c.F;
-        var reportedLzw = false; var reportedJpx = false; var reportedAction = false; var reportedObjStm = false; var reportedFile = false; var reportedAf = false;
+        var reportedLzw = false; var reportedJpx = false; var reportedObjStm = false; var reportedFile = false; var reportedAf = false;
         var reportedXObjects = new HashSet<string>(StringComparer.Ordinal);
         void XObjectFinding(string rule, string message, string part1, string part23)
         {
@@ -216,6 +496,8 @@ internal static class PdfAChecks
             if (o is PdfStream st)
             {
                 var subtype = f.Resolve(dict.Get("Subtype")).AsName();
+                if (subtype == "PS" && f.Resolve(dict.Get("Type")).AsName() == "XObject")
+                    XObjectFinding("PDFA-XOBJECT-POSTSCRIPT", "a standalone PostScript XObject is not permitted", "6.2.7", "6.2.9");
                 if (subtype == "Image")
                 {
                     if (f.Resolve(dict.Get("Interpolate")) is PdfBoolean { Value: true })
@@ -245,13 +527,13 @@ internal static class PdfAChecks
                     if (name is "LZWDecode" or "LZW" && !reportedLzw) { reportedLzw = true; c.Add("PDFA-FILTER-LZW", ValidationSeverity.Error, "LZWDecode filter is not permitted", Clause(c, "6.1.10", "6.1.10", "6.1.10")); }
                     if (name == "JPXDecode" && c.Part == 1 && !reportedJpx) { reportedJpx = true; c.Add("PDFA1-FILTER-JPX", ValidationSeverity.Error, "JPXDecode is not permitted in PDF/A-1", "ISO 19005-1 6.2.8"); }
                 }
-                if (st.Dict.Get("F") is not null || st.Dict.Get("FFilter") is not null || st.Dict.Get("FDecodeParms") is not null)
-                    c.Add("PDFA-STREAM-EXTERNAL", ValidationSeverity.Error, "stream refers to an external file (/F, /FFilter or /FDecodeParms)", Clause(c, "6.1.7", "6.1.7", "6.1.7"));
+                if (f.Resolve(st.Dict.Get("F")) is not null and not PdfNull
+                    || f.Resolve(st.Dict.Get("FFilter")) is not null and not PdfNull
+                    || f.Resolve(st.Dict.Get("FDecodeParms")) is not null and not PdfNull)
+                    c.Add("PDFA-STREAM-EXTERNAL", ValidationSeverity.Error, "stream refers to an external file (/F, /FFilter or /FDecodeParms)", Clause(c, "6.1.7", "6.1.7.1", "6.1.7.1"));
                 if (c.Part == 1 && !reportedObjStm && f.Resolve(st.Dict.Get("Type")).AsName() is "ObjStm" or "XRef")
                 { reportedObjStm = true; c.Add("PDFA1-OBJSTM", ValidationSeverity.Error, "object streams and cross-reference streams are not permitted in PDF/A-1", "ISO 19005-1 6.1.4"); }
             }
-            if (!reportedAction && f.Resolve(dict.Get("S")).AsName() is { } actionType && ForbiddenActions.Contains(actionType) && (dict.Get("Type") is null || f.Resolve(dict.Get("Type")).AsName() == "Action"))
-            { reportedAction = true; c.Add("PDFA-ACTION", ValidationSeverity.Error, $"action /{actionType} is not permitted", Clause(c, "6.6.1", "6.5.1", "6.5.1")); }
             if (dict.Get("EF") is not null && f.Resolve(dict.Get("Type")).AsName() is "Filespec" or null)
             {
                 if (c.Part < 3 && !reportedFile)

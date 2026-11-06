@@ -13,6 +13,7 @@ public sealed class OptionalContentState
     readonly HashSet<PdfDictionary> _groups = new(ReferenceEqualityComparer.Instance);
     readonly HashSet<PdfDictionary> _locked = new(ReferenceEqualityComparer.Instance);
     readonly List<string> _warnings = [];
+    readonly Action<string> _warn;
     public PdfDocument Document { get; }
     internal PdfFile File { get; }
     internal PdfDictionary? Configuration { get; }
@@ -23,6 +24,7 @@ public sealed class OptionalContentState
 
     public OptionalContentState(PdfDocument document, string? configurationName = null)
     {
+        _warn = Warn;
         Document = document;
         File = document.File;
         var properties = R(File.Catalog.Get("OCProperties")) as PdfDictionary;
@@ -50,7 +52,7 @@ public sealed class OptionalContentState
         Groups = groups.AsReadOnly();
 
         // Only RBGroups inherits from /D. An explicit empty array suppresses inheritance.
-        var radioValue = Configuration?.Get("RBGroups");
+        var radioValue = R(Configuration?.Get("RBGroups"));
         if (radioValue is null or PdfNull) radioValue = DefaultConfiguration?.Get("RBGroups");
         var radioGroups = new List<IReadOnlyList<PdfDictionary>>();
         if (ReadArray(radioValue, "RBGroups") is { } radio)
@@ -109,6 +111,12 @@ public sealed class OptionalContentState
         return _locked.Contains(group);
     }
 
+    /// <summary>
+    /// Returns the group's ON/OFF state, including UI overrides and usage rules.
+    /// Configuration intent separately determines whether that state affects rendered content.
+    /// Print and Export recommendations temporarily override the current View state without modifying it.
+    /// The supplied zoom and context determine that View state when there is no UI override.
+    /// </summary>
     public bool IsVisible(PdfDictionary group,
         ContentInterpreter.OptionalContentEvent displayEvent = ContentInterpreter.OptionalContentEvent.View, double zoom = 1,
         OptionalContentContext? context = null)
@@ -149,14 +157,35 @@ public sealed class OptionalContentState
     }
 
     internal bool IsVisibleCore(PdfDictionary group, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
-        OptionalContentContext? context = null) =>
-        _visibility.TryGetValue(group, out var visible) ? visible
-            : !IsOff(File, group, Configuration, DefaultConfiguration, displayEvent, zoom, context, Warn);
+        OptionalContentContext? context = null)
+    {
+        if (displayEvent is ContentInterpreter.OptionalContentEvent.Print or ContentInterpreter.OptionalContentEvent.Export)
+        {
+            if (RecommendedVisibility(File, group, Configuration, displayEvent, zoom, context, _warn) is { } temporary)
+                return temporary;
+            displayEvent = ContentInterpreter.OptionalContentEvent.View;
+        }
+        return _visibility.TryGetValue(group, out var visible) ? visible
+            : !IsOff(File, group, Configuration, DefaultConfiguration, displayEvent, zoom, context, _warn);
+    }
+
+    static bool ContainsGroup(PdfFile file, PdfArray groups, PdfDictionary group)
+    {
+        foreach (var value in groups.Items)
+            if (ReferenceEquals(file.Resolve(value), group)) return true;
+        return false;
+    }
 
     internal static bool IsOff(PdfFile file, PdfDictionary ocg, PdfDictionary? cfg,
         PdfDictionary? defaultConfiguration, ContentInterpreter.OptionalContentEvent displayEvent, double zoom,
         OptionalContentContext? context = null, Action<string>? warn = null)
     {
+        if (displayEvent is ContentInterpreter.OptionalContentEvent.Print or ContentInterpreter.OptionalContentEvent.Export)
+        {
+            if (RecommendedVisibility(file, ocg, cfg, displayEvent, zoom, context, warn) is { } temporary)
+                return !temporary;
+            displayEvent = ContentInterpreter.OptionalContentEvent.View;
+        }
         if (cfg is null) return false;
         PdfObject? R(PdfObject? value) => file.Resolve(value);
         var baseState = R(cfg.Get("BaseState")).AsName();
@@ -167,69 +196,87 @@ public sealed class OptionalContentState
         else
         {
             var baseOff = baseState == "OFF";
-            bool Contains(string key) => R(cfg.Get(key)) is PdfArray arr && arr.Items.Any(x => ReferenceEquals(R(x), ocg));
-            off = Contains("OFF") || !Contains("ON") && baseOff;
+            off = R(cfg.Get("OFF")) is PdfArray offGroups && ContainsGroup(file, offGroups, ocg)
+                || !(R(cfg.Get("ON")) is PdfArray onGroups && ContainsGroup(file, onGroups, ocg)) && baseOff;
         }
 
-        if (R(cfg.Get("AS")) is not PdfArray applications) return off;
-        var eventName = displayEvent.ToString();
-        var zoomOutOfRange = false;
-        bool? contextRecommendation = null;
-        var eventAllowsContext = true;
-        var hasEventRecommendation = false;
+        return RecommendedVisibility(file, ocg, cfg, displayEvent, zoom, context, warn) is { } visible
+            ? !visible : off;
+    }
+
+    static bool? RecommendedVisibility(PdfFile file, PdfDictionary ocg, PdfDictionary? cfg,
+        ContentInterpreter.OptionalContentEvent displayEvent, double zoom, OptionalContentContext? context,
+        Action<string>? warn)
+    {
+        PdfObject? R(PdfObject? value) => file.Resolve(value);
+        if (R(cfg?.Get("AS")) is not PdfArray applications) return null;
+        var eventName = displayEvent switch
+        {
+            ContentInterpreter.OptionalContentEvent.View => "View",
+            ContentInterpreter.OptionalContentEvent.Print => "Print",
+            ContentInterpreter.OptionalContentEvent.Export => "Export",
+            _ => displayEvent.ToString()
+        };
+        bool? recommendations = null;
         foreach (var application in applications.Items)
         {
             if (R(application) is not PdfDictionary app
                 || R(app.Get("Event")).AsName() != eventName
                 || R(app.Get("Category")) is not PdfArray categories)
                 continue;
-            if (R(app.Get("OCGs")) is PdfArray groups
-                && !groups.Items.Any(value => ReferenceEquals(R(value), ocg)))
+            var applicationGroups = R(app.Get("OCGs"));
+            if (applicationGroups is null or PdfNull) continue;
+            if (applicationGroups is not PdfArray groups)
+            {
+                warn?.Invoke("invalid optional-content application OCGs array");
                 continue;
-            if (R(app.Get("OCGs")) is PdfDictionary group && !ReferenceEquals(group, ocg))
+            }
+            if (!ContainsGroup(file, groups, ocg))
+            {
+                foreach (var value in groups.Items)
+                    if (ResolveGroup(file, value) is null)
+                    {
+                        warn?.Invoke("invalid optional-content application OCGs reference");
+                        break;
+                    }
                 continue;
+            }
             if (R(ocg.Get("Usage")) is not PdfDictionary usage) continue;
             foreach (var categoryValue in categories.Items)
             {
                 var category = R(categoryValue).AsName();
-                if (category == eventName && R(usage.Get(category)) is PdfDictionary eventUsage)
+                bool? recommendation = null;
+                if (category is "View" or "Print" or "Export"
+                    && R(usage.Get(category)) is PdfDictionary eventUsage)
                 {
-                    if (R(eventUsage.Get(eventName + "State")).AsName() is "ON" or "OFF")
+                    var stateKey = category switch
                     {
-                        hasEventRecommendation = true;
-                        eventAllowsContext &= R(eventUsage.Get(eventName + "State")).AsName() == "ON";
-                    }
-                    off = R(eventUsage.Get(eventName + "State")).AsName() switch
+                        "View" => "ViewState",
+                        "Print" => "PrintState",
+                        _ => "ExportState"
+                    };
+                    recommendation = R(eventUsage.Get(stateKey)).AsName() switch
                     {
-                        "ON" => false,
-                        "OFF" => true,
-                        _ => off,
+                        "ON" => true,
+                        "OFF" => false,
+                        _ => null,
                     };
                 }
-                else if (category == "Zoom" && displayEvent == ContentInterpreter.OptionalContentEvent.View
-                    && R(usage.Get("Zoom")) is PdfDictionary zoomUsage)
+                else if (category == "Zoom" && R(usage.Get("Zoom")) is PdfDictionary zoomUsage)
                 {
-                    var min = R(zoomUsage.Get("min")).AsNumber();
-                    var max = R(zoomUsage.Get("max")).AsNumber();
-                    if (min is { } minZoom && zoom < minZoom
-                        || max is { } maxZoom && zoom > maxZoom)
-                        zoomOutOfRange = true;
+                    var min = R(zoomUsage.Get("min")).AsNumber() ?? 0;
+                    var max = R(zoomUsage.Get("max")).AsNumber() ?? double.PositiveInfinity;
+                    recommendation = zoom >= min && zoom < max;
                 }
                 else if (category is "Language" or "User")
-                {
-                    if (UsageRecommendation(file, ocg, usage, app, category, context, warn) is { } recommendation)
-                        contextRecommendation = (contextRecommendation ?? true) && recommendation;
-                }
+                    recommendation = UsageRecommendation(file, ocg, usage, app, category, context, warn);
                 else if (category is not ("View" or "Print" or "Export" or "Zoom"))
                     warn?.Invoke($"unsupported optional-content usage category {category ?? "(non-name)"}");
+                if (recommendation is { } on)
+                    recommendations = (recommendations ?? true) && on;
             }
         }
-        // Context recommendations can enable an initially OFF layer, but cannot undo
-        // another usage category's OFF recommendation. Legacy rules remain unchanged without context.
-        if (contextRecommendation is { } on)
-            off = !on || hasEventRecommendation && !eventAllowsContext;
-        if (zoomOutOfRange) off = true;
-        return off;
+        return recommendations;
     }
 
     static bool? UsageRecommendation(PdfFile file, PdfDictionary ocg, PdfDictionary usage, PdfDictionary application,

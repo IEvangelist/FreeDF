@@ -25,6 +25,40 @@ public class ObjectStreamIndexTests
     }
 
     [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(int.MaxValue)]
+    public void Member_index_must_identify_the_requested_header_number_even_when_cached(int index)
+    {
+        var file = FileWithObjectStream("3 0 4 3 42 43", 8, 2);
+        Assert.Equal(42, Assert.IsType<PdfInteger>(file.GetObject(3)).Value);
+        file.Xref[3] = file.Xref[3] with { GenOrIndex = index };
+        // A different request reaches the same stream cache without the object cache.
+        file.Xref[9] = file.Xref[3];
+        Assert.Throws<PdfParseException>(() => file.GetObject(9));
+        var other = FileWithObjectStream("3 0 4 3 42 43", 8, 2);
+        other.Xref[3] = other.Xref[3] with { GenOrIndex = index };
+        Assert.Throws<PdfParseException>(() => other.GetObject(3));
+    }
+
+    [Fact]
+    public void Duplicate_member_numbers_cannot_redirect_a_requested_member()
+    {
+        var file = FileWithObjectStream("3 0 3 3 42 43", 8, 2);
+        Assert.Throws<PdfParseException>(() => file.GetObject(3));
+    }
+
+    [Fact]
+    public void Object_stream_reference_requires_container_generation_zero()
+    {
+        var file = FileWithObjectStream("3 0 4 3 42 43", 8, 2);
+        file.GetObject(2);
+        file.Xref[2] = file.Xref[2] with { GenOrIndex = 7 };
+        Assert.Throws<PdfParseException>(() => file.GetObject(3));
+    }
+
+    [Theory]
     [InlineData("3 -1 4 3 42 (", 9, 2)]
     [InlineData("3 2147483647 4 3 42 (", 17, 2)]
     [InlineData("3 0 4 3 42 (", -1, 2)]

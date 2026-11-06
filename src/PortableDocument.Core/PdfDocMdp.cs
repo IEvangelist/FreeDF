@@ -136,7 +136,7 @@ static class PdfDocMdpChanges
         Pages(cat.Get("Pages"), 0);
         // Fields that are not on a page tree annotation list still own appearances.
         foreach (var n in c.Fields)
-            if (f.Resolve(new PdfRef(n, 0)) is PdfDictionary fd && f.Resolve(fd.Get("AP")) is PdfDictionary ap) CollectAp(f, ap, c.WidgetAp);
+            if (f.GetObject(n) is PdfDictionary fd && f.Resolve(fd.Get("AP")) is PdfDictionary ap) CollectAp(f, ap, c.WidgetAp);
         if (cat.Get("DSS") is { } dss) Reach(f, dss, c.Dss, 0);
     }
 
@@ -154,7 +154,7 @@ static class PdfDocMdpChanges
         if (depth > 32 || into.Count > 20000) return;
         switch (o)
         {
-            case PdfRef r when into.Add(r.Number): Reach(f, f.GetObject(r.Number), into, depth + 1); break;
+            case PdfRef r when into.Add(r.Number): Reach(f, f.GetObject(r), into, depth + 1); break;
             case PdfArray a: foreach (var i in a.Items) Reach(f, i, into, depth + 1); break;
             case PdfStream s: Reach(f, s.Dict, into, depth + 1); break;
             case PdfDictionary d: foreach (var v in d.Entries.Values) Reach(f, v, into, depth + 1); break;

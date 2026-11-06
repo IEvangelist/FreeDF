@@ -254,9 +254,13 @@ public class Doc
     {
         if (compress)
         {
-            using var o = new MemoryStream();
-            using (var z = new ZLibStream(o, CompressionLevel.SmallestSize, true)) z.Write(data);
-            data = o.ToArray();
+            if (data.Length == 0) data = PdfFilters.DeflateEncode(data);
+            else
+            {
+                using var o = new MemoryStream();
+                using (var z = new ZLibStream(o, CompressionLevel.SmallestSize, true)) z.Write(data);
+                data = o.ToArray();
+            }
             dict = (dict + " /Filter /FlateDecode").Trim();
         }
         var n = num ?? New();

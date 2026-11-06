@@ -13,7 +13,7 @@ FILES = {
     "glyphlist.txt": ("a3b2f61ced9f3644cc0d4ecde5c59df34ca286c689d9484a43a710a81c466789", 4281),
     "zapfdingbats.txt": ("f6394e3cb8a447e84a1dad75d4baaf2aa7f45dc104faf369f4720e1a774ef2dc", 201),
 }
-OUT = Path(__file__).resolve().parents[2] / "src" / "PortableDocument.Content" / "Resources"
+OUT = Path(__file__).resolve().parents[2] / "src" / "PortableDocument.Core" / "Resources"
 
 for name, (digest, count) in FILES.items():
     url = f"https://raw.githubusercontent.com/adobe-type-tools/agl-aglfn/{REVISION}/{name}"

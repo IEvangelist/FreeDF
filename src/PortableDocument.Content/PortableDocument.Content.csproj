@@ -9,8 +9,6 @@
     <EmbeddedResource Include="Resources\std14-widths.bin" LogicalName="PortableDocument.Content.Resources.std14-widths.bin" />
     <EmbeddedResource Include="Resources\std14-notice.txt" LogicalName="PortableDocument.Content.Resources.std14-notice.txt" />
     <EmbeddedResource Include="Resources\predefined-cmaps.bin" LogicalName="PortableDocument.Content.Resources.predefined-cmaps.bin" />
-    <EmbeddedResource Include="Resources\glyphlist.txt" LogicalName="PortableDocument.Content.Resources.glyphlist.txt" />
-    <EmbeddedResource Include="Resources\zapfdingbats.txt" LogicalName="PortableDocument.Content.Resources.zapfdingbats.txt" />
     <EmbeddedResource Include="Resources\cmyk-srgb-9x9x9x9.bin" LogicalName="PortableDocument.Content.Resources.cmyk-srgb-9x9x9x9.bin" />
   </ItemGroup>
 
