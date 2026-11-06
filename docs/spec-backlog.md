@@ -4,6 +4,63 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary dictionary entry grammar
+
+ISO 32000-1 7.3.7 (printed p18) requires dictionary keys to be names,
+prohibits multiple entries with the same key and defines dictionaries
+as enclosed key/value pairs. Decoded name bytes determine identity;
+null values do not permit duplicate written entries. Ordinary loading
+previously discarded invalid keys, silently kept the last duplicate
+value or synthesized null for a name immediately followed by `>>`,
+without entering explicit repair.
+
+The lexer records those violations while parsing existing dictionary
+entries. TryAdd detects duplicates during insertion, without a second
+lookup on successful insertion or a recursive tree walk. Unrepaired
+indirect loading checks the flag before publishing ordinary values or
+stream dictionaries. Already-repaired recovery retains the previous
+last-value/discarded-key/null behavior and raw bytes; direct content
+lexing and existing strict object-stream errors are preserved. This
+does not validate all original syntax, trailer dictionaries, numeric,
+name or string tokens, missing container delimiters or resource budgets.
+
+Sixty-nine controls cover invalid key types, missing values, direct
+and escaped duplicate names (including null values), nested scopes,
+stream metadata, forced recovery, valid comments/names/strings/references
+and unchanged content-lexer recovery. The unchanged-production baseline
+is 20 failures/49 passes. Final focused checks pass 1,914; the integrated
+full Release suite passes 20,812, with zero failed/skipped. Current main
+4346ac39 was merged cleanly before the slice, with no Core or benchmark
+source changes from d6e94416; its editor node CI selection passes.
+Solution and benchmark builds have zero warnings/errors; final rebuilt
+UaDump retains identical complete JSON for 435 PDFs/870 results, and
+all provider/parser correctness preflights pass.
+
+MuPDF 1.28.5 independently opens 67 of 68 PDF controls (the extra test
+uses the content lexer directly). All 14 valid indexed controls resolve
+cleanly without repair; all 14 forced-repair valid controls resolve
+with repair. Twenty malformed indexed inputs all remain natively
+unrepaired: twelve fail lookup, eight return values, one warns and one
+returns the expected raw stream bytes. Of twenty forced-repair malformed
+inputs, one fails open, eleven fail lookup and eight return values;
+all nineteen that open are repaired. Native duplicate-name recovery
+keeps the last value, including escaped equivalents and null, without
+requiring indexed repair. These disagreements are retained, not used
+to define normative acceptance or a recovery interoperability claim.
+
+The existing flat/nested fresh-load and full-traversal benchmarks use
+the retained d6e94416 single-pass results as their matched source/input
+control, without repeating completed measurements. Five final means
+are lower and three higher; all 99.9% intervals overlap except the
+large nested stream, which is lower. Six managed counters match;
+large nested dictionary/stream counters differ by about +1.167/+5.667
+bytes/op. The new nested run logs an 89.807 ms minimum-iteration warning.
+There is no causal speedup, exact-neutrality, universal improvement or
+zero-overhead claim. This does not explain or dismiss the previous
+keyword slice's unfavorable large-stream result and longer diagnostic.
+[Scoped reports and all eight comparisons](../bench/FreeDF.Bench/README.md#ordinary-dictionary-entry-grammar-2026-11-05)
+retain original timings, fixture/input identities and raw managed counters.
+
 ## 2026-11-05 ordinary object keyword values
 
 ISO 32000-1 7.3.1 (printed p13) lists the eight basic object types;
@@ -21,8 +78,10 @@ or inspect raw stream bytes. The existing object-stream predicate and
 recovery semantics remain unchanged. Already-repaired recovery retains the previous
 null/collection values and stream bytes. Content operators, names,
 strings, comments, booleans, null and indirect references remain valid.
-This is not complete value grammar: duplicate keys, discarded invalid
-dictionary keys, malformed numeric/name/string tokens, missing values
+At this slice, duplicate keys and discarded invalid dictionary keys
+remained separate work (addressed in the subsequent section above).
+This is not complete value grammar: malformed
+numeric/name/string tokens, missing values
 and container delimiters require separate original-syntax validation.
 
 Eighty-three controls have a corrected unchanged-production baseline

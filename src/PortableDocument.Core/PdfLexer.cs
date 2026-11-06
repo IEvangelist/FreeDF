@@ -38,6 +38,7 @@ public sealed class PdfLexer
     public int Length => _end;
     public byte[] Data => _d;
     internal bool HasKeywordValue { get; private set; }
+    internal bool HasInvalidDictionary { get; private set; }
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
@@ -326,6 +327,7 @@ public sealed class PdfLexer
             {
                 if (_objectStreamMember)
                     throw new PdfParseException("dictionary key must be a name in object stream member");
+                HasInvalidDictionary = true;
                 continue;
             }
             if (_objectStreamMember && d.ContainsKey(name.Value))
@@ -338,11 +340,16 @@ public sealed class PdfLexer
             {
                 if (_objectStreamMember)
                     throw new PdfParseException("missing dictionary value in object stream member");
+                HasInvalidDictionary = true;
                 d[name.Value] = PdfNull.Instance;
                 break;
             }
             if (v is PdfKeyword) HasKeywordValue = true;
-            d[name.Value] = v;
+            if (!d.TryAdd(name.Value, v))
+            {
+                HasInvalidDictionary = true;
+                d[name.Value] = v;
+            }
         }
         _nesting--;
         return new PdfDictionary(d);

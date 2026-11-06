@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [ordinary dictionary entry guard](spec-backlog.md#2026-11-05-ordinary-dictionary-entry-grammar)
+requires explicit repair for non-name keys, decoded duplicate keys and
+names missing a value before `>>`, including nested stream metadata.
+Single-pass insertion preserves tolerant recovered values. Trailer,
+complete token/container grammar and resource-budget parity remain open.
+
 The [ordinary keyword-value guard](spec-backlog.md#2026-11-05-ordinary-object-keyword-values)
 requires explicit repair for bare keywords in ordinary values and
 stream dictionaries. The single-pass lexer flag preserves

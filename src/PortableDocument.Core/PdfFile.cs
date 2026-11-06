@@ -148,6 +148,8 @@ public sealed class PdfFile
         var obj = lx.ReadObject() ?? throw new PdfParseException("eof in object");
         if (!Repaired && (obj is PdfKeyword || lx.HasKeywordValue))
             throw new PdfParseException("indirect object contains a keyword value");
+        if (!Repaired && lx.HasInvalidDictionary)
+            throw new PdfParseException("indirect object contains invalid dictionary entries");
         if (obj is PdfDictionary d)
         {
             var save = lx.Pos;

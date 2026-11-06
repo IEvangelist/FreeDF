@@ -9,6 +9,52 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary dictionary entry grammar: 2026-11-05
+
+This slice reuses the unchanged IndirectObjectBench and NestedObjectBench:
+fresh load plus complete flat/nested value traversal/checksum, not just
+catalog opening. All value shapes, unrepaired state, stream bytes,
+counts and checksums are checked outside timing. Tests, integrated
+editor CI node selection, final corpus comparison and provider/parser
+preflights finish before timing. No provider dependency is added.
+
+The retained single-pass keyword implementation at d6e94416 is the
+control; it was not remeasured. Incoming main 4346ac39 has no Core or
+benchmark changes. Source archives, identical fixture sources/input
+lengths/hashes and matching isolated project/runtime flags establish
+the comparison; engine MVIDs differ. BDN 0.15.8 / .NET 10.0.14 /
+SDK 10.0.403 / Windows 11 / i7-14700K; one launch, three warmups,
+eight 500 ms iterations. Error is the 99.9% interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / flat integer | 8.306 +/- 0.5265 | 8.354 +/- 0.1334 | 26,480 -> 26,480 |
+| 64 / flat dictionary | 16.650 +/- 0.2711 | 15.898 +/- 0.6181 | 65,392 -> 65,392 |
+| 4,096 / flat integer | 623.126 +/- 17.7894 | 621.925 +/- 17.3084 | 1,617,013.16 -> 1,617,013.16 |
+| 4,096 / flat dictionary | 2,499.328 +/- 150.7849 | 2,408.889 +/- 62.1715 | 4,107,375 -> 4,107,375 |
+| 64 / nested dictionary | 41.93 +/- 1.438 | 42.20 +/- 1.772 | 183,152 -> 183,152 |
+| 64 / nested stream | 52.18 +/- 2.490 | 50.25 +/- 1.161 | 213,872 -> 213,872 |
+| 4,096 / nested dictionary | 10,755.72 +/- 654.979 | 10,798.17 +/- 627.658 | 11,644,081.333 -> 11,644,082.5 |
+| 4,096 / nested stream | 15,422.98 +/- 342.441 | 13,853.55 +/- 578.083 | 13,610,141 -> 13,610,146.667 |
+
+Five means lower/three higher; only the large nested-stream intervals
+separate, favorably. The nested final logs an 89.807 ms minimum-iteration
+warning, retained with raw logs in session artifacts. Six managed
+counters match and two differ slightly (+1.167/+5.667 bytes/op);
+these are not native/retained memory measurements or causal allocation
+attribution. No universal/causal speedup, zero overhead or exact
+neutrality is established. This run does not explain or dismiss the
+previous keyword slice's large-stream separation and longer diagnostic.
+Repair performance, general token grammar and provider conformance are
+not measured.
+
+[Flat control](results/2026-11-05-ordinary-dictionary-flat-control-d6e94416.md)
+and [final](results/2026-11-05-ordinary-dictionary-flat-final.md),
+[nested control](results/2026-11-05-ordinary-dictionary-nested-control-d6e94416.md)
+and [final](results/2026-11-05-ordinary-dictionary-nested-final.md),
+their adjacent CSVs and [raw counters/identities](results/2026-11-05-ordinary-dictionary-gc.csv)
+retain all eight cases.
+
 ## Ordinary object keyword values: 2026-11-05
 
 The new NestedObjectBench times fresh PdfFile.Load plus traversal of
