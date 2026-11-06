@@ -9,6 +9,42 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary hexadecimal string syntax: 2026-11-05
+
+This slice reuses the four existing NestedObjectBench cases and the
+retained 98ff9597 result as control, not remeasured. Timed work is fresh
+PDF load plus complete nested traversal/checksum; the fixtures contain
+literal strings and nested dictionaries, not malformed or hex-heavy
+strings. Correctness preflight checks all values, stream bytes,
+unrepaired state, counts and checksums outside timing. Tests, final
+corpus comparison and provider/parser preflights finish before timing.
+
+Fixture source and PDF length/SHA256 are identical; BDN runtime/harness
+flags match while engine identities differ. BDN0.15.8/.NET10.0.14/
+SDK10.0.403/Windows11/i7-14700K; one launch, 3 warmups, 8x500ms
+iterations; errors are 99.9% confidence-interval half-widths.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 nested dictionary | 42.81 +/- 2.564 | 42.68 +/- 1.144 | 183,152 -> 183,688 |
+| 64 nested stream | 52.06 +/- 1.373 | 53.04 +/- 1.080 | 213,872 -> 214,920 |
+| 4,096 nested dictionary | 10,898.58 +/- 1,110.366 | 9,353.73 +/- 585.942 | 11,644,080.833 -> 11,676,884.667 |
+| 4,096 nested stream | 14,092.70 +/- 1,088.522 | 11,860.24 +/- 483.904 | 13,610,164 -> 13,675,702.667 |
+
+Three means are lower and one is higher; large dictionary/stream
+intervals do not overlap. That is not a causal or universal speedup
+claim. Managed allocations increase by about
+536/1,048/32,804/65,539 bytes per operation, a material
+variation not attributed to the simple scan guard. This is managed
+allocation only, not native or retained memory. Timing is not malformed
+recovery or hex-heavy workload evidence; no optimization/dismissal of
+the prior name/dictionary concerns is claimed.
+
+[Control](results/2026-11-05-ordinary-hex-nested-control-98ff9597.md)
+and [final](results/2026-11-05-ordinary-hex-nested-final.md), adjacent
+CSVs and [raw counters/identities](results/2026-11-05-ordinary-hex-gc.csv)
+retain all four comparisons.
+
 ## Ordinary name escape syntax: 2026-11-05
 
 This slice reuses the four existing NestedObjectBench cases and the

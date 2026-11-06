@@ -152,6 +152,8 @@ public sealed class PdfFile
             throw new PdfParseException("indirect object contains invalid dictionary entries");
         if (!Repaired && lx.HasInvalidName)
             throw new PdfParseException("indirect object contains an invalid name");
+        if (!Repaired && lx.HasInvalidHexString)
+            throw new PdfParseException("indirect object contains an invalid hexadecimal string");
         if (obj is PdfDictionary d)
         {
             var save = lx.Pos;

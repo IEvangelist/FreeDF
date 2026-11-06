@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [ordinary hexadecimal-string guard](spec-backlog.md#2026-11-05-ordinary-hexadecimal-string-syntax)
+requires explicit repair for non-hexadecimal, non-whitespace bytes in
+ordinary hex strings; valid whitespace and odd final nibbles remain
+supported. Repaired and direct content recovery is unchanged. Matched
+benchmark means are lower but allocation counters vary materially; no
+causal performance conclusion is claimed.
+
 The [ordinary name-syntax guard](spec-backlog.md#2026-11-05-ordinary-name-escape-syntax)
 requires explicit repair for incomplete/non-hexadecimal name escapes
 and decoded null in ordinary values, keys and stream metadata.

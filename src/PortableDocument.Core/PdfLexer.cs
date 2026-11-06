@@ -40,6 +40,7 @@ public sealed class PdfLexer
     internal bool HasKeywordValue { get; private set; }
     internal bool HasInvalidDictionary { get; private set; }
     internal bool HasInvalidName { get; private set; }
+    internal bool HasInvalidHexString { get; private set; }
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
@@ -255,8 +256,12 @@ public sealed class PdfLexer
         while (Pos < _end && _d[Pos] != '>')
         {
             var h = Hex(_d[Pos++]);
-            if (h < 0 && _objectStreamMember && !IsWhite(_d[Pos - 1]))
-                throw new PdfParseException("invalid hexadecimal string in object stream member");
+            if (h < 0 && !IsWhite(_d[Pos - 1]))
+            {
+                if (_objectStreamMember)
+                    throw new PdfParseException("invalid hexadecimal string in object stream member");
+                HasInvalidHexString = true;
+            }
             if (h < 0) continue;
             if (hi < 0) hi = h; else { bytes.Add((byte)(hi * 16 + h)); hi = -1; }
         }

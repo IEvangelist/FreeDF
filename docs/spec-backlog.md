@@ -4,6 +4,57 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary hexadecimal string syntax
+
+ISO 32000-1 7.3.4.3 (printed p16) requires hexadecimal strings to
+contain hexadecimal digits and ignores PDF whitespace; an unmatched
+final nibble is padded with zero. The lexer already preserves that
+odd-digit rule, but previously discarded every non-hex/non-whitespace
+byte and returned a value without explicit repair.
+
+The lexer now records such bytes while parsing the existing string.
+Unrepaired ordinary loading checks that flag before publishing direct,
+nested or stream-dictionary values. Existing object-stream errors are
+preserved. Already-repaired values and direct content lexing retain
+their previous invalid-character recovery; raw stream bytes are never
+interpreted as strings by this check. Unterminated values already
+triggered an existing recovery path and were deliberately excluded from
+this malformed-character control set.
+
+Thirty-seven tests cover six closed malformed hex forms at top-level,
+nested array/dictionary, and stream-metadata positions, valid empty,
+whitespace and odd-nibble forms, escaped ordinary literal strings
+containing angle brackets, raw bytes and direct content recovery.
+Corrected unchanged-production baseline: 7 failures/30 passes. Final
+focused parser selection passes 2,124. The full sequential Release suite
+passes 21,022 with zero failed/skipped; solution and benchmark builds
+have zero warnings/errors. Final rebuilt UaDump yields unchanged complete
+JSON over 435 PDFs/870 results. All provider/parser correctness preflights
+pass.
+
+MuPDF 1.28.5 opens all 36 independently encoded PDFs without lookup
+errors. Seven invalid indexed inputs remain unrepaired but generate
+native warnings; all seven forced-repair forms set native repaired.
+Ten valid indexed forms resolve without repair/warnings, and ten forced
+valid forms resolve repaired. Both raw-stream controls preserve the
+literal `<4G>` bytes. Native warnings/repair state are an independent
+behavior comparison, not normative acceptance or a claim of output
+equivalence.
+
+Four existing nested fresh-load/full-traversal benchmark cases reuse
+the retained 98ff9597 source/input control. Three final means are lower,
+one is higher; the large dictionary and stream intervals do not overlap.
+This is not causal or universal speedup evidence. The matched harness
+runs vary materially, and managed allocation counters increase by about
+536/1,048/
+32,804/65,539 bytes per operation. The counters are managed allocation,
+not native/retained memory and not a causal explanation. Preserve the
+timings as observed and do not infer a parser cost/benefit from an
+uncontrolled allocation variation. Timing is still not for malformed
+recovery or hex-heavy inputs.
+[Matched reports and allocation records](../bench/FreeDF.Bench/README.md#ordinary-hexadecimal-string-syntax-2026-11-05)
+retain all four comparisons and identities.
+
 ## 2026-11-05 ordinary name escape syntax
 
 ISO 32000-1 7.3.5 (printed pp16-17) excludes null from name bytes
