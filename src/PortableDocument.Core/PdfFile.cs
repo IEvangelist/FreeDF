@@ -151,6 +151,13 @@ public sealed class PdfFile
                 return ReadStream(d, lx);
             lx.Pos = save;
         }
+        if (!Repaired)
+        {
+            lx.SkipWhite();
+            if ((uint)lx.Pos > (uint)Data.Length || !Data.AsSpan(lx.Pos).StartsWith("endobj"u8)
+                || lx.Pos + 6 < Data.Length && PdfLexer.IsRegular(Data[lx.Pos + 6]))
+                throw new PdfParseException("indirect object value must be followed by endobj");
+        }
         return obj is PdfKeyword ? PdfNull.Instance : obj;
     }
 

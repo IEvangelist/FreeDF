@@ -9,6 +9,51 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary indirect object closers: 2026-11-05
+
+IndirectObjectBench times fresh PdfFile.Load followed by traversal of
+all 64/4,096 integer or dictionary values and a checksum. It exercises
+lazy non-stream loads, not merely catalog parsing. Setup separately
+checks each value, row count, unrepaired state and checksum; fixture
+creation, correctness checks and SHA256/MVID reporting are not timed.
+Inputs are synthetic correctness/performance fixtures, not a full
+spec-conformance corpus or provider comparison.
+
+The control archives exact 2a61e790 Core and central project/package
+properties. Final production adds only the unrepaired non-stream
+endobj/bounds guard. Both minimal isolated BDN executables link the
+same checked-in IndirectObjectBench source with matching project flags;
+all four input lengths/hashes match and engine MVIDs differ. Tests,
+corpus and correctness preflights finish before sequential timing.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / integer | 7.913 +/- 0.1974 | 8.116 +/- 0.4013 | 26,480 -> 26,480 |
+| 64 / dictionary | 15.869 +/- 0.2132 | 16.120 +/- 1.1222 | 65,392 -> 65,392 |
+| 4,096 / integer | 597.317 +/- 12.1756 | 606.692 +/- 12.8214 | 1,617,013.21 -> 1,617,013.21 |
+| 4,096 / dictionary | 2,450.040 +/- 133.5840 | 2,430.302 +/- 201.0937 | 4,107,378.77 -> 4,107,375.00 |
+
+Three means increase, one decreases; all confidence intervals overlap.
+No proven timing improvement, regression or zero-overhead claim.
+Managed allocation counters match in three cases; the approximately
+-3.77-byte/op observation in the large-dictionary case is retained,
+not asserted to be a causal reduction or exact neutrality. Native/
+retained memory and malformed-object repair costs are not measured.
+This workload does not explain the earlier classic allocation delta.
+
+[Control report](results/2026-11-05-indirect-endobj-control.md),
+[final report](results/2026-11-05-indirect-endobj-final.md), matching
+CSV and [eight raw GC/source/input/MVID rows](results/2026-11-05-indirect-endobj-gc.csv)
+retain the evidence. Reproduce with separate net10.0 BDN 0.15.8
+executables linking IndirectObjectBench.cs against archived/final Core,
+Optimize/TieredPGO enabled, ServerGarbageCollector disabled; run
+`--filter '*IndirectObjectBench*' --warmupCount 3 --iterationCount 8
+--iterationTime 500 --launchCount 1` independently for each source.
+
 ## Primary xref chain cycle guard: 2026-11-05
 
 A new XrefHybridBench final run compares the primary-cycle guard with

@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [ordinary indirect closer guard](spec-backlog.md#2026-11-05-ordinary-indirect-object-closers)
+requires delimited endobj before publishing an unrepaired non-stream
+value. Existing repair recovery and ordinary stream policy remain;
+the reproduced hex-EOF span regression is bounded. Complete value/
+header grammar and lifecycle still remain open.
+
 The [primary-chain cycle guard](spec-backlog.md#2026-11-05-primary-xref-chain-cycles)
 repairs repeated Prev offsets rather than silently truncating the index.
 Acyclic forward links and shared supplemental streams remain supported;

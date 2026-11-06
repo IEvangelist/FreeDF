@@ -4,6 +4,57 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary indirect object closers
+
+ISO 32000-1 7.3.10 (printed p21) requires an indirect value to be
+bracketed by obj/endobj; 7.2.2/7.2.3 (printed p13) define token
+boundaries and comments as whitespace. Ordinary non-stream objects
+previously returned their value without checking the closing keyword.
+Unrepaired loading now requires a delimited endobj immediately after
+the value and whitespace/comments. Malformed indexed targets enter
+the existing explicit repair path, preserving lazy loading and cached
+identity. Already-repaired ordinary values remain recoverable.
+
+Sixty initial controls cover dictionary/integer/array/string/name/null
+values, missing/misspelled/joined/intervening-token closers, complete
+comments/PDF whitespace, catalog-open repair and already-repaired
+recovery. Actual unchanged-production baseline: 39 failures/21 passes.
+The first implementation's full suite exposed an out-of-range span for
+an unterminated hexadecimal string: ordinary lexer recovery can leave
+its position one byte past EOF. A new focused control reproduced that
+failure before adding a position bound to the closing guard. The lexer
+itself and ordinary stream closing policy are unchanged.
+
+Final 61 controls pass; focused checks pass 1,583 and full Release
+passes 20,458 with zero failed/skipped. Solution/benchmark builds have
+zero warnings/errors. Final rebuilt UaDump yields unchanged complete
+JSON across the pinned 435-PDF/870-result corpus; all provider/parser
+benchmark correctness preflights pass. The initial failing full run
+(20,456 pass/one failure) is retained, not dismissed as unrelated.
+
+Sixty independently encoded MuPDF 1.28.5 comparisons all open. The
+eighteen well-closed value controls load and resolve without warnings.
+Thirty malformed non-integer values still resolve unrepaired with
+closing-keyword warnings; six malformed integer values fail lookup
+with expected-R errors. The three malformed-catalog controls resolve
+the integer target unrepaired with catalog warnings. Three forced-
+repair integer controls set the repaired flag but fail target lookup.
+FreeDF explicitly repairs malformed closers and retains the physical
+value; native permissive acceptance is not conformance. The additional
+hex-EOF regression is a FreeDF control, not part of those sixty native
+comparisons. No external PDFs are bundled.
+
+A new IndirectObjectBench measures a fresh load plus traversal of all
+64/4,096 integer or dictionary values, not just eager catalog loading.
+Correctness, source/input hashes and engine identities are checked
+outside timing. Matched archived 2a61e790/final runs retain three
+higher means and one lower, with all 99.9% intervals overlapping.
+Managed counters match in three cases and differ by about -3.77
+bytes/op in the large-dictionary case; no proven timing/causal
+allocation reduction or native/retained-memory guarantee follows.
+Ordinary stream strictness, complete value/header grammar, global
+budgets, object lifecycle and full spec parity remain open.
+
 ## 2026-11-05 primary xref chain cycles
 
 ISO 32000-1 7.5.6 (printed p44) requires incremental trailers to
