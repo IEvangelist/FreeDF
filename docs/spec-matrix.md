@@ -4,6 +4,13 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [ordinary name-syntax guard](spec-backlog.md#2026-11-05-ordinary-name-escape-syntax)
+requires explicit repair for incomplete/non-hexadecimal name escapes
+and decoded null in ordinary values, keys and stream metadata.
+Existing recovered names and direct content lexing remain unchanged.
+Version-dependent, byte-identity and complete token grammar remain open;
+matched traversal means are higher with overlapping intervals.
+
 The [ordinary dictionary entry guard](spec-backlog.md#2026-11-05-ordinary-dictionary-entry-grammar)
 requires explicit repair for non-name keys, decoded duplicate keys and
 names missing a value before `>>`, including nested stream metadata.

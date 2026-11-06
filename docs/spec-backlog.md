@@ -4,6 +4,54 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary name escape syntax
+
+ISO 32000-1 7.3.5 (printed pp16-17) excludes null from name bytes
+and requires each literal NUMBER SIGN to introduce two hexadecimal
+digits. Names may be empty; valid escapes can encode delimiters,
+whitespace, NUMBER SIGN and non-ASCII bytes. The escape rules date
+from PDF 1.2; this slice's PDF fixtures declare 1.7.
+
+The lexer flags incomplete/non-hexadecimal escapes and decoded null
+during existing name parsing. Unrepaired ordinary loading checks that
+flag before publishing values or stream metadata. No extra name scan,
+reference resolution or raw-stream inspection is added. Repaired
+recovery and direct content lexing retain their existing decoded
+names; strict object-stream exceptions remain unchanged. This does
+not establish all version-dependent name semantics, UTF-8/byte-identity
+parity, implementation limits, trailer grammar or complete token grammar.
+
+The 173 controls exercise seven malformed names in top-level, array,
+dictionary-key, nested-value and stream-metadata positions, with valid
+empty/escaped names and forced-repair counterparts. Raw stream/comment
+lookalikes and direct content-lexer compatibility are included.
+Unchanged-production baseline: 35 failures/138 passes. Final focused
+checks pass 2,087; full Release suite passes 20,985, zero failed/skipped.
+Solution and benchmark builds have zero warnings/errors; final rebuilt
+UaDump retains identical complete JSON for 435 PDFs/870 results.
+All provider/parser correctness preflights pass.
+
+MuPDF 1.28.5 independently opens all 172 PDF controls (the extra test
+uses the lexer directly), with no target lookup errors. All 35 malformed
+indexed inputs resolve without repair or warnings; all 35 forced-repair
+counterparts resolve repaired with warnings. Fifty valid indexed
+controls resolve cleanly without repair; fifty forced counterparts
+resolve repaired. Both raw/comment controls resolve with the expected
+repair state, and all 36 stream cases return matching bytes. Native
+acceptance of malformed original names is preserved as a disagreement,
+not treated as normative conformance or proof of decoded-name parity.
+
+Four existing nested dictionary/stream fresh-load traversal benchmarks
+use retained 84935d2f results as matched source/input controls, without
+repeating them. All four final means are higher (about 0.9-3.6%),
+with overlapping 99.9% intervals. This unfavorable direction is retained
+as a performance concern, not dismissed or called zero overhead.
+Two managed counters match; large dictionary/stream counters change
+by about -1.667/+17.333 bytes/op, without causal attribution. The
+control's 89.807 ms minimum-iteration warning remains documented.
+[Timings, identities and raw managed counters](../bench/FreeDF.Bench/README.md#ordinary-name-escape-syntax-2026-11-05)
+do not establish native/retained memory or a universal performance claim.
+
 ## 2026-11-05 ordinary dictionary entry grammar
 
 ISO 32000-1 7.3.7 (printed p18) requires dictionary keys to be names,

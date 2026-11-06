@@ -150,6 +150,8 @@ public sealed class PdfFile
             throw new PdfParseException("indirect object contains a keyword value");
         if (!Repaired && lx.HasInvalidDictionary)
             throw new PdfParseException("indirect object contains invalid dictionary entries");
+        if (!Repaired && lx.HasInvalidName)
+            throw new PdfParseException("indirect object contains an invalid name");
         if (obj is PdfDictionary d)
         {
             var save = lx.Pos;

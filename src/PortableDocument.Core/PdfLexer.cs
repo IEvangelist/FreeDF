@@ -39,6 +39,7 @@ public sealed class PdfLexer
     public byte[] Data => _d;
     internal bool HasKeywordValue { get; private set; }
     internal bool HasInvalidDictionary { get; private set; }
+    internal bool HasInvalidName { get; private set; }
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
@@ -211,15 +212,23 @@ public sealed class PdfLexer
             if (c == '#' && Pos + 1 < _end && Hex(_d[Pos]) >= 0 && Hex(_d[Pos + 1]) >= 0)
             {
                 var decoded = (byte)(Hex(_d[Pos]) * 16 + Hex(_d[Pos + 1]));
-                if (_objectStreamMember && decoded == 0)
-                    throw new PdfParseException("null byte in name in object stream member");
+                if (decoded == 0)
+                {
+                    if (_objectStreamMember)
+                        throw new PdfParseException("null byte in name in object stream member");
+                    HasInvalidName = true;
+                }
                 sb.Add(decoded);
                 Pos += 2;
             }
             else
             {
-                if (_objectStreamMember && c == '#')
-                    throw new PdfParseException("invalid name escape in object stream member");
+                if (c == '#')
+                {
+                    if (_objectStreamMember)
+                        throw new PdfParseException("invalid name escape in object stream member");
+                    HasInvalidName = true;
+                }
                 sb.Add(c);
             }
         }

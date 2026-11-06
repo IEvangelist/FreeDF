@@ -9,6 +9,45 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary name escape syntax: 2026-11-05
+
+This slice reuses the four existing NestedObjectBench cases and the
+retained 84935d2f results as control, not remeasured. These fixtures
+include ordinary name keys and values in nested dictionary/stream
+objects; timed boundaries remain fresh load plus full traversal to
+checksum. Every value shape, stream byte, count and unrepaired state
+is preflighted outside timing. Malformed-name recovery, escape-heavy
+names, native/retained memory and conformance are not timed.
+
+Source archives, unchanged fixture source/input lengths/hashes and
+matching isolated project/runtime flags establish the comparison;
+engine identities differ. Tests, final corpus comparison and all
+provider/parser preflights finish before timing. BDN 0.15.8 /
+.NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K; one launch,
+three warmups, eight 500 ms iterations. Error is the 99.9% interval
+half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / nested dictionary | 42.20 +/- 1.772 | 42.81 +/- 2.564 | 183,152 -> 183,152 |
+| 64 / nested stream | 50.25 +/- 1.161 | 52.06 +/- 1.373 | 213,872 -> 213,872 |
+| 4,096 / nested dictionary | 10,798.17 +/- 627.658 | 10,898.58 +/- 1,110.366 | 11,644,082.5 -> 11,644,080.833 |
+| 4,096 / nested stream | 13,853.55 +/- 578.083 | 14,092.70 +/- 1,088.522 | 13,610,146.667 -> 13,610,164 |
+
+All four means are higher (about 0.9-3.6%) with overlapping intervals.
+Retain this direction as a performance concern, not zero overhead or
+proof that the guard caused a regression. Two managed counters match;
+two differ by about -1.667/+17.333 bytes/op, not causal allocation
+attribution. The control's 89.807 ms minimum-iteration warning and
+previous keyword-slice large-stream concern remain documented; this
+run does not explain or dismiss either. No repeated measurements are
+used to select a favorable outcome.
+
+[Control](results/2026-11-05-ordinary-name-nested-control-84935d2f.md)
+and [final](results/2026-11-05-ordinary-name-nested-final.md), adjacent
+CSVs and [raw counters/identities](results/2026-11-05-ordinary-name-gc.csv)
+retain all four cases.
+
 ## Ordinary dictionary entry grammar: 2026-11-05
 
 This slice reuses the unchanged IndirectObjectBench and NestedObjectBench:
