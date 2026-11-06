@@ -160,7 +160,8 @@ fallback path's performance is not measured by this benchmark.
 
 The name-syntax and object-stream name-escape selections pass 196 tests;
 the full Release suite passes 21,201 with zero failures/skips. The
-benchmark correctness preflights pass.
+Release solution build succeeds with zero errors and five existing
+machine-source NU1507 warnings; benchmark correctness preflights pass.
 
 Matched `IndirectObjectBench.LoadValues` runs compare baseline commit
 `f93701b` with final engine MVID
