@@ -128,12 +128,20 @@ public sealed class PdfFile
     {
         if (offset < 0 || offset >= Data.Length) throw new PdfParseException("offset out of range");
         var lx = new PdfLexer(Data, (int)offset);
+        if (expectNum < 0) lx.SkipWhite();
+        var numberStart = lx.Pos;
         var n = lx.ReadObject(false) as PdfInteger;
+        var numberEnd = lx.Pos;
+        if (expectNum < 0) lx.SkipWhite();
+        var generationStart = lx.Pos;
         var g = lx.ReadObject(false) as PdfInteger;
+        var generationEnd = lx.Pos;
         var kw = lx.ReadObject(false) as PdfKeyword;
         if (n is null || g is null || kw?.Value != "obj" || (expectNum >= 0 && n.Value != expectNum)
             || (expectGeneration is { } generation && g.Value != generation)) throw new PdfParseException($"object header mismatch at {offset}");
-        if (expectNum < 0 && (n.Value is <= 0 or > int.MaxValue || g.Value is < 0 or > 65535))
+        if (expectNum < 0 && (n.Value is <= 0 or > int.MaxValue || g.Value is < 0 or > 65535
+            || !PdfLexer.IsNumericToken(Data.AsSpan(numberStart, numberEnd - numberStart))
+            || !PdfLexer.IsNumericToken(Data.AsSpan(generationStart, generationEnd - generationStart))))
             throw new PdfParseException($"invalid or unsupported cross-reference stream object header at {offset}");
         var obj = lx.ReadObject() ?? throw new PdfParseException("eof in object");
         if (obj is PdfDictionary d)

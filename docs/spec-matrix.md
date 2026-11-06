@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [xref header integer-syntax guard](spec-backlog.md#2026-11-05-xref-stream-header-integer-syntax)
+checks original object/generation tokens during unindexed section
+loading, not just recovered values. Ordinary indexed recovery remains
+unchanged. Matched cumulative header/footer benchmark intervals overlap;
+effective-entry identity and full grammar/lifecycle remain open.
+
 The [startxref integer-syntax guard](spec-backlog.md#2026-11-05-startxref-offset-integer-syntax)
 rejects repeated signs in footer offsets using the existing strict token
 predicate. Ordinary numeric recovery and valid single-sign/padded

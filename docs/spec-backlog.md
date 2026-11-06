@@ -4,6 +4,43 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 xref stream header integer syntax
+
+ISO 32000-1 7.3.3 (printed p14) defines integer syntax with at most
+one leading sign; 7.3.10 (printed p21) requires integer object-number/
+generation header parts. Unindexed xref-stream loading previously
+range-checked values after ordinary recovery, accepting repeated signs.
+It now checks both original header token spans with the existing strict
+numeric predicate, only when loading without an expected object number.
+Ordinary indexed header recovery and numeric lexer behavior are unchanged.
+
+Thirty-four raw/Flate controls include 26 malformed tokens and eight
+valid signed/padded/negative-zero spellings. Actual unchanged-production
+baseline: 16 failures/18 passes. Existing range/type checks already
+recovered ten malformed cases. Final focused checks pass 1,592; full
+Release passes 20,343 with zero failed/skipped. Solution/benchmark builds
+have zero warnings/errors; final rebuilt UaDump yields unchanged complete
+JSON across the pinned 435-PDF/870-result corpus. All provider/parser
+benchmark correctness preflights pass.
+
+Thirty-four independently encoded MuPDF 1.28.5 comparisons all expose
+targets. Most malformed headers repair, but generations --0 and +-0
+load unrepaired in both forms. Plain/padded/negative-zero controls stay
+clean; the valid +3/+0 control repairs. These differences remain explicit;
+no external PDFs are bundled. Header identity versus its effective
+xref entry, full ordinary-object grammar and lifecycle remain separate.
+
+Cumulative XrefFilterBench results compare retained generation-bound
+control b0315639 with all later header/footer guards on identical input/
+decoded hashes. Decoder code and timed fresh-load boundary are unchanged.
+All final means are lower, but all 99.9% intervals overlap: Flate 64/4,096
+6.313/138.068 to 6.309/133.873 microseconds, LZW 5.223/247.459 to
+4.827/217.366. No proven speedup, regression, zero-overhead or individual-
+guard attribution follows. Rounded managed allocation sizes are unchanged;
+all eight raw counters and distinct engine identifiers are retained.
+The existing classic allocation discrepancy is a different workload and
+is not explained by these xref-stream measurements.
+
 ## 2026-11-05 startxref offset integer syntax
 
 ISO 32000-1 7.3.3 (printed p14) defines an integer as decimal digits

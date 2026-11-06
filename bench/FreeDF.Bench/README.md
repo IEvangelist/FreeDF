@@ -9,6 +9,39 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Cumulative xref-stream header/footer guards: 2026-11-05
+
+Matched XrefFilterBench inputs compare the retained generation-bound
+control (production b0315639) with later header range/integer syntax,
+startxref boundary/integer syntax and intervening classic parser guards.
+Classic-only paths are not exercised by these inputs, but their possible
+code-layout effects are not isolated. Decoder and fixture code are
+unchanged; setup checks correctness outside the timed fresh PdfFile.Load.
+Input lengths, SHA256 and decoded hashes match; engine MVIDs differ.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. The final timed run
+is isolated from this slice's test/corpus workloads.
+
+| Filter / rows | Generation control +/- 99.9% half-width (us) | Cumulative final (us) |
+|---|---:|---:|
+| Flate / 64 | 6.313 +/- 0.1659 | 6.309 +/- 0.1389 |
+| Flate / 4,096 | 138.068 +/- 4.2051 | 133.873 +/- 1.1003 |
+| LZW / 64 | 5.223 +/- 0.7208 | 4.827 +/- 0.0817 |
+| LZW / 4,096 | 247.459 +/- 31.6958 | 217.366 +/- 4.6933 |
+
+All means decrease, all confidence intervals overlap. No proven speedup,
+regression, zero-overhead or single-guard attribution is claimed. Rounded
+managed allocations remain 11.62/345.03 KB Flate and 12.59/340.87 KB LZW,
+not zero or a native/retained-memory guarantee. Raw allocation/operation
+counters are retained rather than asserted exactly equal. This different
+workload does not explain the earlier classic fallback allocation delta.
+
+[Retained control](results/2026-11-05-xref-guards-final.md),
+[cumulative final](results/2026-11-05-xref-header-footer-final.md),
+matching CSV and [eight raw GC/hash/MVID rows](results/2026-11-05-xref-header-footer-gc.csv)
+preserve the observations.
+
 ## Classic allocation diagnostic: 2026-11-05
 
 A bounded diagnostic investigated the approximately 64-byte/op difference
