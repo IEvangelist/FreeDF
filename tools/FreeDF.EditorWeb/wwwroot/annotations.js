@@ -211,7 +211,7 @@ export function createAnnotations(ctx) {
         geo = { extra: { quads: q.quads, text: q.text } };
       }
       if (kind === 'note' || kind === 'caret' || kind === 'freetext') {
-        const text = kind === 'caret' ? '' : prompt(kind === 'note' ? 'Note text' : 'Text', kind === 'freetext' ? 'Text' : '');
+        const text = kind === 'caret' ? '' : await window.editorUi.prompt({ title: kind === 'note' ? 'Add note' : 'Add text annotation', label: 'Text', value: kind === 'freetext' ? 'Text' : '', confirmLabel: 'Add annotation' });
         if (text === null) return;
         geo.extra = { ...(geo.extra ?? {}), text };
       }
@@ -284,7 +284,7 @@ export function createAnnotations(ctx) {
   }
 
   async function markFromFind() {
-    const q = prompt('Mark text containing'); if (!q) return;
+    const q = await window.editorUi.prompt({ title: 'Mark matching text', label: 'Text to find', confirmLabel: 'Find text' }); if (!q) return;
     const hits = await (await ctx.request('/api/find?q=' + encodeURIComponent(q))).json();
     const mine = hits.filter(h => h.page === ctx.page());
     if (!mine.length) { announce('No matches on this page.'); return; }
@@ -355,11 +355,11 @@ export function createAnnotations(ctx) {
   async function undoStep() { const r = await post('/api/page-undo').catch(fail); if (r) { await ctx.sync(); await reload(); announce(`Undid ${r.label}.`); } }
   async function redoStep() { const r = await post('/api/page-redo').catch(fail); if (r) { await ctx.sync(); await reload(); announce(`Redid ${r.label}.`); } }
   async function flatten(all = false) {
-    if (!confirm(all ? 'Flatten annotations on every page into the page content?' : 'Flatten annotations on this page into the page content?')) return;
+    if (!await window.editorUi.confirm({ title: 'Flatten annotations', message: all ? 'Bake annotations on every page into the page content?' : 'Bake annotations on this page into the page content?', confirmLabel: 'Flatten annotations' })) return;
     const r = await post('/api/annot-flatten?page=' + (all ? -1 : ctx.page())); await ctx.sync(); await reload(); announce(`${r.flattened} annotations flattened.`);
   }
   async function applyRedactions() {
-    if (!confirm('Redaction permanently removes the marked content when you save. Convert the marks on this page into redactions?')) return;
+    if (!await window.editorUi.confirm({ title: 'Apply redactions', message: 'Redaction permanently removes the marked content when you save. Convert the marks on this page into redactions?', confirmLabel: 'Apply redactions' })) return;
     const r = await post('/api/annot-redact-apply?page=' + ctx.page()); await ctx.sync(); await reload(); announce(`${r.applied} redaction marks applied.`);
   }
   async function exportXfdf() {

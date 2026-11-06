@@ -119,8 +119,12 @@ static class EditorFileAccess
 
     static async Task Menu(IPage page, string item)
     {
+        var discard = item is "New" or "Open" or "Close document" && await page.Locator("#dstate").GetAttributeAsync("data-dirty") == "true";
         await page.Locator("#fileBtn").ClickAsync();
         await page.GetByRole(AriaRole.Menuitem, new() { NameRegex = new("^" + System.Text.RegularExpressions.Regex.Escape(item) + "(?:\\u2026|$)") }).ClickAsync();
+        if (discard)
+            await page.GetByRole(AriaRole.Dialog, new() { Name = "Discard unsaved changes", Exact = true })
+                .GetByRole(AriaRole.Button, new() { Name = "Discard changes", Exact = true }).ClickAsync();
     }
 
     static async Task<bool> Same(IPage page, string file) =>
@@ -307,19 +311,34 @@ static class EditorFileAccess
             await text.FillAsync("Local font text");
             await text.PressAsync("Escape");
             await page.Locator("#layer .it").First.ClickAsync();
+            await page.WaitForFunctionAsync("async () => (await (await pdfHost.request('/api/page/0/items')).json()).some(i => i.text === 'Local font text')");
+            var beforeBrowse = await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())");
             await page.Locator("#fpb").ClickAsync();
-            var picker = page.Locator(".fpop");
-            await picker.GetByRole(AriaRole.Button, new() { Name = "Installed fonts on this device…" }).ClickAsync();
+            var picker = page.Locator("#props .font-panel");
+            Check(await page.Locator(".fpop").CountAsync() == 0, "Font browsing replaces Properties instead of creating a floating popup.");
+            await picker.GetByRole(AriaRole.Searchbox, new() { Name = "Search PDF fonts", Exact = true }).FillAsync("Courier");
+            Check(await picker.Locator(".fo[data-f]").CountAsync() == 1, "PDF family search filters the built-in fonts.");
+            await picker.GetByRole(AriaRole.Button, new() { Name = "Back to Properties", Exact = true }).ClickAsync();
+            Check(await page.EvaluateAsync<string>("async () => JSON.stringify(await (await pdfHost.request('/api/page/0/items')).json())") == beforeBrowse,
+                "Browsing and Back do not edit the text.");
+            Check(await page.Locator("#fpb").EvaluateAsync<bool>("el => el === document.activeElement"), "Back restores focus to Change font.");
+            await page.Locator("#fpb").ClickAsync();
+            await picker.Locator("summary").ClickAsync();
+            await picker.GetByRole(AriaRole.Button, new() { Name = "Load installed fonts", Exact = true }).ClickAsync();
             await picker.Locator(".fmsg").Filter(new() { HasTextString = "Permission to read installed fonts was not granted" }).WaitForAsync();
             Check(await picker.Locator(".fo[data-f=Helvetica]").CountAsync() == 1, "Denied permission leaves the standard families available.");
 
             await Fa<object?>(page, "($fa.fontMode = 'granted', 0)");
-            await picker.GetByRole(AriaRole.Button, new() { Name = "Installed fonts on this device…" }).ClickAsync();
+            await picker.GetByRole(AriaRole.Button, new() { Name = "Load installed fonts", Exact = true }).ClickAsync();
             await picker.Locator(".flo").First.WaitForAsync();
             Check(await picker.Locator(".flo").CountAsync() == 2, "Both installed families are listed.");
-            await picker.Locator("input[type=search]").FillAsync("source");
+            await picker.GetByRole(AriaRole.Searchbox, new() { Name = "Search PDF fonts", Exact = true }).FillAsync("Courier");
+            await picker.GetByRole(AriaRole.Searchbox, new() { Name = "Search installed fonts", Exact = true }).FillAsync("source");
             Check(await picker.Locator(".flo").CountAsync() == 1, "Search filters installed fonts.");
-            await picker.Locator("input[type=search]").FillAsync("");
+            Check(await picker.Locator(".fo[data-f=Courier]").CountAsync() == 1, "Installed and PDF searches are independent.");
+            await picker.GetByRole(AriaRole.Searchbox, new() { Name = "Search installed fonts", Exact = true }).PressAsync("ArrowDown");
+            Check(await picker.Locator(".flo[data-local='Source Code Pro']").EvaluateAsync<bool>("el => el === document.activeElement"), "Arrow Down moves from search into installed font choices.");
+            await picker.GetByRole(AriaRole.Searchbox, new() { Name = "Search installed fonts", Exact = true }).FillAsync("");
             await picker.Locator(".flo[data-local='Restricted Demo']").HoverAsync();
             Check((await picker.Locator(".fprev").EvaluateAsync<string>("e => e.style.fontFamily")).Contains("Restricted Demo"), "Hover previews the font.");
 
@@ -331,11 +350,30 @@ static class EditorFileAccess
             await page.WaitForFunctionAsync("document.querySelector('#fpb b')?.textContent === 'Courier'");
 
             await page.Locator("#fpb").ClickAsync();
-            picker = page.Locator(".fpop");
+            picker = page.Locator("#props .font-panel");
+            await picker.Locator("summary").ClickAsync();
             await picker.Locator(".flo").First.WaitForAsync();
             var queries = await Fa<int>(page, "$fa.fontQueries.length");
             Check(await picker.Locator(".flo").CountAsync() == 2, "Cached metadata lists installed fonts without a new query.");
             Check(await Fa<int>(page, "$fa.fontQueries.length") == queries, "No Local Font Access query for cached metadata.");
+            await page.EvaluateAsync("""
+                () => {
+                  window.fontQueryBeforeDelay = window.queryLocalFonts;
+                  window.queryLocalFonts = async options => {
+                    if (options?.postscriptNames) await new Promise(resolve => window.finishFontQuery = resolve);
+                    return window.fontQueryBeforeDelay(options);
+                  };
+                }
+                """);
+            await picker.Locator(".flo[data-local='Source Code Pro']").ClickAsync();
+            await page.WaitForFunctionAsync("typeof window.finishFontQuery === 'function'");
+            Check(await picker.Locator(".font-back").EvaluateAsync<bool>("el => el === document.activeElement"), "Loading keeps a safe Back target focused instead of losing keyboard focus when disabling font choices.");
+            await page.Keyboard.PressAsync("Escape");
+            await page.EvaluateAsync("() => { window.queryLocalFonts = window.fontQueryBeforeDelay; window.finishFontQuery(); }");
+            await page.WaitForFunctionAsync("document.getElementById('status').textContent.includes('text selection changed')");
+            Check(await page.Locator("#fpb b").TextContentAsync() == "Courier", "A font that finishes loading after Back is not applied.");
+            await page.Locator("#fpb").ClickAsync();
+            await picker.Locator("summary").ClickAsync();
             await picker.Locator(".flo[data-local='Source Code Pro']").ClickAsync();
             await page.WaitForFunctionAsync("document.querySelector('#fpb b')?.textContent === 'Source Code Pro'");
             Check(await Fa<string>(page, "JSON.stringify($fa.fontQueries.at(-1))") == "{\"postscriptNames\":[\"SourceCodePro-Regular\"]}", "Only the chosen face's bytes are requested.");
@@ -397,7 +435,8 @@ static class EditorFileAccess
 
             await page.Locator("#layer .it").First.ClickAsync();
             await page.Locator("#fpb").ClickAsync();
-            await page.Locator(".fpop .flo[data-local='Source Code Pro']").ClickAsync();
+            await page.Locator("#props .font-panel summary").ClickAsync();
+            await page.Locator("#props .flo[data-local='Source Code Pro']").ClickAsync();
             await page.WaitForFunctionAsync("document.querySelector('#fpb b')?.textContent === 'Source Code Pro'");
             await Durable();
             Check(await page.EvaluateAsync<string>(RecordFonts) == "[\"Source Code Pro\"]", "The recovery record lists the local font in use.");
@@ -440,10 +479,44 @@ static class EditorFileAccess
             await text.WaitForAsync(); await text.FillAsync("Fallback"); await text.PressAsync("Escape");
             await page.Locator("#layer .it").First.ClickAsync();
             await page.Locator("#fpb").ClickAsync();
-            await page.Locator(".fpop .fmsg").Filter(new() { HasTextString = "cannot list installed fonts" }).WaitForAsync();
-            Check(await page.Locator(".fpop .fo[data-f=Times]").CountAsync() == 1, "Unsupported browsers keep the standard families.");
+            await page.Locator("#props .font-panel summary").ClickAsync();
+            await page.Locator("#props .fmsg").Filter(new() { HasTextString = "cannot list installed fonts" }).WaitForAsync();
+            Check(await page.Locator("#props .fo[data-f=Times]").CountAsync() == 1, "Unsupported browsers keep the standard families.");
+            await page.Keyboard.PressAsync("Escape");
+            await page.WaitForFunctionAsync("async () => (await (await pdfHost.request('/api/page/0/items')).json()).some(i => i.text === 'Fallback')");
+            var originalPdf = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "03-typography-embedded.pdf"));
+            await page.Locator("[data-tool=select]").ClickAsync();
+            await page.Locator("#open").SetInputFilesAsync(originalPdf);
+            await page.WaitForFunctionAsync("document.getElementById('name').textContent === '03-typography-embedded.pdf' && document.getElementById('status').textContent.startsWith('Ready.')");
+            await page.Locator("#layer > .span").First.WaitForAsync();
+            await page.Locator("#layer > .span").First.ClickAsync();
+            var originalFont = await page.Locator("#layer > .span.on").EvaluateAsync<string>("el => el._span.font");
+            await page.Locator("[data-original-font]").ClickAsync();
+            Check(await page.Locator(".font-panel strong").TextContentAsync() == originalFont, "Original PDF font names are not misreported as a built-in substitute.");
+            await page.Keyboard.PressAsync("Escape");
+            Check(await page.EvaluateAsync<int>("async () => (await (await pdfHost.request('/api/page/0/items')).json()).length") == 0,
+                "Browsing original text fonts and Escape do not promote or replace the original text.");
+            await page.Locator("[data-original-font]").ClickAsync();
+            await page.Locator("#layer").ClickAsync(new() { Position = new() { X = 5, Y = 5 } });
+            Check(await page.Locator(".font-panel").CountAsync() == 0, "Changing selection closes the font sidebar view.");
+            await page.Locator("#layer > .span").First.ClickAsync();
+            await page.Locator("[data-original-font]").ClickAsync();
+            await page.SetViewportSizeAsync(430, 800);
+            Check(await page.EvaluateAsync<bool>("""
+                () => {
+                  const panel = document.getElementById('props'), search = panel.querySelector('input[type=search]').getBoundingClientRect();
+                  return panel.scrollWidth <= panel.clientWidth + 1 && search.left >= 0 && search.right <= innerWidth;
+                }
+                """), "The font sidebar and search fit the mobile Properties sheet without horizontal scrolling.");
+            var pdfSearch = page.GetByRole(AriaRole.Searchbox, new() { Name = "Search PDF fonts", Exact = true });
+            await pdfSearch.FillAsync("Courier");
+            await pdfSearch.PressAsync("ArrowDown");
+            await page.Keyboard.PressAsync("Enter");
+            await page.WaitForFunctionAsync("async () => (await (await pdfHost.request('/api/page/0/items')).json()).some(i => i.font === 'Courier' && i.orig != null)");
+            await page.Keyboard.PressAsync("Control+z");
+            await page.WaitForFunctionAsync("async () => (await (await pdfHost.request('/api/page/0/items')).json()).length === 0");
             await page.EvaluateAsync("sessionStorage.removeItem('fa-unsupported')");
-            Console.WriteLine("PASS: Local Font Access permission denial, search, preview, cached metadata (no bytes), fsType refusal with substitute, subset embedding of the chosen local font, unsupported-browser fallback.");
+            Console.WriteLine("PASS: layered font sidebar, Back/Escape without mutation, independent searches, keyboard selection, stale-load protection, original-text promotion/Undo, permission denial, preview, metadata-only cache, fsType refusal, subset embedding, recovery and unsupported-browser fallback.");
         }
         finally { page.Dialog -= accept; }
     }

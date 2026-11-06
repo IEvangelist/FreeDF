@@ -110,9 +110,9 @@ a.sponsor-badge { border-color: color-mix(in srgb, var(--sponsor) 45%, transpare
 a.sponsor-badge:hover { color: var(--fg); background: color-mix(in srgb, var(--sponsor) 30%, transparent); }
 
 /* Form controls */
-#props input[type=text], #props input[type=number], #props select, #props textarea, .dbody input, .dbody select, #pn, #fq, .fpop input, .fpb, .swatch, label.tgl, .doc {
+#props input[type=text], #props input[type=number], #props select, #props textarea, .dbody input, .dbody select, #pn, #fq, .fpb, .swatch, label.tgl, .doc {
   background: var(--input-bg); color: var(--fg); }
-#props input[type=text], #props input[type=number], #props select, #props textarea, .dbody input:not([type=checkbox]):not([type=radio]), .dbody select, #pn, #fq, .fpop input, .fpb, .swatch, label.tgl { border-color: var(--input-border); }
+#props input[type=text], #props input[type=number], #props select, #props textarea, .dbody input:not([type=checkbox]):not([type=radio]), .dbody select, #pn, #fq, .fpb, .swatch, label.tgl { border-color: var(--input-border); }
 .dbody input:not([type=checkbox]):not([type=radio]), .dbody select { border-radius: var(--radius); }
 #props input:hover, #props select:hover, #props textarea:hover, .swatch:hover, .fpb:hover { border-color: var(--fg-2); }
 .swatch input[type=color] { border-color: var(--line-2); }
@@ -137,7 +137,7 @@ input[type=radio]:not(.wgt):checked { background-color: var(--primary); border-c
 .hd { background: #fff; border-color: var(--accent); }
 
 /* Menus, popovers, dialogs, tooltips, toasts */
-.cm, .fpop, #findbar { background: var(--raised); border-color: var(--line-2); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); color: var(--fg); }
+.cm, #findbar { background: var(--raised); border-color: var(--line-2); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); color: var(--fg); }
 .cm { padding: 4px; font-size: var(--text-base); transform-origin: top left; animation: pop-in var(--dur-2) var(--ease); }
 .cm.sub { animation-duration: var(--dur-1); top: -5px; left: 100%; }
 .cm .cm-i.has-sub:focus-within:not(:hover):not([data-open]) > .cm.sub:not(:focus-within) { display: none; }
@@ -215,6 +215,29 @@ main.hide-l .rz.l, main.hide-r .rz.r { display: none; }
 /* Header buttons never shrink; narrow screens move secondary actions into the overflow menu. */
 header button, header a, header .group { flex-shrink: 0; }
 #more { display: none; }
+#fileBtn .lbl, #editBtn .lbl { display: inline; }
+.cm-i[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+.selection-box { position: absolute; border: 1.5px dashed var(--accent); pointer-events: none; }
+.message-dialog .dfoot { flex-wrap: wrap; }
+.font-panel { min-width: 0; }
+#props .font-panel > section.head { position: sticky; top: 0; z-index: 1; background: linear-gradient(180deg, var(--accent-bg), transparent), var(--panel); }
+.font-panel strong { overflow-wrap: anywhere; }
+.font-back { display: flex; align-items: center; gap: 6px; padding: 0 8px; }
+.font-panel input[type=search] { width: 100%; min-width: 0; height: var(--sidebar-control); padding: 0 9px; background: var(--input-bg); color: var(--fg); border: 1px solid var(--input-border); border-radius: var(--radius); font: inherit; }
+.font-panel input[type=search]:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.font-panel .fl { max-height: 260px; }
+.font-panel .fo.on { background: var(--accent-bg); color: var(--fg); box-shadow: inset 2px 0 var(--ring); }
+.font-panel .flocal { display: block; border: 0; }
+.font-panel .flocal summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+.font-panel .flocal:not([open]) > :not(summary) { display: none; }
+.font-panel .flocal .hint { margin: 8px 0; }
+.font-panel .flocal .fld { margin: 10px 0; }
+.font-panel .fll { max-height: 220px; }
+.font-panel .fmsg, .font-panel .fprev { padding: 8px 0; }
+.font-panel .fprev { max-height: none; }
+.font-panel .flocal:has(.fll[hidden]) .fprev { display: none; }
+.font-panel .fpl { margin: 8px 0 0; }
+@media (forced-colors: active) { .selection-box { border-color: Highlight; } }
 @media (max-width: 900px) {
   header .hdr2 { display: none; }
   #more { display: inline-flex; }
@@ -222,7 +245,11 @@ header button, header a, header .group { flex-shrink: 0; }
   .doc { flex: 0 1 auto; min-width: 44px; margin-right: auto; }
   #name { max-width: none; }
 }
-@media (max-width: 400px) { #fileBtn > svg.i:last-child { display: none; } #fileBtn { padding: 0 8px; } }
+@media (max-width: 720px) {
+  #fileBtn, #editBtn { padding: 0 8px; }
+  .doc { gap: 4px; padding: 0 6px; }
+}
+@media (max-width: 480px) { #fileBtn > svg.i, #editBtn > svg.i { display: none; } }
 @media (max-width: 380px) {
   :root { --h: 40px; }
   header { gap: 0; padding-left: 2px; padding-right: 2px; }
@@ -272,7 +299,7 @@ footer #recovery { height: 24px; }
 
 /* Forced colours: rely on system colours and visible borders instead of tints. */
 @media (forced-colors: active) {
-  button, label.btn, .seg, .form-mode, .doc, .thumb, .dlg, .cm, .pal, .toast, .fpop, #findbar { border: 1px solid CanvasText; }
+  button, label.btn, .seg, .form-mode, .doc, .thumb, .dlg, .cm, .pal, .toast, #findbar { border: 1px solid CanvasText; }
   button.on, button[aria-pressed="true"], .thumb.sel, .pal li[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; forced-color-adjust: none; background: Highlight; color: HighlightText; }
   button.primary { forced-color-adjust: none; background: ButtonText; color: ButtonFace; }
   .cm-i:focus-visible, .cm-i:hover { outline: 2px solid Highlight; }

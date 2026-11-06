@@ -33,6 +33,7 @@
   <symbol id="i-line" viewBox="0 0 24 24"><path d="M5 19L19 5"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20 16l-4.5-4.5L7 20"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M16 3l5 5L8 21H3v-5zM13 6l5 5"/></symbol>
   <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 4v6a4 4 0 004 4h4a4 4 0 014 4v2M18 4v6M6 20v-2M16 8l2-2 2 2"/></symbol>
   <symbol id="i-rotl" viewBox="0 0 24 24"><path d="M4 12a8 8 0 108-8H8M8 1l-4 3 4 3"/></symbol>
   <symbol id="i-rotr" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-8-8h4M16 1l4 3-4 3"/></symbol>
@@ -76,6 +77,7 @@
   <div class="brand"><img class="logo" src="favicon.svg" alt=""><strong>FreeDF</strong><h1 class="sr-only">FreeDF PDF editor</h1></div>
   <div class="group">
     <button id="fileBtn" title="File menu" aria-haspopup="menu"><svg class="i"><use href="#i-open"/></svg><span class="lbl">File</span><svg class="i"><use href="#i-down"/></svg></button>
+    <button id="editBtn" title="Edit menu" aria-haspopup="menu"><svg class="i"><use href="#i-edit"/></svg><span class="lbl">Edit</span><svg class="i"><use href="#i-down"/></svg></button>
     <input id="open" type="file" accept="application/pdf" hidden><input id="merge" type="file" accept="application/pdf" multiple hidden>
   </div>
   <div class="doc empty" id="doc"><svg class="i"><use href="#i-file"/></svg><span id="name">No document</span><span id="dstate" hidden></span><span id="pages"></span></div>
@@ -194,7 +196,7 @@ const imageUrl = async url => {
   return assetImages.get(url);
 };
 function pruneAssetImages() {
-  const ids = new Set([...items.map(it => it.asset), ...undo.flatMap(s => JSON.parse(s).items.map(it => it.asset)), clip?.asset].filter(Boolean));
+  const ids = new Set([...items.map(it => it.asset), ...[...undo, ...redo].flatMap(s => JSON.parse(s).items.map(it => it.asset)), clip?.asset].filter(Boolean));
   for (const url of assetImages.keys()) if (!ids.has(url.slice('/api/asset/'.length))) assetImages.delete(url);
 }
 const reportError = e => { console.error(e); status(e.message); };
@@ -207,7 +209,8 @@ document.querySelector('label[for="img"], label:has(#img)').onkeydown = e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('img').click(); }
 };
 let state = { version: 0, pages: [] }, sel = 0, dragFrom = -1, buildEpoch = 0, shownPage = -1, baseRenderTimer = 0, neighborPrefetchTimer = 0, layoutBuildTimer = 0, pageImageRetryEpoch = -1;
-let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], saveT = 0, editing = false;
+let items = [], cur = null, tool = 'select', zoom = 1, fitMode = 'page', fitP0 = 1, preview = false, undo = [], redo = [], saveT = 0, editing = false;
+const multi = new Set();
 const pendingUploads = new Map();
 let locked = localStorage.getItem('lock-geom') === '1';
 const GEOM = new Set(['x', 'y', 'w', 'h', 'x2', 'y2']);
@@ -293,6 +296,7 @@ function selectionHint() {
 
 function markSelection(target, it) {
   const layer = $('layer');
+  multi.clear(); paintSelectionBox(layer);
   layer.querySelectorAll('.span.on, .it.on, .obj.on').forEach(el => {
     el.classList.remove('on');
     if (el.classList.contains('span')) el.style.outline = '';
@@ -314,8 +318,109 @@ function markSelection(target, it) {
 }
 
 function selectSpan(s, target) {
+  multi.clear();
   curSpan = s; cur = null; curObj = null;
   markSelection(target); props(true); selectionHint();
+}
+
+function toggleSelection(target) {
+  if (!multi.size) { const current = cur || curObj || curSpan; if (current) multi.add(current); }
+  if (multi.has(target)) multi.delete(target);
+  else {
+    const owner = it => it.parentForm || Math.floor((it.orig ?? (spans.includes(it) ? it.index : 0)) / 10000000);
+    for (const it of multi)
+      if ((target.kind === 'form' && target.formRef && owner(it) === target.formRef) ||
+          (it.kind === 'form' && it.formRef && owner(target) === it.formRef)) multi.delete(it);
+    multi.add(target);
+  }
+  cur = null; curObj = null; curSpan = null; formUi?.clear();
+  if (multi.size === 1) {
+    const only = [...multi][0]; multi.clear();
+    if (objs.includes(only)) curObj = only; else if (spans.includes(only)) curSpan = only; else cur = only;
+  }
+  paint(); props();
+  const el = $('layer').querySelector('.it.on, .obj.on, .span.on, .lines.on line');
+  if (el) { el.setAttribute('tabindex', '0'); el.focus({ preventScroll: true }); }
+  status(multi.size > 1 ? `${multi.size} objects selected. Drag a selected object to move them together; Shift-click to add or remove.` : 'Selection updated.');
+}
+
+function selectionBox(selection = [...multi]) {
+  const boxes = selection.map(it => {
+    if (objs.includes(it)) { const [x0, y0, x1, y1] = oBox(it); return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; }
+    if (spans.includes(it)) return { x: it.x, y: it.y - .95 * it.size, w: it.width, h: 1.2 * it.size };
+    return bboxOf(it);
+  });
+  const x = Math.min(...boxes.map(b => b.x)), y = Math.min(...boxes.map(b => b.y));
+  return { x, y, w: Math.max(...boxes.map(b => b.x + b.w)) - x, h: Math.max(...boxes.map(b => b.y + b.h)) - y };
+}
+
+function translateObject(o, dx, dy) {
+  const edit = o.edit ?? { sx: 1, sy: 1, tx: 0, ty: 0, delete: false };
+  o.edit = { ...edit, tx: edit.tx + dx, ty: edit.ty + dy };
+}
+
+function translateSelection(dx, dy) {
+  for (let it of [...multi]) {
+    if (spans.includes(it)) {
+      const text = spanItem(it); items.push(text); multi.delete(it); multi.add(text); it = text;
+      const el = [...$('layer').children].find(e => e._span?.index === text.orig);
+      if (el) {
+        el.style.outline = ''; el.style.width = ''; el.style.height = ''; el.title = '';
+        paintItem(el, text);
+      }
+    }
+    if (objs.includes(it)) translateObject(it, dx, dy); else shift(it, dx, dy);
+  }
+}
+
+function saveSelection() {
+  for (const it of multi) if (objs.includes(it)) saveObj(it);
+  queueSave();
+}
+
+function canMoveSelection() {
+  if (locked) { status('Positions and sizes are locked.'); return false; }
+  const selected = [...multi].filter(it => objs.includes(it));
+  if (selected.some(it => it.kind === 'form') && selected.some(it => it.inForm)) {
+    status('Move whole PDF graphic groups separately from editable graphic children.'); return false;
+  }
+  return true;
+}
+
+function moveSelection(dx, dy) {
+  if (!canMoveSelection()) return;
+  if (!dx && !dy) return;
+  pushUndo(); translateSelection(dx, dy); paint(); props(); saveSelection();
+}
+
+function multiPointerDown(ev, target) {
+  if (ev.button !== 0) return false;
+  if (ev.shiftKey && (locked || (target !== (cur || curObj || curSpan) && !multi.has(target)))) {
+    ev.preventDefault(); ev.stopPropagation(); toggleSelection(target); return true;
+  }
+  if (!multi.has(target)) { multi.clear(); paintSelectionBox($('layer')); return false; }
+  ev.stopPropagation();
+  if (!canMoveSelection()) return true;
+  const origin = selectionBox();
+  let dx = 0, dy = 0;
+  drag(ev, () => {}, (point, start, event) => {
+    let x = (point[0] - start[0]) / S, y = (point[1] - start[1]) / S;
+    [x, y] = moveDelta(origin.x, origin.y, x, y, event);
+    translateSelection(x - dx, y - dy); dx = x; dy = y; paint();
+  }, saveSelection, false, () => { if (ev.shiftKey) toggleSelection(target); });
+  return true;
+}
+
+function paintSelectionBox(layer) {
+  layer.dataset.multi = multi.size;
+  if (multi.size < 2) { layer.querySelector('.selection-box')?.remove(); return; }
+  let el = layer.querySelector('.selection-box');
+  if (!el) {
+    el = document.createElement('div'); el.className = 'selection-box';
+    el.setAttribute('role', 'group'); el.setAttribute('aria-label', `${multi.size} selected objects`); layer.appendChild(el);
+  }
+  const b = selectionBox();
+  Object.assign(el.style, { left: b.x * S + 'px', top: b.y * S + 'px', width: b.w * S + 'px', height: b.h * S + 'px' });
 }
 
 function focusTextProperties(selector) {
@@ -336,7 +441,7 @@ function spanProps() {
   const change = (key, value) => { if (draft[key] === value) return; const it = convertSpan(s); it[key] = value; paint(); props(); };
   p.querySelectorAll('[data-original]').forEach(el => el.oninput = () =>
     change(el.dataset.original, el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value));
-  p.querySelector('[data-original-font]').onclick = e => openFontPicker(e.currentTarget, draft, family => {
+  p.querySelector('[data-original-font]').onclick = () => openFontPicker(draft, family => {
     const it = convertSpan(s); it.font = family; it.oStyle = null; paint(); props();
   });
   const input = p.querySelector('textarea');
@@ -460,6 +565,7 @@ function scheduleNeighborPrefetch() {
   }, 250);
 }
 async function select(retainedUndo = null) {
+  multi.clear();
   finishCrop(false);
   const epoch = ++selectionEpoch, page = sel;
   const v = $('view');
@@ -468,7 +574,7 @@ async function select(retainedUndo = null) {
     await itemSave;
     if (epoch !== selectionEpoch) return;
     undo = retainedUndo ?? [];
-    if (!retainedUndo) await post('/api/asset-history');
+    if (!retainedUndo) { redo = []; await post('/api/asset-history'); }
     if (epoch !== selectionEpoch) return;
     document.querySelectorAll('.thumb').forEach((e, i) => e.classList.toggle('sel', i === sel));
     outline?.update(state, sel);
@@ -605,15 +711,10 @@ async function build(immediateBase = false, renderDelay = 180) {
   // The incoming base inherits this target, so record it before any decode can replace the old base.
   if ($('base')) $('base').dataset.targetUrl = targetUrl;
   if (current) {
-    const previewUrl = `/api/page/${sel}.png?dpi=${Math.min(dpi, 40)}&v=${state.version}&bare=${!preview}`;
-    if (immediateBase && !targetCached && $('base').dataset.loadedUrl !== previewUrl) {
-      await decodeBase(previewUrl, epoch, { pool: false });
-      if (epoch !== buildEpoch) return;
-    }
-    $('base').dataset.targetUrl = targetUrl;
     applyPageLayout(r, dw, dh, Lw, Lh, fitP);
     if ($('base').dataset.loadedUrl === targetUrl) return;
-    if (targetCached) await decodeBase(targetUrl, epoch);
+    // Keep the last decoded page sharp while an edit's full-resolution replacement renders.
+    if (immediateBase || targetCached) await decodeBase(targetUrl, epoch);
     else scheduleBaseRender(targetUrl, epoch, renderDelay);
     return;
   }
@@ -632,12 +733,12 @@ function toLayer(cx, cy) {
 }
 
 function setObjectAffordance(el, o) {
-  const big = pageSized(o) && o !== curObj;
+  const big = pageSized(o) && o !== curObj && !multi.has(o);
   el.title = big ? `Alt+click, or focus and press Enter, to select this ${o.kind === 'form' ? 'whole page' : 'page-sized ' + o.kind}` :
     `Move or resize this ${o.kind}${o.inForm ? ' inside its graphic group' : ''}`;
   if (big) {
     el.tabIndex = 0; el.setAttribute('role', 'button'); el.setAttribute('aria-label', 'Select whole-page content (Enter)');
-    el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectObj(o); } };
+    el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.shiftKey ? toggleSelection(o) : selectObj(o); } };
   } else {
     if (el.hasAttribute('tabindex')) {
       el.setAttribute('role', 'button'); el.setAttribute('aria-label', el.title);
@@ -709,6 +810,7 @@ async function cropImage(it) {
   if (cropEdit) finishCrop(false);
   if (preview) { await $('prev').onclick(); await build(); }
   if (!items.includes(it)) throw new Error('The selected image is no longer available.');
+  multi.clear();
   cur = it; curObj = null; curSpan = null; setTool('select');
   const full = { ...it }; applyImageCrop(full, { x: 0, y: 0, w: 1, h: 1 });
   cropEdit = { it, draft: { ...it }, full };
@@ -807,7 +909,7 @@ addEventListener('resize', positionCropToolbar);
 function paintItem(e, it, activeEditor = null) {
   const cropping = cropEdit?.it === it, display = cropping ? cropEdit.draft : it;
   e._it = it;
-  e.className = 'it' + (it === cur ? ' on' : '') + (it.type === 'text' ? ' txt' : '') + (it.type === 'redact' ? ' redact' : '') + (cropping ? ' cropping' : '');
+  e.className = 'it' + (it === cur || multi.has(it) ? ' on' : '') + (it.type === 'text' ? ' txt' : '') + (it.type === 'redact' ? ' redact' : '') + (cropping ? ' cropping' : '');
   e.style.left = display.x * S + 'px'; e.style.top = display.y * S + 'px'; e.style.opacity = it.opacity;
   if (it.type === 'text') {
     if (e !== activeEditor) e.textContent = it.text;
@@ -847,30 +949,32 @@ function paintItem(e, it, activeEditor = null) {
 }
 
 function paintDragGeometry(layer) {
-  const it = curObj || cur;
-  const el = curObj ? layer.querySelector('.obj.on') :
-    cur?.type === 'line' ? [...layer.querySelectorAll('.lines')].find(e => e._it === cur) : layer.querySelector('.it.on');
-  if (!el || (curObj ? el._obj : el._it) !== it) return false;
-  if (curObj) {
-    const [x0, y0, x1, y1] = oBox(it);
-    Object.assign(el.style, { left: x0 * S + 'px', top: y0 * S + 'px', width: Math.max(x1 - x0, 1) * S + 'px', height: Math.max(y1 - y0, 1) * S + 'px' });
-  } else if (it.type === 'line') {
-    const line = el.querySelector('line');
-    for (const [key, value] of Object.entries({ x1: it.x, y1: it.y, x2: it.x2, y2: it.y2 })) line.setAttribute(key, value * S);
-    layer.querySelectorAll(':scope > .hd').forEach(h => {
-      const [x, y] = h._point;
-      h.style.left = it[x] * S - 5 + 'px'; h.style.top = it[y] * S - 5 + 'px';
-    });
-  } else {
-    el.style.left = it.x * S + 'px'; el.style.top = it.y * S + 'px';
-    if (it.type === 'text') {
-      el.style.fontSize = it.size * S + 'px';
-      el.style.minWidth = it.w > 0 ? it.w * S + 'px' : '';
+  for (const it of multi.size ? multi : [curObj || cur]) {
+    const original = objs.includes(it);
+    const el = [...layer.children].find(e => original ? e._obj === it : e._it === it);
+    if (!el) return false;
+    if (original) {
+      const [x0, y0, x1, y1] = oBox(it);
+      Object.assign(el.style, { left: x0 * S + 'px', top: y0 * S + 'px', width: Math.max(x1 - x0, 1) * S + 'px', height: Math.max(y1 - y0, 1) * S + 'px' });
+    } else if (it.type === 'line') {
+      const line = el.querySelector('line');
+      for (const [key, value] of Object.entries({ x1: it.x, y1: it.y, x2: it.x2, y2: it.y2 })) line.setAttribute(key, value * S);
+      layer.querySelectorAll(':scope > .hd').forEach(h => {
+        const [x, y] = h._point;
+        h.style.left = it[x] * S - 5 + 'px'; h.style.top = it[y] * S - 5 + 'px';
+      });
     } else {
-      el.style.width = it.w * S + 'px'; el.style.height = it.h * S + 'px';
+      el.style.left = it.x * S + 'px'; el.style.top = it.y * S + 'px';
+      if (it.type === 'text') {
+        el.style.fontSize = it.size * S + 'px';
+        el.style.minWidth = it.w > 0 ? it.w * S + 'px' : '';
+      } else {
+        el.style.width = it.w * S + 'px'; el.style.height = it.h * S + 'px';
+      }
       if (it.type === 'image') paintImageGeometry(el, it);
     }
   }
+  if (multi.size) paintSelectionBox(layer);
   return true;
 }
 
@@ -895,11 +999,12 @@ function paint() {
     for (const o of objs) {
       if (o.edit?.delete) continue;
       const [x0, y0, x1, y1] = oBox(o);
-      const e = document.createElement('div'); e._obj = o; e.className = 'obj' + (o === curObj ? ' on' : '');
+      const e = document.createElement('div'); e._obj = o; e.className = 'obj' + (o === curObj || multi.has(o) ? ' on' : '');
       e.style.left = x0 * S + 'px'; e.style.top = y0 * S + 'px'; e.style.width = Math.max(x1 - x0, 1) * S + 'px'; e.style.height = Math.max(y1 - y0, 1) * S + 'px';
       setObjectAffordance(e, o);
       e.onpointerdown = ev => {
-        if (tool !== 'select') return;
+        if (tool !== 'select' || ev.button !== 0) return;
+        if (multiPointerDown(ev, o)) return;
         if (o === curObj || !pageSized(o) || ev.altKey) startObjMove(ev, o);
         else if (pageHint !== $('name').textContent) { pageHint = $('name').textContent; status('Plain clicks pass through page-sized content. Alt+click, or Tab to it and press Enter, to select the whole page.'); }
       };
@@ -912,11 +1017,13 @@ function paint() {
     const used = new Set(items.filter(i => i.orig != null).map(i => i.orig));
     for (const s of spans) {
       if (used.has(s.index)) continue;
-      const b = document.createElement('div'); b.className = 'span' + (s === curSpan ? ' on' : ''); b.title = 'Select this text; edit its content in Properties';
-      if (s === curSpan) b.style.outline = '1px solid var(--accent, #7c5cff)';
+      const b = document.createElement('div'); b._span = s; b.className = 'span' + (s === curSpan || multi.has(s) ? ' on' : ''); b.title = 'Select this text; edit its content in Properties';
+      if (s === curSpan || multi.has(s)) b.style.outline = '1px solid var(--accent, #7c5cff)';
       b.style.left = s.x * S + 'px'; b.style.top = (s.y - 0.9 * s.size) * S + 'px';
       b.style.width = Math.max(s.width, 2) * S + 'px'; b.style.height = 1.15 * s.size * S + 'px';
       b.onpointerdown = ev => {
+        if (ev.button !== 0) return;
+        if (multiPointerDown(ev, s)) return;
         if (locked) { ev.stopPropagation(); selectSpan(s, b); return; }
         let it;
         drag(ev, () => selectSpan(s, b), (point, start, event) => {
@@ -928,9 +1035,9 @@ function paint() {
           let dx = (point[0] - start[0]) / S, dy = (point[1] - start[1]) / S;
           [dx, dy] = moveDelta(s.x, s.y - .95 * s.size, dx, dy, event);
           it.x = s.x + dx; it.y = s.y - .95 * s.size + dy; paint();
-        });
+        }, null, false, () => { if (ev.shiftKey) toggleSelection(s); });
       };
-      b.ondblclick = () => focusTextProperties('[data-original-text]');
+      b.ondblclick = () => { if (multi.size) selectSpan(s, b); focusTextProperties('[data-original-text]'); };
       content.appendChild(b);
     }
   }
@@ -939,7 +1046,7 @@ function paint() {
       // One SVG per line so lines take part in z-order with the other items.
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg._it = it;
-      svg.setAttribute('class', 'lines'); svg.setAttribute('width', geom.Lw); svg.setAttribute('height', geom.Lh);
+      svg.setAttribute('class', 'lines' + (multi.has(it) ? ' on' : '')); svg.setAttribute('width', geom.Lw); svg.setAttribute('height', geom.Lh);
       const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       l.setAttribute('x1', it.x * S); l.setAttribute('y1', it.y * S); l.setAttribute('x2', it.x2 * S); l.setAttribute('y2', it.y2 * S);
       l.setAttribute('stroke', it.stroke || '#000'); l.setAttribute('stroke-width', Math.max(it.strokeWidth * S, 1)); l.setAttribute('opacity', it.opacity);
@@ -960,6 +1067,7 @@ function paint() {
   for (const [image, url] of imageLoads) setImage(image, url).catch(reportError);
   formUi?.paint(layer);
   if (!formUi?.editing()) paintWidgets(layer);
+  paintSelectionBox(layer);
   annot?.pageChanged();
 }
 
@@ -1074,7 +1182,7 @@ function lineHandles(layer, it) {
   }
 }
 
-function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
+function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false, onClick) {
   ev.preventDefault(); ev.stopPropagation();
   clearTimeout(saveT);
   const start = toLayer(ev.clientX, ev.clientY);
@@ -1089,6 +1197,7 @@ function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
     if (!changed && point[0] === start[0] && point[1] === start[1]) return;
     if (!changed) { pushUndo(); changed = true; }
     onMove(point, start, last);
+    props(true);
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(move); };
   const mv = e => { if (e.pointerId === ev.pointerId) { last = e; schedule(); } };
@@ -1105,6 +1214,7 @@ function drag(ev, onStart, onMove, onEnd, mutatesOnStart = false) {
     move();
     dragging = false;
     if (changed) onEnd?.();
+    else if (e.type !== 'pointercancel') onClick?.();
     if (changed || saveT) queueSave();
     props(true);
   };
@@ -1130,6 +1240,8 @@ function constrainBox(b0, k, dx, dy, e, lockRatio, minimum = 2) {
 }
 
 function startMove(ev, it) {
+  if (ev.button !== 0) return;
+  if (multiPointerDown(ev, it)) return;
   curSpan = null;
   if (locked) { ev.stopPropagation(); cur = it; curObj = null; markSelection(ev.currentTarget, it); props(true); selectionHint(); return; }
   cur = it; curObj = null; let o;
@@ -1140,7 +1252,7 @@ function startMove(ev, it) {
       it.x = o.x + dx; it.y = o.y + dy;
       if (it.type === 'line') { it.x2 = o.x2 + dx; it.y2 = o.y2 + dy; }
       paint();
-    });
+    }, null, false, () => { if (ev.shiftKey) toggleSelection(it); });
 }
 
 function startResize(ev, it, k, el) {
@@ -1158,7 +1270,7 @@ function startResize(ev, it, k, el) {
 
 function layerDown(ev) {
   if (formUi?.layerDown(ev)) return;
-  if (tool === 'select') { cur = null; curObj = null; curSpan = null; paint(); props(); return; }
+  if (tool === 'select') { if (!ev.shiftKey) deselect(); return; }
   curSpan = null; curObj = null;
   const kind = tool;
   const base = { id: crypto.randomUUID(), type: kind, x: 0, y: 0, w: 0, h: 0, text: '', font: 'Helvetica', size: 18, bold: false, italic: false, color: '#000000',
@@ -1195,6 +1307,7 @@ function layerDown(ev) {
 }
 
 function editText(el, it) {
+  if (multi.size) { cur = it; curObj = null; curSpan = null; markSelection(el, it); props(); }
   if (it.orig != null) { focusTextProperties('[data-k=text]'); return; }
   if (!el) return;
   editing = true; el.contentEditable = 'plaintext-only'; el.focus();
@@ -1216,19 +1329,32 @@ function editText(el, it) {
 }
 
 function setTool(t) {
+  const clearSelection = t !== 'select' && multi.size > 0;
+  if (clearSelection) multi.clear();
   finishCrop(false);
   formUi?.cancelArmed();
   tool = t;
   document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   $('layer')?.classList.toggle('draw', t !== 'select');
+  if (clearSelection) { paint(); props(); }
 }
 
-function pushUndo() { undo.push(JSON.stringify({ items, ed: objs.map(o => o.edit ?? null), fv: widgetState() })); if (undo.length > 100) undo.shift(); }
-async function doUndo() {
+const historySnapshot = () => JSON.stringify({ items, ed: objs.map(o => o.edit ?? null), fv: widgetState() });
+function pushUndo() { undo.push(historySnapshot()); redo = []; if (undo.length > 100) undo.shift(); }
+let historyStep = Promise.resolve();
+const doUndo = () => stepHistory('undo');
+const doRedo = () => stepHistory('redo');
+function stepHistory(kind) {
+  historyStep = historyStep.then(() => restoreHistory(kind)).catch(reportError);
+  return historyStep;
+}
+async function restoreHistory(kind) {
   if (cropEdit) { finishCrop(false); return; }
   await fieldSave;
-  if (!undo.length) return pageHistoryStep('undo');
-  const s = JSON.parse(undo.pop()); items = s.items; cur = null; curObj = null; curSpan = null;
+  const from = kind === 'undo' ? undo : redo, to = kind === 'undo' ? redo : undo;
+  if (!from.length) return pageHistoryStep(kind);
+  to.push(historySnapshot());
+  const s = JSON.parse(from.pop()); items = s.items; multi.clear(); cur = null; curObj = null; curSpan = null;
   const changed = [];
   objs.forEach((o, k) => { if (JSON.stringify(o.edit ?? null) !== JSON.stringify(s.ed[k])) { o.edit = s.ed[k]; changed.push(o); } });
   paint(); props(); queueSave();
@@ -1236,6 +1362,7 @@ async function doUndo() {
   const now = widgetState();
   for (const [name, value] of Object.entries(s.fv ?? {})) if (now[name] !== undefined && now[name] !== value) await setField(name, value);
   if (s.fv) { widgetStamp++; paint(); }
+  status(kind === 'undo' ? 'Undid edit.' : 'Redid edit.');
 }
 
 function pageHistoryStep(kind) {
@@ -1278,6 +1405,7 @@ function saveObj(o) {
   return objectSave;
 }
 function selectObj(o) {
+  multi.clear();
   cur = null; curSpan = null; curObj = o;
   const el = [...$('layer').querySelectorAll('.obj')].find(e => e._obj === o);
   if (el) markSelection(el, o); else paint();
@@ -1293,7 +1421,7 @@ function startObjMove(ev, o) {
       [dx, dy] = moveDelta(b0[0], b0[1], dx, dy, e);
       setEdit(o, [b0[0] + dx, b0[1] + dy, b0[2] + dx, b0[3] + dy]); paint();
     },
-    () => saveObj(o));
+    () => saveObj(o), false, () => { if (ev.shiftKey) toggleSelection(o); });
 }
 function startObjResize(ev, o, k) {
   if (locked) return;
@@ -1359,7 +1487,7 @@ async function flush() {
   const i = sel;
   const body = JSON.stringify({
     items: items.map(x => ({ ...x })),
-    historyAssets: [...new Set(undo.flatMap(snapshot => JSON.parse(snapshot).items.map(item => item.asset).filter(Boolean)))],
+    historyAssets: [...new Set([...undo, ...redo].flatMap(snapshot => JSON.parse(snapshot).items.map(item => item.asset).filter(Boolean)))],
     clipboardAssets: clip?.asset ? [clip.asset] : [],
   });
   const uploads = [...pendingUploads];
@@ -1392,9 +1520,14 @@ async function flush() {
   if (redrawBase) updateBase();
 }
 
-let propsTarget = null, propsLocked = false;
+let propsTarget = null, propsLocked = false, fontView = null;
 function props(geometryOnly = false) {
   const p = $('props');
+  if (fontView) {
+    if (!multi.size && (cur || curSpan) === fontView.target && fontView.root.isConnected) return;
+    fontView = null;
+  }
+  if (multi.size > 1) return selectionProps(p, geometryOnly);
   if (cropEdit) {
     p.innerHTML = '<section class="head"><h2>Crop image</h2></section><section><p class="hint">Drag the image edges or corners on the page. Dimmed areas will be hidden.</p><p class="hint">Enter applies; Escape cancels. Focus a crop handle and use arrow keys for precise adjustments (Shift for 10 points).</p><p class="hint">Cropping hides pixels, but does not remove them. Use redaction for sensitive content.</p></section>';
     return;
@@ -1405,7 +1538,10 @@ function props(geometryOnly = false) {
     const values = b ? { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] } : cur;
     if (values) p.querySelectorAll(curObj ? '[data-o]' : '[data-k]').forEach(el => {
       const key = curObj ? el.dataset.o : el.dataset.k;
-      if (GEOM.has(key) || key === 'size') el.value = +(+values[key] || 0).toFixed(2);
+      if (GEOM.has(key) || key === 'size') {
+        const value = String(+(+values[key] || 0).toFixed(2));
+        if (el.value !== value) el.value = value;
+      }
     });
     return;
   }
@@ -1450,7 +1586,7 @@ function props(geometryOnly = false) {
   p.innerHTML = h;
   p.querySelectorAll('[data-image]').forEach(button => button.onclick = () =>
     button.dataset.image === 'crop' ? cropImage(it).catch(reportError) : transformImage(it, button.dataset.image));
-  if ($('fpb')) $('fpb').onclick = () => openFontPicker($('fpb'), it);
+  if ($('fpb')) $('fpb').onclick = () => openFontPicker(it);
   p.querySelectorAll('[data-k]').forEach(el => {
     let pushed = false;
     el.oninput = () => {
@@ -1491,7 +1627,7 @@ const upload = (url, f) => { const fd = new FormData(); fd.append('f', f); retur
 // Passwords live only in these closures: they are sent once with the open request and never stored, logged or kept for recovery.
 const passwordHeader = pw => ({ 'X-Pdf-Password': btoa(String.fromCharCode(...new TextEncoder().encode(pw))) });
 async function unlockDialog() {
-  if (!state.protection || state.protection.owner || !confirmDiscard()) return;
+  if (!state.protection || state.protection.owner || !await confirmDiscard()) return;
   modal('Unlock with owner password', `<p class="dnote">Re-opens this PDF with the owner password so editing, printing, copying and Remove protection become available. Unsaved edits are discarded. The password is used once and never saved.</p><label>Owner password<input id="ow" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="owe"></label><p id="owe" data-error role="alert"></p>`, 'Unlock', async o => {
     const input = o.querySelector('#ow'), value = input.value, fail = m => { o.querySelector('[data-error]').textContent = m; return false; };
     if (!value) return fail('Enter the owner password.');
@@ -1576,8 +1712,11 @@ const openPicker = () => fa?.supported ? fa.pick().then(r => r && openWith(r.fil
 $('merge').onchange = e => { const files = [...e.target.files]; if (files.length) mergeDialog?.isConnected ? mergeDialog.addFiles(files) : mergePdfs(files); };
 $('rl').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/270`));
 $('rr').onclick = () => state.pageCount && act(() => post(`/api/rotate/${sel}/90`));
-$('del').onclick = () => state.pageCount && confirm('Delete this page?') && act(() => post(`/api/delete/${sel}`));
-$('title').onclick = () => { const t = prompt('Document title'); if (t) act(() => post('/api/title?t=' + encodeURIComponent(t))); };
+$('del').onclick = async () => {
+  if (state.pageCount && await window.editorUi.confirm({ title: 'Delete page', message: `Delete page ${sel + 1}? You can undo this until you save.`, confirmLabel: 'Delete page' }))
+    await act(() => post(`/api/delete/${sel}`));
+};
+$('title').onclick = async () => { const t = await window.editorUi.prompt({ title: 'Document title', label: 'Title', confirmLabel: 'Apply' }); if (t) await act(() => post('/api/title?t=' + encodeURIComponent(t))); };
 document.querySelectorAll('#tools [data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 $('zi').onclick = () => zoomBy(1.25);
 $('zo').onclick = () => zoomBy(1 / 1.25);
@@ -1598,6 +1737,7 @@ $('img').onchange = async e => {
   const a = await r.json(), pg = state.pages[sel], w = Math.min(240, pg.width / 2);
   pendingUploads.set(a.id, f);
   pushUndo();
+  multi.clear(); curObj = null; curSpan = null; formUi?.clear();
   cur = { id: crypto.randomUUID(), type: 'image', x: 40, y: 40, w, h: w * a.h / a.w, text: '', font: 'Helvetica', size: 12, bold: false, italic: false, color: '#000000', fill: '', stroke: '', strokeWidth: 0, opacity: 1, asset: a.id, x2: 0, y2: 0 };
   items.push(cur); paint(); props(); queueSave();
 };
@@ -1777,9 +1917,9 @@ function modal(title, body, okLabel, onOk) {
   return o;
 }
 const PAGE_SIZES = { A4: [595.276, 841.89], A3: [841.89, 1190.55], A5: [419.53, 595.276], Letter: [612, 792], Legal: [612, 1008], Tabloid: [792, 1224] };
-const confirmDiscard = () => !state.dirty || confirm('You have unsaved changes. Discard them?');
-function newDoc() {
-  if (!confirmDiscard()) return;
+const confirmDiscard = async () => !state.dirty || await window.editorUi.confirm({ title: 'Discard unsaved changes', message: 'Your unsaved changes will be lost. Save a copy first if you want to keep them.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing' });
+async function newDoc() {
+  if (!await confirmDiscard()) return;
   const o = modal('New document', `<div class="new-doc-layout"><div class="new-doc-controls">
     <label>Page size<select id="nps">${Object.keys(PAGE_SIZES).map(k => `<option>${k}</option>`).join('')}</select></label>
     <label>Orientation<select id="nor"><option>Portrait</option><option>Landscape</option></select></label>
@@ -1925,13 +2065,14 @@ function exportImages() {
 }
 const exportText = () => state.pageCount && flush().then(() => dlUrl('/api/export/text'));
 const exportSecure = () => state.pageCount && flush().then(() => protectDialog(false));
-async function closeDoc() { if (!confirmDiscard()) return; await act(() => post('/api/close')); }
+async function closeDoc() { if (!await confirmDiscard()) return; await act(() => post('/api/close')); }
 const pickFile = id => { const i = $(id); i.value = ''; i.click(); };
 function openFileMenu() {
+  $('fileBtn').focus();
   const has = !!state.pageCount, r = $('fileBtn').getBoundingClientRect();
   openMenuAt(buildMenu([
     { label: 'New…', key: 'Alt+N', run: newDoc },
-    { label: 'Open…', key: mod + 'O', run: () => confirmDiscard() && openPicker() },
+    { label: 'Open…', key: mod + 'O', run: async () => { if (await confirmDiscard()) openPicker(); } },
     samples && { label: 'Open sample', sub: samples.menuEntries() },
     '-',
     { label: 'Save', key: mod + 'S', disabled: !has, run: saveDoc },
@@ -1953,18 +2094,21 @@ function openFileMenu() {
   ]), r.left, r.bottom + 4);
 }
 $('fileBtn').onclick = openFileMenu;
+$('editBtn').onclick = openEditMenu;
 $('dl').onclick = saveAs; $('dl').title = 'Save a copy (download)';
 addEventListener('beforeunload', e => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // Global shortcuts (captured so they run before the editing shortcuts below)
 addEventListener('keydown', e => {
+  if (document.querySelector('.message-dialog')) return;
   const k = e.key.toLowerCase(), typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || editing || document.querySelector('.mdl') || document.activeElement?.closest?.('.ct-tree');
   const m = e.ctrlKey || e.metaKey;
   if (m && k === 'f') { e.preventDefault(); openFind(); return; }
   if (m && k === 'p') { e.preventDefault(); printDoc(); return; }
   if (m && k === 's') { e.preventDefault(); e.shiftKey ? saveAsFile() : saveDoc(); return; }
-  if (m && k === 'o') { e.preventDefault(); confirmDiscard() && openPicker(); return; }
+  if (m && k === 'o') { e.preventDefault(); confirmDiscard().then(ok => { if (ok) openPicker(); }); return; }
   if (e.altKey && k === 'n') { e.preventDefault(); newDoc(); return; }
+  if (!typing && e.altKey && (k === 'f' || k === 'e')) { e.preventDefault(); (k === 'f' ? openFileMenu : openEditMenu)(); return; }
   if (m && k === '0') { e.preventDefault(); fitPage(); return; }
   if (m && k === '9') { e.preventDefault(); fitWidth(); return; }
   if (m && k === '1') { e.preventDefault(); zoomTo(100); return; }
@@ -1975,7 +2119,7 @@ addEventListener('keydown', e => {
     if (k === 'z' && (curObj || cur)) { e.preventDefault(); zoomToSelection(); return; }
   }
   if (e.key === 'F3' || (m && k === 'g')) { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); return; }
-  if (typing || cur || curObj) return;
+  if (typing || cur || curObj || curSpan || multi.size > 1) return;
   if (e.key === 'PageDown' || e.key === 'ArrowRight') { e.preventDefault(); goPage(sel + 1); }
   else if (e.key === 'PageUp' || e.key === 'ArrowLeft') { e.preventDefault(); goPage(sel - 1); }
   else if (e.key === 'Home') { e.preventDefault(); goPage(0); }
@@ -2026,37 +2170,65 @@ addEventListener('resize', () => { if ((lastW >= 1000) !== (innerWidth >= 1000) 
 autoPanels();
 
 // ---- Font picker ----
-function openFontPicker(anchor, it, onPick) {
-  document.querySelectorAll('.fpop').forEach(x => x.remove());
-  const pop = document.createElement('div'); pop.className = 'fpop';
-  pop.innerHTML = '<input type="search" placeholder="Search fonts…" aria-label="Search fonts"><div class="fl" role="listbox"></div>';
-  const list = pop.querySelector('.fl'), q = pop.querySelector('input');
+function openFontPicker(it, onPick) {
+  const p = $('props'), root = document.createElement('div');
+  const original = it.orig != null && it.oStyle, currentFont = original ? (it.originalFont || it.font) : it.font, selectedFamily = original ? null : it.font;
+  root.className = 'font-panel';
+  const view = fontView = { target: cur || curSpan, root, scrollTop: p.scrollTop };
+  root.innerHTML = `<section class="head"><button type="button" class="font-back">${ic('left')}<span>Back to Properties</span></button></section>
+    <section><h2>Change font</h2><p class="hint">Current font: <strong>${esc(currentFont)}</strong>. Choose a family to apply it to the selected text.</p>
+    <label class="fld"><span>Search PDF fonts</span><input type="search" aria-label="Search PDF fonts" autocomplete="off"></label>
+    <div class="fl" role="group" aria-label="PDF font families"></div></section>
+    <section data-installed-fonts></section>`;
+  const list = root.querySelector('.fl'), q = root.querySelector('input');
+  const back = () => {
+    if (fontView !== view) return;
+    fontView = null; props(); p.scrollTop = view.scrollTop;
+    p.querySelector('#fpb, [data-original-font]')?.focus({ preventScroll: true });
+  };
   const choose = fam => {
-    if (onPick) { onPick(fam); return; }
-    if (it.font === fam && it.orig == null) return;
-    pushUndo(); it.font = fam; if (it.orig != null) it.oStyle = null; paint(); queueSave(); props();
+    if (fontView !== view || !root.isConnected || (cur || curSpan) !== view.target) { status('The font view or text selection changed. No font was applied.'); return; }
+    fontView = null;
+    if (onPick) onPick(fam);
+    else if (it.font !== fam || it.orig != null) {
+      pushUndo(); it.font = fam; if (it.orig != null) it.oStyle = null; paint(); queueSave(); props();
+    } else props();
+    p.scrollTop = view.scrollTop;
+    p.querySelector('#fpb, [data-original-font]')?.focus({ preventScroll: true });
   };
   const render = () => {
     const t = q.value.trim().toLowerCase(), f = fontList.filter(x => x.family.toLowerCase().includes(t));
     let html = '', sect = null;
     for (const x of f) {
-      const s = x.standard ? 'Standard PDF fonts' : `Installed fonts`;
+      const s = x.standard ? 'Built-in PDF fonts' : 'Loaded font families';
       if (s !== sect) { html += `<div class="fh">${s}</div>`; sect = s; }
-      html += `<button type="button" role="option" class="fo${x.family === it.font ? ' on' : ''}" data-f="${esc(x.family)}" style="font-family:${esc(famCss(x.family))}">${esc(x.family)}</button>`;
+      const family = ['Symbol', 'ZapfDingbats'].includes(x.family) ? 'inherit' : famCss(x.family);
+      html += `<button type="button" class="fo${x.family === selectedFamily ? ' on' : ''}" aria-pressed="${x.family === selectedFamily}" data-f="${esc(x.family)}" style="font-family:${esc(family)}" title="${esc(x.family)}">${esc(x.family)}</button>`;
     }
     list.innerHTML = html || '<div class="fh">No matching fonts</div>';
-    list.querySelectorAll('.fo').forEach(b => b.onclick = () => { pop.remove(); choose(b.dataset.f); });
-    list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+    list.querySelectorAll('.fo').forEach(b => { b.tabIndex = -1; b.onclick = () => choose(b.dataset.f); });
+    const first = list.querySelector('.on') || list.querySelector('.fo'); if (first) first.tabIndex = 0;
+  };
+  root.querySelector('.font-back').onclick = back;
+  root.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); back(); return; }
+    const search = e.target.matches('input[type=search]'), group = e.target.closest('.fl') || (search && e.target.closest('section, details')?.querySelector('.fl'));
+    if (!group || (search && e.key !== 'ArrowDown')) return;
+    const options = [...group.querySelectorAll('.fo')].filter(el => !el.disabled);
+    const i = options.indexOf(e.target), d = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (!options.length || (!d && e.key !== 'Home' && e.key !== 'End')) return;
+    e.preventDefault();
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : Math.max(0, Math.min(options.length - 1, i + d));
+    options.forEach(el => el.tabIndex = -1); options[next].tabIndex = 0; options[next].focus();
   };
   q.oninput = render; render();
-  document.body.appendChild(pop);
-  if (localFonts) localFonts.attach(pop, choose);
-  const r = anchor.getBoundingClientRect();
-  pop.style.left = Math.max(4, Math.min(r.left, innerWidth - pop.offsetWidth - 4)) + 'px';
-  pop.style.top = Math.min(r.bottom + 4, innerHeight - pop.offsetHeight - 4) + 'px';
+  p.replaceChildren(root); p.scrollTop = 0;
+  setPanel('r', true, true);
+  const installed = root.querySelector('[data-installed-fonts]');
+  if (localFonts) localFonts.attach(installed, choose, selectedFamily);
+  else installed.innerHTML = '<h3>Installed fonts</h3><p class="hint">Installed fonts are unavailable in this session. PDF fonts above remain available.</p>';
   q.focus();
-  const close = e => { if (e.type === 'keydown' ? e.key === 'Escape' : !pop.contains(e.target)) { pop.remove(); removeEventListener('pointerdown', close, true); removeEventListener('keydown', close, true); } };
-  addEventListener('pointerdown', close, true); addEventListener('keydown', close, true);
 }
 
 // ---- Context menu ----
@@ -2076,16 +2248,37 @@ function arrange(it, mode) {
     items.splice(j, 0, it);
   });
 }
+function alignmentDelta(b, mode) {
+  const W = geom.Lw / S, H = geom.Lh / S;
+  return [
+    { left: -b.x, center: (W - b.w) / 2 - b.x, right: W - b.w - b.x }[mode] ?? 0,
+    { top: -b.y, middle: (H - b.h) / 2 - b.y, bottom: H - b.h - b.y }[mode] ?? 0,
+  ];
+}
 function alignTo(it, mode) {
   if (locked) { status('Positions and sizes are locked.'); return; }
-  const b = bboxOf(it), W = geom.Lw / S, H = geom.Lh / S;
-  const dx = { left: -b.x, center: (W - b.w) / 2 - b.x, right: W - b.w - b.x }[mode] ?? 0;
-  const dy = { top: -b.y, middle: (H - b.h) / 2 - b.y, bottom: H - b.h - b.y }[mode] ?? 0;
-  commit(() => shift(it, dx, dy));
+  if (Array.isArray(it)) {
+    if (!canMoveSelection()) return;
+    pushUndo(); translateSelection(0, 0); paint();
+    translateSelection(...alignmentDelta(selectionBox(), mode));
+    paint(); props(); saveSelection(); return;
+  }
+  pushUndo();
+  if (spans.includes(it)) {
+    it = spanItem(it); items.push(it); cur = it; curObj = null; curSpan = null;
+    paint();
+  }
+  const original = objs.includes(it), bounds = original && oBox(it);
+  const b = bounds ? { x: bounds[0], y: bounds[1], w: bounds[2] - bounds[0], h: bounds[3] - bounds[1] } : bboxOf(it);
+  const [dx, dy] = alignmentDelta(b, mode);
+  if (original) translateObject(it, dx, dy); else shift(it, dx, dy);
+  paint(); props();
+  if (original) saveObj(it); else queueSave();
 }
 function paste(at) {
   if (!clip) return;
   commit(() => {
+    multi.clear();
     const c = { ...clip, id: crypto.randomUUID(), orig: null };
     const b = bboxOf(c), dx = at ? at.x - b.x : 12, dy = at ? at.y - b.y : 12;
     shift(c, dx, dy); items.push(c); cur = c; curObj = null; clip = { ...c };
@@ -2105,14 +2298,13 @@ function redactItem(it) {
 }
 const mod = navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+';
 
-function menuFor(ev) {
-  const t = ev.target, pt = { x: ev.offsetX, y: ev.offsetY };
-  const layer = $('layer'), r = layer.getBoundingClientRect();
-  const here = { x: (ev.clientX - r.left) / S, y: (ev.clientY - r.top) / S };
-  const el = t.closest?.('.it, line'), it = el?._it ?? null;
-  const objEl = t.closest?.('.obj');
-  if (it) {
-    cur = it; curObj = null; paint(); props();
+function pageAlignmentEntry(it) {
+  return { label: 'Align to page', disabled: locked, sub: [
+    { label: 'Left', run: () => alignTo(it, 'left') }, { label: 'Center horizontally', run: () => alignTo(it, 'center') }, { label: 'Right', run: () => alignTo(it, 'right') }, '-',
+    { label: 'Top', run: () => alignTo(it, 'top') }, { label: 'Center vertically', run: () => alignTo(it, 'middle') }, { label: 'Bottom', run: () => alignTo(it, 'bottom') }] };
+}
+function itemEditEntries(it, here = null) {
+    const layer = $('layer');
     const n = items.indexOf(it), last = n === items.length - 1, first = n === 0;
     return [
       it.type === 'text' && { label: 'Edit text', key: 'Dbl-click', run: () => { const e = [...layer.children].find(c => c._it === it); e && editText(e, it); } },
@@ -2132,22 +2324,105 @@ function menuFor(ev) {
         { label: 'Bring Forward', key: mod + ']', disabled: last, run: () => arrange(it, 'forward') },
         { label: 'Send Backward', key: mod + '[', disabled: first, run: () => arrange(it, 'backward') },
         { label: 'Send to Back', key: mod + 'Shift+[', disabled: first, run: () => arrange(it, 'back') }] },
-      { label: 'Align to page', sub: [
-        { label: 'Left', run: () => alignTo(it, 'left') }, { label: 'Center horizontally', run: () => alignTo(it, 'center') }, { label: 'Right', run: () => alignTo(it, 'right') }, '-',
-        { label: 'Top', run: () => alignTo(it, 'top') }, { label: 'Middle vertically', run: () => alignTo(it, 'middle') }, { label: 'Bottom', run: () => alignTo(it, 'bottom') }] },
+      pageAlignmentEntry(it),
       it.type !== 'redact' && { label: 'Redact this area', run: () => redactItem(it) },
       '-',
       { label: 'Delete', key: 'Del', danger: true, run: () => commit(() => { items = items.filter(x => x !== it); cur = null; }) },
     ];
+}
+function objectEditEntries(o) {
+  return [
+    pageAlignmentEntry(o),
+    { label: 'Delete', key: 'Del', danger: true, run: () => deleteObj(o) },
+    { label: 'Reset object', disabled: !o.edit, run: () => { pushUndo(); o.edit = null; paint(); props(); saveObj(o); } },
+  ];
+}
+function multiEditEntries() {
+  return [
+    { label: 'Cut', key: mod + 'X', disabled: true }, { label: 'Copy', key: mod + 'C', disabled: true },
+    { label: 'Paste', key: mod + 'V', disabled: !clip, run: () => paste(null) },
+    { label: 'Duplicate', key: mod + 'D', disabled: true },
+    pageAlignmentEntry([...multi]),
+    { label: 'Delete', key: 'Del', disabled: true },
+  ];
+}
+function selectionProps(p, geometryOnly) {
+  const b = selectionBox();
+  if (!geometryOnly || propsTarget !== multi || propsLocked !== locked) {
+    propsTarget = multi; propsLocked = locked;
+    const number = (key, label, readOnly = false) => `<label class="fld"><span>${label}</span><input type="number" step="1" data-group="${key}"${readOnly ? ' readonly' : locked ? ' disabled' : ''}></label>`;
+    p.innerHTML = `<section class="head"><h2>${multi.size} objects selected</h2></section>
+      <section><p class="hint">Shift-click to add or remove objects. Drag a selected object or use arrow keys to move the selection together. This selection is temporary, not a saved PDF group.</p>
+      <h3>Position</h3><div class="row">${number('x', 'X')}${number('y', 'Y')}</div>
+      <div class="row">${number('w', 'Width', true)}${number('h', 'Height', true)}</div></section>
+      <section><h3>Align selection to page</h3><div class="row"><button data-group-align="left">Left</button><button data-group-align="right">Right</button></div>
+      <button data-group-align="center">Center horizontally</button>
+      <div class="row"><button data-group-align="top">Top</button><button data-group-align="bottom">Bottom</button></div>
+      <button data-group-align="middle">Center vertically</button></section>
+      <section><p class="hint">Select one object for text, appearance, resizing, clipboard or delete actions.</p><button data-group-clear>Deselect</button></section>`;
+    p.querySelectorAll('[data-group-align]').forEach(el => { el.disabled = locked; el.onclick = () => alignTo([...multi], el.dataset.groupAlign); });
+    p.querySelectorAll('[data-group=x], [data-group=y]').forEach(el => el.onchange = () => {
+      if (!Number.isFinite(el.valueAsNumber)) { status('Enter a valid selection position.'); props(true); return; }
+      const box = selectionBox();
+      moveSelection(el.dataset.group === 'x' ? el.valueAsNumber - box.x : 0, el.dataset.group === 'y' ? el.valueAsNumber - box.y : 0);
+    });
+    p.querySelector('[data-group-clear]').onclick = deselect;
+  }
+  p.querySelectorAll('[data-group]').forEach(el => {
+    const value = String(+b[el.dataset.group].toFixed(2));
+    if (el.value !== value) el.value = value;
+  });
+}
+function deselect() { multi.clear(); cur = null; curObj = null; curSpan = null; formUi?.clear(); paint(); props(); }
+function editMenuEntries() {
+  const has = !!state.pageCount, selected = !!(multi.size || cur || curObj || curSpan || formUi?.hasSelection());
+  const selection = multi.size > 1 ? multiEditEntries() : cur ? itemEditEntries(cur) : curObj ? objectEditEntries(curObj) :
+    curSpan ? [{ label: 'Edit text', run: () => focusTextProperties('[data-original-text]') }, pageAlignmentEntry(curSpan)] :
+    has && (formUi?.hasSelection() || formUi?.hasClipboard()) ? formUi.editEntries() : [
+      { label: 'Cut', key: mod + 'X', disabled: true },
+      { label: 'Copy', key: mod + 'C', disabled: true },
+      { label: 'Paste', key: mod + 'V', disabled: !has || !clip, run: () => paste(null) },
+      { label: 'Duplicate', key: mod + 'D', disabled: true },
+      { label: 'Delete', key: 'Del', disabled: true },
+    ];
+  return [
+    { label: 'Undo', key: mod + 'Z', disabled: !has || (!undo.length && !state.pageUndo), run: doUndo },
+    { label: 'Redo', key: mod + 'Shift+Z', disabled: !has || (!redo.length && !state.pageRedo), run: doRedo },
+    '-', ...selection, '-',
+    { label: 'Deselect', key: 'Esc', disabled: !selected, run: deselect },
+    { label: 'Properties', disabled: !selected, run: () => {
+      if (document.querySelector('main').classList.contains('hide-r')) $('tr').click();
+      $('props').querySelector('input:not(:disabled), textarea, button')?.focus();
+    } },
+    { label: locked ? 'Unlock positions and sizes' : 'Lock positions and sizes', disabled: !has, run: () => $('lock').click() },
+    '-', { label: 'Find…', key: mod + 'F', disabled: !has, run: openFind },
+  ];
+}
+function openEditMenu() {
+  const anchor = $('editBtn');
+  anchor.focus();
+  const r = anchor.getBoundingClientRect(), m = buildMenu(editMenuEntries());
+  m.setAttribute('aria-label', 'Edit');
+  openMenuAt(m, r.left, r.bottom + 4);
+}
+function menuFor(ev) {
+  const t = ev.target, pt = { x: ev.offsetX, y: ev.offsetY };
+  const layer = $('layer'), r = layer.getBoundingClientRect();
+  const here = { x: (ev.clientX - r.left) / S, y: (ev.clientY - r.top) / S };
+  const el = t.closest?.('.it, line'), it = el?._it ?? null;
+  const objEl = t.closest?.('.obj');
+  const target = it || objEl?._obj || t.closest?.('.span')?._span;
+  if (multi.size > 1 && (!target || multi.has(target))) return multiEditEntries();
+  multi.clear();
+  if (it) {
+    cur = it; curObj = null; curSpan = null; paint(); props();
+    return itemEditEntries(it, here);
   }
   if (objEl) {
     const o = objs.find(o => !o.edit?.delete && (() => { const [x0, y0, x1, y1] = oBox(o); return here.x >= x0 && here.x <= x1 && here.y >= y0 && here.y <= y1; })());
     if (o) {
       selectObj(o);
-      return [
-        { label: 'Delete', key: 'Del', danger: true, run: () => deleteObj(o) },
-        o.edit && { label: 'Reset position and size', run: () => { pushUndo(); o.edit = null; paint(); props(); saveObj(o); } },
-      ];
+      return objectEditEntries(o);
     }
   }
   const ts = t.closest?.('.span');
@@ -2157,8 +2432,9 @@ function menuFor(ev) {
     { label: 'Add rectangle here', run: () => commit(() => { cur = mkItem('rect', here.x, here.y); items.push(cur); }) },
     { label: 'Add ellipse here', run: () => commit(() => { cur = mkItem('ellipse', here.x, here.y); items.push(cur); }) },
     '-',
-    { label: 'Undo', key: mod + 'Z', disabled: !undo.length, run: doUndo },
-    { label: 'Deselect', key: 'Esc', disabled: !cur && !curObj && !curSpan, run: () => { cur = null; curObj = null; curSpan = null; paint(); props(); } },
+    { label: 'Undo', key: mod + 'Z', disabled: !undo.length && !state.pageUndo, run: doUndo },
+    { label: 'Redo', key: mod + 'Shift+Z', disabled: !redo.length && !state.pageRedo, run: doRedo },
+    { label: 'Deselect', key: 'Esc', disabled: !cur && !curObj && !curSpan, run: deselect },
   ];
 }
 
@@ -2168,11 +2444,11 @@ function buildMenu(entries, sub) {
   for (const e of entries.filter(Boolean)) {
     if (e === '-') { const s = document.createElement('div'); s.className = 'cm-sep'; m.appendChild(s); continue; }
     const b = document.createElement(e.sub ? 'div' : 'button'); b.setAttribute('role', 'menuitem');
-    if (e.sub) { b.tabIndex = -1; b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-label', e.label); } else b.type = 'button';
+    if (e.sub) { b.tabIndex = -1; b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-label', e.label); b.setAttribute('aria-disabled', !!e.disabled); } else b.type = 'button';
     b.className = 'cm-i' + (e.danger ? ' danger' : '') + (e.sub ? ' has-sub' : ''); b.disabled = !!e.disabled;
     b.innerHTML = `<span>${e.label}</span>${e.key ? `<kbd>${e.key}</kbd>` : ''}${e.sub ? '<i>›</i>' : ''}`;
     if (e.sub) {
-      const s = buildMenu(e.sub, true); b.appendChild(s);
+      const s = buildMenu(e.disabled ? e.sub.map(item => typeof item === 'object' ? { ...item, disabled: true } : item) : e.sub, true); b.appendChild(s);
       b.onpointerenter = () => { const r = b.getBoundingClientRect(); s.style.top = '-5px'; s.style.left = '100%'; if (r.right + 200 > innerWidth) { s.style.left = 'auto'; s.style.right = '100%'; } };
     } else b.onclick = () => { closeMenu(); e.run(); };
     m.appendChild(b);
@@ -2200,7 +2476,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') { e.preventDefault(); closeMenu(); return; }
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   e.preventDefault(); e.stopImmediatePropagation();
-  const list = [...document.querySelectorAll('.cm:not(.sub) > .cm-i:not(:disabled)')], i = list.indexOf(document.activeElement);
+  const list = [...document.querySelectorAll('.cm:not(.sub) > .cm-i:not(:disabled):not([aria-disabled="true"])')], i = list.indexOf(document.activeElement);
   list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus();
 }, true);
 
@@ -2211,6 +2487,14 @@ addEventListener('keydown', e => {
     return;
   }
   if (editing || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+  if (multi.size > 1) {
+    if (e.key === 'Escape') { e.preventDefault(); deselect(); return; }
+    const d = e.shiftKey ? 10 : 1, movement = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
+    if (movement && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); moveSelection(...movement); return; }
+    if (['Delete', 'Backspace'].includes(e.key) || ((e.ctrlKey || e.metaKey) && ['c', 'x', 'd', '[', ']', '{', '}'].includes(e.key.toLowerCase()))) {
+      e.preventDefault(); status('Select one object for clipboard, ordering or delete actions. Multi-selection supports moving and alignment.'); return;
+    }
+  }
   if (curSpan && e.key === 'Escape') { curSpan = null; paint(); props(); return; }
   if (e.ctrlKey || e.metaKey) {
     const k = e.key;
@@ -2221,8 +2505,8 @@ addEventListener('keydown', e => {
   }
   if (e.key === '[' && !e.ctrlKey) { $('tl').click(); return; }
   if (e.key === ']' && !e.ctrlKey) { $('tr').click(); return; }
-  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); doUndo(); return; }
-  if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); pageHistoryStep('redo'); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
+  if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); doRedo(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'd' && cur) {
     e.preventDefault(); pushUndo();
     const c = { ...cur, id: crypto.randomUUID(), x: cur.x + 12, y: cur.y + 12, orig: null };
@@ -2252,7 +2536,7 @@ import(new URL('form-fields.js', document.baseURI)).then(m => {
   formUi = m.createFormFields({
     request, post, flush, status, esc, ic, modal, buildMenu, openMenuAt, toLayer, snapPoint, moveDelta, constrainBox, locked: () => locked, tool: () => tool, scale: () => S,
     pageIndex: () => sel, pageCount: () => state.pageCount, documentEpoch: () => documentEpoch, pageGeometry: () => state.pages[sel], layer: () => $('layer'),
-    repaint: () => paint(), props: () => props(), otherSelection: () => !!(cur || curObj || curSpan), clearOtherSelection: () => { cur = null; curObj = null; curSpan = null; },
+    repaint: () => paint(), props: () => props(), otherSelection: () => !!(multi.size || cur || curObj || curSpan), clearOtherSelection: () => { multi.clear(); cur = null; curObj = null; curSpan = null; },
     download: u => flush().then(() => dlUrl(u)),
     toolbar: () => { const g = document.createElement('div'); g.className = 'group'; document.querySelector('#tools .seg').after(g); return g; },
     afterMutation: async () => {
@@ -2311,7 +2595,7 @@ async function initFileAccess() {
         const { missing } = await (await post('/api/require-fonts', JSON.stringify([...usedFonts]))).json();
         if (missing.length) throw new Error(`Still not loaded: ${missing.join(', ')}. ${result.failed.map(f => `${f.family}: ${f.reason}`).join(' ')}`.trim());
       },
-      attach: (pop, choose) => fonts.attachPicker(pop, { controller, choose, esc, famCss, refreshFonts: () => request('/api/fonts').then(r => r.json()).then(l => { fontList = l; }) }),
+      attach: (panel, choose, current) => fonts.attachPicker(panel, { controller, choose, current, esc, famCss, refreshFonts: () => request('/api/fonts').then(r => r.json()).then(l => { fontList = l; }) }),
     };
   } catch (error) { console.warn('File access and local fonts are unavailable:', error); fa = null; localFonts = null; }
 }
@@ -2338,7 +2622,7 @@ async function startEditor() {
     validateUi = module.validateUi;
     recovery = await module.createRecovery({
       capture: { state: async () => (await request('/api/state')).json(), document: async () => (await request('/api/recovery')).blob() },
-      ui: () => ({ sel, zoom, fitMode, preview, undo, clip, localFonts: [...usedFonts].slice(0, 64) }),
+      ui: () => ({ sel, zoom, fitMode, preview, undo, redo, clip, localFonts: [...usedFonts].slice(0, 64) }),
       flush, button: $('recovery'), onError: reportError,
     });
     retained = await recovery.load();
@@ -2357,7 +2641,7 @@ async function startEditor() {
       try {
         if (retained.format !== 1 || !(retained.payload instanceof Blob)) throw new Error('Unsupported or corrupt local recovery record.');
         validateUi(retained.ui);
-        const historyItems = retained.ui.undo.flatMap(entry => JSON.parse(entry).items).concat(retained.ui.clip ?? []);
+        const historyItems = [...retained.ui.undo, ...(retained.ui.redo ?? [])].flatMap(entry => JSON.parse(entry).items).concat(retained.ui.clip ?? []);
         const forms = [...new Set(historyItems.filter(item => item.orig >= 10000000).map(item => Math.floor(item.orig / 10000000)))];
         const reply = await (await post('/api/recovery?forms=' + encodeURIComponent(JSON.stringify(forms)), await retained.payload.text())).json();
         const remap = item => {
@@ -2369,14 +2653,15 @@ async function startEditor() {
           return item;
         };
         const controls = retained.ui;
-        const restoredUndo = controls.undo.map(entry => {
+        const restoreStack = stack => stack.map(entry => {
           const snapshot = JSON.parse(entry);
           return JSON.stringify({ ...snapshot, items: snapshot.items.map(remap) });
         });
         sel = controls.sel; zoom = controls.zoom; fitMode = controls.fitMode; preview = controls.preview; clip = remap(controls.clip);
         $('prev').classList.toggle('on', preview);
         $('prev').setAttribute('aria-pressed', preview);
-        await ready(restoredUndo);
+        await ready(restoreStack(controls.undo));
+        redo = restoreStack(controls.redo ?? []);
         await fa?.restore(retained.name);
         await reconcileLocalFonts(retained.ui.localFonts);
         recovery.start(retained);

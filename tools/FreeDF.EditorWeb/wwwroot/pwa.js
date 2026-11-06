@@ -31,10 +31,10 @@ export function createPwa(hooks, win = window, doc = document) {
   async function openPending() {
     if (opening || !pending.length) return;
     if (hooks.busy()) { hooks.status('Finish the current action, then choose App > Open received PDFs.'); return; }
-    if (!hooks.confirmReplace()) return;
     opening = true;
     const batch = pending[0];
     try {
+      if (!await hooks.confirmReplace()) return;
       const files = await Promise.all(batch.map(async handle => {
         if (handle.kind !== 'file') throw new Error('Only PDF files can be opened by this app.');
         const file = await handle.getFile();

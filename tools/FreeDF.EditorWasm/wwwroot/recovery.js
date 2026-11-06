@@ -32,7 +32,8 @@ function transaction(db, mode, action) {
 export function validateUi(ui) {
   if (!ui || !Number.isInteger(ui.sel) || ui.sel < 0 || !Number.isFinite(ui.zoom) || ui.zoom <= 0 ||
       typeof ui.preview !== 'boolean' || ![null, 'page', 'width'].includes(ui.fitMode) || !Array.isArray(ui.undo) ||
-      ui.undo.some(entry => {
+      (ui.redo !== undefined && !Array.isArray(ui.redo)) ||
+      [...ui.undo, ...(ui.redo ?? [])].some(entry => {
         if (typeof entry !== 'string') return true;
         const snapshot = JSON.parse(entry);
         return !Array.isArray(snapshot.items) || !Array.isArray(snapshot.ed);
@@ -100,12 +101,12 @@ export async function createRecovery({ capture, ui, flush, button, onError }) {
       show('Recovery off', 'The retained edit was cleared. Recovery stays off for this document; opening or creating another document enables it.');
     });
   };
-  button.onclick = () => {
+  button.onclick = async () => {
     if (button.textContent === 'Retry recovery') {
       if (clearing) clear().catch(() => {});
       else { coreDirty = true; write().catch(() => {}); }
     }
-    else if (confirm('Clear locally retained edits from this and previous versions? The open document stays in memory. Recovery will stay off until another document is opened or created.'))
+    else if (await window.editorUi.confirm({ title: 'Clear local recovery', message: 'Clear locally retained edits from this and previous versions? The open document stays in memory. Recovery will stay off until another document is opened or created.', confirmLabel: 'Clear recovery' }))
       clear().catch(() => {});
   };
   return {

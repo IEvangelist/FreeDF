@@ -16,17 +16,35 @@ static class EditorFormAuthoring
         ("Combo box", "f_combo", "Option 2"), ("List box", "f_list", "Option 3"), ("Push button", "f_button", null), ("Signature placeholder", "f_sig", null),
     ];
 
-    static async Task Updated(IPage page, string name) =>
-        await page.WaitForFunctionAsync("n => document.getElementById('status').textContent.includes(n)", $"Updated {name}");
+    static async Task Updated(IPage page, string name, string property, string value, IElementHandle previous)
+    {
+        await page.WaitForFunctionAsync("""
+            ([name, property, value, previous]) => {
+              const input = document.querySelector(`#props [data-ff="${property}"]`);
+              return !previous.isConnected &&
+                document.querySelector('#props [data-ff=name]')?.value === name &&
+                (input ? input.value === value : document.querySelector('#props [data-ffcheck]')?.checked) &&
+                document.getElementById('status').textContent.includes(`Updated ${name}`);
+            }
+            """, new object[] { name, property, value, previous });
+        Check(await page.EvaluateAsync<bool>("""
+            async ([name, property, value]) => {
+              const fields = await (await pdfHost.request('/api/forms?page=0')).json();
+              return fields.some(field => field.name === name && String(field[property]) === value);
+            }
+            """, new[] { name, property, value }), $"persisted {name}.{property} should be '{value}'");
+    }
 
     static async Task<int> Boxes(IPage page) => await page.Locator("#layer .ffbox").CountAsync();
 
     static async Task SetField(IPage page, string selector, string value, string name)
     {
         var input = page.Locator("#props " + selector);
+        var property = await input.GetAttributeAsync("data-ff") ?? throw new Exception("Missing field property.");
+        var previous = await input.ElementHandleAsync() ?? throw new Exception("Missing field control.");
         await input.FillAsync(value);
         await input.PressAsync("Tab");
-        await Updated(page, name);
+        await Updated(page, name, property, value, previous);
     }
 
     static async Task<string> Save(IPage page)
@@ -69,14 +87,16 @@ static class EditorFormAuthoring
             if (value is not null) await SetField(page, "[data-ff=value]", value, name);
             if (label == "Text field")
             {
+                var previous = (await page.Locator("#props [data-ff=alignment]").ElementHandleAsync())!;
                 await EditorChoices.Choose(page, page.Locator("#props").GetByRole(AriaRole.Combobox, new() { Name = "Alignment", Exact = true }), "2");
-                await Updated(page, name);
+                await Updated(page, name, "alignment", "2", previous);
                 Check(await page.Locator("#props [data-ff=alignment]").InputValueAsync() == "2", "custom alignment choice updates field properties");
             }
             if (label == "Check box")
             {
+                var previous = (await page.Locator("#props [data-ffcheck]").ElementHandleAsync())!;
                 await page.Locator("#props [data-ffcheck]").CheckAsync();
-                await Updated(page, name);
+                await Updated(page, name, "value", "Yes", previous);
             }
             if (label == "Radio button")
             {
@@ -101,10 +121,14 @@ static class EditorFormAuthoring
         await page.Keyboard.PressAsync("Control+z");
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .ffbox').length === n", 11);
 
-        // Alignment through the property panel, then row tab order from the Form menu.
+        // Contextual alignment through Edit, then row tab order from the Form menu.
         await page.Locator("#formBtn").ClickAsync();
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Select all fields on page" }).ClickAsync();
-        await page.Locator("#props [data-ffarr=left]").ClickAsync();
+        await page.Locator("#editBtn").ClickAsync();
+        var edit = page.GetByRole(AriaRole.Menu, new() { Name = "Edit", Exact = true });
+        Check(await edit.GetByRole(AriaRole.Menuitem, new() { Name = "Copy" }).IsEnabledAsync(), "Edit exposes field clipboard actions");
+        await edit.GetByRole(AriaRole.Menuitem, new() { Name = "Align fields", Exact = true }).HoverAsync();
+        await page.Locator(".cm.sub .cm-i").Filter(new() { HasTextRegex = new Regex("^Left$") }).ClickAsync();
         await page.WaitForFunctionAsync("document.getElementById('status').textContent.startsWith('Updated 11 fields')");
         var xs = await Positions(page);
         Check(xs.Max() - xs.Min() < 0.01, "Align left puts every field on the same X");
@@ -118,7 +142,8 @@ static class EditorFormAuthoring
         var names = doc.GetFormFields().Select(f => f.FullName).ToHashSet();
         foreach (var (_, name, _) in Fields) Check(names.Contains(name), $"saved PDF has field {name}");
         var values = doc.GetFormFields().ToDictionary(f => f.FullName, f => f.Value);
-        Check(values["f_text"] == "Ada Lovelace" && values["f_combo"] == "Option 2" && values["f_check"] == "Yes", "saved values");
+        Check(values["f_text"] == "Ada Lovelace" && values["f_combo"] == "Option 2" && values["f_check"] == "Yes",
+            $"saved values: text='{values["f_text"]}', combo='{values["f_combo"]}', check='{values["f_check"]}'");
         Check(Pdf.RenderPage(doc.Pages[0], 72).Rgba.AsSpan().SequenceEqual(blank) is false, "widgets render");
         Check(doc.Pages[0].Dict.Get("Tabs") is PdfName { Value: "R" }, "saved /Tabs /R");
 
@@ -128,10 +153,11 @@ static class EditorFormAuthoring
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .ffbox').length === n", 11);
 
         // Flatten everything: widgets and AcroForm disappear but the rendered page stays populated.
-        page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
         await page.Locator("#formBtn").ClickAsync();
         await page.GetByRole(AriaRole.Menuitem, new() { Name = "Flatten form" }).HoverAsync();
         await page.Locator(".cm.sub .cm-i").Filter(new() { HasTextString = "All fields" }).ClickAsync();
+        await page.GetByRole(AriaRole.Dialog, new() { Name = "Flatten form fields", Exact = true })
+            .GetByRole(AriaRole.Button, new() { Name = "Flatten fields", Exact = true }).ClickAsync();
         await page.WaitForFunctionAsync("n => document.querySelectorAll('#layer .ffbox').length === n", 0);
         // A completed file download can precede the Save modal closing; undo must wait for the UI, not just the file.
         await page.EvaluateAsync("""

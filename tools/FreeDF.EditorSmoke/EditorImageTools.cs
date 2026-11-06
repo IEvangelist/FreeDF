@@ -160,6 +160,9 @@ static class EditorImageTools
         foreach (var (key, value) in new[] { ("w", "160"), ("h", "120"), ("x", "48"), ("y", "72") })
             await page.Locator($"[data-k={key}]").FillAsync(value);
         await Saved(page, "items[0].w === 160 && items[0].h === 120 && items[0].x === 48 && items[0].y === 72");
+        await page.Locator("#layer > .it").ClickAsync(new() { Modifiers = new[] { KeyboardModifier.Shift } });
+        Check(await page.Locator(".it.on").CountAsync() == 0, "Shift-click without movement deselects the image");
+        await page.Locator("#layer > .it").ClickAsync();
         var uncroppedRaster = await Raster(page);
         await page.Locator("[data-image=crop]").ClickAsync();
         Check(await page.Locator(".mdl").CountAsync() == 0 && await page.Locator("[data-crop-handle]").CountAsync() == 8, "crop uses on-image edge and corner handles, not a dialog");

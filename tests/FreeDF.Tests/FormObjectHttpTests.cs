@@ -76,6 +76,7 @@ public class FormObjectHttpTests
             response.EnsureSuccessStatusCode();
             Assert.True((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("saved").GetBoolean());
         }
+
         Assert.False((await server.State()).GetProperty("dirty").GetBoolean());
         var saved = await File.ReadAllBytesAsync(server.InputPath);
         Assert.Equal(saved, await server.Client.GetByteArrayAsync("/api/download"));
@@ -101,6 +102,23 @@ public class FormObjectHttpTests
             o.GetProperty("index").GetInt32() == index);
         Assert.Equal(JsonValueKind.Null, reopenedChild.GetProperty("edit").ValueKind);
         Assert.Equal(selectedAfter.X0, reopenedChild.GetProperty("x0").GetDouble(), 4);
+    }
+
+    [Fact]
+    public async Task Selection_metadata_identifies_graphic_groups_and_their_children_and_text()
+    {
+        await using var server = await EditorServer.Start(Fixture());
+        var objects = await server.Objects();
+        var group = Assert.Single(objects, o => o.GetProperty("kind").GetString() == "form" && !o.GetProperty("inForm").GetBoolean());
+        var reference = group.GetProperty("formRef").GetInt32();
+        Assert.True(reference > 0);
+        Assert.Equal(0, group.GetProperty("parentForm").GetInt32());
+        var children = objects.Where(o => o.GetProperty("inForm").GetBoolean()).ToArray();
+        Assert.NotEmpty(children);
+        Assert.All(children, child => Assert.Equal(reference, child.GetProperty("parentForm").GetInt32()));
+        using var text = JsonDocument.Parse(await server.Client.GetByteArrayAsync("/api/page/0/text"));
+        var nestedText = Assert.Single(text.RootElement.EnumerateArray(), span => span.GetProperty("text").GetString() == "Form text");
+        Assert.Equal(reference, nestedText.GetProperty("index").GetInt64() / 10_000_000);
     }
 
     static (string Kind, double X0, double Y0, double X1, double Y1) Bounds(ContentInterpreter.PageObject o) =>

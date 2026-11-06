@@ -103,53 +103,67 @@ export function createLocalFonts({ upload, win = globalThis }) {
   };
 }
 
-/** Adds the installed-fonts section to the font picker popover. */
-export function attachPicker(pop, { controller, choose, refreshFonts, esc, famCss }) {
-  const query = pop.querySelector('input'), box = document.createElement('div');
+/** Adds an independently searchable installed-fonts section to the font sidebar. */
+export function attachPicker(panel, { controller, choose, current, refreshFonts, esc, famCss }) {
+  const box = document.createElement('details');
   box.className = 'flocal';
-  box.innerHTML = '<div class="fprev" aria-hidden="true"></div><div class="fl fll" role="listbox" aria-label="Installed fonts" hidden></div><div class="fmsg" role="status"></div><button type="button" class="fpl"></button>';
-  const [preview, list, message, button] = box.children;
+  box.innerHTML = '<summary>Installed fonts on this device</summary><p class="hint">Font names stay on this device. Only a chosen family is read and embedded in the PDF, subject to its license.</p><label class="fld"><span>Search installed fonts</span><input type="search" aria-label="Search installed fonts" autocomplete="off" disabled></label><div class="fprev" aria-hidden="true"></div><div class="fl fll" role="group" aria-label="Installed font families" hidden></div><div class="fmsg" role="status"></div><button type="button" class="fpl"></button>';
+  const query = box.querySelector('input'), preview = box.querySelector('.fprev'), list = box.querySelector('.fll'), message = box.querySelector('.fmsg'), button = box.querySelector('.fpl');
   preview.textContent = SAMPLE;
-  pop.append(box);
-  let families = null;
+  panel.append(box);
+  let families = null, busy = false, busyFocus = null;
+  const back = panel.closest('.font-panel')?.querySelector('.font-back');
+  const setBusy = value => {
+    if (value) {
+      busyFocus = box.contains(document.activeElement) ? document.activeElement : null;
+      if (busyFocus) back?.focus();
+    }
+    busy = value; button.disabled = value; query.disabled = value || !families;
+    list.querySelectorAll('.flo').forEach(el => el.disabled = value);
+    if (!value && busyFocus?.isConnected && document.activeElement === back)
+      (busyFocus === button && families ? query : busyFocus).focus();
+  };
   const say = (text, substitute) => {
     message.textContent = text ?? '';
     if (!substitute) return;
     const use = document.createElement('button');
     use.type = 'button'; use.className = 'fpl'; use.textContent = `Use ${substitute} instead`;
-    use.onclick = () => { pop.remove(); choose(substitute); };
+    use.onclick = () => choose(substitute);
     message.append(' ', use);
   };
   const render = () => {
     if (!families) return;
     const t = query.value.trim().toLowerCase(), shown = families.filter(f => f.family.toLowerCase().includes(t));
-    list.hidden = false;
-    list.innerHTML = `<div class="fh">Installed on this device</div>` + (shown.map(f =>
-      `<button type="button" role="option" class="fo flo" data-local="${esc(f.family)}" style="font-family:${esc(famCss(f.family))}">${esc(f.family)}</button>`).join('') || '<div class="fh">No matching installed fonts</div>');
-    list.querySelectorAll('.flo').forEach(b => b.onclick = () => embed(families.find(f => f.family === b.dataset.local), b));
+    query.disabled = busy; list.hidden = false;
+    list.innerHTML = shown.map(f =>
+      `<button type="button" class="fo flo${f.family === current ? ' on' : ''}" aria-pressed="${f.family === current}" data-local="${esc(f.family)}" style="font-family:${esc(famCss(f.family))}" title="${esc(f.family)}">${esc(f.family)}</button>`).join('') || '<div class="fh">No matching installed fonts</div>';
+    list.querySelectorAll('.flo').forEach(b => { b.tabIndex = -1; b.disabled = busy; b.onclick = () => embed(families.find(f => f.family === b.dataset.local)); });
+    const first = list.querySelector('.on') || list.querySelector('.flo'); if (first) first.tabIndex = 0;
   };
-  async function embed(entry, option) {
-    say(`Embedding ${entry.family}…`); option.disabled = true;
+  async function embed(entry) {
+    say(`Embedding ${entry.family}…`); setBusy(true);
     try {
       const result = await controller.embed(entry);
-      if (result.family) { await refreshFonts(); pop.remove(); choose(result.family); return; }
+      if (result.family) { await refreshFonts(); choose(result.family); return; }
       say(`${entry.family} cannot be embedded. ${result.refused.reason}`, result.refused.substitute);
     } catch (error) { say(describeFontError(error)); }
-    finally { option.disabled = false; }
+    finally { setBusy(false); }
   }
   const show = value => { if (value) preview.style.fontFamily = value; };
-  pop.addEventListener('mouseover', e => show(e.target.closest('.fo')?.style.fontFamily));
-  pop.addEventListener('focusin', e => show(e.target.closest('.fo')?.style.fontFamily));
+  panel.addEventListener('mouseover', e => show(e.target.closest('.fo')?.style.fontFamily));
+  panel.addEventListener('focusin', e => show(e.target.closest('.fo')?.style.fontFamily));
   query.addEventListener('input', render);
   if (!controller.supported) {
     button.hidden = true;
-    say('This browser cannot list installed fonts, so standard PDF fonts and the fonts embedded in the document are offered.');
+    say('This browser cannot list installed fonts. PDF fonts above remain available, and existing text keeps its original font until you change it.');
     return;
   }
-  button.textContent = 'Installed fonts on this device…';
+  button.textContent = 'Load installed fonts';
   button.onclick = async () => {
+    setBusy(true);
     try { say('Reading installed font names on this device…'); families = await controller.refresh(); button.textContent = 'Refresh installed fonts'; say(''); render(); }
     catch (error) { say(describeFontError(error)); }
+    finally { setBusy(false); }
   };
   controller.cached().then(cached => { if (cached && !families) { families = cached; button.textContent = 'Refresh installed fonts'; render(); } })
     .catch(error => say(`Installed font metadata could not be restored: ${error.message}`));
