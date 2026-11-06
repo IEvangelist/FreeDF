@@ -4,6 +4,62 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 indexed indirect header integer syntax
+
+ISO 32000-1 7.3.3 (printed p14) defines an integer as decimal digits
+with at most one optional sign; 7.3.10 (printed p21) requires integer
+object/generation identifiers. Ordinary indexed loading previously
+checked their parsed values but bypassed the original-token check
+already used when loading an unindexed cross-reference stream.
+Repeated signs could therefore publish an unrepaired object.
+
+The existing token predicate and identifier bounds now also run for
+unrepaired indexed loads. Token starts are captured after whitespace/
+comments, not before them. Already-repaired recovery and the general
+numeric lexer remain unchanged. This is not complete header/xref
+offset, effective-entry identity, generation lifecycle or value grammar
+validation.
+
+Eighty-one controls have an actual unchanged-production baseline of
+24 failures/57 passes: integer, dictionary and stream values; repeated
+object/generation signs; valid single signs, padding, negative zero,
+comments/PDF whitespace; nonzero-generation identity; already-repaired
+compatibility and an intentionally unchanged permissive numeric value.
+Malformed object-number prefixes can still recover physical values;
+malformed generation headers remain absent under the existing repair
+scanner. Unrelated catalog lookup and repeated cached lookup remain
+usable in both cases.
+
+Final focused checks pass 1,774; full Release passes 20,659 with zero
+failed/skipped. Solution/benchmark builds have zero warnings/errors.
+Final rebuilt UaDump yields unchanged complete JSON across the pinned
+435-PDF/870-result corpus; all provider/parser correctness preflights
+pass. Historical earlier counts remain dated evidence.
+
+MuPDF 1.28.5 independently opens all 81 encoded comparisons. All 54
+valid header controls resolve without warnings or repair. Nine malformed
+object-number controls set the native repaired flag but fail target
+lookup. Nine of fifteen malformed-generation controls likewise repair
+and fail lookup; the other six (plus-minus-zero and minus-minus-zero,
+across three value kinds) return the target unrepaired without warnings.
+Both forced-repair compatibility controls fail native lookup. The one
+ordinary repeated-sign numeric-value control fails native lookup while
+FreeDF retains its historical recovery. These disagreements are retained;
+permissive reference acceptance is not normative conformance or proof
+that a target lookup succeeds. No external PDFs are bundled.
+
+Matched IndirectObjectBench runs reuse the existing fixture source and
+fresh-load/full-value-traversal timing boundary against exact archived
+ec347d19/final Core. Input lengths/hashes match and engine identities
+differ. All four final means are higher (about 0.3-7.7%), with overlapping
+99.9% confidence intervals. This is a retained performance concern, not
+proof of a regression or justification to claim zero overhead. Managed
+counters match in three cases and differ by about -0.032 bytes/op in
+the large integer case; no causal allocation reduction or native/
+retained-memory guarantee follows. Malformed-header repair cost is not
+measured. Broader grammar, footer discovery, Size cardinality, budgets,
+object lifecycle and full PDF-spec parity remain open.
+
 ## 2026-11-05 ordinary embedded stream framing
 
 ISO 32000-1 7.3.8.1 (printed p19), 7.3.8.2 and Table 5 (printed

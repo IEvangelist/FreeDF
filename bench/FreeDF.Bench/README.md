@@ -9,6 +9,49 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Indexed indirect header integer syntax: 2026-11-05
+
+The existing IndirectObjectBench times fresh PdfFile.Load plus
+traversal/checksum of all 64/4,096 integer or dictionary objects.
+Correctness, source/input hashes, unrepaired state, row count and
+engine identities are checked outside timing. This measures valid
+indexed-load overhead, not malformed repair, native/retained memory
+or provider conformance.
+
+Exact archived ec347d19 Core and central properties are compared with
+final Core through isolated matching-name BDN executables linking the
+same unchanged fixture source and project flags. Input lengths/SHA256
+hashes match in all four cases; engine MVIDs differ. Tests, corpus and
+all correctness preflights finish before sequential control/final timing.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Values / kind | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / integer | 7.858 +/- 0.3915 | 8.394 +/- 0.3731 | 26,480 -> 26,480 |
+| 64 / dictionary | 15.673 +/- 0.5124 | 16.712 +/- 0.8637 | 65,392 -> 65,392 |
+| 4,096 / integer | 621.890 +/- 8.4489 | 624.033 +/- 12.9855 | 1,617,013.1923 -> 1,617,013.1600 |
+| 4,096 / dictionary | 2,303.305 +/- 40.8396 | 2,480.579 +/- 171.8589 | 4,107,375 -> 4,107,375 |
+
+All four final means are higher (about 0.3-7.7%); the 99.9% confidence
+intervals overlap. This remains a performance concern, not proof of
+a regression, an improvement or zero overhead. Managed counters match
+in three cases; the approximately -0.032-byte/op large-integer
+observation is retained without causal attribution or exact-neutrality
+claims. These results do not explain the earlier classic-xref delta.
+
+[Control report](results/2026-11-05-indexed-header-control.md),
+[final report](results/2026-11-05-indexed-header-final.md), matching
+CSV and [eight raw GC/source/input/MVID rows](results/2026-11-05-indexed-header-gc.csv)
+retain the evidence. Reproduce with separate net10.0 BDN 0.15.8
+executables linking IndirectObjectBench.cs against archived/final Core,
+matching assembly/project names, Optimize/TieredPGO enabled and
+ServerGarbageCollector disabled; run `--filter '*IndirectObjectBench*'
+--warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1`
+independently for each source.
+
 ## Ordinary embedded stream framing: 2026-11-05
 
 OrdinaryStreamBench times fresh PdfFile.Load plus traversal/checksum

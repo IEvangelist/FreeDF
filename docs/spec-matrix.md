@@ -4,6 +4,12 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [indexed header integer-syntax guard](spec-backlog.md#2026-11-05-indexed-indirect-header-integer-syntax)
+extends original-token checks to unrepaired indexed objects, retaining
+repaired-header and general numeric-value recovery. Matched traversal
+means are higher with overlapping intervals, not a zero-overhead claim.
+Complete grammar, effective-entry identity and lifecycle remain open.
+
 The [ordinary embedded stream framing checks](spec-backlog.md#2026-11-05-ordinary-embedded-stream-framing)
 require an LF/CRLF opening, integer Length/exact extent and delimited
 closing keywords before repair. Ordinary recovery remains tolerant;
@@ -30,8 +36,8 @@ the recorded native same-section precedence disagreement remain open.
 
 The [xref header integer-syntax guard](spec-backlog.md#2026-11-05-xref-stream-header-integer-syntax)
 checks original object/generation tokens during unindexed section
-loading, not just recovered values. Ordinary indexed recovery remains
-unchanged. Matched cumulative header/footer benchmark intervals overlap;
+loading, not just recovered values. That slice preserved ordinary
+indexed recovery (extended above). Matched cumulative header/footer benchmark intervals overlap;
 effective-entry identity and full grammar/lifecycle remain open.
 
 The [startxref integer-syntax guard](spec-backlog.md#2026-11-05-startxref-offset-integer-syntax)
