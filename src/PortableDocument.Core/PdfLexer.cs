@@ -103,7 +103,7 @@ public sealed class PdfLexer
         while (Pos < _end && IsRegular(_d[Pos])) Pos++;
         CheckTokenBoundary();
         var token = _d.AsSpan(start, Pos - start);
-        if (TryNumber(token, out var num))
+        if (TryNumber(token, out var num, out var integer, out var isInteger))
         {
             if (!IsNumericToken(token))
             {
@@ -111,8 +111,9 @@ public sealed class PdfLexer
                     throw new PdfParseException("invalid numeric token in object stream member");
                 HasInvalidNumberToken = true;
             }
-            if (resolveRefs && num is PdfInteger n1 && n1.Value >= 0) return TryRef(n1, start) ?? num;
-            return num;
+            if (resolveRefs && isInteger && integer >= 0 && TryRef(integer, start) is { } reference)
+                return reference;
+            return isInteger ? new PdfInteger(integer) : num;
         }
         if (ShortKeywords.TryGetValue(ShortKeywordKey(token), out var keyword)) return keyword;
         var tok = Encoding.Latin1.GetString(_d, start, Pos - start);
@@ -125,7 +126,7 @@ public sealed class PdfLexer
         };
     }
 
-    PdfObject? TryRef(PdfInteger first, int startPos)
+    PdfObject? TryRef(long first, int startPos)
     {
         var save = Pos;
         var firstEnd = Pos;
@@ -152,12 +153,12 @@ public sealed class PdfLexer
                     throw new PdfParseException("indirect reference generation exceeds 65535 in object stream member");
                 if (_objectStreamMember && Pos == generationEnd)
                     throw new PdfParseException("indirect reference requires white space in object stream member");
-                if (first.Value > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
+                if (first > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
                 if (!IsPdf20ObjectIdentifierToken(_d.AsSpan(startPos, firstEnd - startPos), allowZero: false)
                     || !IsPdf20ObjectIdentifierToken(_d.AsSpan(generationStart, generationEnd - generationStart), allowZero: true))
                     HasInvalidObjectIdentifierSyntax = true;
                 Pos++;
-                return new PdfRef((int)first.Value, gen);
+                return new PdfRef((int)first, gen);
             }
         }
         Pos = save;
@@ -190,9 +191,11 @@ public sealed class PdfLexer
         return digits > 0 && i == token.Length;
     }
 
-    static bool TryNumber(ReadOnlySpan<byte> t, out PdfObject o)
+    static bool TryNumber(ReadOnlySpan<byte> t, out PdfObject o, out long integer, out bool isInteger)
     {
         o = null!;
+        integer = 0;
+        isInteger = false;
         if (t.Length == 0) return false;
         var c = t[0];
         if (!(c is >= (byte)'0' and <= (byte)'9' or (byte)'+' or (byte)'-' or (byte)'.')) return false;
@@ -205,7 +208,12 @@ public sealed class PdfLexer
         while (digits < s.Length && s[digits] is >= (byte)'0' and <= (byte)'9') digits++;
         if (digits == s.Length)
         {
-            if (long.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var l)) { o = new PdfInteger(neg ? -l : l); return true; }
+            if (long.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var l))
+            {
+                integer = neg ? -l : l;
+                isInteger = true;
+                return true;
+            }
             if (double.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var big)) { o = new PdfReal(neg ? -big : big); return true; }
             return false;
         }

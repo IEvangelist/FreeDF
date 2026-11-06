@@ -149,6 +149,37 @@ escaped/non-ASCII names, native memory or all document loads.
 | 4,096 / numeric values | 174,076 | `9A9B5A8CAACC6778AD7664090CB4D2D1CCE9B74A8F7373E9DA5C1A573168614F` |
 | 4,096 / dictionary names | 227,325 | `F8F4E0DAD1AB7A1F9614E2138D1609CAE90841BD08B3484CAD756B1BB1652306` |
 
+## Reference-token integer allocation: 2026-11-05
+
+When a nonnegative integer begins an indirect reference, `PdfLexer` now
+retains its primitive parsed value and creates a `PdfInteger` only if the
+token is not part of a reference. This avoids one short-lived object per
+successfully parsed reference without changing token acceptance or repair.
+
+Matched `IndirectReferenceBench` runs compare baseline commit `bce32c2`
+(control MVID `6b65115e-ee4b-42a0-98b0-5f9100852f76`) with the pending
+implementation (MVID `fcc035d8-04f5-4086-864e-2dac24013589`). Both generated
+PDFs contain one reference per object. BDN ShortRun used three warmups and
+three measured iterations; errors are the 99.9% confidence-interval
+half-widths. Environment: .NET 10.0.14 / SDK 10.0.403 / Windows 11 /
+i7-14700K.
+
+| Objects | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---:|---:|---:|---:|
+| 64 | 15.006 +/- 3.873 | 15.114 +/- 1.034 | 51.10 KB -> 49.58 KB |
+| 4,096 | 1,242.33 +/- 1,536.368 | 1,161.69 +/- 274.779 | 3,242.36 KB -> 3,146.33 KB |
+
+Managed allocation falls by 1.52 KB and 96.03 KB respectively. Both timing
+intervals overlap; the wide 4,096-object control interval makes timing
+inconclusive, so no speedup or regression is claimed. These synthetic
+reference-heavy loads do not establish native/retained memory or performance
+for all documents or providers.
+
+| Objects | Input bytes | SHA-256 |
+|---:|---:|---|
+| 64 | 3,655 | `A4C111E79A1682B5334FA8809CFECD4CC004A13815D806D1F68DC620B3D3D85F` |
+| 4,096 | 239,613 | `15114B6A443289F3F7DBC8E4F81ABEEB7AEFCC187326284391AEABC7A8ED139D` |
+
 ## Ordinary dictionary entry grammar: 2026-11-05
 
 This slice reuses the unchanged IndirectObjectBench and NestedObjectBench:

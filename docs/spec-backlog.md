@@ -174,6 +174,28 @@ results, not a universal load-time, escaped-name, native-memory or provider
 comparison. See the [benchmark record](../bench/FreeDF.Bench/README.md#ascii-name-token-fast-path-2026-11-05)
 for exact timings, intervals, hashes and settings.
 
+## 2026-11-05 Reference-token integer allocation
+
+`PdfLexer` now keeps the primitive result of integer parsing while checking
+whether the token begins an indirect reference. It allocates `PdfInteger`
+only when the integer is an ordinary value, avoiding a temporary object for
+each successfully parsed reference. This is performance-only and preserves
+existing numeric syntax, reference resolution and repair behavior.
+
+The focused numeric/reference selector passes 288 tests. The Release
+solution build succeeds with zero errors and five existing machine-source
+NU1507 warnings. One full-suite run had an unrelated ICC allocation assertion
+fail; that test passed in isolation and the immediate full-suite rerun passed
+all 21,201 tests with zero failures or skips.
+
+Matched `IndirectReferenceBench` measurements show 1.52 KB less managed
+allocation for 64 references and 96.03 KB less for 4,096 references.
+Timing intervals overlap substantially, including a very wide baseline
+interval for the larger input, so no timing improvement or regression is
+claimed. This evidence is limited to the generated reference-heavy inputs;
+see the [benchmark record](../bench/FreeDF.Bench/README.md#reference-token-integer-allocation-2026-11-05)
+for MVIDs, input hashes, timings and settings.
+
 ## 2026-11-05 ordinary dictionary entry grammar
 
 ISO 32000-1 7.3.7 (printed p18) requires dictionary keys to be names,
