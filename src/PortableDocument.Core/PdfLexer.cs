@@ -10,6 +10,8 @@ public class PdfParseException(string message) : Exception(message);
 /// <summary>Tokenizer + object parser used for both file bodies and content streams (ISO 32000-2 §7.2-7.3).</summary>
 public sealed class PdfLexer
 {
+    static readonly UTF8Encoding StrictNameEncoding = new(false, true);
+
     // Only fixed operators are shared; arbitrary input must not grow a process-wide cache.
     static readonly FrozenDictionary<int, PdfKeyword> ShortKeywords =
         ("q Q cm w J j M d ri i gs m l c v y h re S s f F f* B B* b b* n W W* " +
@@ -221,6 +223,17 @@ public sealed class PdfLexer
     PdfName ReadName()
     {
         Pos++;
+        var start = Pos;
+        var ascii = true;
+        while (Pos < _end && IsRegular(_d[Pos]))
+        {
+            var c = _d[Pos++];
+            if (c >= 0x80 || c == '#') ascii = false;
+        }
+        CheckTokenBoundary();
+        if (ascii) return new PdfName(Encoding.ASCII.GetString(_d.AsSpan(start, Pos - start)));
+
+        Pos = start;
         var sb = new List<byte>();
         while (Pos < _end && IsRegular(_d[Pos]))
         {
@@ -251,7 +264,7 @@ public sealed class PdfLexer
         CheckTokenBoundary();
         var arr = sb.ToArray();
         string s;
-        try { s = new UTF8Encoding(false, true).GetString(arr); } catch { s = Encoding.Latin1.GetString(arr); }
+        try { s = StrictNameEncoding.GetString(arr); } catch { s = Encoding.Latin1.GetString(arr); }
         return new PdfName(s);
     }
 

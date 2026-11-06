@@ -149,6 +149,30 @@ control's 89.807 ms minimum-iteration warning remains documented.
 [Timings, identities and raw managed counters](../bench/FreeDF.Bench/README.md#ordinary-name-escape-syntax-2026-11-05)
 do not establish native/retained memory or a universal performance claim.
 
+## 2026-11-05 ASCII name-token parsing fast path
+
+Common unescaped ASCII names now decode directly from the input span,
+avoiding a temporary byte list, copied byte array and per-name strict UTF-8
+decoder allocation. Escaped and non-ASCII names retain the existing
+strict-UTF-8-then-Latin-1 fallback and validation behavior. This is a
+performance-only change; it does not change PDF name acceptance. The
+fallback path's performance is not measured by this benchmark.
+
+The name-syntax and object-stream name-escape selections pass 196 tests;
+the full Release suite passes 21,201 with zero failures/skips. The
+benchmark correctness preflights pass.
+
+Matched `IndirectObjectBench.LoadValues` runs compare baseline commit
+`f93701b` with final engine MVID
+`d08d28bc-9906-4948-b72f-23ad6b193562` (control MVID
+`54b7127b-9e05-4176-b46d-feb5f7e93c56`). On identical 64- and 4,096-object
+inputs, both dictionary-name workload intervals are disjoint and managed
+allocations fall 14.78 KB and 896.77 KB respectively. Numeric-only object
+workload intervals overlap. These are bounded synthetic repeated-name
+results, not a universal load-time, escaped-name, native-memory or provider
+comparison. See the [benchmark record](../bench/FreeDF.Bench/README.md#ascii-name-token-fast-path-2026-11-05)
+for exact timings, intervals, hashes and settings.
+
 ## 2026-11-05 ordinary dictionary entry grammar
 
 ISO 32000-1 7.3.7 (printed p18) requires dictionary keys to be names,

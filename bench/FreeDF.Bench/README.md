@@ -117,6 +117,38 @@ and [final](results/2026-11-05-ordinary-name-nested-final.md), adjacent
 CSVs and [raw counters/identities](results/2026-11-05-ordinary-name-gc.csv)
 retain all four cases.
 
+## ASCII name-token fast path: 2026-11-05
+
+Matched `IndirectObjectBench.LoadValues` runs compare commit `f93701b`
+with the ASCII-name fast path. Inputs, generated source, benchmark settings
+and runtime are identical; input hashes are shown below. The fast path is
+for unescaped ASCII names only. Numeric-only object values are a control;
+escaped/non-ASCII name performance is not measured. BDN 0.15.8 / .NET
+10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K; one launch, three
+warmups, five 500 ms iterations. Error is the 99.9% confidence-interval
+half-width. Engine MVIDs: control `54b7127b-9e05-4176-b46d-feb5f7e93c56`,
+final `d08d28bc-9906-4948-b72f-23ad6b193562`.
+
+| Objects / workload | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / numeric values | 9.252 +/- 1.2973 | 8.784 +/- 0.4408 | 26.38 KB -> 25.60 KB |
+| 64 / dictionary names | 16.907 +/- 0.2918 | 14.348 +/- 0.7203 | 64.38 KB -> 49.60 KB |
+| 4,096 / numeric values | 680.683 +/- 57.5337 | 664.244 +/- 29.5261 | 1,611.14 KB -> 1,610.36 KB |
+| 4,096 / dictionary names | 2,563.016 +/- 197.1543 | 1,187.144 +/- 265.7315 | 4,043.13 KB -> 3,146.36 KB |
+
+Both dictionary-name timing intervals are disjoint and their managed
+allocations fall by 14.78 KB and 896.77 KB respectively. Numeric-control
+timing intervals overlap. This is evidence for these synthetic repeated
+ASCII-name workloads, not a general PDF/provider ranking or a claim about
+escaped/non-ASCII names, native memory or all document loads.
+
+| Objects / workload | Input bytes | SHA-256 |
+|---|---:|---|
+| 64 / numeric values | 2,631 | `EE0271889A4923C5A23AD617A1486DF6726232479F62E40ECA8CE8E1CFBC6290` |
+| 64 / dictionary names | 3,463 | `972BD608A7035AEAB3223E30271E6D215EC6495AC81979937D297534C02DDC1E` |
+| 4,096 / numeric values | 174,076 | `9A9B5A8CAACC6778AD7664090CB4D2D1CCE9B74A8F7373E9DA5C1A573168614F` |
+| 4,096 / dictionary names | 227,325 | `F8F4E0DAD1AB7A1F9614E2138D1609CAE90841BD08B3484CAD756B1BB1652306` |
+
 ## Ordinary dictionary entry grammar: 2026-11-05
 
 This slice reuses the unchanged IndirectObjectBench and NestedObjectBench:
