@@ -17,6 +17,8 @@ public sealed class PdfFile
     readonly HashSet<PdfDictionary> _resolvingObjectStreamTypes = [];
     readonly HashSet<int> _readingObjectStreamIndexes = [];
     readonly HashSet<long> _loadingObjectOffsets = [];
+    bool _pdf20IdentifierSyntax;
+    bool _hasInvalidObjectIdentifierSyntax;
 
     PdfFile(byte[] data) { Data = data; }
 
@@ -40,7 +42,11 @@ public sealed class PdfFile
         {
             f.ReadXrefChain();
             f.SetupEncryption(password);
-            if (f.Trailer.Get("Root") is null || f.Resolve(f.Trailer.Get("Root")) is not PdfDictionary) throw new PdfParseException("bad root");
+            if (f.Resolve(f.Trailer.Get("Root")) is not PdfDictionary root) throw new PdfParseException("bad root");
+            var version = f.Resolve(root.Get("Version")) is PdfName catalogVersion ? catalogVersion.Value : f.Version;
+            f._pdf20IdentifierSyntax = UsesPdf20IdentifierSyntax(version);
+            if (f._pdf20IdentifierSyntax && f._hasInvalidObjectIdentifierSyntax && !f.Repaired)
+                throw new PdfParseException("PDF 2.0 indirect object identifiers must use canonical decimal syntax");
         }
         catch (PdfPasswordException) { throw; }
         catch (Exception e) when (e is PdfParseException or IndexOutOfRangeException or ArgumentException or FormatException or InvalidCastException or KeyNotFoundException or InvalidOperationException or NullReferenceException or OverflowException)
@@ -68,6 +74,25 @@ public sealed class PdfFile
         var depth = 0;
         while (o is PdfRef r && depth++ < 32) o = GetObject(r);
         return o is PdfRef ? PdfNull.Instance : o;
+    }
+
+    void CheckObjectIdentifierSyntax(bool invalid)
+    {
+        if (!invalid) return;
+        _hasInvalidObjectIdentifierSyntax = true;
+        if (!Repaired && _pdf20IdentifierSyntax)
+            throw new PdfParseException("PDF 2.0 indirect object identifiers must use canonical decimal syntax");
+    }
+
+    static bool UsesPdf20IdentifierSyntax(string version)
+    {
+        var separator = version.IndexOf('.');
+        if (separator <= 0 || !int.TryParse(version.AsSpan(0, separator), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var major)
+            || !int.TryParse(version.AsSpan(separator + 1), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var minor))
+            return false;
+        return major >= 2;
     }
 
     /// <summary>Reads one indirect reference, returning null-object for a missing, free or different-generation target without following further references.</summary>
@@ -139,12 +164,16 @@ public sealed class PdfFile
         var kw = lx.ReadObject(false) as PdfKeyword;
         if (n is null || g is null || kw?.Value != "obj" || (expectNum >= 0 && n.Value != expectNum)
             || (expectGeneration is { } generation && g.Value != generation)) throw new PdfParseException($"object header mismatch at {offset}");
+        var invalidIdentifierSyntax =
+            !PdfLexer.IsPdf20ObjectIdentifierToken(Data.AsSpan(numberStart, numberEnd - numberStart), allowZero: false)
+            || !PdfLexer.IsPdf20ObjectIdentifierToken(Data.AsSpan(generationStart, generationEnd - generationStart), allowZero: true);
         if ((expectNum < 0 || !Repaired) && (n.Value is <= 0 or > int.MaxValue || g.Value is < 0 or > 65535
             || !PdfLexer.IsNumericToken(Data.AsSpan(numberStart, numberEnd - numberStart))
             || !PdfLexer.IsNumericToken(Data.AsSpan(generationStart, generationEnd - generationStart))))
             throw new PdfParseException(expectNum < 0
                 ? $"invalid or unsupported cross-reference stream object header at {offset}"
                 : $"invalid or unsupported indirect object header at {offset}");
+        CheckObjectIdentifierSyntax(invalidIdentifierSyntax);
         var obj = lx.ReadObject() ?? throw new PdfParseException("eof in object");
         if (!Repaired && (obj is PdfKeyword || lx.HasKeywordValue))
             throw new PdfParseException("indirect object contains a keyword value");
@@ -156,6 +185,7 @@ public sealed class PdfFile
             throw new PdfParseException("indirect object contains an invalid hexadecimal string");
         if (!Repaired && lx.HasInvalidNumberToken)
             throw new PdfParseException("indirect object contains an invalid numeric token");
+        CheckObjectIdentifierSyntax(lx.HasInvalidObjectIdentifierSyntax);
         if (obj is PdfDictionary d)
         {
             var save = lx.Pos;
@@ -288,6 +318,7 @@ public sealed class PdfFile
         var lexer = new PdfLexer(map.Data, start, objectStreamMember: true,
             end: map.First + member.End);
         var parsed = lexer.ReadObject();
+        CheckObjectIdentifierSyntax(lexer.HasInvalidObjectIdentifierSyntax);
         if (lexer.Pos > map.First + member.End)
             throw new PdfParseException("object stream member exceeds its boundary");
         if (parsed is null or PdfKeyword)

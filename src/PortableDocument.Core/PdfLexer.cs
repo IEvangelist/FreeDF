@@ -42,6 +42,7 @@ public sealed class PdfLexer
     internal bool HasInvalidName { get; private set; }
     internal bool HasInvalidHexString { get; private set; }
     internal bool HasInvalidNumberToken { get; private set; }
+    internal bool HasInvalidObjectIdentifierSyntax { get; private set; }
 
     public static bool IsWhite(int c) => c is 0 or 9 or 10 or 12 or 13 or 32;
     public static bool IsDelim(int c) => c is '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%';
@@ -125,7 +126,9 @@ public sealed class PdfLexer
     PdfObject? TryRef(PdfInteger first, int startPos)
     {
         var save = Pos;
+        var firstEnd = Pos;
         SkipWhite();
+        var generationStart = Pos;
         var negative = false;
         if (_objectStreamMember && Pos < _end && _d[Pos] is (byte)'+' or (byte)'-')
             negative = _d[Pos++] == '-';
@@ -148,6 +151,9 @@ public sealed class PdfLexer
                 if (_objectStreamMember && Pos == generationEnd)
                     throw new PdfParseException("indirect reference requires white space in object stream member");
                 if (first.Value > int.MaxValue) throw new PdfParseException("indirect object number exceeds supported range");
+                if (!IsPdf20ObjectIdentifierToken(_d.AsSpan(startPos, firstEnd - startPos), allowZero: false)
+                    || !IsPdf20ObjectIdentifierToken(_d.AsSpan(generationStart, generationEnd - generationStart), allowZero: true))
+                    HasInvalidObjectIdentifierSyntax = true;
                 Pos++;
                 return new PdfRef((int)first.Value, gen);
             }
@@ -155,6 +161,10 @@ public sealed class PdfLexer
         Pos = save;
         return null;
     }
+
+    internal static bool IsPdf20ObjectIdentifierToken(ReadOnlySpan<byte> token, bool allowZero) =>
+        token.Length > 0 && (token[0] is >= (byte)'1' and <= (byte)'9'
+            || allowZero && token.SequenceEqual("0"u8));
 
     void CheckTokenBoundary()
     {

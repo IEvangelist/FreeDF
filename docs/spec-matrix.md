@@ -43,6 +43,14 @@ repaired-header and general numeric-value recovery. Matched traversal
 means are higher with overlapping intervals, not a zero-overhead claim.
 Complete grammar, effective-entry identity and lifecycle remain open.
 
+The [PDF 2.0 indirect-identifier syntax guard](spec-backlog.md#2026-11-05-pdf-20-indirect-object-identifier-syntax)
+requires positive object numbers and nonnegative generations in canonical
+decimal spelling for both object headers and references. Catalog `/Version`
+overrides are honored without tightening PDF 1.7 parsing. Invalid spellings
+enter existing recovery; detection is lazy, not a whole-file validation pass.
+The matched reference-heavy benchmark intervals overlap and managed
+allocations are unchanged; no speedup or zero-overhead claim is made.
+
 The [ordinary embedded stream framing checks](spec-backlog.md#2026-11-05-ordinary-embedded-stream-framing)
 require an LF/CRLF opening, integer Length/exact extent and delimited
 closing keywords before repair. Ordinary recovery remains tolerant;

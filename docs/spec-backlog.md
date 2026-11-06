@@ -9457,3 +9457,49 @@ may still lack mappings, and a family match does not prove an exact predicate.
 No percentages of standards coverage are inferred. Classify those unmapped and
 other-rule-only cases before choosing further fixes; the prior zero file-verdict
 misses do not close this work.
+
+### 2026-11-05 PDF 2.0 indirect-object identifier syntax
+
+The [PDF Association's ISO 32000-2:2020 Clause 7.3.10 erratum](https://pdf-issues.pdfa.org/32000-2-2020/clause07.html#H7.3.10),
+tracked as [issue #379](https://github.com/pdf-association/pdf-issues/issues/379),
+requires an object number to be a positive decimal integer with no leading
+plus sign or leading zero. A generation number is nonnegative and follows the
+same syntax except that the single digit `0` is permitted. This applies to
+both indirect-object headers and indirect references. The existing PDF 1.7
+acceptance of signed and zero-padded integer spellings is intentionally kept.
+
+The lexer records noncanonical reference spellings in ordinary and compressed
+object values. Header spellings are checked from their original bytes; the
+effective version is determined after resolving the catalog, so `/Version`
+overrides work in either direction without prematurely tightening a PDF 1.7
+document. A nonconforming identifier enters the existing explicit xref-repair
+path. This is not a strict rejection or a whole-file validator: objects are
+checked when loaded, and the existing repair scan may not recover every
+malformed header.
+
+`Pdf20ObjectIdentifierSyntaxTests` covers header and reference signs/padding,
+object number zero, compressed-member references, and catalog version
+overrides. Together with the existing indexed-header compatibility controls,
+the focused selector passes 96 tests with zero failures or skips. The first
+pre-fix run failed all 10 new syntax expectations while both PDF 1.7 controls
+passed.
+
+`IndirectReferenceBench` measures fresh PDF 2.0 loads of 64 and 4,096 objects
+with one reference per object. Matched baseline/final input hashes are
+`A4C111E79A1682B5334FA8809CFECD4CC004A13815D806D1F68DC620B3D3D85F` (64) and
+`15114B6A443289F3F7DBC8E4F81ABEEB7AEFCC187326284391AEABC7A8ED139D` (4,096);
+engine MVIDs are `2d5bcc60-a0da-43df-a1ad-cb291c490788` and
+`72f66e52-82c2-41b5-b8fc-721462d07635`. BenchmarkDotNet ShortRun (3
+iterations, 3 warmups; .NET 10.0.14, i7-14700K) measured 17.749±3.466 us
+versus 16.88±2.311 us at 64 objects, and 2,575.68±352.61 us versus
+2,590.67±1,511.02 us at 4,096 (99.9% confidence margins). Managed allocation
+counters are unchanged at 63.88 KB and 4,011.14 KB respectively. Both
+intervals overlap substantially; no causal speedup or regression is claimed.
+Independent Poppler 4.06 text extraction accepted canonical, padded-reference,
+and padded-header PDF 2.0 controls (all exit 0 and emit the same `Parity`
+text). That records provider recovery behavior, not an alternative to the
+normative erratum. No cross-provider throughput comparison was run. The full
+Release suite passes 21,201 tests with zero failures or skips; the Release
+solution build has zero errors and five existing machine-source NU1507
+warnings. All benchmark correctness preflights pass; no repository
+package-source configuration was changed.
