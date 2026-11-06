@@ -106,11 +106,13 @@ export function createFormFields(ctx) {
   function layerDown(ev) {
     if (!armed) { if (selected.size) { selected.clear(); ctx.props(); } return false; }
     ev.preventDefault();
-    const kind = armed, S = ctx.scale(), start = ctx.toLayer(ev.clientX, ev.clientY), layer = ctx.layer();
+    const kind = armed, S = ctx.scale(), point = ctx.toLayer(ev.clientX, ev.clientY), layer = ctx.layer();
+    const start = ctx.snapPoint(point[0] / S, point[1] / S, ev).map(value => value * S);
     const rub = document.createElement('div'); rub.className = 'ffrub'; layer.appendChild(rub);
     let box = null;
     const move = e => {
-      const p = ctx.toLayer(e.clientX, e.clientY);
+      const point = ctx.toLayer(e.clientX, e.clientY);
+      const p = ctx.snapPoint(point[0] / S, point[1] / S, e).map(value => value * S);
       const x0 = Math.min(p[0], start[0]), y0 = Math.min(p[1], start[1]);
       box = [x0, y0, Math.abs(p[0] - start[0]), Math.abs(p[1] - start[1])];
       Object.assign(rub.style, { left: x0 + 'px', top: y0 + 'px', width: box[2] + 'px', height: box[3] + 'px' });
@@ -175,7 +177,7 @@ export function createFormFields(ctx) {
       const p = ctx.toLayer(e.clientX, e.clientY); let dx = (p[0] - start[0]) / S, dy = (p[1] - start[1]) / S;
       if (!moved && Math.hypot(dx, dy) * S < 3) return;
       moved = true;
-      if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+      [dx, dy] = ctx.moveDelta(group[0].x, group[0].y, dx, dy, e);
       for (const o of group) { o.g.x = o.x + dx; o.g.y = o.y + dy; }
       ctx.repaint();
     };
@@ -191,9 +193,8 @@ export function createFormFields(ctx) {
     const S = ctx.scale(), start = ctx.toLayer(ev.clientX, ev.clientY), o = { x: f.x, y: f.y, w: f.w, h: f.h };
     const move = e => {
       const p = ctx.toLayer(e.clientX, e.clientY), dx = (p[0] - start[0]) / S, dy = (p[1] - start[1]) / S;
-      const east = corner.includes('e'), south = corner.includes('s');
-      const w = Math.max(6, o.w + (east ? dx : -dx)), h = Math.max(6, o.h + (south ? dy : -dy));
-      f.w = w; f.h = h; f.x = east ? o.x : o.x + o.w - w; f.y = south ? o.y : o.y + o.h - h;
+      const [x0, y0, x1, y1] = ctx.constrainBox([o.x, o.y, o.x + o.w, o.y + o.h], corner, dx, dy, e, false, 6);
+      f.x = x0; f.y = y0; f.w = x1 - x0; f.h = y1 - y0;
       ctx.repaint();
     };
     const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); commitMoves([f]); };

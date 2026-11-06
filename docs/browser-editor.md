@@ -193,6 +193,8 @@ fall back to the primary worker; pool smoke checks compare decoded pixels.
 | Select/move/resize/delete/recolor existing editable graphics | Same content-rewriter operations, including object transforms and reset |
 | Select existing editable text; add text; typography/color/alignment/spacing | Selection/focus/cancel does not replace PDF content. Actual text changes reuse supported original embedded glyphs and text transforms; the PDF renderer paints edited originals rather than approximate browser fonts |
 | Rectangle, ellipse, line, PNG/JPEG insertion; fill/stroke/opacity | Same builder and image decoders; non-interlaced RGB/RGBA PNGs support 8-bit and 16-bit channels, with 16-bit samples reduced to 8-bit after row filtering for PDF embedding |
+| Inserted image crop, rotation and flipping | Properties and context menu offer source-image cropping, 90-degree left/right rotation and visual horizontal/vertical flips. Edits are undoable and retained in local recovery, PDF export and printing |
+| Optional page grid and snapping | Grid & snap independently enables the grid and snapping, with 2–144 point spacing (12 by default). Preferences stay local; the grid never becomes PDF or print content |
 | Copy/paste, duplicate, arrange, bring to front, undo, geometry lock | Same UI operations and existing undo scope (object edits, not a document-wide history) |
 | Redaction | Same content-removing redactor: arbitrary paths/strokes/clips, rotated content, per-invocation shared/nested Forms, partial inline/stencil image blanking and hidden optional content; not a painted-cover substitute |
 | Forms: text, button and choice fields | The in-page Fill out / Edit toggle defaults to Edit for layout authoring. Fill out in Select mode exposes text/comb/multiline, themed editable and select-only combo boxes, multi-select lists, checkbox and radio controls with keyboard interaction and field undo; save/reopen retains values and appearances. Push-button actions stay inert. Preview mode hides the editing layer; the Properties field list remains available |
@@ -202,6 +204,32 @@ fall back to the primary worker; pool smoke checks compare decoded pixels.
 | Reload / previous edit recovery | Explicit Resume previous edit or Discard and clear; unencrypted editable state, undo and clipboard remain local in IndexedDB |
 | PNG, all-pages PNG ZIP, text, compressed PDF exports | Local downloads |
 | Print, fullscreen, keyboard shortcuts, panels | Browser APIs and existing editor UI; printing uses locally rendered page images |
+
+Image cropping happens directly on the page: choose **Crop image** in Properties
+or the context menu, or double-click an inserted image. Drag an edge or corner
+handle; excluded pixels appear dimmed, with a rule-of-thirds guide inside the
+retained area. **Apply crop** (or Enter) commits the crop as one undoable edit;
+**Cancel** (or Escape) discards the draft. Clicking elsewhere on the page also
+applies it. Focus a handle and use arrow keys for one-point adjustments (Shift
+for ten). Mouse, pen and touch use the same handles. Dragging a handle outward
+reveals previously hidden pixels; **Restore full image** restores every edge.
+Retained pixels stay in place, including after rotation or flipping. The usual
+round handles resize the image when crop mode is not active.
+**Cropping is not redaction**: original image bytes remain in the exported PDF;
+use the content-removing redaction tool for sensitive material.
+
+Snapping applies to inserted content, editable existing content and form-field
+placement, movement and resizing, in unrotated page coordinates. Hold **Ctrl**
+(**Command** on Mac) while dragging to bypass it. **Shift** constrains movement
+to one axis, preserves resize proportions or constrains drawing angles/shapes;
+**Alt** resizes from the center. Images always resize proportionally, so the
+dominant edge snaps while the other follows the aspect ratio. Showing the grid
+and enabling snapping are independent options.
+
+Grid & snap, Lock and Preview share compact icon controls with labels on hover
+and keyboard focus. Labels appear without shifting the toolbar and respect
+reduced-motion settings. Selected controls use a flat tint and border; keyboard
+focus retains its separate, crisp outline.
 
 Printing renders each page at 150 dpi and requests its own paper size from the
 PDF CropBox, rotation and UserUnit, including landscape and mixed-size documents.
