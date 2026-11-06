@@ -4,9 +4,16 @@ Status: **Done** = implemented and covered by tests, **Partial** = implemented w
 Full spec parity is the goal; this table is the honest current state.
 See [spec-backlog.md](spec-backlog.md) for the actionable remaining work.
 
+The [ordinary embedded stream framing checks](spec-backlog.md#2026-11-05-ordinary-embedded-stream-framing)
+require an LF/CRLF opening, integer Length/exact extent and delimited
+closing keywords before repair. Ordinary recovery remains tolerant;
+existing object-stream index-stage schema checks and external-F
+compatibility are preserved. Complete stream/filter, external-file and
+lifecycle parity remain open.
+
 The [ordinary indirect closer guard](spec-backlog.md#2026-11-05-ordinary-indirect-object-closers)
 requires delimited endobj before publishing an unrepaired non-stream
-value. Existing repair recovery and ordinary stream policy remain;
+value. That slice preserved ordinary stream policy (extended above);
 the reproduced hex-EOF span regression is bounded. Complete value/
 header grammar and lifecycle still remain open.
 

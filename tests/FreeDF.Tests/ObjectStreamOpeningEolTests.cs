@@ -52,7 +52,7 @@ public class ObjectStreamOpeningEolTests
     [InlineData("\r", "")]
     [InlineData("", " ")]
     [InlineData("", "%note\n")]
-    public void Ordinary_stream_opening_recovery_remains_permissive(string opening, string prefix)
+    public void Ordinary_stream_opening_recovery_is_explicit(string opening, string prefix)
     {
         foreach (var repair in new[] { false, true })
         {
@@ -60,7 +60,7 @@ public class ObjectStreamOpeningEolTests
             var file = PdfFile.Load(Encoding.Latin1.GetBytes(text));
             Assert.Equal(Encoding.Latin1.GetBytes(prefix + "2 0 << /Type /Target >>"),
                 Assert.IsType<PdfStream>(file.GetObject(3)).RawData);
-            Assert.Equal(repair, file.Repaired);
+            Assert.True(file.Repaired);
         }
     }
 

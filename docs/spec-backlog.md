@@ -4,6 +4,66 @@ This backlog expands every incomplete status in [spec-matrix.md](spec-matrix.md)
 
 The current matrix has **14 Partial rows and 0 Todo rows**. Two additional rows marked Done (redaction and signatures) document limitations that still need follow-up. These row counts are not a spec-completion percentage. The benchmark source and checked-in results remain in `bench/FreeDF.Bench`; they are repository artifacts, not a separately published NuGet package.
 
+## 2026-11-05 ordinary embedded stream framing
+
+ISO 32000-1 7.3.8.1 (printed p19), 7.3.8.2 and Table 5 (printed
+p20) require LF/CRLF after stream, an integer Length matching the
+encoded byte extent with at most one optional additional EOL, and
+endstream followed by whitespace/comments and endobj. These checks
+now apply to ordinary embedded streams before explicit repair, not
+only cross-reference/object streams. Already-repaired ordinary stream
+recovery remains tolerant and preserves the recovered bytes/cache.
+The existing external F path is unchanged: Table 5 makes its inline
+Length a recommendation, not the embedded-data requirement. This is
+not external-file support or complete stream/filter conformance.
+
+The 120 new controls have an actual unchanged-production baseline of
+34 failures/86 passes. They cover invalid openings, Length types and
+extents, keyword boundaries/closers, missing endstream at physical EOF,
+empty streams, counted marker-like bytes, all optional closing EOLs,
+comments, indirect Length and already-repaired/external compatibility.
+Five older ordinary-stream recovery tests now expect the explicit
+repaired state while retaining their exact recovered-byte assertions.
+The first focused run exposed twelve object-stream lifecycle failures
+from validating Length too early and three outdated ordinary-recovery
+expectations. Object-stream Length schema validation remains at its
+existing index stage; moving it earlier can repair during nested
+container loading and then continue an invalid member lookup.
+Those failures were corrected rather than weakening the assertions.
+
+Final focused checks pass 1,693; full Release passes 20,578 with zero
+failed/skipped. Solution/benchmark builds have zero warnings/errors.
+Final rebuilt UaDump yields unchanged complete JSON across the pinned
+435-PDF/870-result corpus; all provider/parser correctness preflights
+pass. Historical earlier counts remain dated evidence.
+
+MuPDF 1.28.5 independently opens all 120 encoded comparisons without
+open/lookup errors. All 25 valid indexed controls return expected
+bytes without warnings or repair. The 34 malformed indexed controls
+remain unrepaired natively; 20 return the expected recovered bytes and
+19 emit warnings. All 58 forced-repair controls set the native repaired
+flag; 30 return expected bytes, while the other 28 retain different
+extents. Two of those disagreements are otherwise-valid forced-repair
+controls (empty data and indirect Length). Three external compatibility
+controls return the inline bytes unrepaired, two with warnings; that
+does not validate external-file reading. FreeDF's explicit repair and
+the recorded native byte differences are not equivalent policies.
+Permissive native open acceptance is not normative conformance.
+External PDFs remain outside the repository.
+
+A new OrdinaryStreamBench times fresh loading plus traversal/checksum
+of all bytes in 64/4,096 ordinary streams with direct or shared indirect
+Length. Correctness, source/input hashes and engine identities are
+checked outside timing. Matched archived e8dd5642/final runs have four
+lower means; only the 64-stream indirect-Length confidence intervals
+do not overlap. This is bounded single-run evidence, not a universal
+or causal speedup claim. Managed counters match in three cases and
+increase by about 1.4 bytes/op in the large direct-Length case; the
+difference is retained without causal attribution. Native/retained
+memory and malformed-input repair costs are not measured. Complete
+value/header grammar, footer discovery, external streams, budgets,
+object lifecycle and full PDF-spec parity remain open.
+
 ## 2026-11-05 ordinary indirect object closers
 
 ISO 32000-1 7.3.10 (printed p21) requires an indirect value to be

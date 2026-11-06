@@ -179,16 +179,18 @@ public sealed class PdfFile
     PdfStream ReadStream(PdfDictionary d, PdfLexer lx)
     {
         var xref = d.Get("Type") is PdfName { Value: "XRef" };
-        var kind = xref ? "cross-reference stream" : "object stream";
+        var embedded = !Repaired && Resolve(d.Get("F")) is null or PdfNull;
+        PdfParseException FramingError(string message) => new(
+            $"{(xref ? "cross-reference stream" : IsObjectStream(d) ? "object stream" : "stream")} {message}");
         var p = lx.Pos;
         if (p < Data.Length && Data[p] == 13) p++;
         if (p < Data.Length && Data[p] == 10) p++;
-        if ((p == lx.Pos || Data[p - 1] != 10) && (xref || IsObjectStream(d)))
-            throw new PdfParseException($"{kind} keyword must be followed by LF or CRLF");
+        if ((p == lx.Pos || Data[p - 1] != 10) && (xref || embedded || IsObjectStream(d)))
+            throw FramingError("keyword must be followed by LF or CRLF");
         var length = d.Get("Length");
         if (length is PdfRef) length = Resolve(length);
-        if (xref && length is not PdfInteger { Value: >= 0 })
-            throw new PdfParseException("cross-reference stream Length must resolve to a nonnegative integer");
+        if (length is not PdfInteger { Value: >= 0 } && (xref || embedded && !IsObjectStream(d)))
+            throw FramingError("Length must resolve to a nonnegative integer");
         long len = length switch
         {
             PdfInteger integer => integer.Value,
@@ -199,16 +201,16 @@ public sealed class PdfFile
         {
             if (!ExactEndStreamFollows(p + (int)len, out var afterEndStream))
             {
-                if (xref || IsObjectStream(d))
-                    throw new PdfParseException($"{kind} endstream must follow Length with at most one EOL");
+                if (xref || embedded || IsObjectStream(d))
+                    throw FramingError("endstream must follow Length with at most one EOL");
             }
             else
             {
                 var closing = new PdfLexer(Data, afterEndStream);
                 closing.SkipWhite();
                 if ((!Data.AsSpan(closing.Pos).StartsWith("endobj"u8)
-                    || closing.Pos + 6 < Data.Length && PdfLexer.IsRegular(Data[closing.Pos + 6])) && (xref || IsObjectStream(d)))
-                    throw new PdfParseException($"{kind} endstream must be followed by endobj");
+                    || closing.Pos + 6 < Data.Length && PdfLexer.IsRegular(Data[closing.Pos + 6])) && (xref || embedded || IsObjectStream(d)))
+                    throw FramingError("endstream must be followed by endobj");
             }
             return new PdfStream(d, Data.AsSpan(p, (int)len).ToArray());
         }
@@ -217,11 +219,11 @@ public sealed class PdfFile
         var end = idx;
         if (end > p && Data[end - 1] == 10) end--;
         if (end > p && Data[end - 1] == 13) end--;
-        if (length is PdfInteger { Value: >= 0 } && (xref || IsObjectStream(d)))
+        if (length is PdfInteger { Value: >= 0 } && (xref || embedded || IsObjectStream(d)))
         {
             if (len != end - p)
-                throw new PdfParseException($"{kind} recovered byte count disagrees with Length");
-            throw new PdfParseException($"{kind} is missing a valid endstream marker");
+                throw FramingError("recovered byte count disagrees with Length");
+            throw FramingError("is missing a valid endstream marker");
         }
         return new PdfStream(d, Data.AsSpan(p, end - p).ToArray());
     }

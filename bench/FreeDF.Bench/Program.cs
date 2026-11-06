@@ -52,6 +52,9 @@ if (args.Contains("--preflight"))
     foreach (var objects in new[] { 64, 4096 })
         foreach (var dictionaryValues in new[] { false, true })
             new IndirectObjectBench { Objects = objects, DictionaryValues = dictionaryValues }.Setup();
+    foreach (var streams in new[] { 64, 4096 })
+        foreach (var indirectLength in new[] { false, true })
+            new OrdinaryStreamBench { Streams = streams, IndirectLength = indirectLength }.Setup();
     foreach (var rows in new[] { 64, 4096 })
         foreach (var fixedEntry in new[] { false, true })
             new XrefClassicBench { Rows = rows, FixedEntry = fixedEntry }.Setup();

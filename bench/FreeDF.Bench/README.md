@@ -9,6 +9,55 @@ It is not included in text comparisons because this harness has no equivalent
 PDFsharp decoded-text operation. Results describe these versions, not the
 latest version of every provider or complete spec-conformance rankings.
 
+## Ordinary embedded stream framing: 2026-11-05
+
+OrdinaryStreamBench times fresh PdfFile.Load plus traversal/checksum
+of all raw bytes in 64/4,096 ordinary streams with direct or shared
+indirect Length. Setup independently checks every stream's exact
+bytes, row count, unrepaired state and checksum. Fixture generation,
+correctness checks and source/input/MVID reporting are not timed.
+This measures ordinary lazy stream loading, not decoding, malformed
+repair, external-file loading or a provider-conformance ranking.
+
+The exact archived e8dd5642 Core/control central properties and final
+Core are linked by separate minimal BDN executables with matching
+project flags and the same checked-in fixture source. All four input
+lengths/SHA256 hashes match; engine MVIDs differ. Tests, corpus and
+all correctness preflights finish before sequential control/final
+timing. The first harness attempt executed zero benchmarks because
+its project filename differed from the assembly name. Its failed
+logs/NA output are retained separately in session artifacts; only the
+corrected matching-name harnesses supply the reports below.
+
+BDN 0.15.8 / .NET 10.0.14 / SDK 10.0.403 / Windows 11 / i7-14700K,
+one launch, three warmups, eight 500 ms iterations. Error is the
+99.9% confidence-interval half-width.
+
+| Streams / Length | Control +/- error (us) | Final +/- error (us) | Managed bytes/op control -> final |
+|---|---:|---:|---:|
+| 64 / direct | 20.48 +/- 0.205 | 19.82 +/- 0.732 | 77,168 -> 77,168 |
+| 64 / indirect | 22.74 +/- 0.346 | 21.14 +/- 0.773 | 78,872 -> 78,872 |
+| 4,096 / direct | 3,059.76 +/- 422.172 | 2,739.69 +/- 66.945 | 4,861,037.60 -> 4,861,039.00 |
+| 4,096 / indirect | 2,946.36 +/- 81.916 | 2,914.20 +/- 161.269 | 4,959,509.60 -> 4,959,509.60 |
+
+All four final means are lower. Only the 64-stream indirect-Length
+confidence intervals do not overlap; this limited single-run result
+does not establish a universal or causal improvement or zero overhead.
+Managed counters match in three cases; the +1.4-byte/op large direct
+observation is retained without causal attribution or an exact
+neutrality claim. Native/retained memory is not measured. These
+results do not explain the earlier classic-xref allocation delta.
+
+[Control report](results/2026-11-05-ordinary-stream-control.md),
+[final report](results/2026-11-05-ordinary-stream-final.md), matching
+CSV and [eight raw GC/source/input/MVID rows](results/2026-11-05-ordinary-stream-gc.csv)
+retain the evidence. Reproduce with separate net10.0 BDN 0.15.8
+executables linking OrdinaryStreamBench.cs against archived/final Core,
+matching assembly/project names, Optimize/TieredPGO enabled and
+ServerGarbageCollector disabled; run `--filter '*OrdinaryStreamBench*'
+--warmupCount 3 --iterationCount 8 --iterationTime 500 --launchCount 1`
+independently for each source.
+
 ## Ordinary indirect object closers: 2026-11-05
 
 IndirectObjectBench times fresh PdfFile.Load followed by traversal of
