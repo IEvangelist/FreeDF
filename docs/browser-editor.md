@@ -65,11 +65,69 @@ Background redraws and layout changes preserve a focused page-number entry.
 Enter submits it; leaving the field restores the actual current page number.
 
 Select an object to drag it, or open **Properties** (`]`) for exact position,
-size and styling controls. On narrow screens the Properties button opens a
+size and styling controls. Position, size and line endpoint inputs follow
+dragging/resizing once per animation frame without rebuilding the controls or
+saving mid-gesture. After an edit, the current decoded page stays visible until
+the full-resolution replacement is ready; it no longer drops to a low-resolution
+preview between sharp renders. First visits to a page still use a quick preview.
+On narrow screens the Properties button opens a
 sheet; a selected object's status hint points to it when it is closed.
 Double-click original text to open and focus its Properties editor, or
 double-click added text to edit it in place. Locking geometry prevents moving
 and resizing without preventing text editing.
+
+**Change font** opens a dedicated view inside Properties, with **Back to
+Properties** at the top. Browsing, Back and Escape leave text unchanged; choosing
+a family applies one undoable edit and returns to the text controls. Search
+built-in PDF fonts and loaded families separately from the expandable
+**Installed fonts on this device** section. Installed font access requires an
+explicit **Load installed fonts** action and browser permission. Only names and
+styles are cached; chosen eligible fonts are embedded locally, with license
+refusals and explicit substitute choices. Arrow keys navigate font choices.
+Changing selection closes the font view, and a late-loading font cannot change
+text after leaving it.
+
+The top-level **Edit** menu (`Alt+E`) exposes Undo and Redo, plus actions for the
+current selection. Added objects offer cut, copy, paste, duplicate, arrange,
+align to page, redaction and delete. Original page objects offer alignment, delete
+and reset; original text offers alignment and its content editor. **Edit > Align
+to page** positions a selection at the left, horizontal center, right, top,
+vertical center or bottom of the visible page without changing its size.
+Alignment respects geometry locking and supports Undo/Redo. Aligning original
+text retains its original font, just like dragging it. Selected form fields offer clipboard,
+duplicate, align, distribute and delete actions. Unavailable commands are disabled.
+Properties, deselect, geometry locking and Find are also available there.
+Object edits support `Ctrl+Z` to undo and `Ctrl+Shift+Z` or `Ctrl+Y` to redo
+(`Cmd` on macOS). A new edit clears the object redo stack; changing pages clears
+both object stacks. Page/form history continues to work when the object stack is
+empty. Local recovery retains both object stacks, including their image assets.
+
+**Shift-click** objects to add or remove them from a temporary multi-selection.
+For keyboard selection, focus an object and use **Shift+Enter** or **Shift+Space**.
+The shared outline and Properties panel show the selection's combined bounds.
+Drag any selected object, edit the selection's X/Y, or use arrow keys (Shift for
+10-point steps) to move all selected objects while preserving their spacing.
+**Align to page** aligns the combined outline, not each object separately.
+One drag, nudge, position change or alignment is one undoable edit, including
+mixed original page content and added objects. Original text is only promoted
+when edited. Hold Shift after starting a drag to constrain its axis.
+Geometry locking applies to the whole selection. Click empty space, press
+Escape, choose another tool, change pages or use Undo/Redo to clear it.
+These are not persistent PDF groups; resizing, appearance, clipboard and delete
+actions still require a single object. Form-field multi-selection remains
+separate. Selecting a PDF graphic group excludes its own selected children
+and text, preventing the same content from moving twice.
+Whole PDF graphic groups and editable graphic children cannot be moved in the
+same selection; the editor explains this rather than partially applying a move.
+
+App-triggered confirmations and text prompts use the editor's themed dialogs,
+including unsaved changes, page deletion, titles, annotation text, flattening,
+redaction, clearing recovery and discarding work to reload an update. Confirmations
+initially focus the safe choice; Tab stays inside the dialog, Escape cancels,
+and text inputs support Enter to apply. Messages queue rather than replacing an
+unanswered question, and closing restores focus and the previous modal's state.
+Browser-owned file pickers, permission/security prompts, app installation and
+the browser's leave-page warning remain native.
 
 **File > New** shows a live, proportionally scaled page preview beside the
 paper size and orientation choices, including dimensions in millimeters and

@@ -165,7 +165,7 @@ test('work started during asynchronous update stages is protected unless discard
   g.win.editorPwa.pendingCount = 1;
   await g.paint();
   assert.equal(g.reloads(), 0); assert.match(g.banner().textContent, /unsaved changes/);
-  g.win.confirm = () => true;
-  g.banner().children.find(e => e.textContent === 'Reload now').onclick();
+  g.win.editorUi = { confirm: async () => true };
+  await g.banner().children.find(e => e.textContent === 'Reload now').onclick();
   await g.paint(); assert.equal(g.reloads(), 1);
 });

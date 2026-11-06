@@ -62,8 +62,8 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
 .thumb:hover .acts, .thumb:focus-within .acts { animation: fade-in var(--dur-2) var(--ease-in-out); }
 
 /* Menus: glass surface, clip reveal, opacity stagger (no box movement) */
-.cm, .fpop, #findbar { background: color-mix(in srgb, var(--raised) 90%, transparent); box-shadow: var(--e3), inset 0 1px 0 var(--edge); border-color: color-mix(in srgb, var(--line-2) 80%, transparent); }
-.cm:not(.sub), .fpop { animation: reveal var(--dur-3) var(--ease-out) backwards; }
+.cm, #findbar { background: color-mix(in srgb, var(--raised) 90%, transparent); box-shadow: var(--e3), inset 0 1px 0 var(--edge); border-color: color-mix(in srgb, var(--line-2) 80%, transparent); }
+.cm:not(.sub) { animation: reveal var(--dur-3) var(--ease-out) backwards; }
 .cm.sub { animation: fade-in var(--dur-2) var(--ease-in-out) both; }
 @keyframes reveal { from { opacity: 0; } }
 .cm:not(.sub) > .cm-i, .cm:not(.sub) > .cm-sep { animation: fade-in var(--dur-3) var(--ease-in-out) both; }
@@ -148,7 +148,7 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
 }
 :root[data-motion="reduce"] button:hover:not(:disabled), :root[data-motion="reduce"] .thumb:hover, :root[data-motion="reduce"] #empty:hover::before { transform: none !important; }
 :root[data-motion="reduce"] main #left, :root[data-motion="reduce"] main #props, :root[data-motion="reduce"] main::before { transition: none !important; }
-@media (prefers-reduced-transparency: reduce) { .cm, .fpop, #findbar, .mdl, .pal-scrim, main::before { backdrop-filter: none !important; background-color: var(--raised); } }
+@media (prefers-reduced-transparency: reduce) { .cm, #findbar, .mdl, .pal-scrim, main::before { backdrop-filter: none !important; background-color: var(--raised); } }
 @media (forced-colors: active) {
   #empty { border: 2px dashed CanvasText; background: Canvas; } #empty::before { border: 2px solid CanvasText; background: Canvas; box-shadow: none; }
   header, #tools, footer, #left, #props, #view { background: Canvas; box-shadow: none; }
@@ -183,7 +183,7 @@ a.sponsor:hover svg.i { transform: scale(1.18) rotate(-6deg); transition: transf
 header, #tools, footer, #left, #props { background-color: var(--panel); }
 
 /* Perf: nothing over the page canvas blurs or re-rasterises per frame; surfaces are solid. */
-.cm, .fpop, #findbar, #pager { background: var(--raised); }
+.cm, #findbar, #pager { background: var(--raised); }
 main::before { backdrop-filter: none; }
 
 /* Interactive control boxes never move (hover/press/selection): automated and real clicks never wait for a box to settle. */

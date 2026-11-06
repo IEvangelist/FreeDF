@@ -1,6 +1,6 @@
 using Microsoft.Playwright;
 
-// Header layout contract: brand -> File menu -> opened document, in DOM, focus and visual order.
+// Header layout contract: brand -> File/Edit menus -> opened document, in DOM, focus and visual order.
 static class EditorHeader
 {
     static void Check(bool ok, string message) { if (!ok) throw new Exception("FAIL: " + message); }
@@ -111,14 +111,14 @@ static class EditorHeader
             () => { const q = id => document.getElementById(id); return !!(q('dl').compareDocumentPosition(q('ghLink')) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(q('ghLink').compareDocumentPosition(q('tr')) & Node.DOCUMENT_POSITION_FOLLOWING); }
             """), where + ": header GitHub link follows Download in focus order");
         Check(await page.EvaluateAsync<bool>("""
-            () => { const q = id => document.getElementById(id), brand = document.querySelector('header .brand'), file = q('fileBtn'), doc = q('doc'),
+            () => { const q = id => document.getElementById(id), brand = document.querySelector('header .brand'), file = q('fileBtn'), edit = q('editBtn'), doc = q('doc'),
                 before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-              return before(brand, file) && before(file, doc) && before(file, q('dl')) && before(doc, q('rl')); }
-            """), where + ": DOM/focus order is brand, File, document, then remaining actions");
+              return before(brand, file) && before(file, edit) && before(edit, doc) && before(file, q('dl')) && before(doc, q('rl')); }
+            """), where + ": DOM/focus order is brand, File, Edit, document, then remaining actions");
         Check(await page.EvaluateAsync<bool>("""
-            () => { const r = id => document.getElementById(id).getBoundingClientRect(), file = r('fileBtn'), doc = r('doc'), brand = document.querySelector('header .brand').getBoundingClientRect();
+            () => { const r = id => document.getElementById(id).getBoundingClientRect(), file = r('fileBtn'), edit = r('editBtn'), doc = r('doc'), brand = document.querySelector('header .brand').getBoundingClientRect();
               const brandShown = getComputedStyle(document.querySelector('header .brand')).display !== 'none';
-              return (!brandShown || brand.right <= file.left) && file.right <= doc.left + 1 && doc.left - file.right < 24 && Math.abs((file.top + file.bottom) - (doc.top + doc.bottom)) < 8 && file.height >= 28; }
-            """), where + ": File menu sits immediately right of the brand with the document beside it");
+              return (!brandShown || brand.right <= file.left) && file.right <= edit.left + 1 && edit.right <= doc.left + 1 && doc.left - edit.right < 24 && Math.abs((file.top + file.bottom) - (doc.top + doc.bottom)) < 8 && file.height >= 28; }
+            """), where + ": File and Edit menus sit immediately right of the brand with the document beside them");
     }
 }

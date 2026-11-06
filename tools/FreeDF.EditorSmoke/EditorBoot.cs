@@ -99,15 +99,26 @@ static class EditorBoot
                     await page.SetViewportSizeAsync(mobile ? 390 : 1440, mobile ? 844 : 1000);
                     var state = await page.EvaluateAsync<string>("""
                         () => {
-                          const body = getComputedStyle(document.body), header = document.querySelector('header'),
-                            button = document.getElementById('fileBtn'), icon = button.querySelector('svg'),
-                            bounds = icon.getBoundingClientRect();
+                          const body = getComputedStyle(document.body), header = document.querySelector('header');
+                          const menus = ['fileBtn', 'editBtn'].map(id => {
+                            const button = document.getElementById(id), bounds = button.getBoundingClientRect(),
+                              icon = button.querySelector('svg').getBoundingClientRect(),
+                              label = button.querySelector('.lbl').getBoundingClientRect();
+                            return { id, width: bounds.width, height: bounds.height,
+                              iconWidth: icon.width, iconHeight: icon.height,
+                              styled: bounds.width >= 30 && bounds.height >= 30 && bounds.left >= 0 &&
+                                bounds.right <= innerWidth && label.width > 0 && label.height > 0 &&
+                                (innerWidth <= 480 ? icon.width === 0 && icon.height === 0 &&
+                                  bounds.height >= 40 :
+                                  icon.width > 0 && icon.width <= 32 && icon.height > 0 && icon.height <= 32) };
+                          });
                           return JSON.stringify({ display: body.display, margin: body.margin,
-                            header: getComputedStyle(header).display, iconWidth: bounds.width,
-                            iconHeight: bounds.height, overflow: document.documentElement.scrollHeight > innerHeight + 1,
+                            header: getComputedStyle(header).display, menus,
+                            overflow: document.documentElement.scrollHeight > innerHeight + 1 ||
+                              document.documentElement.scrollWidth > innerWidth + 1,
                             styled: body.display === 'grid' && body.margin === '0px' &&
-                              getComputedStyle(header).display === 'flex' && bounds.width <= 32 &&
-                              bounds.height <= 32 && bounds.width > 0 &&
+                              getComputedStyle(header).display === 'flex' && menus.every(menu => menu.styled) &&
+                              document.documentElement.scrollWidth <= innerWidth + 1 &&
                               document.documentElement.scrollHeight <= innerHeight + 1 });
                         }
                         """);

@@ -375,10 +375,10 @@ export function createFormFields(ctx) {
     if (r?.skipped.length) ctx.modal('Form data import', `<p>${r.applied} value(s) applied. Skipped:</p><ul>${r.skipped.slice(0, 50).map(s => `<li>${ctx.esc(s)}</li>`).join('')}</ul>`, 'Close', () => true);
   };
 
-  const flatten = (scope) => {
+  const flatten = async (scope) => {
     const names = scope === 'selected' ? sel().map(f => f.name) : undefined;
     if (scope === 'selected' && !names.length) { ctx.status('Select the fields to flatten first.'); return; }
-    if (!confirm('Flatten bakes field appearances into the page and removes the fields. You can undo this with Ctrl+Z until you save. Continue?')) return;
+    if (!await window.editorUi.confirm({ title: 'Flatten form fields', message: 'Flatten bakes field appearances into the page and removes the fields. You can undo this with Ctrl+Z until you save.', confirmLabel: 'Flatten fields' })) return;
     selected.clear();
     run(() => post('flatten', scope === 'selected' ? { names } : undefined, { scope }).then(json), r => `Flattened ${r?.flattened ?? 0} field(s).`);
   };
@@ -406,11 +406,28 @@ export function createFormFields(ctx) {
   };
   const toolbar = ctx.toolbar(); toolbar.append(button, mode);
 
+  function editEntries() {
+    const fields = sel(), has = fields.length > 0, mod = navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+';
+    const multiple = fields.length > 1, locked = ctx.locked();
+    return [
+      { label: 'Cut', key: mod + 'X', disabled: !has, run: () => { copy(); remove(fields); } },
+      { label: 'Copy', key: mod + 'C', disabled: !has, run: copy },
+      { label: 'Paste', key: mod + 'V', disabled: !clip?.length, run: () => paste() },
+      { label: 'Duplicate', key: mod + 'D', disabled: !has, run: () => { copy(); paste(); } },
+      { label: 'Align fields', disabled: !multiple || locked, sub:
+        [['left', 'Left'], ['centre', 'Center horizontally'], ['right', 'Right'], ['top', 'Top'], ['middle', 'Middle vertically'], ['bottom', 'Bottom']]
+          .map(([mode, label]) => ({ label, run: () => arrange(mode) })) },
+      { label: 'Distribute fields', disabled: fields.length < 3 || locked, sub: [
+        { label: 'Horizontally', run: () => arrange('hdist') }, { label: 'Vertically', run: () => arrange('vdist') }] },
+      { label: 'Delete', key: 'Del', disabled: !has, danger: true, run: () => remove(fields) },
+    ];
+  }
+
   addEventListener('keydown', e => {
     if (!armed) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); arm(null); }
     else if (e.key === 'Enter' && !/INPUT|TEXTAREA|SELECT|BUTTON/.test(document.activeElement?.tagName)) { e.preventDefault(); e.stopPropagation(); placeCentre(); }
   }, true);
 
-  return { load, paint, props, layerDown, editing: () => editing, reset: () => { editing = true; selected.clear(); armed = null; clip = null; list = []; updateMode(); }, clear: () => { selected.clear(); }, cancelArmed: () => arm(null), hasSelection: () => selected.size > 0 };
+  return { load, paint, props, layerDown, editEntries, hasClipboard: () => !!clip?.length, editing: () => editing, reset: () => { editing = true; selected.clear(); armed = null; clip = null; list = []; updateMode(); }, clear: () => { selected.clear(); }, cancelArmed: () => arm(null), hasSelection: () => selected.size > 0 };
 }
